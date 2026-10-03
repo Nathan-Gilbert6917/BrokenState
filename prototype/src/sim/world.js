@@ -17,11 +17,11 @@ import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
-import { captivesDaily } from "./conflicts.js";
+import { captivesDaily, releaseStranded } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
-import { armorPower, armorMult, allItems } from "./inventory.js";
+import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { autopilotHour } from "./autopilot.js";
 
@@ -33,7 +33,7 @@ let nextId = 1;
 export const newId = () => nextId++;
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
-// [{ name?, skills?, appearance?, leader? }]. Headless tools leave it out.
+// [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
 export function createWorld({ seed, factionCount, crew = null }) {
   const rng = new Rng(seed);
   const map = generateMap(rng);
@@ -78,11 +78,9 @@ export function createWorld({ seed, factionCount, crew = null }) {
   state.survivors.forEach((s, i) => (s.gear.weapon = { key: starts[i], name: GEAR[starts[i]].name, quality: 1 }));
   state.survivors[0].gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 };
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
-  const roles = ["farm", "farm", "scavenge", "operate", "guard", "build"];
-  state.survivors.forEach((s, i) => (s.role = roles[i]));
   state.survivors[0].leader = true;
   if (crew) applyCrew(state, crew);
-  assignStations(state, hubBase);
+  assignStartingRoles(state);
 
   // Pre-war maps: geography is known, current conditions are not.
   updateVision(state);
@@ -107,7 +105,7 @@ export function makeSurvivor(state, quality = 1) {
   }
   const s = {
     id: newId(),
-    name: `${rng.pick(FIRST_NAMES)} ${rng.pick(LAST_NAMES)}`,
+    name: freshName(state),
     skills, traits, health: 100, mood: 60, alive: true, leader: false,
     // Worn and held gear (inventory.js): hands, off hand, body, head, arms, legs, pack; plus 4 pockets.
     gear: { weapon: null, armor: null, tool: null, head: null, arms: null, legs: null, backpack: null },
@@ -121,6 +119,39 @@ export function makeSurvivor(state, quality = 1) {
   return s;
 }
 
+// A name nobody in this world has had: no first name twice while one is free (messages use first names), and
+// never a full name twice. Two rng picks, as before, unless a full name has to be re-rolled.
+const firstOf = (name) => String(name).split(" ")[0];
+function freshName(state) {
+  const rng = state.rng;
+  const given = state.namesGiven || (state.namesGiven = []);
+  const names = [...state.survivors.map((s) => s.name), ...given];
+  const firsts = new Set(names.map(firstOf));
+  let pool = FIRST_NAMES.filter((f) => !firsts.has(f));
+  if (!pool.length) {
+    // Every first name has been used: at least keep clear of the living.
+    const living = new Set(state.survivors.filter((s) => s.alive).map((s) => firstOf(s.name)));
+    pool = FIRST_NAMES.filter((f) => !living.has(f));
+  }
+  const first = rng.pick(pool.length ? pool : FIRST_NAMES);
+  let name = `${first} ${rng.pick(LAST_NAMES)}`;
+  for (let i = 0; i < 8 && names.includes(name); i++) name = `${first} ${rng.pick(LAST_NAMES)}`;
+  given.push(name);
+  return name;
+}
+
+// Renames a survivor. An empty name, or a full name someone else alive already has, is refused.
+// Returns "" when the name is set (or unchanged), else the reason.
+export function renameSurvivor(state, s, name) {
+  if (!s) return "Nobody to rename.";
+  const n = String(name ?? "").trim().replace(/\s+/g, " ");
+  if (!n) return "A name cannot be empty.";
+  if (n === s.name) return "";
+  if (state.survivors.some((o) => o !== s && o.alive && o.name.toLowerCase() === n.toLowerCase())) return `There is already a ${n} in the group.`;
+  s.name = n;
+  return "";
+}
+
 // Starting-colonist overrides (new-run screen). Never touches state.rng.
 export function applyCrew(state, crew) {
   if (crew.some((c) => c && c.leader)) state.survivors.forEach((s) => (s.leader = false));
@@ -129,9 +160,30 @@ export function applyCrew(state, crew) {
     if (!c) return;
     if (c.name && String(c.name).trim()) s.name = String(c.name).trim();
     if (c.skills) for (const k of SKILLS) if (c.skills[k] != null) s.skills[k] = Math.max(0, Math.min(20, Math.round(c.skills[k])));
+    // Traits and the skill-point budget belong to the edited colonist, not to the seed.
+    if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))];
+    if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
     if (c.leader) s.leader = true;
   });
+}
+
+// Starting jobs by skill instead of list order: the two best farmers farm, then the best scavenger scavenges,
+// the best shot guards and the best mechanic builds; whoever is left farms too. Nobody starts on the ammo
+// bench (the hub opens with plenty of ammo and little food). Also called when the run begins, so skills
+// edited on the new-run screen count.
+const START_ROLES = [["farm", "farming"], ["farm", "farming"], ["scavenge", "scavenging"], ["guard", "shooting"], ["build", "mechanics"]];
+export function assignStartingRoles(state) {
+  const h = hub(state);
+  const pool = atBase(state, h.id);
+  for (const s of pool) { s.role = "farm"; s.station = null; }
+  for (const [role, key] of START_ROLES) {
+    if (!pool.length) break;
+    const best = pool.reduce((a, s) => (skill(s, key) > skill(a, key) ? s : a), pool[0]);
+    best.role = role;
+    pool.splice(pool.indexOf(best), 1);
+  }
+  assignStations(state, h);
 }
 
 // ---------- shared helpers ----------
@@ -154,6 +206,14 @@ export const survivorById = (state, id) => state.survivors.find((s) => s.id === 
 export const alive = (state) => state.survivors.filter((s) => s.alive);
 export const atBase = (state, baseId) => alive(state).filter((s) => s.location.kind === "base" && s.location.baseId === baseId);
 export const factionById = (state, id) => state.factions.find((f) => f.id === id);
+// Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips.
+// Waiting escorts eat, heal and can be treated at the hub; they do no base work (atBase leaves them out).
+export function residents(state, baseId) {
+  const h = hub(state);
+  const hubId = h ? h.id : null;
+  return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId));
+}
+const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
 export function skill(s, key) {
   let v = s.skills[key] || 0;
@@ -189,9 +249,12 @@ export function playerStrength(state) {
   return alive(state).reduce((sum, s) => sum + combatPower(s), 0);
 }
 
-export function hurt(state, s, amount, tileId, cause) {
-  if (s.traits.includes("tough")) amount *= 0.75;
-  amount *= armorMult(s);
+// opts.raw: damage that armor and toughness do nothing against (hunger, thirst, infection).
+export function hurt(state, s, amount, tileId, cause, opts = {}) {
+  if (!opts || !opts.raw) {
+    if (s.traits.includes("tough")) amount *= 0.75;
+    amount *= armorMult(s);
+  }
   s.health -= amount;
   if (s.health <= 0) killSurvivor(state, s, tileId, cause);
 }
@@ -200,13 +263,32 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   if (!s.alive) return;
   s.alive = false;
   s.health = 0;
+  s.station = null;
+  s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
-  // Death site: the body and everything carried stays where they fell. item = the real item (a pack keeps its
-  // contents), so looting the body after a battle can take it off the site (inventory.js).
-  const items = [];
-  for (const g of allItems(s)) items.push({ kind: "gear", key: g.key, name: `${s.name.split(" ")[0]}'s ${g.name}`, qty: 1, value: GEAR[g.key].value * (g.quality || 1), item: g });
-  items.push(...extraItems);
-  if (tileId != null) {
+  // Died on the tile of one of your bases (hunger, an infected wound, a scavenging accident, a raid or horde at
+  // the walls, a convoy starving while it holds there): their things go to that base's armory. No death site
+  // inside the walls: no team could be sent to recover it, and passers-by cannot loot it. The one exception is
+  // a team's own battle on that tile: its fallen stay bodies to loot on the result screen (inventory.js).
+  const here = tileId != null ? state.bases.find((b) => b.tile === tileId) : null;
+  const fight = state.combat;
+  const teamBattle = !!(fight && fight.tileId === tileId && fight.setup && fight.setup.partyId != null
+    && s.location && s.location.kind === "party" && s.location.partyId === fight.setup.partyId);
+  const home = here && !teamBattle ? here : null;
+  if (home) {
+    const kept = stripAll(s);
+    home.armory.push(...kept);
+    for (const e of extraItems) {
+      if (e.kind === "gear" && e.item) home.armory.push(e.item);
+      else if (e.kind === "supply" && e.qty > 0) home.stock[e.key] = (home.stock[e.key] || 0) + e.qty;
+    }
+    if (kept.length) log(state, `${firstOf(s.name)}'s things (${kept.map((g) => g.name).join(", ")}) were put in ${home.name}'s armory.`, "info");
+  } else if (tileId != null) {
+    // Death site: the body and everything carried stays where they fell. item = the real item (a pack keeps its
+    // contents), so looting the body after a battle can take it off the site (inventory.js).
+    const items = [];
+    for (const g of allItems(s)) items.push({ kind: "gear", key: g.key, name: `${s.name.split(" ")[0]}'s ${g.name}`, qty: 1, value: GEAR[g.key].value * (g.quality || 1), item: g });
+    items.push(...extraItems);
     let site = state.deathSites.find((d) => d.tile === tileId);
     if (site) {
       site.items.push(...items);
@@ -224,26 +306,109 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   }
   if (s.leader) {
     s.leader = false;
-    const next = alive(state).sort((a, b) => skill(b, "leadership") - skill(a, "leadership"))[0];
-    if (next) {
-      addCard(state, {
-        title: "The leader is dead",
-        text: `${s.name} is gone. The group needs someone to lead. Morale drops across the hub.`,
-        choices: alive(state).slice(0, 6).map((c) => ({
-          label: `${c.name} (Leadership ${skill(c, "leadership")})`,
-          resolve: (st) => {
-            c.leader = true;
-            alive(st).forEach((o) => (o.mood = Math.max(0, o.mood - 15)));
-            return `${c.name} now leads the group.`;
-          },
-        })),
-      });
-    }
+    leaderCard(state, `${s.name} is gone. The group needs someone to lead. Morale drops across the hub.`);
   }
-  if (!alive(state).length) {
-    state.gameOver = true;
-    log(state, "Every survivor is dead. The holdout has fallen.", "death");
+  checkGameOver(state);
+}
+
+// "The leader is dead": the six best living, free (not captive) people by Leadership. Checked again when the
+// player picks, since a candidate can die or be captured while the card waits: the pick then falls back to the
+// best one left.
+const LEADER_CARD = "The leader is dead";
+const leaderCandidates = (state) => state.survivors.filter(isFree).sort((a, b) => skill(b, "leadership") - skill(a, "leadership"));
+function leaderCard(state, text) {
+  const list = leaderCandidates(state).slice(0, 6);
+  if (!list.length) return false; // nobody free right now: ensureLeader asks again once someone is
+  addCard(state, {
+    title: LEADER_CARD,
+    text,
+    choices: list.map((c) => ({
+      label: `${c.name} (Leadership ${skill(c, "leadership")})`,
+      disabled: () => !isFree(c),
+      resolve: (st) => {
+        if (st.survivors.some((o) => o.alive && o.leader)) return "The group already has a leader.";
+        const pick = isFree(c) ? c : leaderCandidates(st)[0];
+        if (!pick) return "Nobody is left to lead.";
+        st.survivors.forEach((o) => (o.leader = false));
+        pick.leader = true;
+        alive(st).forEach((o) => (o.mood = Math.max(0, o.mood - 15)));
+        return pick === c ? `${pick.name} now leads the group.` : `${c.name} is gone too. ${pick.name} now leads the group.`;
+      },
+    })),
+  });
+  return true;
+}
+
+// Daily safety net: a group with no living leader and no card waiting is asked again (every candidate on the
+// last card was lost, or the only people left were captives who have since come home).
+export function ensureLeader(state) {
+  if (state.gameOver || state.survivors.some((s) => s.alive && s.leader)) return;
+  if (state.cards.some((c) => c.title === LEADER_CARD)) return;
+  leaderCard(state, "The group has no leader. Someone has to step up. Morale drops across the hub.");
+}
+
+// The run ends when nobody is left alive: deaths, desertion and a captive changing sides all count (captives
+// still count as alive). Called after every way of losing someone, and once at the end of each hour.
+export function checkGameOver(state) {
+  if (state.gameOver) return true;
+  if (!state.survivors.length || alive(state).length) return false;
+  state.gameOver = true;
+  // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
+  const allDead = state.survivors.every((s) => !s.left);
+  log(state, `${allDead ? "Every survivor is dead." : "Every survivor is dead or gone."} The holdout has fallen.`, "death");
+  return true;
+}
+
+// A base is lost (overrun by a horde, taken in a raid). One place for everything that has to follow: the
+// people still there flee to the hub, vehicles parked there are left on the tile (abandoned, with a map
+// marker), supply runs to or from it are paused, and the log says what was lost.
+export function removeBase(state, base, cause = "was lost") {
+  const i = state.bases.indexOf(base);
+  if (i < 0 || base.type === "hub") return false;
+  const h = hub(state);
+  const fled = [];
+  for (const s of state.survivors) {
+    if (!s.location || s.location.kind !== "base" || s.location.baseId !== base.id) continue;
+    s.station = null;
+    s.inBed = false;
+    if (!s.alive) continue;
+    s.location = { kind: "base", baseId: h.id };
+    fled.push(s);
   }
+  const left = [];
+  for (const v of state.vehicles) {
+    if (v.loc.kind !== "base" || v.loc.baseId !== base.id) continue;
+    v.loc = { kind: "abandoned", tile: base.tile, since: state.hour };
+    left.push(v.name);
+    // The people who fled know where it stands.
+    const key = `vehicle:${v.id}`;
+    const m = { key, type: "vehicle", tile: base.tile, hour: state.hour, label: `${v.name} (left at ${base.name})`, info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) } };
+    const cur = state.markers.find((x) => x.key === key);
+    if (cur) Object.assign(cur, m);
+    else state.markers.push(m);
+  }
+  let paused = 0;
+  for (const job of state.supplyRuns || []) {
+    if (job.originId !== base.id && job.destId !== base.id) continue;
+    if (job.status === "done" || job.status === "disbanded") continue;
+    if (!job.paused) paused++;
+    job.paused = true;
+    job.lastResult = `Day ${day(state)}: ${base.name} ${cause}`;
+  }
+  for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = h.id;
+  state.bases.splice(i, 1);
+  assignStations(state, h);
+  const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${k}`);
+  const bits = [];
+  if (base.buildings.length) bits.push(`${base.buildings.length} building${base.buildings.length === 1 ? "" : "s"}`);
+  if (stock.length) bits.push(`its stock (${stock.join(", ")})`);
+  if (base.armory.length) bits.push(`${base.armory.length} item${base.armory.length === 1 ? "" : "s"} in the armory`);
+  const parts = [`${base.name} ${cause}.`, bits.length ? `Lost with it: ${bits.join(", ")}.` : "Nothing of value was left there."];
+  if (left.length) parts.push(`${left.length === 1 ? `The ${left[0]} was` : `${left.join(" and ")} were`} left behind there (marked on the map).`);
+  if (fled.length) parts.push(`${fled.map((s) => firstOf(s.name)).join(", ")} fled to ${h.name}.`);
+  if (paused) parts.push(`${paused} supply run${paused === 1 ? "" : "s"} to or from it ${paused === 1 ? "is" : "are"} paused.`);
+  log(state, parts.join(" "), "death");
+  return true;
 }
 
 export function supplyValue(stock) {
@@ -311,6 +476,7 @@ export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
   movePartiesHour(state);
+  releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   constructionHour(state);
   craftingHour(state);
@@ -326,8 +492,12 @@ export function tickHour(state) {
     deathSitesDaily(state);
     captivesDaily(state);
     recomputeOwnership(state);
+    ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
   }
+  // Safety net: no stock below zero, whatever subtracted from it.
+  for (const b of state.bases) for (const k of Object.keys(b.stock)) if (b.stock[k] < 0) b.stock[k] = 0;
+  checkGameOver(state);
   updateVision(state);
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)

@@ -8,7 +8,14 @@
 </head>
 <body>
   <div id="app">
-    <header id="topbar"></header>
+    <header id="topbar">
+      <span class="title">BROKEN STATE</span>
+      <span class="clock" id="tb-clock"></span>
+      <span class="speed row" id="tb-speed"></span>
+      <span class="stock" id="tb-stock"></span>
+      <span id="tb-people"></span>
+      <span class="row small" id="tb-tools"></span>
+    </header>
     <aside id="left"></aside>
     <main id="mapwrap">
       <canvas id="map"></canvas>
@@ -18,6 +25,7 @@
       <div id="ctxmenu" class="hidden"></div>
       <div id="tooltip" class="hidden"></div>
       <div id="banner" class="hidden"></div>
+      <div id="fps" class="hidden"></div>
     </main>
     <aside id="right"></aside>
     <footer id="log"></footer>

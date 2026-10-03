@@ -38,6 +38,11 @@ export function mergeSpots(state, spotted) {
       if (cur && cur.hour <= s.hour) state.markers.splice(state.markers.indexOf(cur), 1);
       continue;
     }
+    // A death site with nothing left on it (the person carried nothing): no marker.
+    if (s.type === "death" && s.info && s.info.items === 0 && !state.deathSites.some((d) => d.tile === s.tile && d.items.length)) {
+      if (cur && cur.hour <= s.hour) state.markers.splice(state.markers.indexOf(cur), 1);
+      continue;
+    }
     if (!cur) {
       state.markers.push({ ...s });
       added++;
@@ -68,23 +73,53 @@ export function perceive(state, p, members, tiles, bonus = 0) {
     }
     // Your own dead and vehicles are easy to recognise.
     for (const d of state.deathSites) {
-      if (d.tile !== id) continue;
-      spot(p, { key: `death:${id}`, type: "death", tile: id, hour: state.hour, label: `Death site: ${d.names.join(", ")}`, info: { items: d.items.length } });
+      if (d.tile !== id || !d.items.length) continue;
+      spot(p, deathMark(state, d));
     }
     for (const v of state.vehicles) {
       if (v.loc.kind !== "abandoned" || v.loc.tile !== id) continue;
-      spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile: id, hour: state.hour, label: v.name, info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) } });
+      spot(p, vehicleMark(state, v));
     }
   }
   return found;
 }
 
+// Marker entries for a death site and for an abandoned vehicle (cargo left inside is noted on the label).
+// A site with no names is cargo a team had to drop (parties.js shedOverload): nobody died there.
+export const deathLabel = (d) => (d.names.length ? `Death site: ${d.names.join(", ")}` : "Cargo left behind");
+const deathMark = (state, d) => ({ key: `death:${d.tile}`, type: "death", tile: d.tile, hour: state.hour, label: deathLabel(d), info: { items: d.items.length } });
+const hasCargo = (v) => !!(v.cargo && (v.cargo.gear.length || Object.values(v.cargo.supplies).some((q) => q >= 1)));
+const vehicleMark = (state, v, note) => ({
+  key: `vehicle:${v.id}`, type: "vehicle", tile: v.loc.tile, hour: state.hour,
+  label: `${v.name}${note || hasCargo(v) ? ` (${[note, hasCargo(v) ? "cargo inside" : ""].filter(Boolean).join(", ")})` : ""}`,
+  info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) },
+});
+
+// Put straight on the map (not through a team's report): where a whole team was lost, so that what it carried
+// and its vehicle can be recovered (parties.js wipeParty).
+export const markDeathSite = (state, d) => upsert(state, deathMark(state, d));
+export const markAbandonedVehicle = (state, v, note) => upsert(state, vehicleMark(state, v, note));
+
+// Death sites with nothing left on them are removed, with their markers (a site only matters while there is
+// something to recover). Runs every hour with the live-marker update.
+export function clearEmptyDeathSites(state) {
+  for (let i = state.deathSites.length - 1; i >= 0; i--) {
+    const d = state.deathSites[i];
+    if (d.items.length) continue;
+    state.deathSites.splice(i, 1);
+    if (state.deathSites.some((o) => o.tile === d.tile)) continue;
+    const m = state.markers.findIndex((x) => x.key === `death:${d.tile}`);
+    if (m >= 0) state.markers.splice(m, 1);
+  }
+}
+
 // Tiles in live view keep their markers current.
 export function updateLiveMarkers(state) {
+  clearEmptyDeathSites(state);
   for (const id of state.live) {
     const t = state.tiles[id];
-    for (const d of state.deathSites) if (d.tile === id) upsert(state, { key: `death:${id}`, type: "death", tile: id, hour: state.hour, label: `Death site: ${d.names.join(", ")}`, info: { items: d.items.length } });
-    for (const v of state.vehicles) if (v.loc.kind === "abandoned" && v.loc.tile === id) upsert(state, { key: `vehicle:${v.id}`, type: "vehicle", tile: id, hour: state.hour, label: v.name, info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) } });
+    for (const d of state.deathSites) if (d.tile === id) upsert(state, deathMark(state, d));
+    for (const v of state.vehicles) if (v.loc.kind === "abandoned" && v.loc.tile === id) upsert(state, vehicleMark(state, v));
     if (t.hidden && t.hidden.known && t.hidden.taken) {
       const m = state.markers.find((m) => m.key === `${t.hidden.type}:${id}`);
       if (m) m.info = { ...(m.info || {}), emptied: true };

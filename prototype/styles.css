@@ -44,6 +44,7 @@ h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--accent); text-trans
 #topbar .stock { display: flex; gap: 0.7rem; font-variant-numeric: tabular-nums; }
 #topbar .stock span b { color: var(--accent); font-weight: 600; margin-right: 0.15rem; }
 #topbar .speed button { padding: 0.25rem 0.55rem; }
+#tb-tools { margin-left: auto; }
 #left, #right { background: var(--panel); overflow-y: auto; padding: 0.7rem 0.9rem; }
 #left { grid-area: left; border-right: 1px solid var(--line); }
 #right { grid-area: right; border-left: 1px solid var(--line); }
@@ -98,7 +99,20 @@ table.t th { color: var(--muted); font-weight: 500; }
 
 /* hover descriptions */
 #tip { position: fixed; z-index: 50; pointer-events: none; max-width: 22rem; background: #0f1114; border: 1px solid var(--accent); border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.85rem; line-height: 1.4; color: var(--text); box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
-#banner { position: absolute; top: 0.6rem; left: 50%; transform: translateX(-50%); background: #4a3816; border: 1px solid var(--accent); border-radius: 8px; padding: 0.4rem 0.8rem; z-index: 6; }
+/* Banners at the top of the map: "Paused" and move mode. They sit between the running-orders list and the dev panel. */
+#banner { position: absolute; top: 0.6rem; left: 0.6rem; right: 0.6rem; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; pointer-events: none; }
+/* The banner spans the top of the map; the orders list and dev panel sit below it while it shows. */
+#mapwrap:has(#banner:not(.hidden)) #orders, #mapwrap:has(#banner:not(.hidden)) #devpanel { top: 4.6rem; }
+#banner > div { pointer-events: auto; background: #4a3816; border: 1px solid var(--accent); border-radius: 8px; padding: 0.4rem 0.8rem; text-align: center; max-width: 100%; }
+#banner > .paused { background: rgba(58,44,14,0.96); border-color: #ffd166; box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
+#banner > .paused b.big { color: #ffd166; letter-spacing: 0.08em; text-transform: uppercase; margin-right: 0.3rem; }
+#banner > .paused button { margin-left: 0.5rem; padding: 0.1rem 0.5rem; }
+#banner .armed { display: block; color: #ffd166; margin-top: 0.15rem; }
+.armed { color: #ffd166; }
+/* Dev tools: frame rate overlay (bottom right of the map; over the battle map while a battle is open). */
+#fps { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 6; pointer-events: none; background: rgba(13,15,18,0.85); border: 1px solid #7a5cff; border-radius: 6px; padding: 0.25rem 0.5rem; font: 0.75rem/1.35 ui-monospace, Consolas, "Courier New", monospace; color: #cfd6e0; white-space: pre; }
+#fps.fixed { position: fixed; z-index: 25; left: 0.6rem; right: auto; }
+body.tl-on #fps { top: 0.6rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); z-index: 8; }
 #legend { max-width: 17rem; }
 #legend .layer { display: block; color: var(--text); cursor: pointer; padding: 0.05rem 0; }
 #legend .layer input { vertical-align: middle; }
@@ -111,6 +125,10 @@ button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
 .basebox { width: min(72rem, 96vw) !important; }
 .basebody { max-height: 62vh; overflow-y: auto; padding-right: 0.3rem; }
+.basename { font-size: 1.35rem; font-weight: 700; width: min(26rem, 60vw); background: transparent; border-color: transparent; padding: 0.05rem 0.3rem; margin-left: -0.3rem; }
+.basename:hover, .basename:focus { border-color: var(--line); background: var(--panel-2); }
+.nrmod { color: var(--accent); font-size: 0.72rem; margin-left: 0.1rem; }
+.nrmod.neg { color: var(--danger); }
 
 /* tactical combat */
 #combat { position: fixed; inset: 0; z-index: 20; display: grid; grid-template-columns: 1fr calc(23rem); background: #0d0f12; }
@@ -180,7 +198,8 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .nrskills { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.1rem 0.5rem; font-size: 0.8rem; }
 .nrskill { display: flex; align-items: center; gap: 0.2rem; }
 .nrskill span { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nrskill b { width: 1.3rem; text-align: center; }
+.nrskill b { min-width: 1.3rem; text-align: center; white-space: nowrap; }
+.nrskill b i { font-style: normal; font-weight: 400; }
 .nrskill button.mini { padding: 0 0.3rem; line-height: 1.1; font-size: 0.75rem; }
 .nrrand { margin-top: 0.4rem; gap: 0.25rem; }
 .zprevs { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin: 0.4rem 0 0.8rem; }
@@ -236,12 +255,19 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 @media (max-width: 1000px) { .invcols, .invcols.three { grid-template-columns: 1fr; } }
 
 /* Dev tools panel (ui/devtools.js) */
-#devpanel { position: absolute; right: 0.6rem; top: 0.6rem; width: 23rem; max-height: 70%; overflow-y: auto; background: rgba(20,22,26,0.92); border: 1px solid #7a5cff; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem; z-index: 5; }
+#devpanel { position: absolute; right: 0.6rem; top: 0.6rem; width: min(26rem, calc(100% - 1.2rem)); max-height: 70%; overflow-y: auto; overflow-x: hidden; background: rgba(20,22,26,0.92); border: 1px solid #7a5cff; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem; z-index: 5; }
 #devpanel .devopts { display: grid; gap: 0.2rem; margin: 0.35rem 0; }
 #devpanel .devopts button { padding: 0.05rem 0.4rem; }
 #devpanel .devzed { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.6rem; margin: 0.3rem 0; }
-#devpanel .devtable { width: 100%; border-collapse: collapse; margin-top: 0.3rem; }
-#devpanel .devtable td { padding: 0.1rem 0.25rem; border-top: 1px solid var(--line); white-space: nowrap; }
+/* Fixed column widths so the table always fits the panel: names and types wrap, numbers stay on one line. */
+#devpanel .devtable { width: 100%; border-collapse: collapse; margin-top: 0.3rem; table-layout: fixed; }
+#devpanel .devtable td { padding: 0.1rem 0.2rem; border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+#devpanel .devtable td:nth-child(1) { width: 33%; white-space: normal; overflow-wrap: anywhere; }
+#devpanel .devtable td:nth-child(2) { width: 23%; white-space: normal; }
+#devpanel .devtable td:nth-child(3) { width: 13%; }
+#devpanel .devtable td:nth-child(4) { width: 10%; }
+#devpanel .devtable td:nth-child(5) { width: 13%; }
+#devpanel .devtable td:nth-child(6) { width: 8%; text-align: right; }
 #devpanel .dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.3rem; vertical-align: middle; }
 
 /* Timelapse viewer (ui/timelapse.js): the map fills the window, panels float over it */

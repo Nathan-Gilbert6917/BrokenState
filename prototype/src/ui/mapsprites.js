@@ -1362,11 +1362,16 @@ function fade(p, f = 0.7, dark = 0.18) {
   return p;
 }
 
-// Danger pip: a small skull.
+// Danger pip: a skull, 7 x 7 on a 9 x 9 grid so it gets a dark outline all round and reads on any ground.
 function paintSkull() {
-  const p = painter(5, 5);
-  p.rect(1, 0, 3, 0, BONE); p.rect(0, 1, 4, 2, BONE); p.rect(1, 3, 3, 3, BONE); p.set(1, 4, BONE); p.set(3, 4, BONE);
-  p.set(1, 1, OUTLINE); p.set(3, 1, OUTLINE); p.set(2, 2, shade(BONE, -0.5));
+  const p = painter(9, 9);
+  const lit = shade(BONE, 0.3), dark = shade(BONE, -0.55);
+  p.rect(2, 1, 6, 1, BONE); p.rect(1, 2, 7, 5, BONE); p.rect(2, 6, 6, 7, BONE);   // cranium, cheekbones, jaw
+  p.rect(2, 1, 4, 1, lit); p.set(1, 2, lit); p.set(2, 2, lit);                      // light on the crown
+  p.rect(2, 3, 3, 4, OUTLINE); p.rect(5, 3, 6, 4, OUTLINE);                         // eye sockets
+  p.set(4, 5, dark);                                                                // nose
+  p.set(3, 7, dark); p.set(5, 7, dark);                                             // gaps between the teeth
+  p.set(1, 5, shade(BONE, -0.2)); p.set(7, 5, shade(BONE, -0.2));
   return p;
 }
 
@@ -1939,7 +1944,7 @@ export function poiSpriteCanvas(type, variant = "", faded = false) {
   });
 }
 
-// Danger pip (a small skull) drawn under a site at high zoom.
+// Danger pip (a skull): render.js draws a row of them under a site's name when zoomed in.
 export const skullCanvas = () => cached("skull", paintSkull);
 
 // Tent and campfire; lit = false for an abandoned camp.

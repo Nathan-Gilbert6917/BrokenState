@@ -8,7 +8,7 @@ import { SUPPLIES } from "./data.js";
 import { newId, log, day, hub, baseById, survivorById, hurt, mergeKnowledge } from "./world.js";
 import {
   STANCES, planPath, fuelForPath, carryCapacity, supplyLoad, unitsThatFit, partyCapacity, cargoLoad,
-  partyMembers, partyTile, startReturn, removeParty, travelHours,
+  partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty,
 } from "./parties.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
 import { assignStations } from "./buildings.js";
@@ -198,6 +198,8 @@ export function dispatchSupplyRun(state, job, manual = false) {
   }
   const p = {
     id: newId(), owner: "player", kind: "convoy", routeKind: "supply", mission: "route", supplyJobId: job.id,
+    // The run's own terms, fixed when it leaves: editing the job later only changes the next run.
+    atDest: AT_DEST[job.atDest] ? job.atDest : "return", pickup: cleanLines(job.pickup),
     dest: dest.tile, destBaseId: dest.id, homeBaseId: origin.id, escort: escortFor(ready.length),
     members: ready.map((s) => s.id), stance: job.stance || "normal", vehicle: !!v, vehicleId: v ? v.id : null,
     supplies, cargo: { supplies: { ...deliver }, gear: [] },
@@ -247,7 +249,8 @@ export function supplyArrive(state, p) {
   mergeKnowledge(state, p.seen, p.spotted);
   const delivered = got.join(", ") || "nothing";
   if (job) job.lastResult = `Day ${day(state)}: delivered ${delivered} to ${dest.name}`;
-  const mode = job ? job.atDest : "return";
+  // What this convoy left with (not the job as edited since); a deleted job's convoy comes home.
+  const mode = !job ? "return" : p.atDest || job.atDest;
   if (mode === "disband") return disbandAt(state, p, dest, job, `delivered ${delivered}`);
   if (mode === "hold") {
     p.phase = "holding";
@@ -284,9 +287,9 @@ function headHome(state, p, job) {
         dest.stock.fuel -= top;
       }
     }
-    if (job && job.atDest !== "disband") {
+    if (job && (p.atDest || job.atDest) !== "disband") {
       const got = [], short = [];
-      for (const l of cleanLines(job.pickup)) {
+      for (const l of cleanLines(p.pickup || job.pickup)) {
         const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
         const take = Math.max(0, Math.min(l.qty, Math.floor(dest.stock[l.key] || 0), unitsThatFit(room, l.key)));
         if (take > 0) {
@@ -497,13 +500,22 @@ function holdUpkeep(state, p, job) {
     headHome(state, p, job);
     return;
   }
+  // One food and one water per person a day, from the base first, then from what the convoy carries.
+  const draw = (k) => {
+    if ((dest.stock[k] || 0) >= 1) dest.stock[k] -= 1;
+    else if ((p.supplies[k] || 0) >= 1) p.supplies[k] -= 1;
+    else return false;
+    return true;
+  };
+  let short = "";
   for (const m of partyMembers(state, p)) {
-    if ((dest.stock.food || 0) >= 1) dest.stock.food -= 1;
-    else if ((p.supplies.food || 0) >= 1) p.supplies.food -= 1;
-    else {
-      hurt(state, m, 6, dest.tile, `of hunger while holding at ${dest.name}`);
-      continue;
-    }
-    m.health = Math.min(100, m.health + 3);
+    const fed = draw("food"), watered = draw("water");
+    if (!fed) hurt(state, m, 6, dest.tile, `of hunger while holding at ${dest.name}`, { raw: true });
+    if (!watered && m.alive) hurt(state, m, 8, dest.tile, `of thirst while holding at ${dest.name}`, { raw: true });
+    if (fed && watered) m.health = Math.min(100, m.health + 3);
+    else short = !fed && !watered ? "food and water" : !fed ? "food" : "water";
   }
+  if (short) log(state, `The convoy holding at ${dest.name} (${jobName(state, job)}) has no ${short}. Send it home or stock the base.`, "danger");
+  // If the last of the crew died here, the convoy ends as a wiped team: its goods go into this base's stores.
+  wipeIfEmpty(state, p);
 }

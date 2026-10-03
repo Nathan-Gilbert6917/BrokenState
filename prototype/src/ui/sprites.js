@@ -20,7 +20,7 @@ const ZKEY = "brokenstate.zombieLook";
 export const ZOMBIE_LOOK_OPTIONS = {
   palette: { name: "Skin palette", tip: "Overall color of the dead", values: [["mixed", "Mixed"], ["rotten", "Rotten green"], ["ashen", "Ashen grey"], ["pale", "Pale blue"], ["burnt", "Burnt"]] },
   gore: { name: "Gore", tip: "How many wounds and how much blood", values: [["0", "None"], ["1", "Some"], ["2", "Heavy"]] },
-  variants: { name: "Variants", tip: "Which kinds of dead appear. By strength: fast zombies look like runners, tough ones like brutes or bloated.", values: [["stats", "By strength"], ["mixed", "Random mix"], ["walkers", "Walkers only"]] },
+  variants: { name: "Variants", tip: "Which kinds of dead appear. By strength: the stronger the dead (badly infected ground), the more runners, bloated ones and brutes among the walkers.", values: [["stats", "By strength"], ["mixed", "Random mix"], ["walkers", "Walkers only"]] },
   eyes: { name: "Eyes", tip: "Eye glow on the dead", values: [["glow", "Glowing"], ["red", "Red"], ["dead", "Dull"]] },
   clothes: { name: "Clothes", tip: "How torn their clothes are", values: [["torn", "Torn"], ["rags", "Rags"], ["intact", "Mostly intact"]] },
 };
@@ -342,16 +342,20 @@ export function paintZombie(variant, seed, look = zlook) {
   return p;
 }
 
-// Which variant a battle zombie shows: by its stats (fast = runner, tough = brute/bloated) or at random.
+// Which variant a battle zombie shows: by its strength or at random. Strength is the unit's power (1 on the
+// road, 2 to 5 by the infection of the ground; combat.js enemyUnit gives hp 15 + 7 x power): weak dead are
+// walkers, stronger ones bring runners and bloated ones, the strongest brutes. [walker, runner, bloated, brute] odds.
+const VARIANT_ODDS = [[4.25, [0.2, 0.3, 0.15, 0.35]], [3.5, [0.35, 0.35, 0.2, 0.1]], [2.6, [0.7, 0.15, 0.15, 0]], [0, [0.88, 0, 0.12, 0]]];
 export function zombieVariant(u, seed, look = zlook) {
   const rng = new Rng(seed * 7919 + 3);
   if (look.variants === "walkers") return "walker";
   if (look.variants === "mixed") return rng.pick(["walker", "walker", "runner", "bloated", "brute"]);
-  const fast = u.mob >= 3; // ZOMBIE_FAST in combat.js
-  const tough = u.maxHp >= 55;
-  if (fast) return tough && rng.chance(0.4) ? "brute" : rng.chance(0.75) ? "runner" : "walker";
-  if (tough) return rng.chance(0.5) ? "brute" : "bloated";
-  return rng.chance(0.85) ? "walker" : "bloated";
+  const power = u.power ?? ((u.maxHp || 22) - 15) / 7;
+  if (u.mob >= 3) return rng.pick(["runner", "runner", "runner", "brute", "walker"]); // really fast (ZOMBIE_FAST in combat.js)
+  const odds = VARIANT_ODDS.find(([min]) => power >= min)[1];
+  let roll = rng.next();
+  for (let i = 0; i < 4; i++) { roll -= odds[i]; if (roll < 0) return ZOMBIE_VARIANTS[i]; }
+  return "walker";
 }
 
 // ---------- human enemies ----------
@@ -447,7 +451,8 @@ export function survivorURL(s, seed = 0, withGear = true) {
 }
 export const appearanceURL = (app, weaponKey = null, armorKey = null) => canvasURL(survivorCanvas(app, weaponKey, armorKey));
 export const zombieURL = (variant, seed, look = zlook) => canvasURL(zombieCanvas(variant, seed, look));
-export const spriteImg = (url, size = 3, extra = "") => (url ? `<img class="sprite" src="${url}" alt="" style="width:${(GW / GH) * size}rem;height:${size}rem"${extra}>` : "");
+// style: extra CSS for the image (merged into the one style attribute).
+export const spriteImg = (url, size = 3, style = "") => (url ? `<img class="sprite" src="${url}" alt="" style="width:${(GW / GH) * size}rem;height:${size}rem${style ? `;${style}` : ""}">` : "");
 
 // ---------- battle map ----------
 const variants = new WeakMap(); // battle unit -> zombie variant (kept off the sim objects)

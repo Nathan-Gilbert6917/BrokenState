@@ -5,10 +5,10 @@
 // Makeshift gear has durability (item.dur): it wears with every fight / treatment / day of work and breaks at 0.
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
 import { GEAR, SKILL_NAMES } from "./data.js";
-import { log, atBase, skill, newId } from "./world.js";
+import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count } from "./buildings.js";
-import { partyMembers } from "./parties.js";
-import { ARMOR_SLOTS, ensurePack } from "./inventory.js";
+import { partyMembers, addGearToCargo } from "./parties.js";
+import { ARMOR_SLOTS, SLOT_NAMES, ensurePack } from "./inventory.js";
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -51,7 +51,18 @@ export function craftOutputText(key) {
   const r = CRAFTS[key];
   if (r.supplies) return Object.entries(r.supplies).map(([k, v]) => `+${v} ${k}`).join(", ");
   const d = GEAR[r.gear];
-  const bits = [`${d.slot}, power ${d.power}`];
+  const bits = [];
+  // What the thing does, by kind: weapons have power, armor has armor, packs carry, tools give their bonus.
+  if (d.slot === "weapon") bits.push(`weapon, power ${d.power}`);
+  else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
+  else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} carry space`);
+  else {
+    const fx = [];
+    if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
+    for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
+    if (d.water) fx.push(`+${d.water} water a day at its base`);
+    bits.push(`tool${fx.length ? `, ${fx.join(", ")}` : ""}`);
+  }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
   if (d.dur) bits.push(`lasts ${d.dur} ${durUnit(r.gear)}`);
   if (d.noise === 0 && d.slot === "weapon") bits.push("silent");
@@ -101,13 +112,13 @@ export function queueCraft(state, base, key) {
   return `${craftName(key)} queued at ${base.name}.${note}`;
 }
 
-// Cancelling an untouched job refunds everything; a started one gives half back (like construction).
+// Cancelling an untouched job refunds everything; a started one gives half back, rounded up (like construction).
 export function cancelCraft(state, base, id) {
   const q = craftQueue(base);
   const job = q.find((c) => c.id === id);
   if (!job) return "That job is gone.";
   const full = job.progress <= 0;
-  for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.floor(v / 2));
+  for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
   q.splice(q.indexOf(job), 1);
   return `Cancelled ${craftName(job.recipe)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
@@ -186,13 +197,21 @@ export function wearAfterFight(state, people) {
   }
 }
 
-// A treatment with a bandage kit uses it up a little (medical.js).
+// A treatment with a kit that wears (the bandage kit) uses it up a little: at a base, in the field and in battle.
 export function useMedKit(state, s) {
-  if (s && s.gear.tool && GEAR[s.gear.tool.key].medKit) wearSlot(state, s, "tool");
+  if (s && s.alive && s.gear.tool && GEAR[s.gear.tool.key] && GEAR[s.gear.tool.key].medKit) wearSlot(state, s, "tool");
 }
 
-// Medicine bonus from a makeshift med kit (the surgical kit has its own rules in medical.js / combat.js).
-export const medKitBonus = (s) => (s && s.gear.tool && GEAR[s.gear.tool.key].medKit) || 0;
+// Medicine bonus from the kit in the off hand (GEAR[key].medKit): +2 for a bandage kit, +4 for a surgical kit.
+// The usual skill-gap rule applies (world.gearEffect): a surgical kit needs Medicine 10 for the full bonus,
+// gives less below that and nothing below 3. One rule for treating at a base, in the field and in battle.
+export function medKitBonus(s) {
+  const t = s && s.gear && s.gear.tool;
+  const d = t && GEAR[t.key];
+  if (!d || !d.medKit) return 0;
+  const eff = gearEffect(s, t);
+  return eff.usable ? Math.round(d.medKit * eff.mult * 10) / 10 : 0;
+}
 
 // Skill bonus a tool gives for base work (crowbar: Scavenging).
 export function toolBonus(s, skillKey) {
@@ -259,6 +278,12 @@ export function fieldCraft(state, party, recipeKey) {
   if (!opt) return "The team cannot make that in the field.";
   if (!opt.ok) return opt.reason;
   const r = CRAFTS[recipeKey];
+  // An item nobody can wear needs room in the cargo (parties.js addGearToCargo); checked before materials are used.
+  if (!r.supplies && !partyMembers(state, party).some((s) => !s.gear[GEAR[r.gear].slot])) {
+    const probe = makeItem(r.gear, 1);
+    if (!addGearToCargo(state, party, probe)) return `No free ${SLOT_NAMES[GEAR[r.gear].slot] || "slot"} on anyone and no room in the cargo for a ${probe.name}: not made.`;
+    party.cargo.gear.splice(party.cargo.gear.indexOf(probe), 1);
+  }
   for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
   const members = partyMembers(state, party);
   const maker = members.reduce((a, s) => (skill(s, r.skill) > skill(a, r.skill) ? s : a), members[0]);

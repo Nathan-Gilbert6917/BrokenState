@@ -2,12 +2,12 @@
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
   newId, log, addCard, day, hub, atBase, combatPower, hurt, playerStrength,
-  factionById, baseById, makeSurvivor, RADIO_RANGE,
+  factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE,
 } from "./world.js";
-import { spawnAiParty, sendHelpSquad } from "./parties.js";
+import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
 import { baseWalls, count } from "./buildings.js";
-import { radioBasesInRange } from "./world.js";
-import { defendInPerson } from "./conflicts.js";
+import { radioBasesInRange, removeBase } from "./world.js";
+import { defendInPerson, raidForce } from "./conflicts.js";
 
 const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
@@ -39,7 +39,7 @@ export function createFactions(state, count) {
     const pref = pool.filter((t) => PREFERRED_SITES[type].includes(t.loc.type));
     const site = rng.pick(pref.length ? pref : pool);
     let name = rng.pick(def.names);
-    if (usedNames.has(name)) name = def.names.find((n) => !usedNames.has(n)) || `${name} II`;
+    if (usedNames.has(name)) name = def.names.find((n) => !usedNames.has(n)) || ["II", "III", "IV", "V", "VI", "VII", "VIII"].map((n) => `${name} ${n}`).find((n) => !usedNames.has(n)) || `${name} ${usedNames.size}`;
     usedNames.add(name);
     const pop = rng.int(14, 28);
     state.factions.push({
@@ -67,7 +67,32 @@ export function changeGoodwill(state, f, amount, reason) {
   f.goodwill = Math.max(-100, Math.min(100, f.goodwill + amount));
   const after = attitude(f);
   if (before !== after && f.known) log(state, `${f.name} is now ${after.toLowerCase()} toward you${reason ? ` (${reason})` : ""}.`, after === "Hostile" ? "danger" : "good");
+  breakPactIfHostile(state, f);
 }
+
+// A pact does not survive open hostility: a hostile group tears it up (and can raid you again, launchRaid).
+export function breakPactIfHostile(state, f) {
+  if (!f.pact || attitude(f) !== "Hostile") return false;
+  const kind = f.pact === "trade" ? "trade pact" : "non-aggression pact";
+  f.pact = null;
+  log(state, `${f.name} has torn up your ${kind}.`, "danger");
+  // A trade route needs the pact: it pauses, and escorts waiting at home go back to the hub's roster. A convoy
+  // already on the road finds the gates shut and comes home.
+  for (const r of state.routes || []) {
+    if (!r.active || r.factionId !== f.id) continue;
+    r.active = false;
+    r.paused = "pact";
+    for (const id of r.escortIds || []) {
+      const s = survivorById(state, id);
+      if (s && s.alive && s.location.kind === "route") s.location = { kind: "base", baseId: hub(state).id };
+    }
+    log(state, `The trade route to ${f.name} is paused: there is no pact any more.`, "danger");
+  }
+  return true;
+}
+
+// Name for the log: a group you have not met is not named.
+const knownName = (f, unknown = "an unknown group") => (f.known ? f.name : unknown);
 
 export function recomputeOwnership(state) {
   const g = state.grid;
@@ -121,7 +146,7 @@ export function factionsDaily(state) {
       if (cands.length) {
         const t = rng.pick(cands);
         f.bases.push(t.id);
-        if (state.knowledge[t.id] && state.live.has(t.id)) log(state, `${f.name} has taken over ${t.loc.name}.`, "danger");
+        if (state.knowledge[t.id] && state.live.has(t.id)) log(state, `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.`, "danger");
       }
     }
 
@@ -155,6 +180,17 @@ export function factionsDaily(state) {
 
     if (f.pop <= 2) collapseFaction(state, f);
   }
+  clearStaleAlerts(state);
+}
+
+// "Prepare defenses" lasts until that raid is resolved. If the raid never arrives (bought off, broken on the
+// road, its group gone), the base stands down.
+export function clearStaleAlerts(state) {
+  for (const b of state.bases) {
+    if (!b.alert) continue;
+    const coming = state.parties.some((p) => p.kind === "raid" && !p.returning && p.target && p.target.kind === "player" && p.target.baseId === b.id);
+    if (!coming) b.alert = false;
+  }
 }
 
 function launchRaid(state, f) {
@@ -162,7 +198,8 @@ function launchRaid(state, f) {
   const g = state.grid;
   const origin = f.bases[0];
   const targets = [];
-  if (f.goodwill < -30) {
+  // Only a hostile group raids you: the same line as the "Hostile" label (and a hostile group has no pact left).
+  if (attitude(f) === "Hostile") {
     for (const b of state.bases) {
       const d = g.distance(origin, b.tile);
       if (d > 20) continue;
@@ -195,16 +232,20 @@ export function baseDefense(state, base) {
 }
 
 // Called when a raid party reaches its target and the siege timer runs out.
-export function resolveRaidOnPlayer(state, party) {
+// opts.beaten ("overrun" | "broken"): the defenders already fought this raid on the battle map and lost
+// (conflicts.js). Then only the break-in is applied: no second fight by the numbers, no further injuries.
+export function resolveRaidOnPlayer(state, party, opts = {}) {
   const rng = state.rng;
   const base = baseById(state, party.target.baseId);
   const f = factionById(state, party.owner);
   if (!base || !f) return;
-  const people = atBase(state, base.id);
+  f.known = true; // they are at your walls: you know who they are
+  const beaten = opts.beaten || null;
+  const people = beaten ? [] : atBase(state, base.id);
   const def = baseDefense(state, base);
   const att = party.strength;
-  base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
-  const ratio = def / att;
+  if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
+  const ratio = beaten ? (beaten === "broken" ? 1 : 0) : def / att;
   if (ratio >= 1.2) {
     state.stats.raidsRepelled += 1;
     log(state, `${base.name} drove off the ${f.name} raid.`, "good");
@@ -220,10 +261,9 @@ export function resolveRaidOnPlayer(state, party) {
     steal(base.stock, count(base, "storehouse") ? 0.25 : 0.5);
     for (let i = 0; i < 3 && people.length; i++) hurt(state, rng.pick(people), rng.int(30, 70), base.tile, `when ${base.name} was overrun`);
     if (base.type === "outpost") {
-      // Survivors who live flee to the hub; the outpost is lost.
-      for (const s of atBase(state, base.id)) s.location = { kind: "base", baseId: hub(state).id };
-      state.bases.splice(state.bases.indexOf(base), 1);
-      log(state, `${base.name} has been lost.`, "death");
+      // Survivors who live flee to the hub; the outpost is lost (world.removeBase: vehicles left behind,
+      // stations cleared, supply runs paused, and the log says what went with it).
+      removeBase(state, base, "has been lost");
     }
   }
   base.alert = false;
@@ -241,9 +281,11 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   const def = 8 + strength(target) * 0.8 + helpPower;
   const att = party.strength;
-  const who = attacker ? attacker.name : "a horde";
-  // Only report fights you could know about: raids on groups you know, horde attacks you can see.
-  const report = state.live.has(party.target.tile) || (attacker && target.known && (attacker.known || target.known));
+  // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
+  // met are not named.
+  const who = attacker ? knownName(attacker) : "a horde";
+  const whom = knownName(target, `the people at ${tileLabel(state, party.target.tile)}`);
+  const report = state.live.has(party.target.tile) || (attacker && target.known);
   if (att > def * 1.1) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
@@ -252,14 +294,15 @@ export function resolveRaidOnFaction(state, party, helpers) {
       const lost = party.target.tile;
       target.bases = target.bases.filter((b) => b !== lost);
       if (attacker && attacker.bases.length < 4 && rng.chance(0.5)) attacker.bases.push(lost);
+      recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
-    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${target.name} hard (${loss} dead).`, "danger");
+    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss} dead).`, "danger");
     if (target.pop <= 2) collapseFaction(state, target);
     return false;
   }
   target.pop = Math.max(1, target.pop - rng.int(0, 2));
   if (attacker) attacker.pop = Math.max(0, attacker.pop - rng.int(1, 3));
-  if (report) log(state, `${target.name} held off ${who}.`, "info");
+  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}.`, "info");
   return true;
 }
 
@@ -267,12 +310,25 @@ export function collapseFaction(state, f) {
   if (!f.alive) return;
   f.alive = false;
   f.bases = [];
-  log(state, `${f.name} has collapsed.`, "danger");
+  f.pact = null;
+  if (f.known) log(state, `${f.name} has collapsed.`, "danger");
+  // Their people on the road are gone with them: raids, sieges and convoys end here.
+  for (const q of [...state.parties]) {
+    if (q.owner !== f.id) continue;
+    // Your relief squad at a siege they were laying: nothing left to fight.
+    for (const h of state.parties.filter((x) => x.owner === "player" && x.phase === "helping" && x.helpFor === q.id)) {
+      awaitOrders(state, h, `The attackers melted away: ${knownName(f, "their group")} has fallen apart.`);
+    }
+    removeParty(state, q);
+  }
+  // Their land is nobody's from this moment (patrol cards and outpost sites read tile owners).
+  recomputeOwnership(state);
+  clearStaleAlerts(state);
   // Some survivors look for a new home.
   if (state.rng.chance(0.6)) {
     addCard(state, {
       title: "Refugees at the gate",
-      text: `Survivors from ${f.name} have reached ${hub(state).name}. They ask to join you.`,
+      text: `Survivors from ${knownName(f, "a group that fell apart out in the dead lands")} have reached ${hub(state).name}. They ask to join you.`,
       choices: [
         { label: "Take them in (2 survivors, -10 food)", resolve: (st) => recruit(st, 2, -10) },
         { label: "Take one in", resolve: (st) => recruit(st, 1, -5) },
@@ -319,7 +375,8 @@ export function deliverHelpCall(state, party) {
     addCard(state, { title: "A call for help, too late", text: `A runner from ${target.name} arrives. They were attacked, but the fight is already over.`, choices: [{ label: "OK", resolve: () => "" }] });
     return;
   }
-  const atkName = attacker ? attacker.name : `a horde of ${Math.round(party.strength / 0.15)}`;
+  target.known = true; // they sent word: you know who they are now
+  const atkName = attacker ? knownName(attacker, "a group they do not know") : `a horde of ${Math.round(party.strength / 0.15)}`;
   addCard(state, {
     title: `${target.name} asks for help`,
     text: `${target.name} (${attitude(target).toLowerCase()}) is under siege by ${atkName}. The message came ${via}. They hold for about ${Math.max(1, party.siegeLeft ?? 18)} more hours.`,
@@ -332,8 +389,11 @@ export function deliverHelpCall(state, party) {
       {
         label: "Send 40 ammo",
         hint: "Strengthens their defense, small goodwill gain",
-        disabled: (h.stock.ammo || 0) < 40,
+        disabled: () => (h.stock.ammo || 0) < 40,
         resolve: (st) => {
+          // Checked against what the hub holds now, not when the message came in.
+          if ((h.stock.ammo || 0) < 40) return `${h.name} no longer has 40 ammo to spare.`;
+          if (!st.parties.includes(party)) return `Too late: the fight at ${target.name} is already over.`;
           h.stock.ammo -= 40;
           party.strength *= 0.8;
           changeGoodwill(st, target, 6, "you sent ammo");
@@ -357,28 +417,40 @@ export function raidWarning(state, party) {
   const base = baseById(state, party.target.baseId);
   const f = factionById(state, party.owner);
   if (!base || !f) return;
+  f.known = true; // close enough to count: the lookouts know whose people these are
   const def = baseDefense(state, base);
-  const tribute = Math.ceil((base.stock.food || 0) * 0.3);
+  // What "Prepare defenses" does, with the real numbers (baseDefense: non-guards count 1.3 instead of 0.8).
+  const wasAlert = base.alert;
+  base.alert = true;
+  const prepared = baseDefense(state, base);
+  base.alert = wasAlert;
+  const force = raidForce(f, party.strength);
+  // Tribute is a share of the food on hand when it is paid, and never more than there is.
+  const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `Lookouts spot about ${Math.round(party.strength)} strength of ${f.name} fighters on the way. Current defense: ${Math.round(def)}.`,
+    text: `Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}). Current defense: ${Math.round(def)}.`,
     choices: [
-      { label: "Prepare defenses", hint: "Everyone at the base fights (+30% from non-guards)", resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
+      { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
-        label: `Pay tribute (${tribute} food, 30 ammo)`,
-        hint: "They turn back and goodwill rises a little",
-        disabled: (base.stock.ammo || 0) < 30,
+        label: "Pay tribute (30% of the food, 30 ammo)",
+        hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises a little`,
+        disabled: (st) => (base.stock.ammo || 0) < 30 || !st.parties.includes(party),
         resolve: (st) => {
-          base.stock.food -= tribute;
-          base.stock.ammo -= 30;
+          if (!st.parties.includes(party)) return "The raiders are already gone.";
+          if ((base.stock.ammo || 0) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
+          const t = tributeNow();
+          base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
+          base.stock.ammo -= t.ammo;
           changeGoodwill(st, f, 6, "tribute");
           party.returning = true;
-          return `${f.name} took the tribute and turned back.`;
+          base.alert = false; // the raid is off: the base stands down
+          return `${f.name} took the tribute (${t.food} food, ${t.ammo} ammo) and turned back.`;
         },
       },
       {
         label: "Defend in person (tactical)",
-        hint: `Fight the raid yourself with everyone at ${base.name} (${atBase(state, base.id).length} people). Win and the raid is broken; lose and they press the attack, weakened`,
+        hint: `Fight the ${force.count} attacker${force.count === 1 ? "" : "s"} yourself with the people at ${base.name} (${atBase(state, base.id).length} there; the best 8 take the field). Win and the raid is broken; lose and they break in and take what they want`,
         disabled: (st) => !atBase(st, base.id).length || !st.parties.includes(party),
         resolve: (st) => defendInPerson(st, party),
       },

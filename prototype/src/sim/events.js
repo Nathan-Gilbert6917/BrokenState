@@ -1,8 +1,11 @@
 // Travel events: choice cards rolled per tile, and the escort table for trade-route convoys.
 import { TERRAIN, GEAR, LOCATIONS } from "./data.js";
 import { log, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, newId, day, combatPower } from "./world.js";
-import { partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, unitsThatFit, wipeParty } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, abandonVehicle, breakdownChance } from "./vehicles.js";
+import {
+  partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, unitsThatFit, partySpeed,
+  carried, takeSupply, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
+} from "./parties.js";
+import { partyFuel, useFuel, partyVehicle, breakdownChance } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 
@@ -23,17 +26,49 @@ function injureRandom(state, p, min, max, cause) {
   if (!m.length) return "";
   const v = state.rng.pick(m);
   hurt(state, v, state.rng.int(min, max), partyTile(p), cause);
-  if (!partyMembers(state, p).length) wipeParty(state, p);
+  wipeIfEmpty(state, p); // the last one: the team ends as a wiped team (cargo at a death site, vehicle marked)
   return v.alive ? `${v.name.split(" ")[0]} was hurt.` : `${v.name} was killed.`;
 }
+// A delay in real hours whatever the pace: progress builds up at the stance's speed per hour, so the same
+// "4 hours" costs a rushed team 4 hours too (not 3).
 function delay(p, hours) {
-  p.progress -= hours;
+  p.progress -= hours * partySpeed(p);
 }
 function addCargo(state, p, key, qty) {
   const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
   return take < qty ? `${take} ${key} (no room for the rest)` : `${take} ${key}`;
+}
+// A choice that costs carried supplies (packed or found). `disabled` is read from what the team carries each
+// time the card is shown, and the cost is checked again and paid when the choice is made: an old card can
+// never take stock below zero.
+function paid(p, cost, choice) {
+  const short = () => Object.entries(cost).find(([k, q]) => carried(p, k) < q);
+  const run = choice.resolve;
+  return {
+    ...choice,
+    get disabled() { return !!short(); },
+    resolve: (s) => {
+      const miss = short();
+      if (miss) return `The team no longer has ${miss[1]} ${miss[0]} to spare. Nothing was done.`;
+      for (const [k, q] of Object.entries(cost)) takeSupply(p, k, q);
+      return run(s);
+    },
+  };
+}
+// Same for fuel burned from the tank and the cans (vehicles.js partyFuel).
+function burns(state, p, fuel, choice) {
+  const run = choice.resolve;
+  return {
+    ...choice,
+    get disabled() { return partyFuel(state, p) < fuel; },
+    resolve: (s) => {
+      if (partyFuel(s, p) < fuel) return `The team no longer has ${fuel} fuel. Nothing was done.`;
+      useFuel(s, p, fuel);
+      return run(s);
+    },
+  };
 }
 function factionNear(state, tileId, filter, radius = 3) {
   return state.factions.find((f) => f.alive && filter(f) && f.bases.some((b) => state.grid.distance(b, tileId) <= radius));
@@ -49,22 +84,12 @@ const EVENTS = [
       text: `Wrecked cars choke the road near ${tileLabel(st, t.id)}.`,
       choices: [
         { label: "Clear a path (4 hours, noisy)", resolve: (s) => { delay(p, 4); return s.rng.chance(0.3) ? `The noise drew the dead. ${injureRandom(s, p, 10, 30, "clearing a blocked road")}` : "The road is clear."; } },
-        { label: "Detour off-road (costs 3 fuel)", hint: "Burns extra fuel but avoids the noise", disabled: partyFuel(st, p) < 3, resolve: (s) => { useFuel(s, p, 3); return "A long detour through the fields."; } },
+        burns(st, p, 3, { label: "Detour off-road (costs 3 fuel)", hint: "Burns extra fuel but avoids the noise", resolve: () => "A long detour through the fields." }),
         { label: "Squeeze through", hint: hint(st, p, "mechanics", 8), resolve: (s) => check(s, p, "mechanics", 8).ok ? "The truck scrapes through." : (delay(p, 3), "The truck gets stuck for hours before you free it.") },
       ],
     }),
   },
-  {
-    id: "breakdown", weight: 0, when: () => false,
-    card: (st, p) => ({
-      title: "Breakdown",
-      text: "The truck coughs and dies.",
-      choices: [
-        { label: "Repair it", hint: hint(st, p, "mechanics", 9), resolve: (s) => check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), "It takes most of the day to get running.") },
-        { label: "Use spare parts (1 part)", disabled: (p.supplies.parts || 0) < 1 && (hub(st).stock.parts || 0) < 1, resolve: (s) => { delay(p, 1); if ((p.supplies.parts || 0) >= 1) p.supplies.parts -= 1; else return "No parts on hand. You patch it with wire."; return "Back on the road quickly."; } },
-      ],
-    }),
-  },
+  // (Vehicle breakdowns are rolled from the vehicle's condition: breakdownCard below.)
   {
     id: "storm", weight: 2, when: () => true,
     card: (st, p) => ({
@@ -82,7 +107,7 @@ const EVENTS = [
       title: "Bad footing",
       text: "Loose rock gives way under one of the team.",
       choices: [
-        { label: "Treat it (1 meds)", disabled: (p.supplies.meds || 0) < 1, resolve: () => { p.supplies.meds -= 1; delay(p, 1); return "Wrapped and walking."; } },
+        paid(p, { meds: 1 }, { label: "Treat it (1 meds)", resolve: () => { delay(p, 1); return "Wrapped and walking."; } }),
         { label: "Keep moving", resolve: (s) => injureRandom(s, p, 8, 18, "after a fall") },
       ],
     }),
@@ -99,8 +124,7 @@ const EVENTS = [
           { label: "Sneak around", hint: hint(st, p, "stealth", 7 + Math.round(t.infection * 4)), resolve: (s) => check(s, p, "stealth", 7 + Math.round(t.infection * 4)).ok ? (delay(p, 1), "You slip past unseen.") : `They spot you. ${injureRandom(s, p, 10, 30, "fleeing the dead")}` },
           {
             label: "Fight (uses ammo)", hint: "Safe with ammo and shooters, loud", resolve: (s) => {
-              const ammo = Math.min(p.supplies.ammo || 0, n * 2);
-              p.supplies.ammo = (p.supplies.ammo || 0) - ammo;
+              const ammo = takeSupply(p, "ammo", n * 2);
               const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0) * (ammo >= n ? 1 : 0.5);
               return power > n * 0.6 ? `Cleared, using ${ammo} ammo.` : `A messy fight. ${injureRandom(s, p, 15, 40, "fighting the dead")}`;
             },
@@ -117,10 +141,11 @@ const EVENTS = [
       return {
         title: "Bitten",
         text: `${v.name} hides a bite on their forearm. It is already turning dark.`,
+        survivorIds: [v.id], // the card is dropped if they die or leave the team before it is answered
         choices: [
-          { label: "Amputate and treat (2 meds)", hint: hint(st, p, "medicine", 10), disabled: (p.supplies.meds || 0) < 2, resolve: (s) => { p.supplies.meds -= 2; if (check(s, p, "medicine", 10).ok) { v.health = Math.max(10, v.health - 50); return `${v.name.split(" ")[0]} survives, badly weakened.`; } hurt(s, v, 999, partyTile(p), "after a bite"); return `${v.name} did not survive.`; } },
-          { label: "End it quickly", resolve: (s) => { hurt(s, v, 999, partyTile(p), "after a bite, by their own team"); s.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 8))); return `The team buries ${v.name}.`; } },
-          { label: "Hope it is not infected", resolve: (s) => { if (s.rng.chance(0.75)) { hurt(s, v, 999, partyTile(p), "after turning"); return `${v.name} turned in the night. ${injureRandom(s, p, 10, 35, "when a friend turned")}`; } return "Against all odds, the fever breaks."; } },
+          paid(p, { meds: 2 }, { label: "Amputate and treat (2 meds)", hint: hint(st, p, "medicine", 10), resolve: (s) => { if (check(s, p, "medicine", 10).ok) { v.health = Math.max(10, v.health - 50); return `${v.name.split(" ")[0]} survives, badly weakened.`; } hurt(s, v, 999, partyTile(p), "after a bite"); wipeIfEmpty(s, p); return `${v.name} did not survive.`; } }),
+          { label: "End it quickly", resolve: (s) => { hurt(s, v, 999, partyTile(p), "after a bite, by their own team"); s.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 8))); wipeIfEmpty(s, p); return `The team buries ${v.name}.`; } },
+          { label: "Hope it is not infected", resolve: (s) => { if (s.rng.chance(0.75)) { hurt(s, v, 999, partyTile(p), "after turning"); if (wipeIfEmpty(s, p)) return `${v.name} turned in the night.`; return `${v.name} turned in the night. ${injureRandom(s, p, 10, 35, "when a friend turned")}`; } return "Against all odds, the fever breaks."; } },
         ],
       };
     },
@@ -133,7 +158,7 @@ const EVENTS = [
         title: "A nest",
         text: "The team finds a nest: a building packed with sleeping dead. Hordes are born here.",
         choices: [
-          { label: "Burn it (5 fuel)", hint: hint(st, p, "stealth", 10), disabled: partyFuel(st, p) < 5, resolve: (s) => { useFuel(s, p, 5); if (check(s, p, "stealth", 10).ok) { s.tiles[nestId].nest = false; log(s, "A nest was destroyed.", "good"); return "The nest burns. Infection here will slowly fade."; } return `It catches, but they wake. ${injureRandom(s, p, 20, 50, "burning a nest")}`; } },
+          burns(st, p, 5, { label: "Burn it (5 fuel)", hint: hint(st, p, "stealth", 10), resolve: (s) => { if (check(s, p, "stealth", 10).ok) { s.tiles[nestId].nest = false; log(s, "A nest was destroyed.", "good"); return "The nest burns. Infection here will slowly fade."; } return `It catches, but they wake. ${injureRandom(s, p, 20, 50, "burning a nest")}`; } }),
           { label: "Mark it and move on", resolve: () => "Noted on the map." },
         ],
       };
@@ -147,7 +172,7 @@ const EVENTS = [
       text: "A pair of traders sit beside a broken cart. Their mule is dead.",
       choices: [
         { label: "Help them (2 hours)", resolve: (s) => { delay(p, 2); const fr = s.factions.find((f) => f.alive && f.type === "traders"); if (fr) changeGoodwill(s, fr, 5, "you helped their people"); return `Grateful, they share: ${addCargo(s, p, "meds", 2)}.`; } },
-        { label: "Trade (10 food for 3 parts)", disabled: (p.supplies.food || 0) < 10, resolve: (s) => { p.supplies.food -= 10; return `Traded. ${addCargo(s, p, "parts", 3)}.`; } },
+        paid(p, { food: 10 }, { label: "Trade (10 food for 3 parts)", resolve: (s) => `Traded. ${addCargo(s, p, "parts", 3)}.` }),
         { label: "Rob them", resolve: (s) => { const fr = s.factions.find((f) => f.alive && f.type === "traders"); if (fr) changeGoodwill(s, fr, -12, "you robbed their people"); s.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 4))); return `You take what they have: ${addCargo(s, p, "parts", 3)}, ${addCargo(s, p, "food", 6)}.`; } },
         { label: "Leave them", resolve: () => "You walk on." },
       ],
@@ -161,7 +186,7 @@ const EVENTS = [
         title: "A survivor alone",
         text: `${s0.name} has been living in a hunting stand. They ask to come with you. Strongest skill: ${Object.entries(s0.skills).sort((a, b) => b[1] - a[1])[0].join(" ")}.`,
         choices: [
-          { label: "Take them along", resolve: (s) => { s0.location = { kind: "party", partyId: p.id }; s.survivors.push(s0); p.members.push(s0.id); s.stats.peopleSaved += 1; if (s.rng.chance(0.1)) { return `${s0.name} joins. Something about their story does not add up.`; } return `${s0.name} joins the team.`; } },
+          { label: "Take them along", resolve: (s) => { s0.location = { kind: "party", partyId: p.id }; s.survivors.push(s0); p.members.push(s0.id); s.stats.peopleSaved += 1; return `${s0.name} joins the team.`; } },
           { label: "Point them toward the hub", resolve: (s) => { if (s.rng.chance(0.6)) { s0.location = { kind: "base", baseId: hub(s).id }; s.survivors.push(s0); s.stats.peopleSaved += 1; return `${s0.name} made it to the hub.`; } return `${s0.name} never arrived.`; } },
           { label: "Leave them", resolve: () => "You move on." },
         ],
@@ -178,7 +203,7 @@ const EVENTS = [
         text: `A ${f.name} patrol stops you. They are ${attitude(f).toLowerCase()}, but watchful.`,
         choices: [
           { label: "Share news and move on", resolve: (s) => { changeGoodwill(s, f, 2); f.lastDiplomacy = day(s); for (const b of f.bases) p.seen.set(b, snapshot(s, b)); return `They mark their bases on your map.`; } },
-          { label: "Offer 5 food as a gift", disabled: (p.supplies.food || 0) < 5, resolve: (s) => { p.supplies.food -= 5; changeGoodwill(s, f, 6, "a gift"); f.lastDiplomacy = day(s); return "They appreciate it."; } },
+          paid(p, { food: 5 }, { label: "Offer 5 food as a gift", resolve: (s) => { changeGoodwill(s, f, 6, "a gift"); f.lastDiplomacy = day(s); return "They appreciate it."; } }),
         ],
       };
     },
@@ -212,7 +237,16 @@ const EVENTS = [
       title: "Crashed military vehicle",
       text: "A Humvee lies on its side in a ditch. Bodies in uniform still sit inside, and the dead are thick around it.",
       choices: [
-        { label: "Search it", hint: hint(st, p, "stealth", 11), resolve: (s) => { const ok = check(s, p, "stealth", 11).ok; const g = s.rng.pick(["ar", "plate", "nvg", "milradio"]); p.cargo.gear.push({ key: g, name: GEAR[g].name, quality: 1 }); return ok ? `Found: ${GEAR[g].name}, ${addCargo(s, p, "ammo", 30)}.` : `Found ${GEAR[g].name}, but ${injureRandom(s, p, 20, 50, "at a crashed Humvee")}`; } },
+        {
+          label: "Search it", hint: hint(st, p, "stealth", 11), resolve: (s) => {
+            const ok = check(s, p, "stealth", 11).ok;
+            const g = s.rng.pick(["ar", "plate", "nvg", "milradio"]);
+            // The find needs carry space like anything else; with none it stays in the wreck.
+            const fits = addGearToCargo(s, p, { key: g, name: GEAR[g].name, quality: 1 });
+            const found = fits ? GEAR[g].name : `${GEAR[g].name} (no room to carry it: left there)`;
+            return ok ? `Found: ${found}, ${addCargo(s, p, "ammo", 30)}.` : `Found ${found}, but ${injureRandom(s, p, 20, 50, "at a crashed Humvee")}`;
+          },
+        },
         { label: "Leave it", resolve: () => "Too many of them." },
       ],
     }),
@@ -233,9 +267,10 @@ const EVENTS = [
       return {
         title: "Tempers flare",
         text: `${a.name.split(" ")[0]} and ${b.name.split(" ")[0]} are at each other's throats over rations.`,
+        survivorIds: [a.id, b.id],
         choices: [
-          { label: "Step in", hint: hint(st, p, "leadership", 7), resolve: (s) => check(s, p, "leadership", 7).ok ? "Calm returns." : (a.mood -= 10, b.mood -= 10, "It ends badly. Both are sulking.") },
-          { label: "Let them sort it out", resolve: (s) => { if (s.rng.chance(0.3)) { hurt(s, b, 10, partyTile(p), "in a fight"); return "Punches are thrown."; } return "It blows over."; } },
+          { label: "Step in", hint: hint(st, p, "leadership", 7), resolve: (s) => check(s, p, "leadership", 7).ok ? "Calm returns." : (sulk(a, 10), sulk(b, 10), "It ends badly. Both are sulking.") },
+          { label: "Let them sort it out", resolve: (s) => { if (s.rng.chance(0.3)) { hurt(s, b, 10, partyTile(p), "in a fight"); wipeIfEmpty(s, p); return "Punches are thrown."; } return "It blows over."; } },
         ],
       };
     },
@@ -244,30 +279,47 @@ const EVENTS = [
     id: "coward", weight: 2, when: (st, p) => partyMembers(st, p).some((m) => m.traits.includes("coward")) && p.phase === "out",
     card: (st, p) => {
       const c = partyMembers(st, p).find((m) => m.traits.includes("coward"));
+      const alone = partyMembers(st, p).length === 1;
       return {
         title: "Cold feet",
         text: `${c.name} wants to turn back. "We are going to die out here."`,
+        survivorIds: [c.id],
         choices: [
-          { label: "Convince them", hint: hint(st, p, "leadership", 8), resolve: (s) => check(s, p, "leadership", 8).ok ? "They steady themselves." : (c.mood -= 15, "They come, but they are shaking.") },
-          { label: "Let them go home alone", resolve: (s) => { p.members = p.members.filter((id) => id !== c.id); if (s.rng.chance(0.7)) { c.location = { kind: "base", baseId: hub(s).id }; return `${c.name} made it home.`; } hurt(s, c, 999, partyTile(p), "walking home alone"); return `${c.name} never made it home.`; } },
+          { label: "Convince them", hint: hint(st, p, "leadership", 8), resolve: (s) => check(s, p, "leadership", 8).ok ? "They steady themselves." : (sulk(c, 15), "They come, but they are shaking.") },
+          {
+            label: alone ? "Turn back for home" : "Let them go home alone",
+            hint: alone ? "They are the whole team: it turns around with everything it carries" : "The rest of the team goes on without them",
+            resolve: (s) => {
+              // The only one out here: going home means the whole team turns around (vehicle, supplies and cargo
+              // go back with them; a team is never left with nobody in it).
+              if (partyMembers(s, p).length <= 1) {
+                const why = startReturn(s, p);
+                return why ? `${c.name} wants to go home, but cannot. ${why}` : `${c.name} turns around and heads for home.`;
+              }
+              p.members = p.members.filter((id) => id !== c.id);
+              if (s.rng.chance(0.7)) { c.location = { kind: "base", baseId: hub(s).id }; return `${c.name} made it home.`; }
+              hurt(s, c, 999, partyTile(p), "walking home alone");
+              return `${c.name} never made it home.`;
+            },
+          },
         ],
       };
     },
   },
 ];
+// Mood never drops below zero.
+function sulk(s, by) {
+  s.mood = Math.max(0, (s.mood || 0) - by);
+}
 
 export function rollTravelEvent(state, p, tileId) {
   const t = state.tiles[tileId];
   // A horde on the tile always forces an encounter.
   const horde = state.hordes.find((h) => h.tile === tileId);
-  if (horde) return hordeCard(state, p, horde);
+  if (horde) return guarded(state, p, hordeCard(state, p, horde), tileId);
   // Worn vehicles break down more often.
   const v = p.vehicle ? partyVehicle(state, p) : null;
-  if (v && state.rng.chance(breakdownChance(v))) {
-    const card = breakdownCard(state, p, v);
-    card.where = tileLabel(state, tileId);
-    return card;
-  }
+  if (v && state.rng.chance(breakdownChance(v))) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
   chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1);
@@ -279,35 +331,82 @@ export function rollTravelEvent(state, p, tileId) {
   const options = EVENTS.filter((e) => e.when(state, p, t));
   if (!options.length) return null;
   const ev = state.rng.weighted(options, (e) => e.weight);
-  const card = ev.card(state, p, t);
+  return guarded(state, p, ev.card(state, p, t), tileId);
+}
+
+// Every travel card belongs to its team: it is dropped when the team is gone or the person it is about has
+// died or left (parties.js cardStale, pruneCards), and if it is answered anyway its choices do nothing.
+function guarded(state, p, card, tileId) {
   card.where = tileLabel(state, tileId);
   card.partyId = p.id;
+  for (const c of card.choices) {
+    const run = c.resolve; // set on the choice itself (not a copy), so a live `disabled` getter stays live
+    c.resolve = (s) => (cardStale(s, card) ? "Too late: the team is no longer there." : run(s));
+  }
   return card;
 }
 
 function breakdownCard(state, p, v) {
-  const parts = (p.supplies.parts || 0) + (p.cargo.supplies.parts || 0);
+  // The card can be answered after the vehicle was left behind (a second breakdown card the same hour).
+  const here = (s) => p.vehicle && partyVehicle(s, p) === v;
+  const gone = `The ${v.name} is no longer with the team.`;
   return {
     title: "Breakdown",
     text: `The ${v.name} coughs and dies. Condition ${Math.round(v.condition)}%, fuel ${Math.round(v.fuel)}.`,
     partyId: p.id,
     choices: [
-      { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
-      { label: "Use a spare part", hint: "1 part: quick fix, +10 condition", disabled: parts < 1, resolve: () => { if ((p.cargo.supplies.parts || 0) >= 1) p.cargo.supplies.parts -= 1; else p.supplies.parts -= 1; v.condition = Math.min(100, v.condition + 10); delay(p, 1); return "Back on the road quickly."; } },
-      { label: "Abandon it", hint: "Leave it here (it is marked on the map) and continue on foot", resolve: (s) => { abandonVehicle(s, p, partyTile(p), "broke down"); return `The ${v.name} is left by the road. The team walks on.`; } },
+      { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
+      {
+        label: "Use a spare part", hint: "1 part: quick fix, +10 condition",
+        get disabled() { return carried(p, "parts") < 1; }, // what the team carries now, not when the card was made
+        resolve: (s) => {
+          if (!here(s)) return gone;
+          if (carried(p, "parts") < 1) return "No spare part left. Nothing was done.";
+          takeSupply(p, "parts", 1);
+          v.condition = Math.min(100, v.condition + 10);
+          delay(p, 1);
+          return "Back on the road quickly.";
+        },
+      },
+      {
+        label: "Abandon it", hint: "Leave it here (it is marked on the map) and continue on foot. Cargo the team cannot carry stays in it", resolve: (s) => {
+          if (!here(s)) return gone;
+          const left = leaveVehicle(s, p, partyTile(p), "broke down");
+          return `The ${v.name} is left by the road. The team walks on.${left ? ` Left in it: ${left}.` : ""}`;
+        },
+      },
     ],
   };
 }
 
 function hordeCard(state, p, horde) {
+  const drive = () => p.vehicle && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything
   return {
     title: `Horde of ${horde.size}`,
     text: `A horde of about ${horde.size} is moving across ${tileLabel(state, horde.tile)}, right in your path.`,
     partyId: p.id,
     choices: [
       { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", 6 + Math.round(horde.size / 25)), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", 6 + Math.round(horde.size / 25)).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },
-      { label: "Outrun it", hint: p.vehicle ? "Truck: safe, uses 4 fuel" : "On foot: risky", resolve: (s) => { if (p.vehicle) { useFuel(s, p, 4); return "The vehicle tears through and away."; } return s.rng.chance(0.5) ? "You run until your lungs burn, and make it." : `Not everyone is fast enough. ${injureRandom(s, p, 30, 80, "running from a horde")}`; } },
-      { label: "Fight", hint: "Very dangerous", resolve: (s) => { const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0); horde.size = Math.max(0, horde.size - Math.round(power * 2)); p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - 40); return `${injureRandom(s, p, 30, 80, "fighting a horde")} ${injureRandom(s, p, 20, 60, "fighting a horde")}`; } },
+      {
+        label: "Outrun it",
+        get hint() { return drive() ? "By vehicle: safe, uses 4 fuel" : p.vehicle ? "Less than 4 fuel: the vehicle cannot outrun it. On foot: risky" : "On foot: risky"; },
+        resolve: (s) => {
+          if (drive()) { useFuel(s, p, 4); return "The vehicle tears through and away."; }
+          const dry = p.vehicle ? "The tank is all but dry, so the team runs for it on foot and comes back for the vehicle after. " : "";
+          return s.rng.chance(0.5) ? `${dry}You run until your lungs burn, and make it.` : `${dry}Not everyone is fast enough. ${injureRandom(s, p, 30, 80, "running from a horde")}`;
+        },
+      },
+      {
+        label: "Fight", hint: "Very dangerous", resolve: (s) => {
+          const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0);
+          horde.size = Math.max(0, horde.size - Math.round(power * 2));
+          // Too few left to be a horde: it is gone from the map.
+          if (horde.size < 5 && s.hordes.includes(horde)) s.hordes.splice(s.hordes.indexOf(horde), 1);
+          takeSupply(p, "ammo", 40);
+          const first = injureRandom(s, p, 30, 80, "fighting a horde");
+          return `${first} ${injureRandom(s, p, 20, 60, "fighting a horde")}`.trim();
+        },
+      },
     ],
   };
 }

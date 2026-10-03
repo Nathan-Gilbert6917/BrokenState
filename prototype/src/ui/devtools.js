@@ -12,7 +12,9 @@ const INFECTED = 0.6; // a tile counts as a hotzone at this infection or more (a
 
 // One sample per in-game day, so the panel can show how things changed over the last week.
 const history = [];
-let historySeed = null;
+let historyOf = null; // the world the samples belong to
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function snapshot(state) {
   const territory = new Map();
@@ -33,8 +35,9 @@ function snapshot(state) {
 
 // Called every refresh; records the first look at each new day.
 export function devSample(state) {
-  if (historySeed !== state.seed) { history.length = 0; historySeed = state.seed; }
+  // A new world starts a new history, also on the same seed (new campaign, group count changed).
   const d = day(state);
+  if (historyOf !== state || (history.length && history[history.length - 1].day > d)) { history.length = 0; historyOf = state; }
   if (!history.length || history[history.length - 1].day < d) history.push(snapshot(state));
   if (history.length > 120) history.shift();
 }
@@ -50,14 +53,14 @@ export function renderDevPanel(state, ui) {
   if (!ui.dev) return "";
   const now = snapshot(state);
   const week = history.find((h) => h.day >= now.day - 7) || null;
-  const box = (key, label, on, t) => `<label title="${t}"><input type="checkbox" data-action="${key}" ${on ? "checked" : ""}> ${label}</label>`;
+  const box = (key, label, on, t) => `<label title="${esc(t)}"><input type="checkbox" data-action="${key}" ${on ? "checked" : ""}> ${label}</label>`;
   const rows = state.factions
     .map((f) => ({ f, s: now.factions[f.id], w: week && week.factions[f.id] }))
     .sort((a, b) => b.s.land - a.s.land || b.s.pop - a.s.pop)
     .map(({ f, s, w }) => `<tr class="${f.alive ? "" : "muted"}">
-      <td><span class="dot" style="background:${f.color}"></span>${f.name}</td>
-      <td class="muted">${FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].label : f.type}</td>
-      <td>${f.alive ? s.pop : "gone"} ${w ? delta(s.pop, w.pop) : ""}</td>
+      <td><span class="dot" style="background:${f.color}"></span>${esc(f.name)}</td>
+      <td class="muted">${esc(FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].label : f.type)}</td>
+      <td>${f.alive ? Math.round(s.pop) : "gone"} ${w ? delta(s.pop, w.pop) : ""}</td>
       <td>${s.bases} ${w ? delta(s.bases, w.bases) : ""}</td>
       <td>${s.land} ${w ? delta(s.land, w.land) : ""}</td>
       <td>${f.alive ? Math.round(strength(f)) : "–"}</td>
@@ -68,9 +71,10 @@ export function renderDevPanel(state, ui) {
       ${box("dev-reveal", "Reveal map (no fog of war)", view.devReveal, "Show every tile live: other groups, their teams, hordes and nests. Display only.")}
       ${box("dev-infection", "Infection overlay", view.layers.has("infection"), "Zombie hotzones (same as the I key)")}
       ${box("dev-autopilot", "Autopilot: the AI runs your holdout (P)", !!state.autopilot, "An AI governor takes over: roles, building, crafting, medicine, trips, supply runs, outposts, every card and battle. Its moves show in the log with 🤖. Turn it off to take control back as things stand.")}
-      <div class="row">Style ${Object.entries(PERSONALITIES).map(([k, p]) => `<button data-action="dev-persona" data-v="${k}" class="${autopilotPersonality(state) === k ? "active" : ""}" title="${p.desc}">${p.name}</button>`).join("")}</div>
-      ${state.autopilot ? `<div class="muted small">🤖 ${autopilotSummary(state)}</div>` : ""}
+      <div class="row">Style ${Object.entries(PERSONALITIES).map(([k, p]) => `<button data-action="dev-persona" data-v="${k}" class="${autopilotPersonality(state) === k ? "active" : ""}" title="${esc(p.desc)}">${p.name}</button>`).join("")}</div>
+      ${state.autopilot ? `<div class="muted small">🤖 ${esc(autopilotSummary(state))}</div>` : ""}
       <div class="row">Fast forward ${DEV_SPEEDS.map((s) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}">${s}×</button>`).join("")}</div>
+      ${box("dev-fps", "Show FPS", !!ui.showFps, "A small overlay in the map's corner: frames per second and frame time (average and worst over the last second), script time per frame, and simulation ticks per second.")}
       <div class="row"><button data-action="tl-open" data-from="dev" title="Replay the game so far, sped up with the fog of war off (ui/timelapse.js). The game is paused while it plays; Close comes back here.">Timelapse so far</button></div>
     </div>
     <div class="muted small">Change over the last ${week ? now.day - week.day : 0} days${week ? "" : " (collecting)"}</div>
@@ -78,7 +82,7 @@ export function renderDevPanel(state, ui) {
       <div>Hotzone tiles</div><div>${now.hot} ${delta(now.hot, week && week.hot)}</div>
       <div>Avg infection</div><div>${(now.infAvg * 100).toFixed(1)}% ${delta(now.infAvg * 100, week && week.infAvg * 100, 1)}</div>
       <div>Nests</div><div>${now.nests} ${delta(now.nests, week && week.nests)}</div>
-      <div>Hordes</div><div>${now.hordes} (${now.hordeSize} zombies) ${delta(now.hordeSize, week && week.hordeSize)}</div>
+      <div>Hordes</div><div>${now.hordes} (${Math.round(now.hordeSize)} zombies) ${delta(now.hordeSize, week && week.hordeSize)}</div>
     </div>
     <table class="devtable"><tr class="muted"><td>Group</td><td>Type</td><td>Pop</td><td>Bases</td><td>Land</td><td>Str</td></tr>${rows}</table>`;
 }

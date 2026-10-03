@@ -13,10 +13,11 @@ import {
 } from "../sim/inventory.js";
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
+import { shortName } from "./names.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
-const first = (s) => esc(s.name.split(" ")[0]);
+const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 
 // ---------- item tiles ----------
 const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun"]);
@@ -170,7 +171,7 @@ function bodyPortrait(state, b, body) {
     return s ? spriteImg(survivorURL(s, state.seed), 7) : "";
   }
   const u = b.units.find((x) => x.id === body.uid);
-  return u ? spriteImg(canvasURL(unitCanvas(state, b, u, cui.salt)), 7, ' style="transform:rotate(-8deg)"') : "";
+  return u ? spriteImg(canvasURL(unitCanvas(state, b, u, cui.salt)), 7, "transform:rotate(-8deg)") : "";
 }
 
 function lootModal(state, ui) {
@@ -201,7 +202,7 @@ function lootModal(state, ui) {
   }
   const you = s ? doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { user: s }) : `<div class="small muted">Nobody left standing to carry anything.</div>`;
   const r = b.result;
-  const got = [...Object.entries(r.loot.supplies).map(([k, n]) => `${n} ${k}`), ...r.loot.gear.map((g) => g.name)];
+  const got = [...Object.entries(r.loot.supplies).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${k}`), ...r.loot.gear.map((g) => g.name)];
   return `<div class="box wide invbox loot">
     <div class="spread"><h1>Loot the bodies</h1><span class="muted">${esc(b.place)} · ${esc(placeName(state, place))}</span></div>
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}

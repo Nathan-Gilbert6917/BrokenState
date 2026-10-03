@@ -14,18 +14,20 @@
 // rescued (Rescue mission), ransomed (during a trade visit or at the gates), or released when
 // goodwill is high. Over time they may escape, be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { stripAll } from "./inventory.js";
+import { stripAll, itemLoad } from "./inventory.js";
 import {
-  log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById,
+  log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
 } from "./world.js";
 import {
   partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, unitsThatFit, wipeParty, awaitOrders,
   removeParty, startReturn, STANCES,
 } from "./parties.js";
+import * as Parties from "./parties.js";
 import { partyFuel, useFuel, partyVehicle } from "./vehicles.js";
-import { attitude, changeGoodwill, isAggressiveType, collapseFaction } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer } from "./factions.js";
 import { perceptionChance } from "./markers.js";
-import { registerCombatHandler, startCombat } from "./combat.js";
+import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
+import { advanceTradeQueue, tradePending } from "./trade.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -36,7 +38,9 @@ const skillChance = (s, dc) => clamp((s + 10 - dc + 1) / 10, 0.05, 0.95);
 
 export const COOLDOWN_HOURS = 20; // a team sees at most one conflict per this many hours
 
-const KIND_OF = { raider: "raiders", expansionist: "mixed", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "mixed", commune: "mixed" };
+// Battle kit per group type (combat.js KITS). Every group fields humans only; "mixed" (humans plus the dead) is
+// for places where both are found, like scavenge sites.
+const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 const NOUN_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "guards", traders: "guards", commune: "militia" };
 
 export const CONFLICT_TYPES = {
@@ -64,15 +68,11 @@ function bump(state, key, sub) {
   s[key][sub] = (s[key][sub] || 0) + 1;
 }
 
-// Lazily register combat handlers (combat.js may still be initialising when this module loads).
-let handlersReady = false;
-function ensureHandlers() {
-  if (handlersReady) return;
-  handlersReady = true;
-  registerCombatHandler("conflict", onConflictCombat);
-  registerCombatHandler("rescue", onRescueCombat);
-  registerCombatHandler("raidDefense", onRaidDefenseCombat);
-}
+// Combat handlers are registered as this module loads, so a battle finishes correctly however it was started
+// (combat.js builds its handler table on first use, which also works while the modules are still initialising).
+registerCombatHandler("conflict", onConflictCombat);
+registerCombatHandler("rescue", onRescueCombat);
+registerCombatHandler("raidDefense", onRaidDefenseCombat);
 
 function check(state, p, key, dc, bonus = 0) {
   const chance = skillChance(bestSkill(state, p, key) + bonus, dc);
@@ -86,6 +86,20 @@ function addCargo(state, p, key, qty) {
   return take;
 }
 
+// Ammo the team can shoot with: packed plus found (both pools are used in a fight, combat.js).
+const carriedAmmo = (p) => Math.max(0, Math.floor(p.supplies.ammo || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies.ammo) || 0));
+
+// Bonus gear goes into the cargo only if there is room for it (parties.js addGearToCargo when it exists).
+function stowGear(state, p, item) {
+  if (typeof Parties.addGearToCargo === "function") {
+    Parties.addGearToCargo(state, p, item);
+    return p.cargo.gear.includes(item);
+  }
+  if (partyCapacity(state, p) - cargoLoad(p.cargo) < itemLoad(item)) return false;
+  p.cargo.gear.push(item);
+  return true;
+}
+
 function teamPower(state, p) {
   return partyMembers(state, p).reduce((a, m) => a + combatPower(m), 0);
 }
@@ -94,7 +108,7 @@ function teamPower(state, p) {
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = teamPower(state, p) * ((p.supplies.ammo || 0) >= people.length * 3 ? 1 : 0.6);
+  let mine = teamPower(state, p) * (carriedAmmo(p) >= people.length * 3 ? 1 : 0.6);
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4;
@@ -233,26 +247,26 @@ export function surrenderTerms(state, f) {
   const att = attitude(f);
   switch (f.type) {
     case "zealot":
-      return { rob: 0.7, capturePer: att === "Hostile" ? 0.5 : 0.3, text: `Zealots are harsh: they take most of what you carry, and each of you has a ${pct(att === "Hostile" ? 0.5 : 0.3)} chance of being dragged off to ${f.name}'s base.` };
+      return { rob: 0.7, gear: true, capturePer: att === "Hostile" ? 0.5 : 0.3, text: `Zealots are harsh: they take most of what you carry and all spare gear, and each of you has a ${pct(att === "Hostile" ? 0.5 : 0.3)} chance of being dragged off to ${f.name}'s base.` };
     case "raider":
     case "expansionist": {
       const c = f.goodwill < -50 ? 0.35 : 0.15;
-      return { rob: 0.5, captureOne: c, text: `They take about half of your supplies and cargo, and all carried gear. ${pct(c)} chance they keep one of you as a prisoner.` };
+      return { rob: 0.5, gear: true, captureOne: c, text: `They take about half of your supplies and cargo, and all carried gear. ${pct(c)} chance they keep one of you as a prisoner.` };
     }
     case "military":
     case "fortress": {
       const c = att === "Hostile" ? 0.25 : 0.05;
-      return { rob: 0.3, captureOne: c, text: `They confiscate about a third of what you carry and any spare gear. ${pct(c)} chance they detain one of you.` };
+      return { rob: 0.3, gear: true, captureOne: c, text: `They confiscate about a third of what you carry and any spare gear. ${pct(c)} chance they detain one of you.` };
     }
     default:
-      return { rob: 0.2, captureOne: 0, text: "They take a fifth of your supplies as a toll and let you go." };
+      return { rob: 0.2, gear: false, captureOne: 0, text: "They take a fifth of your supplies as a toll and let you go. Your gear is left alone." };
   }
 }
 
 function applySurrender(state, p, c, f) {
   const terms = surrenderTerms(state, f);
   const rng = state.rng;
-  const lost = rob(state, p, terms.rob, f);
+  const lost = rob(state, p, terms.rob, f, terms.gear); // exactly what the terms say: gear only where they name it
   const caught = [];
   const members = partyMembers(state, p);
   if (terms.capturePer) for (const m of members) if (rng.chance(terms.capturePer)) caught.push(m);
@@ -603,10 +617,14 @@ function bribeChoice(state, p, c, f) {
   return {
     label: toll ? "Pay the toll" : c.type === "checkpoint" ? "Grease some palms" : "Offer them supplies",
     hint: plan ? `Costs ${planText(plan)} (goes to ${f.name}). ${chance >= 0.95 ? "They take it and let you pass" : `${pct(chance)} they take it and let you pass; otherwise they take it and attack anyway`}` : `You do not carry enough (needs about ${value} worth of goods)`,
-    disabled: !plan,
+    disabled: () => !payPlan(p, value),
     resolve: (st) => {
       const pl = payPlan(p, value);
-      if (!pl) return "You do not have enough.";
+      if (!pl) {
+        // The goods went elsewhere since the card came up (an earlier card this hour): same stand-off, pick again.
+        addCard(st, forcedCard(st, p, c, !!c.followText));
+        return "You no longer carry enough to pay that.";
+      }
       payFrom(p, pl, f);
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "bribe-ok");
@@ -661,7 +679,6 @@ function fightChoice(state, p, c, ambush, goodwillHit) {
 
 // Start a battle for a conflict. The handler applies the aftermath.
 function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
-  ensureHandlers();
   halt(p);
   bump(state, "outcomes", `fight-${c.type}`);
   const f = factionById(state, c.factionId);
@@ -804,15 +821,19 @@ function helpSideChoice(state, p, c, helped, hit, enemy) {
 
 function distractChoice(state, p, c) {
   const fuel = partyFuel(state, p) >= 2;
-  const ammo = (p.supplies.ammo || 0) >= 10;
   const chance = skillChance(bestSkill(state, p, "stealth") + (fuel ? 2 : 0), 10);
   return {
     label: fuel ? "Draw the dead off with a fire (2 fuel)" : "Draw the dead off with gunfire (10 ammo)",
     hint: `Stealth check, ${pct(chance)}. Success: the survivors escape (some may join you). Failure: the dead come for you instead`,
-    disabled: !fuel && !ammo,
+    disabled: () => partyFuel(state, p) < 2 && carriedAmmo(p) < 10,
     resolve: (st) => {
-      if (fuel) useFuel(st, p, 2);
-      else p.supplies.ammo -= 10;
+      // Paid with what the team has now: fuel for a fire, else ammo (found ammo first).
+      if (fuel && partyFuel(st, p) >= 2) useFuel(st, p, 2);
+      else if (carriedAmmo(p) >= 10) payFrom(p, { ammo: 10 }, null);
+      else {
+        addCard(st, observedCard(st, p, c));
+        return "You no longer have the fuel or the ammo for that.";
+      }
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "distract-ok");
         const victim = c.victimId ? factionById(st, c.victimId) : null;
@@ -890,12 +911,15 @@ function buyPrisonersCard(state, p, c, f) {
     {
       label: "Pay for them",
       hint: plan ? `Costs ${planText(plan)}. The prisoners join your team` : `You do not carry enough (about ${value} worth of goods)`,
-      disabled: !plan,
+      disabled: () => !payPlan(p, value),
       resolve: (st) => {
         const pl = payPlan(p, value);
-        if (!pl) return "Not enough.";
+        if (!pl) {
+          addCard(st, buyPrisonersCard(st, p, c, f)); // the offer stands; pay later or leave them
+          return "You no longer carry enough to pay that.";
+        }
         payFrom(p, pl, f);
-        for (const s of held) freeCaptive(st, s, p);
+        for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
         const fresh = [];
         for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(st, p));
         bump(st, "outcomes", "bought-prisoners");
@@ -974,7 +998,7 @@ function onConflictCombat(state, result, setup) {
   if (!p || !state.parties.includes(p)) return;
   if (result.outcome === "victory") {
     lines.push(`You won. ${result.enemiesKilled || "Several"} of ${c.enemy.name} are down.`);
-    lines.push(...victoryRewards(state, p, c));
+    lines.push(...victoryRewards(state, p, c, result));
   } else if (result.outcome === "retreat") {
     const lost = cargoLoad(p.cargo) > 0 ? rob(state, p, 0.25, f, false, true) : "";
     lines.push(`You pulled back.${lost ? ` Some of the load was dropped: ${lost}.` : ""}`);
@@ -1002,7 +1026,7 @@ function onConflictCombat(state, result, setup) {
   afterFight(state, p, c, text);
 }
 
-function victoryRewards(state, p, c) {
+function victoryRewards(state, p, c, result) {
   const rng = state.rng;
   const out = [];
   const f = factionById(state, c.factionId);
@@ -1024,11 +1048,19 @@ function victoryRewards(state, p, c) {
     const all = [...held, ...fresh];
     if (all.length) out.push(`Freed: ${names(all)}. They join the team.`);
   } else if (c.type === "camp" || c.type === "ambush" || c.type === "roadblock" || c.type === "checkpoint" || c.type === "zealotpatrol" || c.type === "challenge") {
-    out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
-    if (rng.chance(0.3)) {
-      const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
-      p.cargo.gear.push({ key, name: GEAR[key].name, quality: rng.pick([0.7, 0.85, 1]) });
-      out.push(`Also a ${GEAR[key].name}.`);
+    if (result && result.tactical) {
+      // Fought on the map: the dead were there to search (the loot screen, or "Take all"), and that is the loot.
+      // Nothing is paid a second time here.
+      const got = [...Object.entries(result.loot.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`), ...result.loot.gear.map((g) => g.name)];
+      if (got.length) out.push(`Taken from the bodies: ${got.join(", ")}.`);
+    } else {
+      // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.
+      out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
+      if (rng.chance(0.3)) {
+        const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
+        const item = { key, name: GEAR[key].name, quality: rng.pick([0.7, 0.85, 1]) };
+        out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);
+      }
     }
   } else if (c.type === "hordeattack") {
     const victim = c.victimId ? factionById(state, c.victimId) : null;
@@ -1149,10 +1181,16 @@ function rescueCard(state, p, f, held) {
       {
         label: "Pay a ransom",
         hint: plan ? `Costs ${planText(plan)}. They hand over ${names(held)}` : `You do not carry enough (about ${value} worth of goods)`,
-        disabled: !plan,
+        disabled: () => !payPlan(p, value),
         resolve: (st) => {
           const pl = payPlan(p, value);
-          if (!pl) return "Not enough.";
+          if (!pl) {
+            // Short of the price by now: the team is still at the gates with the other options.
+            const still = held.filter(isCaptive);
+            if (still.length) addCard(st, rescueCard(st, p, f, still));
+            else { delete p.conflictResume; awaitOrders(st, p, `${f.name} holds none of your people here any more.`); }
+            return "You no longer carry enough for the ransom.";
+          }
           payFrom(p, pl, f);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           bump(st, "outcomes", "rescue-ransom");
@@ -1168,7 +1206,6 @@ function rescueCard(state, p, f, held) {
 }
 
 function startRescueFight(state, p, f, guards, ambush, mode) {
-  ensureHandlers();
   p.phase = "engaged";
   startCombat(state, {
     tile: partyTile(p), partyId: p.id, enemy: { ...guards }, ambush, canRetreat: true, handler: "rescue",
@@ -1229,10 +1266,10 @@ export function ransomOnTradeCard(state, p, f) {
       {
         label: "Pay the ransom",
         hint: plan ? `Costs ${planText(plan)} from what the team carries. They join the team` : `You do not carry enough (about ${value} worth of goods)`,
-        disabled: !plan,
+        disabled: () => !payPlan(p, value),
         resolve: (st) => {
           const pl = payPlan(p, value);
-          if (!pl) return "Not enough.";
+          if (!pl) return "You no longer carry enough for the ransom. The trade visit goes on.";
           payFrom(p, pl, f);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           changeGoodwill(st, f, 2);
@@ -1290,6 +1327,7 @@ export function captivesDaily(state) {
       s.recruitedBy = f.id;
       f.pop += 1;
       captiveEvent(state, "recruited", `${first(s)} has joined ${f.name}`, `After ${Math.floor(days)} days as a prisoner, ${s.name} has taken ${f.name}'s side. They are one of them now.`, "death");
+      checkGameOver(state); // the last one alive changing sides ends the run (world.js)
     } else if (rng.chance(0.005 + skill(s, "stealth") * 0.001)) {
       s.health = Math.max(10, s.health - rng.int(5, 25));
       releaseHome(state, s);
@@ -1305,16 +1343,22 @@ function captiveEvent(state, key, title, text, kind) {
 }
 
 // ---------- base defense in person (from the raid warning) ----------
+// A raid of a given strength as people on the battle map: the head count the lookouts report (at least 1), and
+// each attacker's power set so that count × power is the raid's stated strength.
+export function raidForce(f, strength) {
+  const usual = 2.2 + FACTION_TYPES[f.type].arms * 1.6;
+  const count = clamp(Math.round(strength / usual), 1, 14);
+  return { count, power: Math.round((strength / count) * 10) / 10 };
+}
+
 export function defendInPerson(state, raid) {
   const f = factionById(state, raid.owner);
   const base = state.bases.find((b) => b.id === raid.target.baseId);
   if (!f || !base) return "";
-  ensureHandlers();
-  const def = FACTION_TYPES[f.type];
-  const power = Math.round((2.2 + def.arms * 1.6) * 10) / 10;
+  const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: clamp(Math.round(raid.strength / power), 3, 14), power, factionId: f.id, name: `${f.name} raiders` },
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders` },
     ambush: base.alert ? "player" : null, canRetreat: false, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id },
   });
   return "";
@@ -1329,19 +1373,55 @@ function onRaidDefenseCombat(state, result, setup) {
   let text;
   if (result.outcome === "victory") {
     if (raid) removeParty(state, raid);
+    if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
     text = `${base ? base.name : "The base"} beat off the ${f ? f.name : ""} raid in a stand-up fight.`;
     log(state, text, "good");
   } else {
-    if (raid) {
-      raid.strength *= Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count));
-      if (base) base.alert = true;
-    }
-    text = `The defenders were pushed back. The raiders will press their attack.`;
-    log(state, text, "danger");
+    // That battle was the raid, and the defenders lost it: the raiders are inside and take what they came for.
+    // There is no second fight by the numbers; the people at the base have already taken their losses.
+    const left = (result.enemiesLeft || 0) / Math.max(1, setup.enemy.count);
+    const how = left > 0.5 ? "overrun" : "broken";
+    const name = base ? base.name : "the base";
+    if (raid && base && state.bases.includes(base)) resolveRaidOnPlayer(state, raid, { beaten: how });
+    if (raid) removeParty(state, raid);
+    text = !raid ? `The defenders were beaten, but the raiders had already turned back.`
+      : how === "overrun" ? `The defenders were beaten. ${f ? f.name : "The raiders"} overran ${name} and took what they wanted.`
+      : `The defenders were beaten, but the raiders were too badly mauled to hold ${name}. They grabbed what they could carry and left.`;
   }
   if (f && f.pop <= 2) collapseFaction(state, f);
   addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });
+}
+
+// ---------- stranded teams ----------
+// What is holding an "engaged" team in place: "card", "battle", "search", "trade", or null when nothing is.
+export function engagedWith(state, p) {
+  if (state.cards.some((c) => c.partyId === p.id)) return "card";
+  if (battlePending(state, p.id)) return "battle";
+  if (state.engagement && state.engagement.partyId === p.id) return "search";
+  if (tradePending(state, p.id)) return "trade";
+  return null;
+}
+
+// Every hour (world.js tickHour): an engaged team must have something that will let it go again. If nothing
+// does for two hours running (its card was lost, a one-at-a-time screen went to another team), the team
+// checks in for orders. That works in or out of radio range: a waiting team can always be given orders.
+export function releaseStranded(state) {
+  if (state.resolving) return; // inside a battle's aftermath (e.g. the hours a raid took, scavenge.js afterRaid)
+  advanceTradeQueue(state);
+  for (const p of [...state.parties]) {
+    if (!state.parties.includes(p) || p.owner !== "player") continue;
+    if (p.phase !== "engaged" || engagedWith(state, p) || !partyMembers(state, p).length) {
+      delete p.stranded;
+      continue;
+    }
+    p.stranded = (p.stranded || 0) + 1;
+    if (p.stranded < 2) continue;
+    delete p.stranded;
+    delete p.conflictResume;
+    if (p.kind === "convoy") startReturn(state, p);
+    else awaitOrders(state, p, "The team regroups and checks in.");
+  }
 }
 
 // ---------- for the UI ----------
@@ -1360,7 +1440,7 @@ export function conflictView(state, c) {
     attitude: f ? attitude(f) : null, typeLabel: f ? FACTION_TYPES[f.type].label : "The dead",
     countText: lo === hi ? `${lo}` : `${lo}–${hi}`,
     theirStrength: Math.round(e.count * e.power), myStrength: Math.round(mine),
-    ammo: p ? Math.floor(p.supplies.ammo || 0) : 0,
+    ammo: p ? carriedAmmo(p) : 0,
     vehicle: v ? `${v.name}, fuel ${Math.floor(partyFuel(state, p))}` : "On foot",
     skills: p ? { stealth: bestSkill(state, p, "stealth"), speech: bestSkill(state, p, "speech"), scouting: bestSkill(state, p, "scouting") } : {},
     held: (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s)),

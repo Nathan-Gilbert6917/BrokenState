@@ -1,9 +1,10 @@
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
 import { log, atBase, skill, newId } from "./world.js";
+import { SKILL_NAMES } from "./data.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
-  meds:  { name: "Meds",  in: { scrap: 2, food: 1 }, out: { meds: 1 },  skill: "medicine",  desc: "2 scrap + 1 food → 1 meds per day (+1 with Medicine 8+, +1 with a Clinic or better here)" },
+  meds:  { name: "Meds",  in: { scrap: 2, food: 1 }, out: { meds: 1 },  skill: "medicine",  desc: "2 scrap + 1 food → 1 meds per day (+1 with Medicine 8+, +1 with a staffed Clinic or better here)" },
   parts: { name: "Parts", in: { scrap: 6 },          out: { parts: 1 }, skill: "mechanics", minSkill: 4, desc: "6 scrap → 1 part per day (Mechanics 4+, otherwise half the time it fails)" },
 };
 
@@ -79,17 +80,29 @@ export function assignStations(state, base) {
   }
 }
 
-// Extra meds per day from a med station thanks to the base's hospital (Clinic or better).
-const hospitalCraft = (base) => Math.max(0, ...(base ? base.buildings : []).map((b) => (BUILDINGS[b.type].med && BUILDINGS[b.type].med.craft) || 0));
+// Stations with an operator at work (not in a hospital bed): what makes workshop noise (Heat, hordes.js).
+export const mannedStations = (state, base) => stations(base).filter((st) => stationOperator(state, base, st)).length;
 
-export function recipeOutput(s, recipe, base = null) {
+// Extra meds per day from a med station thanks to the base's hospital (Clinic or better). Like everything else
+// a hospital does, it needs the medics to run it (the same staffing rule as medical.activeHospital).
+function hospitalCraft(state, base) {
+  if (!state || !base) return 0;
+  const medics = atBase(state, base.id).filter((s) => s.role === "medic").length;
+  return Math.max(0, ...base.buildings.map((b) => {
+    const m = BUILDINGS[b.type].med;
+    return m && medics >= m.staff ? m.craft || 0 : 0;
+  }));
+}
+
+// state is needed for the hospital bonus on meds (staffing); without it the bonus is left out.
+export function recipeOutput(s, recipe, base = null, state = null) {
   const r = RECIPES[recipe];
   const out = {};
   for (const [k, v] of Object.entries(r.out)) {
     let q = v;
     if (recipe === "ammo") q = Math.round(v * (1 + skill(s, "mechanics") * 0.04));
     if (recipe === "meds" && skill(s, "medicine") >= 8) q += 1;
-    if (recipe === "meds") q += hospitalCraft(base);
+    if (recipe === "meds") q += hospitalCraft(state, base);
     out[k] = q;
   }
   return out;
@@ -104,7 +117,7 @@ export function stationStatus(state, base, st) {
     return { op: null, running: false, reason: sick ? "Operator in a hospital bed" : "No operator", recipe, out: {} };
   }
   const missing = Object.entries(r.in).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k]) => k);
-  const out = recipeOutput(op, recipe, base);
+  const out = recipeOutput(op, recipe, base, state);
   if (missing.length) return { op, running: false, reason: `Waiting for ${missing.join(", ")}`, recipe, out };
   return { op, running: true, reason: "Running", recipe, out };
 }
@@ -135,7 +148,7 @@ export function canBuild(state, base, type) {
   for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
-      if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${sk} ${lvl}+ survivor here` };
+      if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
     }
   }
   return { ok: true };
@@ -149,11 +162,15 @@ export function queueBuild(state, base, type) {
   return `${BUILDINGS[type].name} queued at ${base.name}.`;
 }
 
+// Cancelling an untouched job refunds everything; a started one gives half back, rounded up (the same rule as
+// crafting.cancelCraft). Returns the message to show.
 export function cancelBuild(state, base, id) {
-  const job = base.construction.find((c) => c.id === id);
-  if (!job) return;
-  for (const [k, v] of Object.entries(BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + Math.floor(v / 2);
+  const job = base ? base.construction.find((c) => c.id === id) : null;
+  if (!job) return "That job is gone.";
+  const full = job.progress <= 0;
+  for (const [k, v] of Object.entries(BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
   base.construction.splice(base.construction.indexOf(job), 1);
+  return `Cancelled ${BUILDINGS[job.type].name}. ${full ? "All" : "Half"} the materials were returned.`;
 }
 
 export function buildRate(state, base) {

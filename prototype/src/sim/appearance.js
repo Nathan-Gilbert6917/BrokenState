@@ -58,9 +58,13 @@ export function ensureAppearance(s, seed = 0) {
 export const freshRng = () => new Rng(Math.floor(Math.random() * 4294967295) || 7);
 
 // ---------- names and skills for the new-run screen ----------
+// taken: full names already in use. A first name someone has is avoided too while another is free
+// (messages use first names), and a full name is never repeated.
 export function randomName(rng, taken = []) {
+  const firsts = new Set(taken.map((n) => String(n).split(" ")[0]));
+  const free = FIRST_NAMES.filter((f) => !firsts.has(f));
   for (let i = 0; i < 40; i++) {
-    const n = `${rng.pick(FIRST_NAMES)} ${rng.pick(LAST_NAMES)}`;
+    const n = `${rng.pick(free.length ? free : FIRST_NAMES)} ${rng.pick(LAST_NAMES)}`;
     if (!taken.includes(n)) return n;
   }
   return `${rng.pick(FIRST_NAMES)} ${rng.pick(LAST_NAMES)}`;

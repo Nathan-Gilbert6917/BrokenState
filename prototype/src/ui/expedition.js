@@ -6,9 +6,11 @@ import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions } from "../sim/parties.js";
 import { partyVehicle, tank } from "../sim/vehicles.js";
-import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS } from "../sim/orders.js";
+import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { crossingsFrom, boatPlan, boatTip, gatherInfo, matsText } from "../sim/crossing.js";
-import { fieldCraftOptions } from "../sim/crafting.js";
+import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
+import { BUILDINGS } from "../sim/buildings.js";
+import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 
@@ -16,13 +18,41 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></div>`;
-const first = (s) => esc(s.name.split(" ")[0]);
+const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 const hrs = (h) => (h == null ? "open-ended" : h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h`);
 
+// ---------- orders given while paused ----------
+// The game starts paused and giving an order never unpauses it: the order is armed and starts when the clock
+// runs again. main.js notes in ui.armed which teams and jobs were touched during the pause.
+const pausedNow = (state, ui) => !!ui && !!ui.started && ui.speed === 0 && !state.gameOver;
+// True when the team's current order was given during this pause and has not begun yet.
+export function startsWhenUnpaused(state, ui, p) {
+  return pausedNow(state, ui) && !!ui.armed && ui.armed.parties.has(p.id) && (p.orderStart ?? p.departed) === state.hour &&
+    (p.phase === "out" || p.phase === "back" || (p.phase === "task" && !!p.task && !p.task.done));
+}
+// Everything waiting for the unpause, as plain-text lines (the banner counts them and lists them in its tip).
+export function armedList(state, ui) {
+  const out = [];
+  if (!pausedNow(state, ui) || !ui.armed) return out;
+  for (const [id, queuedBefore] of ui.armed.parties) {
+    const p = state.parties.find((x) => x.id === id);
+    if (!p) continue;
+    const who = partyMembers(state, p).map(shortName).join(", ") || "Team";
+    if (startsWhenUnpaused(state, ui, p)) out.push(`${who}: ${orderStatus(state, p).label}`);
+    for (const o of (p.orders || []).slice(queuedBefore)) out.push(`${who}: ${describeOrder(state, o)} (queued)`);
+  }
+  for (const b of state.bases) {
+    for (const j of b.construction) if (ui.armed.builds.has(j.id) && !j.progress) out.push(`${b.name}: build ${BUILDINGS[j.type] ? BUILDINGS[j.type].name : j.type}`);
+    for (const j of craftQueue(b)) if (ui.armed.crafts.has(j.id) && !j.progress) out.push(`${b.name}: craft ${craftName(j.recipe)}`);
+  }
+  return out;
+}
+
 // One line per team: what it is doing, time left, and how much is queued.
-function statusLine(state, p) {
+function statusLine(state, ui, p) {
   const st = orderStatus(state, p);
   const live = contactable(p);
+  if (startsWhenUnpaused(state, ui, p)) return { text: `${esc(st.label)} · starts when unpaused`, pct: null, cls: "armed" };
   if (!live) {
     // A one-way move (no way back planned) arrives and waits; other trips come home.
     if (p.etaBack == null && p.etaOut != null) {
@@ -43,7 +73,7 @@ export function renderRunningOrders(state, ui) {
   if (ui.ordersCollapsed) return `<button class="mini" data-action="xp-orderstoggle"${tip("Show the running orders of your teams")}>Orders (${mine.length}) ▸</button>`;
   return `<div class="spread"><b>Running orders</b><button class="mini" data-action="xp-orderstoggle"${tip("Hide this list")}>▾</button></div>
     ${mine.map((p) => {
-      const s = statusLine(state, p);
+      const s = statusLine(state, ui, p);
       const q = (p.orders || []).length;
       return `<div class="ro ${ui.expedition === p.id ? "on" : ""}" data-action="xp-open" data-id="${p.id}"${tip("Open the team panel")}>
         <div class="spread"><span>${partyMembers(state, p).map(first).join(", ")}</span>${q ? `<span class="muted">+${q} queued</span>` : ""}</div>
@@ -58,7 +88,7 @@ export function renderExpedition(state, ui, p) {
   const members = partyMembers(state, p);
   const v = partyVehicle(state, p);
   const live = contactable(p);
-  const s = statusLine(state, p);
+  const s = statusLine(state, ui, p);
   const tile = partyTile(p);
   const home = baseById(state, p.homeBaseId) || hub(state);
   const moving = p.phase === "out" || p.phase === "back";
@@ -94,9 +124,9 @@ export function renderExpedition(state, ui, p) {
         `<button class="mini ${ui.xpQueue ? "active" : ""}" data-action="xp-queuemode"${tip("On: actions go to the end of the queue. Off: they start now (stopping work on the spot).")}>${ui.xpQueue ? "Queue mode: on" : "Queue mode: off"}</button>`}</div>
       ${p.phase === "engaged" ? `<div class="muted">Busy on site. New orders wait in the queue.</div>` : ""}
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
-        ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", "Click a tile on the map. The team travels there (time keeps running).")}
+        ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
         ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
-        ${ord("home", "", "Return home", `Head back to ${home.name} with everything carried. Clears the queue.`)}
+        ${ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Break camp", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
       </div>

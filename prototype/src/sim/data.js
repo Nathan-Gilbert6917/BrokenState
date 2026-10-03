@@ -38,7 +38,7 @@ export const GEAR = {
   plate:      { name: "Plate carrier",            slot: "armor",  skill: null,       power: 4, req: 0,  value: 110, noise: 0 },
   nvg:        { name: "Night vision goggles",     slot: "tool",   skill: "stealth",  power: 3, req: 8,  value: 140, noise: 0, small: true },
   milradio:   { name: "Military encrypted radio", slot: "tool",   skill: "scouting", power: 3, req: 6,  value: 160, noise: 0, small: true },
-  surgkit:    { name: "Surgical kit",             slot: "tool",   skill: "medicine", power: 4, req: 10, value: 90, noise: 0, small: true },
+  surgkit:    { name: "Surgical kit",             slot: "tool",   skill: "medicine", power: 4, req: 10, value: 90, noise: 0, small: true, medKit: 4, desc: "Real instruments: +4 Medicine when treating (at a base, in the field or in battle). Needs Medicine 10 for the full bonus; no use below Medicine 3." },
   // Extra worn pieces (inventory.js): head, arms and legs armor and a real pack.
   bikehelmet: { name: "Motorcycle helmet",        slot: "head",   skill: null,       power: 0.7, req: 0, value: 15, noise: 0, desc: "Scratched but solid. Keeps teeth off your skull." },
   riothelmet: { name: "Riot helmet",              slot: "head",   skill: null,       power: 1.2, req: 0, value: 35, noise: 0, desc: "Police issue, with a visor." },
@@ -46,7 +46,7 @@ export const GEAR = {
   assaultpack:{ name: "Assault pack",             slot: "backpack", skill: null,     power: 1, req: 0,   value: 40, noise: 0, carry: 10, slots: 8, desc: "A military pack: 8 pack slots and +10 carry space for the team." },
   // Makeshift gear (crafting.js): weaker than the real thing and it wears out. dur = uses before it breaks
   // (fights for weapons and armor, treatments for kits, days of work for tools). Extra fields:
-  // medKit = Medicine bonus when treating, bonus = skill bonus for base work, water = water per day at a base,
+  // medKit = Medicine bonus when treating (crafting.medKitBonus; the surgical kit has it too), bonus = skill bonus for base work, water = water per day at a base,
   // carry = extra carry space for the team (parties.js), slots = pack slots (inventory.js).
   spikedbat:  { name: "Spiked bat",               slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "A bat studded with nails. Hits hard, splinters eventually." },
   pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  desc: "A kitchen knife taped to a steel pipe." },
@@ -59,7 +59,7 @@ export const GEAR = {
   sportspads: { name: "Football pads",            slot: "armor",  skill: null,       power: 0.8, req: 0, value: 8,  noise: 0, makeshift: true, dur: 12, desc: "Found, not made: shoulder pads from a school locker (the helmet is a separate piece)." },
   footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "Found, not made: a school football helmet. Cracks eventually." },
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 14, desc: "Steel plates riveted onto a work jacket. Heavy but solid." },
-  bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating in the field or in battle." },
+  bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little." },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging." },
   waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 water a day at the base it is kept at (equipped or in the armory)." },
   backpack:   { name: "Improvised backpack",      slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 carry space for the team." },
@@ -136,16 +136,16 @@ export const SKILL_NAMES = {
 };
 
 export const TRAITS = {
-  brave:     { name: "Brave",        desc: "+2 to combat checks" },
-  coward:    { name: "Coward",       desc: "-2 to combat checks; may refuse danger" },
-  nightowl:  { name: "Night Owl",    desc: "+2 stealth at night" },
+  brave:     { name: "Brave",        desc: "Fights harder: +1 fighting strength, +5% to hit in battle" },
+  coward:    { name: "Coward",       desc: "Fights worse: -1 fighting strength, -5% to hit in battle; may lose their nerve on a trip" },
+  nightowl:  { name: "Night Owl",    desc: "At night their team is 15% more likely to spot others first" },
   medic:     { name: "Former Medic", desc: "+4 Medicine" },
-  greedy:    { name: "Greedy",       desc: "Finds more loot, sometimes pockets some" },
-  tough:     { name: "Tough",        desc: "Takes less damage" },
-  keeneye:   { name: "Keen Eye",     desc: "+1 recon sight radius" },
-  loud:      { name: "Loud",         desc: "-3 stealth" },
-  lucky:     { name: "Lucky",        desc: "Small bonus to every check" },
-  badback:   { name: "Bad Back",     desc: "Carries less" },
+  greedy:    { name: "Greedy",       desc: "Finds 15% more when scavenging around a base" },
+  tough:     { name: "Tough",        desc: "Takes 25% less damage from wounds (not from hunger, thirst or infection)" },
+  keeneye:   { name: "Keen Eye",     desc: "+1 sight radius for their team, and it notices hidden finds more often" },
+  loud:      { name: "Loud",         desc: "-3 Stealth" },
+  lucky:     { name: "Lucky",        desc: "+1 to every skill" },
+  badback:   { name: "Bad Back",     desc: "Carries 8 instead of 15" },
 };
 
 // Faction types. Starting attitude comes from the type (design doc: Faction count and starting attitudes).
@@ -158,8 +158,10 @@ export const FACTION_TYPES = {
   traders:      { label: "Traders",           attitude: "Friendly",   goodwill: 35,  arms: 0.9, food: 1.0, expand: 0.01, raid: 0.0,  names: ["Crossroads Exchange", "Long Haul Co.", "River Market"] },
   commune:      { label: "Farming commune",   attitude: "Friendly",   goodwill: 30,  arms: 0.6, food: 1.6, expand: 0.01, raid: 0.0,  names: ["Greenhollow", "Harvest Fellowship", "Millbrook Co-op"] },
 };
-export const FACTION_COLORS = ["#d9534f", "#e8a33d", "#b065d6", "#4fa3d9", "#5fc28a", "#d96fa8", "#c9c25a", "#7f8cf0", "#e07b54", "#56c7c0"];
+// Group colors on the map. None of them is blue: blue is the player's (render.js PLAYER_COLOR), and a group in
+// a near-blue read as your own land.
+export const FACTION_COLORS = ["#d9534f", "#e8a33d", "#b065d6", "#93c83e", "#5fc28a", "#d96fa8", "#c9c25a", "#e6dfcc", "#e07b54", "#56c7c0"];
 
 export const FIRST_NAMES = ["Maria", "James", "Ana", "Deshawn", "Liam", "Priya", "Owen", "Rosa", "Eli", "Hana", "Marcus", "Ivy", "Theo", "Nadia", "Cole", "June", "Rafael", "Sam", "Dana", "Kenji", "Lena", "Victor", "Mae", "Tobias", "Grace", "Andre", "Lucia", "Wes", "Nora", "Felix", "Imani", "Reid", "Cora", "Malik", "Elena", "Jonah"];
 export const LAST_NAMES = ["Alvarez", "Brooks", "Chen", "Duarte", "Ellis", "Foster", "Garcia", "Hale", "Ibarra", "Jensen", "Kowalski", "Lindqvist", "Morales", "Nakamura", "Okafor", "Price", "Quinn", "Reyes", "Sato", "Tran", "Underwood", "Vance", "Walsh", "Young", "Zimmer"];
-export const TOWN_NAMES = ["Harlow", "Pine Ridge", "Millbrook", "Cedar Falls", "Ashford", "Granite City", "Elm Crossing", "Bramble", "Fort Wade", "Hollis", "Kettle Creek", "Larkspur", "Redwater", "Sutter", "Vale", "Wexford", "Copper Hill", "Dunmore", "Glen Haven", "Marrow", "Ridgeway", "Stillwater", "Cold Spring", "Bellmont", "Oakhurst", "Fallon", "Holloway", "Prairie View"];
+export const TOWN_NAMES = ["Harlow", "Pine Ridge", "Millbrook", "Cedar Falls", "Ashford", "Granite Falls", "Elm Crossing", "Bramble", "Fort Wade", "Hollis", "Kettle Creek", "Larkspur", "Redwater", "Sutter", "Vale", "Wexford", "Copper Hill", "Dunmore", "Glen Haven", "Marrow", "Ridgeway", "Stillwater", "Cold Spring", "Bellmont", "Oakhurst", "Fallon", "Holloway", "Prairie View"];

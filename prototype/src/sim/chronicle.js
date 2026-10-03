@@ -226,6 +226,7 @@ function logCaptions(state, c) {
   for (let i = fresh.length - 1; i >= 0; i--) {
     const l = fresh[i];
     if (l.kind !== "death" && l.kind !== "danger" && l.kind !== "good") continue;
+    if (l.text.startsWith("🤖")) continue; // the governor's own notes (autopilot.js) are not events
     if (l.kind !== "death" && SKIP_LOG.test(l.text)) continue;
     if (l.kind === "death" && /Every survivor is dead/.test(l.text)) continue;
     const major = l.kind === "death" || /founded|overran|has been lost|abandoned|joined/.test(l.text);
@@ -241,6 +242,15 @@ function captionTile(state, c, text) {
   }
   for (const b of state.bases) if (text.includes(b.name)) return b.tile;
   for (const b of c.bases || []) if (text.includes(b.name)) return b.tile; // a base lost since the last frame
+  // A place named in the line ("Fight near Sorensen Farm: defeat."): the longest site name it contains, or the
+  // "(x,y)" of open ground as tile labels write it.
+  if (!c.siteNames) c.siteNames = state.tiles.filter((t) => t.loc && t.loc.name).map((t) => [t.loc.name, t.id]).sort((a, b) => b[0].length - a[0].length);
+  for (const [name, id] of c.siteNames) if (text.includes(name)) return id;
+  const at = /\((\d+),(\d+)\)/.exec(text);
+  if (at) {
+    const t = state.tiles.find((x) => x.x === Number(at[1]) && x.y === Number(at[2]));
+    if (t) return t.id;
+  }
   for (const f of state.factions) if (f.bases.length && text.includes(f.name)) return f.bases[0];
   return -1;
 }

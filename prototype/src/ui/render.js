@@ -13,8 +13,20 @@ import {
 export const HEX = 26;
 
 export const camera = { x: 0, y: 0, zoom: 1 };
-export const view = { selected: -1, hover: -1, preview: null, layers: new Set(["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds"]) };
+const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds"];
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS) };
 const on = (k) => view.layers.has(k);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// A new world starts with the default view: nothing selected, the fog back on, the standard layers, zoom 1.
+export function resetView() {
+  view.selected = -1;
+  view.hover = -1;
+  view.preview = null;
+  view.devReveal = false;
+  view.layers = new Set(DEFAULT_LAYERS);
+  camera.zoom = 1;
+}
 
 // Dev tools "Reveal map": every tile counts as live for drawing. Display only (see ui/devtools.js).
 let allLive = null;
@@ -62,7 +74,9 @@ const minZoom = () => (mapPx && W && H ? Math.max(0.15, Math.min(0.45, 0.95 * Ma
 export function zoomAt(sx, sy, factor) {
   const wx = sx / camera.zoom + camera.x;
   const wy = sy / camera.zoom + camera.y;
-  camera.zoom = Math.max(minZoom(), Math.min(2.6, camera.zoom * factor));
+  // Never below the normal minimum, unless the view is already further out (the timelapse fits the whole map):
+  // then zooming out stays put instead of jumping in.
+  camera.zoom = Math.max(Math.min(minZoom(), camera.zoom), Math.min(2.6, camera.zoom * factor));
   camera.x = wx - sx / camera.zoom;
   camera.y = wy - sy / camera.zoom;
 }
@@ -190,23 +204,33 @@ export function render(state) {
   ctx.textBaseline = "middle";
   const ownBase = new Set(state.bases.map((b) => b.tile));
   const busy = busyTiles(state, live);
-  const labels = []; // drawn after the bases, most important first, skipping any that would overlap
+  // Base tiles with a horde, a siege or a party standing beside the base: the base's name moves below them.
+  const crowded = (id) => busy.has(id) || (on("hordes") && !live.has(id) && !!k[id] && k[id].hordeSize > 0);
+  // Tiles drawn as a base (yours, or another group's as far as you know), with half the sprite's width.
+  baseTiles = new Map(state.bases.map((b) => [b.tile, ((b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost) * zoomBoost()) / 2]));
+  spriteBoxes = [];
+  besideCount = new Map();
+  const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
   for (const t of visible) {
-    if (!t.loc || !on("pois") || ownBase.has(t.id)) continue;
+    if (!t.loc || ownBase.has(t.id)) continue;
     const [px, py] = g.toPixel(t.id, HEX);
-    const snap = live.has(t.id) ? null : k[t.id];
-    const fb = live.has(t.id) ? state.factions.find((f) => f.alive && f.bases.includes(t.id)) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
+    const isLive = live.has(t.id);
+    const snap = isLive ? null : k[t.id];
+    const fb = isLive ? state.factions.find((f) => f.alive && f.bases.includes(t.id)) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
+    if (!fb && !on("pois")) continue; // the Locations layer hides plain sites, not other groups' bases
     // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins…).
     const zone = SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat] || SITE_ZONES.special;
     const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
-    let labelY = py + 19;
+    let labelY = py + 19, side = null;
     if (fb) {
       const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s;
-      const besieged = live.has(t.id) && state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "faction" && q.target.tile === t.id);
+      const besieged = isLive && state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "faction" && q.target.tile === t.id);
       ownerPlate(px, py, fb.color, s, 18, besieged);
       const cv = factionBaseCanvas(fb.type, fb.color);
       drawMapSprite(ctx, cv, px, cy, w);
-      labelY = cy + spriteH(cv, w) / 2 + 6;
+      noteSprite(px, cy, w, spriteH(cv, w));
+      baseTiles.set(t.id, w / 2);
+      labelY = crowded(t.id) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + spriteH(cv, w) / 2 + 6;
     } else if (tier === 2 && camera.zoom < 0.7) {
       // Zoomed out, minor sites are small dots in their zone's color so the map does not clutter.
       ctx.beginPath();
@@ -215,10 +239,17 @@ export function render(state) {
       ctx.fill();
       continue;
     } else {
-      labelY = drawSite(state, t, px, py, tier, zone, snap, busy.has(t.id) ? 0.55 : 1);
+      const d = drawSite(state, t, px, py, tier, zone, isLive, snap, busy.has(t.id) ? 0.55 : 1);
+      labelY = d.labelY;
+      side = d.side;
     }
-    if (tier === 0 || (tier === 1 && camera.zoom > 0.55) || camera.zoom > 1.3) {
-      labels.push({ text: tier === 2 ? siteLabel(state, t) : t.loc.name, x: px, y: labelY, pri: tier, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9 });
+    // Danger skulls go in a row under the name; where the name is not shown at this zoom, under the sprite.
+    // Cities, towns, landmarks and group bases keep their names at every zoom (overlapping ones give way, the
+    // most important first); small sites only up close.
+    const named = tier < 2 || camera.zoom > 1.3;
+    const skulls = !fb && camera.zoom > SKULL_ZOOM ? siteDanger(t.loc) : 0;
+    if (named || skulls) {
+      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, side });
     }
   }
   // Nests you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
@@ -249,8 +280,9 @@ export function render(state) {
     const cv = baseSpriteCanvas(baseLook(b));
     drawMapSprite(ctx, cv, px, cy, w);
     const h = spriteH(cv, w);
+    noteSprite(px, cy, w, h);
     if (b.alert) drawMapSprite(ctx, iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
-    if (camera.zoom > 0.55 || isHub) labels.push({ text: b.name, x: px, y: cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
+    labels.push({ text: b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     if (b.radio) {
       ctx.strokeStyle = "rgba(143,180,224,0.18)";
       ctx.lineWidth = 1.5;
@@ -261,7 +293,6 @@ export function render(state) {
       ctx.setLineDash([]);
     }
   }
-  drawLabels(labels);
   // Markers you know about: death sites, abandoned vehicles, spotted finds, as sprites on a faint ring in their
   // layer's color (dots when zoomed far out, like minor sites). Older reports fade; dealt-with finds show emptied.
   const slot = new Map(), perTile = new Map();
@@ -313,8 +344,6 @@ export function render(state) {
     if (e) e.size += h.size;
     else hordeAt.set(h.tile, { size: h.size, target: h.target });
   }
-  const groupBases = new Set();
-  for (const f of state.factions) if (f.alive) for (const b of f.bases) groupBases.add(b);
   for (const t of on("hordes") ? visible : []) {
     const isLive = live.has(t.id);
     let size = 0, stale = false, target = null;
@@ -322,9 +351,9 @@ export function render(state) {
     else if (k[t.id] && k[t.id].hordeSize) { size = k[t.id].hordeSize; stale = true; }
     if (!size) continue;
     const [px, py] = g.toPixel(t.id, HEX);
-    const based = ownBase.has(t.id) || groupBases.has(t.id);
-    const s = zoomBoost() * (based ? 0.85 : 1);
-    const x = based ? px + 17 * s : px, y = based ? py + 13 * s : py + 3 * s;
+    const based = baseTiles.has(t.id); // a base you can see or last saw there (never one you do not know about)
+    const s = zoomBoost() * (based ? 0.85 : 1), o = Math.min(zoomBoost(), BESIDE_MAX); // the offset stays inside the tile when zoomed out
+    const x = based ? px + 17 * o : px, y = based ? py + 13 * o : py + 3 * s;
     const cv = hordeSpriteCanvas(hordeFigures(size)), w = gridW(cv) * 1.15 * s, h = spriteH(cv, w);
     const facing = target != null && target !== t.id && g.toPixel(target, HEX)[0] < px ? -1 : 1;
     ctx.beginPath();
@@ -354,20 +383,27 @@ export function render(state) {
     const cv = groupPartyCanvas(type, kind, color, n), s = zoomBoost();
     const w = gridW(cv) * (kind === "convoy" ? 1.2 : 1.1) * s;
     if (p.phase === "siege") {
-      drawMapSprite(ctx, siegeCampCanvas(color), px - 25 * s, py + 17 * s, 26 * s);
-      groundRing(px + 24 * s, py + 12 * s, color, false, true);
-      drawMapSprite(ctx, cv, px + 24 * s, py + 12 * s - 3, w, { facing: -1 });
+      const o = Math.min(s, BESIDE_MAX);
+      drawMapSprite(ctx, siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
+      groundRing(px + 24 * o, py + 12 * o, color, false, true);
+      drawMapSprite(ctx, cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
       drawMapSprite(ctx, iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
+      noteSprite(px + 24 * o, py + 12 * o - 3, w, spriteH(cv, w));
       continue;
     }
-    groundRing(px, py, color, false, p.kind === "raid");
-    drawMapSprite(ctx, cv, px, py - 3, w, { facing: facingOf(state, p) });
+    // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
+    const [x, y, k2] = besideBase(tile, px, py);
+    groundRing(x, y, color, false, p.kind === "raid");
+    drawMapSprite(ctx, cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
+    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Your parties: actual position with radio contact, otherwise only the plan.
   for (const p of state.parties) {
     if (p.owner !== "player" || !on("teams")) continue;
     drawPlayerParty(state, p);
   }
+  // Names (and danger skulls) last, so nothing drawn on the map covers them.
+  drawLabels(labels, spriteBoxes);
   // Trip preview from the planner.
   if (view.preview && view.preview.length > 1) {
     ctx.strokeStyle = "rgba(224,168,79,0.95)";
@@ -408,11 +444,32 @@ const ICON_W = 11;                 // status icons (alert, work, radio, siege, "
 // a little smaller in a small town (and a town shop smaller out in the countryside).
 const POI_PX = 1.1;
 const ZONE_K = { urban: 1, town: 0.93, rural: 0.87, special: 1 };
+const SKULL_W = 9;        // danger skulls under a site's name: world pixels each (twice the old pips)
+const SKULL_ZOOM = 1.0;   // skulls show when zoomed in past this (names of small sites only past 1.3)
+const CAMP_TENT = "#d2b36c"; // a camping team's tent: canvas, so it does not blend with the blue walkers in front
+const BESIDE_MAX = 1.15;  // parties, hordes and siege camps beside a base stay inside its tile when zoomed out
+const BESIDE_LABEL_Y = 31; // a base's name drops below whatever stands beside the base
 
-// A site's sprite on its zone plate, picked-over sites faded, danger skulls up close. Returns where its label goes.
-function drawSite(state, t, px, py, tier, zone, snap, alpha) {
+// Per frame: tiles drawn as a base, sprites the skull rows keep clear of (bases and parties), and parties already
+// placed beside a base.
+let baseTiles = new Map(), spriteBoxes = [], besideCount = new Map(); // baseTiles: tile -> half the base sprite's width
+const noteSprite = (x, y, w, h) => spriteBoxes.push([x - w / 2, y - h / 2, w, h]);
+// Where a party on this tile is drawn: beside the base (lower left, further left for a second one) at 85% size
+// when the tile has a base, otherwise on the tile. Returns [x, y, scale].
+function besideBase(tile, px, py) {
+  if (!baseTiles.has(tile)) return [px, py, 1];
+  const n = besideCount.get(tile) || 0;
+  besideCount.set(tile, n + 1);
+  const o = Math.min(zoomBoost(), BESIDE_MAX);
+  return [px - Math.min(baseTiles.get(tile) * 0.8 + 8, 28) - 12 * n * o, py + 12 * o, 0.85];
+}
+
+// A site's sprite on its zone plate, picked-over sites faded. Returns where its label goes (labelY) and the spot
+// beside the plate (side) that the danger skulls fall back to when there is no room under the name.
+function drawSite(state, t, px, py, tier, zone, isLive, snap, alpha) {
   const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[t.loc.type];
-  const loot = state.timelapse ? null : snap ? snap.loot : snap === null ? t.loot : null; // never-seen sites look untouched
+  // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look untouched.
+  const loot = state.timelapse ? null : isLive ? t.loot : snap ? snap.loot : null;
   const faded = loot != null && t.loc.type !== "city" && t.loc.type !== "town" && loot < 0.35 * def.richness;
   const cv = poiSpriteCanvas(t.loc.type, t.loc.type === "military" && / depot$/i.test(t.loc.name) ? "depot" : "", faded);
   const w = gridW(cv) * POI_PX * s * ((ZONE_K[t.loc.zone] || 1) / (ZONE_K[t.loc.type === "city" ? "urban" : def.cat] || 1));
@@ -427,15 +484,13 @@ function drawSite(state, t, px, py, tier, zone, snap, alpha) {
   ctx.stroke();
   ctx.globalAlpha = 1;
   drawMapSprite(ctx, cv, px, foot - h / 2 + 0.6 * s, w, { alpha });
-  const danger = camera.zoom > 1.3 ? siteDanger(t.loc) : 0;
-  for (let i = 0; i < danger; i++) drawMapSprite(ctx, skullCanvas(), px + rx + (3.5 + i * 5) * s, foot, 4.6 * s, { alpha: 0.9 * alpha });
-  return foot + ry + 6;
+  return { labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };
 }
 
-// Tiles with something drawn over a site (a team or group party, a horde, a marker): the site sprite fades there.
+// Tiles with something drawn over a site (a team or group party, a horde): the site sprite fades there. Markers
+// do not fade it: they sit in the tile's corner and can stay for the whole game.
 function busyTiles(state, live) {
   const out = new Set();
-  for (const m of state.markers) if (on(LAYER_OF[m.type])) out.add(m.tile);
   if (on("hordes")) for (const h of state.hordes) if (live.has(h.tile)) out.add(h.tile);
   if (on("teams")) for (const p of state.parties) {
     if (!p.path || !p.path.length) continue;
@@ -492,23 +547,44 @@ function ownerPlate(x, y, color, s, rx, besieged) {
 }
 
 // Place names with a dark halo so they read over sprites and terrain. labels: { text, x, y, pri (lower first),
-// size, bold, color, screen (keep the size on screen when zoomed out) }. A label that would overlap one already
-// drawn is skipped, so crowded city blocks show their most important names first.
-function drawLabels(labels) {
+// size, bold, color, screen (keep the size on screen when zoomed out), skulls (danger 0-3), side }. A label that
+// would overlap one already drawn is skipped, so crowded city blocks show their most important names first.
+// Danger skulls sit in a centred row right under the name (or in the name's place when it is not shown), never on
+// a name and clear of the base and party sprites in `avoid`; with no room there they go beside the site's plate, smaller.
+function drawLabels(labels, avoid = []) {
   labels.sort((a, b) => a.pri - b.pri);
   const boxes = [];
+  const hits = (list, x0, y0, w, h) => list.some((b) => x0 < b[0] + b[2] && b[0] < x0 + w && y0 < b[1] + b[3] && b[1] < y0 + h);
   for (const l of labels) {
-    const size = l.screen && camera.zoom < 1 ? l.size / camera.zoom : l.size;
-    ctx.font = `${l.bold ? "bold " : ""}${size.toFixed(1)}px Segoe UI`;
-    const w = ctx.measureText(l.text).width + size * 0.4, h = size * 1.2;
-    const x0 = l.x - w / 2, y0 = l.y - h / 2;
-    if (boxes.some((b) => x0 < b[0] + b[2] && b[0] < x0 + w && y0 < b[1] + b[3] && b[1] < y0 + h)) continue;
-    boxes.push([x0, y0, w, h]);
-    ctx.lineWidth = size * 0.3;
-    ctx.strokeStyle = "rgba(13,15,18,0.75)";
-    ctx.strokeText(l.text, l.x, l.y);
-    ctx.fillStyle = l.color || "rgba(230,226,216,0.9)";
-    ctx.fillText(l.text, l.x, l.y);
+    let top = l.y - 5; // top edge of the skull row
+    if (l.text) {
+      const size = l.screen && camera.zoom < 1 ? l.size / camera.zoom : l.size;
+      ctx.font = `${l.bold ? "bold " : ""}${size.toFixed(1)}px Segoe UI`;
+      const w = ctx.measureText(l.text).width + size * 0.4, h = size * 1.2;
+      const x0 = l.x - w / 2, y0 = l.y - h / 2;
+      top = y0;
+      if (!hits(boxes, x0, y0, w, h)) {
+        boxes.push([x0 - size * 0.3, y0, w + size * 0.6, h]); // a little air between names on one line
+        ctx.lineWidth = size * 0.3;
+        ctx.strokeStyle = "rgba(13,15,18,0.75)";
+        ctx.strokeText(l.text, l.x, l.y);
+        ctx.fillStyle = l.color || "rgba(230,226,216,0.9)";
+        ctx.fillText(l.text, l.x, l.y);
+        top = y0 + h + 0.5;
+      }
+    }
+    if (!l.skulls) continue;
+    const row = (cx, cy, sw) => {
+      const gap = sw * 0.12, w = l.skulls * sw + (l.skulls - 1) * gap;
+      const x0 = cx - w / 2, y0 = cy - sw / 2;
+      if (hits(boxes, x0, y0, w, sw) || hits(avoid, x0, y0, w, sw)) return false;
+      boxes.push([x0, y0, w, sw]);
+      for (let i = 0; i < l.skulls; i++) drawMapSprite(ctx, skullCanvas(), x0 + sw / 2 + i * (sw + gap), cy, sw, { alpha: 0.95 });
+      return true;
+    };
+    if (row(l.x, top + SKULL_W / 2, SKULL_W) || !l.side) continue;
+    const small = SKULL_W * 0.7;
+    row(l.side[0] + (l.skulls * small * 1.12) / 2, l.side[1], small);
   }
 }
 
@@ -629,13 +705,17 @@ function drawPlayerParty(state, p) {
         return;
       }
     }
+    let k2 = 1;
+    [px, py, k2] = besideBase(partyTile(p), px, py); // on a base's tile: beside the base, not on top of it
     const camping = p.phase === "task" && p.task && p.task.type === "camp";
     if (camping) { // tent and campfire behind the team
       const s = zoomBoost();
-      drawMapSprite(ctx, campSpriteCanvas(look.color), px + 8 * s, py - 8 * s, 22 * s);
+      drawMapSprite(ctx, campSpriteCanvas(CAMP_TENT), px + 14 * s, py - 8 * s, 26 * s);
     }
     groundRing(px, py, ring, false);
-    drawMapSprite(ctx, partySpriteCanvas(look.kind, look.color, look.count), px, py - 3, spriteW(look.kind), { facing });
+    const cvp = partySpriteCanvas(look.kind, look.color, look.count), wp = spriteW(look.kind) * k2;
+    drawMapSprite(ctx, cvp, px, py - 3, wp, { facing });
+    noteSprite(px, py - 3, wp, spriteH(cvp, wp));
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
@@ -646,7 +726,7 @@ function drawPlayerParty(state, p) {
   ctx.lineWidth = 2;
   ctx.setLineDash([4, 5]);
   ctx.beginPath();
-  const plan = p.planPath || (p.planPath = [...p.path]);
+  const plan = p.planPath || p.path; // read only: the renderer never changes the sim
   plan.forEach((id, i) => {
     const [x, y] = g.toPixel(id, HEX);
     if (i === 0) ctx.moveTo(x, y);
@@ -662,10 +742,13 @@ function drawPlayerParty(state, p) {
     const frac = elapsed < half ? elapsed / half : Math.max(0, 1 - (elapsed - half) / half);
     est = plan[Math.min(plan.length - 1, Math.round(frac * (plan.length - 1)))];
   }
-  const [ex, ey] = g.toPixel(est, HEX);
+  const [tx, ty] = g.toPixel(est, HEX);
+  const [ex, ey, ke] = besideBase(est, tx, ty);
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
-  drawMapSprite(ctx, partySpriteCanvas(look.kind, look.color, look.count), ex, ey - 3, spriteW(look.kind), { facing: lastFacing.get(p) || 1, alpha: 0.5 });
+  const cve = partySpriteCanvas(look.kind, look.color, look.count), we = spriteW(look.kind) * ke;
+  drawMapSprite(ctx, cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
+  noteSprite(ex, ey - 3, we, spriteH(cve, we));
   badge(ex, ey, "unknown", color);
 }
 
@@ -673,7 +756,9 @@ export function tileTooltip(state, id) {
   const t = state.tiles[id];
   const isLive = liveSet(state).has(id);
   const snap = state.knowledge[id];
-  const lines = [`<b>${t.loc ? t.loc.name : TERRAIN[t.terrain].name}</b>`];
+  const lines = [`<b>${esc(t.loc ? t.loc.name : TERRAIN[t.terrain].name)}</b>`];
+  const ownHere = state.bases.find((b) => b.tile === id);
+  if (ownHere) lines.push(`<span style="color:#cfe2f7">${esc(ownHere.name)}</span>`);
   if (t.loc) {
     const def = LOCATIONS[t.loc.type], zone = SITE_ZONES[t.loc.zone || def.cat];
     lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
@@ -683,10 +768,10 @@ export function tileTooltip(state, id) {
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
-  for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${m.label} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
+  for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
-  if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => s.name.split(" ")[0]).join(", ")}</span>`);
+  if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   return lines.join("<br>");
 }
 

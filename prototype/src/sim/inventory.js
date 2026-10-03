@@ -82,12 +82,16 @@ export function ensureInv(s) {
   return s;
 }
 
+// Armor one piece gives: its listed power scaled by condition (item.quality). A piece at 100% gives it all,
+// at 60% it gives 80%, at 40% 70%: worn-out armor still protects, just less.
+export const itemArmor = (item) => (item && GEAR[item.key] ? GEAR[item.key].power * (0.5 + 0.5 * Math.max(0, Math.min(1, item.quality ?? 1))) : 0);
+
 // Armor from everything worn (body, head, arms, legs), capped. Damage taken is multiplied by armorMult.
 export function armorPower(s) {
   const g = s && s.gear;
   if (!g) return 0;
   let p = 0;
-  for (const k of ARMOR_SLOTS) if (g[k] && GEAR[g[k].key]) p += GEAR[g[k].key].power;
+  for (const k of ARMOR_SLOTS) p += itemArmor(g[k]);
   return Math.min(ARMOR_CAP, p);
 }
 export const armorMult = (s) => 1 - armorPower(s) * 0.06;
@@ -446,7 +450,10 @@ export function leaveBodies(state, b) {
   }
   b.bodies = [];
   if (!items.length || b.tileId == null) return 0;
-  const who = `${b.setup.enemy.name || b.setup.enemy.kind}'s dead`;
+  // The site's name on the map: "The dead" for zombies, "Red Hand raiders' dead" for people.
+  const en = b.setup.enemy || {};
+  const label = String(en.name || en.kind || "strangers");
+  const who = en.kind === "zombies" || /^(the )?(dead|zombies)$/i.test(label) ? "The dead" : `${label}${/s$/i.test(label) ? "'" : "'s"} dead`;
   let site = state.deathSites.find((d) => d.tile === b.tileId);
   if (site) {
     site.items.push(...items);

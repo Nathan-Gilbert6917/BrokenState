@@ -64,10 +64,10 @@ export function abandonVehicle(state, p, tile, reason) {
 
 export function refuel(state, base, v) {
   const want = Math.max(0, tank(v) - v.fuel);
-  const give = Math.min(want, Math.floor(base.stock.fuel || 0));
-  base.stock.fuel -= give;
-  v.fuel += give;
-  return give ? `Added ${give} fuel to the ${v.name}.` : "No fuel to add.";
+  const give = Math.max(0, Math.min(want, Math.floor(base.stock.fuel || 0)));
+  base.stock.fuel = Math.max(0, (base.stock.fuel || 0) - give);
+  v.fuel = Math.min(tank(v), v.fuel + give);
+  return give > 0.05 ? `Added ${Math.round(give * 10) / 10} fuel to the ${v.name}.` : want > 0.05 ? "No fuel to add." : "The tank is full.";
 }
 
 export function canRepair(state, base) {

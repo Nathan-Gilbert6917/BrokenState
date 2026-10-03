@@ -352,9 +352,11 @@ function matchup(armored, n) {
   return tally;
 }
 {
-  const plain = matchup(false, N), armored = matchup(true, N);
-  console.log(`  3 vs 4 raiders (power 5), no extra armor:              win ${Math.round(plain.victory / N * 100)}%  deaths/battle ${(plain.dead / N).toFixed(2)}`);
-  console.log(`  3 vs 4 raiders (power 5), helmet + arm + knee guards:  win ${Math.round(armored.victory / N * 100)}%  deaths/battle ${(armored.dead / N).toFixed(2)}`);
+  // At least 300 battles a side: with 60 the difference between the two samples is mostly noise.
+  const M = Math.max(N, 300);
+  const plain = matchup(false, M), armored = matchup(true, M);
+  console.log(`  3 vs 4 raiders (power 5), no extra armor:              win ${Math.round(plain.victory / M * 100)}%  deaths/battle ${(plain.dead / M).toFixed(2)}`);
+  console.log(`  3 vs 4 raiders (power 5), helmet + arm + knee guards:  win ${Math.round(armored.victory / M * 100)}%  deaths/battle ${(armored.dead / M).toFixed(2)}`);
   check(armored.dead <= plain.dead * 1.15 + 1, "extra armor does not make fights deadlier");
 }
 

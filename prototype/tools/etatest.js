@@ -28,7 +28,7 @@ function resolveCards(state, p, stats) {
     const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     if (ch) ch.resolve(state);
     stats.cards += 1;
-    if (p.progress < before) stats.delay += before - p.progress;
+    if (p.progress < before) stats.delay += Math.round(((before - p.progress) / (STANCES[p.stance]?.speed || 1)) * 10) / 10; // delays are real hours at any pace
   }
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders) state.cards.splice(i, 1);
 }
@@ -79,9 +79,17 @@ for (const seed of seeds) {
     const fuel = byTruck ? truck.fuel + supplies.fuel : 0;
     const est = estimateTrip(state, { memberIds: crew, dest: dest.id, vehicle: !!byTruck, stance, fuel });
     const oldEst = planPath(state, h.tile, dest.id, !!byTruck).cost / STANCES[stance].speed; // the old formula
-    const res = launchExpedition(state, { memberIds: crew, dest: dest.id, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies });
+    // Packed supplies count against carry space at launch: a team on foot leaves light and is handed the rest
+    // (this tool checks movement, not packing).
+    const res = launchExpedition(state, { memberIds: crew, dest: dest.id, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies: byTruck ? supplies : { food: 4, water: 4 } });
     if (!check(!res.error, `launch: ${res.error}`)) continue;
     const p = res.party;
+    Object.assign(p.supplies, supplies);
+    // The carry limit itself: the same crew on foot cannot leave with the full load.
+    if (c === 0) {
+      const heavy = launchExpedition(state, { memberIds: atBase(state, h.id).slice(0, 1).map((s) => s.id), dest: dest.id, mission: "move", stance, supplies: { food: 60, water: 60 } });
+      check(!!heavy.error && /carry/.test(heavy.error), "a walker left with 120 load (carry limit not checked at launch)");
+    }
     const stats = { cards: 0, delay: 0 };
     const leg1 = runUntil(state, p, (q) => q.phase === "waiting", stats);
     const row = { seed: seed * 100 + c, how: byTruck ? (lowFuel ? "truck, 2 fuel" : "truck") : "foot", stance, tiles: est.tiles, est: est.hoursOut, old: oldEst, actual: leg1.hours, cards: stats.cards, delay: stats.delay, dry: est.dryAt != null };
@@ -161,9 +169,10 @@ for (const seed of seeds) {
     if (shore == null) continue;
     const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
     const supplies = { food: 30, water: 30, meds: 2, parts: byTruck ? 4 : 0, scrap: 45, fuel: byTruck ? 10 : 0 };
-    const res = launchExpedition(state, { memberIds: crew, dest: shore, mission: "move", stance: "normal", vehicleId: byTruck ? truck.id : null, supplies });
+    const res = launchExpedition(state, { memberIds: crew, dest: shore, mission: "move", stance: "normal", vehicleId: byTruck ? truck.id : null, supplies: byTruck ? supplies : { food: 6, water: 6 } });
     if (!check(!res.error, `crossing launch: ${res.error}`)) continue;
     const p = res.party;
+    Object.assign(p.supplies, supplies); // on foot: handed the rest after leaving within the carry limit
     const s1 = { cards: 0, delay: 0 };
     runUntil(state, p, (q) => q.phase === "waiting", s1, false);
     if (!state.parties.includes(p) || partyTile(p) !== shore) continue;

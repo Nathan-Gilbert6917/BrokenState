@@ -29,15 +29,18 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect } from "./world.js";
-import { partyMembers, partyTile, partyCapacity, cargoLoad, unitsThatFit } from "./parties.js";
+import { partyMembers, partyTile, partyCapacity, cargoLoad, unitsThatFit, wipeParty } from "./parties.js";
 import { GEAR, SUPPLIES } from "./data.js";
-import { wearAfterFight } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies } from "./inventory.js";
+import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS } from "./inventory.js";
 
-const handlers = new Map();
+// Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
+// before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
+// with no initialiser is already usable then and is not reset when this line runs later.
+var handlers; // eslint-disable-line no-var
 
 export function registerCombatHandler(key, fn) {
-  handlers.set(key, fn);
+  (handlers = handlers || new Map()).set(key, fn);
 }
 
 export function combatants(state, setup) {
@@ -53,7 +56,12 @@ export function combatants(state, setup) {
 // Opens a fight. With no browser (headless tools) or state.autoCombat, it resolves instantly.
 // In the browser it sets state.combat to a live battle; the combat screen plays it out.
 export function startCombat(state, setup) {
-  if (state.autoCombat || typeof window === "undefined" || !combatants(state, setup).length) {
+  // Nobody left to fight it (the team died or went home while the battle waited its turn): no battle, no result.
+  if (!combatants(state, setup).length) {
+    dropSetup(state, setup);
+    return state.combat || null;
+  }
+  if (state.autoCombat || typeof window === "undefined") {
     const result = autoResolveCombat(state, setup);
     finishCombat(state, setup, result);
     return null;
@@ -66,13 +74,33 @@ export function startCombat(state, setup) {
   return state.combat;
 }
 
+// A battle that cannot happen is dropped without a result. A team that still exists with nobody alive is closed
+// properly (what it carried stays at a death site, parties.js wipeParty).
+function dropSetup(state, setup) {
+  const p = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
+  if (p && p.owner === "player" && !partyMembers(state, p).length) wipeParty(state, p);
+}
+
 export function finishCombat(state, setup, result) {
   state.combat = null;
-  // Makeshift gear loses durability with every fight (a raid only if someone was killed).
-  if (setup.mode !== "raid" || (result && result.enemiesKilled)) wearAfterFight(state, combatants(state, setup));
-  const fn = handlers.get(setup.handler);
-  if (fn) fn(state, result, setup);
-  if (!state.combat && state.combatQueue && state.combatQueue.length) startCombat(state, state.combatQueue.shift());
+  // Makeshift gear loses durability with every fight (a raid only if someone was killed). A battle played on the
+  // map has already worn what its units took the field with (wearFielded, when the battle ended); one resolved by
+  // the numbers wears everyone who was counted in it.
+  if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearAfterFight(state, combatants(state, setup));
+  const fn = handlers && handlers.get(setup.handler);
+  // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
+  state.resolving = (state.resolving || 0) + 1;
+  try {
+    if (fn) fn(state, result, setup);
+  } finally {
+    state.resolving -= 1;
+  }
+  while (!state.combat && state.combatQueue && state.combatQueue.length) startCombat(state, state.combatQueue.shift());
+}
+
+// Is a battle for this team open or waiting its turn?
+export function battlePending(state, partyId) {
+  return !!(state.combat && state.combat.setup.partyId === partyId) || (state.combatQueue || []).some((s) => s.partyId === partyId);
 }
 
 // Quick statistical resolution, used headless and as a fallback.
@@ -81,9 +109,20 @@ export function autoResolveCombat(state, setup) {
   const people = combatants(state, setup);
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((b) => b.id === setup.baseId) : null;
-  const stock = party ? party.supplies : base ? base.stock : {};
-  const ammoUsed = Math.min(stock.ammo || 0, people.length * 6);
-  stock.ammo = (stock.ammo || 0) - ammoUsed;
+  if (!people.length) {
+    // Nobody to fight: no dice, no losses on either side.
+    return { outcome: "defeat", enemiesKilled: 0, enemiesLeft: setup.enemy.count, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] } };
+  }
+  // A team shoots from what it packed and from ammo it found on the way (the same two pools as a tactical battle).
+  const pools = party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}];
+  const have = pools.reduce((a, o) => a + Math.max(0, Math.floor(o.ammo || 0)), 0);
+  const ammoUsed = Math.min(have, people.length * 6);
+  let owed = ammoUsed;
+  for (const o of pools) {
+    const t = Math.min(owed, Math.max(0, Math.floor(o.ammo || 0)));
+    if (t > 0) o.ammo -= t;
+    owed -= t;
+  }
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6);
   let theirs = setup.enemy.count * setup.enemy.power;
   if (setup.ambush === "player") mine *= 1.4;
@@ -172,6 +211,10 @@ const KITS = {
   raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards"], pack: ["backpack", 0.15] },
   soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet"], pack: ["assaultpack", 0.3] },
   zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "machete", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife"], fearless: true },
+  // People of the other group types (conflicts.js KIND_OF). All human: "mixed" is only for humans plus the dead.
+  fighters: { label: "Fighter", aim: 3, hp: 5,  weapons: ["pistol", "shotgun", "huntrifle", "huntrifle", "machete"], strong: ["ar", "shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "huntrifle", "machete", "vest", "kneeguards"], pack: ["backpack", 0.15] },
+  guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet"], pack: ["backpack", 0.3] },
+  militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding"] },
 };
 
 const idx = (x, y) => y * W + x;
@@ -479,6 +522,11 @@ export function playerSees(b, t) {
 }
 
 // ---------- units ----------
+// Medicine bonus from the off-hand kit in battle: the one rule shared with treating at a base and in the field
+// (crafting.medKitBonus: bandage kit +2, surgical kit +4 scaled by the usual skill-gap rule, nothing when the
+// medic is not skilled enough to use it).
+const battleKitBonus = (s) => medKitBonus(s);
+
 function playerUnit(b, s) {
   const item = s.gear.weapon;
   const eff = gearEffect(s, item);
@@ -487,13 +535,21 @@ function playerUnit(b, s) {
   const q = item && key !== "fists" ? item.quality || 1 : 1;
   const bravery = (s.traits.includes("brave") ? 5 : 0) - (s.traits.includes("coward") ? 5 : 0);
   const armor = (s.traits.includes("tough") ? 0.75 : 1) * armorMult(s); // every worn piece (inventory.js)
+  // What this unit takes the field with: exactly these item objects wear when the battle ends (wearFielded).
+  const fielded = [];
+  if (item && key !== "fists") fielded.push(["weapon", item]);
+  for (const slot of ARMOR_SLOTS) if (s.gear[slot]) fielded.push([slot, s.gear[slot]]);
+  // A bandage kit in the off hand loses a use with every treatment in battle; when it runs out its bonus is gone.
+  const tool = s.gear.tool;
+  const medKit = tool && GEAR[tool.key] && GEAR[tool.key].medKit ? tool : null;
   return {
+    fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery,
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
-    stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + (s.gear.tool ? (s.gear.tool.key === "surgkit" ? 6 : GEAR[s.gear.tool.key].medKit || 0) : 0),
+    stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
     ap: 2, aware: true, x: 0, y: 0,
   };
@@ -631,7 +687,7 @@ function damage(b, t, raw, by) {
     t.down = true;
     t.bleed = BLEED_TURNS;
     t.ow = t.hunker = false;
-    say(b, `${t.name} is down and bleeding. Use meds on them within ${BLEED_TURNS} turns.`, "death");
+    say(b, `${t.name} is down and bleeding. Use meds on them within ${BLEED_TURNS} turns${b.raid ? "; once stabilized they are carried out when a teammate extracts" : ""}.`, "death");
   } else {
     t.dead = true;
     t.killedBy = by ? by.side : null;
@@ -727,6 +783,9 @@ function fire(b, a, t, opts = {}) {
   say(b, text, a.side === "player" ? (hit ? "good" : "info") : hit ? "danger" : "info");
   if (w.noise && b.raid) alertNear(b, a.x, a.y, 9 + w.noise * 2, "The gunshots alert everything nearby.");
   else if (w.noise) alertAll(b, "The gunshots alert everyone nearby.");
+  // Any hit that leaves a sleeper alive wakes its group, however quiet the weapon (a crossbow bolt, a shot from
+  // beyond earshot in a raid).
+  if (hit && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
 }
 
 function strike(b, a, t) {
@@ -751,13 +810,23 @@ function heal(b, u, t) {
   b.medsUsed++;
   if (t.down) {
     t.stab = true;
-    say(b, `${u.name} stabilizes ${t.name}. They will live if you hold the field.`, "good");
+    say(b, `${u.name} stabilizes ${t.name}. ${b.raid ? "They will be carried out if a teammate extracts" : "They will live if you hold the field"}.`, "good");
   } else {
     const amt = Math.round(15 + u.medicine * 1.5);
     t.hp = Math.min(t.maxHp, t.hp + amt);
     say(b, `${u.name} patches up ${t === u ? "their own wounds" : t.name} (+${amt}).`, "good");
   }
   fx(b, { type: "heal", to: [t.x, t.y] });
+  // Each treatment uses the healer's bandage kit a little (the wear is applied when the battle ends); a kit that
+  // is used up stops helping.
+  if (u.medKit && u.kitBonus) {
+    u.kitUses += 1;
+    if (u.kitUses >= u.kitLeft) {
+      u.medicine -= u.kitBonus;
+      u.kitBonus = 0;
+      say(b, `${u.name}'s ${u.medKit.name} is used up.`, "info");
+    }
+  }
 }
 
 // Player commands. Returns an error message, or "" when the action happened.
@@ -1126,6 +1195,7 @@ function endBattle(state, b, outcome) {
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
     if (u.down) lines.push(`${u.name} pulled through, barely (health ${Math.round(s.health)}).`);
   }
+  wearFielded(state, b, true);
 
   const enemies = b.units.filter((u) => u.side === "enemy");
   const original = enemies.filter((u) => !u.reinforcement);
@@ -1147,12 +1217,27 @@ function endBattle(state, b, outcome) {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, loot,
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
+    // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
+    tactical: true, worn: true, bodies: b.bodies.length,
   };
   b.summary = lines;
   say(b, outcome === "victory" ? "Victory. The area is clear." : outcome === "retreat" ? "You pulled out of the fight." : "Defeat. Your team is down.", outcome === "victory" ? "good" : "death");
   // No one to pick through the bodies by hand (headless tools, auto-combat): take all that fits now.
   if (b.bodies.length && (state.autoCombat || typeof window === "undefined")) takeAllBodies(state);
   bump(b);
+}
+
+// When a battle on the map ends, before anything is looted or moved: makeshift gear loses a use, but only on the
+// units that took the field and only the item objects they took it with (weapon in hand, every worn armor
+// piece). A bandage kit loses one use per treatment its carrier gave. A broken item is gone.
+function wearFielded(state, b, fought) {
+  for (const u of b.units) {
+    if (u.side !== "player") continue;
+    const s = survivorById(state, u.sid);
+    if (!s || !s.alive) continue;
+    if (fought) for (const [slot, item] of u.fielded || []) if (s.gear[slot] === item) wearSlot(state, s, slot);
+    if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
+  }
 }
 
 // Closes a finished battle: hands the result to the registered handler. take: first take everything that fits
@@ -1629,16 +1714,30 @@ function endRaid(state, b) {
   const R = b.raid;
   b.over = true;
   b.phase = "over";
-  const hurtIds = [], deadIds = [], extractedIds = [];
+  const hurtIds = [], deadIds = [], extractedIds = [], carriedIds = [];
   const lines = [];
+  // Someone walked out: the downed can be carried. A stabilized teammate lives; one still bleeding takes the
+  // same chance as the downed in a lost battle. With nobody out, everyone still on the map is lost.
+  const anyOut = b.units.some((u) => u.side === "player" && u.left && !u.dead);
+  const zombies = b.setup.enemy.kind === "zombies";
   for (const u of b.units) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
+    const carried = !u.dead && !u.left && u.down && anyOut && (u.stab || rng.chance(zombies ? 0.1 : 0.35));
+    if (carried) {
+      const hp = rng.int(5, 15);
+      if (hp < s.health - 0.01) hurt(state, s, (s.health - hp) / u.armor, b.tileId, `while scavenging ${b.place}`);
+      if (!s.alive) { deadIds.push(s.id); lines.push(`${u.name} died.`); continue; }
+      carriedIds.push(s.id);
+      hurtIds.push(s.id);
+      lines.push(`${u.name} was carried out, barely alive (health ${Math.round(s.health)}).`);
+      continue;
+    }
     if (u.dead || !u.left) {
       hurt(state, s, 9999, b.tileId, u.dead ? `while scavenging ${b.place}` : `left behind while scavenging ${b.place}`);
       deadIds.push(s.id);
-      lines.push(u.dead ? `${u.name} died.` : `${u.name} was left behind.`);
+      lines.push(u.dead ? `${u.name} died.` : u.down && anyOut ? `${u.name} bled out before the others could carry them clear.` : `${u.name} was left behind.`);
       continue;
     }
     extractedIds.push(s.id);
@@ -1652,13 +1751,15 @@ function endRaid(state, b) {
   const original = enemies.filter((u) => !u.reinforcement);
   const killed = original.filter((u) => u.dead).length;
   const outcome = extractedIds.length ? "extracted" : "defeat";
+  wearFielded(state, b, killed > 0); // makeshift gear wears in a raid only if someone was killed; a med kit by its use
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed,
     loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
+    tactical: true, worn: true,
     raid: {
-      extractedIds, vehicleKept, hadVehicle: R.vehicleZone >= 0, heat: Math.round(R.heat),
+      extractedIds, carriedIds, vehicleKept, hadVehicle: R.vehicleZone >= 0, heat: Math.round(R.heat),
       searched: R.containers.filter((c) => c.searched && c.kind !== "body").length, total: R.containers.filter((c) => c.kind !== "body").length,
       hours: Math.max(1, Math.ceil(b.turn / 6)),
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
@@ -1686,6 +1787,8 @@ function autoRaidTurn(state) {
       if (adj && !isRanged(u)) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
       const shot = foes.length ? bestShot(b, u, foes) : null;
       if (shot && shot.o.chance >= 45) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+      const fallen = medsLeft(b) > 0 ? b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && adjacent(u, o)) : null;
+      if (fallen) { combatAct(state, { type: "meds", unit: u.id, target: fallen.id }); continue; }
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
       if (!leave && searchableNear(b, u).length) { combatAct(state, { type: "search", unit: u.id }); continue; }
       let targets;

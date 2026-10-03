@@ -14,7 +14,7 @@ import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, skill, combatPower, gearEffect, factionById } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
-  hoursLeft, planPath, partyCapacity, cargoLoad, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed,
+  hoursLeft, planPath, partyCapacity, cargoLoad, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards,
 } from "./parties.js";
 import { startOrder, resumeQueue } from "./orders.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
@@ -220,6 +220,7 @@ function resolveCard(state) {
   state.cards.shift();
   if (!choice) return; // nothing it can pick (needs a map click): dropped, like the headless tools do
   const text = choice.resolve(state);
+  pruneCards(state); // cards about a team or a person that this choice just removed (parties.js)
   if (choice.label === "OK") return;
   const where = card.where ? ` (${card.where})` : "";
   say(state, `${card.title}${where} → ${choice.label}.${text ? ` ${clip(text)}` : ""}`);
@@ -449,8 +450,13 @@ function guardArrivals(state) {
     if (p.mission !== "scavenge" && !queued) continue;
     if (hoursLeft(state, p) > 1) continue;
     if (!busy) { busy = true; continue; }
-    if (queued) p.orders.shift();
-    else p.mission = "move";
+    // In radio contact the governor redirects the team, as you could: it holds at the site as a plain move.
+    // Out of contact it cannot give orders (the UI cannot either): the team arrives, finds the search slot
+    // taken and waits there (parties.js). The note is the governor's own, so it sends the team in afterwards.
+    if (p.radioLive) {
+      if (queued) p.orders.shift();
+      else p.mission = "move";
+    }
     p.apResume = "scavenge";
   }
 }
@@ -481,6 +487,7 @@ function engagementHour(state) {
     state.engagement = null;
     return;
   }
+  if (p.apResume) delete p.apResume; // this team is searching now: nothing left to resume
   const g = gov(state);
   if (e.apSince == null) {
     // The team just got there: pick an approach; the search starts next hour.
@@ -573,10 +580,12 @@ function handleTrade(state) {
   if (askValue > 0 && offerValue >= askValue) {
     state.trade.offer = offer;
     state.trade.ask = ask;
-    executeTrade(state);
-    g.stats.trades++;
+    const res = executeTrade(state);
     const list = (o) => Object.entries(o).map(([k, q]) => `${q} ${k}`).join(", ");
-    text = `traded ${list(offer)} for ${list(ask)}`;
+    if (/^Traded/.test(res)) {
+      g.stats.trades++;
+      text = `traded ${list(offer)} for ${list(ask)}`;
+    } else text = `no deal (${res})`; // e.g. more than the team can carry
   }
   if (!f.pact) {
     const r = proposePact(state, f, f.goodwill >= 20 ? "trade" : "nonaggression");
@@ -904,6 +913,20 @@ function equipFromArmory(state, base) {
       handed.push(`${first(s)} ${best.name}`);
     }
   }
+  // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
+  // else to whoever has the skill for it. Water filters work from the armory and stay there.
+  for (const item of [...base.armory]) {
+    const d = GEAR[item.key];
+    if (!d || d.slot !== "tool" || d.water) continue;
+    const forScav = !!(d.bonus && d.bonus.scavenging);
+    const free = people.filter((s) => !s.gear.tool && (!d.skill || gearEffect(s, item).usable) && (!forScav || s.role === "scavenge"));
+    if (!free.length) continue;
+    const want = forScav ? (s) => skill(s, "scavenging") : d.medKit ? (s) => (s.role === "medic" ? 20 : 0) + skill(s, "medicine") : (s) => (d.skill ? skill(s, d.skill) : 0);
+    const s = free.sort((a, b) => want(b) - want(a))[0];
+    base.armory.splice(base.armory.indexOf(item), 1);
+    s.gear.tool = item;
+    handed.push(`${first(s)} ${item.name}`);
+  }
   if (handed.length) {
     gov(state).stats.equipped += handed.length;
     say(state, `Gear handed out at ${base.name}: ${handed.join(", ")}.`);
@@ -935,13 +958,31 @@ function planTreatment(state, base) {
 // What the player knows about a tile right now (live view or the last report), or null.
 const intel = (state, id) => state.knowledge[id] || null;
 
+// Tiles the player knows to hold another group's base: seen there (in view or in the last report), or the main
+// base of a group you know (the Groups tab shows where that is). Never the real list of bases: the governor
+// plays with the same knowledge as you.
+let knownBasesMemo = { state: null, hour: -1, map: null };
+function knownGroupBases(state) {
+  if (knownBasesMemo.state === state && knownBasesMemo.hour === state.hour) return knownBasesMemo.map;
+  const map = new Map();
+  for (const f of state.factions) if (f.alive && f.known && f.bases.length) map.set(f.bases[0], f);
+  for (let id = 0; id < state.knowledge.length; id++) {
+    const k = state.knowledge[id];
+    if (!k || k.factionBase == null) continue;
+    const f = factionById(state, k.factionBase);
+    if (f && f.alive) map.set(id, f);
+  }
+  knownBasesMemo = { state, hour: state.hour, map };
+  return map;
+}
+
 // Value of scavenging a site for what the hub needs, from what the player knows. null = do not go.
 function siteScore(state, id, need, P) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water" || state.bases.some((b) => b.tile === id)) return null;
   const k = intel(state, id);
   if (k && k.factionBase) return null;
-  if (state.factions.some((f) => f.alive && f.known && f.bases.includes(id))) return null;
+  if (knownGroupBases(state).has(id)) return null;
   const owner = k && typeof k.owner === "number" ? factionById(state, k.owner) : null;
   const hostile = owner && owner.alive && attitude(owner) === "Hostile";
   if (hostile && !P.raid) return null;
@@ -1066,6 +1107,7 @@ function tradeGoods(state, need) {
 function outpostSite(state) {
   const h = hub(state);
   const g = state.grid;
+  const theirs = [...knownGroupBases(state).keys()]; // only bases you know about keep an outpost away
   let best = null;
   for (const id of g.within(h.tile, 7)) {
     const d = g.distance(id, h.tile);
@@ -1074,7 +1116,7 @@ function outpostSite(state) {
     if (state.bases.some((b) => g.distance(b.tile, id) < 3)) continue;
     const k = intel(state, id);
     if (!k || (k.owner != null && k.owner !== "player") || k.factionBase || k.infection > 0.3 || k.hordeSize > 0) continue;
-    if (state.factions.some((f) => f.alive && f.bases.some((b) => g.distance(b, id) <= 6) && (f.known || attitude(f) === "Hostile"))) continue;
+    if (theirs.some((b) => g.distance(b, id) <= 6)) continue;
     if (!planPath(state, h.tile, id, false)) continue;
     const farm = t.loc && t.loc.type === "farm" ? 1.3 : t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.8 : t.terrain === "hills" ? 0.7 : 1;
     const score = farm + (t.loc ? 0.5 : 0) + (t.road ? 0.4 : 0) - d * 0.05 - k.infection;
@@ -1099,6 +1141,13 @@ function launchTrip(state, c, pool, spareHands) {
   // A vehicle for longer trips if it can make the round trip.
   let v = null;
   const cand = vehiclesAtBase(state, h.id).filter((x) => x.condition > 0).sort((a, b) => b.condition - a.condition)[0];
+  // The vehicle is repaired and refuelled for the estimate; if the trip is called off, the parts and the fuel
+  // go back (a trip that never leaves costs nothing).
+  const before = cand ? { condition: cand.condition, fuel: cand.fuel, parts: h.stock.parts, hubFuel: h.stock.fuel } : null;
+  const off = () => {
+    if (before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; }
+    return null;
+  };
   if (cand && dist >= 3 && c.mission !== "outpost" && c.mission !== "rescue") {
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, stance: P.stance });
@@ -1106,7 +1155,7 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (v) refuel(state, h, v);
   const est = estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: !!v, stance: P.stance, fuel: v ? v.fuel + (h.stock.fuel || 0) : 0 });
-  if (!est || est.hoursOut > P.maxHoursOut * (v ? 1.3 : 1)) return null;
+  if (!est || est.hoursOut > P.maxHoursOut * (v ? 1.3 : 1)) return off();
   const n = ids.length;
   const onSite = c.mission === "scavenge" ? P.searchHours + 4 : c.mission === "outpost" ? 0 : 4;
   const days = (est.hours + onSite) / 24;
@@ -1120,7 +1169,7 @@ function launchTrip(state, c, pool, spareHands) {
     fuel: v ? Math.max(0, Math.min(stock("fuel"), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0,
   };
   for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0) sup[k] = (sup[k] || 0) + q;
-  if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water")) return null; // the hub cannot spare it
+  if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water")) return off(); // the hub cannot spare it
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
   const cap = carryCapacity(state, crew, v);
@@ -1129,10 +1178,11 @@ function launchTrip(state, c, pool, spareHands) {
     const over = supplyLoad(sup) - cap;
     if (over > 0) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / SUPPLIES[k].weight));
   }
-  if (supplyLoad(sup) > cap) return null;
-  for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return null;
+  if (supplyLoad(sup) > cap) return off();
+  for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
   const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup });
-  if (res.error) return null;
+  if (res.error) return off();
+  if (!v && before) off(); // repaired or looked at, but the team went on foot
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
@@ -1153,6 +1203,9 @@ function planSupplyRuns(state) {
   for (const o of state.bases.filter((b) => b.type === "outpost")) {
     if (supplyRuns(state).some((j) => j.apMade && j.destId === o.id && (jobParty(state, j) || j.status === "waiting"))) continue;
     const home = atBase(state, h.id);
+    // Like trips, supply runs leave the style's share of the hub at home.
+    const spare = home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac));
+    if (spare < 1) continue;
     const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a));
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
@@ -1169,7 +1222,7 @@ function planSupplyRuns(state) {
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
         const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
         const crew = [];
-        for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.max(1, Math.floor(home.length / 3))) crew.push(s);
+        for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, Math.max(1, Math.floor(home.length / 3)))) crew.push(s);
         if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };
         why = `scrap for a ${BUILDINGS[wish.type].name.toLowerCase()} (${wish.why})`;
       }

@@ -1,7 +1,7 @@
 // New-run setup screen, survivor appearance editor and zombie look settings.
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
-import { survivorById } from "../sim/world.js";
+import { survivorById, skill } from "../sim/world.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -37,10 +37,23 @@ export function appearanceEditor(state, s) {
 }
 
 // ---------- new-run screen ----------
+// The skill-point budget is kept on the colonist (s.skillBudget), so it survives a rebuilt world (new seed or
+// group count): crewSnapshot carries it and world.applyCrew puts it back.
 function budgetOf(ui, s) {
-  ui.skillBudget = ui.skillBudget || {};
-  if (ui.skillBudget[s.id] == null) ui.skillBudget[s.id] = skillTotal(s.skills);
-  return ui.skillBudget[s.id];
+  if (s.skillBudget == null) s.skillBudget = skillTotal(s.skills);
+  return s.skillBudget;
+}
+
+// What a skill counts as in play when traits change it (Loud, Lucky, Former Medic...): " →3" after the points,
+// with the traits and their effect in the hover text. Worked out from world.skill, so it follows the rules.
+function traitMod(s, k) {
+  const eff = skill(s, k);
+  if (eff === s.skills[k]) return "";
+  const why = s.traits.map((t) => {
+    const d = eff - skill({ ...s, traits: s.traits.filter((x) => x !== t) }, k);
+    return d ? `${TRAITS[t].name} ${d > 0 ? "+" : "−"}${Math.abs(d)}` : "";
+  }).filter(Boolean).join(", ");
+  return `<i class="nrmod ${eff < s.skills[k] ? "neg" : ""}"${tip(`Counts as ${eff} in play${why ? `: ${why}` : ""}. The points are what you spend; traits are applied on top.`)}>→${eff}</i>`;
 }
 
 function crewCard(state, ui, s) {
@@ -52,7 +65,7 @@ function crewCard(state, ui, s) {
   }
   const skills = SKILLS.map((k) => `<div class="nrskill"><span>${SKILL_NAMES[k]}</span>
       <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="-1" ${s.skills[k] > 0 ? "" : "disabled"}${tip("Move a point back to the pool")}>−</button>
-      <b>${s.skills[k]}</b>
+      <b>${s.skills[k]}${traitMod(s, k)}</b>
       <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="1" ${left > 0 && s.skills[k] < SKILL_MAX ? "" : "disabled"}${tip("Spend a point from the pool")}>+</button></div>`).join("");
   return `<div class="card leader-pick nrcard ${s.leader ? "on" : ""}">
     <div class="nrtop">
@@ -82,14 +95,15 @@ export function newRunScreen(state, ui) {
   const people = state.survivors;
   return `<div class="box wide">
     <h1>Broken State — New run</h1>
-    <div class="text small">Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes. Customize your starting colonists (name, skills, look) and choose your leader.</div>
+    <div class="text small">Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes. Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
-      <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" style="width:7rem" data-action="seed" value="${state.seed}"></label>
+      <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       <label${tip("How many other survivor groups share the state (5–10)")}>AI groups <select data-action="factioncount">${[5, 6, 7, 8, 9, 10].map((v) => `<option ${v === ui.factionCount ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
       <button data-action="nr-allcrew"${tip("Randomize every colonist's name, skills and look (skill totals stay the same)")}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
+    ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="begin">Start</button></div>
   </div>`;
@@ -97,7 +111,7 @@ export function newRunScreen(state, ui) {
 
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
 export function crewSnapshot(state) {
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, appearance: s.appearance ? { ...s.appearance } : null, leader: !!s.leader }));
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, leader: !!s.leader }));
 }
 
 // ---------- zombie look settings ----------

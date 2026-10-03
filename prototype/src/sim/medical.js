@@ -1,9 +1,8 @@
 // Medical care: hospital tiers, passive healing, infected wounds, and treating people with meds
 // at a base or out in the field. Hospital buildings live in BUILDINGS (family "hospital");
 // their medical numbers sit in the `med` block of each entry.
-import { log, atBase, alive, skill, survivorById, baseById, hurt } from "./world.js";
+import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents } from "./world.js";
 import { BUILDINGS } from "./buildings.js";
-import { GEAR } from "./data.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
 
@@ -80,7 +79,8 @@ export const isSevere = (s) => s.alive && s.health < SEVERE_BELOW;
 // Patients do not work their role while in bed (s.inBed, set hourly in medicalHour).
 export function patients(state, base, h = activeHospital(state, base)) {
   if (!h.beds) return [];
-  return atBase(state, base.id).filter((s) => isHurt(s) && s.role !== "medic").sort((a, b) => (b.woundInfected ? 1 : 0) - (a.woundInfected ? 1 : 0) || a.health - b.health).slice(0, h.beds);
+  // Residents: the people here plus (hub) trade-route escorts waiting between trips.
+  return residents(state, base.id).filter((s) => isHurt(s) && !(s.role === "medic" && s.location.kind === "base")).sort((a, b) => (b.woundInfected ? 1 : 0) - (a.woundInfected ? 1 : 0) || a.health - b.health).slice(0, h.beds);
 }
 
 // Passive heal per hour for one survivor at a base.
@@ -92,6 +92,8 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   // Severe wounds heal slowly without a bed; the hospital tier sets the speed in a bed.
   if (isSevere(s)) perDay *= bed && hosp.tier > 0 ? hosp.severe : SEVERE_NO_BED;
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
+  // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
+  if (base.hungerDays > 0 && perDay > 0) perDay = 0;
   return perDay / 24;
 }
 
@@ -102,19 +104,20 @@ export function medicalHour(state) {
   for (const base of state.bases) {
     const hosp = activeHospital(state, base);
     const beds = new Set(patients(state, base, hosp).map((s) => s.id));
-    for (const s of atBase(state, base.id)) if (beds.has(s.id)) s.inBed = true;
-    for (const s of atBase(state, base.id)) {
+    const here = residents(state, base.id);
+    for (const s of here) if (beds.has(s.id)) s.inBed = true;
+    for (const s of here) {
       if (!isHurt(s)) continue;
       const rate = healRatePerHour(state, base, s, hosp, beds.has(s.id));
       if (rate >= 0) s.health = Math.min(100, s.health + rate);
-      else hurt(state, s, -rate, base.tile, `of an infected wound at ${base.name}`);
+      else hurt(state, s, -rate, base.tile, `of an infected wound at ${base.name}`, { raw: true });
     }
   }
   // Away from a base an infected wound only gets worse.
   for (const s of alive(state)) {
     if (!s.woundInfected || s.location.kind !== "party") continue;
     const p = state.parties.find((x) => x.id === s.location.partyId);
-    hurt(state, s, 3 / 24, p ? partyTile(p) : null, "of an infected wound");
+    hurt(state, s, 3 / 24, p ? partyTile(p) : null, "of an infected wound", { raw: true });
     if (p && state.parties.includes(p) && !partyMembers(state, p).length) wipeParty(state, p);
   }
 }
@@ -125,7 +128,7 @@ export function medicalDaily(state, base) {
   const st = base.stock;
   const hosp = activeHospital(state, base);
   const beds = new Set(patients(state, base).map((s) => s.id));
-  for (const s of atBase(state, base.id)) {
+  for (const s of residents(state, base.id)) {
     if (!s.alive) continue;
     if (s.health < AUTO_BELOW && (st.meds || 0) >= 1) {
       st.meds -= 1;
@@ -158,26 +161,41 @@ export function fieldInfectionDaily(state) {
   }
 }
 
+// ---------- who does the treating ----------
+// The best treater among some people: Medicine plus the kit in their off hand (crafting.medKitBonus: a bandage
+// kit, or a surgical kit they are skilled enough to use). The same rule at a base, in the field and in battle;
+// a kit that wears (bandage kit) loses a use per treatment.
+function bestMedic(people) {
+  let best = null, bestVal = -1;
+  for (const m of people) {
+    const v = skill(m, "medicine") + medKitBonus(m);
+    if (v > bestVal) { best = m; bestVal = v; }
+  }
+  return { medic: best, value: Math.max(0, bestVal) };
+}
+
 // ---------- treating at a base ----------
 export function treatAtBaseInfo(state, base, s) {
   const hosp = activeHospital(state, base);
+  const { medic, value } = bestMedic(atBase(state, base.id));
   const cost = TREAT_MEDS + (s && s.woundInfected ? CURE_MEDS : 0);
   const surgery = !!(s && isSevere(s) && hosp.surgery);
-  const heal = Math.round((hosp.treat + hosp.baseSkill * 0.5) * hosp.eff * (surgery ? SURGERY_MULT : 1));
-  const cureChance = !s || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + hosp.baseSkill * 0.03);
+  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? SURGERY_MULT : 1));
+  const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
   let reason = "";
   if (!s || !s.alive) reason = "Nobody to treat.";
-  else if (s.location.kind !== "base" || s.location.baseId !== base.id) reason = `${s.name} is not at ${base.name}.`;
+  else if (!residents(state, base.id).includes(s)) reason = `${s.name} is not at ${base.name}.`;
   else if (!isHurt(s)) reason = `${s.name} is not hurt.`;
   else if ((base.stock.meds || 0) < cost) reason = `Needs ${cost} meds (have ${Math.floor(base.stock.meds || 0)}).`;
-  return { ok: !reason, reason, cost, heal, cureChance, hosp, surgery };
+  return { ok: !reason, reason, cost, heal, cureChance, hosp, surgery, medic };
 }
 
 export function treatAtBase(state, base, survivorId) {
   const s = survivorById(state, survivorId);
   const info = treatAtBaseInfo(state, base, s);
   if (!info.ok) return info.reason;
-  base.stock.meds -= info.cost;
+  base.stock.meds = Math.max(0, base.stock.meds - info.cost);
+  useMedKit(state, info.medic);
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);
   let cure = "";
@@ -198,17 +216,9 @@ function takeMeds(p, qty) {
   p.supplies.meds = (p.supplies.meds || 0) - (qty - fromCargo);
 }
 
-// The team member who does the treating: best Medicine, a usable surgical kit adds to it.
+// The team member who does the treating: best Medicine plus kit.
 function fieldMedic(state, p) {
-  const members = (p.members || []).map((id) => survivorById(state, id)).filter((m) => m && m.alive);
-  let best = null, bestVal = -1;
-  for (const m of members) {
-    // A usable surgical kit adds 3; a makeshift bandage kit adds its medKit bonus (and wears per treatment).
-    const kit = m.gear.tool && m.gear.tool.key === "surgkit" && skill(m, "medicine") >= GEAR.surgkit.req - 7 ? 3 : medKitBonus(m);
-    const v = skill(m, "medicine") + kit;
-    if (v > bestVal) { best = m; bestVal = v; }
-  }
-  return { medic: best, value: Math.max(0, bestVal) };
+  return bestMedic((p.members || []).map((id) => survivorById(state, id)).filter((m) => m && m.alive));
 }
 
 export function fieldTreatInfo(state, party, s) {
@@ -246,6 +256,7 @@ export function treatAnywhere(state, survivorId) {
   const s = survivorById(state, survivorId);
   if (!s || !s.alive) return "Nobody to treat.";
   if (s.location.kind === "base") return treatAtBase(state, baseById(state, s.location.baseId), s.id);
+  if (s.location.kind === "route") return treatAtBase(state, hub(state), s.id); // an escort waiting at the hub between trips
   if (s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);
     if (p) return fieldTreat(state, p, s.id);

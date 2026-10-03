@@ -24,7 +24,7 @@ export function initCombatUI(cv) {
 
 // ---------- helpers ----------
 const players = (b) => b.units.filter((u) => u.side === "player");
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = (u) => Math.max(0, Math.min(1, u.hp / u.maxHp));
 const hpColor = (f) => (f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f");
 
@@ -195,6 +195,8 @@ export function combatAction(state, key, d) {
   }
   if (key !== "cb-act" || !u) return;
   const v = d.v;
+  // R is the retreat key of a normal battle. A raid has no retreat strip: say how to leave instead.
+  if (v === "retreat" && b.raid) { cui.msg = "In a raid you leave by extracting: move into a green extraction zone and press X."; return; }
   if (v === "move") { cui.mode = "move"; return; }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
   if (v === "meds") {
@@ -240,8 +242,8 @@ export function renderCombatPanel(state) {
   let html = b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
-    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${ammoLeft(b)}</b></span>
-      <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${medsLeft(b)}</b></span>
+    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
   </div>`;
 
@@ -317,8 +319,8 @@ function raidHead(state, b, phase) {
     <div class="heat" style="margin:0.25rem 0 0.4rem"><i style="left:${Math.min(100, R.heat)}%"></i></div>
     <div class="small cbsupply">
       <span data-tip="Weight carried by the team (and vehicle). Anything that does not fit stays in the container.">Load <b>${load}/${cap}</b></span>
-      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2).">Ammo <b>${ammoLeft(b)}</b></span>
-      <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${medsLeft(b)}</b></span>
+      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2).">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>

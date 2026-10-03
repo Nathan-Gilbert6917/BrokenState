@@ -8,9 +8,10 @@
 import { TERRAIN, SUPPLIES } from "./data.js";
 import { log, hurt, snapshot } from "./world.js";
 import {
-  partyMembers, bestSkill, supplyLoad, cargoLoad, carryCapacity, partyCapacity, unitsThatFit, tileLabel, trimCargo, sightRadius,
+  partyMembers, bestSkill, supplyLoad, cargoLoad, carryCapacity, partyCapacity, unitsThatFit, tileLabel, leaveVehicle, sightRadius,
+  carried, takeSupply, wipeIfEmpty,
 } from "./parties.js";
-import { partyVehicle, abandonVehicle } from "./vehicles.js";
+import { partyVehicle } from "./vehicles.js";
 
 // Cost model. Scrap = frame + per person + 1 per `loadPerScrap` carry units (+ raft); hours likewise.
 export const BOAT = {
@@ -24,13 +25,11 @@ export const BOAT = {
   },
 };
 export const GATHER_HOURS = 3; // Gather materials on the shore
+// A shore holds a limited amount of usable material; it comes back slowly (driftwood, a fence someone missed).
+export const SHORE_SCRAP = 10;         // most a shore tile holds
+export const SHORE_REGROW_HOURS = 72;  // hours for 1 scrap to come back
 
-const carried = (p, key) => Math.max(0, p.supplies[key] || 0) + Math.max(0, p.cargo.supplies[key] || 0);
-function take(p, key, qty) {
-  const fromCargo = Math.min(qty, Math.max(0, p.cargo.supplies[key] || 0));
-  p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) - fromCargo;
-  p.supplies[key] = (p.supplies[key] || 0) - (qty - fromCargo);
-}
+const take = takeSupply; // found cargo first, then packed supplies (parties.js)
 
 // Crossings from a land tile: one entry per direction where a single (unbridged) water tile has land beyond it.
 export function crossingsFrom(state, from) {
@@ -112,9 +111,8 @@ export function launchBoat(state, p) {
   for (const [k, q] of Object.entries(t.mats)) if (q > 0) take(p, k, q);
   if (t.mode === "leave" && partyVehicle(state, p)) {
     const v = partyVehicle(state, p);
-    abandonVehicle(state, p, t.from, "left on the shore");
-    trimCargo(state, p);
     log(state, `The team left the ${v.name} on the shore at ${tileLabel(state, t.from)}.`, "info");
+    leaveVehicle(state, p, t.from, "left on the shore"); // cargo the people cannot carry stays in it (logged)
   }
   t.afloat = true;
   return "";
@@ -142,7 +140,8 @@ export function landBoat(state, p) {
     } else if (roll === 1) {
       const m = rng.pick(partyMembers(state, p));
       hurt(state, m, rng.int(4, 12), t.tile, "drowned crossing the river");
-      mishap = ` ${m.name.split(" ")[0]} slipped into the current and was hauled out bruised.`;
+      mishap = m.alive ? ` ${m.name.split(" ")[0]} slipped into the current and was hauled out bruised.` :
+        ` ${m.name.split(" ")[0]} slipped into the current and did not come up again.`;
     } else {
       const before = v.condition;
       v.condition = Math.max(1, v.condition - rng.int(8, 15));
@@ -151,22 +150,44 @@ export function landBoat(state, p) {
   }
   const text = `Crossed the river to ${tileLabel(state, t.tile)}${t.mode === "raft" ? " with the vehicle on a raft" : ""}; the boat was broken up for the landing.${mishap}`;
   log(state, text, mishap ? "danger" : "info");
+  wipeIfEmpty(state, p); // the mishap killed the last of them: what they carried lies on the far shore
   return text;
 }
 
 // ---------- gathering materials on the shore ----------
+// Usable material left on a shore tile right now: starts at SHORE_SCRAP, goes down as teams gather, and comes
+// back by 1 every SHORE_REGROW_HOURS.
+export function shoreScrap(state, tile) {
+  const g = state.tiles[tile].gathered;
+  if (!g) return SHORE_SCRAP;
+  return Math.min(SHORE_SCRAP, g.left + (state.hour - g.hour) / SHORE_REGROW_HOURS);
+}
+
+// Why a team cannot gather on a tile ("" = it can): only on a shore with a crossing, while something is left.
+export function gatherProblem(state, tile) {
+  if (!crossingsFrom(state, tile).length) return "only on a shore with land straight across the water.";
+  if (shoreScrap(state, tile) < 1) return "this shore is picked clean. It takes days for anything useful to wash up again.";
+  return "";
+}
+
+// min–max: what one search can turn up here now (never more than is left on the shore); left: what the shore holds.
 export function gatherInfo(state, p, tile) {
   const t = state.tiles[tile];
   const scav = bestSkill(state, p, "scavenging");
   const bonus = { forest: 2, suburb: 2, city: 3 }[t.terrain] || 0;
   const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
-  return { min: 2 + bonus + Math.floor(scav / 3), max: 5 + bonus + Math.floor(scav / 3), room: unitsThatFit(room, "scrap"), hours: GATHER_HOURS };
+  const left = crossingsFrom(state, tile).length ? Math.floor(shoreScrap(state, tile)) : 0;
+  return { min: Math.min(left, 2 + bonus + Math.floor(scav / 3)), max: Math.min(left, 5 + bonus + Math.floor(scav / 3)), room: unitsThatFit(room, "scrap"), hours: GATHER_HOURS, left };
 }
 
 export function gatherMaterials(state, p, tile) {
   const g = gatherInfo(state, p, tile);
-  const found = state.rng.int(g.min, g.max);
+  if (g.left < 1) return "Nothing useful left on this shore. It takes days for more to wash up.";
+  const found = Math.min(g.left, state.rng.int(g.min, g.max));
   const kept = Math.min(found, g.room);
   p.cargo.supplies.scrap = (p.cargo.supplies.scrap || 0) + kept;
-  return `Gathered ${kept} scrap (driftwood, fencing, barrels) for a boat${kept < found ? `; no room for ${found - kept} more` : ""}. Carried scrap: ${Math.floor(carried(p, "scrap"))}.`;
+  // What the team takes is gone from this shore (what it could not carry stays).
+  state.tiles[tile].gathered = { left: shoreScrap(state, tile) - kept, hour: state.hour };
+  const after = Math.floor(shoreScrap(state, tile));
+  return `Gathered ${kept} scrap (driftwood, fencing, barrels) for a boat${kept < found ? `; no room for ${found - kept} more` : ""}. Carried scrap: ${Math.floor(carried(p, "scrap"))}. ${after < 1 ? "This shore is picked clean now." : `About ${after} more could be found here.`}`;
 }

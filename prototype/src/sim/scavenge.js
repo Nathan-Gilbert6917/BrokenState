@@ -1,12 +1,13 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById } from "./world.js";
-import { partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty } from "./parties.js";
+import {
+  partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
+  wipeIfEmpty, leaveVehicle, addGearToCargo,
+} from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
-import { abandonVehicle } from "./vehicles.js";
 import { tickHour } from "./world.js";
-import { trimCargo } from "./parties.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -47,17 +48,21 @@ export function raidEnemies(state, tileId) {
   return groups;
 }
 
-let raidHandlerReady = false;
+// Registered as this module loads (not on the first raid), so a raid finishes correctly however it was started.
+registerCombatHandler("scavenge", afterRaid);
 
+// A search another team is still running (the abstract search has one slot, state.engagement).
+export function searchBusy(state, p) {
+  const e = state.engagement;
+  return !!(e && !e.done && e.partyId !== p.id && state.parties.some((q) => q.id === e.partyId && partyMembers(state, q).length));
+}
+
+// Returns false when the search could not start because another team's search is still running.
 export function startScavenge(state, p) {
   const t = state.tiles[p.dest];
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
-    if (!raidHandlerReady) {
-      registerCombatHandler("scavenge", afterRaid);
-      raidHandlerReady = true;
-    }
     const groups = raidEnemies(state, p.dest);
     const total = groups.reduce((a, g) => a + g.count, 0);
     const names = groups.map((g) => g.name).join(" and ");
@@ -67,8 +72,10 @@ export function startScavenge(state, p) {
       raid: { heat0: isNight(state) ? 0 : 5 },
       context: { factionIds: groups.filter((g) => g.factionId).map((g) => g.factionId) },
     });
-    return;
+    return true;
   }
+  // The one search slot is never overwritten while another team is using it (the caller makes this team wait).
+  if (searchBusy(state, p)) return false;
   state.engagement = {
     partyId: p.id, tile: p.dest, heat: isNight(state) ? 0 : 5, hours: 0, approach: null,
     log: [`The team reaches ${tileLabel(state, p.dest)}. ${t.loc ? LOCATIONS[t.loc.type].name + "." : ""} Infection here: ${Math.round(t.infection * 100)}%.`],
@@ -76,6 +83,7 @@ export function startScavenge(state, p) {
     guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
   };
   if (state.engagement.guarded) state.engagement.log.push(`${owner.name} hold this place. Expect armed guards.`);
+  return true;
 }
 
 // After the raid: time passes on the shared clock, the site is picked over, the vehicle may stay behind.
@@ -97,9 +105,8 @@ export function afterRaid(state, result, setup) {
     return;
   }
   if (r.hadVehicle && !r.vehicleKept && p.vehicle) {
-    abandonVehicle(state, p, setup.tile, "left at the raid site");
     log(state, `The vehicle was left at ${tileLabel(state, setup.tile)}.`, "danger");
-    trimCargo(state, p);
+    leaveVehicle(state, p, setup.tile, "left at the raid site"); // cargo the people cannot carry stays in it (logged)
   }
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
@@ -118,6 +125,13 @@ export function searchHour(state) {
   const t = state.tiles[e.tile];
   const ap = APPROACHES[e.approach];
   const members = partyMembers(state, p);
+  if (!members.length) {
+    // Nobody left to search (lost between two search hours): the team ends as a wiped team.
+    wipeIfEmpty(state, p);
+    e.done = true;
+    e.log.push("The whole team is dead.");
+    return;
+  }
   e.hours += 1; // the caller advances the shared clock by one hour per search
 
   // Loot.
@@ -202,6 +216,11 @@ export function extract(state) {
   const rng = state.rng;
   const stage = heatStage(e.heat);
   const members = partyMembers(state, p);
+  if (!members.length) {
+    wipeIfEmpty(state, p);
+    state.engagement = null;
+    return;
+  }
   // Hard extraction when overrun.
   if (stage.name === "Overrun" || stage.name === "Swarming") {
     const dc = stage.name === "Overrun" ? 12 : 8;
@@ -214,17 +233,21 @@ export function extract(state) {
   }
   const alive = partyMembers(state, p);
   if (!alive.length) {
+    // What they had found stays with them.
+    for (const [k, v] of Object.entries(e.found.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + v;
+    p.cargo.gear.push(...e.found.gear);
     wipeParty(state, p);
     state.engagement = null;
     return;
   }
-  // Load what fits; the cheapest goods are left behind first.
-  const cap = partyCapacity(state, p) - cargoLoad(p.cargo);
-  let room = cap - e.found.gear.length * 3;
-  p.cargo.gear.push(...e.found.gear);
+  // Load what fits; the cheapest goods are left behind first. Found items need carry space too
+  // (the most valuable go in first); what does not fit is left at the site.
+  const left = [];
+  const gear = [...e.found.gear].sort((a, b) => (GEAR[b.key]?.value || 0) - (GEAR[a.key]?.value || 0));
+  for (const g of gear) if (!addGearToCargo(state, p, g)) left.push(g.name);
+  let room = partyCapacity(state, p) - cargoLoad(p.cargo);
   // Best value per unit of carry space goes in first.
   const keys = Object.keys(e.found.supplies).sort((a, b) => SUPPLIES[b].value / SUPPLIES[b].weight - SUPPLIES[a].value / SUPPLIES[a].weight);
-  const left = [];
   for (const k of keys) {
     const take = Math.min(unitsThatFit(room, k), e.found.supplies[k]);
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
