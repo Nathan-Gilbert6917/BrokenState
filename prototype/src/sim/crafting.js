@@ -1,0 +1,281 @@
+// Hand crafting: survivors on the Craft role make makeshift gear (and a few supplies) by hand at any base,
+// no station needed. Works like the construction queue: materials are paid when a job is queued, crafters
+// put work-hours into the first job they are skilled enough for, and the item lands in the base armory.
+// Some sturdier recipes still need a workshop (needs: "workshop" = an ammo bench or machine shop here).
+// Makeshift gear has durability (item.dur): it wears with every fight / treatment / day of work and breaks at 0.
+// Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
+import { GEAR, SKILL_NAMES } from "./data.js";
+import { log, atBase, skill, newId } from "./world.js";
+import { count } from "./buildings.js";
+import { partyMembers } from "./parties.js";
+import { ARMOR_SLOTS, ensurePack } from "./inventory.js";
+
+// in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
+// needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
+export const CRAFTS = {
+  pipespear:   { gear: "pipespear",   in: { scrap: 3 },           hours: 4,  skill: "mechanics", min: 0, field: true },
+  spikedbat:   { gear: "spikedbat",   in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 0, field: true },
+  sawmachete:  { gear: "sawmachete",  in: { scrap: 6 },           hours: 10, skill: "mechanics", min: 3 },
+  crossbow:    { gear: "crossbow",    in: { scrap: 8, parts: 1 }, hours: 16, skill: "mechanics", min: 5, needs: "workshop" },
+  pipegun:     { gear: "pipegun",     in: { scrap: 6, parts: 2 }, hours: 14, skill: "mechanics", min: 6, needs: "workshop" },
+  padding:     { gear: "padding",     in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
+  shinguards:  { gear: "shinguards",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
+  tirevest:    { gear: "tirevest",    in: { scrap: 6 },           hours: 8,  skill: "mechanics", min: 2 },
+  scrapvest:   { gear: "scrapvest",   in: { scrap: 10, parts: 1 },hours: 18, skill: "mechanics", min: 4, needs: "workshop" },
+  bandagekit:  { gear: "bandagekit",  in: { scrap: 2, meds: 1 },  hours: 4,  skill: "medicine",  min: 2, field: true },
+  dressings:   { name: "Boiled-rag dressings", supplies: { meds: 1 }, in: { scrap: 2, water: 2 }, hours: 6, skill: "medicine", min: 3, field: true,
+                 desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
+  crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
+  waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2 },
+  backpack:    { gear: "backpack",    in: { scrap: 3 },           hours: 5,  skill: "mechanics", min: 0 },
+};
+
+export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
+export const MAX_CRAFT_QUEUE = 8;
+const FIELD_QUALITY = -0.05;  // made on the road with less to work with
+const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better
+
+export const craftName = (key) => CRAFTS[key].name || GEAR[CRAFTS[key].gear].name;
+export const craftQueue = (base) => base.crafting || (base.crafting = []);
+export const hasWorkshop = (base) => WORKSHOP_TYPES.some((t) => count(base, t) > 0);
+
+function meetsNeeds(base, r) {
+  if (!r.needs) return true;
+  if (r.needs === "workshop") return hasWorkshop(base);
+  return count(base, r.needs) > 0;
+}
+const needsText = (r) => (r.needs === "workshop" ? "a workshop (ammo bench or machine shop)" : r.needs);
+
+// Short description of what a recipe makes (for the UI).
+export function craftOutputText(key) {
+  const r = CRAFTS[key];
+  if (r.supplies) return Object.entries(r.supplies).map(([k, v]) => `+${v} ${k}`).join(", ");
+  const d = GEAR[r.gear];
+  const bits = [`${d.slot}, power ${d.power}`];
+  if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
+  if (d.dur) bits.push(`lasts ${d.dur} ${durUnit(r.gear)}`);
+  if (d.noise === 0 && d.slot === "weapon") bits.push("silent");
+  return bits.join(", ");
+}
+export function durUnit(key) {
+  const d = GEAR[key];
+  if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
+  if (d.medKit) return "treatments";
+  return "days";
+}
+
+// ---------- the base craft queue ----------
+// Crafters: people on the Craft role here (patients in a hospital bed do not work).
+export const crafters = (state, base) => atBase(state, base.id).filter((s) => s.role === "craft" && !s.inBed);
+const qualified = (state, base, r) => crafters(state, base).filter((s) => skill(s, r.skill) >= r.min);
+
+// Work-hours per hour on a recipe: each skilled crafter gives 1 + 3% per point of the recipe's skill.
+export function craftRate(state, base, key) {
+  const r = CRAFTS[key];
+  return qualified(state, base, r).reduce((a, s) => a + 1 + skill(s, r.skill) * 0.03, 0);
+}
+
+// Item condition from the best crafter's skill: 75% at 0, 100% at 20. Workshop recipes +10%.
+export function craftQuality(skillLevel, r, field = false) {
+  const q = 0.75 + skillLevel * 0.0125 + (r.needs ? WORKSHOP_QUALITY : 0) + (field ? FIELD_QUALITY : 0);
+  return Math.round(Math.max(0.6, Math.min(1, q)) * 100) / 100;
+}
+
+export function canCraft(state, base, key) {
+  const r = CRAFTS[key];
+  if (!r) return { ok: false, reason: "Unknown recipe" };
+  if (craftQueue(base).length >= MAX_CRAFT_QUEUE) return { ok: false, reason: `Queue is full (${MAX_CRAFT_QUEUE})` };
+  if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
+  if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
+  for (const [k, v] of Object.entries(r.in)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(base.stock[k] || 0)})` };
+  return { ok: true };
+}
+
+export function queueCraft(state, base, key) {
+  const chk = canCraft(state, base, key);
+  if (!chk.ok) return chk.reason;
+  const r = CRAFTS[key];
+  for (const [k, v] of Object.entries(r.in)) base.stock[k] -= v;
+  craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours });
+  const note = crafters(state, base).length ? "" : " Nobody is on the Craft role yet.";
+  return `${craftName(key)} queued at ${base.name}.${note}`;
+}
+
+// Cancelling an untouched job refunds everything; a started one gives half back (like construction).
+export function cancelCraft(state, base, id) {
+  const q = craftQueue(base);
+  const job = q.find((c) => c.id === id);
+  if (!job) return "That job is gone.";
+  const full = job.progress <= 0;
+  for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.floor(v / 2));
+  q.splice(q.indexOf(job), 1);
+  return `Cancelled ${craftName(job.recipe)}. ${full ? "All" : "Half"} the materials were returned.`;
+}
+
+// Why a job is not moving (empty string when it is).
+export function craftJobStatus(state, base, job) {
+  const r = CRAFTS[job.recipe];
+  if (!crafters(state, base).length) return "No crafters. Set someone's role to Craft.";
+  if (!meetsNeeds(base, r)) return `Needs ${needsText(r)} here`;
+  if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;
+  return "";
+}
+
+// Hourly: crafters work the first job in the queue they can do (blocked jobs are skipped, not lost).
+export function craftingHour(state) {
+  for (const base of state.bases) {
+    const q = craftQueue(base);
+    const job = q.find((j) => !craftJobStatus(state, base, j));
+    if (!job) continue;
+    job.progress += craftRate(state, base, job.recipe);
+    if (job.progress < job.hours) continue;
+    q.splice(q.indexOf(job), 1);
+    const r = CRAFTS[job.recipe];
+    if (r.supplies) {
+      for (const [k, v] of Object.entries(r.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
+      log(state, `${craftName(job.recipe)} finished at ${base.name}.`, "good");
+    } else {
+      const best = Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill)));
+      const item = makeItem(r.gear, craftQuality(best, r));
+      base.armory.push(item);
+      log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
+    }
+  }
+}
+
+// ---------- items and durability ----------
+export function makeItem(key, quality = 1) {
+  const d = GEAR[key];
+  const item = { key, name: d.name, quality };
+  if (d.dur) item.dur = d.dur;
+  if (d.slots) ensurePack(item); // a pack comes with empty pack slots
+  return item;
+}
+
+// Uses left (null = does not wear). Items made before durability (loot, older code) start full.
+export function itemDur(item) {
+  if (!item) return null;
+  const d = GEAR[item.key];
+  if (!d || !d.dur) return null;
+  return item.dur != null ? item.dur : d.dur;
+}
+
+// Wears an item by n uses. Returns true when it broke.
+function wear(item, n = 1) {
+  const left = itemDur(item);
+  if (left == null) return false;
+  item.dur = Math.max(0, left - n);
+  return item.dur <= 0;
+}
+
+// Wears what a survivor has in a slot; a broken item is gone.
+export function wearSlot(state, s, slot, n = 1) {
+  const item = s.gear[slot];
+  if (!item || !wear(item, n)) return false;
+  s.gear[slot] = null;
+  log(state, `${s.name.split(" ")[0]}'s ${item.name} broke.`, "danger");
+  return true;
+}
+
+// After a fight: makeshift weapons and every worn armor piece (body, head, arms, legs) lose one use.
+export function wearAfterFight(state, people) {
+  for (const s of people) {
+    if (!s || !s.alive) continue;
+    wearSlot(state, s, "weapon");
+    for (const slot of ARMOR_SLOTS) wearSlot(state, s, slot);
+  }
+}
+
+// A treatment with a bandage kit uses it up a little (medical.js).
+export function useMedKit(state, s) {
+  if (s && s.gear.tool && GEAR[s.gear.tool.key].medKit) wearSlot(state, s, "tool");
+}
+
+// Medicine bonus from a makeshift med kit (the surgical kit has its own rules in medical.js / combat.js).
+export const medKitBonus = (s) => (s && s.gear.tool && GEAR[s.gear.tool.key].medKit) || 0;
+
+// Skill bonus a tool gives for base work (crowbar: Scavenging).
+export function toolBonus(s, skillKey) {
+  const t = s.gear.tool;
+  if (!t) return 0;
+  const b = GEAR[t.key].bonus;
+  return (b && b[skillKey]) || 0;
+}
+
+// Daily: water filters make water at their base (in the armory or worn by someone there) and wear out;
+// tools used for base work (crowbar while scavenging) wear by a day.
+export function craftingDaily(state) {
+  for (const base of state.bases) {
+    const people = atBase(state, base.id);
+    let water = 0;
+    for (const item of [...base.armory]) {
+      const w = GEAR[item.key].water;
+      if (!w) continue;
+      water += w;
+      if (wear(item)) {
+        base.armory.splice(base.armory.indexOf(item), 1);
+        log(state, `The ${item.name} at ${base.name} clogged up for good.`, "danger");
+      }
+    }
+    for (const s of people) {
+      const t = s.gear.tool;
+      if (!t) continue;
+      const d = GEAR[t.key];
+      if (d.water) { water += d.water; wearSlot(state, s, "tool"); }
+      else if (d.bonus && d.bonus.scavenging && s.role === "scavenge" && !s.inBed) wearSlot(state, s, "tool");
+    }
+    if (water) base.stock.water = (base.stock.water || 0) + water;
+  }
+}
+
+// ---------- field crafting (a team on the road) ----------
+const partyHas = (p, k) => Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0);
+function partyTake(p, k, qty) {
+  const fromCargo = Math.min(qty, Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
+  if (fromCargo) p.cargo.supplies[k] -= fromCargo;
+  p.supplies[k] = (p.supplies[k] || 0) - (qty - fromCargo);
+}
+
+// Simple recipes a team can make from what it carries. Each: { key, name, ok, reason, in, hours, skill, min, out }.
+// hours is how long the work would take; fieldCraft does not move the clock (an order can add the wait).
+export function fieldCraftOptions(state, party) {
+  const members = party ? partyMembers(state, party) : [];
+  return Object.entries(CRAFTS).filter(([, r]) => r.field).map(([key, r]) => {
+    const best = Math.max(0, ...members.map((s) => skill(s, r.skill)));
+    let reason = "";
+    if (!members.length) reason = "Nobody on this team.";
+    else if (best < r.min) reason = `Needs ${SKILL_NAMES[r.skill]} ${r.min}+ on the team`;
+    else {
+      const miss = Object.entries(r.in).find(([k, v]) => partyHas(party, k) < v);
+      if (miss) reason = `Needs ${miss[1]} ${miss[0]}; the team carries ${Math.floor(partyHas(party, miss[0]))}`;
+    }
+    return { key, name: craftName(key), ok: !reason, reason, in: { ...r.in }, hours: r.hours, skill: r.skill, min: r.min, out: craftOutputText(key) };
+  });
+}
+
+// Makes one field recipe from the team's supplies. Gear goes to a member with that slot free, else into the cargo.
+export function fieldCraft(state, party, recipeKey) {
+  const opt = fieldCraftOptions(state, party).find((o) => o.key === recipeKey);
+  if (!opt) return "The team cannot make that in the field.";
+  if (!opt.ok) return opt.reason;
+  const r = CRAFTS[recipeKey];
+  for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
+  const members = partyMembers(state, party);
+  const maker = members.reduce((a, s) => (skill(s, r.skill) > skill(a, r.skill) ? s : a), members[0]);
+  const who = maker.name.split(" ")[0];
+  if (r.supplies) {
+    for (const [k, v] of Object.entries(r.supplies)) party.supplies[k] = (party.supplies[k] || 0) + v;
+    return `${who} makes ${craftName(recipeKey).toLowerCase()} (${opt.out}) in about ${r.hours} hours.`;
+  }
+  const item = makeItem(r.gear, craftQuality(skill(maker, r.skill), r, true));
+  const slot = GEAR[r.gear].slot;
+  const taker = members.find((s) => !s.gear[slot]);
+  if (taker) {
+    taker.gear[slot] = item;
+    return `${who} makes a ${item.name} in about ${r.hours} hours; ${taker.name.split(" ")[0]} takes it (${slot}).`;
+  }
+  party.cargo = party.cargo || { supplies: {}, gear: [] };
+  party.cargo.gear.push(item);
+  return `${who} makes a ${item.name} in about ${r.hours} hours. It goes in the cargo.`;
+}
+

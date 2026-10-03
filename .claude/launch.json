@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prototype",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["prototype/server.cjs"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

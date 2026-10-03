@@ -1,0 +1,984 @@
+// DOM panels and modals. Every user action goes through the action dispatcher in main.js.
+// Any element with data-tip="..." shows a hover description.
+import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
+import {
+  day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE,
+} from "../sim/world.js";
+import {
+  MISSIONS, STANCES, estimateTrip, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions, teamName,
+} from "../sim/parties.js";
+import { attitude, baseDefense } from "../sim/factions.js";
+import { baseHeat } from "../sim/hordes.js";
+import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
+import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
+import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
+import {
+  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count,
+} from "../sim/buildings.js";
+import { VEHICLE_TYPES, tank, vehiclesAtBase, partyVehicle, canRepair, partyFuel } from "../sim/vehicles.js";
+import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
+import { ageText, liveSet } from "./render.js";
+import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
+import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
+import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
+import { survivorURL, spriteImg } from "./sprites.js";
+import { renderExpedition } from "./expedition.js";
+import { orderStatus, contactable } from "../sim/orders.js";
+import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
+import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
+import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
+import { inventoryModal } from "./inventory.js";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
+const n0 = (v) => Math.floor((v || 0) + 1e-9);
+const n1 = (v) => (Math.round((v || 0) * 10) / 10).toString();
+const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></div>`;
+const attColor = (a) => ({ Hostile: "var(--danger)", Neutral: "var(--muted)", Friendly: "var(--good)", Allied: "var(--accent)" }[a]);
+const clock = (state) => `${String(hourOfDay(state)).padStart(2, "0")}:00`;
+const first = (s) => esc(s.name.split(" ")[0]);
+const roleSelect = (s, extra = "") => `<select data-action="role" data-id="${s.id}"${tip(ROLES[s.role]?.desc)}${extra}>${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${s.role === k ? "selected" : ""} title="${esc(r.desc)}">${r.name}</option>`).join("")}</select>`;
+
+// ---------- top bar ----------
+export function renderTopbar(state, ui) {
+  const h = hub(state);
+  const speeds = [[0, "⏸", "Pause (Space)"], [0.5, "0.5×", "Slow: an hour takes 6 seconds (1)"], [1, "1×", "Normal: an hour takes 3 seconds, a day 72 seconds (2)"], [2, "2×", "Fast: an hour takes 1.5 seconds (3)"], [3, "3×", "Fastest: an hour takes 1 second, a day 24 seconds (4)"]];
+  return `
+    <span class="title">BROKEN STATE</span>
+    <span class="clock">Day ${day(state)} · ${clock(state)} ${isNight(state) ? "🌙" : "☀"}</span>
+    <span class="speed row">${speeds.map(([s, l, t]) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</span>
+    <span class="stock">${SUPPLY_KEYS.map((k) => `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.`)}><b>${SUPPLIES[k].name}</b>${n0(h.stock[k])}</span>`).join("")}</span>
+    <span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>
+    <span class="row small" style="margin-left:auto">UI
+      <select data-action="uiscale"${tip("Interface size. Larger is easier to read from the couch.")}>${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select>
+      <button data-action="zlook-open"${tip("Zombie look: palette, gore, variants (battle sprites)")}>Zombies</button>
+      <button data-action="dev-toggle" class="${ui.dev ? "active" : ""}"${tip("Dev tools: reveal the map, watch groups and zombie hotzones grow, fast forward (\` key)")}>Dev</button>
+      <button data-action="help"${tip("How the prototype works")}>Help</button>
+    </span>`;
+}
+
+// ---------- left panel ----------
+export function renderLeft(state, ui) {
+  const waiting = state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length;
+  const tabs = [["bases", "Bases", "Your hub and outposts"], ["people", "People", "Everyone, their roles and health"], ["groups", "Groups", "Other survivor groups and trade routes"], ["teams", `Teams${waiting ? ` (${waiting}!)` : ""}`, "Teams in the field and their orders"]];
+  const head = `<div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="tab" data-tab="${k}" class="${ui.tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>`;
+  if (ui.tab === "people") return head + renderPeople(state);
+  if (ui.tab === "groups") return head + renderGroups(state);
+  if (ui.tab === "teams") return head + renderTeams(state, ui);
+  return head + renderBases(state);
+}
+
+function renderBases(state) {
+  return state.bases.map((b) => {
+    const people = atBase(state, b.id);
+    const fc = foodForecast(state, b);
+    const job = b.construction[0];
+    const rate = buildRate(state, b);
+    const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
+    return `<div class="card">
+      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${b.type === "hub" ? "Main hub" : "Outpost"}</span></div>
+      <div class="kv small" style="margin-top:0.4rem">
+        <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
+        <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
+        <div${tip("Noise and light that draw hordes. Workshop operators add 3 each.")}>Heat</div><div>${baseHeat(state, b)}</div>
+        <div${tip("Farm output minus what everyone here eats")}>Food per day</div><div class="${fc < 0 ? "danger" : "good"}">${fc >= 0 ? "+" : ""}${n1(fc)}</div>
+        <div>Building</div><div>${job ? `${BUILDINGS[job.type].name}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
+        ${supplySummary(state, b)}
+        ${line ? `<div${tip("Share of outpost surplus that reaches the hub, and how long backup takes")}>Supply line</div><div class="${line.strength < 0.6 ? "danger" : "good"}">${Math.round(line.strength * 100)}% · ETA ${isFinite(line.hours) ? line.hours + "h" : "cut off"}</div>` : ""}
+      </div>
+      <div class="row" style="margin-top:0.5rem"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button></div>
+    </div>`;
+  }).join("") + `<div class="small muted">Found outposts by sending a team with 15 scrap and choosing Build outpost.</div>`;
+}
+
+function supplySummary(state, b) {
+  const runs = supplyRuns(state).filter((j) => j.originId === b.id || j.destId === b.id);
+  if (!runs.length) return "";
+  const out = runs.filter((j) => jobParty(state, j)).length;
+  const stuck = runs.filter((j) => supplyStatus(state, j).key === "blocked").length;
+  return `<div${tip("Supply-run jobs from or to this base. Manage them in the Supply runs tab.")}>Supply runs</div><div>${runs.length} job${runs.length === 1 ? "" : "s"}${out ? ` · ${out} on the road` : ""}${stuck ? ` · <span class="danger">${stuck} blocked</span>` : ""}</div>`;
+}
+
+function personCard(state, s) {
+  const atB = s.location.kind === "base";
+  const topSkills = Object.entries(s.skills).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => `<span class="chip">${SKILL_NAMES[k]} ${skill(s, k)}</span>`).join("");
+  return `<div class="card surv" data-action="survivor" data-id="${s.id}"${tip("Click for skills, traits and gear")}>
+    <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}</b>${atB ? roleSelect(s) : ""}</div>
+    ${isCaptive(s) ? captiveLine(state, s) : ""}
+    <div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
+    ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
+    <div class="row small"><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>
+    <div>${topSkills}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+  </div>`;
+}
+
+function captiveLine(state, s) {
+  const f = factionById(state, s.location.factionId);
+  const days = Math.floor((state.hour - s.location.since) / 24);
+  return `<div class="small danger"${tip("Get them back: send a team with the Rescue mission to that base, pay a ransom during a trade visit, or raise goodwill until they let them go. The longer they are held, the likelier they escape, change sides, or (with zealots) die.")}>Held by ${esc(f ? f.name : "unknown captors")} at ${esc(tileLabel(state, s.location.tile))} · ${days ? `${days} day${days === 1 ? "" : "s"}` : "since today"}</div>`;
+}
+
+function renderPeople(state) {
+  const groups = [];
+  for (const b of state.bases) {
+    const ppl = atBase(state, b.id);
+    if (ppl.length) groups.push([b.name, ppl]);
+  }
+  const away = alive(state).filter((s) => s.location.kind === "party");
+  if (away.length) groups.push(["Away on teams", away]);
+  const routes = alive(state).filter((s) => s.location.kind === "route");
+  if (routes.length) groups.push(["Convoy escorts", routes]);
+  const held = alive(state).filter(isCaptive);
+  if (held.length) groups.push(["Held captive", held]);
+  return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("");
+}
+
+function renderGroups(state) {
+  const known = state.factions.filter((f) => f.known);
+  const unknown = state.factions.filter((f) => !f.known && f.alive).length;
+  const routes = state.routes.filter((r) => r.active);
+  return `
+    ${known.length ? known.map((f) => {
+      const a = attitude(f);
+      const route = routes.find((r) => r.factionId === f.id);
+      return `<div class="card">
+        <div class="spread"><b><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b>${f.alive ? `<span style="color:${attColor(a)}">${a}</span>` : `<span class="muted">Collapsed</span>`}</div>
+        <div class="small muted">${FACTION_TYPES[f.type].label} · about ${f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</div>
+        <div class="row small"><span class="muted" style="width:4.5rem"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>Goodwill</span><div style="flex:1">${bar((f.goodwill + 100) / 2, attColor(a))}</div><span>${Math.round(f.goodwill)}</span></div>
+        ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
+        ${f.alive ? `<div class="row" style="margin-top:0.35rem">
+          <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
+          ${canRadio(state, f) ? `<button data-action="radiotalk" data-id="${f.id}"${tip("Keep in touch. Regular contact stops neutral groups drifting hostile when you expand nearby.")}>Radio</button>` : ""}
+          ${f.pact === "trade" && !route ? `<button data-action="routesetup" data-id="${f.id}"${tip("Recurring convoys with an escort you choose")}>Set up trade route</button>` : ""}
+        </div>` : ""}
+      </div>`;
+    }).join("") : `<div class="muted small">You have not found any other groups yet. Send recon teams out.</div>`}
+    ${unknown ? `<div class="muted small" style="margin-top:0.5rem">${unknown} group${unknown === 1 ? " is" : "s are"} still out there, unknown.</div>` : ""}
+    <h3>Trade routes</h3>
+    ${routes.length ? routes.map((r) => {
+      const f = factionById(state, r.factionId);
+      const out = state.parties.some((p) => p.routeId === r.id);
+      return `<div class="card small">
+        <div class="spread"><b>${esc(f.name)}</b><button data-action="cancelroute" data-id="${r.id}"${tip("Stop the route; escorts return to the hub")}>End route</button></div>
+        Send ${r.sendQty} ${r.sendKey} → get ${r.recvQty} ${r.recvKey}, every ${r.interval} days<br>
+        ${ESCORTS[r.escort].name} escort: ${r.escortIds.map((id) => survivorById(state, id)).filter((s) => s && s.alive).map(first).join(", ")}<br>
+        <span class="muted">${out ? "Convoy on the road" : `Next convoy day ${r.nextDay}`}</span>
+      </div>`;
+    }).join("") : `<div class="muted small">Sign a trade pact during a trade visit, then set up a route here.</div>`}`;
+}
+
+function renderTeams(state, ui) {
+  const mine = state.parties.filter((p) => p.owner === "player");
+  if (!mine.length) return `<div class="muted small">No teams out. Select a tile on the map and choose an action, or right-click a tile.</div>`;
+  return mine.map((p) => {
+    const members = partyMembers(state, p);
+    const v = partyVehicle(state, p);
+    const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
+    const waiting = p.phase === "waiting";
+    const canOrder = waiting || p.radioLive || p.phase === "task";
+    const ost = p.kind !== "convoy" && canOrder ? orderStatus(state, p) : null;
+    const sjob = p.routeKind === "supply" ? supplyRunById(state, p.supplyJobId) : null;
+    const status = p.routeKind === "supply" ? `<span class="good">${p.phase === "holding" ? `Supply convoy holding at ${esc(baseById(state, p.destBaseId)?.name || "a base")}` : `Supply run (tracked) · ${p.phase === "back" ? "heading home" : `to ${esc(baseById(state, p.destBaseId)?.name || "a base")}`}`}</span>` :
+      p.kind === "convoy" ? `<span class="good">Convoy (tracked)</span>` :
+      waiting ? `<span class="warn">Waiting for orders at ${esc(tileLabel(state, partyTile(p)))}</span>` :
+      p.phase === "task" ? `<span class="good">${esc(ost.label)} at ${esc(tileLabel(state, partyTile(p)))}${ost.left != null ? ` · ${ost.left}h left` : ""}</span>` :
+      p.radioLive ? `<span class="good">📻 Radio contact · ${p.phase === "back" ? "heading home" : p.phase}</span>` : `<span class="muted">No contact. Expected back around day ${back}.</span>`;
+    const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
+    return `<div class="card small ${waiting ? "attn" : ""}">
+      <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
+      ${members.map(first).join(", ")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}<br>
+      ${showLive ? `Food ${n0(p.supplies.food)} · Water ${n0(p.supplies.water)}${v ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(cargoLoad(p.cargo))}/${partyCapacity(state, p)}<br>` : ""}
+      ${status}
+      ${canOrder && p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">
+        ${waiting ? `<button class="primary" data-action="orders" data-id="${p.id}"${tip("Choose what the team does here")}>Orders</button>` : ""}
+        <button data-action="movemode" data-id="${p.id}"${tip("Then click any tile on the map. The team goes there and waits for orders.")}>${ui.moveParty === p.id ? "Click a tile…" : waiting ? "Move…" : "Redirect…"}</button>
+        <button data-action="gohome" data-id="${p.id}"${tip("Head back to the hub now")}>Return home</button>
+      </div>` : ""}
+      ${p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">${ost && ost.left ? `<span class="muted" style="flex:1">${esc(ost.label)} · ${ost.left}h left${(p.orders || []).length ? ` · +${p.orders.length} queued` : ""}</span>` : `<span style="flex:1"></span>`}<button class="mini" data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and the order queue; camp, scavenge, repair and treat")}>Team panel</button></div>` : ""}
+      ${sjob ? `<div class="row" style="margin-top:0.35rem">
+        ${p.phase === "holding" ? `<button class="mini" data-action="sr-release" data-id="${sjob.id}" data-how="return"${tip("Load the pick-up goods and head back to the home base")}>Come home</button><button class="mini" data-action="sr-release" data-id="${sjob.id}" data-how="disband"${tip("The crew join the base they are parked at; the vehicle parks there. The job is kept as a template.")}>Disband here</button>` : ""}
+        <button class="mini" data-action="openbase" data-id="${sjob.originId}" data-tab="convoys"${tip("Open the Supply runs tab of the home base")}>Supply runs…</button>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// ---------- right panel ----------
+// Mission actions available on a tile, based only on what the player knows.
+export function tileActions(state, id) {
+  const t = state.tiles[id];
+  const isLive = state.live.has(id);
+  const snap = isLive ? null : state.knowledge[id];
+  const info = isLive ? { owner: t.owner, loot: t.loot, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
+  const markers = state.markers.filter((m) => m.tile === id);
+  const actions = [];
+  if (state.bases.some((b) => b.tile === id)) return actions;
+  actions.push(["recon", "Send recon"]);
+  actions.push(["move", "Send a team here"]);
+  if (info ? info.loot > 0.05 : t.loot > 0.05) actions.push(["scavenge", "Scavenge / raid"]);
+  const fb = state.factions.find((f) => f.alive && f.known && f.bases.includes(id));
+  if (fb) actions.push(["trade", "Trade visit"]);
+  if (fb && captivesOf(state, fb.id).length) actions.push(["rescue", "Rescue captives"]);
+  if (!fb && t.terrain !== "water" && (!info || info.owner == null || info.owner === "player")) actions.push(["outpost", "Build outpost"]);
+  if (markers.some((m) => m.type === "death")) actions.push(["recover", "Recover bodies"]);
+  if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
+  if (markers.some((m) => (m.type === "cache" || m.type === "car" || m.type === "camp") && !m.info?.emptied)) actions.push(["investigate", "Investigate find"]);
+  if (info && info.hordeSize) actions.push(["cull", "Cull horde"]);
+  return actions;
+}
+
+export function renderRight(state, ui) {
+  const xp = ui.expedition != null && state.parties.find((p) => p.id === ui.expedition);
+  if (xp) return renderExpedition(state, ui, xp);
+  const id = ui.selected;
+  if (id < 0) {
+    return `<h2>State of Calder</h2>
+      <div class="small" style="line-height:1.55">
+      <b>Left-click</b> a tile to inspect it. <b>Right-click</b> for actions. <b>Drag</b> to pan, <b>wheel</b> to zoom. Hover anything for a description.<br><br>
+      <b>Space</b> pause · <b>1–4</b> speed · <b>H</b> find hub · <b>I</b> infection overlay · <b>Esc</b> cancel<br><br>
+      Bright tiles are live (around your bases, or near a team in radio range). Dim tiles show what your people last reported, with its age. Dark tiles have no current intel.<br><br>
+      Teams report only when they get home, unless you have a radio station and they are in range. When a team finishes a job it waits for your orders: act there, move anywhere, or come home.
+      </div>`;
+  }
+  const t = state.tiles[id];
+  const isLive = liveSet(state).has(id); // dev Reveal map shows the true tile here too
+  const snap = isLive ? null : state.knowledge[id];
+  const info = isLive ? { owner: t.owner, infection: t.infection, loot: t.loot, nest: t.nest, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
+  const base = state.bases.find((b) => b.tile === id);
+  const ownerF = info && typeof info.owner === "number" ? factionById(state, info.owner) : null;
+  const walk = estimateTrip(state, { memberIds: [1], dest: id, vehicle: false, stance: "normal" });
+  const lootWord = (v) => (v > 0.7 ? "Rich" : v > 0.35 ? "Some" : v > 0.1 ? "Little" : "Picked over");
+  const actions = tileActions(state, id);
+  const markers = state.markers.filter((m) => m.tile === id);
+  const teamsHere = state.parties.filter((p) => p.owner === "player" && contactable(p) && partyTile(p) === id);
+  return `
+    <h2>${esc(t.loc ? t.loc.name : TERRAIN[t.terrain].name)}</h2>
+    <div class="small muted">${t.loc ? LOCATIONS[t.loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
+    ${t.loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(t.loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[t.loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => SUPPLIES[k].name.toLowerCase()).join(", ")}${LOCATIONS[t.loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
+    ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
+    <div class="card" style="margin-top:0.6rem">
+      <div class="kv small">
+        <div>Intel</div><div>${isLive ? `<span class="good">Live</span>` : snap ? `Last seen ${ageText(state, snap)} (day ${Math.floor(snap.hour / 24) + 1})` : `<span class="muted">None</span>`}</div>
+        ${info ? `
+        <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
+        <div${tip("Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
+        <div${tip("How much is left to scavenge here")}>Loot</div><div>${lootWord(info.loot)}</div>
+        <div>Horde</div><div>${info.hordeSize ? `<span class="danger">${info.hordeSize}${isLive ? "" : " (then)"}</span>` : "None seen"}</div>
+        ${info.nest ? `<div>Nest</div><div class="danger">Yes</div>` : ""}` : ""}
+        <div>From hub</div><div>${walk ? `${walk.tiles} tiles · ~${Math.ceil(walk.hoursOut)}h on foot` : "No route"}</div>
+      </div>
+    </div>
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.</div></div>` : ""}
+    ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
+      <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${m.info.fuel}, condition ${m.info.condition}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
+    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button><button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
+    ${actions.length ? `<h3>Send a team from the hub</h3><div class="row">${actions.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${tip(MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+}
+
+// ---------- legend / map layers ----------
+export function renderLegend(view, ui) {
+  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show map layers")}>Layers ▸</button>`;
+  return `<div class="spread"><b>Map layers</b><button data-action="legendtoggle" class="mini"${tip("Hide this panel")}>▾</button></div>
+    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}> ${l.name}</label>`).join("")}
+    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…) · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; faded = picked over, skulls up close = danger; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen) · red glowing mound = nest · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · ! = waiting for orders · ? = estimated team position</div>`;
+}
+
+// ---------- log ----------
+export function renderLog(state) {
+  return state.log.slice(0, 80).map((l) => `<div class="k-${l.kind}"><span class="t">D${Math.floor(l.hour / 24) + 1} ${String(l.hour % 24).padStart(2, "0")}:00</span>${esc(l.text)}</div>`).join("");
+}
+
+// ---------- modals ----------
+export function renderModal(state, ui) {
+  if (ui.timelapse) return null; // the timelapse viewer has its own overlay (ui/timelapse.js)
+  if (ui.zombieLook) return zombieLookModal(ui);
+  if (ui.inv && ui.inv.loot) return inventoryModal(state, ui); // over the battle screen
+  if (!ui.started) return newRunScreen(state, ui);
+  if (state.gameOver) return gameOverScreen(state);
+  if (ui.cardResult) return `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`;
+  if (state.cards.length) return cardModal(state, state.cards[0]);
+  if (state.engagement && !state.autopilot) return engagementModal(state); // on autopilot the governor searches (sim/autopilot.js)
+  if (state.trade && !state.autopilot) return tradeModal(state, ui);
+  if (ui.planner) return plannerModal(state, ui);
+  if (ui.routeSetup) return routeModal(state, ui);
+  if (ui.inv) return inventoryModal(state, ui); // closes back to the survivor / base screen under it
+  if (ui.survivor) return survivorModal(state, ui);
+  if (ui.baseView) return baseModal(state, ui);
+  if (ui.help) return helpModal();
+  return null;
+}
+
+// The new-run setup screen lives in ui/newgame.js (newRunScreen).
+
+function gameOverScreen(state) {
+  return `<div class="box"><h1>The holdout has fallen</h1>
+    <div class="text">Every survivor is dead. You lasted ${day(state)} days, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
+    <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, hordes, teams, and the rise and fall of your holdout")}>Watch the timelapse</button>` : ""}
+    <button class="primary" data-action="restart">New campaign</button></div></div>`;
+}
+
+function helpModal() {
+  return `<div class="box"><h1>How this prototype works</h1><div class="text small" style="line-height:1.6">
+    <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You lose when every survivor is dead.<br><br>
+    <b>Bases:</b> open Manage on any base. Assign roles, put operators on workshop stations, queue construction (builders burn the timer down), equip people from the armory, refuel and repair vehicles.<br>
+    <b>Teams:</b> select a tile, choose an action, pick a crew, vehicle and supplies. When a team finishes a job it waits for orders: act there, move to any tile, or come home.<br>
+    <b>Intel:</b> what teams see and spot is only revealed when they get home, unless they are in range of a radio station.<br>
+    <b>Markers:</b> teams roll perception (Scouting, Keen Eye) as they travel to spot caches, wrecks and camps. Abandoned vehicles and death sites are marked too. Toggle layers in the map's corner.<br>
+    <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. If one runs dry it is left where it stopped: bring fuel to recover it.<br>
+    <b>Scavenging:</b> search hour by hour while Heat rises; extract before it gets out of hand.<br>
+    <b>Groups:</b> neutral groups turn hostile if you crowd them, grow stronger and ignore diplomacy. Radio contact and trade keep them steady.</div>
+    <button class="primary" data-action="closehelp">Close</button></div>`;
+}
+
+function cardModal(state, card) {
+  if (card.kind === "conflict" && card.conflict) return conflictModal(state, card);
+  return `<div class="box">
+    <h1>${esc(card.title)}</h1>
+    ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
+    <div class="text">${esc(card.text)}</div>
+    <div class="choices">${card.choices.map((c, i) => {
+      const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`;
+    }).join("")}</div></div>`;
+}
+
+// Conflict approach panel: who they are, how many, your team, and odds on every option.
+function conflictModal(state, card) {
+  const c = card.conflict;
+  const v = conflictView(state, c);
+  const f = v.faction;
+  const named = f && v.identified;
+  const total = Math.max(1, v.myStrength + v.theirStrength);
+  const share = Math.round((v.myStrength / total) * 100);
+  const them = `<div class="card small">
+      <div class="spread"><b>${f ? `<span class="swatch" style="background:${named ? f.color : "#777"}"></span>${esc(named ? f.name : "Unknown group")}` : "The dead"}</b>
+        ${f && named ? `<span style="color:${attColor(v.attitude)}"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>${v.attitude} · ${Math.round(f.goodwill)}</span>` : ""}</div>
+      <div class="kv" style="margin-top:0.3rem">
+        <div>Who</div><div>${named || !f ? esc(v.typeLabel) : "Not sure yet. Watching them would tell you"}${f && named && f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""}</div>
+        <div${tip(c.exact ? "Counted while watching them" : "A rough estimate. Watching them gives the exact number")}>Numbers</div><div>${c.exact ? "" : "about "}${v.countText} ${c.enemy.kind === "zombies" ? "infected" : "armed"}</div>
+        <div${tip("Rough fighting strength: number × strength each")}>Their strength</div><div>~${v.theirStrength} (${c.enemy.power} each)</div>
+        ${v.victim ? `<div>Victims</div><div><span class="swatch" style="background:${v.victim.color}"></span>${esc(v.victim.name)} (${attitude(v.victim).toLowerCase()} to you)</div>` : ""}
+        ${v.other ? `<div>Fighting</div><div><span class="swatch" style="background:${v.other.color}"></span>${esc(v.other.name)} (${attitude(v.other).toLowerCase()} to you)</div>` : ""}
+        ${v.held.length ? `<div>Your people</div><div class="danger">${v.held.map(first).join(", ")}</div>` : ""}
+      </div></div>`;
+  const you = v.party ? `<div class="card small">
+      ${v.members.map((m) => `<div class="row"><span style="width:6rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span class="muted" style="width:3.2rem;text-align:right"${tip("Combat power")}>⚔ ${combatPower(m).toFixed(1)}</span></div>`).join("")}
+      <div class="kv" style="margin-top:0.3rem">
+        <div>Strength</div><div>${v.myStrength}</div>
+        <div>Ammo</div><div class="${v.ammo < v.members.length * 3 ? "danger" : ""}">${v.ammo}${v.ammo < v.members.length * 3 ? " (low: fights go worse)" : ""}</div>
+        <div>Transport</div><div>${esc(v.vehicle)}</div>
+      </div>
+      <div style="margin-top:0.3rem"><span class="chip">Stealth ${v.skills.stealth}</span><span class="chip">Speech ${v.skills.speech}</span><span class="chip">Scouting ${v.skills.scouting}</span></div>
+    </div>` : `<div class="muted small">No team.</div>`;
+  return `<div class="box wide">
+    <h1>${esc(card.title)}</h1>
+    ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)} · <span class="${c.mode === "forced" ? "danger" : c.mode === "observed" ? "good" : "warn"}">${esc(v.modeText)}</span></div>` : ""}
+    <div class="text">${esc(card.text)}</div>
+    <div class="grid2">
+      <div><h3>Them</h3>${them}</div>
+      <div><h3>Your team</h3>${you}</div>
+    </div>
+    <div class="row small" style="margin:0.2rem 0 0.6rem"${tip("Your strength against theirs. Ambushes, cover and luck can swing a fight either way.")}><span class="muted" style="width:6rem">Balance</span><div style="flex:1">${bar(share, share >= 55 ? "var(--good)" : share >= 40 ? "#e8a33d" : "var(--danger)")}</div><span style="width:5.5rem;text-align:right">you ${share}%</span></div>
+    <div class="choices">${card.choices.map((ch, i) => {
+      const dis = typeof ch.disabled === "function" ? ch.disabled(state) : ch.disabled;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(ch.hint)}>${esc(ch.label)}${ch.hint ? `<span class="hint">${esc(ch.hint)}</span>` : ""}</button>`;
+    }).join("")}</div></div>`;
+}
+
+function plannerModal(state, ui) {
+  const pl = ui.planner;
+  const h = hub(state);
+  const crewPool = atBase(state, h.id);
+  const ids = [...pl.crew];
+  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance, fuel: v ? v.fuel + (pl.supplies.fuel || 0) : 0 });
+  const members = ids.map((id) => survivorById(state, id)).filter(Boolean);
+  const at = (hr) => `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:00`;
+  const stays = ["move", "recon", "outpost"].includes(pl.mission); // waits there for orders (or stays)
+  const cap = members.reduce((a, m) => a + (m.traits.includes("badback") ? 8 : 15), 0) + (v ? VEHICLE_TYPES[v.type].capacity : 0);
+  const showKeys = ["food", "water", "fuel", "meds", "ammo", "parts", "scrap"];
+  const warn = [];
+  if (est) {
+    for (const k of ["food", "water"]) if ((pl.supplies[k] || 0) < est[k]) warn.push(`${SUPPLIES[k].name}: packing ${pl.supplies[k] || 0}, need about ${est[k]} for the round trip`);
+    if (v && v.fuel + (pl.supplies.fuel || 0) < est.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${est.fuel} for the round trip`);
+  }
+  if (pl.mission === "outpost" && (pl.supplies.scrap || 0) < 15) warn.push("Outposts need 15 scrap carried");
+  if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
+  const missions = Object.entries(MISSIONS).filter(([, m]) => !m.hidden);
+  const keySkills = ["scouting", "stealth", "shooting", "scavenging", "speech", "medicine", "mechanics"];
+  const parked = vehiclesAtBase(state, h.id);
+  return `<div class="box wide">
+    <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
+    <div class="row" style="margin-bottom:0.6rem">Mission
+      <select data-action="pl-mission"${tip(MISSIONS[pl.mission].desc)}>${missions.map(([k, m]) => `<option value="${k}" ${pl.mission === k ? "selected" : ""} title="${esc(m.desc)}">${m.name}</option>`).join("")}</select>
+      <span class="small muted">${MISSIONS[pl.mission].desc}</span></div>
+    <h3>Crew (${ids.length})</h3>
+    <div class="crew">${crewPool.map((s) => `
+      <label class="${pl.crew.has(s.id) ? "on" : ""}"${tip(`${s.name}: ${ROLES[s.role]?.name || s.role} at the hub. Taking them pauses that work.`)}><input type="checkbox" data-action="pl-crew" data-id="${s.id}" ${pl.crew.has(s.id) ? "checked" : ""}>
+        <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b> <span class="muted small">HP ${n0(s.health)} · ${ROLES[s.role]?.name || s.role}</span><br>
+        <span class="small">${keySkills.map((k) => `${SKILL_NAMES[k].slice(0, 5)} ${skill(s, k)}`).join(" · ")}</span><br>
+        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"}${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
+    <div class="grid2" style="margin-top:0.6rem">
+      <div>
+        <h3>Transport</h3>
+        <div class="choices">
+          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. Carry space comes only from people.")}>On foot</button>
+          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road. Carries +${VEHICLE_TYPES[x.type].capacity}. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · +${VEHICLE_TYPES[x.type].capacity} carry</span></button>`).join("")}
+          ${parked.length ? "" : `<span class="small muted">No vehicles parked at the hub.</span>`}
+        </div>
+        <h3>Stance</h3>
+        <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
+        <h3>Estimate</h3>
+        ${est ? `<div class="kv small"><div>Distance</div><div>${est.tiles} tiles</div>
+          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span></div>
+          ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
+          <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
+          <div>Needs</div><div>${est.food} food · ${est.water} water${v ? ` · ${est.fuel} fuel` : ""}</div><div>Carry space</div><div>${cap}</div></div>` : `<div class="danger">No route to this tile${v ? " by vehicle" : ""}.</div>`}
+      </div>
+      <div>
+        <h3>Supplies (from hub)</h3>
+        <table class="t">${showKeys.map((k) => `<tr${tip(k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : "")}><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">hub ${n0(h.stock[k])}</td></tr>`).join("")}</table>
+        <button data-action="pl-autofill" style="margin-top:0.4rem"${tip("Pack enough for the round trip plus 25%")}>Auto-fill (+25% margin)</button>
+        ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
+      </div>
+    </div>
+    ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || !est ? "disabled" : ""}>Send team</button></div>
+  </div>`;
+}
+
+function engagementModal(state) {
+  const e = state.engagement;
+  const p = engagementParty(state);
+  if (!e.approach) {
+    return `<div class="box"><h1>Scavenging ${esc(tileLabel(state, e.tile))}</h1>
+      <div class="text">${esc(e.log[0])}${e.guarded ? " " + esc(e.log[1]) : ""}</div>
+      <div class="text small muted">Each search takes an hour on the shared clock. Heat rises as you search: Quiet → Stirring → Swarming → Overrun. Extract before it gets out of hand.</div>
+      <div class="choices">${Object.entries(APPROACHES).map(([k, a]) => `<button data-action="approach" data-v="${k}"${tip(`${a.loot}× loot, +${a.heat} base Heat per hour`)}>${a.name}<span class="hint">${a.desc}</span></button>`).join("")}</div></div>`;
+  }
+  const stage = heatStage(e.heat);
+  const members = p ? partyMembers(state, p) : [];
+  const cap = p ? partyCapacity(state, p) - cargoLoad(p.cargo) : 0;
+  const load = foundLoad(e);
+  const found = [...Object.entries(e.found.supplies).map(([k, v]) => `${v} ${k}`), ...e.found.gear.map((g) => g.name)];
+  return `<div class="box wide"><h1>Scavenging ${esc(tileLabel(state, e.tile))} · ${APPROACHES[e.approach].name}</h1>
+    <div class="spread small"><span>Heat: <b>${stage.name}</b> — ${stage.desc}</span><span>${e.hours} hour${e.hours === 1 ? "" : "s"} searched · ${clock(state)}</span></div>
+    <div class="heat" style="margin:0.4rem 0 0.9rem"${tip("Quiet → Stirring (25) → Swarming (50) → Overrun (75). Fights get likelier and extraction harder.")}><i style="left:${e.heat}%"></i></div>
+    <div class="grid2">
+      <div><h3>Log</h3><div class="elog" id="elog">${e.log.map((l) => `<div>${esc(l)}</div>`).join("")}</div></div>
+      <div><h3>Team</h3>${members.map((m) => `<div class="row small"><span style="width:7rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div></div>`).join("")}
+        <div class="small muted" style="margin-top:0.3rem">Ammo ${n0(p ? p.supplies.ammo : 0)} · Food ${n0(p ? p.supplies.food : 0)}</div>
+        <h3>Found (${load} / ${Math.max(0, cap)} carry space)</h3>
+        <div class="small">${found.length ? found.map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing yet</span>"}</div>
+        ${load > cap ? `<div class="small danger">More than you can carry. The cheapest goods will be left behind.</div>` : ""}
+      </div>
+    </div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end">
+      ${e.done ? `<button class="primary" data-action="engclose">Close</button>` : `<button data-action="search"${tip("One more hour: more loot, more Heat")}>Search another hour</button><button class="primary" data-action="extract"${tip("Leave with what you found. Hard if Swarming or Overrun.")}>Extract now</button>`}
+    </div></div>`;
+}
+
+function tradeModal(state, ui) {
+  const ctx = tradeContext(state);
+  if (!ctx) return `<div class="box"><button data-action="tradeleave">Close</button></div>`;
+  const { f, speech, have } = ctx;
+  const tot = tradeTotals(state);
+  const a = attitude(f);
+  const rows = SUPPLY_KEYS.map((k) => `<tr>
+    <td><b>${SUPPLIES[k].name}</b></td>
+    <td>${have[k]}</td><td class="muted">${sellPrice(state, f, k, speech).toFixed(1)}</td>
+    <td><button data-action="offer" data-k="${k}" data-d="-5">−</button> ${state.trade.offer[k] || 0} <button data-action="offer" data-k="${k}" data-d="5" ${(state.trade.offer[k] || 0) + 5 > have[k] ? "disabled" : ""}>+</button></td>
+    <td style="border-left:1px solid var(--line)">${n0(f.stock[k])}</td><td class="muted">${buyPrice(state, f, k, speech).toFixed(1)}</td>
+    <td><button data-action="ask" data-k="${k}" data-d="-5">−</button> ${state.trade.ask[k] || 0} <button data-action="ask" data-k="${k}" data-d="5" ${(state.trade.ask[k] || 0) + 5 > (f.stock[k] || 0) ? "disabled" : ""}>+</button></td>
+  </tr>`).join("");
+  return `<div class="box wide"><h1><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</h1>
+    <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)} · Your best Speech: ${speech}</div>
+    ${captivesOf(state, f.id).length ? `<div class="small danger" style="margin-bottom:0.4rem">They hold ${captivesOf(state, f.id).map(first).join(", ")}. A ransom was offered when you arrived; a Rescue team can also get them out.</div>` : ""}
+    <div class="small muted" style="margin-bottom:0.5rem">Prices follow their stock: they pay more for what they are short of. You trade from what your team carries.</div>
+    <table class="t"><tr><th></th><th>You carry</th><th${tip("What they pay you per unit. Speech improves it.")}>They pay</th><th>Offer</th><th style="border-left:1px solid var(--line)">They have</th><th${tip("What you pay them per unit")}>You pay</th><th>Ask</th></tr>${rows}</table>
+    <div class="spread" style="margin-top:0.6rem"><span>Your offer: <b>${tot.offer.toFixed(0)}</b> · Their goods: <b>${tot.ask.toFixed(0)}</b></span>
+      <span class="${tot.offer >= tot.ask ? "good" : "danger"}">${tot.offer >= tot.ask ? "Acceptable" : "Not enough"}</span></div>
+    ${ui.tradeMsg ? `<div class="result">${esc(ui.tradeMsg)}</div>` : ""}
+    <div class="row" style="margin-top:0.8rem">
+      <button class="primary" data-action="dotrade" ${tot.offer >= tot.ask && tot.offer > 0 ? "" : "disabled"}${tip("Swap goods. Overpaying earns a little goodwill.")}>Trade</button>
+      <button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your offer for nothing in return. Raises goodwill.")}>Give offer as a gift</button>
+      <button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Propose non-aggression pact</button>
+      <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Propose trade pact</button>
+      <button data-action="tradeleave" style="margin-left:auto"${tip("End the visit. The team then waits for orders.")}>Leave</button>
+    </div></div>`;
+}
+
+function routeModal(state, ui) {
+  const r = ui.routeSetup;
+  const f = factionById(state, r.factionId);
+  const h = hub(state);
+  const pool = atBase(state, h.id);
+  const needPeople = ESCORTS[r.escort].people;
+  const keys = SUPPLY_KEYS.filter((k) => k !== "water");
+  return `<div class="box wide"><h1>Trade route to ${esc(f.name)}</h1>
+    <div class="grid2">
+      <div>
+        <h3>Goods</h3>
+        <div class="row">Send <input type="number" data-action="rt" data-f="sendQty" value="${r.sendQty}"> <select data-action="rt" data-f="sendKey">${keys.map((k) => `<option ${r.sendKey === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+        <div class="row" style="margin-top:0.4rem">Receive <input type="number" data-action="rt" data-f="recvQty" value="${r.recvQty}"> <select data-action="rt" data-f="recvKey">${keys.map((k) => `<option ${r.recvKey === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+        <div class="row" style="margin-top:0.4rem">Every <input type="number" data-action="rt" data-f="interval" value="${r.interval}"> days</div>
+        <div class="small muted">They have ${n0(f.stock[r.recvKey])} ${r.recvKey}. Fair value: you send ${(r.sendQty * SUPPLIES[r.sendKey].value).toFixed(0)}, receive ${(r.recvQty * SUPPLIES[r.recvKey].value).toFixed(0)}.</div>
+        <h3>Escort</h3>
+        <div class="choices">${Object.entries(ESCORTS).map(([k, e]) => `<button data-action="rt-escort" data-v="${k}" class="${r.escort === k ? "active" : ""}"${tip(e.desc)}>${e.name} (${e.people} ${e.people === 1 ? "survivor" : "survivors"})<span class="hint">${e.desc}</span></button>`).join("")}</div>
+      </div>
+      <div>
+        <h3>Choose ${needPeople} escort${needPeople === 1 ? "" : "s"} (${r.escortIds.size} picked)</h3>
+        <div class="small muted" style="margin-bottom:0.4rem">Escorts are committed to the route and do not work at the hub.</div>
+        <div class="crew" style="grid-template-columns:1fr">${pool.map((s) => `<label class="${r.escortIds.has(s.id) ? "on" : ""}"><input type="checkbox" data-action="rt-crew" data-id="${s.id}" ${r.escortIds.has(s.id) ? "checked" : ""}> ${esc(s.name)} <span class="small muted">Combat ${combatPower(s).toFixed(1)} · Shooting ${skill(s, "shooting")}</span></label>`).join("")}</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="rt-cancel">Cancel</button><button class="primary" data-action="rt-create" ${r.escortIds.size === needPeople ? "" : "disabled"}>Start route</button></div>
+  </div>`;
+}
+
+function gapLabel(s, item, plain = false) {
+  const e = gearEffect(s, item);
+  const def = GEAR[item.key];
+  let txt, cls;
+  if (!def.skill || e.gap <= 0) [txt, cls] = ["Full use", "good"];
+  else if (e.gap <= 3) [txt, cls] = ["Slightly below skill (−15%)", "muted"];
+  else if (e.gap <= 7) [txt, cls] = ["Below skill (−35%, may damage)", "danger"];
+  else [txt, cls] = [`Cannot use (needs ${def.req} ${SKILL_NAMES[def.skill]})`, "danger"];
+  return plain ? txt : `<span class="${cls}">${txt}</span>`;
+}
+
+function gearTip(item) {
+  const d = GEAR[item.key];
+  const dur = itemDur(item);
+  return `${d.name}: power ${d.power}${d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}, value ${d.value}${item.quality < 1 ? `, condition ${Math.round(item.quality * 100)}%` : ""}${dur != null ? `. Makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left before it breaks` : ""}${d.desc ? `. ${d.desc}` : ""}`;
+}
+// Uses left on makeshift gear, e.g. " [7/10]".
+const durTag = (item) => { const v = itemDur(item); return v != null ? ` [${v}/${GEAR[item.key].dur}]` : ""; };
+
+function survivorModal(state, ui) {
+  const s = survivorById(state, ui.survivor);
+  if (!s) return null;
+  const base = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
+  const slots = EQUIP_SLOTS; // inventory.js: hands, off hand, head, body, arms, legs, backpack
+  ensureInv(s);
+  const carried = s.pockets.filter(Boolean).length + (s.gear.backpack && s.gear.backpack.contents ? s.gear.backpack.contents.filter(Boolean).length : 0);
+  return `<div class="box"><div class="spread"><h1><span class="surv-port" data-action="look-edit" data-id="${s.id}"${tip("Customize how they look")}>${spriteImg(survivorURL(s, state.seed), 3)}</span>${s.leader ? "★ " : ""}${esc(s.name)}</h1>
+      <button class="mini ${ui.lookEdit === s.id ? "active" : ""}" data-action="look-edit" data-id="${s.id}"${tip("Change their look: build, hair, clothes, accessory. Shown in battle.")}>Customize look</button></div>
+    ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
+    <div class="where">${s.leader ? "Leader · " : ""}Health ${n0(s.health)} · Mood ${n0(s.mood)} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
+    ${isCaptive(s) ? captiveLine(state, s) : ""}
+    <div class="grid2">
+      <div><h3>Skills</h3>${SKILLS.map((k) => `<div class="row small"><span style="width:6rem">${SKILL_NAMES[k]}</span><div style="flex:1">${bar(skill(s, k) * 5, "var(--accent)")}</div><span style="width:1.6rem">${skill(s, k)}</span></div>`).join("")}</div>
+      <div><h3>Traits</h3>${s.traits.map((t) => `<div class="small"><b>${TRAITS[t].name}</b> <span class="muted">${TRAITS[t].desc}</span></div>`).join("")}
+        <div class="spread"><h3>Gear</h3><button class="mini primary" data-action="inv-open" data-id="${s.id}" ${personPlace(s) ? "" : "disabled"}${tip("Paper-doll inventory: what they wear, hold and carry in pockets and pack. Move items to and from the armory (at a base) or teammates and the cargo (on a team).")}>Inventory</button></div>
+        <div class="small muted">Armor ${Math.round(armorPower(s) * 10) / 10} from worn pieces · ${carried} item${carried === 1 ? "" : "s"} in pockets and pack</div>
+        ${slots.map((slot) => {
+          const cur = s.gear[slot];
+          return `<div class="card small"><b>${SLOT_NAMES[slot]}:</b> ${cur ? `<span${tip(gearTip(cur))}>${esc(cur.name)}</span>${cur.quality < 1 ? ` (${Math.round(cur.quality * 100)}%)` : ""} — ${gapLabel(s, cur)}` : "<span class='muted'>none</span>"}
+            ${base ? `<div class="row" style="margin-top:0.3rem">${gearControls(state, base, s, slot)}</div>` : ""}</div>`;
+        }).join("")}
+        ${base ? "" : `<div class="small muted">Away from a base, gear moves only between teammates and the team's cargo (Inventory).</div>`}
+      </div>
+    </div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;
+}
+
+function gearControls(state, base, s, slot) {
+  const cur = s.gear[slot];
+  const opts = base.armory.map((g, i) => [g, i]).filter(([g]) => GEAR[g.key].slot === slot);
+  return `${cur ? `<button class="mini" data-action="unequip" data-id="${s.id}" data-slot="${slot}" data-base="${base.id}"${tip(`Put the ${cur.name} in ${base.name}'s armory`)}>Unequip</button>` : ""}
+    ${opts.length ? `<select data-action="equip" data-id="${s.id}" data-base="${base.id}"${tip("Equip from this base's armory")}><option value="">Equip…</option>${opts.map(([g, i]) => `<option value="${i}">${esc(g.name)}${durTag(g)} — ${gapLabel(s, g, true)}</option>`).join("")}</select>` : ""}`;
+}
+
+// ---------- base management ----------
+const BASE_TABS = [
+  ["overview", "Overview", "Stock, people and roles"],
+  ["workshops", "Workshops", "Farms, scavenging and workshop stations: who works where and what they produce"],
+  ["buildings", "Buildings", "What is built here and the bonuses it gives"],
+  ["construction", "Construction", "Build queue with timers, and what you can build"],
+  ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
+  ["crafting", "Crafting", "Hand-made makeshift gear and supplies: craft queue, crafters and recipes (no station needed)"],
+  ["vehicles", "Vehicles", "Fuel, condition, refuel and repair"],
+  ["convoys", "Supply runs", "Convoy jobs between your bases: send supplies, bring goods back, on a schedule"],
+  ["medical", "Medical", "Infirmary or hospital, medics, beds, and treating the injured with meds"],
+];
+
+function baseModal(state, ui) {
+  const b = baseById(state, ui.baseView.id);
+  if (!b) return null;
+  const tab = ui.baseView.tab;
+  const body = { overview: baseOverview, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical }[tab](state, b, ui);
+  return `<div class="box wide basebox">
+    <div class="spread"><h1>${esc(b.name)}</h1><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
+    <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
+    ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
+    <div class="basebody">${body}</div>
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="closebase">Close</button></div>
+  </div>`;
+}
+
+// ---------- medical ----------
+// A Treat button for anyone: at a base it uses the base's meds, on a team it uses the team's carried meds.
+function treatButton(state, s) {
+  if (!isHurt(s)) return "";
+  if (s.location.kind === "base") {
+    const b = baseById(state, s.location.baseId);
+    const info = treatAtBaseInfo(state, b, s);
+    return `<button class="mini" data-action="treat" data-base="${b.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds: +${info.heal} health${info.surgery ? " (surgery on a severe wound)" : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Better with a hospital and Medicine.` : info.reason)}>Treat (${info.cost} meds)</button>`;
+  }
+  if (s.location.kind === "party") {
+    const p = state.parties.find((x) => x.id === s.location.partyId);
+    if (!p) return "";
+    const info = fieldTreatInfo(state, p, s);
+    return `<button class="mini" data-action="fieldtreat" data-party="${p.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Field treatment with the team's meds (${n0(partyMeds(p))} carried): ${info.cost} meds, +${info.heal} health${info.medic ? ` (by ${info.medic.name}, Medicine ${skill(info.medic, "medicine")})` : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Weaker than care at a base.` : info.reason)}>Treat (${info.cost} meds)</button>`;
+  }
+  return "";
+}
+
+function baseMedical(state, b) {
+  const h = activeHospital(state, b);
+  const built = h.built;
+  const people = atBase(state, b.id);
+  const hurtList = people.filter(isHurt).sort((x, y) => x.health - y.health);
+  const beds = new Set(patients(state, b).map((s) => s.id));
+  const next = nextHospitalType(b);
+  const queued = b.construction.find((c) => BUILDINGS[c.type].family === "hospital");
+  const others = people.filter((s) => s.role !== "medic");
+  return `<div class="grid2">
+    <div>
+      <h3>Care</h3>
+      <div class="card small">
+        <div class="spread"><b>${built.tier ? esc(built.name) : "No hospital"}</b>${built.tier ? `<span class="chip ${h.staffed ? "on" : "off"}"${tip("Buildings need people: each tier needs Medic-role staff to run. Unstaffed it works like no hospital.")}>${h.staffed ? "Staffed" : `Needs ${built.staff} medic${built.staff === 1 ? "" : "s"}`}</span>` : ""}</div>
+        <div class="kv" style="margin-top:0.3rem">
+          <div>Beds</div><div>${h.beds ? `${beds.size} of ${h.beds} in use` : "none"}</div>
+          <div${tip("Extra health per day for patients in a bed, plus the best medic's Medicine × 0.5")}>Bed healing</div><div>${h.tier ? `+${h.heal} / day (+${n1(h.staffSkill * 0.5)} from medics)` : "—"}</div>
+          <div${tip("Everyone at the base heals this much per day: 4 + best Medicine here × 0.4")}>Everyone</div><div>+${n1(4 + h.baseSkill * 0.4)} / day</div>
+          <div${tip("Multiplier on what each dose of meds heals, for treatments and the automatic dose below 70 health")}>Meds effect</div><div>×${h.eff}</div>
+          <div>Infected wounds</div><div>${h.cures ? "Cleaned in bed" : h.guards ? "Prevented in bed" : "Risky below 40 health"}</div>
+          <div${tip("Below 30 health, healing runs at 40% speed without a bed; the hospital tier sets the speed in a bed. Surgery (Clinic and up) also makes treatments 50% bigger for severe wounds.")}>Severe wounds</div><div>${h.tier ? `${Math.round(h.severe * 100)}% speed in bed` : "40% speed"}${h.surgery ? " · surgery" : ""}</div>
+          <div>Meds in stock</div><div>${n0(b.stock.meds)}</div>
+        </div>
+      </div>
+      <h3>Medics</h3>
+      <div class="card small">
+        ${h.staff.length ? h.staff.map((s) => `<div class="spread"><span>${esc(s.name)} <span class="muted">Medicine ${skill(s, "medicine")}</span></span>${roleSelect(s)}</div>`).join("") : `<span class="muted">Nobody on the Medic role.</span>`}
+        ${others.length ? `<div style="margin-top:0.3rem"><select data-action="medicop"${tip("Set someone's role to Medic")}><option value="">Add a medic…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
+      </div>
+      <h3>Upgrade path</h3>
+      ${hospitalTypes().map((k) => {
+        const d = BUILDINGS[k];
+        const isNext = k === next;
+        const chk = isNext ? canBuild(state, b, k) : null;
+        const status = d.tier <= built.tier ? `<span class="chip on">Built</span>` : queued && queued.type === k ? `<span class="chip">Queued</span>` : isNext ? `<button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest (Construction tab)" : chk.reason)}>${d.tier === 1 ? "Build" : "Upgrade"}</button>` : `<span class="muted">Later</span>`;
+        return `<div class="card small"${tip(d.desc)}><div class="spread"><b>${d.tier}. ${esc(d.name)}</b>${status}</div>
+          <span class="muted">${d.med.beds} beds · +${d.med.heal}/day · meds ×${d.med.eff} · ${d.med.staff} medic${d.med.staff === 1 ? "" : "s"}${d.med.cures ? " · cleans infections" : d.med.guards ? " · prevents infections" : ""}<br>${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours${d.req ? ` · needs ${Object.entries(d.req).map(([sk, l]) => `${SKILL_NAMES[sk]} ${l}+`).join(", ")}` : ""}${isNext && !chk.ok ? ` · <span class="danger">${esc(chk.reason)}</span>` : ""}</span></div>`;
+      }).join("")}
+    </div>
+    <div>
+      <h3>Injured and sick (${hurtList.length})</h3>
+      ${hurtList.length ? hurtList.map((s) => `<div class="card small">
+        <div class="spread"><a data-action="survivor" data-id="${s.id}" class="link">${esc(s.name)}</a>${treatButton(state, s)}</div>
+        <div class="row"><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem;text-align:right">${n0(s.health)}</span></div>
+        <div>${beds.has(s.id) ? `<span class="chip on"${tip("In a hospital bed: gets the bed healing bonus and +3 mood a day, but does not work their role until healed")}>In bed</span>` : h.beds ? `<span class="chip"${tip(s.role === "medic" ? "Medics stay on duty and are never admitted as patients" : "No free bed: the worst off get beds first")}>No bed</span>` : ""}${s.health < 30 ? `<span class="chip off"${tip("Severe wound (below 30 health): heals at 40% speed without a bed; a hospital bed and surgery help")}>Severe</span>` : ""}${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed and loses 2 health a day. Treat with meds; a Clinic or better cleans it in bed.")}>Infected wound</span>` : ""}<span class="muted">${(() => { const r = healRatePerHour(state, b, s, h, beds.has(s.id)) * 24; return `${r >= 0 ? "+" : ""}${n1(r)} health/day`; })()}</span></div>
+      </div>`).join("") : `<div class="muted small">Nobody here is hurt.</div>`}
+      <div class="small muted" style="margin-top:0.4rem">Anyone below 70 health also gets one dose of meds a day automatically while stock lasts.</div>
+    </div>
+  </div>`;
+}
+
+function baseOverview(state, b) {
+  const people = atBase(state, b.id);
+  const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
+  const fc = foodForecast(state, b);
+  return `<div class="grid2">
+    <div>
+      <h3>Stock</h3>
+      <table class="t">${SUPPLY_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(b.stock[k])}</td></tr>`).join("")}</table>
+      ${b.type === "outpost" ? `<div class="small muted" style="margin-top:0.4rem">Outposts keep a small reserve and ship the rest to the hub each day.</div>` : ""}
+      <h3>Status</h3>
+      <div class="kv small">
+        <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
+        <div>Heat</div><div>${baseHeat(state, b)}</div>
+        <div>Food per day</div><div class="${fc < 0 ? "danger" : "good"}">${fc >= 0 ? "+" : ""}${n1(fc)}</div>
+        <div>Beds</div><div>${baseBeds(b)} for ${people.length}</div>
+        ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
+      </div>
+    </div>
+    <div>
+      <h3>People and roles</h3>
+      ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a></td><td>${roleSelect(s)}</td><td class="small">${n0(s.health)} HP</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
+      <div class="small muted" style="margin-top:0.4rem">${Object.entries(ROLES).map(([k, r]) => `<b>${r.name}</b> ${people.filter((s) => s.role === k).length}`).join(" · ")}</div>
+    </div>
+  </div>`;
+}
+
+function baseWorkshops(state, b) {
+  const people = atBase(state, b.id);
+  const farmers = people.filter((s) => s.role === "farm");
+  const scav = people.filter((s) => s.role === "scavenge");
+  const scavOut = Object.entries(scavengeOutput(state, b)).filter(([, v]) => v >= 0.1).map(([k, v]) => `${n1(v)} ${k}`).join(", ");
+  const sts = stations(b);
+  return `
+    <h3>Farming</h3>
+    <div class="card small"><div class="spread"><b>Farm plots: ${count(b, "farm_plot")} (${farmSlots(b)} slots)</b><span class="${farmers.length > farmSlots(b) ? "danger" : ""}">${farmers.length} farmer${farmers.length === 1 ? "" : "s"}</span></div>
+      ${farmers.length ? farmers.map(first).join(", ") : "<span class='muted'>Nobody farming</span>"} · <b>${n1(farmOutput(state, b))} food/day</b>
+      ${farmers.length > farmSlots(b) ? `<div class="danger">Over capacity: extra farmers work at 30%. Build more plots.</div>` : ""}</div>
+    <h3>Scavenging</h3>
+    <div class="card small">${scav.length ? `${scav.map(first).join(", ")} · <b>${scavOut || "little"} per day</b>` : "<span class='muted'>Nobody scavenging</span>"}</div>
+    <h3>Workshop stations</h3>
+    ${sts.length ? `<table class="t"><tr><th>Station</th><th>Operator</th><th>Status</th><th>Per day</th></tr>${sts.map((st) => {
+      const s = stationStatus(state, b, st);
+      const r = RECIPES[s.recipe];
+      return `<tr>
+        <td${tip(`${BUILDINGS[st.type].desc} ${r.desc}`)}><b>${BUILDINGS[st.type].name}</b></td>
+        <td><select data-action="stationop" data-base="${b.id}" data-station="${st.id}"${tip("Assigning someone sets their role to Operate")}><option value="">— none —</option>${people.map((p) => `<option value="${p.id}" ${s.op && s.op.id === p.id ? "selected" : ""}>${esc(p.name)} (${SKILL_NAMES[r.skill]} ${skill(p, r.skill)})</option>`).join("")}</select></td>
+        <td><span class="chip ${s.running ? "on" : "off"}">${esc(s.reason)}</span></td>
+        <td class="small">${s.op ? `${Object.entries(r.in).map(([k, v]) => `−${v} ${k}`).join(", ")} → ${Object.entries(s.out).map(([k, v]) => `+${v} ${k}`).join(", ")}` : "—"}</td>
+      </tr>`;
+    }).join("")}</table>` : `<div class="muted small">No workshop stations. Build an ammo bench, med station or machine shop in Construction.</div>`}`;
+}
+
+function baseBuildings(state, b) {
+  const groups = {};
+  for (const x of b.buildings) groups[x.type] = (groups[x.type] || 0) + 1;
+  return `<div class="grid2">
+    <div><h3>Built here</h3>${Object.keys(groups).length ? Object.entries(groups).map(([t, n]) => `<div class="card small"${tip(BUILDINGS[t].desc)}><b>${BUILDINGS[t].name}${n > 1 ? ` ×${n}` : ""}</b><br><span class="muted">${BUILDINGS[t].desc}</span></div>`).join("") : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
+    <div><h3>Bonuses</h3><div class="kv small">${buildingSummary(state, b).map(([k, v]) => `<div>${k}</div><div>${esc(v)}</div>`).join("")}</div></div>
+  </div>`;
+}
+
+function baseConstruction(state, b) {
+  const rate = buildRate(state, b);
+  const builders = atBase(state, b.id).filter((s) => s.role === "build");
+  let elapsed = 0;
+  return `<div class="grid2">
+    <div>
+      <h3>Queue</h3>
+      <div class="small muted" style="margin-bottom:0.4rem">${builders.length ? `Builders: ${builders.map(first).join(", ")} (${n1(rate)} work-hours per hour)` : "No builders. Set someone's role to Build."}</div>
+      ${b.construction.length ? b.construction.map((job, i) => {
+        const left = job.hours - job.progress;
+        elapsed += left;
+        const eta = rate > 0 ? Math.ceil(elapsed / rate) : null;
+        return `<div class="card small">
+          <div class="spread"><b>${i === 0 ? "▶ " : ""}${BUILDINGS[job.type].name}</b><button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></div>
+          ${bar((job.progress / job.hours) * 100, "var(--accent)")}
+          <span class="muted">${i === 0 ? `${n1(left)} work-hours left` : "Waiting in queue"} · ${eta != null ? `done in about ${eta}h` : "paused"}</span>
+        </div>`;
+      }).join("") : `<div class="muted small">Nothing queued.</div>`}
+    </div>
+    <div>
+      <h3>Build</h3>
+      ${Object.entries(BUILDINGS).map(([k, d]) => {
+        const chk = canBuild(state, b, k);
+        return `<div class="card small"${tip(d.desc)}>
+          <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
+          <span class="muted">${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours · have ${count(b, k)}/${d.max}${chk.ok ? "" : ` · ${esc(chk.reason)}`}</span>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function baseArmory(state, b) {
+  const people = atBase(state, b.id);
+  const slots = ["weapon", "armor", "tool"];
+  return `
+    <h3>Stored here (${b.armory.length})</h3>
+    <div class="small">${b.armory.length ? b.armory.map((g) => `<span class="chip"${tip(gearTip(g))}>${esc(g.name)}${g.quality < 1 ? ` (${Math.round(g.quality * 100)}%)` : ""}${durTag(g)}</span>`).join("") : "<span class='muted'>Empty. Gear your teams bring home (and crafted gear) lands here.</span>"}</div>
+    <h3>Equipment</h3>
+    ${people.length ? `<table class="t"><tr><th>Survivor</th>${slots.map((s) => `<th>${SLOT_NAMES[s]}</th>`).join("")}<th${tip("Head, arms, legs and pack (inventory.js). Open the inventory to change them, fill pockets and packs, or swap with others here.")}>Worn and carried</th></tr>${people.map((s) => `<tr>
+      <td><a data-action="survivor" data-id="${s.id}" class="link">${esc(s.name)}</a><br><span class="small muted">Shoot ${skill(s, "shooting")} · Stealth ${skill(s, "stealth")} · Combat ${combatPower(s).toFixed(1)}</span></td>
+      ${slots.map((slot) => {
+        const cur = s.gear[slot];
+        return `<td class="small">${cur ? `<span${tip(gearTip(cur))}>${esc(cur.name)}${durTag(cur)}</span><br>${gapLabel(s, cur)}` : "<span class='muted'>—</span>"}<div class="row" style="margin-top:0.2rem">${gearControls(state, b, s, slot)}</div></td>`;
+      }).join("")}
+      <td class="small">${ensureInv(s) && ["head", "arms", "legs", "backpack"].map((k) => s.gear[k]).filter(Boolean).map((g) => `<span class="chip"${tip(gearTip(g))}>${esc(g.name)}${durTag(g)}</span>`).join("") || "<span class='muted'>—</span>"}
+        <div class="muted">Armor ${Math.round(armorPower(s) * 10) / 10} · pockets ${s.pockets.filter(Boolean).length}/${s.pockets.length}</div>
+        <button class="mini" data-action="inv-open" data-id="${s.id}"${tip("Open the paper-doll inventory")}>Inventory</button></td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here to equip.</div>`}`;
+}
+
+// ---------- crafting (hand-made, no station) ----------
+function baseCrafting(state, b) {
+  const people = atBase(state, b.id);
+  const crew = crafters(state, b);
+  const q = craftQueue(b);
+  const others = people.filter((s) => s.role !== "craft");
+  const best = (r) => Math.max(0, ...crew.filter((s) => skill(s, r.skill) >= r.min).map((s) => skill(s, r.skill)));
+  let elapsed = 0;
+  return `<div class="grid2">
+    <div>
+      <h3>Crafters</h3>
+      <div class="card small">
+        ${crew.length ? crew.map((s) => `<div class="spread"><span>${esc(s.name)} <span class="muted">Mechanics ${skill(s, "mechanics")} · Medicine ${skill(s, "medicine")}</span></span>${roleSelect(s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
+        ${others.length ? `<div style="margin-top:0.3rem"><select data-action="craftop"${tip("Set someone's role to Craft")}><option value="">Add a crafter…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Mechanics ${skill(s, "mechanics")}, Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
+      </div>
+      <h3>Queue (${q.length}/${MAX_CRAFT_QUEUE})</h3>
+      ${q.length ? q.map((job, i) => {
+        const r = CRAFTS[job.recipe];
+        const why = craftJobStatus(state, b, job);
+        const rate = craftRate(state, b, job.recipe);
+        const left = job.hours - job.progress;
+        elapsed += left;
+        const eta = !why && rate > 0 ? Math.ceil(elapsed / rate) : null; // jobs ahead in the queue go first
+        return `<div class="card small">
+          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))}</b><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
+          ${bar((job.progress / job.hours) * 100, "var(--accent)")}
+          <span class="muted">${n1(left)} of ${job.hours} work-hours left · ${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about ${eta}h at the current pace${r.gear ? ` · condition about ${Math.round(craftQuality(best(r), r) * 100)}%` : ""}` : "paused"}</span>
+        </div>`;
+      }).join("") : `<div class="muted small">Nothing queued.</div>`}
+      <div class="small muted" style="margin-top:0.4rem">Crafters work on the first job they have the skill for. Finished gear goes to the armory; equip it in the Armory tab. Makeshift gear is weaker than the real thing and breaks after a number of uses.</div>
+    </div>
+    <div>
+      <h3>Recipes</h3>
+      <div class="small muted" style="margin-bottom:0.4rem">${hasWorkshop(b) ? "A workshop is here: workshop recipes are open (and come out a bit better)." : "No workshop here: recipes marked Workshop need an ammo bench or machine shop at this base."}</div>
+      ${Object.keys(CRAFTS).map((k) => {
+        const r = CRAFTS[k];
+        const chk = canCraft(state, b, k);
+        const d = r.gear ? GEAR[r.gear] : null;
+        return `<div class="card small"${tip(d ? `${d.desc || ""} Value ${d.value}.` : r.desc)}>
+          <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs ? `<span class="chip"${tip("Needs an ammo bench or machine shop at this base")}>Workshop</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
+          <span class="muted">${Object.entries(r.in).map(([c, v]) => `${v} ${c}`).join(", ")} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+</span><br>
+          <span>→ ${esc(craftOutputText(k))}</span>${chk.ok ? "" : ` · <span class="danger">${esc(chk.reason)}</span>`}
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function baseVehicles(state, b) {
+  const here = vehiclesAtBase(state, b.id);
+  const rep = canRepair(state, b);
+  const elsewhere = state.vehicles.filter((v) => !(v.loc.kind === "base" && v.loc.baseId === b.id));
+  const where = (v) => {
+    if (v.loc.kind === "base") return `parked at ${esc(baseById(state, v.loc.baseId)?.name)}`;
+    if (v.loc.kind === "party") return "out with a team";
+    const m = state.markers.find((m) => m.key === `vehicle:${v.id}`);
+    return m ? `abandoned near ${esc(tileLabel(state, m.tile))} (reported ${ageText(state, m)})` : "missing (no report yet)";
+  };
+  return `
+    <h3>Parked here</h3>
+    ${here.length ? here.map((v) => `<div class="card small">
+      <div class="spread"><b>${esc(v.name)}</b><span class="muted">+${VEHICLE_TYPES[v.type].capacity} carry</span></div>
+      <div class="row"><span style="width:5.5rem" class="muted"${tip("Low condition means more breakdowns on the road")}>Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
+      <div class="row"><span style="width:5.5rem" class="muted">Fuel</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:3rem">${n0(v.fuel)}/${tank(v)}</span></div>
+      <div class="row" style="margin-top:0.3rem">
+        <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
+        <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && (b.stock.parts || 0) >= 1 && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button>
+      </div></div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
+    ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(v.name)}</b> · ${where(v)}</div>`).join("")}` : ""}`;
+}
+
+// ---------- supply runs ----------
+const STATUS_CHIP = { road: "on", holding: "on", blocked: "off" };
+const SR_SKILLS = ["shooting", "stealth", "scouting", "mechanics", "medicine"];
+
+function baseConvoys(state, b, ui) {
+  if (ui.supplyForm && ui.supplyForm.originId === b.id) return supplyFormView(state, b, ui);
+  const jobs = supplyRuns(state).filter((j) => j.originId === b.id || j.destId === b.id || jobParty(state, j)?.destBaseId === b.id);
+  const others = state.bases.filter((x) => x.id !== b.id);
+  return `<div class="spread" style="gap:1rem;align-items:flex-start"><div class="small muted">Convoy jobs between your own bases. A run takes supplies from the base it leaves, travels the road like any team (events, fuel, vehicle wear) and can bring goods back. Outposts hold back the stock these runs need instead of shipping it to the hub.</div>
+    <button class="primary" data-action="sr-new" data-base="${b.id}" ${others.length ? "" : "disabled"}${tip(others.length ? `Set up a convoy that leaves from ${b.name}` : "You need a second base first: found an outpost")}>New supply run</button></div>
+    ${jobs.length ? jobs.map((j) => jobCard(state, j, b)).join("") : `<div class="muted small" style="margin-top:0.6rem">No supply runs from or to ${esc(b.name)} yet.</div>`}`;
+}
+
+function jobCard(state, j, b) {
+  const st = supplyStatus(state, j);
+  const p = jobParty(state, j);
+  const v = j.vehicleId ? state.vehicles.find((x) => x.id === j.vehicleId) : null;
+  const crew = j.crewIds.map((id) => survivorById(state, id)).filter(Boolean);
+  const awayFromOrigin = (s) => s.alive && !isCaptive(s) && s.location.kind === "base" && s.location.baseId !== j.originId;
+  const crewTxt = crew.map((s) => {
+    const note = !s.alive ? "dead" : isCaptive(s) ? "captive" : !p && awayFromOrigin(s) ? `at ${baseById(state, s.location.baseId)?.name}` : "";
+    return `${first(s)}${note ? ` <span class="danger">(${esc(note)})</span>` : ""}`;
+  }).join(", ");
+  const idle = !p;
+  const ended = j.status === "disbanded" || j.status === "done";
+  const btn = (action, label, t, extra = "") => `<button class="mini" data-action="${action}" data-id="${j.id}" data-base="${b.id}"${extra}${tip(t)}>${label}</button>`;
+  const end = j.atDest === "return" ? `Comes back with ${esc(linesText(j.pickup))}` :
+    j.atDest === "hold" ? `Holds there${j.pickup.length ? `; brings back ${esc(linesText(j.pickup))} when sent home` : ""}` : "Disbands into the destination";
+  return `<div class="card small srjob">
+    <div class="spread"><b>${esc(jobName(state, j))}</b><span class="chip ${STATUS_CHIP[st.key] || ""}">${esc(st.text)}</span></div>
+    <div class="kv" style="margin-top:0.3rem">
+      <div>Crew</div><div>${crewTxt || `<span class="muted">none</span>`} · ${ESCORTS[escortFor(crew.filter((s) => s.alive).length)].name.toLowerCase()} escort</div>
+      <div>Transport</div><div>${v ? `${esc(v.name)} <span class="muted">(fuel ${n0(v.fuel)}/${tank(v)}, condition ${Math.round(v.condition)}%)</span>` : "On foot with hand carts"}</div>
+      <div>Delivers</div><div>${esc(linesText(j.deliver))}</div>
+      <div>At the end</div><div>${end}</div>
+      <div>Schedule</div><div>${j.repeat ? `Every ${j.repeat} day${j.repeat === 1 ? "" : "s"}` : "Once"} · ${STANCES[j.stance]?.name || ""} · ${j.runs || 0} run${j.runs === 1 ? "" : "s"} so far</div>
+      ${j.lastResult ? `<div>Last</div><div class="muted">${esc(j.lastResult)}</div>` : ""}
+    </div>
+    <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
+      ${idle && !ended ? btn("sr-dispatch", "Dispatch now", "Send the convoy now instead of waiting for its departure day. Repeating jobs count the next departure from today.") : ""}
+      ${idle && j.status === "done" ? btn("sr-dispatch", "Run again", "Send this one-off run again now with the same crew and goods") : ""}
+      ${p && p.phase === "holding" ? btn("sr-release", "Load up and come home", "The held convoy loads the pick-up goods and heads back to its home base", ` data-how="return"`) + btn("sr-release", "Disband here", "The crew join this base as staff and the vehicle parks here. The job is kept as a template.", ` data-how="disband"`) : ""}
+      ${!ended && j.repeat ? (j.paused ? btn("sr-resume", "Resume", "Start sending convoys on schedule again") : btn("sr-pause", "Pause", "Stop new departures. A convoy already on the road finishes its trip.")) : ""}
+      ${btn("sr-edit", "Edit", "Change crew, vehicle, goods, schedule or what happens at the destination. Changes apply to the next run.")}
+      ${ended || (idle && crew.some(awayFromOrigin)) ? btn("sr-recreate", "Recreate convoy", "Set the job up again with the crew picked where they are now. From the destination it runs the other way, with deliver and pick-up swapped.") : ""}
+      ${btn("sr-delete", "Delete", p ? "Remove the job. The convoy on the road finishes its trip and comes home." : "Remove the job")}
+    </div>
+  </div>`;
+}
+
+function supplyFormView(state, b, ui) {
+  const f = ui.supplyForm;
+  const dests = state.bases.filter((x) => x.id !== b.id);
+  const dest = baseById(state, f.destId);
+  const est = supplyEstimate(state, f);
+  const here = atBase(state, b.id);
+  const away = f.crew.filter((id) => !here.some((s) => s.id === id)).map((id) => survivorById(state, id)).filter(Boolean);
+  const crewBox = (s, note) => `<label class="${f.crew.includes(s.id) ? "on" : ""}"${tip(note ? `${s.name} is not at ${b.name} right now. They go only if they are back here on departure day.` : `${s.name}: ${ROLES[s.role]?.name || s.role} here. On departure day they leave that work; their current gear goes with them.`)}><input type="checkbox" data-action="sr-crew" data-id="${s.id}" ${f.crew.includes(s.id) ? "checked" : ""}>
+      <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b> <span class="muted small">HP ${n0(s.health)} · ⚔ ${combatPower(s).toFixed(1)} · ${note ? `<span class="danger">${esc(note)}</span>` : ROLES[s.role]?.name || s.role}</span><br>
+      <span class="small">${SR_SKILLS.map((k) => `${SKILL_NAMES[k].slice(0, 5)} ${skill(s, k)}`).join(" · ")}</span><br>
+      <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"}</span></span></label>`;
+  const awayNote = (s) => (!s.alive ? "dead" : isCaptive(s) ? "held captive" : s.location.kind === "base" ? `at ${baseById(state, s.location.baseId)?.name || "another base"}` : "away");
+  const parked = vehiclesAtBase(state, b.id);
+  const jobV = f.vehicleId && !parked.some((x) => x.id === f.vehicleId) ? state.vehicles.find((x) => x.id === f.vehicleId) : null;
+  const lineRows = (list, from) => `${f[list].map((l, i) => `<div class="row srline">
+      <select data-action="sr-line" data-list="${list}" data-i="${i}" data-f="key"${tip("Which supply")}>${SUPPLY_KEYS.map((k) => `<option value="${k}" ${l.key === k ? "selected" : ""}>${SUPPLIES[k].name}</option>`).join("")}</select>
+      <input type="number" min="0" data-action="sr-line" data-list="${list}" data-i="${i}" data-f="qty" value="${l.qty}"${tip(`How many. Weight ${SUPPLIES[l.key]?.weight ?? 1} each.`)}>
+      <span class="muted small">${from ? `${esc(from.name)} has ${n0(from.stock[l.key])}` : ""}</span>
+      <button class="mini" data-action="sr-delline" data-list="${list}" data-i="${i}"${tip("Remove this line")}>✕</button></div>`).join("")}
+    <button class="mini" data-action="sr-addline" data-list="${list}"${tip(list === "deliver" ? "Add another supply to send" : "Add another supply to bring back")}>+ Add line</button>`;
+  return `<h3 style="margin-top:0.2rem">${f.mode === "recreate" ? "Recreate supply run" : f.jobId ? "Edit supply run" : "New supply run"} from ${esc(b.name)}</h3>
+  <div class="grid2">
+    <div>
+      <div class="row">Destination <select data-action="sr-dest"${tip("The base the convoy goes to")}>${dests.map((x) => `<option value="${x.id}" ${x.id === f.destId ? "selected" : ""}>${esc(x.name)}${x.type === "hub" ? " (hub)" : ""}</option>`).join("")}</select></div>
+      <h3>Crew (${f.crew.length})</h3>
+      <div class="small muted" style="margin-bottom:0.3rem">They work here between runs. Their gear goes with them: change it in the <a class="link" data-action="basetab" data-tab="armory"${tip("Open the armory. This form stays open; come back to the Supply runs tab.")}>Armory</a> tab.</div>
+      <div class="crew" style="grid-template-columns:1fr">${here.map((s) => crewBox(s, "")).join("")}${away.map((s) => crewBox(s, awayNote(s))).join("")}${here.length || away.length ? "" : `<span class="muted">Nobody is here.</span>`}</div>
+      <h3>Transport</h3>
+      <div class="choices">
+        <button data-action="sr-vehicle" data-v="" class="${!f.vehicleId ? "active" : ""}"${tip("Hand carts: slower, quiet, carry only what people can (15 each, 8 with a bad back)")}>On foot with hand carts</button>
+        ${parked.map((x) => `<button data-action="sr-vehicle" data-v="${x.id}" class="${f.vehicleId === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road; the tank is topped up from ${b.name}'s fuel on departure. Carries +${VEHICLE_TYPES[x.type].capacity}. If it is missing, broken or short of fuel on departure day, the convoy goes on foot when the load fits, otherwise it waits.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · +${VEHICLE_TYPES[x.type].capacity} carry</span></button>`).join("")}
+        ${jobV ? `<button class="active" data-action="sr-vehicle" data-v="${jobV.id}"${tip("Picked earlier, but not parked here right now")}>${esc(jobV.name)}<span class="hint">Not parked here right now</span></button>` : ""}
+      </div>
+      <h3>Stance</h3>
+      <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="sr-stance" data-v="${k}" class="${f.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
+    </div>
+    <div>
+      <h3>Deliver (from ${esc(b.name)})</h3>
+      ${lineRows("deliver", b)}
+      <label class="small" style="display:block;margin-top:0.3rem"${tip("Off: the run waits until the full amount is in stock. On: it leaves with whatever there is.")}><input type="checkbox" data-action="sr-partial" ${f.allowPartial ? "checked" : ""}> Send what there is if short</label>
+      <h3>At the destination</h3>
+      <div class="row">${Object.entries(AT_DEST).map(([k, a]) => `<button data-action="sr-atdest" data-v="${k}" class="${f.atDest === k ? "active" : ""}"${tip(a.desc)}>${a.name}</button>`).join("")}</div>
+      <h3>Bring back (from ${esc(dest ? dest.name : "the destination")})</h3>
+      ${f.atDest === "disband" ? `<div class="small muted">Nothing: a disbanded convoy stays there.</div>` : lineRows("pickup", dest)}
+      <h3>Schedule</h3>
+      <div class="row">
+        <button data-action="sr-sched" data-v="once" class="${f.schedule === "once" ? "active" : ""}"${tip("One trip, leaving at the next dawn (or press Dispatch now in the list)")}>Once</button>
+        <button data-action="sr-sched" data-v="repeat" class="${f.schedule === "repeat" ? "active" : ""}"${tip("Leaves automatically every few days. If the last convoy is still out, the next one waits for it.")}>Repeat</button>
+        ${f.schedule === "repeat" ? `every <input type="number" min="1" style="width:4rem" data-action="sr-every" value="${f.every}"${tip("Days between departures")}> days` : ""}
+      </div>
+      <h3>Estimate</h3>
+      ${est.error ? `<div class="danger">${esc(est.error[0].toUpperCase() + est.error.slice(1))}.</div>` : `<div class="kv small">
+        <div>Distance</div><div>${est.tiles} tiles ${est.useVehicle ? `by ${esc(est.v.name)}` : "on foot"}</div>
+        <div>Travel</div><div>~${Math.ceil(est.hoursOut)}h each way · whole trip ~${(est.hours / 24).toFixed(1)} days</div>
+        <div${tip("Taken from this base on departure: at least enough for the way out, ideally the whole trip. The way back is topped up at the destination when it can be.")}>Road supplies</div><div>${est.need}–${est.want} food · ${est.need}–${est.want} water${est.useVehicle ? ` · ${est.fuelWant} fuel` : ""}</div>
+        <div${tip("Weight of the delivery against what the crew (and vehicle) can carry")}>Load</div><div class="${est.load > est.capacity ? "danger" : ""}">${Math.ceil(est.load)} / ${est.capacity}</div>
+        <div${tip("Set by crew size. Light (1): fewer zombie troubles, raiders see an easy target. Standard (2-4). Heavy (5+): deters small raids, draws zombies and big raids.")}>Escort</div><div>${ESCORTS[escortFor(f.crew.length)].name}</div>
+      </div>`}
+      ${!est.error && est.warnings.length ? `<div class="small warn" style="margin-top:0.4rem">${est.warnings.map(esc).join("<br>")}</div>` : ""}
+    </div>
+  </div>
+  ${ui.supplyError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.supplyError)}</div>` : ""}
+  <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button data-action="sr-cancel"${tip("Close the form without saving")}>Cancel</button><button class="primary" data-action="sr-save" ${f.crew.length && f.destId ? "" : "disabled"}${tip("Save the job. It leaves at the next dawn, or press Dispatch now in the list.")}>${f.jobId ? "Save changes" : "Create supply run"}</button></div>`;
+}

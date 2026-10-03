@@ -1,0 +1,9 @@
+{
+  "name": "broken-state-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.cjs",
+    "simtest": "node tools/simtest.js"
+  }
+}

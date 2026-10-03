@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Broken State — State Map Prototype</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar"></header>
+    <aside id="left"></aside>
+    <main id="mapwrap">
+      <canvas id="map"></canvas>
+      <div id="legend"></div>
+      <div id="orders" class="hidden"></div>
+      <div id="devpanel" class="hidden"></div>
+      <div id="ctxmenu" class="hidden"></div>
+      <div id="tooltip" class="hidden"></div>
+      <div id="banner" class="hidden"></div>
+    </main>
+    <aside id="right"></aside>
+    <footer id="log"></footer>
+  </div>
+  <div id="modal" class="hidden"></div>
+  <div id="combat" class="hidden">
+    <div id="cbmapwrap"><canvas id="combatmap"></canvas></div>
+    <aside id="cbpanel"></aside>
+  </div>
+  <div id="tip" class="hidden"></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

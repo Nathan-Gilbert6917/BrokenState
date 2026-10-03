@@ -1,0 +1,3 @@
+# Keep line endings as LF on every machine (the tools and agents write LF)
+* text=auto eol=lf
+*.png binary

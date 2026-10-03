@@ -1,0 +1,312 @@
+// Team orders that take time, and the order queue. A team works through its queue one order at a time:
+// move, look around, camp, field repairs, treating someone, a mission on the spot, or going home.
+// When an order finishes and nothing else is queued, the team reports in with an orders card
+// (parties.js awaitOrders), which doubles as the "done, what next?" notice.
+import { log, survivorById } from "./world.js";
+import {
+  MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed,
+} from "./parties.js";
+import { partyVehicle, partyFuel } from "./vehicles.js";
+import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
+import { boatPlan, launchBoat, landBoat, gatherMaterials, GATHER_HOURS } from "./crossing.js";
+import { fieldCraftOptions, fieldCraft } from "./crafting.js";
+
+export const REPAIR_HOURS = 3;   // a roadside repair
+export const SURVEY_HOURS = 2;   // Look around
+export const CAMP_HOURS = [8, 24, null]; // camp choices offered in the team panel (null: until you break it)
+
+// What a queued or running order is called in the panels and the log.
+export function describeOrder(state, o) {
+  switch (o.type) {
+    case "move": return `Move to ${tileLabel(state, o.tile)}`;
+    case "mission": return MISSIONS[o.mission]?.name || o.mission;
+    case "camp": return o.hours ? `Camp ${o.hours}h` : "Camp (until broken)";
+    case "repair": return "Repair vehicle";
+    case "treat": { const s = survivorById(state, o.survivorId); return `Treat ${s ? s.name.split(" ")[0] : "someone"}`; }
+    case "survey": return "Look around";
+    case "home": return "Return home";
+    case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
+    case "gather": return "Gather boat materials";
+    case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
+  }
+  return o.type;
+}
+
+// The order the team is busy with right now.
+export function orderLabel(state, p) {
+  if (p.phase === "task" && p.task) return describeOrder(state, p.task);
+  if (p.phase === "back") return "Return home";
+  if (p.phase === "waiting") return "Waiting for orders";
+  if (p.phase === "holding") return "Holding";
+  const m = MISSIONS[p.mission]?.name || "Team";
+  if (p.phase === "out") return p.mission === "move" ? `Move to ${tileLabel(state, p.dest)}` : `${m} at ${tileLabel(state, p.dest)}`;
+  return m;
+}
+
+export const queueText = (state, p) => (p.orders || []).map((o) => describeOrder(state, o)).join(" → ");
+
+// Teams you can give orders to: waiting or working on the spot (you know where they are), or in radio range.
+export const contactable = (p) => p.owner === "player" && p.kind !== "convoy" && (p.phase === "waiting" || p.phase === "task" || p.radioLive);
+
+// Status of the current order for the panels: label, hours left (null = open-ended) and share done.
+export function orderStatus(state, p) {
+  const label = orderLabel(state, p);
+  let left = null, elapsed = 0;
+  if (p.phase === "task" && p.task) {
+    elapsed = p.task.done;
+    left = p.task.hours != null ? Math.max(0, p.task.hours - p.task.done) : null;
+  } else if (p.phase === "out" || p.phase === "back") {
+    left = hoursLeft(state, p);
+    elapsed = Math.max(0, state.hour - (p.orderStart ?? p.departed ?? state.hour));
+  } else if (p.phase === "waiting") left = 0;
+  const pct = left == null ? null : elapsed + left > 0 ? elapsed / (elapsed + left) : 1;
+  return { label, left, elapsed, pct };
+}
+
+// Hour estimates for every queued order, chained from where the current order ends.
+// Travel uses the same stepping as real movement (travelHours); missions on the spot have no fixed time.
+export function queueEstimate(state, p) {
+  let tile = p.dest ?? partyTile(p);
+  let vehicle = p.vehicle;
+  let fuel = vehicle ? partyFuel(state, p) : 0;
+  if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
+  // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
+  let owed = Math.min(0, p.progress || 0);
+  if ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) {
+    const cur = travelHours(state, p.path.slice(p.idx), { vehicle, speed: partySpeed(p), progress: p.progress, fuel });
+    tile = p.path[p.path.length - 1];
+    vehicle = cur.vehicle;
+    fuel = cur.fuelLeft;
+    owed = 0;
+  }
+  return (p.orders || []).map((o) => {
+    let hours = null;
+    if (o.type === "move") {
+      const res = planPath(state, tile, o.tile, vehicle);
+      if (res) {
+        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed });
+        owed = 0;
+        hours = t.hours;
+        vehicle = t.vehicle;
+        fuel = t.fuelLeft;
+        tile = o.tile;
+      }
+    } else if (o.type === "camp") hours = o.hours;
+    else if (o.type === "repair") hours = REPAIR_HOURS;
+    else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
+    else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
+    else if (o.type === "gather") hours = GATHER_HOURS;
+    else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
+    else if (o.type === "cross") {
+      // Build and crossing hours were fixed when the order was given; the team ends up across the water.
+      hours = o.build + o.cross;
+      tile = o.tile;
+      if (o.mode === "leave") { vehicle = false; fuel = 0; }
+    }
+    return { order: o, label: describeOrder(state, o), hours };
+  });
+}
+
+// Where the team will be once its current and queued moves are done (start of a queued move).
+export function queueEndTile(state, p) {
+  const moves = (p.orders || []).filter((o) => o.type === "move" || o.type === "cross");
+  return moves.length ? moves[moves.length - 1].tile : p.dest ?? partyTile(p);
+}
+
+// ---------- giving orders ----------
+// Start now if the team is waiting for orders, otherwise add it to the end of the queue.
+export function queueOrder(state, p, o) {
+  p.orders = p.orders || [];
+  if (p.phase === "waiting") return startOrder(state, p, o);
+  p.orders.push(o);
+  return `Queued: ${describeOrder(state, o)} (after ${p.orders.length === 1 ? "the current order" : `${p.orders.length - 1} more`}).`;
+}
+
+export function removeQueued(state, p, i) {
+  if (!p.orders || i < 0 || i >= p.orders.length) return "";
+  const [o] = p.orders.splice(i, 1);
+  return `Removed from the queue: ${describeOrder(state, o)}.`;
+}
+
+// Pick the queue back up after the team was stopped on the way.
+export function resumeQueue(state, p) {
+  if (!p.orders || !p.orders.length) return "Nothing queued.";
+  const o = p.orders.shift();
+  return startOrder(state, p, o);
+}
+
+// Called by awaitOrders when the current order finished where it was meant to: run the next one.
+export function continueQueue(state, p, text) {
+  if (!p.orders || !p.orders.length) return false;
+  const o = p.orders.shift();
+  if (text) log(state, `${teamName(state, p)}: ${text}`, "info");
+  log(state, `${teamName(state, p)}: next order, ${describeOrder(state, o)}.`, "info");
+  startOrder(state, p, o);
+  return true;
+}
+
+// Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
+export function startOrder(state, p, o) {
+  // An orders card still open for this team is out of date now.
+  for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders && state.cards[i].partyId === p.id) state.cards.splice(i, 1);
+  const fail = (msg) => {
+    if (p.phase === "waiting") awaitOrders(state, p, msg);
+    return msg;
+  };
+  // A boat already on the water cannot be called back: the order waits until the team lands.
+  if (p.phase === "task" && p.task?.afloat) {
+    p.orders = p.orders || [];
+    p.orders.unshift(o);
+    return `On the water; after landing: ${describeOrder(state, o)}.`;
+  }
+  if (o.type !== "move" && p.phase === "task") p.task = null; // switching jobs on the spot
+  switch (o.type) {
+    case "move": {
+      const msg = orderMove(state, p, o.tile);
+      return p.phase === "out" && p.dest === o.tile ? msg : fail(msg);
+    }
+    case "mission": {
+      const opt = orderOptions(state, p).find((x) => x.mission === o.mission);
+      if (!opt || opt.disabled) return fail(`${MISSIONS[o.mission]?.name || o.mission}: ${opt ? opt.disabled : "not possible here"}.`);
+      return giveOrder(state, p, o.mission) || `${teamName(state, p)}: ${MISSIONS[o.mission].name}.`;
+    }
+    case "survey":
+      return startOrder(state, p, { type: "mission", mission: "survey" });
+    case "camp":
+      startTask(state, p, { type: "camp", hours: o.hours ?? null });
+      return `The team makes camp${o.hours ? ` for ${o.hours} hours` : " until you break it"}.`;
+    case "repair": {
+      const r = repairInfo(state, p);
+      if (!r.ok) return fail(`Repair: ${r.reason}`);
+      startTask(state, p, { type: "repair", hours: REPAIR_HOURS });
+      return `Working on the ${r.v.name} (${REPAIR_HOURS}h, about +${r.gain}%).`;
+    }
+    case "treat": {
+      const s = survivorById(state, o.survivorId);
+      const info = fieldTreatInfo(state, p, s);
+      if (!info.ok) return fail(`Treat: ${info.reason}`);
+      startTask(state, p, { type: "treat", survivorId: o.survivorId, hours: info.hours || FIELD_TREAT_HOURS });
+      return `Treating ${s.name.split(" ")[0]} (${info.hours || FIELD_TREAT_HOURS}h).`;
+    }
+    case "home":
+      startReturn(state, p);
+      return "The team heads home.";
+    case "craft": {
+      // Field crafting (crafting.js): the hours pass first, then the item is made from the team's supplies.
+      const opt = fieldCraftOptions(state, p).find((x) => x.key === o.recipe);
+      if (!opt || !opt.ok) return fail(`Craft: ${opt ? opt.reason : "not possible in the field"}.`);
+      startTask(state, p, { type: "craft", recipe: o.recipe, hours: opt.hours });
+      return `Crafting ${opt.name.toLowerCase()} (${opt.hours}h).`;
+    }
+    case "gather":
+      startTask(state, p, { type: "gather", hours: GATHER_HOURS });
+      return `The team searches the shore for boat materials (${GATHER_HOURS}h).`;
+    case "cross": {
+      const from = partyTile(p);
+      const plan = boatPlan(state, p, from, o.tile, o.mode);
+      if (!plan.crossing) return fail(`Boat: ${plan.reason}`);
+      // Use the hours and materials fixed when the order was given (the queue estimate counted on them).
+      const mats = o.mats || plan.mats;
+      const short = Object.entries(mats).filter(([k, q]) => plan.have[k] < q);
+      if (short.length) return fail(`Boat: needs ${short.map(([k, q]) => `${q} ${k} (have ${plan.have[k]})`).join(", ")}. Gather materials on the shore or bring scrap.`);
+      if (!plan.ok && !Object.keys(plan.missing).length) return fail(`Boat: ${plan.reason}`);
+      const build = o.build ?? plan.build, cross = o.cross ?? plan.cross;
+      startTask(state, p, { type: "cross", tile: o.tile, from, mode: plan.mode, mats, build, cross, hours: build + cross, risk: plan.risk });
+      p.dest = o.tile; // finished only once the team stands on the far shore (a stop or failure keeps the queue on hold)
+      return `Building a boat to cross to ${tileLabel(state, o.tile)} (${build}h, then ${cross}h on the water).`;
+    }
+  }
+  return "";
+}
+
+// Work on the spot: the team stays on its tile until the task is done (or you stop it).
+export function startTask(state, p, task) {
+  const tile = partyTile(p);
+  p.phase = "task";
+  p.path = [tile];
+  p.idx = 0;
+  p.progress = Math.min(0, p.progress);
+  p.dest = tile;
+  p.task = { ...task, done: 0 };
+  p.orderStart = state.hour;
+}
+
+// Hourly, from playerPartyHour.
+export function taskHour(state, p) {
+  const t = p.task;
+  if (!t) return awaitOrders(state, p, "");
+  t.done += 1;
+  if (t.type === "camp") campHour(state, p);
+  if (t.type === "cross" && !t.afloat && t.done >= t.build) {
+    const err = launchBoat(state, p);
+    if (err) return awaitOrders(state, p, err);
+  }
+  if (!state.parties.includes(p)) return;
+  if (t.hours != null && t.done >= t.hours) finishTask(state, p);
+}
+
+// Stop the current task now (break camp, or give up on a repair/treatment before it is done).
+export function stopTask(state, p) {
+  if (p.phase !== "task" || !p.task) return "The team is not working on anything here.";
+  if (p.task.type === "camp") return finishTask(state, p);
+  if (p.task.type === "cross" && p.task.afloat) return "The boat is already on the water.";
+  const label = describeOrder(state, p.task);
+  awaitOrders(state, p, `${label} stopped.`);
+  return `${label} stopped.`;
+}
+
+function finishTask(state, p) {
+  const t = p.task;
+  let text = "";
+  if (t.type === "survey") text = survey(state, p, 0.25, false);
+  else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}`;
+  else if (t.type === "repair") text = fieldRepair(state, p);
+  else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);
+  else if (t.type === "gather") text = gatherMaterials(state, p, partyTile(p));
+  else if (t.type === "craft") text = fieldCraft(state, p, t.recipe);
+  else if (t.type === "cross") text = landBoat(state, p);
+  awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
+  return text;
+}
+
+const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `${m.name.split(" ")[0]} ${Math.floor(m.health)}`).join(", ")}.`;
+
+// Resting in camp: the hurt heal at twice the rate of a base without a hospital, spirits lift a little.
+// An infected wound does not heal in camp (it needs meds).
+export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected ? (BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24 : 0);
+function campHour(state, p) {
+  for (const s of partyMembers(state, p)) {
+    s.health = Math.min(100, s.health + campHealPerHour(state, p, s));
+    s.mood = Math.min(100, (s.mood || 0) + 0.3);
+  }
+}
+
+// ---------- roadside repairs ----------
+const carried = (p, key) => Math.max(0, p.supplies[key] || 0) + Math.max(0, p.cargo.supplies[key] || 0);
+function take(p, key, qty) {
+  const fromCargo = Math.min(qty, Math.max(0, p.cargo.supplies[key] || 0));
+  p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) - fromCargo;
+  p.supplies[key] = (p.supplies[key] || 0) - (qty - fromCargo);
+}
+
+// One part and a few hours: worth more with a good mechanic. A garage at a base does better (vehicles.js repair).
+export function repairInfo(state, p) {
+  const v = partyVehicle(state, p);
+  const mech = bestSkill(state, p, "mechanics");
+  const gain = Math.round(8 + mech * 1.5);
+  let reason = "";
+  if (!v) reason = "No vehicle with the team.";
+  else if (v.condition >= 100) reason = `The ${v.name} is in top shape.`;
+  else if (carried(p, "parts") < 1) reason = "Needs 1 part carried.";
+  return { ok: !reason, reason, v, gain, mech, hours: REPAIR_HOURS, parts: carried(p, "parts") };
+}
+
+function fieldRepair(state, p) {
+  const r = repairInfo(state, p);
+  if (!r.ok) return `Repair: ${r.reason}`;
+  take(p, "parts", 1);
+  const before = r.v.condition;
+  r.v.condition = Math.min(100, r.v.condition + r.gain);
+  return `Roadside repair on the ${r.v.name}: condition ${Math.round(before)}% → ${Math.round(r.v.condition)}% (1 part).`;
+}

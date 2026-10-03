@@ -1,0 +1,14 @@
+# Dependencies and build output (for the desktop app wrapper, when added)
+node_modules/
+dist/
+out/
+build/
+
+# Logs and OS files
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local, per-machine Claude Code settings
+.claude/settings.local.json
