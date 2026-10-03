@@ -8,6 +8,9 @@ import {
 import { partyFuel, useFuel, partyVehicle, breakdownChance } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
+import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { hordeScore, reduceHorde } from "./hordes.js";
+import { travelEffects } from "./weather.js";
 
 // ---------- helpers ----------
 function check(state, p, key, dc) {
@@ -151,14 +154,25 @@ const EVENTS = [
     },
   },
   {
-    id: "nest", weight: 2, when: (st, p, t) => st.grid.within(t.id, 2).some((id) => st.tiles[id].nest),
+    id: "hive", weight: 2, when: (st, p, t) => st.grid.within(t.id, 2).some((id) => st.tiles[id].hive),
     card: (st, p, t) => {
-      const nestId = st.grid.within(t.id, 2).find((id) => st.tiles[id].nest);
+      const hiveTile = st.grid.within(t.id, 2).find((id) => st.tiles[id].hive);
+      p.seen.set(hiveTile, snapshot(st, hiveTile)); // they saw it: it goes on the map when the team reports
       return {
-        title: "A nest",
-        text: "The team finds a nest: a building packed with sleeping dead. Hordes are born here.",
+        title: "A hive",
+        text: "The team comes upon an infestation hive: a mound of fused bodies, warm and pulsing, the dead packed around it. Hordes are born here. Destroying it takes a real assault (the Destroy hive mission).",
         choices: [
-          burns(st, p, 5, { label: "Burn it (5 fuel)", hint: hint(st, p, "stealth", 10), resolve: (s) => { if (check(s, p, "stealth", 10).ok) { s.tiles[nestId].nest = false; log(s, "A nest was destroyed.", "good"); return "The nest burns. Infection here will slowly fade."; } return `It catches, but they wake. ${injureRandom(s, p, 20, 50, "burning a nest")}`; } }),
+          burns(st, p, 5, { label: "Set fires at its edge (5 fuel)", hint: `${hint(st, p, "stealth", 10)}. Burns part of its guard and its stores; it does not destroy the hive`, resolve: (s) => {
+            const hv = hiveAt(s, hiveTile);
+            if (!hv) return "The hive is gone already.";
+            if (check(s, p, "stealth", 10).ok) {
+              const guard = s.hordes.find((h) => h.role === "guard" && h.hive === hv.id);
+              if (guard) reduceHorde(s, guard, Math.round(guard.size * 0.25));
+              hv.res = Math.max(0, hv.res - 10);
+              return "The fires take. Part of its brood burns, and the hive is set back.";
+            }
+            return `They wake before the fire catches. ${injureRandom(s, p, 20, 50, "setting fire to a hive")}`;
+          } }),
           { label: "Mark it and move on", resolve: () => "Noted on the map." },
         ],
       };
@@ -215,7 +229,7 @@ const EVENTS = [
       title: "Abandoned supply truck",
       text: "A delivery truck sits on its rims, back door still shut.",
       choices: [
-        { label: "Search it (2 hours)", resolve: (s) => { delay(p, 2); const k = s.rng.pick(["food", "fuel", "scrap", "meds", "ammo"]); const q = { food: 12, fuel: 8, scrap: 15, meds: 3, ammo: 30 }[k]; return s.rng.chance(0.2) ? `Something was waiting inside. ${injureRandom(s, p, 10, 30, "searching a truck")}` : `Found ${addCargo(s, p, k, q)}.`; } },
+        { label: "Search it (2 hours)", resolve: (s) => { delay(p, 2); const k = s.rng.pick(["food", "fuel", "scrap", "meds", "ammo"]); const q = { food: 12, fuel: 5, scrap: 15, meds: 3, ammo: 30 }[k]; /* fuel is scarce */ return s.rng.chance(0.2) ? `Something was waiting inside. ${injureRandom(s, p, 10, 30, "searching a truck")}` : `Found ${addCargo(s, p, k, q)}.`; } },
         { label: "Leave it", resolve: () => "Not worth the risk." },
       ],
     }),
@@ -322,7 +336,7 @@ export function rollTravelEvent(state, p, tileId) {
   if (v && state.rng.chance(breakdownChance(v))) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
-  chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1);
+  chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state).events; // storms and blizzards: more trouble on the road (weather.js)
   if (state.bases.some((b) => b.tile === tileId)) return null;
   // Conflicts with other people (or a surge of the dead): see conflicts.js. Roadblocks and ambushes live there.
   const conflict = rollConflict(state, p, tileId);
@@ -379,14 +393,19 @@ function breakdownCard(state, p, v) {
   };
 }
 
+// The horde's score (hordes.js hordeScore) sets how hard it is to hide from and how badly a fight goes; on a
+// hive's land the dead are tougher still (hives.js zombieToughness).
 function hordeCard(state, p, horde) {
   const drive = () => p.vehicle && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything
+  const score = hordeScore(horde.size);
+  const tough = 1 + zombieToughness(state, horde.tile) * 0.35;
+  const dc = 5 + Math.round(score / 3);
   return {
     title: `Horde of ${horde.size}`,
-    text: `A horde of about ${horde.size} is moving across ${tileLabel(state, horde.tile)}, right in your path.`,
+    text: `A horde of about ${horde.size} (score ${score}${horde.bosses ? `, a ${BOSS_NAMES.horde} lumbering at its head` : ""}) is moving across ${tileLabel(state, horde.tile)}, right in your path.${tough > 2 ? " This close to a hive the dead are much tougher." : ""}`,
     partyId: p.id,
     choices: [
-      { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", 6 + Math.round(horde.size / 25)), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", 6 + Math.round(horde.size / 25)).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },
+      { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", dc), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", dc).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },
       {
         label: "Outrun it",
         get hint() { return drive() ? "By vehicle: safe, uses 4 fuel" : p.vehicle ? "Less than 4 fuel: the vehicle cannot outrun it. On foot: risky" : "On foot: risky"; },
@@ -399,12 +418,15 @@ function hordeCard(state, p, horde) {
       {
         label: "Fight", hint: "Very dangerous", resolve: (s) => {
           const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0);
-          horde.size = Math.max(0, horde.size - Math.round(power * 2));
+          horde.size = Math.max(0, horde.size - Math.round((power * 2) / tough));
           // Too few left to be a horde: it is gone from the map.
           if (horde.size < 5 && s.hordes.includes(horde)) s.hordes.splice(s.hordes.indexOf(horde), 1);
           takeSupply(p, "ammo", 40);
-          const first = injureRandom(s, p, 30, 80, "fighting a horde");
-          return `${first} ${injureRandom(s, p, 20, 60, "fighting a horde")}`.trim();
+          // One wound for a small horde, two for a medium one, three for a large one (and one more for a Wallbreaker).
+          const hits = Math.min(4, 1 + (score >= 6 ? 1 : 0) + (score >= 13 ? 1 : 0) + (horde.bosses ? 1 : 0));
+          const out = [];
+          for (let i = 0; i < hits && partyMembers(s, p).length; i++) out.push(injureRandom(s, p, i ? 20 : 30, (i ? 60 : 80) * Math.min(1.5, tough), "fighting a horde"));
+          return out.join(" ").trim();
         },
       },
     ],

@@ -5,6 +5,7 @@ import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents
 import { BUILDINGS } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
+import { isSick } from "./health.js";
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -80,7 +81,8 @@ export const isSevere = (s) => s.alive && s.health < SEVERE_BELOW;
 export function patients(state, base, h = activeHospital(state, base)) {
   if (!h.beds) return [];
   // Residents: the people here plus (hub) trade-route escorts waiting between trips.
-  return residents(state, base.id).filter((s) => isHurt(s) && !(s.role === "medic" && s.location.kind === "base")).sort((a, b) => (b.woundInfected ? 1 : 0) - (a.woundInfected ? 1 : 0) || a.health - b.health).slice(0, h.beds);
+  // The sick (health.js conditions) get beds too: they recover faster in one.
+  return residents(state, base.id).filter((s) => (isHurt(s) || isSick(s)) && !(s.role === "medic" && s.location.kind === "base")).sort((a, b) => (b.woundInfected ? 1 : 0) - (a.woundInfected ? 1 : 0) || a.health - b.health).slice(0, h.beds);
 }
 
 // Passive heal per hour for one survivor at a base.
@@ -93,7 +95,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (isSevere(s)) perDay *= bed && hosp.tier > 0 ? hosp.severe : SEVERE_NO_BED;
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
-  if (base.hungerDays > 0 && perDay > 0) perDay = 0;
+  if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
   return perDay / 24;
 }
 

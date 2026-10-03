@@ -99,6 +99,8 @@ table.t th { color: var(--muted); font-weight: 500; }
 
 /* hover descriptions */
 #tip { position: fixed; z-index: 50; pointer-events: none; max-width: 22rem; background: #0f1114; border: 1px solid var(--accent); border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.85rem; line-height: 1.4; color: var(--text); box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+#tip.pre { white-space: pre-line; max-width: 28rem; }
+#topbar .wx { margin-left: 0.5rem; white-space: nowrap; cursor: help; }
 /* Banners at the top of the map: "Paused" and move mode. They sit between the running-orders list and the dev panel. */
 #banner { position: absolute; top: 0.6rem; left: 0.6rem; right: 0.6rem; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; pointer-events: none; }
 /* The banner spans the top of the map; the orders list and dev panel sit below it while it shows. */
@@ -306,3 +308,14 @@ body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #bann
 #timelapse .tl-days span:first-child { transform: none; }
 #timelapse .tl-days span:last-child { transform: translateX(-100%); }
 @media (max-width: 1100px) { #timelapse .tl-caps { width: 16rem; } #timelapse .tl-info { width: 16rem; } }
+
+/* Trade window, radio panel, caravan planner (ui/tradewindow.js) */
+.tradebox .tw-cols > div { min-width: 0; }
+.tw-step { white-space: nowrap; }
+.tw-step button.mini { padding: 0.05rem 0.3rem; }
+input.tw-qty { width: 3.6rem; margin: 0 0.15rem; }
+.tw-totals { margin-top: 0.6rem; padding: 0.5rem 0.6rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.tw-balance { position: relative; height: 0.6rem; margin: 0.35rem 0; background: #5a2f2f; border-radius: 4px; overflow: hidden; }
+.tw-balance > i { display: block; height: 100%; background: var(--good); }
+.tw-balance > b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; opacity: 0.7; }
+button.danger { border-color: var(--danger); }

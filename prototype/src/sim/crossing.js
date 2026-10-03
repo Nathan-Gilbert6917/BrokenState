@@ -12,6 +12,7 @@ import {
   carried, takeSupply, wipeIfEmpty,
 } from "./parties.js";
 import { partyVehicle } from "./vehicles.js";
+import { travelEffects } from "./weather.js";
 
 // Cost model. Scrap = frame + per person + 1 per `loadPerScrap` carry units (+ raft); hours likewise.
 export const BOAT = {
@@ -94,7 +95,7 @@ export function boatTip(state, plan, to) {
   const leave = plan.mode === "leave" ? ` The ${plan.vehicle.name} stays on this shore (marked on the map, recover it later).` : "";
   return `Build a boat and cross to ${tileLabel(state, to)}. ${rows}. Mechanics ${plan.mech}: -${Math.round(plan.cut * 100)}% build time. ` +
     `Total: ${matsText(plan.mats)} (have ${plan.have.scrap} scrap${plan.mats.parts ? `, ${plan.have.parts} parts` : ""}); ${plan.build}h building + ${plan.cross}h crossing. ` +
-    `${Math.round(plan.risk * 100)}% risk of a mishap on the water.${leave}${plan.ok ? "" : ` ${plan.reason}`}`;
+    `${Math.round(plan.risk * 100)}% risk of a mishap on the water${travelEffects(state).boat > 1 ? ` in calm weather (${travelEffects(state).boat}× in today's weather)` : ""}.${leave}${plan.ok ? "" : ` ${plan.reason}`}`;
 }
 
 // The order the panels queue: hours and materials are fixed when it is given (so queue estimates hold).
@@ -126,7 +127,7 @@ export function landBoat(state, p) {
   for (const id of state.grid.within(t.tile, sightRadius(state, p))) p.seen.set(id, snapshot(state, id));
   const rng = state.rng;
   let mishap = "";
-  if (rng.chance(t.risk ?? 0.05)) {
+  if (rng.chance(Math.min(0.6, (t.risk ?? 0.05) * travelEffects(state).boat))) { // storms and high wind on the water (weather.js)
     const v = partyVehicle(state, p);
     const roll = rng.int(0, v && t.mode === "raft" ? 2 : 1);
     if (roll === 0) {

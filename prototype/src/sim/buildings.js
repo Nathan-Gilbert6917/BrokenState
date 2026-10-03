@@ -1,6 +1,7 @@
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
 import { log, atBase, skill, newId } from "./world.js";
 import { SKILL_NAMES } from "./data.js";
+import { workFactor } from "./health.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -9,16 +10,31 @@ export const RECIPES = {
 };
 
 export const BUILDINGS = {
-  farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 8, desc: "Room for 2 farmers at full output. Extra farmers work at 30%." },
+  farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: the hub 6, an outpost 2." },
   ammo_bench:   { name: "Ammo bench",     cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", desc: "Workshop station. One operator turns scrap into ammo." },
   med_station:  { name: "Med station",    cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
   machine_shop: { name: "Machine shop",   cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
   bunkhouse:    { name: "Bunkhouse",      cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
-  walls:        { name: "Walls",          cost: { scrap: 25 },            hours: 36, max: 3, desc: "+3 wall strength (each point adds 2 defense)." },
+  walls:        { name: "Walls",          cost: { scrap: 25 },            hours: 36, max: 3, desc: "+3 wall strength (each point adds 2 defense against raids, and holds back 18 more of a horde)." },
+  // Defences against hordes (defences.js): they raise the size of horde the base holds out, and show up on the
+  // base's battle map when the dead break in anyway.
+  barricades:   { name: "Barricades",       cost: { scrap: 8 },             hours: 10, max: 3, defence: true, desc: "Cars, timber and sandbags behind the walls: the base holds back 12% more of a horde each, and they are full cover on the battle map if the dead break in. One is wrecked in every break-in fight; a Wallbreaker smashes one each time it attacks." },
+  spike_pits:   { name: "Spike pits",       cost: { scrap: 6 },             hours: 8,  max: 2, defence: true, desc: "Sharpened stakes in covered pits on the approach. One use: the next horde to attack loses 7% + 4 of the dead per pit before it reaches the walls, and the pits are on the battle map (each of the dead that steps in is hurt)." },
+  trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
+  gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, plus two more barricades on the battle map. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
+  floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
   watchtower:   { name: "Watchtower",     cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner." },
   radio:        { name: "Radio station",  cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
+  // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
+  relay:        { name: "Radio relay",    cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
   garage:       { name: "Garage",         cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed." },
-  storehouse:   { name: "Storehouse",     cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked storage: raiders steal half as much from this base." },
+  storehouse:   { name: "Storehouse",     cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked storage: raiders steal half as much from this base, and stored food spoils 25% slower." },
+  // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
+  well:         { name: "Well",           cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
+  rain_catcher: { name: "Rain catcher",   cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
+  cistern:      { name: "Cistern",        cost: { scrap: 25 },            hours: 30, max: 3, desc: "+150 water capacity (the hub holds 80 without one, an outpost 40)." },
+  cellar:       { name: "Root cellar",    cost: { scrap: 15 },            hours: 20, max: 1, desc: "Cool storage: stored food spoils half as fast." },
+  greenhouse:   { name: "Greenhouse",     cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Hospital tiers (family "hospital"): each one upgrades the one below and replaces it when finished.
   // med: beds = patients that get the bonus, heal = extra health per day in a bed, eff = meds multiplier,
   // treat = health per manual treatment before Medicine, staff = Medic-role people needed to run it,
@@ -42,7 +58,8 @@ export const BUILDINGS = {
 export const count = (base, type) => base.buildings.filter((b) => b.type === type).length;
 export const baseWalls = (base) => (base.type === "hub" ? 3 : 1) + count(base, "walls") * 3;
 export const baseBeds = (base) => (base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
-export const farmSlots = (base) => count(base, "farm_plot") * 2;
+// Crop plots (farming.js plotLimit): hub 4, outpost 2, +2 per Farm plot building.
+export const farmSlots = (base) => (base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 
 export function addBuilding(base, type) {
@@ -58,7 +75,8 @@ export function addBuilding(base, type) {
 
 export function stationOperator(state, base, st) {
   // Patients in a hospital bed (s.inBed, set hourly by medical.js) do not work.
-  return atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id && !s.inBed) || null;
+  // Someone too sick to work (health.js) leaves the station idle.
+  return atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id && !s.inBed && workFactor(s) >= 0.35) || null;
 }
 
 // Operators without a valid station are moved to the first free one.
@@ -113,8 +131,8 @@ export function stationStatus(state, base, st) {
   const r = RECIPES[recipe];
   const op = stationOperator(state, base, st);
   if (!op) {
-    const sick = atBase(state, base.id).some((s) => s.role === "operate" && s.station === st.id && s.inBed);
-    return { op: null, running: false, reason: sick ? "Operator in a hospital bed" : "No operator", recipe, out: {} };
+    const sick = atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id);
+    return { op: null, running: false, reason: sick ? (sick.inBed ? "Operator in a hospital bed" : "Operator too sick to work") : "No operator", recipe, out: {} };
   }
   const missing = Object.entries(r.in).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k]) => k);
   const out = recipeOutput(op, recipe, base, state);
@@ -145,6 +163,7 @@ export function canBuild(state, base, type) {
     if (have >= def.tier) return { ok: false, reason: "Already built (or a better tier)" };
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
+  if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
   for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
@@ -174,7 +193,7 @@ export function cancelBuild(state, base, id) {
 }
 
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + 1 + skill(s, "mechanics") * 0.03, 0);
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s), 0);
 }
 
 // Builders work on the first job in the queue, hour by hour.
@@ -196,12 +215,14 @@ export function buildingSummary(state, base) {
   return [
     ["Defense from walls", `+${baseWalls(base) * 2}`],
     ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}`],
-    ["Farm slots", `${farmSlots(base)}`],
+    ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
     ["Vision", `${(base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
-    ["Radio", base.radio ? "Yes" : "No"],
+    ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
     ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],
+    ["Water", `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
+    ["Food keeping", count(base, "cellar") && count(base, "storehouse") ? "Cellar and storehouse: spoils 62% slower" : count(base, "cellar") ? "Root cellar: spoils half as fast" : count(base, "storehouse") ? "Storehouse: spoils 25% slower" : "Spoils about 1.2% a day"],
     ["Medical", (() => {
       const h = base.buildings.find((x) => BUILDINGS[x.type].family === "hospital");
       if (!h) return "No hospital (severe wounds heal slowly)";

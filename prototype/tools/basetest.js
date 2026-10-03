@@ -7,7 +7,8 @@ import {
   checkGameOver, removeBase, renameSurvivor, assignStartingRoles, combatPower,
 } from "../src/sim/world.js";
 import { GEAR, TRAITS, FIRST_NAMES } from "../src/sim/data.js";
-import { basesDaily, farmOutput, scavengeOutput, supplyLine, hungerDamage, foodForecast, GREEDY_SCAV } from "../src/sim/economy.js";
+import { basesDaily, farmOutput, scavengeOutput, supplyLine, hungerDamage, foodForecast, GREEDY_SCAV, eatPerDay, spoilRate } from "../src/sim/economy.js";
+import { careToday } from "../src/sim/farming.js";
 import { addBuilding, queueBuild, cancelBuild, canBuild, stations, stationStatus, assignStations, constructionHour, BUILDINGS } from "../src/sim/buildings.js";
 import { treatAtBase, treatAtBaseInfo, fieldTreatInfo, treatAnywhere, medicalHour, healRatePerHour } from "../src/sim/medical.js";
 import { craftOutputText, CRAFTS, medKitBonus, makeItem, queueCraft, cancelCraft } from "../src/sim/crafting.js";
@@ -195,11 +196,17 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     h.stock.food = 300;
     const hubScrap = h.stock.scrap;
     check(supplyLine(st, base).strength === 0, `seed ${sd}: the outpost has no land route`);
-    const mouths = residents(st, h.id).length;
-    const farm = farmOutput(st, h) + (scavengeOutput(st, h).food || 0);
+    // The same day without the outpost (same seed, everyone at the hub resting: no harvests, no finds): the hub's
+    // food must end the day exactly the same (crops ripen in batches now, and stored food spoils a little).
+    const twin = W(sd);
+    const th = hub(twin);
+    th.stock.food = 300;
+    for (const s of atBase(twin, th.id)) s.role = "rest";
+    for (const s of atBase(st, h.id)) s.role = "rest";
+    basesDaily(twin);
     basesDaily(st);
     st.cards.length = 0;
-    check(near(h.stock.food, Math.round((300 + farm - mouths) * 10) / 10, 0.11), `the hub's food is not drained by the cut-off outpost (${h.stock.food})`);
+    check(near(h.stock.food, th.stock.food, 0.11), `the hub's food is not drained by the cut-off outpost (${h.stock.food} vs ${th.stock.food} without it)`);
     check(base.stock.scrap >= 40, `the outpost keeps its stock (${base.stock.scrap} scrap)`);
     check(h.stock.scrap < hubScrap + 20, "nothing was shipped into the void");
     check(logHas(st, /Test Outpost is cut off/), "the log says the outpost is cut off");
@@ -316,9 +323,13 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   h.stock.food = 100; h.stock.meds = 20;
   check(residents(st, h.id).includes(e) && !atBase(st, h.id).includes(e), "a waiting escort is a hub resident but not base staff");
   check(near(foodForecast(st, h), farmOutput(st, h) - 6), "the food forecast counts the escort");
-  const farm = farmOutput(st, h), scavFood = scavengeOutput(st, h).food || 0;
+  // Nobody farms or scavenges today (no harvest, no finds): the stock drops by six mouths, then spoils a little.
+  for (const s of atBase(st, h.id)) s.role = "rest";
+  const eat = eatPerDay(st, h);
+  check(near(eat / 6, eat / residents(st, h.id).length) && residents(st, h.id).length === 6, `six mouths eat (${eat})`);
   basesDaily(st);
-  check(near(h.stock.food, Math.round((100 + farm + scavFood - 6) * 10) / 10, 0.11), `the hub feeds the escort (${h.stock.food})`);
+  const left = 100 - eat;
+  check(Math.abs(h.stock.food - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${h.stock.food}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
   const hp = e.health;
   for (let i = 0; i < 24; i++) medicalHour(st);
   check(e.health > hp, `the escort heals at the hub (${hp.toFixed(1)} → ${e.health.toFixed(1)})`);
@@ -366,10 +377,10 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check(stationStatus(st, h, stn).out.meds === 2, `a staffed clinic adds +1 (${stationStatus(st, h, stn).out.meds})`);
 
   ppl.forEach((s) => { s.role = "farm"; s.station = null; });
-  const base = farmOutput(st, h);
-  ppl[5].skills.farming = 20; // the expert is last in the list, with 4 slots for 6 farmers
-  const bonus = (2.2 + 20 * 0.12) / 2.2;
-  check(farmOutput(st, h) > base + 2.2 * (bonus - 1) * 0.9 * 0.7, `the best farmer gets a full slot (${base.toFixed(2)} → ${farmOutput(st, h).toFixed(2)})`);
+  const base = careToday(st, h);
+  ppl[5].skills.farming = 20; // the expert is last in the list: the best farmers tend first (farming.js)
+  const after = careToday(st, h);
+  check(after.avgSkill > base.avgSkill && after.care > base.care, `the best farmer counts for the crop care (${base.care.toFixed(2)} → ${after.care.toFixed(2)})`);
 
   ppl.forEach((s) => { s.role = "guard"; s.station = null; });
   const quiet = baseHeat(st, h);
@@ -527,8 +538,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   ppl.forEach((s) => (s.role = "scavenge"));
   h.stock.food = 9999;
   let n = 0;
-  while (!logHas(st, /was hurt scavenging near/) && n++ < 300) { ppl.forEach((s) => { if (s.alive) s.health = 100; }); basesDaily(st); st.cards.length = 0; }
-  check(logHas(st, /was hurt scavenging near .* \(health \d+ → \d+\)/), "a scavenging injury is logged");
+  // Scavenging around a base brings cuts and sprains (health.js), logged with where it happened.
+  while (!logHas(st, /scavenging around the base at/) && n++ < 300) { ppl.forEach((s) => { if (s.alive) { s.health = 100; s.conditions = []; } }); h.stock.water = 80; basesDaily(st); st.cards.length = 0; }
+  check(logHas(st, /got a (deep cut|sprain) scavenging around the base at /), "a scavenging injury is logged");
   Object.assign(h.stock, { scrap: 50, meds: 5 });
   ppl.forEach((s) => (s.skills.medicine = 5));
   queueCraft(st, h, "bandagekit");

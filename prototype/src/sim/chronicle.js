@@ -1,7 +1,8 @@
 // Chronicle: a compact recording of the whole world (no fog of war) for the timelapse viewer (ui/timelapse.js).
 // One frame per in-game day (every 6 hours for the first 3 days, plus a frame soon after a major event): tile
 // owners and infection as changes against the previous frame (a full keyframe every KEY_EVERY frames), your
-// bases, the groups' bases, hordes, nests, parties, your population and hub stocks, and captions for notable
+// bases, the groups' bases, hordes (with their Wallbreakers), hives and hive build sites, parties, your population
+// and hub stocks, and captions for notable
 // events. Pure data, no DOM. Recording only reads the world and never touches state.rng, so a run plays out the
 // same with or without it. chronicleReader turns frames back into a state-like object that render() can draw.
 import { hub, alive } from "./world.js";
@@ -16,7 +17,7 @@ const DEDUPE_HOURS = 120;    // the same caption text is not repeated within 5 d
 const BIG_HORDE = 120;       // hordes this big get a caption once
 
 // Log lines that are routine or that the chronicle captions in its own words (with a map position).
-const SKIP_LOG = /finished at|crafted at|broke\.$|clogged|wound|running again|left behind|ran out of fuel|Convoy back|is home|Not enough|no escort|from the bodies|has collapsed|nest was destroyed|thanks your squad|trade route|refused the convoy|out of water|Every survivor is dead|extracted from|set up\./i;
+const SKIP_LOG = /finished at|crafted at|broke\.$|clogged|wound|running again|left behind|ran out of fuel|Convoy back|is home|Not enough|no escort|from the bodies|has collapsed|was destroyed by your team|thanks your squad|trade route|refused the convoy|out of water|Every survivor is dead|extracted from|set up\./i;
 
 // Owner codes in frames: 0 = nobody, 1 = you, 2 + i = group i in chronicle.factions.
 function facIndex(c, f) {
@@ -86,12 +87,12 @@ export function startChronicle(state) {
   const c = (state.chronicle = {
     v: 1, tiles: n,
     factions: [], facIndex: new Map(), facAlive: [], // groups: { id, name, color, type }, index = owner code - 2
-    frames: [],   // { h, d: Uint16Array (packed, see record), full: Uint8Array | null (keyframe), bases, fb, nests }
+    frames: [],   // { h, d: Uint16Array (packed, see record), full: Uint8Array | null (keyframe), bases, fb, hives, sites }
     events: [],   // captions: { h, text, kind (death | danger | good | info | world), tile, color?, major? }
     own: new Uint8Array(n), inf: new Uint8Array(n), // last recorded values; deltas are taken against these
     keys: new WeakMap(), nextKey: 1, announced: new WeakSet(), sieges: [], hordeSize: new WeakMap(),
     lastHour: -1, lastLog: state.log[0] || null, seenLog: state.log[0] || null, pending: false, nBases: state.bases.length,
-    bases: null, baseSig: null, fb: null, fbSig: null, nests: null, nestSig: null, overAt: null, said: new Map(), ms: 0,
+    bases: null, baseSig: null, fb: null, fbSig: null, hives: null, hiveSig: null, sites: null, siteSig: null, overAt: null, said: new Map(), ms: 0,
   });
   for (const f of state.factions) facIndex(c, f);
   const h = hub(state);
@@ -143,8 +144,8 @@ function record(state, c) {
   const first = !c.frames.length;
   const key = c.frames.length % KEY_EVERY === 0;
   for (const f of state.factions) facIndex(c, f);
-  // Tiles: owner and infection changes, land per owner code, nests.
-  const ownD = [], infD = [], land = [], nests = [];
+  // Tiles: owner and infection changes, land per owner code, hives.
+  const ownD = [], infD = [], land = [], hives = [];
   for (let i = 0; i < n; i++) {
     const t = tiles[i];
     const o = ownerCode(c, t.owner);
@@ -152,11 +153,11 @@ function record(state, c) {
     if (o !== c.own[i]) { ownD.push(i, o); c.own[i] = o; }
     if (q !== c.inf[i]) { infD.push(i, q); c.inf[i] = q; }
     if (o) land[o] = (land[o] || 0) + 1;
-    if (t.nest) nests.push(i);
+    if (t.hive) hives.push(i);
   }
-  // Movers: hordes [key, tile, size], parties [key, tile, look code, siege target tile].
+  // Movers: hordes [key, tile, size | Wallbreakers << 14], parties [key, tile, look code, siege target tile].
   const hz = [], pt = [];
-  for (const h of state.hordes) hz.push(keyOf(c, h), h.tile, clamp16(h.size));
+  for (const h of state.hordes) hz.push(keyOf(c, h), h.tile, Math.min(16383, Math.round(h.size || 0)) | (Math.min(3, h.bosses || 0) << 14));
   for (const p of state.parties) {
     const tile = p.path && p.path[p.idx];
     if (tile == null) continue;
@@ -186,7 +187,7 @@ function record(state, c) {
   if (key) { full = new Uint8Array(n * 2); full.set(c.own); full.set(c.inf, n); }
 
   // Interned parts: the same array is shared by every frame until something changes.
-  const prevBases = c.bases, prevFb = c.fb, prevNests = c.nests;
+  const prevBases = c.bases, prevFb = c.fb, prevHives = c.hives;
   const baseSig = state.bases.map((b) => `${b.id}|${b.tile}|${b.type}|${b.name}|${+!!b.radio}${+!!b.watchtower}${+!!b.alert}|${b.buildings.map((x) => x.type).join(",")}`).join(";");
   if (baseSig !== c.baseSig) {
     c.baseSig = baseSig;
@@ -196,19 +197,24 @@ function record(state, c) {
   for (const f of state.factions) if (f.alive) fb[facIndex(c, f)] = f.bases.slice();
   const fbSig = fb.map((x) => x.join(",")).join(";");
   if (fbSig !== c.fbSig) { c.fbSig = fbSig; c.fb = fb; }
-  const nestSig = nests.join(",");
-  if (nestSig !== c.nestSig) { c.nestSig = nestSig; c.nests = nests; }
+  const hiveSig = hives.join(",");
+  if (hiveSig !== c.hiveSig) { c.hiveSig = hiveSig; c.hives = hives; }
+  // Hive build sites: [tile, biomass (in steps of 50), started].
+  const sites = (state.hiveSites || []).map((x) => [x.tile, Math.floor(x.biomass / 50) * 50, x.started != null ? 1 : 0]);
+  const siteSig = sites.map((x) => x.join(":")).join(",");
+  if (siteSig !== c.siteSig) { c.siteSig = siteSig; c.sites = sites; }
 
   if (!first) {
     logCaptions(state, c);
-    worldCaptions(state, c, prevBases, prevFb, prevNests);
+    worldCaptions(state, c, prevBases, prevFb, prevHives);
   } else c.lastLog = state.log[0] || null;
   if (state.gameOver && c.overAt == null) {
     c.overAt = state.hour;
     const hb2 = hub(state);
-    caption(c, { h: state.hour, text: `Every survivor is dead. ${hb2 ? hb2.name : "The holdout"} has fallen on day ${Math.floor(state.hour / 24) + 1}.`, kind: "death", tile: hb2 ? hb2.tile : -1, major: true });
+    if (state.victory) caption(c, { h: state.hour, text: `Every hive is destroyed. ${hb2 ? hb2.name : "The holdout"} has won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
+    else caption(c, { h: state.hour, text: `Every survivor is dead. ${hb2 ? hb2.name : "The holdout"} has fallen on day ${Math.floor(state.hour / 24) + 1}.`, kind: "death", tile: hb2 ? hb2.tile : -1, major: true });
   }
-  c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, nests: c.nests });
+  c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, hives: c.hives, sites: c.sites });
   c.lastHour = state.hour;
   c.pending = false;
   c.nBases = state.bases.length;
@@ -229,6 +235,7 @@ function logCaptions(state, c) {
     if (l.text.startsWith("🤖")) continue; // the governor's own notes (autopilot.js) are not events
     if (l.kind !== "death" && SKIP_LOG.test(l.text)) continue;
     if (l.kind === "death" && /Every survivor is dead/.test(l.text)) continue;
+    if (/^Every hive is destroyed/.test(l.text)) continue; // the chronicle's own victory caption says it
     const major = l.kind === "death" || /founded|overran|has been lost|abandoned|joined/.test(l.text);
     caption(c, { h: l.hour, text: l.text, kind: l.kind, tile: captionTile(state, c, l.text), major });
   }
@@ -255,9 +262,9 @@ function captionTile(state, c, text) {
   return -1;
 }
 
-// What the fog of war hid: groups taking and losing sites, collapses, sieges, nests, big hordes; plus your bases
+// What the fog of war hid: groups taking and losing sites, collapses, sieges, hives, big hordes; plus your bases
 // appearing or disappearing when the log did not already say so.
-function worldCaptions(state, c, prevBases, prevFb, prevNests) {
+function worldCaptions(state, c, prevBases, prevFb, prevHives) {
   const h = state.hour;
   const said = (name) => c.events.some((e) => e.h > c.lastHour && e.text.includes(name));
   if (prevBases && prevBases !== c.bases) {
@@ -275,9 +282,9 @@ function worldCaptions(state, c, prevBases, prevFb, prevNests) {
     for (const t of is) if (!was.includes(t)) caption(c, { h, text: `${m.name} took over ${placeName(state, t, true)}.`, kind: "world", color: m.color, tile: t });
     for (const t of was) if (!is.includes(t)) caption(c, { h, text: `${m.name} lost ${placeName(state, t, true)}.`, kind: "world", color: m.color, tile: t });
   });
-  if (prevNests && prevNests !== c.nests) {
-    for (const t of prevNests) if (!c.nests.includes(t)) caption(c, { h, text: `A nest ${placeName(state, t)} was destroyed.`, kind: "good", tile: t });
-    for (const t of c.nests) if (!prevNests.includes(t)) caption(c, { h, text: `A new nest took root ${placeName(state, t)}.`, kind: "danger", tile: t });
+  if (prevHives && prevHives !== c.hives) {
+    for (const t of prevHives) if (!c.hives.includes(t)) caption(c, { h, text: `A hive ${placeName(state, t)} was destroyed.`, kind: "good", tile: t, major: true });
+    for (const t of c.hives) if (!prevHives.includes(t)) caption(c, { h, text: `A new hive rose ${placeName(state, t)}.`, kind: "danger", tile: t, major: true });
   }
   for (const hd of state.hordes) {
     // A horde that lost a good part of itself on a group's base tile threw itself at that base.
@@ -318,7 +325,7 @@ export function chronicleSize(c) {
     payload += f.d.byteLength;
     arrays++;
     if (f.full) { payload += f.full.byteLength; arrays++; }
-    interned.add(f.bases).add(f.fb).add(f.nests);
+    interned.add(f.bases).add(f.fb).add(f.hives).add(f.sites);
   }
   let internedBytes = 0;
   for (const x of interned) internedBytes += JSON.stringify(x || []).length * 2 + 64;
@@ -428,10 +435,10 @@ export function chronicleReader(state) {
     const groups = c.factions.map((m, i) => (i < d[9] ? { ...m, pop: d[fac + i * 3], land: d[fac + i * 3 + 1], alive: !!d[fac + i * 3 + 2], bases: (frames[k].fb[i] || []).length } : { ...m, pop: 0, land: 0, alive: false, bases: 0 }));
     let zombies = 0;
     const { hz } = sections(frames[k]);
-    for (let i = 0; i < d[7]; i++) zombies += d[hz + i * 3 + 2];
+    for (let i = 0; i < d[7]; i++) zombies += d[hz + i * 3 + 2] & 16383;
     return {
       hour: frames[k].h, pop: d[0], stock: { food: d[1], water: d[2], ammo: d[3], meds: d[4] }, land: d[10],
-      bases: frames[k].bases.length, groups, hordes: d[7], zombies, nests: frames[k].nests.length,
+      bases: frames[k].bases.length, groups, hordes: d[7], zombies, hives: frames[k].hives.length, sites: (frames[k].sites || []).length,
       fallen: c.overAt != null && frames[k].h >= c.overAt && d[0] === 0,
     };
   }
@@ -449,9 +456,10 @@ export function chronicleReader(state) {
       const code = A.own[i];
       ft.owner = info.fallen && code === 1 ? null : ownerOf(code);
       ft.infection = (A.inf[i] + (B.inf[i] - A.inf[i]) * frac) / INF_Q;
-      ft.nest = false;
+      ft.hive = false;
     }
-    for (const id of f0.nests) tiles[id].nest = true;
+    for (const id of f0.hives) tiles[id].hive = true;
+    const hiveSites = (f0.sites || []).map(([tile, biomass, started], i) => ({ id: -1 - i, tile, biomass, started: started ? f0.h : null, score: 0 }));
     const factions = info.groups.map((m, i) => ({ id: m.id, name: m.name, color: m.color, type: m.type, alive: m.alive, pop: m.pop, bases: m.alive ? f0.fb[i] || [] : [], goodwill: 0 }));
     const bases = info.fallen ? [] : f0.bases.map(baseOf);
     // Hordes and parties move toward their tile in the next frame; ones that vanish or appear swap at the halfway mark.
@@ -459,10 +467,10 @@ export function chronicleReader(state) {
     const h0 = movers(k, "hz", 3), h1 = movers(k1, "hz", 3);
     for (const [key, a] of h0) {
       const b = h1.get(key);
-      if (b) hordes.push({ id: key, tile: lerpTile(a[1], b[1], frac), size: Math.round(a[2] + (b[2] - a[2]) * frac), target: null });
-      else if (frac < 0.5) hordes.push({ id: key, tile: a[1], size: a[2], target: null });
+      if (b) hordes.push({ id: key, tile: lerpTile(a[1], b[1], frac), size: Math.round((a[2] & 16383) + ((b[2] & 16383) - (a[2] & 16383)) * frac), bosses: a[2] >> 14, target: null });
+      else if (frac < 0.5) hordes.push({ id: key, tile: a[1], size: a[2] & 16383, bosses: a[2] >> 14, target: null });
     }
-    if (frac >= 0.5) for (const [key, b] of h1) if (!h0.has(key)) hordes.push({ id: key, tile: b[1], size: b[2], target: null });
+    if (frac >= 0.5) for (const [key, b] of h1) if (!h0.has(key)) hordes.push({ id: key, tile: b[1], size: b[2] & 16383, bosses: b[2] >> 14, target: null });
     const parties = [];
     const p0 = movers(k, "pt", 4), p1 = movers(k1, "pt", 4);
     const party = (key, rec, tile, next) => {
@@ -488,8 +496,9 @@ export function chronicleReader(state) {
     if (frac >= 0.5) for (const [key, b] of p1) if (!p0.has(key)) party(key, b, b[1], null);
     return {
       timelapse: true, frame: k, frac, hour: Math.floor(t), info, fallen: info.fallen ? f0.bases.map((b) => b.tile) : [],
-      seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, parties, markers: [], vehicles: FAKE_VEHICLES,
+      seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, hiveSites, parties, markers: [], vehicles: FAKE_VEHICLES,
       deathSites: [], survivors: [], cityId: state.cityId, cityIds: state.cityIds, originId: state.originId,
+      weather: state.weather, // the same pre-rolled days (weather.js), so the map shows that day's season and weather
     };
   }
 

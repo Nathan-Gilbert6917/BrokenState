@@ -4,7 +4,7 @@
 // and a boat (or a raft carrying the vehicle) while a team crosses water. The body or clothes are tinted
 // with the owner's color. Sprites face right; drawMapSprite mirrors them for travel to the left.
 // Also the map's places and things: your bases, other groups' bases and parties (by group type), sites (one
-// sprite per location type), hordes and nests, markers (vehicles, wrecks, caches, camps, graves) and status icons.
+// sprite per location type), hordes and hives, markers (vehicles, wrecks, caches, camps, graves) and status icons.
 import { zombieLook } from "./sprites.js";
 
 const UP = 4;             // pre-upscale factor for the cached canvas
@@ -1375,7 +1375,7 @@ function paintSkull() {
   return p;
 }
 
-// ---------- the dead: hordes and nests ----------
+// ---------- the dead: hordes and hives ----------
 // Skin and rags follow the zombie look settings (sprites.js): palette and eye glow.
 const ZSKIN = { rotten: ["#8ea36b", "#7f9a62", "#9aa877"], ashen: ["#a7a69b", "#8f8e86", "#b5b2a5"], pale: ["#9fb0b5", "#8fa3aa", "#b4c2c4"], burnt: ["#6b5446", "#5c463a", "#7a6152"] };
 const ZRAGS = ["#56606e", "#6a4a3a", "#55603f", "#6d6f73", "#7a3b32", "#45454a", "#8a7a5a", "#45606b"];
@@ -1427,9 +1427,9 @@ function paintHorde(n, look = {}) {
   return p;
 }
 
-// A nest: a festering mound of bodies over a dark pool, pods glowing, bones sticking out. level 0–2 by how
+// A hive: a festering mound of bodies over a dark pool, pods glowing, bones sticking out. level 0–2 by how
 // infected the ground is (bigger, redder, more pods).
-function paintNestHive(level = 0) {
+function paintHive(level = 0) {
   const p = painter(28, 18);
   const POOL = "#2a1018", POOL_LIT = "#4a1a28", VEIN = "#8a1c22", POD = "#ff5a3a", POD_HOT = "#ffb43b";
   // The pool, with veins running out of the mound.
@@ -1911,8 +1911,8 @@ export function hordeSpriteCanvas(n) {
   return cached(`horde:${k}:${look.palette}:${look.eyes}`, () => paintHorde(k, look));
 }
 
-// A nest by how infected its ground is: level 0–2.
-export const nestSpriteCanvas = (level = 0) => cached(`nest:${level}`, () => paintNestHive(level));
+// An infestation hive by how infected its ground is: level 0–2 (sim/hives.js).
+export const hiveSpriteCanvas = (level = 0) => cached(`hive:${level}`, () => paintHive(level));
 
 // Status icon: "alert" | "unknown" (a disc in `color`) | "work" | "radio" | "siege".
 export const iconCanvas = (kind, color = "#ffd166") => cached(`icon:${kind}:${color}`, () => paintIcon(kind, color));
@@ -1952,7 +1952,7 @@ export function campSpriteCanvas(color, lit = true) {
   return cached(`camp:${color}:${+lit}`, () => paintCamp(color, lit));
 }
 
-// Map marker sprites: "death" | "cache" | "car" | "camp" | "vehicle" | "nest". opt: { emptied } for finds (stripped
+// Map marker sprites: "death" | "cache" | "car" | "camp" | "vehicle" | "hive". opt: { emptied } for finds (stripped
 // wreck, emptied cache, picked-through camp), { empty } for a death site with nothing left, { vehicle: "truck" |
 // "sedan", needsFuel, damaged } for an abandoned vehicle (in `color`).
 export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
@@ -1962,7 +1962,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "cache") return paintCacheMarker(!!opt.emptied);
     if (type === "car") return paintWreckMarker(!!opt.emptied);
     if (type === "camp") return paintCampMarker(!!opt.emptied);
-    if (type === "nest") return paintNestHive(0);
+    if (type === "hive") return paintHive(0);
     return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged);
   });
 }

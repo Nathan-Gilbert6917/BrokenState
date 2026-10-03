@@ -11,8 +11,13 @@ import {
   MISSIONS, STANCES, estimateTrip, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions, teamName, carryCapacity, supplyLoad,
 } from "../sim/parties.js";
 import { attitude, baseDefense } from "../sim/factions.js";
-import { baseHeat } from "../sim/hordes.js";
+import { baseHeat, hordeScore } from "../sim/hordes.js";
+import { holdLimit, wallTier } from "../sim/defences.js";
+import { hiveDanger, hiveTracker } from "../sim/hives.js";
+import { HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
+import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine } from "./farming.js";
+import { conditionChips, conditionTreatRow, illnessCard, isSick } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
@@ -28,10 +33,12 @@ import { survivorURL, spriteImg } from "./sprites.js";
 import { renderExpedition, startsWhenUnpaused } from "./expedition.js";
 import { shortName } from "./names.js";
 import { orderStatus, contactable } from "../sim/orders.js";
+import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal } from "./inventory.js";
+import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLines } from "./tradewindow.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -62,10 +69,11 @@ export function topbarParts(state, ui) {
   const h = hub(state);
   const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.5, "0.5×", "Slow: an hour takes 6 seconds (1)"], [1, "1×", "Normal: an hour takes 3 seconds, a day 72 seconds (2)"], [2, "2×", "Fast: an hour takes 1.5 seconds (3)"], [3, "3×", "Fastest: an hour takes 1 second, a day 24 seconds (4)"]];
   return {
-    clock: `Day ${day(state)} · ${clock(state)} ${isNight(state) ? "🌙" : "☀"}`,
+    clock: `Day ${day(state)} · ${clock(state)} ${isNight(state) ? "🌙" : "☀"}${weatherChip(state)}`,
     speed: speeds.map(([s, l, t]) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}"${tip(t)}>${l}</button>`).join("") +
       (ui.speed > 3 ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
-    stock: SUPPLY_KEYS.map((k) => `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.`)}><b>${SUPPLIES[k].name}</b>${n0(h.stock[k])}</span>`).join(""),
+    // Food and water also show days left (economy.js outlook; the tooltip has the details).
+    stock: SUPPLY_KEYS.map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : null; return `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.${ln ? ` ${ln.tip}` : ""}`)}><b>${SUPPLIES[k].name}</b>${n0(h.stock[k])}${ln ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     tools: `UI
       <select data-action="uiscale"${tip("Interface size. Larger is easier to read from the couch.")}>${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select>
@@ -73,6 +81,19 @@ export function topbarParts(state, ui) {
       <button data-action="dev-toggle" class="${ui.dev ? "active" : ""}"${tip("Dev tools: reveal the map, autopilot, fast forward, frame rate, and a tracker of groups and zombie hotzones (\` key)")}>Dev</button>
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>`,
   };
+}
+// The planner's weather note: hours the weather adds to the trip compared with fair weather.
+function weatherEta(est) {
+  const out = est.weatherOut || 0, all = out + (est.weatherBack || 0);
+  if (!out && !all) return "";
+  const sg = (h) => `${h > 0 ? "+" : "−"}${Math.abs(h)}h`;
+  return ` <span class="${out > 0 ? "warn" : "muted"}"${tip(`Weather (mud, snow, storms, fog) changes this trip by ${sg(out)} on the way out and ${sg(all)} over the round trip, compared with fair weather. The estimate already includes it.`)}>${sg(out)} weather</span>`;
+}
+
+// Season and weather next to the clock; hover for effects and the forecast (weather.js).
+function weatherChip(state) {
+  const se = wxSeason(state), w = wxNow(state);
+  return `<span class="wx" data-tip-pre${tip(weatherReport(state))}>${se.icon} ${se.name} ${se.dayOfSeason}/${SEASON_DAYS} · ${w.icon} ${Math.round(w.temp)}°C${w.severe ? " ⚠" : ""}</span>`;
 }
 // The whole bar as one string (tools and tests).
 export function renderTopbar(state, ui) {
@@ -119,15 +140,25 @@ function renderBases(state) {
       <div class="kv small" style="margin-top:0.4rem">
         <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
         <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
+        ${holdRow(state, b)}
         <div${tip("Noise and light that draw hordes. Workshop operators add 3 each.")}>Heat</div><div>${baseHeat(state, b)}</div>
-        <div${tip("Farms and base scavenging, minus what workshops use and what everyone here eats")}>Food per day</div>${foodCell(fc)}
+        <div${tip("Days of food left at today's rate without harvests, and the next harvest (crops ripen in batches)")}>Food</div>${foodCellHtml(state, b)}
+        <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div>Building</div><div>${job ? `${BUILDINGS[job.type].name}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
         ${supplySummary(state, b)}
+        ${caravanLines(state, b)}
         ${line ? `<div${tip("Share of outpost surplus that reaches the hub, and how long backup takes")}>Supply line</div><div class="${line.strength < 0.6 ? "danger" : "good"}">${Math.round(line.strength * 100)}% · ETA ${isFinite(line.hours) ? line.hours + "h" : "cut off"}</div>` : ""}
       </div>
       <div class="row" style="margin-top:0.5rem"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button></div>
     </div>`;
   }).join("") + `<div class="small muted">Found outposts by sending a team with 15 scrap and choosing Build outpost.</div>`;
+}
+
+// "Can this base hold against a horde of N?" (sim/defences.js): the biggest horde its walls, guards and defence
+// buildings stop, and the same with a Wallbreaker leading it.
+function holdRow(state, b) {
+  const lim = holdLimit(state, b), boss = holdLimit(state, b, 1);
+  return `<div${tip(`Against hordes: the walls (tier ${wallTier(b)} of 3) hold back about 15 + 18 per point of wall strength, guards on duty add 2 per point of their combat power, and barricades, a trench, a reinforced gate and floodlights add to that (spike pits thin a horde first). A bigger horde breaks in and the best 8 here fight it on the base map. A ${BOSS_NAMES.horde} cuts the limit to 60% and smashes a defence. Man the defences on a horde warning to put everyone on the walls.`)}>Holds a horde of</div><div>up to ~${lim} <span class="muted">(${boss} with a ${BOSS_NAMES.horde})</span></div>`;
 }
 
 function supplySummary(state, b) {
@@ -148,6 +179,7 @@ function personCard(state, s) {
     ${isCaptive(s) ? captiveLine(state, s) : ""}
     ${known ? `<div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
+    ${isSick(s) ? `<div class="small">${conditionChips(state, s)}</div>` : ""}
     <div class="row small"><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>` :
     isCaptive(s) ? "" : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
     <div>${topSkills}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
@@ -179,7 +211,7 @@ function renderGroups(state) {
   const known = state.factions.filter((f) => f.known);
   const unknown = state.factions.filter((f) => !f.known && f.alive).length;
   const routes = state.routes.filter((r) => r.active);
-  return `
+  return `${groupsRadioHeader(state)}
     ${known.length ? known.map((f) => {
       const a = attitude(f);
       const route = routes.find((r) => r.factionId === f.id);
@@ -190,7 +222,7 @@ function renderGroups(state) {
         ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
         ${f.alive ? `<div class="row" style="margin-top:0.35rem">
           <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
-          ${canRadio(state, f) ? `<button data-action="radiotalk" data-id="${f.id}"${tip("Keep in touch. Regular contact stops neutral groups drifting hostile when you expand nearby.")}>Radio</button>` : ""}
+          ${canRadio(state, f) ? `<button data-action="rd-open" data-id="${f.id}"${tip("Radio panel: greet, ask for news, ask for a trade caravan, make a deal, call for help, pacts")}>Radio…</button>` : ""}${f.heard ? `<span class="small muted"${tip("You found them by scanning the airwaves")}>heard on the radio</span>` : ""}
           ${f.pact === "trade" && !route ? `<button data-action="routesetup" data-id="${f.id}"${tip("Recurring convoys with an escort you choose")}>Set up trade route</button>` : ""}
         </div>` : ""}
       </div>`;
@@ -283,6 +315,7 @@ export function tileActions(state, id) {
   if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
   if (markers.some((m) => (m.type === "cache" || m.type === "car" || m.type === "camp") && !m.info?.emptied)) actions.push(["investigate", "Investigate find"]);
   if (info && info.hordeSize) actions.push(["cull", "Cull horde"]);
+  if (info && info.hive) actions.push(["hive", "Destroy hive"]);
   return actions;
 }
 
@@ -303,7 +336,13 @@ export function renderRight(state, ui) {
   const t = state.tiles[id];
   const isLive = liveSet(state).has(id); // dev Reveal map shows the true tile here too
   const snap = isLive ? null : state.knowledge[id];
-  const info = isLive ? { owner: t.owner, infection: t.infection, loot: t.loot, nest: t.nest, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
+  const here = state.hordes.filter((h) => h.tile === id);
+  const liveSite = isLive && state.hiveSites ? state.hiveSites.find((x) => x.tile === id) : null;
+  const info = isLive ? { owner: t.owner, infection: t.infection, loot: t.loot, hive: t.hive, site: liveSite ? { biomass: liveSite.biomass, started: liveSite.started != null } : null,
+    hordeSize: here.reduce((a, h) => a + h.size, 0), hordeBoss: here.reduce((a, h) => a + (h.bosses || 0), 0) } : snap;
+  // The hives you know of (live or reported): this tile's place in their land.
+  const knownHives = state.tiles.filter((x) => (liveSet(state).has(x.id) ? x.hive : state.knowledge[x.id] && state.knowledge[x.id].hive)).map((x) => x.id);
+  const hz = knownHives.length ? hiveDanger(state, id, knownHives) : { territory: false, red: false };
   const base = state.bases.find((b) => b.tile === id);
   const ownerF = info && typeof info.owner === "number" ? factionById(state, info.owner) : null;
   const walk = estimateTrip(state, { memberIds: [1], dest: id, vehicle: false, stance: "normal" });
@@ -323,8 +362,10 @@ export function renderRight(state, ui) {
         <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
         <div${tip("Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
         <div${tip("How much is left to scavenge here")}>Loot</div><div>${lootWord(info.loot)}</div>
-        <div>Horde</div><div>${info.hordeSize ? `<span class="danger">${Math.round(info.hordeSize)}${isLive ? "" : " (then)"}</span>` : "None seen"}</div>
-        ${info.nest ? `<div>Nest</div><div class="danger">Yes</div>` : ""}` : ""}
+        <div>Horde</div><div>${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
+        ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission).`)}>Hive</div><div class="danger">Yes</div>` : ""}
+        ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Culling the hordes gathered here sets it back.`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead</div>` : ""}` : ""}
+        ${hz.territory && !info?.hive ? `<div${tip("Land a hive holds: at least 3 danger skulls. On the red-skull ring right around a hive every one of the dead is much tougher (+3 power; +1 elsewhere in its land).")}>Hive land</div><div class="danger">${hz.red ? "Red-skull ground: much tougher dead" : "Yes: tougher dead"}</div>` : ""}
         <div>From hub</div><div>${walk ? `${walk.tiles} tiles · ~${Math.ceil(walk.hoursOut)}h on foot` : "No route over land"}</div>
       </div>
       ${walk || base ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
@@ -341,7 +382,7 @@ export function renderLegend(view, ui) {
   if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show map layers")}>Layers ▸</button>`;
   return `<div class="spread"><b>Map layers</b><button data-action="legendtoggle" class="mini"${tip("Hide this panel")}>▾</button></div>
     ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}> ${l.name}</label>`).join("")}
-    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…) · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; faded = picked over, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen) · red glowing mound = nest · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · ! = waiting for orders · ? = estimated team position</div>`;
+    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…) · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; faded = picked over, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen; a grey brute with a concrete fist at its head = Wallbreaker) · red glowing mound = infestation hive, its land tinted dark red (sites there show at least 3 skulls) and the ring around it brighter with red skulls (much tougher dead) · a raw mound with bones and a red bar = a hive being built (the bar: dead gathered of 1,000) · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · dashed circles = radio coverage (station 8 tiles, linked relay 6; red = relay not linked or off the air) · a group's wagon or truck beside your base = their caravan · ! = waiting for orders · ? = estimated team position</div>`;
 }
 
 // ---------- log ----------
@@ -364,7 +405,9 @@ function pickModal(state, ui) {
   if (state.gameOver) return ["over", () => gameOverScreen(state)];
   if (state.cards.length) return ["card", () => cardModal(state, state.cards[0])];
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
-  if (state.trade && !state.autopilot) return ["trade", () => tradeModal(state, ui)];
+  if (state.trade && !state.autopilot) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js
+  if (ui.radioWith != null) return ["radio", () => radioModal(state, ui)];
+  if (ui.caravanPlan) return ["caravan", () => caravanPlanModal(state, ui)];
   if (ui.planner) return ["planner", () => plannerModal(state, ui)];
   if (ui.routeSetup) return ["route", () => routeModal(state, ui)];
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
@@ -386,6 +429,14 @@ export function modalKind(state, ui) {
 // The new-run setup screen lives in ui/newgame.js (newRunScreen).
 
 function gameOverScreen(state) {
+  if (state.victory) {
+    const st = hiveTracker(state).stats;
+    return `<div class="box"><h1>Every hive is destroyed</h1>
+    <div class="text">The hives are ash. Hordes still drift in from beyond the state's borders, but nothing breeds them here any more. ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, beat ${st.repelled} break-in${st.repelled === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
+    <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, the hives rising and falling, hordes, teams and your holdout")}>Watch the timelapse</button>` : ""}
+    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    <button class="primary" data-action="restart">New campaign</button></div></div>`;
+  }
   return `<div class="box"><h1>The holdout has fallen</h1>
     <div class="text">Every survivor is dead. You lasted ${day(state)} days, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
     <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, hordes, teams, and the rise and fall of your holdout")}>Watch the timelapse</button>` : ""}
@@ -395,8 +446,9 @@ function gameOverScreen(state) {
 function helpModal() {
   const k = (t) => `<b>${t}</b>`;
   return `<div class="box wide"><h1>How to play</h1><div class="text small" style="line-height:1.6">
-    <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You lose when the last survivor is dead, gone or lost.<br><br>
+    <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You <b>win</b> when every infestation hive is destroyed (and no new one is being built); you lose when the last survivor is dead, gone or lost.<br><br>
     <b>Time:</b> the game starts <b>paused</b>; a banner at the top of the map says so. Press ${k("Space")} or pick a speed (${k("1–4")}) to run the clock. Orders you give while paused are queued and start when you unpause (the banner counts them). Cards and windows (planner, base, help) stop the clock while they are open.<br>
+    <b>Seasons and weather:</b> a year is four seasons of 28 days (spring, summer, autumn, winter); a run starts in mid-spring. Next to the clock: season, day of the season, today's weather and the temperature; hover it for what the weather does and the forecast (3 days; 4 with a watchtower, 5 with a radio station; the further out, the less sure). Rain and melting snow leave mud that slows off-road travel (vehicles most); snow cover slows everything, off-road most; storms and blizzards slow everyone a lot, can hurt people on the road and make boat crossings riskier; fog cuts sight by a tile and makes ambushes likelier; heat waves slow walkers. Arrival times in the planner and panels already include the weather hour by hour (the planner shows how many hours it adds). Crops grow only in their seasons and best in mild, moist weather; frost, hard freezes, blizzards, drought, heat and storms can kill them, and wet weather rots ripe ones. Cold and heat can make people outdoors ill, the dead slow down in deep cold, and the map's <i>Weather</i> layer shows snow, rain, fog and heat as a wash over the land.<br>
     <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. Toggle layers in the map's corner.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue, the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Packed supplies count against carry space (15 per person, 8 with a bad back, more with packs and vehicles). Teams report only when they get home, unless a radio station is built and they are in range.<br>
@@ -410,7 +462,11 @@ function helpModal() {
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it).<br>
     <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. One left behind is marked on the map: bring fuel (and a part if it is badly damaged) to recover it.<br>
     <b>Groups:</b> neutral groups turn hostile if you crowd them. Radio contact, gifts and trade keep them steady; pacts stop raids and open trade routes. Hostile groups raid and take captives (rescue, ransom or goodwill gets them back).<br>
-    <b>Hordes:</b> spawn from nests, grow, drift toward noise (Heat) and people, and attack bases. Cull them, lure them away, or keep Heat low.<br>
+    <b>Radio:</b> a radio station reaches 8 tiles; a radio relay at an outpost (no operator, 1 part every 10 days) adds 6 tiles when a station or another linked relay is in range, so relays chain coverage outward (dashed circles on the map; red = not linked or off the air). Groups within reach (their radios add 4 tiles) can be called from the Groups tab (Radio…): greet, ask for news, ask for a trade caravan, make a deal ("we want 20 meds, paying 60 ammo"), call for help, pacts. <i>Scan the airwaves</i> finds groups in reach you have not met. Groups call you too, with offers and requests.<br>
+    <b>Trade window:</b> two columns, yours and theirs: every supply with steppers, every item one by one. Items are valued by what they are, their condition and the uses left; supplies by how short the group is of them. They pay you less than they charge (Speech and goodwill narrow the gap); a deal goes through when it is fair for them. <i>Balance with</i> ammo, scrap or food fills the gap. Intel: buy a report of the area (only those tiles lose their fog) or horde sightings, or sell your own maps.<br>
+    <b>Caravans:</b> a group's caravan comes to your base for a radio deal and stays a day (Bases tab: Trade). You can attack it for its goods, but the group turns hostile and raids you. Your own trade caravans (Groups tab: New trade caravan…) visit a list of destinations; at each stop: trade, unload, stay a day, go on, or return home.<br>
+    <b>Hives and hordes:</b> infestation hives gain resources every day, more when other hives stand within 5 tiles (alone 1, two together 3 each, three 6 each, up to 12), and spend them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15) and, for 40, on a <b>Wallbreaker</b>: a brute that leads a horde and smashes defences. Every 30–60 days the hives pick a spot for a new hive: hives within 10 tiles send hordes there, and once the gathered hordes reach a score of 30 they start turning into a hive, which stands when 1,000 of the dead have gone into it. Hordes move at most 2 tiles a day (slower in deep cold), merge when they meet and split up; a horde's score (from its size) is how tough it is. You see them only near your bases (a watchtower sees further), with teams in radio range, or when a team reports. A hive holds the land within 4 tiles (at least 3 skulls there) and the ring right around it has red skulls: the dead there are much tougher. It radiates infection; destroying it lets the infection fade. Destroy a hive with the <b>Destroy hive</b> mission: a hard battle against its brood and the <b>Broodmother</b>. Hordes also come in from beyond the border every week or so, so the state is never quite safe.<br>
+    <b>Defending against hordes:</b> a base's walls hold back a horde up to a limit (the base panel shows "Holds a horde of"); guards and the defence buildings (barricades, spike pits, trench, reinforced gate, floodlights) raise it. A bigger horde breaks in and the best 8 there fight it on the base map, with the barricades, pits and trench on it. Lose and the base is overrun: people hurt or killed, stores spoiled, an outpost lost. When lookouts see a horde coming you get a warning card: man the defences, or burn a decoy fire.<br>
     <b>Dev tools</b> (${k("`")} key or the Dev button): reveal the map, infection overlay, autopilot (${k("P")}: an AI governor plays for you), fast forward 10× / 50× / 200×, show FPS, and the timelapse so far.<br>
     <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–4")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("Esc")} closes the top window, then move mode, then the team panel.</div>
     <button class="primary" data-action="closehelp">Close</button></div>`;
@@ -532,7 +588,7 @@ function plannerModal(state, ui) {
         <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
         <h3>Estimate</h3>
         ${est ? `<div class="kv small"><div>Distance</div><div>${est.tiles} tiles</div>
-          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span></div>
+          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span>${weatherEta(est)}</div>
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
           <div>Needs</div><div>${est.food} food · ${est.water} water${v ? ` · ${est.fuel} fuel` : ""}</div>
@@ -722,7 +778,8 @@ function gearControls(state, base, s, slot) {
 // ---------- base management ----------
 const BASE_TABS = [
   ["overview", "Overview", "Stock, people and roles"],
-  ["workshops", "Workshops", "Farms, scavenging and workshop stations: who works where and what they produce"],
+  ["farming", "Farming", "Crop plots: what grows, when it ripens, expected harvests, weather risks; the food and water outlook"],
+  ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
   ["construction", "Construction", "Build queue with timers, and what you can build"],
   ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
@@ -736,7 +793,7 @@ function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
   const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical }[tab](state, b, ui);
+  const body = { overview: baseOverview, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -788,7 +845,7 @@ function baseMedical(state, b) {
   const h = activeHospital(state, b);
   const built = h.built;
   const people = atBase(state, b.id);
-  const hurtList = people.filter(isHurt).sort((x, y) => x.health - y.health);
+  const hurtList = people.filter((s) => isHurt(s) || isSick(s)).sort((x, y) => x.health - y.health);
   const beds = new Set(patients(state, b).map((s) => s.id));
   const next = nextHospitalType(b);
   const queued = b.construction.find((c) => BUILDINGS[c.type].family === "hospital");
@@ -813,6 +870,7 @@ function baseMedical(state, b) {
         ${h.staff.length ? h.staff.map((s) => `<div class="spread"><span>${esc(s.name)} <span class="muted">Medicine ${skill(s, "medicine")}</span></span>${roleSelect(s)}</div>`).join("") : `<span class="muted">Nobody on the Medic role.</span>`}
         ${others.length ? `<div style="margin-top:0.3rem"><select data-action="medicop"${tip("Set someone's role to Medic")}><option value="">Add a medic…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
       </div>
+      ${illnessCard(state, b)}
       <h3>Upgrade path</h3>
       ${hospitalTypes().map((k) => {
         const d = BUILDINGS[k];
@@ -829,7 +887,8 @@ function baseMedical(state, b) {
         <div class="spread"><a data-action="survivor" data-id="${s.id}" class="link">${esc(s.name)}</a>${treatButton(state, s)}</div>
         <div class="row"><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem;text-align:right">${n0(s.health)}</span></div>
         <div>${beds.has(s.id) ? `<span class="chip on"${tip("In a hospital bed: gets the bed healing bonus and +3 mood a day, but does not work their role until healed")}>In bed</span>` : h.beds ? `<span class="chip"${tip(s.role === "medic" ? "Medics stay on duty and are never admitted as patients" : "No free bed: the worst off get beds first")}>No bed</span>` : ""}${s.health < 30 ? `<span class="chip off"${tip("Severe wound (below 30 health): heals at 40% speed without a bed; a hospital bed and surgery help")}>Severe</span>` : ""}${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed and loses 2 health a day. Treat with meds; a Clinic or better cleans it in bed.")}>Infected wound</span>` : ""}<span class="muted">${healPerDayText(state, b, s, h, beds.has(s.id))}</span></div>
-      </div>`).join("") : `<div class="muted small">Nobody here is hurt.</div>`}
+        ${conditionTreatRow(state, b, s)}
+      </div>`).join("") : `<div class="muted small">Nobody here is hurt or ill.</div>`}
       <div class="small muted" style="margin-top:0.4rem">The rate includes the daily dose: anyone below 70 health gets one dose of meds a day automatically (at midnight, 1 meds each) while stock lasts.</div>
     </div>
   </div>`;
@@ -847,8 +906,10 @@ function baseOverview(state, b) {
       <h3>Status</h3>
       <div class="kv small">
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
+        ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
-        <div${tip("Farms and base scavenging, minus what workshops use and what everyone here eats")}>Food per day</div>${foodCell(fc)}
+        <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
+        <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div>Beds</div><div>${baseBeds(b)} for ${people.length}</div>
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
       </div>
@@ -869,11 +930,9 @@ function baseWorkshops(state, b) {
   const sts = stations(b);
   return `
     <h3>Farming</h3>
-    <div class="card small"><div class="spread"><b>Farm plots: ${count(b, "farm_plot")} (${farmSlots(b)} slots)</b><span class="${farmers.length > farmSlots(b) ? "danger" : ""}">${farmers.length} farmer${farmers.length === 1 ? "" : "s"}</span></div>
-      ${farmers.length ? farmers.map((x) => first(x) + bedTag(x)).join(", ") : "<span class='muted'>Nobody farming</span>"} · <b>${n1(farmOutput(state, b))} food/day</b>
-      ${farmers.length > farmSlots(b) ? `<div class="danger">Over capacity: extra farmers work at 30%. Build more plots.</div>` : ""}</div>
+    <div class="card small">${farmers.length} farmer${farmers.length === 1 ? "" : "s"} on ${farmSlots(b)} plots${farmers.length ? `: ${farmers.map((x) => first(x) + bedTag(x)).join(", ")}` : ""}. Crops ripen in batches: see the <a class="link" data-action="basetab" data-tab="farming">Farming</a> tab.</div>
     <h3>Scavenging</h3>
-    <div class="card small">${scav.length ? `${scav.map((x) => first(x) + bedTag(x)).join(", ")} · <b>${scavOut || "little"} per day</b>` : "<span class='muted'>Nobody scavenging</span>"}</div>
+    <div class="card small"${tip(ROLES.scavenge.desc)}>${scav.length ? `${scav.map((x) => first(x) + bedTag(x)).join(", ")} · <b>usually nothing</b> <span class="muted">(on average ${scavOut || "next to nothing"} a day; the surroundings are ${Math.round((b.scavLeft ?? 1) * 100)}% unpicked)</span>` : "<span class='muted'>Nobody scavenging</span>"}<div class="muted">Picking around the base rarely turns anything up. Send teams to real sites for supplies.</div></div>
     <h3>Workshop stations</h3>
     ${sts.length ? `<table class="t"><tr><th>Station</th><th>Operator</th><th>Status</th><th>Per day</th></tr>${sts.map((st) => {
       const s = stationStatus(state, b, st);

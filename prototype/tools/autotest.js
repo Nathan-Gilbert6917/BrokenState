@@ -89,7 +89,8 @@ function run(seed, style) {
   const h = hub(state);
   const people = state.survivors;
   m.day = state.gameOver ? day(state) : Math.min(day(state) - 1, days);
-  m.gameOver = state.gameOver;
+  m.gameOver = state.gameOver && !state.victory;
+  m.victory = !!state.victory;
   m.alive = alive(state).length;
   m.dead = people.filter((s) => !s.alive && !s.left).length;
   m.left = people.filter((s) => s.left).length;
@@ -108,7 +109,7 @@ function run(seed, style) {
 }
 
 const pad = (v, n) => String(v).padEnd(n);
-const line = (m) => `${pad(m.style, 10)} seed ${pad(m.seed, 4)} day ${pad(m.day + (m.gameOver ? "✝" : ""), 5)} alive ${pad(m.alive, 3)} (peak ${pad(m.peak, 3)}) dead ${pad(m.dead, 3)} left ${pad(m.left, 2)} held ${pad(m.captives, 2)} ` +
+const line = (m) => `${pad(m.style, 10)} seed ${pad(m.seed, 4)} day ${pad(m.day + (m.gameOver ? "✝" : m.victory ? "★" : ""), 5)} alive ${pad(m.alive, 3)} (peak ${pad(m.peak, 3)}) dead ${pad(m.dead, 3)} left ${pad(m.left, 2)} held ${pad(m.captives, 2)} ` +
   `bldg ${pad(m.buildings, 3)} outposts ${pad(m.outposts, 2)} trips ${pad(m.launched, 3)} cards ${pad(m.cards, 4)} raids held ${pad(m.raids, 2)} ` +
   `stock food ${pad(m.stock.food, 4)} meds ${pad(m.stock.meds, 3)} scrap ${pad(m.stock.scrap, 4)} parts ${pad(m.stock.parts, 3)} ammo ${pad(m.stock.ammo, 4)} ${Math.round(m.ms)}ms`;
 

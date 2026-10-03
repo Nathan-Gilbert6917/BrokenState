@@ -25,6 +25,9 @@ import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatAction, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
+import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
+import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
+import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
@@ -50,6 +53,7 @@ const freshUi = () => ({
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null,
   dev: false, showFps: false, armed: newArmed(),
+  radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
 });
 const ui = { scale: 1, factionCount: 7, legendCollapsed: false, ordersCollapsed: false, crewEdited: false, ...freshUi() };
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount });
@@ -85,7 +89,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade);
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || !!ui.survivor || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -628,6 +632,8 @@ const actions = {
     log(state, `${state.survivors.find((s) => s.leader).name} leads the group.`, "info");
   },
   restart: () => newWorld(randomSeed()),
+  // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
+  keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
 for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-auto", "cb-close"]) actions[k] = (d) => combatAction(state, k, d);
@@ -635,6 +641,10 @@ for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-auto", "cb-close
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Farming tab and illness (ui/farming.js, ui/health.js).
+for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
+// Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
+for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).
 for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => { if (k === "tl-open" && state.combat) return; fn(state, ui, d); };
 
@@ -725,6 +735,7 @@ const changeActions = {
   "pl-mission": (el) => { ui.planner.mission = el.value; autofill(ui.planner); ui.plannerError = ""; },
   "pl-supply": (el) => { ui.planner.supplies[el.dataset.k] = Math.max(0, Math.floor(Number(el.value) || 0)); ui.plannerError = ""; },
   ...Object.fromEntries(Object.entries(LOOK_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
+  ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   seed: (el) => newWorld(cleanSeed(el.value), true),
   factioncount: (el) => { ui.factionCount = Number(el.value); newWorld(state.seed, true); },
   rename: (el) => {
@@ -746,6 +757,7 @@ const changeActions = {
     b.name = name;
   },
 };
+for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -812,6 +824,7 @@ document.addEventListener("mouseover", (e) => {
   if (!el || !el.dataset.tip) return hideTip();
   tipTarget = el;
   tipEl.textContent = el.dataset.tip;
+  tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
   tipEl.classList.remove("hidden");
   placeTip(e);
 });
@@ -1009,6 +1022,8 @@ function closeTopLayer() {
   if (!state.autopilot && (state.cards.length || state.engagement || state.trade)) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }
+  if (ui.radioWith != null) { ui.radioWith = null; ui.radioMsg = ""; return true; }
+  if (ui.caravanPlan) { ui.caravanPlan = null; ui.cvMsg = ""; return true; }
   if (ui.survivor != null) {
     if (ui.lookEdit != null) ui.lookEdit = null;
     else ui.survivor = null;

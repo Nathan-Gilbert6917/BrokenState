@@ -9,6 +9,7 @@ import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, ensurePack } from "./inventory.js";
+import { workFactor } from "./health.js";
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -83,7 +84,7 @@ const qualified = (state, base, r) => crafters(state, base).filter((s) => skill(
 // Work-hours per hour on a recipe: each skilled crafter gives 1 + 3% per point of the recipe's skill.
 export function craftRate(state, base, key) {
   const r = CRAFTS[key];
-  return qualified(state, base, r).reduce((a, s) => a + 1 + skill(s, r.skill) * 0.03, 0);
+  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s), 0); // the sick work less (health.js)
 }
 
 // Item condition from the best crafter's skill: 75% at 0, 100% at 20. Workshop recipes +10%.

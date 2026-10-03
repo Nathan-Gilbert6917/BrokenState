@@ -1,24 +1,27 @@
-// Daily economy for every base (hub and outposts share the same rules), supply lines,
-// trade routes and death-site looting.
+// Daily economy for every base (hub and outposts share the same rules): water, base scavenging, farming
+// (farming.js), eating, food spoiling, illness (health.js), supply lines, trade routes and death-site looting.
 import { TERRAIN, LOCATIONS, SUPPLIES } from "./data.js";
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver,
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { farmSlots, baseBeds, runStations, assignStations } from "./buildings.js";
+import { count, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
+import { farmingDaily, farmFoodPerDay, cropWaterNeed, nextHarvests, farmOf, econStats } from "./farming.js";
+import { healthDaily, workFactor, conditionsOf, CONDITIONS } from "./health.js";
+import * as Weather from "./weather.js";
 
 export const ROLES = {
-  farm:     { name: "Farm",     desc: "Grows food on the farm plots. Each plot fits 2 farmers at full output; extras work at 30%." },
-  scavenge: { name: "Scavenge", desc: "Searches the ruins around this base. What they find depends on the site (a gas station gives fuel, a hospital meds)." },
+  farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
+  scavenge: { name: "Scavenge", desc: "Picks through the ruins right around this base. Usually finds nothing: a small chance a day of a small find (better with Scavenging, worse as the area is picked over). Expeditions to real sites are where supplies come from." },
   operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds or parts). Loud: raises Heat." },
   build:    { name: "Build",    desc: "Works on the construction queue. More builders finish faster; Mechanics helps." },
   guard:    { name: "Guard",    desc: "Defends the base. Guards count 1.5× in fights." },
-  rest:     { name: "Rest",     desc: "Recovers mood. Injured people heal either way." },
-  medic:    { name: "Medic",    desc: "Staffs the infirmary or hospital (each tier needs 1–3 medics to run; unstaffed it works like no hospital). The best medic's Medicine speeds up healing for patients in beds; with no medic only slow natural healing and weak meds. Medics are never admitted as patients." },
+  rest:     { name: "Rest",     desc: "Recovers mood, and the sick get better faster. Injured people heal either way." },
+  medic:    { name: "Medic",    desc: "Staffs the infirmary or hospital (each tier needs 1–3 medics to run; unstaffed it works like no hospital). The best medic's Medicine speeds up healing for patients in beds; with no medic only slow natural healing and weak meds. Medics are never admitted as patients, and catch contagious illness more easily." },
   craft:    { name: "Craft",    desc: "Makes makeshift gear and supplies by hand from the craft queue (base Crafting tab). No station needed; Mechanics (or Medicine for kits) sets what they can make and how fast." },
 };
 
@@ -33,26 +36,155 @@ export function siteBonus(state, base) {
   };
 }
 
+// Expected food per day from the plots over the next 30 days (what is in the ground, by when it ripens).
 export function farmOutput(state, base) {
-  // Patients in a bed do not work. The best farmers get the plots; the extras work at 30%.
-  const farmers = atBase(state, base.id).filter((s) => s.role === "farm" && !s.inBed).sort((a, b) => skill(b, "farming") - skill(a, "farming"));
-  const slots = farmSlots(base);
-  const bonus = siteBonus(state, base).farm;
-  return farmers.reduce((sum, s, i) => sum + (2.2 + skill(s, "farming") * 0.12) * bonus * (i < slots ? 1 : 0.3), 0);
+  return farmFoodPerDay(state, base);
 }
 
+// ---------- base scavenging ----------
+// Rare by design: each scavenger has a small chance a day of a small find. The chance grows with Scavenging (and a
+// crowbar), Greedy, and the site; it drops as the surroundings get picked over (base.scavLeft, 1 → 0.2, back up
+// slowly when nobody scavenges). Expeditions to real sites are where supplies come from.
 export const GREEDY_SCAV = 1.15; // the Greedy trait: finds more when scavenging around a base
+export const BASE_SCAV_CHANCE = 0.07;   // per scavenger per day at Scavenging 0, fresh surroundings
+export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1] };
+const SCAV_DEPLETE = 0.004, SCAV_REGROW = 0.0015, SCAV_FLOOR = 0.2;
+export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
+export function scavChance(state, base, s) {
+  const b = siteBonus(state, base);
+  const p = BASE_SCAV_CHANCE * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.04) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s);
+  return Math.min(0.5, p);
+}
+// What a find is drawn from: the site's own table, with scrap always likely; fuel and parts are rare.
+function scavTable(state, base) {
+  const t = { ...siteBonus(state, base).table };
+  t.scrap = (t.scrap || 0) + 2;
+  if (t.fuel) t.fuel *= 0.4;
+  if (t.parts) t.parts *= 0.5;
+  return t;
+}
+// Expected supplies per day (for the UI and tests).
 export function scavengeOutput(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "scavenge" && !s.inBed);
-  const b = siteBonus(state, base);
-  const total = people.reduce((sum, s) => sum + (2 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.2) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1), 0);
-  // 60% scrap, the rest split by what the site holds.
-  const out = { scrap: total * 0.6 };
-  const keys = Object.keys(b.table).filter((k) => k !== "scrap");
-  const w = keys.reduce((a, k) => a + b.table[k], 0) || 1;
-  for (const k of keys) out[k] = (out[k] || 0) + (total * 0.4 * b.table[k]) / w / Math.max(1, SUPPLIES[k].value / 2) * (k === "ammo" ? 4 : 1);
+  const table = scavTable(state, base);
+  const w = Object.values(table).reduce((a, v) => a + v, 0) || 1;
+  const p = people.reduce((a, s) => a + scavChance(state, base, s), 0);
+  const out = {};
+  for (const [k, v] of Object.entries(table)) out[k] = (p * v / w) * (SCAV_FIND[k][0] + SCAV_FIND[k][1]) / 2;
   return out;
+}
+
+function baseScavenging(state, base, people) {
+  const rng = state.rng;
+  const scav = people.filter((s) => s.role === "scavenge" && !s.inBed);
+  const table = scavTable(state, base);
+  const keys = Object.keys(table);
+  for (const s of scav) {
+    if (!rng.chance(scavChance(state, base, s))) continue;
+    const k = rng.weighted(keys, (x) => table[x]);
+    const q = rng.int(SCAV_FIND[k][0], SCAV_FIND[k][1]);
+    base.stock[k] = (base.stock[k] || 0) + q;
+    econStats(state).scavFinds++;
+    log(state, `${s.name.split(" ")[0]} turned up ${q} ${k} around ${base.name}.`, "good");
+  }
+  base.scavLeft = scav.length ? Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length) : Math.min(1, scavLeft(base) + SCAV_REGROW);
+}
+
+// ---------- water ----------
+// The hub has a well; an outpost a spring or a hand pump; a base by a river or lake draws from it too. Well
+// buildings add more, rain catchers fill on wet days (weather.rainWater), cisterns hold more. Production only
+// fills the base up to its capacity (water brought home on top of that is kept). Everyone living at a base drinks
+// 1 a day (1.5 in a heat wave), the sick with dysentery 1 more; growing crops are watered on dry days
+// (farming.cropWaterNeed). Water filters (crafting.js) add their water on top.
+export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, hotDrink: 1.5 };
+export const waterCapacity = (base) => (base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
+
+export function waterProduction(state, base) {
+  const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
+  const own = (base.type === "hub" ? WATER.hubWell : WATER.spring) * factor;
+  const stream = byWater(state, base) ? WATER.stream : 0;
+  const wells = count(base, "well") * WATER.well * factor;
+  const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
+  const filters = base.armory.filter((it) => it && it.key === "waterfilter").length * 3;
+  const total = own + stream + wells + rain;
+  return { own, stream, wells, rain, filters, factor, total: Math.round(total * 10) / 10 };
+}
+
+const hotToday = (state) => {
+  const w = Weather.weather ? Weather.weather(state) : null;
+  return !!w && (w.key === "heat" || w.hi >= 30);
+};
+export function waterNeed(state, base) {
+  const mouths = residents(state, base.id);
+  const hot = hotToday(state);
+  const sick = mouths.reduce((a, s) => a + conditionsOf(s).reduce((b, c) => b + (CONDITIONS[c.key].thirst || 0), 0), 0);
+  const people = mouths.length * (hot ? WATER.hotDrink : WATER.drink) + sick;
+  const crops = cropWaterNeed(state, base);
+  return { people: Math.round(people * 10) / 10, crops, total: Math.round((people + crops) * 10) / 10, hot };
+}
+
+// Water per day and days left, for the top bar and the base panel.
+export function waterOutlook(state, base) {
+  const prod = waterProduction(state, base);
+  const need = waterNeed(state, base);
+  const stock = base.stock.water || 0;
+  const cap = waterCapacity(base);
+  const inflow = prod.total + prod.filters;
+  const net = inflow - need.total;
+  // On a dry day: no rain in the catchers, and the crops need watering (for planning: is the supply enough?).
+  const dryNet = inflow - prod.rain - need.people - cropWaterNeed(state, base, { dry: true });
+  return { stock, cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
+}
+
+// Thirst: health lost per day by everyone at a base that ran dry (10, 14, 18 … up to 25), scaled by how short they
+// were (at least 35%). Like hunger, armor does not help and nobody heals; it kills faster than hunger.
+export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
+function thirst(state, base, mouths, short) {
+  base.thirstDays = (base.thirstDays || 0) + 1;
+  econStats(state).thirstDays++;
+  const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
+  for (const s of mouths) {
+    s.mood = Math.max(0, s.mood - 8);
+    hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true });
+  }
+  log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
+}
+
+// ---------- food ----------
+// Stored food spoils: 1% of the stock a day, more as the store grows (+1% per 800 food: big piles draw rats and
+// rot), half that in the cold, half again in the heat; a storehouse keeps it 25% better and a root cellar 50%
+// (both: 62%).
+export const FOOD_SPOIL = 0.01;
+export const SPOIL_PILE = 800;
+export function spoilRate(state, base) {
+  const w = Weather.weather ? Weather.weather(state) : null;
+  const mean = w ? (w.hi + w.lo) / 2 : 15;
+  const temp = mean < 5 ? 0.5 : mean > 24 ? 1.5 : 1;
+  const store = (count(base, "storehouse") ? 0.75 : 1) * (count(base, "cellar") ? 0.5 : 1);
+  const pile = 1 + Math.max(0, base.stock.food || 0) / SPOIL_PILE;
+  return FOOD_SPOIL * pile * temp * store;
+}
+export const foodSpoilage = (state, base) => Math.max(0, base.stock.food || 0) * spoilRate(state, base);
+export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
+export const eatPerDay = (state, base) => residents(state, base.id).length * (Weather.foodNeedFactor ? Weather.foodNeedFactor(state) : 1);
+
+// Food outlook for the base panel: stock, expected farm food (next 30 days), eaten, spoiled and used per day,
+// days of food left without harvests, and the next harvests.
+export function foodOutlook(state, base) {
+  const farm = farmFoodPerDay(state, base);
+  const scav = scavengeOutput(state, base).food || 0;
+  let used = 0;
+  for (const st of stations(base)) {
+    const ss = stationStatus(state, base, st);
+    if (ss.running) used += RECIPES[ss.recipe].in.food || 0;
+  }
+  const eat = eatPerDay(state, base);
+  const spoil = foodSpoilage(state, base);
+  const stock = base.stock.food || 0;
+  const burn = eat + spoil + used - scav;
+  return { stock, farm, scav, used, eat, spoil, net: farm + scav - eat - spoil - used, daysLeft: burn > 0 ? stock / burn : Infinity, harvests: nextHarvests(state, base) };
 }
 
 export function foodForecast(state, base) {
@@ -65,6 +197,7 @@ export function foodForecast(state, base) {
 export const hungerDamage = (days) => Math.min(20, 4 + 2 * Math.max(1, days));
 function starve(state, base, mouths) {
   base.hungerDays = (base.hungerDays || 0) + 1;
+  econStats(state).hungerDays++;
   const dmg = hungerDamage(base.hungerDays);
   for (const s of mouths) {
     s.mood = Math.max(0, s.mood - 10);
@@ -75,6 +208,7 @@ function starve(state, base, mouths) {
 
 export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
+  healthDaily(state);
   fieldInfectionDaily(state);
   shipFromOutposts(state);
   maybeStranger(state);
@@ -86,24 +220,43 @@ function baseDaily(state, base) {
   // Everyone who eats and sleeps here: the staff plus (hub) trade-route escorts waiting between trips.
   const mouths = residents(state, base.id);
   const st = base.stock;
-  if (base.type === "hub") st.water = Math.min(80, (st.water || 0) + 14); // the well
   for (const s of people) if (s.role === "work") s.role = "scavenge";
+  farmOf(state, base); // plots follow the buildings
 
-  st.food += farmOutput(state, base);
-  for (const [k, v] of Object.entries(scavengeOutput(state, base))) st[k] = (st[k] || 0) + v;
-  for (const s of people) {
-    if (s.role === "scavenge" && !s.inBed && rng.chance(0.04)) {
-      const before = s.health;
-      hurt(state, s, rng.int(10, 25), base.tile, `scavenging near ${base.name}`);
-      if (s.alive) log(state, `${s.name} was hurt scavenging near ${base.name} (health ${Math.round(before)} → ${Math.round(s.health)}).`, "danger");
-    }
-    if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
-  }
+  // Water in: the well, streams, wells and rain catchers fill the base up to its capacity.
+  const prod = waterProduction(state, base);
+  const room = Math.max(0, waterCapacity(base) - (st.water || 0));
+  st.water = (st.water || 0) + Math.min(room, prod.total);
+
+  baseScavenging(state, base, people);
+  for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
 
-  // Eating. An outpost that runs short is covered from the hub afterwards (shipFromOutposts).
-  st.food -= mouths.length;
+  // Drinking: people first, then the crops get what is left.
+  const need = waterNeed(state, base);
+  if (mouths.length && (st.water || 0) + 1e-9 < need.people) {
+    const short = 1 - (st.water || 0) / need.people;
+    st.water = 0;
+    thirst(state, base, mouths, short);
+  } else {
+    st.water = (st.water || 0) - need.people;
+    base.thirstDays = 0;
+  }
+  const give = Math.min(Math.max(0, st.water || 0), need.crops);
+  st.water = (st.water || 0) - give;
+  farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+
+  // Eating. An outpost that runs short is covered from the hub afterwards (shipFromOutposts). Under a week of food
+  // left, everyone goes on short rations (60%): it stretches the stock and costs mood, not health.
+  const full = eatPerDay(state, base);
+  const rationing = mouths.length > 0 && (st.food || 0) > 0 && (st.food || 0) < full * RATION_DAYS;
+  if (rationing && !base.rationing) log(state, `${base.name} is on short rations: under ${RATION_DAYS} days of food left.`, "danger");
+  base.rationing = rationing;
+  if (rationing) for (const s of mouths) s.mood = Math.max(0, s.mood - 3);
+  const eaten = full * (rationing ? RATION : 1);
+  st.food -= eaten;
+  econStats(state).eaten += eaten;
   if (st.food < 0 && base.type === "hub") {
     st.food = 0;
     starve(state, base, mouths);
@@ -111,6 +264,8 @@ function baseDaily(state, base) {
     base.hungerDays = 0;
     for (const s of mouths) s.mood = Math.min(100, s.mood + 1);
   }
+  // Stored food spoils.
+  if (st.food > 0) { const sp = foodSpoilage(state, base); st.food -= sp; econStats(state).spoiled += sp; }
   // Beds.
   const crowd = mouths.length - baseBeds(base);
   for (const s of mouths) s.mood = Math.max(0, Math.min(100, s.mood + (crowd > 0 ? -3 : 1)));
@@ -209,7 +364,8 @@ function shipFromOutposts(state) {
     } else base.hungerDays = 0;
     if (!cutOff) {
       // Ship surplus to the hub, keeping a reserve: enough scrap to save up for a building (and parts once a job is queued).
-      const keep = { food: staff.length * 3, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2 };
+      // Water and seed: an outpost keeps a week of water (its own well is small) and food to sow its plots.
+      const keep = { food: staff.length * 3 + 6, water: staff.length * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const k of Object.keys(base.stock)) {

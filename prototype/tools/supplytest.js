@@ -160,6 +160,11 @@ for (const seed of seeds) {
       // The player keeps the truck repaired.
       if (truck.loc.kind === "base" && truck.condition < 40) truck.condition = 85;
       if (h.stock.fuel < 40) h.stock.fuel += 30; // and finds fuel now and then
+      // Teams bring food and water home (crops ripen in batches and stored food spoils), and scrap to Outpost A
+      // (picking around a base rarely finds anything now): this test is about the supply runs, not about famine.
+      if (h.stock.food < 200) h.stock.food += 100;
+      if (h.stock.water < 60) h.stock.water += 40;
+      if (A.stock.scrap < 8 && d % 3 === 0) A.stock.scrap += 6;
       // Release the held convoy after 4 days of holding.
       if (!released && jobParty(state, j3)?.phase === "holding" && d >= (j3.lastDay || 0) + 6) {
         check(supplyStatus(state, j3).key === "holding", "j3 status not holding");

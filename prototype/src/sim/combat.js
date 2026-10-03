@@ -43,6 +43,14 @@ export function registerCombatHandler(key, fn) {
   (handlers = handlers || new Map()).set(key, fn);
 }
 
+// Battle layouts by key (setup.layout): fn(b, ctx) is called twice while a battle is set up, with ctx.phase "map"
+// (after the map is made, before anyone is placed: put defences, hive flesh) and "units" (after both sides are
+// placed: add bosses, adjust units). Registered like the handlers (defences.js, hives.js).
+var layouts; // eslint-disable-line no-var
+export function registerBattleLayout(key, fn) {
+  (layouts = layouts || new Map()).set(key, fn);
+}
+
 export function combatants(state, setup) {
   let list = [];
   if (setup.partyId) {
@@ -185,6 +193,12 @@ export const CELL = {
   cabinet: { walk: false, cover: 1, los: false, name: "Cabinet" },
   counter: { walk: false, cover: 1, los: false, name: "Counter" },
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
+  // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
+  // the dead that steps in (spikes hurt, a trench stops it for the turn).
+  barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
+  spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" },
+  trench:    { walk: true,  cover: 0, los: false, name: "Trench", trap: "trench" },
+  hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh" },
 };
 
 // Weapon stats in battle, keyed like GEAR. opt = best range; fall = aim lost per tile beyond it.
@@ -597,6 +611,17 @@ export function createBattle(state, setup) {
     losCache: new Int8Array(W * H * W * H), rng,
   };
   b.reinfMax = Math.round(b.infection * 5);
+  const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
+  const layoutCtx = (phase) => ({
+    phase, state, rng, W, H, inside, cellAt: (x, y) => b.cells[idx(x, y)],
+    free: (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "open" && !unitAt(b, x, y),
+    put: (x, y, k) => { if (inside(x, y)) b.cells[idx(x, y)].k = k; },
+    standable: (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y),
+  });
+  if (layout) {
+    layout(b, layoutCtx("map"));
+    b.reach = flood(b.cells, 0, Math.floor(H / 2));
+  }
   const occupied = (x, y) => !!unitAt(b, x, y);
   const spot = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
   const coverScore = (x, y) => coverSides(b, x, y).reduce((s, c) => s + c, 0);
@@ -652,6 +677,7 @@ export function createBattle(state, setup) {
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
   });
+  if (layout) layout(b, layoutCtx("units"));
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
 
   const foeName = e.name || e.kind;
@@ -741,6 +767,13 @@ function moveAlong(b, u, path) {
     if (there && (active(there) || (x === path[path.length - 1][0] && y === path[path.length - 1][1]))) break;
     u.x = x; u.y = y;
     walked.push([x, y]);
+    // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
+    const trap = CELL[b.cells[idx(x, y)].k].trap;
+    if (trap && u.kind === "zombie") {
+      if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(18, 28), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
+      else { u.ap = 0; say(b, `${u.name} flounders in the trench.`, "good"); }
+      if (!active(u) || trap === "trench") break;
+    }
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
       if (!o.ow || o.side === u.side || !active(o) || !active(u)) continue;
@@ -1159,6 +1192,11 @@ function checkEnd(state, b) {
   if (!b.units.some((u) => u.side === "player" && active(u))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
 }
 
+// Ends the open battle now (a battle played out headless that ran too long: defences.js fightNow).
+export function endBattleNow(state, outcome) {
+  if (state.combat && !state.combat.over) endBattle(state, state.combat, outcome);
+}
+
 function endBattle(state, b, outcome) {
   const rng = state.rng;
   b.over = true;
@@ -1178,7 +1216,7 @@ function endBattle(state, b, outcome) {
       let live;
       if (outcome === "victory") live = u.stab ? 1 : 0.5 + medic * 0.02;
       else if (outcome === "retreat") live = 0;
-      else live = (zombies ? 0.1 : 0.35) + (u.stab ? 0.3 : 0);
+      else live = (setup.downedLive ?? (zombies ? 0.1 : 0.35)) + (u.stab ? 0.3 : 0); // setup.downedLive: at your own base the downed can be dragged inside (defences.js)
       dies = !rng.chance(live);
       if (outcome === "retreat") lines.push(`${u.name} was left behind.`);
     }
@@ -1269,21 +1307,21 @@ export const AREAS = {
   kitchen:   { name: "Kitchen",        boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.85, 4, 12], water: [0.6, 3, 6] }, gear: [["knife", 0.08]] },
   pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.85, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05]] },
   clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.75, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08]] },
-  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.6, 2, 6], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03]] },
-  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.2, 1, 3] }, gear: [] },
-  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.2, 2, 4] }, gear: [] },
+  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03]] },
+  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [] },
+  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [] },
   office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.15, 1, 1], water: [0.3, 1, 3] }, gear: [] },
   armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04]] },
   barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.3, 1, 3] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03]] },
   motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [] },
-  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.3, 2, 4], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05]] },
+  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05]] },
   lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.5, 1, 4], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["milradio", 0.03]] },
   cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.2, 1, 2] }, gear: [["huntrifle", 0.08], ["machete", 0.06]] },
   hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [] },
   cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08]] },
   control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [] },
   campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04]] },
-  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.5, 1, 4], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03]], alarm: 0.15 },
+  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
   gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05]] },
   lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.25, 1, 2], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04]] },

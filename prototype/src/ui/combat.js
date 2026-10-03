@@ -820,6 +820,29 @@ function drawObject(k, px, py, cs, n) {
       ctx.strokeStyle = "#a9cbff"; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = "#cfe3f7"; ctx.fillRect(px + cs * 0.6, py + cs * 0.25, cs * 0.2, cs * 0.5);
       break;
+    // Base defences and the inside of a hive (sim/defences.js, sim/hives.js).
+    case "barricade":
+      ctx.fillStyle = "#5a4a36"; ctx.fillRect(px + cs * 0.06, py + cs * 0.22, cs * 0.88, cs * 0.56);
+      ctx.fillStyle = "#8a6a44"; for (let i = 0; i < 3; i++) ctx.fillRect(px + cs * 0.08, py + cs * (0.26 + i * 0.17), cs * 0.84, cs * 0.09);
+      ctx.strokeStyle = "#2a2018"; ctx.strokeRect(px + cs * 0.06, py + cs * 0.22, cs * 0.88, cs * 0.56);
+      ctx.fillStyle = "#9a9a92"; ctx.fillRect(px + cs * 0.6, py + cs * 0.12, cs * 0.3, cs * 0.16); // a slab of sheet metal on top
+      break;
+    case "spikes":
+      ctx.fillStyle = "#2a2018"; ctx.fillRect(px + cs * 0.1, py + cs * 0.1, cs * 0.8, cs * 0.8);
+      ctx.fillStyle = "#c9b48a";
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const sx = px + cs * (0.22 + i * 0.28), sy = py + cs * (0.24 + j * 0.27); ctx.beginPath(); ctx.moveTo(sx, sy - cs * 0.1); ctx.lineTo(sx + cs * 0.06, sy + cs * 0.06); ctx.lineTo(sx - cs * 0.06, sy + cs * 0.06); ctx.closePath(); ctx.fill(); }
+      break;
+    case "trench":
+      ctx.fillStyle = "#241c14"; ctx.fillRect(px, py + cs * 0.2, cs, cs * 0.6);
+      ctx.fillStyle = "#4a3a28"; ctx.fillRect(px, py + cs * 0.2, cs, cs * 0.08); ctx.fillRect(px, py + cs * 0.72, cs, cs * 0.08);
+      ctx.fillStyle = "#8a6a44"; ctx.fillRect(px + cs * 0.3, py + cs * 0.1, cs * 0.06, cs * 0.25); ctx.fillRect(px + cs * 0.66, py + cs * 0.1, cs * 0.06, cs * 0.25); // stakes
+      break;
+    case "hivewall":
+      ctx.fillStyle = "#3a161c"; ctx.fillRect(px, py, cs, cs);
+      ctx.fillStyle = n > 0.5 ? "#6a2a30" : "#5a2a2e"; ctx.beginPath(); ctx.ellipse(cx, cy, cs * 0.46, cs * 0.42, n * 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ff5a3a"; ctx.beginPath(); ctx.arc(cx + cs * (n - 0.5) * 0.4, cy - cs * 0.08, cs * 0.08, 0, Math.PI * 2); ctx.fill(); // a glowing pod
+      ctx.strokeStyle = "#8a1c22"; ctx.beginPath(); ctx.moveTo(px + cs * 0.1, cy + cs * 0.2); ctx.lineTo(px + cs * 0.9, cy + cs * 0.1); ctx.stroke();
+      break;
     case "water":
       ctx.fillStyle = "#2c4f6b"; ctx.fillRect(px, py, cs, cs);
       ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.beginPath(); ctx.moveTo(px + cs * 0.15, py + cs * (0.3 + n * 0.4)); ctx.lineTo(px + cs * 0.55, py + cs * (0.3 + n * 0.4)); ctx.stroke();
@@ -858,7 +881,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
   }
-  drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy, cs, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 });
+  drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy - (t.boss ? cs * 0.12 : 0), t.boss ? cs * 1.3 : cs, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 }); // bosses stand taller
   if (t.down) {
     ctx.fillStyle = ring;
     ctx.font = `800 ${Math.round(cs * 0.3)}px Segoe UI, sans-serif`;

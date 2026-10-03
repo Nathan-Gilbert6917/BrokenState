@@ -15,6 +15,7 @@ import { rollTravelEvent } from "../src/sim/events.js";
 import { newItem, stripAll, allItems } from "../src/sim/inventory.js";
 import { saveSupplyRun, dispatchSupplyRun, jobParty, supplyRunById } from "../src/sim/supply.js";
 import { searchBusy } from "../src/sim/scavenge.js";
+import { WATER } from "../src/sim/economy.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -686,8 +687,12 @@ section("Supply runs: an edit changes the next run only; held convoys drink (T-1
       check(state.parties.includes(p) && p.phase === "holding", "an edit to the job changed what the convoy on the road does at the destination");
       p.supplies.water = 0;
       op.stock.water = 0;
+      // A dry outpost: no spring or stream here for this check (outposts have their own small water supply now).
+      const wet = { spring: WATER.spring, stream: WATER.stream };
+      WATER.spring = 0; WATER.stream = 0;
       const hp = partyMembers(state, p).map((s) => s.health);
       tick(state, 24 * 3, p);
+      Object.assign(WATER, wet);
       const now = partyMembers(state, p).map((s) => s.health);
       check(now.length < hp.length || now.some((x, i) => x < hp[i]), "a convoy holding at a base with no water is not thirsty");
     }

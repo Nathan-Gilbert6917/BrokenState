@@ -104,7 +104,7 @@ export function generateMap(rng) {
     tiles.push({
       id, x, y, elev, terrain,
       road: false, roadLinks: [], river: false, bridge: false,
-      loc: null, loot: 0, infection: 0, owner: null, nest: false,
+      loc: null, loot: 0, infection: 0, owner: null, hive: false,
     });
   }
 
@@ -430,10 +430,10 @@ export function generateMap(rng) {
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
-  // Nests: four around the origin, two around each other hot spot.
+  // Infestation hives (hives.js): four around the origin, two around each other hot spot.
   for (const [i, s] of seeds.entries()) {
-    const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.nest));
-    for (const n of spots.slice(0, i ? 2 : 4)) n.nest = true;
+    const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.hive));
+    for (const n of spots.slice(0, i ? 2 : 4)) n.hive = true;
   }
 
   return {

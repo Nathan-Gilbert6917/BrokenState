@@ -7,11 +7,12 @@
 import { render, resize, camera, view, HEX } from "./render.js";
 import { chronicleReader, finishChronicle, INF_Q } from "../sim/chronicle.js";
 import { drawMapSprite, markerSpriteCanvas } from "./mapsprites.js";
+import { seasonOfDay } from "../sim/weather.js";
 
 export const TL_SPEEDS = [1, 2, 5, 10]; // in-game days per second
 const PLAYER_COLOR = "#4f8fd6";
 const KIND_COLOR = { death: "#ff4d4d", danger: "#e2685f", good: "#6cc48a", info: "#8fb4e0", world: "#c9b98a" };
-const LAYER_KEYS = ["pois", "territory", "teams", "hordes", "infection"];
+const LAYER_KEYS = ["pois", "territory", "teams", "hordes", "infection", "weather"];
 const CHART_W = 300, CHART_H = 54;
 const HOT = Math.ceil(0.6 * INF_Q); // hotzone tiles (same 0.6 line as the dev panel)
 const CAPTIONS = 7;                 // captions shown at once
@@ -19,7 +20,7 @@ const CAPTIONS = 7;                 // captions shown at once
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const dayOf = (h) => Math.floor(h / 24) + 1;
-const clockOf = (h) => `Day ${dayOf(h)} · ${String(Math.floor(h) % 24).padStart(2, "0")}:00`;
+const clockOf = (h) => `Day ${dayOf(h)} · ${String(Math.floor(h) % 24).padStart(2, "0")}:00 · ${seasonOfDay(dayOf(h) - 1).icon} ${seasonOfDay(dayOf(h) - 1).name}`; // with the season (weather.js)
 const kindColor = (e) => e.color || KIND_COLOR[e.kind] || KIND_COLOR.info;
 
 let active = null; // the open session, for the scrubber's DOM listeners
@@ -274,6 +275,7 @@ export function controlsHTML(s) {
     <span class="tl-sep"></span>
     ${b("tl-layer", "Infection", "Zombie infection overlay (I)", ` data-k="infection"`, view.layers.has("infection") ? "active" : "")}
     ${b("tl-layer", "Territory", "Land held by you and the groups (T)", ` data-k="territory"`, view.layers.has("territory") ? "active" : "")}
+    ${b("tl-layer", "Weather", "Season and weather wash over the land (snow, rain, fog, heat)", ` data-k="weather"`, view.layers.has("weather") ? "active" : "")}
     ${b("tl-fit", "Fit", "Show the whole map (F). Drag to pan, wheel to zoom.")}
     ${b("tl-close", "Close ✕", s.from === "end" ? "Back to the game-over screen (Esc)" : "Back to the game (Esc)")}`;
 }
@@ -340,7 +342,7 @@ function updateOverlay(s, fs) {
     $("tl-people").innerHTML = info.fallen ? `<span class="danger">fallen</span>` : `${info.pop} alive · ${info.bases} base${info.bases === 1 ? "" : "s"}`;
     $("tl-stock").innerHTML = info.fallen ? "" : `<span class="muted">Hub:</span> food ${info.stock.food} · water ${info.stock.water} · ammo ${info.stock.ammo} · meds ${info.stock.meds}`;
     $("tl-vals").innerHTML = valuesHTML(s, info);
-    $("tl-world").textContent = `Hordes ${info.hordes} (${info.zombies} dead) · nests ${info.nests} · hotzone tiles ${hot}`;
+    $("tl-world").textContent = `Hordes ${info.hordes} (${info.zombies} dead) · hives ${info.hives}${info.sites ? ` (+${info.sites} being built)` : ""} · hotzone tiles ${hot}`;
   }
   // Captions: when a new one comes up, and once a day for the fading (an event can fall between two frames).
   const capKey = `${lastEventAt(s, s.t)}:${Math.floor(s.t / 24)}`;

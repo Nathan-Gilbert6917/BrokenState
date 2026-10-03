@@ -1,5 +1,6 @@
 // Headless balance/smoke test: runs the simulation without any UI.
 // Usage: node tools/simtest.js [days] [seed] [factions]
+import { hiveTracker } from "../src/sim/hives.js";
 import { createWorld, tickHour, day, alive, hub } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, startReturn } from "../src/sim/parties.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
@@ -62,6 +63,10 @@ console.log(`Simulated ${day(state) - 1} days in ${ms.toFixed(0)} ms (seed ${see
 console.log(`Survivors alive: ${alive(state).length}, game over: ${state.gameOver}`);
 console.log("Hub stock:", JSON.stringify(h.stock));
 console.log(`Hordes: ${state.hordes.length} (sizes ${state.hordes.map((x) => x.size).join(", ")})`);
+{
+  const hv = hiveTracker(state);
+  console.log(`Hives: ${hv.hives} (built ${hv.stats.built}, destroyed ${hv.stats.destroyed}, resources ${hv.res}, +${hv.income}/day), build sites ${hv.sites.length}, horde attacks on your bases: held ${hv.stats.held}, break-ins ${hv.stats.breakIns} (beaten ${hv.stats.repelled}, overrun ${hv.stats.overrun})${state.victory ? " · VICTORY" : ""}`);
+}
 console.log(`Death sites: ${state.deathSites.length}, cards resolved: ${cardsResolved}`);
 for (const f of state.factions) console.log(`  ${f.alive ? "" : "[gone] "}${f.name} (${f.type}) pop ${f.pop}, bases ${f.bases.length}, goodwill ${f.goodwill.toFixed(0)} ${attitude(f)}`);
 console.log("Recent log:");

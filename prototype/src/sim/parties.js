@@ -18,11 +18,15 @@ import {
 } from "./vehicles.js";
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf } from "./conflicts.js";
+import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText } from "./orders.js";
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
+import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
+import { travelFactor, travelEffects, travelHazard } from "./weather.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -38,12 +42,14 @@ export const MISSIONS = {
   outpost:     { name: "Build outpost",    desc: "Found a satellite base here. Needs 15 scrap carried. The team stays as its first staff." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
+  hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running." },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak them out, storm the base, negotiate or pay a ransom." },
   survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
+  caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
 export function moveCost(state, from, to, vehicle) {
@@ -104,7 +110,7 @@ export function sightRadius(state, p) {
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
-  return r;
+  return Math.max(1, r + travelEffects(state).sight); // fog and blizzards cut sight by a tile (weather.js)
 }
 
 function hasMilRadio(state, p) {
@@ -154,12 +160,15 @@ export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply
 // over, a delay (negative progress) is paid first, and a vehicle that runs dry is left behind and the
 // team walks the rest (at walking cost). Random events and fights can still add delays on the road.
 // maxHours: stop early (idx then says how far the team got).
-export function travelHours(state, path, { vehicle = false, speed = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90 } = {}) {
+// Weather (weather.js) changes the cost of a step by the hour it is taken in, and every day's weather is already
+// fixed in state.weather, so the estimate steps through the same hours as the trip will: startHour is the hour the
+// trip starts from (now, unless it is a later leg or a queued move). weather: false gives the fair-weather time.
+export function travelHours(state, path, { vehicle = false, speed = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: !!vehicle };
   let f = fuel, hours = 0, dryAt = null;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
-    for (const tileId of stepAlong(state, sim, speed)) {
+    for (const tileId of stepAlong(state, sim, speed, weather ? startHour + hours : null)) {
       if (!sim.vehicle) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
       const use = state.tiles[prev].roadLinks.includes(tileId) ? 0.6 : 1.5;
@@ -185,13 +194,14 @@ function setPlan(state, p, etaBack) {
 // events are unknown at the hub, so this can run ahead of the real team.
 export function plannedTile(state, p) {
   const plan = p.planPath || p.path;
-  const t = state.hour - (p.planStart ?? p.departed);
-  const opts = { vehicle: !!p.planVehicle, speed: partySpeed(p), fuel: p.planFuel ?? Infinity };
+  const start = p.planStart ?? p.departed;
+  const t = state.hour - start;
+  const opts = { vehicle: !!p.planVehicle, speed: partySpeed(p), fuel: p.planFuel ?? Infinity, startHour: start };
   if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
   const tb = t - p.etaOut - 6;
   if (p.etaBack == null || tb <= 0) return plan[plan.length - 1];
   const go = travelHours(state, plan, opts);
-  return plan[plan.length - 1 - travelHours(state, [...plan].reverse(), { ...opts, vehicle: go.vehicle, fuel: go.fuelLeft, maxHours: tb }).idx];
+  return plan[plan.length - 1 - travelHours(state, [...plan].reverse(), { ...opts, vehicle: go.vehicle, fuel: go.fuelLeft, maxHours: tb, startHour: start + p.etaOut + 6 }).idx];
 }
 
 // Hours left for a team on its current path (what the order queue and the panels show).
@@ -209,14 +219,19 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const go = travelHours(state, out.path, { vehicle, speed: sp, fuel: vehicle ? fuel ?? Infinity : 0 });
   // The way back is planned from the destination, like startReturn does (on foot if the tank ran dry).
   const backPlan = planPath(state, dest, home.tile, go.vehicle) || planPath(state, dest, home.tile, false);
-  const back = backPlan ? travelHours(state, backPlan.path, { vehicle: go.vehicle && !!planPath(state, dest, home.tile, true), speed: sp, fuel: go.fuelLeft }) : { hours: go.hours };
+  const backOpts = { vehicle: go.vehicle && !!planPath(state, dest, home.tile, true), speed: sp, fuel: go.fuelLeft, startHour: state.hour + go.hours + 6 };
+  const back = backPlan ? travelHours(state, backPlan.path, backOpts) : { hours: go.hours };
   const hoursOut = go.hours;
   const hoursBack = back.hours;
   const hours = hoursOut + hoursBack + 6; // out, back, plus time on site
   const n = memberIds.length;
+  // Hours the weather adds (or, rarely, saves) against the same trip in fair weather: shown by the planner.
+  const fairOut = travelHours(state, out.path, { vehicle, speed: sp, fuel: vehicle ? fuel ?? Infinity : 0, weather: false }).hours;
+  const fairBack = backPlan ? travelHours(state, backPlan.path, { ...backOpts, weather: false }).hours : fairOut;
   return {
     path: out.path,
     hoursOut, hoursBack, hours,
+    weatherOut: hoursOut - fairOut, weatherBack: hoursBack - fairBack,
     arriveHour: state.hour + hoursOut,
     dryAt: go.dryAt,
     days: hours / 24,
@@ -375,12 +390,14 @@ export function pruneCards(state) {
   for (let i = state.cards.length - 1; i >= 0; i--) if (cardStale(state, state.cards[i])) state.cards.splice(i, 1);
 }
 
-function stepAlong(state, p, speed) {
+// hour: the hour this step is taken in (the weather of that hour sets the cost); null = fair weather.
+function stepAlong(state, p, speed, hour = state.hour) {
   if (p.idx >= p.path.length - 1) return [];
   p.progress += speed;
   const entered = [];
   while (p.idx < p.path.length - 1) {
-    const cost = moveCost(state, p.path[p.idx], p.path[p.idx + 1], p.vehicle);
+    const from = p.path[p.idx], to = p.path[p.idx + 1];
+    const cost = moveCost(state, from, to, p.vehicle) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }));
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
       break;
@@ -457,6 +474,8 @@ function playerPartyHour(state, p) {
     onEnterTile(state, p, tileId);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
   }
+  // Storms and blizzards: a small chance each hour on the road that someone is hurt (weather.js).
+  if (p.kind !== "convoy" && p.idx < p.path.length - 1 && travelHazard(state, p, partyMembers(state, p)) && wipeIfEmpty(state, p)) return;
   updateRadio(state, p);
   if (p.idx >= p.path.length - 1) {
     if (p.phase === "out") arrive(state, p);
@@ -613,6 +632,7 @@ export function orderOptions(state, p) {
   if (t.loot > 0.05) add("scavenge");
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
+  if (p.caravan) add("caravan"); // a trade caravan's stop card (caravans.js)
   if (fb && captivesOf(state, fb.id).length) add("rescue");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
   if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
@@ -622,6 +642,7 @@ export function orderOptions(state, p) {
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
+  if (hiveAt(state, tile)) add("hive");
   if (t.hidden && !t.hidden.taken && (t.hidden.known || p.spotted?.has(`${t.hidden.type}:${tile}`))) add("investigate");
   const v = state.vehicles.find((x) => x.loc.kind === "abandoned" && x.loc.tile === tile);
   if (v && !p.vehicle) {
@@ -862,6 +883,8 @@ function arrive(state, p) {
       awaitOrders(state, p, text);
       return "";
     }
+    case "hive":
+      return hiveArrive(state, p); // hives.js: the hive card and its battle
     case "cull": {
       const horde = state.hordes.find((h) => h.tile === p.dest) || state.hordes.find((h) => state.grid.distance(h.tile, p.dest) <= 1);
       if (!horde) {
@@ -895,6 +918,8 @@ function arrive(state, p) {
     case "route":
       convoyArrive(state, p);
       return "";
+    case "caravan":
+      return caravanStop(state, p) || ""; // caravans.js: the stop card
   }
   return "";
 }
@@ -920,10 +945,10 @@ function investigate(state, p) {
     if (h.type === "camp") {
       // Notes left behind point to something.
       const f = rng.pick(state.factions.filter((x) => x.alive));
-      const nest = state.tiles.find((x) => x.nest && state.grid.distance(x.id, tile) <= 10);
+      const nest = state.tiles.find((x) => x.hive && state.grid.distance(x.id, tile) <= 10);
       if (f) for (const b of f.bases) p.seen.set(b, snapshot(state, b));
       if (nest) p.seen.set(nest.id, snapshot(state, nest.id));
-      extra = ` Notes in the camp mention ${f ? f.name : "other survivors"}${nest ? " and a nest nearby" : ""}; it goes on the map when the team reports.`;
+      extra = ` Notes in the camp mention ${f ? f.name : "other survivors"}${nest ? " and a hive nearby" : ""}; it goes on the map when the team reports.`;
     }
     h.taken = true;
     spot(p, { key, type: h.type, tile, hour: state.hour, label: MARKER_TYPES[h.type].name, info: { emptied: true } });
@@ -1052,7 +1077,7 @@ function cullCard(state, p, horde) {
   const moved = (st) => { awaitOrders(st, p, "The horde had moved on before the team was set.", { failed: true }); return "The horde is no longer there."; };
   return {
     title: `A horde of ${horde.size}`,
-    text: `The team has found the horde near ${tileLabel(state, horde.tile)}. Your squad's combat power is ${Math.round(power0)}.`,
+    text: `The team has found the horde near ${tileLabel(state, horde.tile)} (score ${hordeScore(horde.size)}${horde.bosses ? `, a ${BOSS_NAMES.horde} among them` : ""}${zombieToughness(state, horde.tile) >= 3 ? "; this is red-skull ground by a hive, and the dead here are much tougher" : ""}). Your squad's combat power is ${Math.round(power0)}.`,
     partyId: p.id,
     choices: [
       {
@@ -1063,9 +1088,12 @@ function cullCard(state, p, horde) {
           const members = partyMembers(st, p);
           const power = members.reduce((s, m) => s + combatPower(m), 0);
           const ammoUse = takeSupply(p, "ammo", members.length * 15);
-          const kill = Math.min(horde.size, Math.round(power * (ammoUse > members.length * 8 ? 3 : 1.5) * st.rng.range(0.7, 1.3)));
+          // Tougher dead (a hive's land, red-skull ground) fall slower; a bigger horde (its score) presses closer.
+          const tough = 1 + zombieToughness(st, horde.tile) * 0.35;
+          const kill = Math.min(horde.size, Math.round((power * (ammoUse > members.length * 8 ? 3 : 1.5) * st.rng.range(0.7, 1.3)) / tough));
           horde.size -= kill;
-          if (members.length && st.rng.chance(0.4)) hurt(st, st.rng.pick(members), st.rng.int(15, 45), horde.tile, "fighting a horde");
+          const risk = Math.min(0.9, 0.25 + hordeScore(horde.size + kill) / 40 + (horde.bosses ? 0.2 : 0) + (tough - 1) * 0.3);
+          if (members.length && st.rng.chance(risk)) hurt(st, st.rng.pick(members), st.rng.int(15, 45) * tough, horde.tile, "fighting a horde");
           const broken = horde.size <= 5;
           if (broken && st.hordes.includes(horde)) st.hordes.splice(st.hordes.indexOf(horde), 1);
           if (!wipeIfEmpty(st, p)) awaitOrders(st, p, `The team cut down about ${kill} of them.`);
@@ -1289,6 +1317,7 @@ function aiPartyHour(state, p) {
     removeParty(state, p);
     return;
   }
+  if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   for (const tileId of entered) {
     // Hordes chew up whoever walks into them.
@@ -1298,9 +1327,9 @@ function aiPartyHour(state, p) {
       horde.size = Math.max(0, horde.size - Math.round(p.strength * 0.6));
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
-    if (p.kind === "convoy") {
+    if (p.kind === "convoy" || p.kind === "caravan") {
       for (const r of state.factions) {
-        if (!r.alive || r.type !== "raider") continue;
+        if (!r.alive || r.type !== "raider" || r.id === p.owner) continue;
         if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && state.rng.chance(0.12)) {
           r.stock.food += 15;
           r.stock.ammo += 20;
@@ -1333,6 +1362,8 @@ function aiPartyHour(state, p) {
         to.stock.scrap += 10;
       }
       removeParty(state, p);
+    } else if (p.kind === "caravan") {
+      caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "raid") {
       const stillThere = p.target.kind === "player" ? baseById(state, p.target.baseId) :
         factionById(state, p.target.factionId)?.bases.includes(p.target.tile);

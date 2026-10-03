@@ -94,14 +94,14 @@ for (let i = 0; i < seeds; i++) {
 
   // Same seed, same map.
   if (i < 5) {
-    const sig = (st) => JSON.stringify(st.tiles.map((t) => [t.terrain, t.road, t.loc && t.loc.name, Math.round(t.infection * 1000), t.nest]));
+    const sig = (st) => JSON.stringify(st.tiles.map((t) => [t.terrain, t.road, t.loc && t.loc.name, Math.round(t.infection * 1000), t.hive]));
     check(sig(createWorld({ seed, factionCount: 8 })) === sig(s), `seed ${seed}: not deterministic`);
   }
   if (i < 3) {
     const byType = {};
     for (const t of sites) byType[t.loc.type] = (byType[t.loc.type] || 0) + 1;
     console.log(`seed ${seed}: ${g.width}×${g.height}, ${sites.length} sites (${Object.entries(zones).map(([z, n]) => `${z} ${n}`).join(", ")}), ` +
-      `${s.tiles.filter((t) => t.road).length} road tiles, nests ${s.tiles.filter((t) => t.nest).length}, hub ${ht.loc.name}`);
+      `${s.tiles.filter((t) => t.road).length} road tiles, hives ${s.tiles.filter((t) => t.hive).length}, hub ${ht.loc.name}`);
     console.log(`  ${Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   }
 }

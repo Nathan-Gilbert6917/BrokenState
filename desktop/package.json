@@ -1,0 +1,19 @@
+{
+  "name": "broken-state-desktop",
+  "productName": "Broken State",
+  "version": "0.1.0",
+  "description": "Desktop window for the Broken State prototype",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "perf": "electron . --perf",
+    "perf:browser": "node perf/browser-bench.js",
+    "icon": "node scripts/make-icon.js",
+    "dist": "node scripts/dist.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "18.4.4",
+    "electron": "39.8.10"
+  }
+}

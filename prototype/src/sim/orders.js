@@ -73,8 +73,11 @@ export function queueEstimate(state, p) {
   if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
   // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
   let owed = Math.min(0, p.progress || 0);
+  // at: the hour each queued order starts (weather sets travel times by the hour, weather.js).
+  let at = state.hour + (p.phase === "task" && p.task?.hours != null ? Math.max(0, p.task.hours - p.task.done) : 0);
   if ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) {
     const cur = travelHours(state, p.path.slice(p.idx), { vehicle, speed: partySpeed(p), progress: p.progress, fuel });
+    at += cur.hours;
     tile = p.path[p.path.length - 1];
     vehicle = cur.vehicle;
     fuel = cur.fuelLeft;
@@ -85,7 +88,7 @@ export function queueEstimate(state, p) {
     if (o.type === "move") {
       const res = planPath(state, tile, o.tile, vehicle);
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed });
+        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed, startHour: at });
         owed = 0;
         hours = t.hours;
         vehicle = t.vehicle;
@@ -105,7 +108,7 @@ export function queueEstimate(state, p) {
       let res = planPath(state, tile, home.tile, vehicle);
       if (!res && vehicle) { res = planPath(state, tile, home.tile, false); vehicle = false; fuel = 0; }
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed });
+        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed, startHour: at });
         owed = 0;
         hours = t.hours;
         vehicle = t.vehicle;
@@ -118,6 +121,7 @@ export function queueEstimate(state, p) {
       tile = o.tile;
       if (o.mode === "leave") { vehicle = false; fuel = 0; }
     }
+    at += hours ?? 0;
     return { order: o, label: describeOrder(state, o), hours };
   });
 }

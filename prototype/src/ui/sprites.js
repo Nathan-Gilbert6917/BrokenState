@@ -10,6 +10,7 @@
 import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
+import { bossBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
 const UP = 4;             // pre-upscale factor for the cached canvas
@@ -484,6 +485,7 @@ export function unitCanvas(state, b, t, salt = 0) {
     const app = s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt);
     return survivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, spriteArmorKey(s));
   }
+  if (t.boss) return bossBattleCanvas(t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js)
   const seed = (t.id * 131 + salt) | 0;
   if (t.kind === "zombie") {
     const vk = `${seed}:${zlook.variants}`;

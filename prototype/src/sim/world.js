@@ -6,13 +6,14 @@ import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } 
 import { appearanceFor } from "./appearance.js";
 export { radioBasesInRange };
 
-// Bases with a radio station whose range covers a tile.
+// Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
 function radioBasesInRange(state, tileId, extra = 0) {
-  return state.bases.filter((b) => b.radio && state.grid.distance(b.tile, tileId) <= RADIO_RANGE + extra);
+  return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
 import { movePartiesHour } from "./parties.js";
 import { hordesHour, hordesDaily } from "./hordes.js";
+import { ensureHives, hivesSecured } from "./hives.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily } from "./vehicles.js";
@@ -24,6 +25,9 @@ import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { autopilotHour } from "./autopilot.js";
+import { woundTrauma } from "./health.js";
+import { weatherHour, weatherDaily } from "./weather.js";
+import { coverNodes, radioDaily } from "./radio.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -62,7 +66,7 @@ export function createWorld({ seed, factionCount, crew = null }) {
   const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
-    stock: { food: 45, water: 40, fuel: 24, meds: 6, ammo: 80, parts: 2, scrap: 25 },
+    stock: { food: 60, water: 40, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25 }, // fuel is scarce (economy rework)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -82,6 +86,7 @@ export function createWorld({ seed, factionCount, crew = null }) {
   if (crew) applyCrew(state, crew);
   assignStartingRoles(state);
 
+  ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
   // Pre-war maps: geography is known, current conditions are not.
   updateVision(state);
   log(state, `Day 1. ${state.bases[0].name} is all that is left. ${state.factions.length} other groups are out there somewhere.`, "info");
@@ -257,6 +262,7 @@ export function hurt(state, s, amount, tileId, cause, opts = {}) {
   }
   s.health -= amount;
   if (s.health <= 0) killSurvivor(state, s, tileId, cause);
+  else if (!opts || !opts.raw) woundTrauma(state, s, amount); // a real wound may need dressing (health.js)
 }
 
 export function killSurvivor(state, s, tileId, cause, extraItems = []) {
@@ -349,8 +355,17 @@ export function ensureLeader(state) {
 
 // The run ends when nobody is left alive: deaths, desertion and a captive changing sides all count (captives
 // still count as alive). Called after every way of losing someone, and once at the end of each hour.
+// The survivors win when every hive is destroyed and no new one is being built (hives.js hivesSecured); after
+// "Keep playing" on the victory screen (state.victoryKept) the run goes on until the last survivor is gone.
 export function checkGameOver(state) {
   if (state.gameOver) return true;
+  if (!state.victoryKept && alive(state).length && hivesSecured(state)) {
+    state.gameOver = true;
+    state.victory = true;
+    // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
+    log(state, `Every hive is destroyed. The State of Calder is not safe, but it is yours to win back. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+    return true;
+  }
   if (!state.survivors.length || alive(state).length) return false;
   state.gameOver = true;
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
@@ -422,16 +437,20 @@ export function baseVision(base) {
 
 export function snapshot(state, tileId) {
   const t = state.tiles[tileId];
-  const hordeSize = state.hordes.filter((h) => h.tile === tileId).reduce((s, h) => s + h.size, 0);
+  const here = state.hordes.filter((h) => h.tile === tileId);
+  const hordeSize = here.reduce((s, h) => s + h.size, 0);
+  const site = state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
   const factionBase = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   return {
     hour: state.hour,
     owner: t.owner,
     factionBase: factionBase ? factionBase.id : null,
     hordeSize,
+    hordeBoss: here.reduce((s, h) => s + (h.bosses || 0), 0),
     infection: t.infection,
     loot: t.loot,
-    nest: t.nest,
+    hive: !!t.hive,
+    site: site ? { biomass: site.biomass, started: site.started != null } : null,
     deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
   };
 }
@@ -475,6 +494,7 @@ export function mergeKnowledge(state, seen, spotted) {
 export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
+  weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   movePartiesHour(state);
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
@@ -482,6 +502,7 @@ export function tickHour(state) {
   craftingHour(state);
   medicalHour(state);
   if (state.hour % 24 === 0) {
+    weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
     vehiclesDaily(state);
@@ -491,6 +512,7 @@ export function tickHour(state) {
     supplyDaily(state);
     deathSitesDaily(state);
     captivesDaily(state);
+    radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     recomputeOwnership(state);
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");

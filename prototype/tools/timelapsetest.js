@@ -87,9 +87,11 @@ const state = run.state, c = state.chronicle;
 const lastDay = day(state);
 console.log(`Campaign: game over on day ${lastDay} (${run.forced} forced deaths after day ${days}), ${run.ms.toFixed(0)} ms.`);
 // The last death came outside tickHour (as in a battle): the viewer calls finishChronicle when it opens.
-const before = c.frames.length;
+// When the game ended inside the hourly tick instead (a horde breaking in can now end it before the forced
+// decline), that frame is recorded already and finishChronicle adds none.
+const before = c.frames.length, already = c.overAt != null;
 finishChronicle(state);
-check(c.frames.length === before + 1, "finishChronicle adds the game-over frame");
+check(c.frames.length === before + (already ? 0 : 1) && c.overAt != null, already ? "the game ended inside the hourly tick: its game-over frame is recorded and finishChronicle adds none" : "finishChronicle adds the game-over frame");
 check(c.overAt === state.hour, "game over recorded at the hour it happened");
 
 // ---------- frames ----------
@@ -122,7 +124,7 @@ try {
   const twin = new Map();
   const copy = (x) => { if (!twin.has(x)) twin.set(x, JSON.parse(JSON.stringify(x))); return twin.get(x); };
   const clone = {
-    frames: c.frames.map((f) => ({ h: f.h, d: f.d.slice(), full: f.full ? f.full.slice() : null, bases: copy(f.bases), fb: copy(f.fb), nests: copy(f.nests) })),
+    frames: c.frames.map((f) => ({ h: f.h, d: f.d.slice(), full: f.full ? f.full.slice() : null, bases: copy(f.bases), fb: copy(f.fb), hives: copy(f.hives), sites: copy(f.sites) })),
     events: c.events.map((e) => ({ ...e, text: e.text.split("").join("") })),
     own: c.own.slice(), inf: c.inf.slice(), factions: JSON.parse(JSON.stringify(c.factions)),
   };
@@ -131,7 +133,7 @@ try {
   if (!clone.frames.length) heap = null;
 } catch { /* no gc available: estimate only */ }
 const per365 = (b) => kb((b / lastDay) * 365);
-console.log(`  ${size.frames} frames (${size.keyframes} keyframes), ${size.interned} distinct base / group-base / nest lists, ${size.captions} captions`);
+console.log(`  ${size.frames} frames (${size.keyframes} keyframes), ${size.interned} distinct base / group-base / hive / site lists, ${size.captions} captions`);
 console.log(`  typed-array payload ${kb(size.payload)}, captions ~${kb(size.captionBytes)}, estimated total ${kb(size.approx)}${heap != null ? `, measured heap ${kb(heap)}` : ""}`);
 console.log(`  scaled to 365 days: estimate ${per365(size.approx)}${heap != null ? `, measured ${per365(heap)}` : ""}`);
 check(size.approx < 2 * 1024 * 1024, "under 2 MB");

@@ -113,7 +113,8 @@ const groupOf = (state, type) => {
   check(misses === 0 || asleepAfterMiss === misses, `a silent miss wakes nobody (${asleepAfterMiss}/${misses})`);
 }
 
-// 3. Hordes: none below the minimum stays on the map; merged hordes stop at the cap (C-9, R-2).
+// 3. Hordes: none below the minimum stays on the map; wandering hordes that meet merge up to the cap and the rest
+// stays a horde of its own (C-9, R-2; hordes.js mergeHordes).
 {
   console.log("Hordes");
   const st = world();
@@ -121,17 +122,17 @@ const groupOf = (state, type) => {
   st.hordes = [
     { id: 9001, tile: land[0].id, size: 0, target: null, move: 0 },
     { id: 9002, tile: land[1].id, size: 4, target: null, move: 0 },
-    { id: 9003, tile: land[2].id, size: 100, target: null, move: 0 },
-    { id: 9004, tile: land[2].id, size: 100, target: null, move: 0 },
+    { id: 9003, tile: land[2].id, size: 350, target: null, move: 0 },
+    { id: 9004, tile: land[2].id, size: 350, target: null, move: 0 },
     { id: 9005, tile: land[3].id, size: 30, target: null, move: 0 },
   ];
   hordesHour(st);
   check(st.hordes.every((x) => x.size >= HORDE_MIN_SIZE), "hordes of 0 and 4 are removed within the hour");
   const merged = st.hordes.filter((x) => x.tile === land[2].id);
-  check(merged.length === 1 && merged[0].size === HORDE_MAX_SIZE, `two hordes of 100 merge into one of ${HORDE_MAX_SIZE} (got ${merged.map((x) => x.size)})`);
+  check(merged.length === 2 && merged.some((x) => x.size === HORDE_MAX_SIZE) && merged.some((x) => x.size === 700 - HORDE_MAX_SIZE), `two hordes of 350 merge into one of ${HORDE_MAX_SIZE} and the other ${700 - HORDE_MAX_SIZE} stay apart (got ${merged.map((x) => x.size)})`);
   const small = st.hordes.find((x) => x.id === 9005);
   check(reduceHorde(st, small, 27) === true && !st.hordes.includes(small), "a horde cut down to 3 is removed at once");
-  const big = st.hordes.find((x) => x.id === 9003) || merged[0];
+  const big = merged.find((x) => x.size === HORDE_MAX_SIZE) || merged[0];
   check(reduceHorde(st, big, 10) === false && st.hordes.includes(big) && big.size === HORDE_MAX_SIZE - 10, "a horde that stays above the minimum only shrinks");
 }
 

@@ -13,6 +13,7 @@ import { BUILDINGS } from "../sim/buildings.js";
 import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
+import { weather as wxNow, travelEffects } from "../sim/weather.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -105,6 +106,7 @@ export function renderExpedition(state, ui, p) {
       <div class="${s.cls}">${s.text}</div>
       ${s.pct != null && p.phase !== "waiting" ? bar(s.pct * 100, "var(--accent)") : ""}
       ${live ? `<div class="muted">At ${esc(tileLabel(state, tile))}${p.phase === "out" || p.phase === "back" ? ` → ${esc(tileLabel(state, p.path[p.path.length - 1]))}` : ""}</div>` : ""}
+      ${live ? weatherLine(state, p, v) : ""}
       ${queueBlock(state, p, live)}
     </div>`;
 
@@ -145,6 +147,16 @@ export function renderExpedition(state, ui, p) {
   return head + status + actions +
     `<h3>People (${members.length})</h3>${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
+}
+
+// Today's weather and what it does to this team's pace (sim/weather.js); the ETAs above already include it.
+function weatherLine(state, p, v) {
+  const w = wxNow(state), fx = travelEffects(state);
+  const [road, off] = v ? [fx.vehRoad, fx.vehOff] : [fx.footRoad, fx.footOff];
+  const pct = (f) => `${f >= 1 ? "+" : "−"}${Math.abs(Math.round((f - 1) * 100))}%`;
+  const pace = road > 1.005 || off > 1.005 ? `${v ? "driving" : "on foot"}: roads ${pct(road)}, off-road ${pct(off)}` : "normal pace";
+  const extra = [fx.sight ? "sight −1 tile" : "", fx.injury ? "injury risk" : ""].filter(Boolean).join(", ");
+  return `<div class="${w.severe ? "warn" : "muted"}"${tip(fx.lines.join(" · "))}>${w.icon} ${esc(w.name)} ${Math.round(w.temp)}°C · ${pace}${extra ? ` · ${extra}` : ""}</div>`;
 }
 
 // Field crafting (sim/crafting.js): a timed order per recipe, made from what the team carries.

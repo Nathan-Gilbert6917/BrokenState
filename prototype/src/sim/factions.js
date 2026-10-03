@@ -46,7 +46,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 2, meds: pop, parts: 2, scrap: pop * 3 },
+      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3 },
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
   });
@@ -131,7 +131,7 @@ export function factionsDaily(state) {
     }
     f.stock.ammo = Math.min(f.pop * 30, f.stock.ammo + f.pop * 0.3 * def.arms);
     f.stock.scrap = Math.min(f.pop * 10, f.stock.scrap + f.pop * 0.2);
-    f.stock.fuel = Math.min(f.pop * 6, f.stock.fuel + f.pop * 0.08);
+    f.stock.fuel = Math.min(f.pop * 3, f.stock.fuel + f.pop * 0.04); // fuel is scarce (economy rework)
     f.stock.meds = Math.min(f.pop * 3, f.stock.meds + f.pop * 0.04);
 
     // Expansion: claim a nearby site.

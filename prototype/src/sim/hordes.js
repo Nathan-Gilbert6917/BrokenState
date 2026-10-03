@@ -1,16 +1,46 @@
-// Hordes: spawned by nests, they grow, merge and drift toward noise (Hub Heat) and people.
-import { newId, log, day, atBase, hurt, hub, factionById, removeBase } from "./world.js";
+// Hordes: crowds of the dead on the State Map. Hives (hives.js) build them with resources and give each one a
+// job (role): "guard" stays on its hive, "build" walks to a new hive's build site and becomes part of its "mass",
+// "roam" wanders near home, "attack" marches on a base, and "border" hordes come in from off the map. A horde
+// moves at most 2 tiles a day (12 hours a tile, slower in deep cold or snow: weather.js), merges with hordes it
+// meets that are on the same errand, and can split while each part keeps at least 10 of the dead. Its score
+// (hordeScore, from its size) is how tough it is when met and how much it adds to a new hive.
+import { newId, atBase, day } from "./world.js";
+import { findPath } from "./hex.js";
 import { mannedStations } from "./buildings.js";
-import { baseDefense, resolveRaidOnFaction } from "./factions.js";
-import { tileLabel } from "./parties.js";
+import { resolveRaidOnFaction } from "./factions.js";
+import { hordeSpeedFactor } from "./weather.js";
+import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
+import { hordeAttackBase, hordeWarnings } from "./defences.js";
 
-const HOURS_PER_TILE = 4;
-const MAX_HORDES = 18; // the 64×42 map has 6–8 nests (mapgen.js)
-export const HORDE_MAX_SIZE = 140; // growth and merging both stop here
+export const HOURS_PER_TILE = 12;  // at most 2 tiles a day
+export const HORDE_MAX_SIZE = 600; // merging stops here
 export const HORDE_MIN_SIZE = 5;   // fewer than this is no longer a horde: it is removed
+export const SPLIT_MIN = 10;       // a split leaves at least this many in each part
+// What a hive pays for a horde, and how big it comes out (hives.js).
+export const HORDE_SIZES = {
+  small:  { name: "small",  min: 10,  max: 25,  cost: 3 },
+  medium: { name: "medium", min: 50,  max: 80,  cost: 8 },
+  large:  { name: "large",  min: 100, max: 200, cost: 15 },
+};
+const WANDER = new Set(["roam", "border", undefined, null]);
 
-// Takes n of the dead off a horde. A horde below HORDE_MIN_SIZE is removed from the map at once; returns true
-// then. Every place that shrinks a horde goes through here (or is caught by pruneHordes within the hour).
+// A horde's score from its size: about 3 for a small horde, 8 for a medium one, 16 for a large one (20 at 200,
+// 33 at 400). It sets the horde's toughness in a fight and what it adds to a new hive (hives.js).
+export const hordeScore = (size) => Math.round((Math.max(0, size || 0) ** 0.8 / 3.4) * 10) / 10;
+export const hordeClass = (size) => (size < 40 ? "small" : size < 95 ? "medium" : size <= 220 ? "large" : "huge");
+
+export function makeHorde(state, o) {
+  const h = {
+    id: newId(), tile: o.tile, size: Math.round(o.size), target: o.target ?? null, move: 0,
+    role: o.role || "roam", hive: o.hive ?? null, site: o.site ?? null, bosses: o.bosses || 0, goal: o.goal || null, born: state.hour,
+  };
+  state.hordes.push(h);
+  return h;
+}
+
+// Takes n of the dead off a horde. A horde below HORDE_MIN_SIZE is removed from the map at once (a Wallbreaker
+// with it dies with it); returns true then. Every place that shrinks a horde goes through here (or is caught by
+// pruneHordes within the hour).
 export function reduceHorde(state, h, n) {
   h.size = Math.max(0, Math.round(h.size - Math.max(0, n)));
   if (h.size >= HORDE_MIN_SIZE) return false;
@@ -24,96 +54,171 @@ export function pruneHordes(state) {
   for (let i = state.hordes.length - 1; i >= 0; i--) if (!(state.hordes[i].size >= HORDE_MIN_SIZE)) state.hordes.splice(i, 1);
 }
 
+// Splits n of the dead off into a new horde on the same tile, doing the same job. Refused (null) unless both
+// parts keep at least SPLIT_MIN.
+export function splitHorde(state, h, n) {
+  n = Math.round(n);
+  if (n < SPLIT_MIN || h.size - n < SPLIT_MIN) return null;
+  h.size -= n;
+  const part = makeHorde(state, { tile: h.tile, size: n, role: h.role, hive: h.hive, site: h.site, goal: h.goal, target: h.target });
+  part.move = h.move;
+  return part;
+}
+
 export function baseHeat(state, base) {
   const people = atBase(state, base.id);
   const workshop = mannedStations(state, base); // stations with an operator at work; idle "Operate" people make no noise
   return people.length + workshop * 3 + (base.radio ? 2 : 0) + (base.type === "hub" ? 3 : 0);
 }
 
+// Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or
+// the same hive's guard, the same build site, the same attack.
+function intent(h) {
+  if (WANDER.has(h.role)) return "wander";
+  if (h.role === "guard") return `guard:${h.hive}`;
+  if (h.role === "build") return `build:${h.site}`;
+  if (h.role === "mass") return `mass:${h.site}`;
+  if (h.role === "attack") return `attack:${h.goal ? h.goal.tile : h.target}`;
+  return `other:${h.id}`;
+}
+
+export function mergeHordes(state) {
+  const at = new Map();
+  for (const h of state.hordes) {
+    const k = `${h.tile}|${intent(h)}`;
+    const first = at.get(k);
+    if (!first) { at.set(k, h); continue; }
+    // Up to the cap; a remainder too small to stand alone goes along anyway.
+    const room = HORDE_MAX_SIZE - first.size;
+    if (room < SPLIT_MIN) { at.set(k, h); continue; } // that one is full: the next ones gather on this one
+    const take = h.size - room < SPLIT_MIN ? h.size : room;
+    first.size += take;
+    h.size -= take;
+    first.bosses = (first.bosses || 0) + (h.size ? 0 : h.bosses || 0);
+    if (!h.size) h.bosses = 0;
+  }
+  for (let i = state.hordes.length - 1; i >= 0; i--) if (!state.hordes[i].size) state.hordes.splice(i, 1);
+}
+
+const isLand = (state, id) => { const t = state.tiles[id]; return t.terrain !== "water" || t.bridge; };
+
+// The next tile toward a horde's target over land (rivers are crossed at bridges). The way is planned once per
+// target and kept on the horde; a target it cannot reach is dropped (its job then falls back to wandering).
+function nextStep(state, h) {
+  const g = state.grid;
+  if (!h.path || h.pathTo !== h.target || h.path[0] !== h.tile) {
+    const res = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) ? 1 : Infinity), 120);
+    if (!res || res.path.length < 2) {
+      h.path = null;
+      h.target = null;
+      // A build site its hive cannot reach by land: that hive stops sending hordes there (hives.js supportSite).
+      const site = h.role === "build" ? siteById(state, h.site) : null;
+      if (site && h.hive != null) (site.noPath = site.noPath || []).push(h.hive);
+      if (h.role === "build" || h.role === "attack") { h.role = "roam"; h.site = null; h.goal = null; }
+      return null;
+    }
+    h.path = res.path;
+    h.pathTo = h.target;
+  }
+  h.path.shift();
+  return h.path[0] ?? null;
+}
+
 export function hordesHour(state) {
   const g = state.grid;
   pruneHordes(state);
+  let speed = 1;
+  try { speed = hordeSpeedFactor(state); } catch { speed = 1; }
   for (const h of [...state.hordes]) {
-    h.move = (h.move || 0) + 1;
+    if (!state.hordes.includes(h)) continue;
+    if (h.target == null || h.target === h.tile) { h.move = Math.min(HOURS_PER_TILE, h.move || 0); continue; }
+    h.move = (h.move || 0) + speed;
     if (h.move < HOURS_PER_TILE) continue;
-    h.move = 0;
-    if (h.target == null || h.target === h.tile) continue;
-    const opts = g.neighbors(h.tile).filter((id) => {
-      const t = state.tiles[id];
-      return t.terrain !== "water" || t.bridge;
-    });
-    if (!opts.length) continue;
-    opts.sort((a, b) => g.distance(a, h.target) - g.distance(b, h.target) + (state.rng.next() - 0.5) * 0.6);
-    h.tile = opts[0];
+    h.move -= HOURS_PER_TILE;
+    const next = nextStep(state, h);
+    if (next == null) continue;
+    h.tile = next;
     onHordeEnter(state, h);
   }
-  // Merge hordes that meet.
-  for (let i = 0; i < state.hordes.length; i++) {
-    for (let j = state.hordes.length - 1; j > i; j--) {
-      if (state.hordes[i].tile === state.hordes[j].tile) {
-        state.hordes[i].size = Math.min(HORDE_MAX_SIZE, state.hordes[i].size + state.hordes[j].size);
-        state.hordes.splice(j, 1);
-      }
-    }
-  }
+  mergeHordes(state);
+  hordeWarnings(state); // defences.js: lookouts see a horde coming for a base
 }
 
 function onHordeEnter(state, h) {
+  if (!state.hordes.includes(h)) return;
   const base = state.bases.find((b) => b.tile === h.tile);
-  if (base) return hordeAttackPlayer(state, h, base);
-  const f = state.factions.find((f) => f.alive && f.bases.includes(h.tile));
+  if (base) return hordeAttackBase(state, h, base);
+  const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
   if (f) {
-    const held = resolveRaidOnFaction(state, { strength: h.size * 0.12, owner: null, target: { factionId: f.id, tile: h.tile } }, []);
+    // A Wallbreaker at its head makes a horde half again as dangerous to a group's walls.
+    const held = resolveRaidOnFaction(state, { strength: h.size * 0.12 * (h.bosses ? 1.6 : 1), owner: null, target: { factionId: f.id, tile: h.tile } }, []);
+    if (h.role === "attack") { h.role = "roam"; h.goal = null; }
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
+    return;
+  }
+  if (h.role === "build") {
+    const site = siteById(state, h.site);
+    if (site && site.tile === h.tile) deliverToSite(state, h, site);
   }
 }
 
-function hordeAttackPlayer(state, h, base) {
-  const rng = state.rng;
-  const people = atBase(state, base.id);
-  const def = baseDefense(state, base);
-  const att = h.size * 0.14;
-  let lost = 0;
-  base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 4);
-  if (def >= att * 1.1) {
-    const killed = Math.min(h.size, Math.round(def * 2.5));
-    lost = killed;
-    log(state, `A horde hit ${base.name}. The walls held and about ${killed} of the dead were cut down.`, "good");
-    if (people.length && rng.chance(0.3)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
-  } else {
-    lost = h.size * 0.4;
-    for (const k of Object.keys(base.stock)) base.stock[k] = Math.floor(base.stock[k] * 0.85);
-    log(state, `A horde broke into ${base.name}.`, "death");
-    for (let i = 0; i < 3 && people.length; i++) hurt(state, rng.pick(people), rng.int(20, 60), base.tile, `when the horde broke into ${base.name}`);
-    if (base.type === "outpost" && def < att * 0.6) {
-      removeBase(state, base, "was overrun and abandoned"); // world.js: people flee, vehicles are left there, the log says what was lost
-    }
+// Somewhere to wander: a tile up to 4 away, kept near home for a hive's roamers and pulled toward the middle of
+// the map for hordes that came in from the border.
+function wanderTarget(state, h) {
+  const g = state.grid, rng = state.rng;
+  const home = h.hive != null ? hiveById(state, h.hive) : null;
+  let opts = g.within(h.tile, 4).filter((id) => isLand(state, id));
+  if (home) {
+    const near = opts.filter((id) => g.distance(id, home.tile) <= 7);
+    if (near.length) opts = near;
+  } else if (h.role === "border") {
+    const [x, y] = g.xy(h.tile);
+    const cx = g.width / 2, cy = g.height / 2;
+    const inward = opts.filter((id) => { const [ox, oy] = g.xy(id); return Math.hypot(ox - cx, oy - cy) <= Math.hypot(x - cx, y - cy); });
+    if (inward.length && (x < 8 || y < 6 || x >= g.width - 8 || y >= g.height - 6)) opts = inward;
   }
-  h.target = null;
-  reduceHorde(state, h, lost);
+  return opts.length ? rng.pick(opts) : h.tile;
 }
 
 export function hordesDaily(state) {
   const rng = state.rng;
   const g = state.grid;
-  const d = day(state);
-  // Nests spawn new hordes; infection creeps outward from them.
-  for (const t of state.tiles) {
-    if (!t.nest) continue;
-    for (const id of g.within(t.id, 3)) state.tiles[id].infection = Math.min(1, state.tiles[id].infection + 0.003);
-    if (state.hordes.length < MAX_HORDES && rng.chance(1 / 6)) {
-      state.hordes.push({ id: newId(), tile: t.id, size: Math.round(10 + Math.min(60, d * 0.4) * rng.range(0.6, 1.2)), target: null, move: 0 });
-    }
-  }
-  for (const h of state.hordes) {
-    h.size = Math.min(HORDE_MAX_SIZE, Math.round(h.size * 1.006));
+  hivesDaily(state); // income, new hordes, build sites, border spawns, infection (hives.js)
+  for (const h of [...state.hordes]) {
+    if (!state.hordes.includes(h)) continue;
+    // Wandering hordes rot away (1.2% a day, at least 1); the ones with a job are kept up by their hive.
+    if (WANDER.has(h.role) && reduceHorde(state, h, Math.max(1, Math.round(h.size * 0.012)))) continue;
     if (h.lureUntil && state.hour < h.lureUntil) continue;
+    switch (h.role) {
+      case "guard": {
+        const hv = hiveById(state, h.hive);
+        if (hv) { h.target = hv.tile; continue; }
+        h.role = "roam"; h.hive = null;
+        break;
+      }
+      case "build": case "mass": {
+        const site = siteById(state, h.site);
+        if (site) { h.target = site.tile; continue; }
+        h.role = "roam"; h.site = null;
+        break;
+      }
+      case "attack": {
+        const goal = h.goal;
+        const still = goal && (goal.baseId != null ? state.bases.some((b) => b.id === goal.baseId && b.tile === goal.tile)
+          : state.factions.some((f) => f.alive && f.id === goal.factionId && f.bases.includes(goal.tile)));
+        if (still) { h.target = goal.tile; continue; }
+        h.role = "roam"; h.goal = null;
+        break;
+      }
+    }
+    // Wanderers: a build site that needs the dead draws them in (hives.js).
+    if (drawnToSite(state, h)) continue;
     // Drift toward the loudest, closest people.
     let best = null;
     for (const b of state.bases) {
       const dist = g.distance(h.tile, b.tile);
-      if (dist > 9) continue;
+      if (dist > 8) continue;
       const score = baseHeat(state, b) / (1 + dist * 0.35);
       if (!best || score > best.score) best = { tile: b.tile, score };
     }
@@ -121,16 +226,27 @@ export function hordesDaily(state) {
       if (!f.alive) continue;
       for (const fb of f.bases) {
         const dist = g.distance(h.tile, fb);
-        if (dist > 9) continue;
+        if (dist > 8) continue;
         const score = (f.pop * 0.5) / (1 + dist * 0.35);
         if (!best || score > best.score) best = { tile: fb, score };
       }
     }
-    if (best && rng.chance(0.7)) h.target = best.tile;
-    else {
-      const wander = g.within(h.tile, 4);
-      h.target = rng.pick(wander);
-    }
+    // The pull of people grows over the year: 15% of days at the start, 45% from about day 180.
+    if (best && rng.chance(Math.min(0.45, 0.15 + day(state) / 600))) h.target = best.tile;
+    else h.target = wanderTarget(state, h);
+    // Very big wandering hordes break apart now and then.
+    if (h.size > 300 && rng.chance(0.1)) splitHorde(state, h, Math.floor(h.size / 2));
   }
 }
 
+// For the dev tools and the timelapse: the dead on the map by job.
+export function hordeCounts(state) {
+  const out = { hordes: state.hordes.length, zombies: 0, bosses: 0, roles: {} };
+  for (const h of state.hordes) {
+    out.zombies += h.size;
+    out.bosses += h.bosses || 0;
+    const r = h.role || "roam";
+    out.roles[r] = (out.roles[r] || 0) + 1;
+  }
+  return out;
+}

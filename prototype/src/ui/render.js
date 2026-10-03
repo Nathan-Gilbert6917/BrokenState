@@ -5,15 +5,19 @@ import { partyTile, plannedTile } from "../sim/parties.js";
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
+import { weatherTint } from "../sim/weather.js";
+import { radioNodes } from "../sim/radio.js";
+import { HIVE } from "../sim/hiveconst.js";
+import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
-  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, nestSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW,
+  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW,
 } from "./mapsprites.js";
 
 export const HEX = 26;
 
 export const camera = { x: 0, y: 0, zoom: 1 };
-const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds"];
+const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
 export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS) };
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -144,6 +148,14 @@ export function render(state) {
     ctx.fillStyle = color;
     ctx.fill();
   }
+  // Season and weather wash over the land (weather.js): one fill for every visible land tile.
+  const tint = on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
+  if (tint) {
+    ctx.beginPath();
+    for (const t of visible) if (t.terrain !== "water") { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX + 0.5); }
+    ctx.fillStyle = tint;
+    ctx.fill();
+  }
   for (const t of on("infection") ? visible : []) {
     const isLive = live.has(t.id), snap = k[t.id];
     if (!isLive && !snap) continue;
@@ -193,6 +205,28 @@ export function render(state) {
     const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
     const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
     drawMapSprite(ctx, bridgeCanvas(), px, py, 24, { angle: ax === bx && ay === by ? 0 : Math.atan2(by - ay, bx - ax) });
+  }
+
+  // Hives you know about (live, or in the last report): their land is tinted dark red, the ring right around each
+  // hive brighter, with a red skull on every ring tile when zoomed in (the dead there are much tougher). Sites
+  // inside a hive's land show at least 3 skulls, red ones on the ring (labels below).
+  const hiveTiles = [];
+  for (const t of state.tiles) if (live.has(t.id) ? t.hive : k[t.id] && k[t.id].hive) hiveTiles.push(t.id);
+  const hiveDist = (id) => { let d = Infinity; for (const h of hiveTiles) { const x = g.distance(h, id); if (x < d) d = x; } return d; };
+  const ringSkulls = [];
+  if (on("hordes") && hiveTiles.length) {
+    ctx.beginPath();
+    for (const t of visible) { const d = hiveDist(t.id); if (d <= HIVE.TERRITORY && d > HIVE.RING) { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX - 0.5); } }
+    ctx.fillStyle = "rgba(150,20,30,0.13)";
+    ctx.fill();
+    ctx.beginPath();
+    for (const t of visible) { const d = hiveDist(t.id); if (d <= HIVE.RING) { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX - 0.5); if (d > 0 && camera.zoom > SKULL_ZOOM * 0.7 && !t.loc) ringSkulls.push([px, py]); } }
+    ctx.fillStyle = "rgba(200,25,25,0.22)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,70,60,0.35)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    for (const [px, py] of ringSkulls) drawMapSprite(ctx, redSkullCanvas(), px, py + 13, SKULL_W, { alpha: 0.9 });
   }
 
   // Locations: other groups' bases as compound sprites in their color, plain sites as pixel sprites (one per site
@@ -247,18 +281,19 @@ export function render(state) {
     // Cities, towns, landmarks and group bases keep their names at every zoom (overlapping ones give way, the
     // most important first); small sites only up close.
     const named = tier < 2 || camera.zoom > 1.3;
-    const skulls = !fb && camera.zoom > SKULL_ZOOM ? siteDanger(t.loc) : 0;
+    const hd = hiveTiles.length && !fb ? hiveDist(t.id) : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
+    const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(t.loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, side });
+      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side });
     }
   }
-  // Nests you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
+  // Hives you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 420);
   for (const t of on("hordes") ? visible : []) {
     const isLive = live.has(t.id);
     const snap = k[t.id];
-    const nest = isLive ? t.nest : snap && snap.nest;
-    if (!nest) continue;
+    const hive = isLive ? t.hive : snap && snap.hive;
+    if (!hive) continue;
     const [px, py] = g.toPixel(t.id, HEX);
     const s = zoomBoost(), inf = (isLive ? t.infection : snap.infection) || 0;
     const level = inf >= 0.8 ? 2 : inf >= 0.5 ? 1 : 0, w = (28 + level * 4) * s;
@@ -268,7 +303,23 @@ export function render(state) {
       ctx.fillStyle = `rgba(255,50,35,${(0.1 + 0.16 * pulse * (1 + level * 0.4)).toFixed(3)})`;
       ctx.fill();
     }
-    drawMapSprite(ctx, nestSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
+    drawMapSprite(ctx, hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
+  }
+  // Hive build sites you know about: a raw mound of the dead with bones sticking up (glowing once the building has
+  // started) and how much of the 1,000 dead it needs has gone into it.
+  const siteAt = new Map((state.hiveSites || []).map((x) => [x.tile, x]));
+  for (const t of on("hordes") ? visible : []) {
+    const isLive = live.has(t.id);
+    const st = isLive ? siteAt.get(t.id) : k[t.id] && k[t.id].site;
+    if (!st) continue;
+    const [px, py] = g.toPixel(t.id, HEX);
+    const s = zoomBoost(), w = 26 * s, started = st.started != null && st.started !== false;
+    drawMapSprite(ctx, siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
+    const bw = 24 * s, bx = px - bw / 2, by = py + 11 * s, frac = Math.max(0, Math.min(1, (st.biomass || 0) / HIVE.SITE_BIOMASS));
+    ctx.fillStyle = "rgba(13,15,18,0.8)";
+    ctx.fillRect(bx - 1, by - 1, bw + 2, 4 * s + 2);
+    ctx.fillStyle = started ? "#e2412f" : "#8a5a5a";
+    ctx.fillRect(bx, by, bw * frac, 4 * s);
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   for (const b of state.bases) {
@@ -283,12 +334,14 @@ export function render(state) {
     noteSprite(px, cy, w, h);
     if (b.alert) drawMapSprite(ctx, iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
     labels.push({ text: b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
-    if (b.radio) {
-      ctx.strokeStyle = "rgba(143,180,224,0.18)";
+    // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
+    const node = radioNodes(state).find((n) => n.base === b);
+    if (node) {
+      ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 6]);
       ctx.beginPath();
-      ctx.arc(px, py, RADIO_RANGE * HEX * Math.sqrt(3), 0, Math.PI * 2);
+      ctx.arc(px, py, node.range * HEX * Math.sqrt(3), 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -341,17 +394,18 @@ export function render(state) {
   const hordeAt = new Map();
   for (const h of on("hordes") ? state.hordes : []) {
     const e = hordeAt.get(h.tile);
-    if (e) e.size += h.size;
-    else hordeAt.set(h.tile, { size: h.size, target: h.target });
+    if (e) { e.size += h.size; e.bosses += h.bosses || 0; }
+    else hordeAt.set(h.tile, { size: h.size, target: h.target, bosses: h.bosses || 0 });
   }
   for (const t of on("hordes") ? visible : []) {
     const isLive = live.has(t.id);
-    let size = 0, stale = false, target = null;
-    if (isLive) ({ size = 0, target = null } = hordeAt.get(t.id) || {});
-    else if (k[t.id] && k[t.id].hordeSize) { size = k[t.id].hordeSize; stale = true; }
+    let size = 0, stale = false, target = null, bosses = 0;
+    if (isLive) ({ size = 0, target = null, bosses = 0 } = hordeAt.get(t.id) || {});
+    else if (k[t.id] && k[t.id].hordeSize) { size = k[t.id].hordeSize; bosses = k[t.id].hordeBoss || 0; stale = true; }
     if (!size) continue;
     const [px, py] = g.toPixel(t.id, HEX);
-    const based = baseTiles.has(t.id); // a base you can see or last saw there (never one you do not know about)
+    // Beside, not on top of: a base you can see or last saw there (never one you do not know about), a hive or a build site.
+    const based = baseTiles.has(t.id) || hiveTiles.includes(t.id) || siteAt.has(t.id) || !!(k[t.id] && k[t.id].site && !isLive);
     const s = zoomBoost() * (based ? 0.85 : 1), o = Math.min(zoomBoost(), BESIDE_MAX); // the offset stays inside the tile when zoomed out
     const x = based ? px + 17 * o : px, y = based ? py + 13 * o : py + 3 * s;
     const cv = hordeSpriteCanvas(hordeFigures(size)), w = gridW(cv) * 1.15 * s, h = spriteH(cv, w);
@@ -366,6 +420,8 @@ export function render(state) {
     ctx.stroke();
     ctx.setLineDash([]);
     drawMapSprite(ctx, cv, x, y, w, { facing, alpha: stale ? 0.45 : 1 });
+    // A Wallbreaker with the horde: the brute with the concrete fist stands at its head.
+    if (bosses) drawMapSprite(ctx, wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s, 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
     pill(x + w / 2, y - h / 2 + 2 * s, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
   }
   // Other groups' parties you can currently see, by group type: convoys by vehicle (spiked pickup, humvee, armored
@@ -378,7 +434,7 @@ export function render(state) {
     const f = factionById(state, p.owner);
     const [px, py] = g.toPixel(tile, HEX);
     const color = f ? f.color : "#cccccc", type = f ? f.type : "fortress";
-    const kind = p.vehicle ? "convoy" : p.kind === "raid" ? "raid" : "walk";
+    const kind = p.vehicle || p.kind === "caravan" ? "convoy" : p.kind === "raid" ? "raid" : "walk"; // a caravan: their wagon or truck
     const n = p.members ? p.members.length + (p.kind === "raid" ? 1 : 0) : p.strength >= 15 ? 4 : p.strength >= 7 ? 3 : 2;
     const cv = groupPartyCanvas(type, kind, color, n), s = zoomBoost();
     const w = gridW(cv) * (kind === "convoy" ? 1.2 : 1.1) * s;
@@ -521,7 +577,7 @@ function baseLook(b) {
   const farms = count(b, "farm_plot");
   return {
     kind: b.type === "hub" ? "hub" : "outpost", color: PLAYER_COLOR, walls: Math.min(3, count(b, "walls")),
-    tower: !!b.watchtower, radio: !!b.radio, hosp, farms: farms >= 4 ? 2 : farms ? 1 : 0,
+    tower: !!b.watchtower, radio: !!b.radio || count(b, "relay") > 0, hosp, farms: farms >= 4 ? 2 : farms ? 1 : 0,
     workshop: b.buildings.some((x) => def(x).station), big: b.buildings.length >= 4,
   };
 }
@@ -579,7 +635,7 @@ function drawLabels(labels, avoid = []) {
       const x0 = cx - w / 2, y0 = cy - sw / 2;
       if (hits(boxes, x0, y0, w, sw) || hits(avoid, x0, y0, w, sw)) return false;
       boxes.push([x0, y0, w, sw]);
-      for (let i = 0; i < l.skulls; i++) drawMapSprite(ctx, skullCanvas(), x0 + sw / 2 + i * (sw + gap), cy, sw, { alpha: 0.95 });
+      for (let i = 0; i < l.skulls; i++) drawMapSprite(ctx, l.red ? redSkullCanvas() : skullCanvas(), x0 + sw / 2 + i * (sw + gap), cy, sw, { alpha: 0.95 });
       return true;
     };
     if (row(l.x, top + SKULL_W / 2, SKULL_W) || !l.side) continue;

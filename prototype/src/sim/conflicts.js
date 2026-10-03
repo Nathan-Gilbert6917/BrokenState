@@ -14,6 +14,7 @@
 // rescued (Rescue mission), ransomed (during a trade visit or at the gates), or released when
 // goodwill is high. Over time they may escape, be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
+import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad } from "./inventory.js";
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
@@ -28,6 +29,7 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRai
 import { perceptionChance } from "./markers.js";
 import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
+import { travelEffects } from "./weather.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -121,7 +123,9 @@ function enemyGroup(state, p, f, scale = 1) {
   if (!f) {
     const t = state.tiles[partyTile(p)];
     const count = Math.round((5 + t.infection * 14 + (isNight(state) ? 3 : 0)) * scale * rng.range(0.8, 1.25));
-    return { kind: "zombies", count: Math.max(4, count), power: 1, name: "the dead" };
+    // On a hive's land the dead are tougher: +1 power, +3 on the red-skull ring around a hive (hives.js).
+    const hz = zombieToughness(state, partyTile(p));
+    return { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
   }
   const def = FACTION_TYPES[f.type];
   let count = Math.round((n * rng.range(0.8, 1.5) + 1) * scale);
@@ -324,6 +328,7 @@ export function spotFirstChance(state, p) {
   if (p.stance === "stealthy") c += 0.25;
   if (p.stance === "rushed") c -= 0.1;
   if (p.vehicle) c -= 0.1;
+  c -= travelEffects(state).ambush; // fog and whiteouts hide the other side until it is close (weather.js)
   if (isNight(state) && members.some((m) => m.traits.includes("nightowl") || (m.gear.tool && m.gear.tool.key === "nvg"))) c += 0.15;
   return clamp(c, 0.05, 0.9);
 }

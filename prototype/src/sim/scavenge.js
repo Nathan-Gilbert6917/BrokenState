@@ -7,7 +7,9 @@ import {
 } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
+import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
+import { searchHazards } from "./health.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -33,8 +35,10 @@ export function raidEnemies(state, tileId) {
   const t = state.tiles[tileId];
   const groups = [];
   const inf = t.infection || 0;
-  const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + rng.int(-1, 1));
-  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3, name: "the dead" });
+  // A hive's land (hives.js): more of the dead and tougher (+1 power), and on the red-skull ring around a hive +3.
+  const hz = zombieToughness(state, tileId);
+  const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1));
+  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   const kindOf = (f) => (f.type === "military" ? "soldiers" : f.type === "zealot" ? "zealots" : "raiders");
@@ -108,6 +112,8 @@ export function afterRaid(state, result, setup) {
     log(state, `The vehicle was left at ${tileLabel(state, setup.tile)}.`, "danger");
     leaveVehicle(state, p, setup.tile, "left at the raid site"); // cargo the people cannot carry stays in it (logged)
   }
+  // Cuts and fevers from the hours spent searching (health.js), as in the hour-by-hour search.
+  for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
   if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);
@@ -141,7 +147,7 @@ export function searchHour(state) {
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * (key === "ammo" ? 6 : 1));
+    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now)
     if (qty > 0) {
       e.found.supplies[key] = (e.found.supplies[key] || 0) + qty;
       finds.push(`${qty} ${key}`);
@@ -191,6 +197,7 @@ export function searchHour(state) {
     }
   }
   e.log.push(`Hour ${e.hours} [${stage.name}]: ${line}`);
+  searchHazards(state, partyMembers(state, p), tileLabel(state, e.tile)); // cuts and fevers while searching (health.js)
   if (!partyMembers(state, p).length) {
     // Everyone died; what they found stays with them.
     for (const [k, v] of Object.entries(e.found.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + v;
