@@ -480,7 +480,7 @@ function hiveCard(state, p, hive) {
     choices: [
       {
         label: "Storm the hive (tactical battle)",
-        hint: `About ${force.count} of the brood and the ${BOSS_NAMES.hive}. Win and the hive is destroyed; you can fall back from the left edge`,
+        hint: `About ${force.count} of the brood and the ${BOSS_NAMES.hive}. Win and the hive is destroyed; you can fall back from the left edge, or sound the retreat to pull everyone out at once`,
         resolve: (st) => {
           if (gone(st)) return moved(st);
           assaultHive(st, p, hive);
