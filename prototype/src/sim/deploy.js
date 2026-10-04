@@ -20,6 +20,7 @@
 import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say } from "./combat.js";
 import { count } from "./buildings.js";
 import { poweredType } from "./power.js";
+import { armoryDefence } from "./defences.js";
 import { isNight } from "./world.js";
 
 export const DEPLOY = {
@@ -77,6 +78,7 @@ export function deployMap(b, ctx, base, c) {
       for (let t = 0; t < 8; t++) { const x = rng.int(8, 12), y = rng.int(0, ctx.H - 1); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
     }
     if (base && count(base, "trench")) for (let y = 0; y < ctx.H; y++) if (ctx.free(10, y) && y % 4 !== 2) ctx.put(10, y, "trench");
+    layKit(ctx, rng, c.kit || armoryDefence(base), { wireX: [9, 9], trapX: [8, 12], bagX: [3, 6] });
     return;
   }
   const H = ctx.H, X = DEPLOY.WALL_X, mid = Math.floor(H / 2);
@@ -107,7 +109,20 @@ export function deployMap(b, ctx, base, c) {
   for (let i = 0; i < (c.pits || 0) * 5; i++) {
     for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.SPIKE_X[0], DEPLOY.SPIKE_X[1]), y = rng.int(0, H - 1); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
   }
+  layKit(ctx, rng, c.kit || armoryDefence(base), { wireX: [X + 1, X + 1], trapX: DEPLOY.SPIKE_X, bagX: DEPLOY.BARRICADE_X });
   Object.assign(b.deployPlan, { gate: gate.map((y) => [X, y]), breaches: breaches.map((y) => [X, y]), towers });
+}
+
+// The armory's defence kit on the map (defences.js armoryDefence): 4 cells of wire a roll, a bear trap a trap,
+// 3 sandbag cells a bundle (cover), each on a free cell in its columns.
+function layKit(ctx, rng, kit, at) {
+  if (!kit) return;
+  const put = (n, [x0, x1], k) => {
+    for (let i = 0; i < n; i++) for (let t = 0; t < 8; t++) { const x = rng.int(x0, x1), y = rng.int(0, ctx.H - 1); if (ctx.free(x, y)) { ctx.put(x, y, k); break; } }
+  };
+  put((kit.wire || 0) * 4, at.wireX, "wire");
+  put(kit.traps || 0, at.trapX, "beartrap");
+  put((kit.bags || 0) * 3, at.bagX, "sandbag");
 }
 
 // ---------- units (layout phase "units") ----------

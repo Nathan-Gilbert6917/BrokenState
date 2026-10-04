@@ -247,14 +247,18 @@ export function minSellable(state, f, key, speech, value, cap = Infinity) {
 }
 
 // ---------- the goods a group has for sale ----------
-const WARES = {
-  traders: ["pistol", "shotgun", "huntrifle", "vest", "machete", "bikehelmet", "kneeguards", "backpack", "bandagekit", "crowbar", "waterfilter", "assaultpack"],
-  commune: ["machete", "huntrifle", "pipespear", "waterfilter", "bandagekit", "backpack", "padding"],
-  military: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "pistol"],
-  fortress: ["shotgun", "huntrifle", "vest", "riothelmet", "kneeguards", "crowbar"],
-  raider: ["pistol", "shotgun", "machete", "spikedbat", "tirevest", "bikehelmet", "pipegun"],
-  expansionist: ["pistol", "shotgun", "huntrifle", "vest", "riothelmet", "scrapvest"],
-  zealot: ["machete", "knife", "shotgun", "pipespear", "bandagekit"],
+// Each group's stock fits what it is: raiders sell what they took (and drink), the military its kit, the commune
+// farm and camp things, the fortress its defences.
+export const WARES = {
+  traders: ["pistol", "shotgun", "huntrifle", "vest", "machete", "bikehelmet", "kneeguards", "backpack", "bandagekit", "crowbar", "waterfilter", "assaultpack",
+    "revolver", "leverrifle", "compbow", "slingbag", "hikingpack", "camonet", "stove", "flare", "cards", "guitar", "chocolate", "instcoffee", "smokes", "vodka"],
+  commune: ["machete", "huntrifle", "pipespear", "waterfilter", "bandagekit", "backpack", "padding", "bat", "compbow", "slingbag", "stove", "ghillie", "harmonica", "cards",
+    "beartrap", "barbedwire", "tripwire", "chocolate"],
+  military: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "pistol", "carbine", "rucksack", "camonet", "smokegren", "flare", "sandbags", "barbedwire", "instcoffee"],
+  fortress: ["shotgun", "huntrifle", "vest", "riothelmet", "kneeguards", "crowbar", "sledge", "prybar", "fireaxe", "sandbags", "barbedwire", "beartrap", "tripwire", "riotarms"],
+  raider: ["pistol", "shotgun", "machete", "spikedbat", "tirevest", "bikehelmet", "pipegun", "revolver", "bat", "nailbat", "molotov", "pipebomb", "vodka", "smokes"],
+  expansionist: ["pistol", "shotgun", "huntrifle", "vest", "riothelmet", "scrapvest", "carbine", "leverrifle", "revolver", "hikingpack", "riotarms", "smokegren", "flare"],
+  zealot: ["machete", "knife", "shotgun", "pipespear", "bandagekit", "fireaxe", "bat", "molotov", "compbow"],
 };
 export const WARES_MAX = 12;
 // Fills a group's gear for sale (sim-side only: uses the world's random numbers). refresh: new stock for the week.
