@@ -338,7 +338,7 @@ function launchRaid(state, f) {
     for (const b of state.bases) {
       const from = nearestOwnBase(state, f, b.tile);
       const d = g.distance(from, b.tile);
-      if (d > RAIDS.REACH * Math.sqrt(worldScale(state))) continue; // groups settle farther apart on a bigger map (worldsize.js)
+      if (d > RAIDS.REACH) continue; // the same reach on every map size: on a bigger one the far groups must expand toward you first
       targets.push({ kind: "player", baseId: b.id, tile: b.tile, from, w: playerRaidWeight(state, f, b, d) });
     }
   }
