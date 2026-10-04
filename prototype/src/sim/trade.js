@@ -26,6 +26,7 @@ import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
+import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -293,6 +294,7 @@ export function advanceTradeQueue(state) {
   const q = state.tradeQueue;
   while (!state.trade && q && q.length) {
     const v = q.shift();
+    if (v.visitorId != null) { resumeVisitorTrade(state, v); continue; } // outsiders (visitors.js)
     const f = factionById(state, v.factionId);
     if (v.caravanId != null) {
       const c = state.parties.find((x) => x.id === v.caravanId);
@@ -313,6 +315,7 @@ export function advanceTradeQueue(state) {
 export function tradeContext(state) {
   const t = state.trade;
   if (!t) return null;
+  if (t.visitorId != null) return visitorTradeContext(state, t); // merchants and travellers from outside (visitors.js)
   const f = factionById(state, t.factionId);
   if (!f || !f.alive) return null;
   const have = {}, theirHave = {};

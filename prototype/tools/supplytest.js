@@ -65,6 +65,7 @@ for (const seed of seeds) {
   const state = createWorld({ seed, factionCount: 6 });
   allLogs = [];
   state.started = true;
+  state.visitorsOff = true; // no outsiders (visitors.js): their trade windows and cards are not this test's business
   const h = hub(state);
   Object.assign(h.stock, { food: 700, water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 });
   for (let i = 0; i < 6; i++) state.survivors.push({ ...state.survivors[i], id: newId(), name: `Extra${i} Hand`, leader: false, gear: { weapon: null, armor: null, tool: null }, skills: { ...state.survivors[i].skills }, traits: [], location: { kind: "base", baseId: h.id } });

@@ -33,6 +33,7 @@ import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
 import { noteRescue } from "./relations.js";
 import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
+import { driveOff } from "./aiscav.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -55,6 +56,7 @@ export const CONFLICT_TYPES = {
   zealotpatrol: { mode: "forced",   name: "Zealot patrol" },
   checkpoint:   { mode: "forced",   name: "Checkpoint" },
   challenge:    { mode: "forced",   name: "Challenged" },
+  contest:      { mode: "forced",   name: "A contested site" }, // their scavengers and your team at the same site (aiscav.js)
   surge:        { mode: "forced",   name: "The dead surge" },
   // observed: you saw them first
   camp:         { mode: "observed", name: "Camp by the road" },
@@ -373,8 +375,9 @@ export function stationaryEncounter(state, p, opts = {}) {
   return card;
 }
 
-// Build a conflict of a given type for a party (also used by the test tools and the console).
-export function triggerConflict(state, p, type, factionId) {
+// Build a conflict of a given type for a party (also used by the test tools and the console). extra: fields for the
+// conflict (contest: scavPartyId, site).
+export function triggerConflict(state, p, type, factionId, extra = {}) {
   const f = factionId != null ? factionById(state, factionId) : null;
   const def = CONFLICT_TYPES[type];
   if (!def) return null;
@@ -384,7 +387,7 @@ export function triggerConflict(state, p, type, factionId) {
   else {
     const g = f || state.factions.find((x) => x.alive);
     if (!g) return null;
-    card = def.mode === "forced" ? forcedCard(state, p, makeConflict(state, p, type, g, enemyGroup(state, p, g))) : observedCard(state, p, observedConflict(state, p, g, type));
+    card = def.mode === "forced" ? forcedCard(state, p, makeConflict(state, p, type, g, enemyGroup(state, p, g), extra)) : observedCard(state, p, observedConflict(state, p, g, type));
   }
   if (card) {
     p.lastConflict = state.hour;
@@ -519,6 +522,7 @@ function forcedCard(state, p, c, followUp = false) {
     zealotpatrol: `Figures in ash-grey robes block the way: a ${f && f.name} patrol. They demand you kneel and give up what is "unclean".`,
     checkpoint: `A ${f && f.name} checkpoint: sandbags, a barrier, rifles. They order you to stop for inspection.`,
     challenge: `${f && f.name} sentries step out of cover, weapons raised. They want to know who you are and why you are on their land.`,
+    contest: `${f && f.name} scavengers are already working ${c.site != null ? Parties.tileLabel(state, c.site) : "this place"}: about ${n} of them, with sacks, crowbars and rifles. They say it is theirs and want you gone.`,
     surge: `The dead pour out of the buildings around you: about ${n}, and more behind them. They have your scent.`,
   };
   const text = followUp ? c.followText : texts[c.type];
@@ -540,7 +544,7 @@ function forcedChoices(state, p, c) {
 }
 
 function runDc(c) {
-  return { ambush: 12, roadblock: 9, zealotpatrol: 11, checkpoint: 11, challenge: 9, surge: 10 }[c.type] ?? 11;
+  return { ambush: 12, roadblock: 9, zealotpatrol: 11, checkpoint: 11, challenge: 9, contest: 9, surge: 10 }[c.type] ?? 11;
 }
 function runBonus(state, p) {
   let b = 0;
@@ -1100,7 +1104,7 @@ function victoryRewards(state, p, c, result) {
     if (held.length) out.push(`Freed: ${names(held)}, back with the team.`);
     if (fresh.length) out.push(`${held.length ? "The other prisoners" : "The prisoners"}, ${names(fresh)}, ${fresh.length === 1 ? "asks" : "ask"} to come with you.`);
     askToJoin(state, p, fresh, "Freed from the prisoner column.");
-  } else if (c.type === "camp" || c.type === "ambush" || c.type === "roadblock" || c.type === "checkpoint" || c.type === "zealotpatrol" || c.type === "challenge") {
+  } else if (c.type === "camp" || c.type === "ambush" || c.type === "roadblock" || c.type === "checkpoint" || c.type === "zealotpatrol" || c.type === "challenge" || c.type === "contest") {
     if (result && result.tactical) {
       // Fought on the map: the dead were there to search (the loot screen, or "Take all"), and that is the loot.
       // Nothing is paid a second time here.
@@ -1140,12 +1144,16 @@ function victoryRewards(state, p, c, result) {
       out.push(`${helped.name} thank you with ${addCargo(state, p, key, key === "ammo" ? 40 : 4)} ${key}.`);
     }
   }
+  if (c.type === "contest" && c.scavPartyId != null) {
+    const said = driveOff(state, p, c.scavPartyId, addCargo); // aiscav.js: they leave the site, and drop their haul
+    if (said) out.push(said);
+  }
   if (c.aiPartyId) {
     const q = state.parties.find((x) => x.id === c.aiPartyId);
     if (q) {
       q.strength *= 0.4;
       if (q.strength < 2) removeParty(state, q);
-      out.push("Their war party is broken.");
+      out.push(q.kind === "scav" ? "Their scavengers scatter." : "Their war party is broken.");
     }
   }
   return out;

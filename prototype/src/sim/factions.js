@@ -11,6 +11,8 @@ import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou } from "./diplomacy.js";
 import { allianceRaidHelp } from "./alliance.js";
+import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
+import { outsiderRaidOn } from "./visitors.js";
 
 const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
@@ -126,16 +128,20 @@ export function factionsDaily(state) {
     if (!f.alive) continue;
     const def = FACTION_TYPES[f.type];
     // Food and growth.
-    f.stock.food += f.pop * (0.88 + 0.25 * def.food) - f.pop;
+    // Their fields and workshops: food a little short of what they eat for the less farming types (the rest from
+    // the sites they strip, aiscav.js), and FACTION_MAKE of the old ammo, scrap, fuel and meds made from nothing.
+    const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
+    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) - f.pop;
     if (f.stock.food > f.pop * 4 && f.pop < 50 && rng.chance(0.25)) f.pop += 1;
     if (f.stock.food < 0) {
       f.stock.food = 0;
       if (rng.chance(0.35)) f.pop -= 1;
     }
-    f.stock.ammo = Math.min(f.pop * 30, f.stock.ammo + f.pop * 0.3 * def.arms);
-    f.stock.scrap = Math.min(f.pop * 10, f.stock.scrap + f.pop * 0.2);
-    f.stock.fuel = Math.min(f.pop * 3, f.stock.fuel + f.pop * 0.04); // fuel is scarce (economy rework)
-    f.stock.meds = Math.min(f.pop * 3, f.stock.meds + f.pop * 0.04);
+    const mk = off ? 1 : FACTION_MAKE;
+    f.stock.ammo = Math.min(f.pop * 30, f.stock.ammo + f.pop * 0.3 * def.arms * mk);
+    f.stock.scrap = Math.min(f.pop * 10, f.stock.scrap + f.pop * 0.2 * mk);
+    f.stock.fuel = Math.min(f.pop * 3, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
+    f.stock.meds = Math.min(f.pop * 3, f.stock.meds + f.pop * 0.04 * mk);
 
     // Expansion: claim a nearby site.
     if (f.bases.length < 4 && rng.chance(def.expand * (f.pop / 18))) {
@@ -183,6 +189,7 @@ export function factionsDaily(state) {
 
     if (f.pop <= 2) collapseFaction(state, f);
   }
+  aiScavDaily(state); // aiscav.js: scavenging parties out, sites in their own land stripped
   clearStaleAlerts(state);
 }
 
@@ -191,7 +198,8 @@ export function factionsDaily(state) {
 export function clearStaleAlerts(state) {
   for (const b of state.bases) {
     if (!b.alert) continue;
-    const coming = state.parties.some((p) => p.kind === "raid" && !p.returning && p.target && p.target.kind === "player" && p.target.baseId === b.id);
+    const coming = state.parties.some((p) => p.kind === "raid" && !p.returning && p.target && p.target.kind === "player" && p.target.baseId === b.id) ||
+      outsiderRaidOn(state, b.id); // raiders from outside the state (visitors.js)
     if (!coming) b.alert = false;
   }
 }
@@ -297,7 +305,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const att = party.strength;
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
   // met are not named.
-  const who = attacker ? knownName(attacker) : "a horde";
+  const who = attacker ? knownName(attacker) : party.raidName || "a horde"; // raidName: raiders from outside (visitors.js)
   const whom = knownName(target, `the people at ${tileLabel(state, party.target.tile)}`);
   const report = state.live.has(party.target.tile) || (attacker && target.known);
   if (att > def * 1.1) {

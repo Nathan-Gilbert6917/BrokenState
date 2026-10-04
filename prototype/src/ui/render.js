@@ -11,7 +11,11 @@ import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
 import { hasKey } from "../sim/locks.js";
+import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
+import { inCoverage } from "../sim/radio.js";
+import { visitorTipLines } from "../sim/visitors.js";
+import { outsiderPartyCanvas, OUTSIDER_COLORS } from "./mapsprites.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
@@ -316,7 +320,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
     }
   }
   // Sites: a code for how each looks (0 not drawn; low bits 1 group base, 3 site; 4 busy, 8 faded or besieged;
-  // 16 and up the group). A changed code redraws the chunks around it; a new zoom only works out the sizes again.
+  // 16 and up the group, or for a site its loot band). A changed code redraws the chunks around it; a new zoom only works out the sizes again.
   fbAt.clear(); factionIdx.clear(); besiegedFb.clear();
   state.factions.forEach((f, i) => {
     factionIdx.set(f, i);
@@ -333,10 +337,11 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
       if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0);
       else if (F.poisOn) {
-        // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look untouched.
-        const def = LOCATIONS[t.loc.type], loot = state.timelapse ? null : isLive ? t.loot : snap ? snap.loot : null;
-        const faded = loot != null && t.loc.type !== "city" && t.loc.type !== "town" && loot < 0.35 * def.richness;
-        code = 3 | (busy.has(id) ? 4 : 0) | (faded ? 8 : 0);
+        // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look
+        // untouched. The sprite fades by the loot band (aiscav.js: rich, some, little, picked clean; bits 16 and 32).
+        const loot = state.timelapse ? null : isLive ? t.loot : snap ? snap.loot : null;
+        const band = loot == null || t.loc.type === "city" || t.loc.type === "town" ? 0 : lootBand(t, loot);
+        code = 3 | (busy.has(id) ? 4 : 0) | (band >= 2 ? 8 : 0) | (band << 4);
       }
     }
     if (code !== G.siteCode[id]) {
@@ -360,7 +365,7 @@ function siteDesc(state, id, code, fb) {
     return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null };
   }
   if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, dyn: false }; // zoomed out: a dot in the zone's color
-  return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, !!(code & 8)) };
+  return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, (code >> 4) & 3) };
 }
 
 function paintSite(d, px, py) {
@@ -542,6 +547,7 @@ function moverHash(state) {
   let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0);
   for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
+  for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
   return h;
 }
@@ -880,7 +886,7 @@ export function render(state) {
     const f = factionById(state, p.owner);
     const [px, py] = g.toPixel(tile, HEX);
     const color = f ? f.color : "#cccccc", type = f ? f.type : "fortress";
-    const kind = p.vehicle || p.kind === "caravan" ? "convoy" : p.kind === "raid" ? "raid" : "walk"; // a caravan: their wagon or truck
+    const kind = p.vehicle || p.kind === "caravan" ? "convoy" : p.kind === "raid" ? "raid" : p.kind === "scav" ? "scav" : "walk"; // a caravan: their wagon or truck; scavengers with their sack
     const n = p.members ? p.members.length + (p.kind === "raid" ? 1 : 0) : p.strength >= 15 ? 4 : p.strength >= 7 ? 3 : 2;
     const cv = groupPartyCanvas(type, kind, color, n), s = zoomBoost();
     const w = gridW(cv) * (kind === "convoy" ? 1.2 : 1.1) * s;
@@ -898,6 +904,24 @@ export function render(state) {
     groundRing(x, y, color, false, p.kind === "raid");
     sprite(cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+  }
+  // Outsiders (sim/visitors.js): raiders from outside in dark red, merchants in gold, travellers in grey. Drawn where
+  // you can see them; in radio coverage only (heard, not seen) faded on a dashed ring. The timelapse shows them all.
+  if (on("teams")) for (const v of state.visitors || []) {
+    const seen = live.has(v.tile);
+    const heard = !seen && !state.timelapse && inCoverage(state, v.tile);
+    if (!seen && !heard) continue;
+    const color = OUTSIDER_COLORS[v.kind] || "#8a8a86";
+    const [px, py] = g.toPixel(v.tile, HEX);
+    const cv = outsiderPartyCanvas(v.kind, v.sub, Math.ceil(v.size / 2)), s = zoomBoost();
+    const w = gridW(cv) * (v.kind === "merchants" ? 1.3 : 1.15) * s;
+    const next = v.path && v.path[v.idx + 1];
+    const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
+    const [x, y, k2] = besideBase(v.tile, px, py);
+    groundRing(x, y, color, heard, v.kind === "raiders");
+    sprite(cv, x, y - 3, w * k2, { facing, alpha: heard ? 0.55 : 1 });
+    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+    if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
   }
   // Your parties: actual position with radio contact, otherwise only the plan.
   for (const p of state.parties) {
@@ -973,7 +997,7 @@ function besideBase(tile, px, py) {
 }
 
 // Where a site's sprite goes on its zone plate, where its label goes (labelY), and the spot beside the plate (side)
-// that the danger skulls fall back to when there is no room under the name. faded: picked over.
+// that the danger skulls fall back to when there is no room under the name. faded: the loot band (0–3, aiscav.js).
 function siteLook(t, px, py, tier, faded) {
   const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[t.loc.type];
   const cv = poiSpriteCanvas(t.loc.type, t.loc.type === "military" && / depot$/i.test(t.loc.name) ? "depot" : "", faded);
@@ -1287,6 +1311,8 @@ export function tileTooltip(state, id) {
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
+  // Loot left as you know it (aiscav.js bands): the live value, else the last you saw or heard (it may be gone since).
+  if (t.loc && !ownHere && (isLive || snap)) lines.push(`<span class="muted">Loot: ${LOOT_BANDS[lootBand(t, isLive ? t.loot : snap.loot)].toLowerCase()}${isLive ? "" : " (then)"}</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
   for (const pin of jobPins(state)) if (pin.tile === id) lines.push(`<span style="color:#e0b84f">${pin.icon} Job: ${pin.label.replace(/[&<>"]/g, "")}</span>`); // ui/diplomacy.js
@@ -1295,6 +1321,7 @@ export function tileTooltip(state, id) {
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
+  for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   return lines.join("<br>");
 }

@@ -26,6 +26,7 @@ import {
 import { VEHICLE_TYPES, tank, vehiclesAtBase, partyVehicle, canRepair, partyFuel } from "../sim/vehicles.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
 import { ageText, liveSet } from "./render.js";
+import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
 import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
@@ -52,6 +53,7 @@ import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
+import { outsidersSection } from "./visitors.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -248,6 +250,7 @@ function renderGroups(state) {
       </div>`;
     }).join("") : `<div class="muted small">You have not found any other groups yet. Send recon teams out.</div>`}
     ${unknown ? `<div class="muted small" style="margin-top:0.5rem">${unknown} group${unknown === 1 ? " is" : "s are"} still out there, unknown.</div>` : ""}
+    ${outsidersSection(state)}
     <h3>Trade routes</h3>
     ${routes.length ? routes.map((r) => {
       const f = factionById(state, r.factionId);
@@ -367,7 +370,14 @@ export function renderRight(state, ui) {
   const base = state.bases.find((b) => b.tile === id);
   const ownerF = info && typeof info.owner === "number" ? factionById(state, info.owner) : null;
   const walk = estimateTrip(state, { memberIds: [1], dest: id, vehicle: false, stance: "normal" });
-  const lootWord = (v) => (v > 0.7 ? "Rich" : v > 0.35 ? "Some" : v > 0.1 ? "Little" : "Picked over");
+  // Loot by band (aiscav.js: rich, some, little, picked clean, against what the site held untouched). Not in view: the
+  // band you last saw (or heard of on the radio), with its age: others may have stripped it since.
+  const lootCell = (v) => {
+    const word = LOOT_BANDS[lootBand(t, v)];
+    if (isLive) return `${word} <span class="muted">· now</span>`;
+    const at = snap.lootHour > snap.hour ? snap.lootHour : snap.hour, old = state.hour - at >= 72;
+    return `<span${old ? ' class="muted"' : ""}>${snap.lootSrc === "radio" && snap.lootHour > snap.hour ? "radio news" : "last seen"} ${ageText(state, { hour: at })}: ${word.toLowerCase()}</span>${old ? `<div class="small muted">May be stripped since: other groups scavenge too</div>` : ""}`;
+  };
   const actions = tileActions(state, id);
   const markers = state.markers.filter((m) => m.tile === id);
   const teamsHere = state.parties.filter((p) => p.owner === "player" && contactable(p) && partyTile(p) === id);
@@ -382,7 +392,7 @@ export function renderRight(state, ui) {
         ${info ? `
         <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
         <div${tip("Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
-        <div${tip("How much is left to scavenge here")}>Loot</div><div>${lootWord(info.loot)}</div>
+        <div${tip("How much is left to scavenge here, against what it held untouched: rich, some, little, picked clean. Nothing grows back, and other groups strip sites too: what you have not seen lately may be gone.")}>Loot</div><div>${lootCell(info.loot)}</div>
         <div>Horde</div><div>${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission).`)}>Hive</div><div class="danger">Yes</div>` : ""}
         ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Culling the hordes gathered here sets it back.`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead</div>` : ""}` : ""}
@@ -403,7 +413,7 @@ export function renderLegend(view, ui) {
   if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show map layers")}>Layers ▸</button>`;
   return `<div class="spread"><b>Map layers</b><button data-action="legendtoggle" class="mini"${tip("Hide this panel")}>▾</button></div>
     ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}> ${l.name}</label>`).join("")}
-    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…) · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; faded = picked over, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen; a grey brute with a concrete fist at its head = Wallbreaker) · red glowing mound = infestation hive, its land tinted dark red (sites there show at least 3 skulls) and the ring around it brighter with red skulls (much tougher dead) · a raw mound with bones and a red bar = a hive being built (the bar: dead gathered of 1,000) · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · dashed circles = radio coverage (station 8 tiles, linked relay 6; red = relay not linked or off the air) · a group's wagon or truck beside your base = their caravan · ! = waiting for orders · ? = estimated team position</div>`;
+    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…), their scavengers carry a stuffed sack · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; the more faded, the less loot left as you last saw it: rich, some, little, picked clean, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen; a grey brute with a concrete fist at its head = Wallbreaker) · red glowing mound = infestation hive, its land tinted dark red (sites there show at least 3 skulls) and the ring around it brighter with red skulls (much tougher dead) · a raw mound with bones and a red bar = a hive being built (the bar: dead gathered of 1,000) · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · dashed circles = radio coverage (station 8 tiles, linked relay 6; red = relay not linked or off the air) · a group's wagon or truck beside your base = their caravan · ! = waiting for orders · ? = estimated team position</div>`;
 }
 
 // ---------- log ----------
@@ -502,6 +512,7 @@ function helpModal() {
     <b>Diplomacy:</b> groups post jobs (Groups tab → Jobs; accepted jobs are tagged on the map and listed in the planner), fight wars and sign pacts with each other (World affairs: broker a ceasefire or join a side), and show what they want and have spare (Market board). Invite groups that trust you into the Calder Coalition: hold over half the land with every group left in it and no hive standing, and the coalition wins.<br>
     <b>Radio:</b> a radio station reaches 8 tiles; a radio relay at an outpost (no operator, 1 part every 10 days) adds 6 tiles when a station or another linked relay is in range, so relays chain coverage outward (dashed circles on the map; red = not linked or off the air). Groups within reach (their radios add 4 tiles) can be called from the Groups tab (Radio…): greet, ask for news, ask for a trade caravan, make a deal ("we want 20 meds, paying 60 ammo"), call for help, pacts. <i>Scan the airwaves</i> finds groups in reach you have not met. Groups call you too, with offers and requests.<br>
     <b>Trade window:</b> two columns, yours and theirs: every supply with steppers, every item one by one. Items are valued by what they are, their condition and the uses left; supplies by how short the group is of them. They pay you less than they charge (Speech and goodwill narrow the gap); a deal goes through when it is fair for them. <i>Balance with</i> ammo, scrap or food fills the gap. Intel: buy a report of the area (only those tiles lose their fog) or horde sightings, or sell your own maps.<br>
+    <b>Outsiders:</b> people from beyond the state cross the border now and then and leave again: raider bands (from about day 20, more often later: they go for whatever is weakly defended; pay, talk, fight or avoid them, or pay them to leave over the radio), merchant caravans (rare goods: fuel, meds, manuals, books, good gear; invite them over the radio and trade when they stop at your base) and travellers (news, maps, people who want to join or need shelter). The Groups tab lists the ones you know of.<br>
     <b>Caravans:</b> a group's caravan comes to your base for a radio deal and stays a day (Bases tab: Trade). You can attack it for its goods, but the group turns hostile and raids you. Your own trade caravans (Groups tab: New trade caravan…) visit a list of destinations; at each stop: trade, unload, stay a day, go on, or return home.<br>
     <b>Hives and hordes:</b> infestation hives gain resources every day, more when other hives stand within 5 tiles (alone 1, two together 3 each, three 6 each, up to 12), and spend them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15) and, for 40, on a <b>Wallbreaker</b>: a brute that leads a horde and smashes defences. Every 30–60 days the hives pick a spot for a new hive: hives within 10 tiles send hordes there, and once the gathered hordes reach a score of 30 they start turning into a hive, which stands when 1,000 of the dead have gone into it. Hordes move at most 2 tiles a day (slower in deep cold), merge when they meet and split up; a horde's score (from its size) is how tough it is. You see them only near your bases (a watchtower sees further), with teams in radio range, or when a team reports. A hive holds the land within 4 tiles (at least 3 skulls there) and the ring right around it has red skulls: the dead there are much tougher. It radiates infection; destroying it lets the infection fade. Destroy a hive with the <b>Destroy hive</b> mission: a hard battle against its brood and the <b>Broodmother</b>. Hordes also come in from beyond the border every week or so, so the state is never quite safe.<br>
     <b>Defending against hordes:</b> a base's walls hold back a horde up to a limit (the base panel shows "Holds a horde of"); guards and the defence buildings (barricades, spike pits, trench, reinforced gate, floodlights) raise it. A bigger horde breaks in and the best 8 there fight it on the base map, with the barricades, pits and trench on it. Lose and the base is overrun: people hurt or killed, stores spoiled, an outpost lost. When lookouts see a horde coming you get a warning card: man the defences, or burn a decoy fire.<br>

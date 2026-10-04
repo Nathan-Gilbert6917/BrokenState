@@ -1576,6 +1576,7 @@ function person(p, x, y, o) {
     case "banner": p.set(x + 4, y + 4, skin); p.rect(x + 5, y - 6, x + 5, y + 9, WOOD); p.rect(x + 6, y - 6, x + 9, y - 2, ac); p.rect(x + 6, y - 2, x + 9, y - 2, shade(ac, -0.3)); p.set(x + 7, y - 4, GOLD); p.set(x + 8, y - 4, GOLD); break;
     case "shield": p.rect(x + 4, y + 2, x + 6, y + 7, ac); p.rect(x + 4, y + 2, x + 6, y + 2, shade(ac, 0.3)); p.set(x + 5, y + 4, STEEL); break;
     case "binoc": p.rect(x + 3, y + 1, x + 4, y + 1, "#2a2a2e"); p.set(x + 4, y + 2, skin); break;
+    case "bar": p.set(x + 4, y + 4, skin); p.rect(x + 5, y + 1, x + 5, y + 6, METAL); p.set(x + 6, y + 1, METAL); p.set(x + 4, y + 6, METAL); break; // a crowbar
     default: p.set(x + 4, y + 4, skin);
   }
 }
@@ -1701,9 +1702,10 @@ function paintFortressTruck(c) {
 
 // The people a group sends on foot, by group type. kind: "raid" (weapons raised) or "walk" (convoys on foot).
 function paintGroupWalkers(type, c, n, kind) {
-  const raid = kind === "raid";
+  const raid = kind === "raid", scav = kind === "scav";
   const p = painter(type === "raider" && raid ? 26 : 24, 17);
-  const slots = (type === "traders" && !raid ? [[1, 4], [7, 3]] : [[8, 5], [1, 3], [15, 4], [19, 6]]).slice(0, Math.max(1, Math.min(4, n))).sort((a, b) => a[1] - b[1]);
+  // Scavengers (aiscav.js): up to three, packs on, the last one hauling a stuffed sack.
+  const slots = (scav ? [[6, 5], [0, 3], [12, 4]] : type === "traders" && !raid ? [[1, 4], [7, 3]] : [[8, 5], [1, 3], [15, 4], [19, 6]]).slice(0, Math.max(1, Math.min(scav ? 3 : 4, n))).sort((a, b) => a[1] - b[1]);
   const look = (i) => {
     switch (type) {
       case "raider": return { cloth: i % 2 ? "#3a3028" : shade(c, -0.25), hat: "mohawk", hatColor: c, band: c, arm: raid ? "raised" : "rifle", pants: "#2a2a30" };
@@ -1716,6 +1718,11 @@ function paintGroupWalkers(type, c, n, kind) {
     }
   };
   if (type === "raider" && raid) { biker(p, 14, 6, c, c); slots.splice(2); }
+  if (scav) {
+    slots.forEach(([x, y], i) => person(p, x, y + 2, { ...look(i), pack: true, arm: i === 0 ? "bar" : look(i).arm === "banner" ? "rifle" : look(i).arm }));
+    lootSack(p, 18, 8);
+    return p;
+  }
   if (type === "traders" && !raid) {                                // a pack mule with the walkers
     const mule = "#7a5a40", dark = shade(mule, -0.35);
     p.rect(14, 10, 20, 12, mule); p.rect(14, 12, 20, 12, dark);       // body
@@ -1729,7 +1736,16 @@ function paintGroupWalkers(type, c, n, kind) {
   return p;
 }
 
-// Group party sprite: kind "convoy" (vehicle), "raid" or "walk" (on foot). type: FACTION_TYPES key.
+// A stuffed burlap sack with a pipe and a can sticking out (group scavengers' haul).
+function lootSack(p, x, y) {
+  const s = "#9a8358", d = shade(s, -0.35), l = shade(s, 0.25);
+  p.rect(x + 1, y + 2, x + 4, y + 7, s); p.rect(x, y + 4, x + 5, y + 7, s); p.rect(x, y + 8, x + 5, y + 8, d);
+  p.rect(x + 1, y + 2, x + 2, y + 3, l); p.rect(x + 2, y + 1, x + 3, y + 1, d);
+  p.rect(x + 4, y - 2, x + 4, y + 1, METAL); p.set(x + 4, y - 3, shade(METAL, 0.3));
+  p.rect(x + 1, y - 1, x + 2, y, RUST); p.set(x + 1, y - 1, shade(RUST, 0.3));
+}
+
+// Group party sprite: kind "convoy" (vehicle), "raid", "scav" (scavengers with their haul) or "walk" (on foot). type: FACTION_TYPES key.
 function paintGroupParty(type, kind, c, n) {
   if (kind !== "convoy") return paintGroupWalkers(type, c, n, kind);
   switch (type) {
@@ -1754,6 +1770,56 @@ function paintSiegeCamp(c) {
   p.rect(0, 13, 23, 13, shade(WOOD, -0.3));
   return p;
 }
+
+// ---------- outsiders (sim/visitors.js) ----------
+// Raiders from outside the state: dark red rags and hoods, a biker and walkers with weapons up under a ragged
+// black-and-red banner. Merchants: a big covered wagon in gold canvas behind two oxen, a guard walking ahead.
+// Travellers: grey walkers with bedrolls (scouts with binoculars, refugees with a handcart of bundles, wanderers
+// with a walking staff).
+const OUT_RED = "#7a1a1a", OUT_GOLD = "#d9a520", OUT_GRAY = "#8a8a86";
+function paintOutsiderRaiders(n) {
+  const p = painter(n >= 3 ? 33 : 28, 19);
+  p.rect(1, 0, 1, 13, WOOD); p.rect(2, 0, 7, 3, "#1a1414"); p.rect(2, 3, 7, 3, OUT_RED); p.set(7, 2, "#1a1414"); p.clear(7, 3); p.set(6, 4, OUT_RED);
+  p.set(4, 1, BONE); p.set(5, 1, BONE); p.set(4, 2, BONE);                         // the skull sign on the banner
+  biker(p, 16, 7, OUT_RED, "#1a1a1a");
+  const slots = [[3, 6], [9, 4], [27, 5]].slice(0, Math.max(1, Math.min(3, n)));
+  slots.forEach(([x, y], i) => person(p, x, y + 2, { cloth: i % 2 ? "#2c2420" : shade(OUT_RED, -0.2), hat: "hood", hatColor: shade(OUT_RED, -0.35), band: "#c03030", arm: i === 1 ? "rifle" : "raised", pants: "#24222a" }));
+  return p;
+}
+function paintOutsiderMerchants() {
+  const p = painter(36, 17);
+  // Two oxen in harness.
+  const ox = "#6a4a34";
+  for (const x0 of [24, 29]) { p.rect(x0, 8, x0 + 5, 11, ox); p.rect(x0, 8, x0 + 5, 8, shade(ox, 0.2)); p.rect(x0 + 5, 6, x0 + 6, 9, ox); p.set(x0 + 6, 5, BONE); p.set(x0 + 4, 5, BONE); p.rect(x0, 12, x0, 14, ox); p.rect(x0 + 4, 12, x0 + 4, 14, ox); }
+  p.rect(22, 9, 24, 9, WOOD); p.rect(26, 7, 31, 7, WOOD_LIT);                 // shaft and yoke
+  // The wagon: a tall gold canvas over hoops, crates at the back, a lantern.
+  for (let r = 0; r < 3; r++) p.rect(2 + (2 - r), 1 + r, 20 - (2 - r), 1 + r, r === 0 ? shade(OUT_GOLD, 0.3) : OUT_GOLD);
+  p.rect(2, 4, 20, 8, OUT_GOLD); p.rect(2, 8, 20, 8, shade(OUT_GOLD, -0.3)); for (let x = 5; x <= 17; x += 4) p.rect(x, 2, x, 8, shade(OUT_GOLD, -0.18));
+  p.rect(2, 5, 20, 5, "#7a2a1a");                                               // a red stripe
+  p.rect(1, 9, 21, 10, WOOD); p.rect(1, 9, 21, 9, WOOD_LIT); crate(p, 0, 6, 3, 3);
+  for (const wx of [3, 15]) { p.rect(wx, 10, wx + 4, 14, "#5c4128"); p.rect(wx + 1, 11, wx + 3, 13, "#3a2a1a"); p.set(wx + 2, 12, WOOD_LIT); p.set(wx + 2, 10, WOOD_LIT); }
+  p.rect(21, 2, 21, 6, METAL); p.set(22, 2, FIRE); p.set(22, 3, FIRE_HOT);      // lantern pole
+  return p;
+}
+function paintOutsiderTravellers(sub, n) {
+  const p = painter(sub === "refugees" ? 28 : 22, 17);
+  const cloth = (i) => (i % 2 ? "#6e6a60" : OUT_GRAY);
+  const bedroll = (x, y) => { p.rect(x - 1, y + 1, x + 1, y + 1, "#a08a60"); p.set(x - 1, y, "#a08a60"); };
+  if (sub === "refugees") {
+    p.rect(17, 9, 25, 12, WOOD); p.rect(17, 9, 25, 9, WOOD_LIT);              // handcart of bundles
+    p.rect(18, 5, 21, 8, "#8a7a6a"); p.rect(22, 6, 24, 8, "#6a7a8a"); p.rect(19, 4, 20, 4, "#b0a080");
+    p.rect(19, 13, 21, 15, "#5c4128"); p.set(20, 14, WOOD_LIT); p.rect(14, 10, 16, 10, WOOD);
+  }
+  const slots = (sub === "refugees" ? [[9, 4], [2, 5], [5, 3]] : [[8, 4], [1, 3], [14, 5]]).slice(0, Math.max(1, Math.min(3, n))).sort((a, b) => a[1] - b[1]);
+  slots.forEach(([x, y], i) => {
+    const arm = sub === "scouts" && i === 0 ? "binoc" : sub === "scouts" ? "rifle" : "none";
+    person(p, x, y + 2, { cloth: cloth(i), pants: "#4a4840", hat: sub === "wanderers" && i === 0 ? "straw" : "cap", hatColor: "#5a5850", pack: true, arm });
+    bedroll(x, y + 2);
+    if (sub === "wanderers") { p.rect(x + 5, y, x + 5, y + 12, WOOD); p.set(x + 4, y + 6, SKIN); }
+  });
+  return p;
+}
+export const OUTSIDER_COLORS = { raiders: OUT_RED, merchants: OUT_GOLD, explorers: OUT_GRAY };
 
 // ---------- your convoys and special teams ----------
 // Trade-route convoy: a pickup with a high load of crates under a tarp and a pennant in the route color.
@@ -1963,7 +2029,8 @@ export function partySpriteCanvas(kind, color, count = 3) {
   });
 }
 
-// Another group's party by group type. kind: "convoy" (by vehicle), "raid" or "walk" (on foot); n: people (1–4).
+// Another group's party by group type. kind: "convoy" (by vehicle), "raid", "scav" (scavengers, aiscav.js) or "walk" (on
+// foot); n: people (1–4).
 export function groupPartyCanvas(type, kind, color, n = 3) {
   const k = kind === "convoy" ? 0 : Math.max(1, Math.min(4, n));
   return cached(`gp:${type}:${kind}:${color}:${k}`, () => paintGroupParty(type, kind, color, k || 3));
@@ -1971,6 +2038,14 @@ export function groupPartyCanvas(type, kind, color, n = 3) {
 
 // Siege camp in the attacker's color, pitched beside a besieged base.
 export const siegeCampCanvas = (color) => cached(`siege:${color}`, () => paintSiegeCamp(color));
+
+// Outsiders (sim/visitors.js) by kind: "raiders" | "merchants" | "explorers" (sub: "scouts" | "refugees" |
+// "wanderers"); n: people shown (1–3).
+export function outsiderPartyCanvas(kind, sub = "", n = 3) {
+  const k = Math.max(1, Math.min(3, n));
+  return cached(`out:${kind}:${sub || ""}:${kind === "merchants" ? 0 : k}`, () =>
+    kind === "raiders" ? paintOutsiderRaiders(k) : kind === "merchants" ? paintOutsiderMerchants() : paintOutsiderTravellers(sub || "wanderers", k));
+}
 
 // A horde of n figures (2–7) in the current zombie look (palette and eyes from the Zombies settings).
 export function hordeSpriteCanvas(n) {
@@ -2002,12 +2077,15 @@ export function factionBaseCanvas(type, color) {
   return cached(`fbase:${type}:${color}`, () => (FACTION_PAINT[type] || paintFortressBase)(color));
 }
 
-// A map site by LOCATIONS type. variant: "depot" (the Army depot look of a military site); faded: picked over.
-export function poiSpriteCanvas(type, variant = "", faded = false) {
-  return cached(`poi:${type}:${variant}:${+faded}`, () => {
+// A map site by LOCATIONS type. variant: "depot" (the Army depot look of a military site); faded: how picked over it
+// is, the loot band (aiscav.js lootBand: 0 rich, 1 some, 2 little, 3 picked clean; true = 2).
+const FADES = [null, [0.3, 0.06], [0.7, 0.18], [0.95, 0.42]];
+export function poiSpriteCanvas(type, variant = "", faded = 0) {
+  const lvl = faded === true ? 2 : Math.max(0, Math.min(3, +faded || 0));
+  return cached(`poi:${type}:${variant}:${lvl}`, () => {
     const paint = POI_PAINT[type] || paintTownCenter;
     const p = paint(variant === "depot");
-    return faded ? fade(p) : p;
+    return lvl ? fade(p, ...FADES[lvl]) : p;
   });
 }
 

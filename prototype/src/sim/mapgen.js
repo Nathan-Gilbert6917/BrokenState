@@ -67,7 +67,7 @@ const COUNTRYSIDE = [
   ["crashsite", 2, () => true],
 ];
 // City blocks are richer than the same shop in a small town (town centers keep their richness).
-const ZONE_RICHNESS = { urban: 1.15, town: 0.85 };
+export const ZONE_RICHNESS = { urban: 1.15, town: 0.85 }; // aiscav.js siteFull: the loot bands
 // Chance that a countryside site gets a dirt road to the nearest road (the rest stay off-road).
 const SPUR_CHANCE = { farm: 0.6, ranch: 0.6, church: 0.7, lodge: 0.5, campground: 0.6, ranger: 0.6, quarry: 0.7, feedstore: 1, gas: 1, diner: 1, motel: 1, clinic: 1 };
 

@@ -21,6 +21,7 @@ import { itemDur } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
 import { vehiclesAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
+import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -89,7 +90,9 @@ export function tradeWindow(state, ui) {
   const a = attitude(f);
   const sp = spread(f, speech);
   const c = ctx.caravan;
-  const where = ctx.kind === "visit"
+  const where = ctx.visitor // outsiders (ui/visitors.js)
+    ? `${visitorTradeHead(state, ctx)} · ${ctx.base ? `at ${esc(ctx.base.name)} until ${when(ctx.visitor.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory` : `met on the road (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`}`
+    : ctx.kind === "visit"
     ? `Your team at their gates (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`
     : `Their caravan at ${esc(ctx.base.name)} · ${caravanGuards(f, c)} guards · leaves ${when(c.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory`;
   const total = tot.offer + tot.ask;
@@ -119,11 +122,11 @@ export function tradeWindow(state, ui) {
     <div class="row" style="margin-top:0.7rem;flex-wrap:wrap">
       <button class="primary" data-action="dotrade" ${v.ok ? "" : "disabled"}${tip(v.ok ? "Swap the goods. Bigger deals and overpaying earn goodwill (up to 4 a day)." : v.reason)}>Accept the deal</button>
       <button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>
-      <button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
+      ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
       <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Trade pact</button>
       ${c ? (confirm
         ? `<span class="danger small">Attack the caravan? ${esc(f.name)} will be your enemies and send raids.</span><button class="danger" data-action="tw-attack-yes" data-id="${c.id}"${tip("A battle at your base against its guards; win and its goods are yours")}>Yes, attack</button><button data-action="tw-attack-no">No</button>`
-        : `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you.`)}>Attack the caravan…</button>`) : ""}
+        : `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you.`)}>Attack the caravan…</button>`) : ""}`}
       <button data-action="tradeleave" style="margin-left:auto"${tip(c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${c ? "Close" : "Leave"}</button>
     </div></div>`;
 }

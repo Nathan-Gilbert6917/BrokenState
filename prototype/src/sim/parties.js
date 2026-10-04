@@ -31,9 +31,10 @@ import { caravanGuarded } from "./jobs.js";
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
 import { travelFactor, travelEffects, travelHazard } from "./weather.js";
-import { hasPerk, checkBonus, gainXpAll, USE } from "./skills.js";
+import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
+import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -861,7 +862,7 @@ function arrive(state, p) {
       }
       const base = {
         id: newId(), tile: p.dest, type: "outpost", name: outpostName(state, p.dest),
-        stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 },
+        stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
         radio: false, watchtower: false, buildings: [], construction: [], armory: [],
       };
       takeSupply(p, "scrap", 15);
@@ -1353,12 +1354,14 @@ function aiPartyHour(state, p) {
     return;
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
+  if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
   for (const tileId of entered) {
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {
       p.strength *= 0.75;
+      if (p.kind === "scav") for (const k of Object.keys(p.scav.got)) p.scav.got[k] *= 0.75; // and drops a share of the haul
       horde.size = Math.max(0, horde.size - Math.round(p.strength * 0.6));
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
@@ -1376,8 +1379,22 @@ function aiPartyHour(state, p) {
         }
       }
     }
+    // Scavengers carrying a haul home: raiders near their own base take it (aiscav.js).
+    if (p.kind === "scav" && p.phase === "home") {
+      for (const r of state.factions) {
+        if (!r.alive || r.type !== "raider" || r.id === p.owner) continue;
+        if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && hash01(state.seed, "scavamb", state.hour, tileId, state.factions.indexOf(r)) < 0.12) {
+          ambushHaul(state, p, r);
+          const from = factionById(state, p.owner);
+          if (state.live.has(tileId)) log(state, `${r.known ? r.name : "Raiders"} ambushed ${from && from.known ? `${from.name} ` : ""}scavengers near ${tileLabel(state, tileId)} and took their haul.`, "danger");
+          removeParty(state, p);
+          return;
+        }
+      }
+    }
   }
   if (p.strength < 1) {
+    if (p.kind === "scav") return loseScav(state, p);
     removeParty(state, p);
     return;
   }
@@ -1399,6 +1416,8 @@ function aiPartyHour(state, p) {
       removeParty(state, p);
     } else if (p.kind === "caravan") {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
+    } else if (p.kind === "scav") {
+      scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
     } else if (p.kind === "raid") {
       const stillThere = p.target.kind === "player" ? baseById(state, p.target.baseId) :
         factionById(state, p.target.factionId)?.bases.includes(p.target.tile);

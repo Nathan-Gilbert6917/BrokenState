@@ -32,6 +32,7 @@ import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
@@ -697,6 +698,8 @@ for (const [k, fn] of Object.entries(SKILL_ACTIONS)) actions[k] = (d) => fn(stat
 for (const [k, fn] of Object.entries(PROD_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
 for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Outsiders (ui/visitors.js): the Groups tab's radio calls, trading with merchants, robbing them.
+for (const [k, fn] of Object.entries(VISITOR_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Jobs, market board, world affairs and the coalition (ui/diplomacy.js); some reuse the handlers above (plan, center, rd-open).
 for (const [k, fn] of Object.entries(DIPLO_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).

@@ -234,7 +234,7 @@ export function gatherIntel(state, p, full = true) {
     }
     const out = state.parties.filter((q) => q.owner === f.id && q.path);
     for (const q of out) tiles.add(q.path[Math.min(q.idx || 0, q.path.length - 1)]);
-    lines.push(out.length ? `They have ${out.length} part${out.length === 1 ? "y" : "ies"} out (${out.map((q) => `${q.kind === "raid" ? "a raid" : q.kind === "caravan" ? "a caravan" : `a ${q.kind}`} near ${tileLabel(state, q.path[Math.min(q.idx || 0, q.path.length - 1)])}`).join("; ")}).` : "No patrols out right now.");
+    lines.push(out.length ? `They have ${out.length} part${out.length === 1 ? "y" : "ies"} out (${out.map((q) => `${q.kind === "raid" ? "a raid" : q.kind === "caravan" ? "a caravan" : q.kind === "scav" ? "a scavenging party" : `a ${q.kind}`} near ${tileLabel(state, q.path[Math.min(q.idx || 0, q.path.length - 1)])}`).join("; ")}).` : "No patrols out right now.");
   } else if (full) lines.push(`${p.group} were on their own: no base to tell of.`);
   let hives = 0, hordes = 0;
   if (near != null) {

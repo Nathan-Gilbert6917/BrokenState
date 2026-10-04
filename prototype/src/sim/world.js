@@ -36,6 +36,7 @@ import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory } from "./alliance.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { visitorsHour, visitorsDaily } from "./visitors.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -519,7 +520,8 @@ export function mergeKnowledge(state, seen, spotted) {
   // seen: Map tileId -> snapshot recorded by a party. Keep the newest per tile.
   for (const [id, snap] of seen) {
     const cur = state.knowledge[id];
-    if (!cur || cur.hour <= snap.hour) state.knowledge[id] = snap;
+    // Radio news of a stripped site (aiscav.js) newer than the team's look keeps its loot.
+    if (!cur || cur.hour <= snap.hour) state.knowledge[id] = cur && cur.lootHour > snap.hour ? { ...snap, loot: cur.loot, lootHour: cur.lootHour, lootSrc: cur.lootSrc } : snap;
     if (snap.factionBase) {
       const f = factionById(state, snap.factionBase);
       if (f) f.known = true;
@@ -536,6 +538,7 @@ export function tickHour(state) {
   movePartiesHour(state);
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
+  visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
   constructionHour(state);
   craftingHour(state);
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
@@ -555,6 +558,7 @@ export function tickHour(state) {
     captivesDaily(state);
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
+    visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     recomputeOwnership(state);
     ensureLeader(state);

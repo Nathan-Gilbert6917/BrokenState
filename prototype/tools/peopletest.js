@@ -403,6 +403,9 @@ section("Warnings before desertion");
     const s3 = W(sd);
     const h3 = hub(s3);
     while (residents(s3, h3.id).length < baseBeds(h3) * 2.5) addPerson(s3, h3, 45);
+    // Every line of the run (the log keeps only the last 200, so a warning can drop out of it before the walk-out).
+    const lines = [], unshift = s3.log.unshift.bind(s3.log);
+    s3.log.unshift = (...x) => { lines.push(...x); return unshift(...x); };
     for (let d = 0; d < 60 && !s3.gameOver; d++) {
       for (let k = 0; k < 24; k++) tickHour(s3);
       h3.stock.food = Math.max(h3.stock.food, 200); h3.stock.water = Math.max(h3.stock.water, 60);
@@ -410,10 +413,10 @@ section("Warnings before desertion");
       s3.engagement = null; s3.trade = null;
     }
     for (const s of s3.survivors.filter((x) => x.left)) {
-      const out = s3.log.find((l) => l.text.startsWith(`${s.name} lost hope`));
-      if (!out) continue; // followed the preacher (a hub event choice), or the line is out of the log
+      const out = lines.find((l) => l.text.startsWith(`${s.name} lost hope`));
+      if (!out) continue; // followed the preacher (a hub event choice)
       deserters++;
-      const warn = s3.log.find((l) => l.text.startsWith(`${s.name} is close to leaving`) && Math.floor(l.hour / 24) < Math.floor(out.hour / 24));
+      const warn = lines.find((l) => l.text.startsWith(`${s.name} is close to leaving`) && Math.floor(l.hour / 24) < Math.floor(out.hour / 24));
       if (!warn) unwarned++;
     }
   }

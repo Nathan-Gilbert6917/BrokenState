@@ -52,12 +52,13 @@ export function farmOutput(state, base) {
 
 // ---------- base scavenging ----------
 // Rare by design: each scavenger has a small chance a day of a small find. The chance grows with Scavenging (and a
-// crowbar), Greedy, and the site; it drops as the surroundings get picked over (base.scavLeft, 1 → 0.2, back up
-// slowly when nobody scavenges). Expeditions to real sites are where supplies come from.
+// crowbar), Greedy, and the site; it drops as the surroundings get picked over (base.scavLeft, 1 → 0.2, 0.004 per
+// scavenger a day; it never comes back: nothing out there grows back, aiscav.js). Expeditions to real sites are where
+// supplies come from.
 export const GREEDY_SCAV = 1.15; // the Greedy trait: finds more when scavenging around a base
 export const BASE_SCAV_CHANCE = 0.07;   // per scavenger per day at Scavenging 0, fresh surroundings
 export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1], preserved: [1, 3], jars: [2, 6] };
-const SCAV_DEPLETE = 0.004, SCAV_REGROW = 0.0015, SCAV_FLOOR = 0.2;
+export const SCAV_DEPLETE = 0.004, SCAV_FLOOR = 0.2;
 export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
 export function scavChance(state, base, s) {
@@ -97,7 +98,7 @@ function baseScavenging(state, base, people) {
     econStats(state).scavFinds++;
     log(state, `${s.name.split(" ")[0]} turned up ${q} ${k} around ${base.name}.`, "good");
   }
-  base.scavLeft = scav.length ? Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length) : Math.min(1, scavLeft(base) + SCAV_REGROW);
+  if (scav.length) base.scavLeft = Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length); // no recovery when nobody scavenges
 }
 
 // ---------- water ----------

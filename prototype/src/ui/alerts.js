@@ -15,6 +15,7 @@ import { brokenAt, fixtureName, jobFor, FIXTURES } from "../sim/breakdowns.js";
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
+import { visitorAlerts } from "./visitors.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -137,11 +138,14 @@ const SECTIONS = {
       out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${state.tiles[c.center].loc ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
     }
   },
+  outsiders(state, out) { // raiders from outside near a base, merchants at one (ui/visitors.js)
+    out.push(...visitorAlerts(state));
+  },
   cards(state, out) {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "horde", "food", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];

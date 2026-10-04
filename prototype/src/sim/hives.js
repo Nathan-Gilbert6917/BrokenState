@@ -319,10 +319,16 @@ function completeSite(state, site) {
 }
 
 // ---------- off-map hordes along the border ----------
+// Land tiles on the map's edge at least `keep` + 1 tiles from your bases: where border hordes (and outsiders,
+// visitors.js) come in.
+export function borderTiles(state, keep = 6) {
+  const g = state.grid;
+  return state.tiles.filter((t) => (t.x === 0 || t.y === 0 || t.x === g.width - 1 || t.y === g.height - 1) && t.terrain !== "water" &&
+    !state.bases.some((b) => g.distance(b.tile, t.id) <= keep));
+}
 function borderSpawn(state) {
-  const g = state.grid, rng = state.rng;
-  const edge = state.tiles.filter((t) => (t.x === 0 || t.y === 0 || t.x === g.width - 1 || t.y === g.height - 1) && t.terrain !== "water" &&
-    !state.bases.some((b) => g.distance(b.tile, t.id) <= 6));
+  const rng = state.rng;
+  const edge = borderTiles(state, 6);
   if (!edge.length) return null;
   const t = rng.pick(edge);
   const r = rng.next();

@@ -12,6 +12,9 @@ export const INF_Q = 63;     // infection stored as 0..63 (finer steps would not
 const KEY_EVERY = 60;        // a full keyframe every 60 frames, so seeking never replays more than 59 deltas
 const EARLY_HOURS = 72;      // frames every 6 hours for the first 3 days
 const EVENT_GAP = 3;         // an event frame comes at least 3 hours after the previous frame
+// Outsiders (visitors.js) in the party list: owner code VISITOR_CODE + their kind's index here.
+export const VISITOR_CODE = 240;
+const VISITOR_KINDS = ["raiders", "merchants", "explorers"];
 const HEAD = 11;             // header slots in a frame's packed data (see record)
 const DEDUPE_HOURS = 120;    // the same caption text is not repeated within 5 days ("X is out of food")
 const BIG_HORDE = 120;       // hordes this big get a caption once
@@ -128,6 +131,14 @@ export function finishChronicle(state) {
   return c;
 }
 
+// A caption for something the log does not say (fog of war: outsiders crossing the border, raids on other groups;
+// visitors.js). It is written at the next frame, with that frame's hour, so captions stay in time order.
+export function chronicleNote(state, text, kind = "world", tile = -1, major = false) {
+  const c = state.chronicle;
+  if (!c || c.overAt != null) return;
+  (c.notes = c.notes || []).push({ text, kind, tile, major: !!major });
+}
+
 // key: what counts as "the same caption" for the 5-day repeat check (the text by default).
 function caption(c, e, key = e.text) {
   const last = c.said.get(key);
@@ -162,6 +173,14 @@ function record(state, c) {
     const tile = p.path && p.path[p.idx];
     if (tile == null) continue;
     pt.push(keyOf(c, p), tile, partyCode(state, c, p), p.phase === "siege" && p.target && p.target.tile != null ? p.target.tile : 65535);
+  }
+  // Outsiders (visitors.js) as parties with owner code VISITOR_CODE + their kind (0 raiders, 1 merchants, 2 explorers).
+  for (const v of state.visitors || []) {
+    const k = VISITOR_KINDS.indexOf(v.kind);
+    if (k < 0 || v.tile == null) continue;
+    const phase = v.phase === "siege" ? 3 : v.phase === "search" ? 2 : v.phase === "travel" ? 0 : 1;
+    const people = Math.max(1, Math.min(3, Math.ceil(v.size / 2)));
+    pt.push(keyOf(c, v), v.tile, ((people - 1) << 2) | (phase << 4) | ((VISITOR_CODE + k) << 8), v.phase === "siege" && v.goal ? v.goal.tile : 65535);
   }
   // Packed frame data. Header: [0] people alive, [1..4] hub food / water / ammo / meds, [5] owner changes,
   // [6] infection changes, [7] hordes, [8] parties, [9] groups, [10] your land; then per group [pop, land,
@@ -268,6 +287,7 @@ function captionTile(state, c, text) {
 function worldCaptions(state, c, prevBases, prevFb, prevHives) {
   const h = state.hour;
   const said = (name) => c.events.some((e) => e.h > c.lastHour && e.text.includes(name));
+  for (const n of (c.notes || []).splice(0)) caption(c, { h, text: n.text, kind: n.kind, tile: n.tile, major: n.major }); // chronicleNote
   if (prevBases && prevBases !== c.bases) {
     const now = new Set(c.bases.map((b) => b.id)), before = new Set(prevBases.map((b) => b.id));
     for (const b of c.bases) if (!before.has(b.id) && !said(b.name)) caption(c, { h, text: `${b.name} founded.`, kind: "good", tile: b.tile, major: true });
@@ -472,10 +492,14 @@ export function chronicleReader(state) {
       else if (frac < 0.5) hordes.push({ id: key, tile: a[1], size: a[2] & 16383, bosses: a[2] >> 14, target: null });
     }
     if (frac >= 0.5) for (const [key, b] of h1) if (!h0.has(key)) hordes.push({ id: key, tile: b[1], size: b[2] & 16383, bosses: b[2] >> 14, target: null });
-    const parties = [];
+    const parties = [], visitors = [];
     const p0 = movers(k, "pt", 4), p1 = movers(k1, "pt", 4);
     const party = (key, rec, tile, next) => {
       const code = rec[2], sprite = SPRITE_KIND[code & 3], phase = ["out", "waiting", "task", "siege"][(code >> 4) & 3];
+      if ((code >> 8) >= VISITOR_CODE) { // an outsider (visitors.js): drawn by render.js from state.visitors
+        visitors.push({ id: key, kind: VISITOR_KINDS[(code >> 8) - VISITOR_CODE] || "explorers", tile, size: ((code >> 2) & 3) * 2 + 1, phase: ["travel", "stop", "search", "siege"][(code >> 4) & 3], path: next != null && next !== tile ? [tile, next] : [tile], idx: 0, act: "" });
+        return;
+      }
       const color = (code >> 6) & 3, owner = ownerOf(code >> 8);
       if (owner == null) return;
       const target = rec[3] !== 65535 ? (() => {
@@ -497,7 +521,7 @@ export function chronicleReader(state) {
     if (frac >= 0.5) for (const [key, b] of p1) if (!p0.has(key)) party(key, b, b[1], null);
     return {
       timelapse: true, frame: k, frac, hour: Math.floor(t), info, fallen: info.fallen ? f0.bases.map((b) => b.tile) : [],
-      seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, hiveSites, parties, markers: [], vehicles: FAKE_VEHICLES,
+      seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, hiveSites, parties, visitors, markers: [], vehicles: FAKE_VEHICLES,
       deathSites: [], survivors: [], cityId: state.cityId, cityIds: state.cityIds, originId: state.originId,
       weather: state.weather, // the same pre-rolled days (weather.js), so the map shows that day's season and weather
     };

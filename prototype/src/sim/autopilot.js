@@ -22,6 +22,7 @@ import { startOrder, resumeQueue } from "./orders.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
+import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
@@ -749,6 +750,11 @@ function handleTrade(state) {
   const ctx = tradeContext(state);
   if (!ctx) {
     state.trade = null;
+    return;
+  }
+  if (ctx.visitor) {
+    // Merchants or travellers from outside (visitors.js): a manual nobody has studied, then what the hub is short of.
+    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality)}.`);
     return;
   }
   if (ctx.kind === "caravan") {
@@ -1498,6 +1504,9 @@ function knownGroupBases(state) {
   return map;
 }
 
+// The area is picked over: fewer than EMPTY_SITES sites within the style's range believed to hold 30%+ loot.
+export const EMPTY_SITES = 3, EMPTY_RING = 8, EMPTY_REACH = 1.6;
+
 // Value of scavenging a site for what the hub needs, from what the player knows. null = do not go.
 function siteScore(state, id, need, P) {
   const t = state.tiles[id];
@@ -1512,7 +1521,8 @@ function siteScore(state, id, need, P) {
   if (state.grid.neighbors(id).some((n) => { const s = intel(state, n); return s && s.hordeSize > 20 && state.hour - s.hour < 48; })) return null;
   const def = t.loc ? LOCATIONS[t.loc.type] : null;
   const memo = gov(state).visited[id];
-  let loot = memo && (!k || k.hour <= memo.hour) ? memo.loot : k ? k.loot : def ? (def.richness || 0.5) * 0.9 : 0;
+  const kHour = k ? Math.max(k.hour, k.lootHour || 0) : -1; // radio news of a stripped site (aiscav.js) counts as a newer look
+  let loot = memo && (!k || kHour <= memo.hour) ? memo.loot : k ? k.loot : def ? (def.richness || 0.5) * 0.9 : 0;
   if (memo && day(state) - memo.day < 6) loot *= 0.6; // just searched: the best is gone
   if (loot < 0.15) return null;
   const table = def ? def.loot : { scrap: 2, food: 1 };
@@ -1601,17 +1611,28 @@ function planTrip(state) {
   // Scavenging: the best known sites for what the hub needs.
   // Cautious, short of something: sites that have it may be farther out (shortReach), the most dangerous (risk
   // above 0.8) are left alone, and the crew is the full three.
+  // As the area empties (other groups strip sites too and nothing grows back, aiscav.js): with fewer than
+  // EMPTY_SITES sites near home it believes still hold loot (30%+), it looks EMPTY_RING tiles farther out and allows
+  // trips EMPTY_REACH × as long.
   const sites = [];
   const gives = (t) => { const table = t.loc ? LOCATIONS[t.loc.type].loot : {}; return short.some((k) => (table[k] || 0) >= 1); };
-  for (const id of state.grid.within(h.tile, P.range + 5 + (short.length ? 4 : 0))) {
-    const t = state.tiles[id];
-    if (!t.loc || id === h.tile) continue;
-    if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
-    const s = siteScore(state, id, need, P);
-    if (!s || s.value <= 0.05 || (P.reserves && s.risk > 0.8)) continue;
-    const far = short.length && gives(t);
-    sites.push({ mission: "scavenge", tile: id, score: (s.value * 4) / (1 + state.grid.distance(id, h.tile) / 6), crew: s.risk > 0.45 || s.hostile || far ? 3 : P.crew, why: needText(need, t), reach: far ? P.shortReach : 1, known: !!intel(state, id), gives: far });
-  }
+  const radius = P.range + 5 + (short.length ? 4 : 0);
+  const scan = (r, outer) => {
+    for (const id of state.grid.within(h.tile, r)) {
+      const t = state.tiles[id];
+      if (!t.loc || id === h.tile || (outer && state.grid.distance(id, h.tile) <= radius)) continue;
+      if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
+      const s = siteScore(state, id, need, P);
+      if (!s || s.value <= 0.05 || (P.reserves && s.risk > 0.8)) continue;
+      const far = short.length && gives(t);
+      sites.push({ mission: "scavenge", tile: id, score: (s.value * 4) / (1 + state.grid.distance(id, h.tile) / 6), crew: s.risk > 0.45 || s.hostile || far || outer ? 3 : P.crew,
+        why: outer ? `${needText(need, t)} (the sites nearer home are picked over)` : needText(need, t), reach: Math.max(far ? P.shortReach : 1, outer ? EMPTY_REACH : 1),
+        known: !!intel(state, id), gives: far, loot: s.loot, outer });
+    }
+  };
+  scan(radius, false);
+  const stocked = sites.filter((x) => x.loot >= 0.3 && state.grid.distance(x.tile, h.tile) <= P.range).length;
+  if (stocked < EMPTY_SITES) scan(radius + EMPTY_RING, true);
   sites.sort((a, b) => b.score - a.score);
   cands.push(...sites.slice(0, P.reserves ? 16 : 6)); // Cautious looks further down the list: the best may be out of reach
   // Cautious: short of something no known site offers: a recon to the nearest unknown site that should have it
@@ -1627,6 +1648,7 @@ function planTrip(state) {
   for (const c of cands.slice(0, P.reserves ? 20 : 8)) {
     const res = launchTrip(state, c, pool, spareHands);
     if (!res) continue;
+    if (c.outer) g.stats.farTrips = (g.stats.farTrips || 0) + 1;
     g.lastLaunch = today;
     if (c.mission === "outpost") g.lastOutpost = today;
     if (c.mission === "rescue") g.lastRescue = today;
