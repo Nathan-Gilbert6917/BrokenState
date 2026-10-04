@@ -442,9 +442,13 @@ const guardOf = (state, hive) => state.hordes.find((h) => h.role === "guard" && 
 // The fight inside a hive: the guard's dead (tougher on red-skull ground) and the Broodmother.
 export function hiveForce(state, hive) {
   const guard = guardOf(state, hive);
-  const s = guard ? hordeScore(guard.size) : 0;
-  // The brood fights on red-skull ground: power 1 + 3 (zombieToughness), plus a little for a big guard.
-  return { count: Math.max(10, Math.min(18, Math.round(8 + s * 0.6))), power: Math.round((5 + s / 30) * 10) / 10, guard: guard ? guard.size : 0 };
+  return broodForce(guard ? guard.size : 0);
+}
+// The brood a hive with a guard of this size fields (also the autopilot's estimate from a guard it has seen).
+// It fights on red-skull ground: power 1 + 3 (zombieToughness), plus a little for a big guard.
+export function broodForce(guardSize) {
+  const s = guardSize ? hordeScore(guardSize) : 0;
+  return { count: Math.max(10, Math.min(18, Math.round(8 + s * 0.6))), power: Math.round((5 + s / 30) * 10) / 10, guard: guardSize || 0 };
 }
 
 export function hiveArrive(state, p) {

@@ -33,7 +33,7 @@
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
-import { canRadioGroup, radioSpeech, radioDeal, dealQuote } from "./radio.js";
+import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork } from "./radio.js";
 import { available, need } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
 import { reduceHorde } from "./hordes.js";
@@ -351,11 +351,24 @@ export function allianceVictory(state) {
 }
 
 // ---------- the AI governor (autopilot.js autopilotDaily) ----------
-// Every style: their caravans fetch the deliveries the hub can spare, and every group that qualifies is invited
-// into the coalition. Aggressive: sells ammo over the radio to groups at war (diplomacy.js autoWarTrade).
-// (Joining wars is decided on the war card: Cautious always stays out.) Returns a line for the log or "".
+// Every style: keeps in touch with every group it knows and can reach on the radio (a greeting whenever one is
+// due: +2 goodwill, +1 with a hostile group, and they do not feel neglected), scans the airwaves once a week, signs
+// the pact a group will sign (non-aggression, then trade: a member needs one), has their caravans fetch the
+// deliveries the hub can spare, and invites every group that qualifies into the coalition. Aggressive: sells ammo
+// over the radio to groups at war (diplomacy.js autoWarTrade). (Joining wars is decided on the war card: Cautious
+// always stays out.) Returns a line for the log or "".
 export function autoDiplomacyDaily(state, style) {
   const out = [];
+  if (hasNetwork(state) && day(state) % 7 === 0) radioScan(state);
+  for (const f of state.factions) {
+    if (!f.alive || !f.known || !canRadioGroup(state, f)) continue;
+    if (radioCooldown(state, f, "greet") === 0) radioGreet(state, f);
+    if (attitude(f) === "Hostile" || f.pact === "trade") continue;
+    const kind = f.goodwill >= 20 ? "trade" : !f.pact ? "nonaggression" : null;
+    if (!kind) continue;
+    const r = radioPact(state, f, kind);
+    if (/signed/i.test(r)) out.push(`${r.replace(/\.$/, "")} (${f.name}).`);
+  }
   const picked = autoJobsDaily(state);
   if (picked) out.push(picked);
   for (const f of state.factions) if (f.alive && !isMember(state, f) && !inviteProblem(state, f)) out.push(inviteToAlliance(state, f));
