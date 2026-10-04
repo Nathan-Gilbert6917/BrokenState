@@ -1,8 +1,11 @@
 // Headless tactical combat test: AI plays both sides through the real engine.
 // Catches crashes and endless battles, and reports win rates per matchup.
-// Usage: node tools/combattest.js [battles per matchup] [seed]
+// Usage: node tools/combattest.js [battles per matchup] [seed] [weapons]
+// "weapons": instead of the usual matchups, each team of three carries one weapon (Shooting 5–11) against 4 raiders
+// (power 5) and 12 of the dead (power 2), and pistols with 2 throwables each against 16 of the dead: weapon balance.
 import { createWorld, makeSurvivor, combatPower, hub } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
+import { newItem, stow } from "../src/sim/inventory.js";
 import { active, createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler } from "../src/sim/combat.js";
 
 const N = Number(process.argv[2] || 150);
@@ -16,14 +19,15 @@ const TERRAINS = ["plains", "forest", "hills", "suburb", "city", "mountain", "wa
 const LOCS = [null, null, "town", "farm", "gas", "police", "military", "mall", "prison", "quarry",
   "apartments", "pharmacy", "autoshop", "ranch", "cabin", "campground", "radiotower", "crashsite"];
 
-function team(n) {
+function team(n, weapon = null, kit = []) {
   const rng = state.rng;
   const list = [];
   for (let i = 0; i < n; i++) {
     const s = makeSurvivor(state);
     s.skills.shooting = rng.int(5, 11);
-    const w = rng.pick(["pistol", "pistol", "huntrifle", "shotgun"]);
+    const w = weapon || rng.pick(["pistol", "pistol", "huntrifle", "shotgun"]);
     s.gear.weapon = { key: w, name: GEAR[w].name, quality: 1 };
+    for (const k of kit || []) stow(s, newItem(k, 1));
     s.location = { kind: "base", baseId: base.id };
     state.survivors.push(s);
     list.push(s);
@@ -40,10 +44,11 @@ function battle(m) {
   const lt = rng.pick(LOCS);
   fake.loc = lt ? { type: lt, name: lt } : null;
   state.tiles[tile.id] = fake;
-  const people = team(m.players);
+  const people = team(m.players, m.weapon, m.kit);
   const power = m.power === "match" ? people.reduce((a, s) => a + combatPower(s), 0) / m.enemy.count * (m.ratio || 1) : m.power;
   base.stock.ammo = 200;
   base.stock.meds = 3;
+  base.armory.length = 0; // what earlier battles left there (Molotovs, pipe bombs off the bodies) stays out of this one
   const setup = {
     tile: tile.id, baseId: base.id, fighterIds: people.map((s) => s.id),
     enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: false, handler: "test", context: {},
@@ -83,6 +88,17 @@ const matchups = [
   { name: "4 vs 6 mixed (power 4)", players: 4, enemy: { kind: "mixed", count: 6 }, power: 4 },
   { name: "3 vs 4 raiders (power 5), infected ground", players: 3, enemy: { kind: "raiders", count: 4 }, power: 5, infection: 0.8 },
 ];
+
+if (process.argv[4] === "weapons") {
+  const W = ["knife", "baton", "bat", "prybar", "machete", "nailbat", "fireaxe", "sledge", "crossbow", "pistol", "revolver", "compbow", "xbow", "shotgun", "huntrifle", "leverrifle", "carbine", "ar"];
+  matchups.length = 0;
+  for (const w of W) {
+    matchups.push({ name: `${w}: 3 vs 4 raiders (power 5)`, players: 3, enemy: { kind: "raiders", count: 4 }, power: 5, weapon: w });
+    matchups.push({ name: `${w}: 3 vs 12 zombies (power 2)`, players: 3, enemy: { kind: "zombies", count: 12 }, power: 2, weapon: w });
+  }
+  matchups.push({ name: "pistol: 3 vs 16 zombies (power 2)", players: 3, enemy: { kind: "zombies", count: 16 }, power: 2, weapon: "pistol" });
+  for (const k of ["molotov", "pipebomb", "flare", "smokegren"]) matchups.push({ name: `pistol + 2 ${k}: 3 vs 16 zombies`, players: 3, enemy: { kind: "zombies", count: 16 }, power: 2, weapon: "pistol", kit: [k, k] });
+}
 
 const t0 = performance.now();
 let crashes = 0;

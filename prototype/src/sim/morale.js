@@ -15,6 +15,7 @@ import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./wo
 import { baseBeds } from "./buildings.js";
 import { allItems } from "./inventory.js";
 import { onLeave, noteMood } from "./relations.js";
+import { buzzWork } from "./comforts.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -71,7 +72,7 @@ export function moodWork(s) {
   if (!s || s.mood == null) return 1;
   if (s.onBreak) return 0;
   const grief = s.grief ? 1 - 0.2 * Math.min(1, s.grief.bond || 0) : 1;
-  return Math.round(moodCurve(s.mood) * grief * 1000) / 1000;
+  return Math.round(moodCurve(s.mood) * grief * buzzWork(s) * 1000) / 1000; // a coffee buzz or a hangover (comforts.js)
 }
 
 // What the People tab shows next to someone's mood.

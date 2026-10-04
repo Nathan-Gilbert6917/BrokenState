@@ -41,13 +41,20 @@ export function makeCandidate(state, { quality = 0.85, minHealth = 60, gearChanc
   s.health = rng.int(minHealth, 100);
   s.mood = rng.int(45, 65);
   if (rng.chance(gearChance)) {
-    const w = rng.weighted(["knife", "spikedbat", "pipespear", "machete", "pistol", "huntrifle"], (k) => ({ knife: 3, spikedbat: 2, pipespear: 2, machete: 1, pistol: 1.5, huntrifle: 0.5 }[k]));
+    const w = rng.weighted(Object.keys(RECRUIT_WEAPONS), (k) => RECRUIT_WEAPONS[k]);
     s.gear.weapon = newItem(w, Math.round(rng.range(0.5, 0.9) * 100) / 100);
   }
-  if (rng.chance(gearChance * 0.35)) stow(s, newItem(rng.pick(["tirevest", "padding", "shinguards", "bikehelmet"]), Math.round(rng.range(0.5, 0.9) * 100) / 100));
-  if (rng.chance(gearChance * 0.3)) stow(s, newItem(rng.pick(["bandagekit", "backpack", "crowbar"]), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+  if (rng.chance(gearChance * 0.35)) stow(s, newItem(rng.pick(RECRUIT_ARMOR), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+  if (rng.chance(gearChance * 0.3)) stow(s, newItem(rng.pick(RECRUIT_KIT), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+  // Something of their own from before: a keepsake, a comfort, a last pack of smokes.
+  if (rng.chance(gearChance * 0.6)) stow(s, newItem(rng.pick(RECRUIT_PERSONAL), 1));
   return s;
 }
+// What a newcomer may bring (weights for the weapon).
+export const RECRUIT_WEAPONS = { knife: 3, spikedbat: 2, pipespear: 2, machete: 1, pistol: 1.5, huntrifle: 0.5, bat: 1.5, prybar: 1, revolver: 0.5 };
+export const RECRUIT_ARMOR = ["tirevest", "padding", "shinguards", "bikehelmet"];
+export const RECRUIT_KIT = ["bandagekit", "backpack", "crowbar", "slingbag", "hikingpack", "flashlight"];
+export const RECRUIT_PERSONAL = ["photos", "photos", "cards", "harmonica", "smokes", "chocolate", "goldring", "watch", "novel"];
 
 // One line about a candidate (for the card text, the log and headless tools).
 export function candidateLine(s) {

@@ -377,6 +377,7 @@ export function combatAction(state, key, d) {
     const have = throwablesOf(state, b, u);
     const k = d.k && have[d.k] ? d.k : THROW_KEYS.find((x) => have[x]);
     if (!k) { cui.msg = "Nothing to throw: bottles, noise makers and firecrackers come from searching and crafting."; return; }
+    if (THROWABLES[k].self) return void act(state, { type: "throw", unit: u.id, item: k, x: u.x, y: u.y }); // the deer call: blown where they stand
     cui.mode = "throw";
     cui.throwKey = k;
     cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.`;
@@ -562,7 +563,9 @@ function stealthButtons(state, b, u, btn) {
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
     const T = THROWABLES[k];
-    html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}. ${have[k]} left.`)}">Throw ${esc(GEAR[k].name.toLowerCase())} (${have[k]})${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
+    const what = T.fx ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
+      : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
+    html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`${what} ${T.keep ? "" : `${have[k]} left.`}`)}">${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
   }
   return html;
 }
@@ -1032,6 +1035,16 @@ function drawLights(b, cs) {
 // Thrown things where they landed: the item, and rings while the noise lasts.
 function drawLures(b, cs, now) {
   const { ox, oy } = geo;
+  // Flames, smoke and flare light (sim/throwables.js): soft discs over the ground, flickering.
+  const ph2 = ((now || 0) % 900) / 900;
+  const disc = (c, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs * (c.r + 0.5), 0, Math.PI * 2); ctx.fill(); };
+  for (const c of b.flares || []) disc(c, "rgba(255,90,70,0.10)");
+  for (const c of b.fires || []) {
+    disc(c, `rgba(255,${120 + Math.round(60 * Math.sin(ph2 * Math.PI * 2))},40,0.32)`);
+    for (let i = 0; i < 5; i++) { const a = i * 1.26 + ph2 * 6; ctx.fillStyle = "rgba(255,200,80,0.7)"; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5 + Math.cos(a) * 0.8) * cs, oy + (c.y + 0.5 + Math.sin(a) * 0.8) * cs, cs * 0.1, 0, Math.PI * 2); ctx.fill(); }
+  }
+  for (const c of b.smoke || []) disc(c, "rgba(200,205,210,0.45)");
+  for (const c of b.flares || []) drawThrowable("flare", ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs);
   for (const l of b.lures || []) {
     const cx = ox + (l.x + 0.5) * cs, cy = oy + (l.y + 0.5) * cs;
     const ph = ((now || 0) % 1200) / 1200;
@@ -1049,6 +1062,20 @@ function drawThrowable(key, cx, cy, cs) {
     ctx.fillStyle = "#3f7a4a"; roundRect(cx - s * 0.45, cy - s * 0.3, s * 0.9, s * 1.3, s * 0.25); ctx.fill();
     ctx.fillStyle = "#3f7a4a"; ctx.fillRect(cx - s * 0.18, cy - s * 0.85, s * 0.36, s * 0.6);
     ctx.fillStyle = "rgba(200,255,210,0.5)"; ctx.fillRect(cx - s * 0.3, cy - s * 0.15, s * 0.14, s * 0.8);
+  } else if (key === "gamecall") {
+    ctx.fillStyle = "#8a6a44"; ctx.beginPath(); ctx.moveTo(cx - s * 0.8, cy - s * 0.15); ctx.lineTo(cx + s * 0.6, cy - s * 0.45); ctx.lineTo(cx + s * 0.6, cy + s * 0.45); ctx.lineTo(cx - s * 0.8, cy + s * 0.15); ctx.closePath(); ctx.fill();
+  } else if (key === "flare") {
+    ctx.fillStyle = "#c8362e"; ctx.fillRect(cx - s * 0.2, cy - s * 0.8, s * 0.4, s * 1.4);
+    ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(cx, cy - s * 0.9, s * 0.35, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "pipebomb") {
+    ctx.fillStyle = "#6a6a68"; ctx.fillRect(cx - s * 0.8, cy - s * 0.3, s * 1.6, s * 0.6);
+    ctx.fillStyle = "#3a3a38"; ctx.fillRect(cx - s * 0.9, cy - s * 0.4, s * 0.2, s * 0.8); ctx.fillRect(cx + s * 0.7, cy - s * 0.4, s * 0.2, s * 0.8);
+  } else if (key === "molotov") {
+    ctx.fillStyle = "#7a5a2a"; roundRect(cx - s * 0.45, cy - s * 0.3, s * 0.9, s * 1.3, s * 0.25); ctx.fill();
+    ctx.fillStyle = "#ff9a3a"; ctx.beginPath(); ctx.arc(cx, cy - s * 0.85, s * 0.3, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "smokegren") {
+    ctx.fillStyle = "#5a6a54"; roundRect(cx - s * 0.45, cy - s * 0.7, s * 0.9, s * 1.4, s * 0.3); ctx.fill();
+    ctx.fillStyle = "#c9c9c0"; ctx.fillRect(cx - s * 0.15, cy - s * 0.95, s * 0.3, s * 0.3);
   } else if (key === "noisemaker") {
     ctx.fillStyle = "#c9b048"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.7, Math.PI, 0); ctx.lineTo(cx + s * 0.8, cy + s * 0.3); ctx.lineTo(cx - s * 0.8, cy + s * 0.3); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "#e6e2d8"; ctx.fillRect(cx - s * 0.5, cy + s * 0.3, s, s * 0.45);
@@ -1235,6 +1262,18 @@ function drawObject(k, px, py, cs, n) {
       ctx.fillStyle = "#2a2018"; ctx.fillRect(px + cs * 0.1, py + cs * 0.1, cs * 0.8, cs * 0.8);
       ctx.fillStyle = "#c9b48a";
       for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const sx = px + cs * (0.22 + i * 0.28), sy = py + cs * (0.24 + j * 0.27); ctx.beginPath(); ctx.moveTo(sx, sy - cs * 0.1); ctx.lineTo(sx + cs * 0.06, sy + cs * 0.06); ctx.lineTo(sx - cs * 0.06, sy + cs * 0.06); ctx.closePath(); ctx.fill(); }
+      break;
+    case "wire": // barbed wire from the armory (sim/defences.js armoryDefence)
+      ctx.strokeStyle = "#9a9a92"; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i <= 4; i++) { const x0 = px + cs * (i / 4); ctx.moveTo(x0, py + cs * 0.3); ctx.lineTo(x0 + cs * 0.12, py + cs * 0.7); }
+      ctx.moveTo(px, cy - cs * 0.1); ctx.lineTo(px + cs, cy - cs * 0.1); ctx.moveTo(px, cy + cs * 0.12); ctx.lineTo(px + cs, cy + cs * 0.12);
+      ctx.stroke();
+      break;
+    case "beartrap":
+      ctx.strokeStyle = "#6a6a64"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, cs * 0.26, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; ctx.moveTo(cx + Math.cos(a) * cs * 0.26, cy + Math.sin(a) * cs * 0.26); ctx.lineTo(cx + Math.cos(a) * cs * 0.16, cy + Math.sin(a) * cs * 0.16); } ctx.stroke();
       break;
     case "trench":
       ctx.fillStyle = "#241c14"; ctx.fillRect(px, py + cs * 0.2, cs, cs * 0.6);
