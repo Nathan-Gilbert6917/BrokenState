@@ -5,7 +5,9 @@
 // (click the selected item again to send it across: onto the person, or into storage). Drag and drop works too.
 import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
-import { partyMembers, partyCapacity, cargoLoad } from "../sim/parties.js";
+import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
+import { wornLoad, maxLoad, personLoad, bandName } from "../sim/load.js";
+import { bandChip, BANDS_HELP } from "./loadview.js";
 import { itemDur, durUnit } from "../sim/crafting.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
@@ -21,7 +23,7 @@ const first = (s) => esc(shortName(s)); // first name, with a last initial when 
 
 // ---------- item tiles ----------
 const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun"]);
-const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧" };
+const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
 const SUPPLY_ICON = { food: "🥫", water: "💧", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
 function icon(key) {
@@ -34,10 +36,11 @@ function icon(key) {
 // Hover text for an item, with the skill-gap rule for the person who would use it.
 export function itemTip(item, s = null) {
   const d = GEAR[item.key];
-  const bits = [`${d.name} (${SLOT_NAMES[d.slot]}${d.small ? ", fits a pocket" : ""})`];
+  const kgTxt = `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`;
+  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
-  else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} carry space for the team`);
+  else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
   else if (d.book) bits.push(d.book.skill ? `book: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js
   else bits.push(`power ${d.power}${d.req && d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req}` : ""}`);
   if (s && d.skill && d.req) {
@@ -59,7 +62,7 @@ function tile(item, loc, s, drag = true) {
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>
-    <span class="iico">${icon(item.key)}</span><span class="iname">${esc(item.name)}</span>
+    <span class="iico">${icon(item.key)}</span><span class="iname">${esc(item.name)}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
     ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
 }
@@ -79,14 +82,24 @@ function doll(state, ui, holder, prefix, portrait, { readonly = false, user = nu
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
   const pk = packOf(holder);
   const arm = armorPower(holder);
+  // What they wear and carry (sim/load.js); with a team, their share of its supplies and cargo too.
+  let weight = "";
+  if (holder.traits) {
+    const worn = wornLoad(holder), max = maxLoad(holder);
+    const place = personPlace(holder);
+    const team = place && place.startsWith("party:") ? state.parties.find((x) => x.id === Number(place.split(":")[1])) : null;
+    const mine = team ? partyLoad(state, team).foot.people.find((x) => x.sid === holder.id) : null;
+    const pl = mine || personLoad(holder, worn);
+    weight = `<div class="small"${tip(`${team ? `Wears ${Math.round(worn * 10) / 10} kg and carries ${Math.round((pl.load - worn) * 10) / 10} kg of the team's supplies and cargo (shared so everyone is equally burdened)` : `Wears and carries ${Math.round(worn * 10) / 10} kg`}, of a ${max} kg max load (40, 28 with a Bad Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${Math.round(pl.load)}/${max} kg ${bandChip(pl.band)}</div>`;
+  }
   return `<div class="doll">
       <div class="dollside">${box("weapon")}${box("tool")}${box("backpack")}</div>
-      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div></div>
+      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}</div>
       <div class="dollside">${box("head")}${box("armor")}${box("arms")}${box("legs")}</div>
     </div>
     <div class="invlabel"${tip("Pockets hold small things: knives, pistols, kits, radios, goggles. Nothing in a pocket is in use until it is moved to a hand.")}>Pockets</div>
     <div class="invgrid">${Array.from({ length: POCKETS }, (_, i) => slotBox(state, ui, `${prefix}:pocket:${i}`, "", user, readonly)).join("")}</div>
-    <div class="invlabel"${tip("A pack holds anything but another pack. Wear a backpack to get pack slots (and extra carry space for the team).")}>Pack${pk ? ` (${pk.filter(Boolean).length}/${pk.length})` : ""}</div>
+    <div class="invlabel"${tip("A pack holds anything but another pack or something bulky. Wear a backpack to get pack slots and a higher max load. Everything in it still weighs what it weighs.")}>Pack${pk ? ` (${pk.filter(Boolean).length}/${pk.length})` : ""}</div>
     ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}`;
 }
 
@@ -97,13 +110,13 @@ function storageBox(state, ui, place, user) {
   const loc = `${st.o}:${st.id}:list`;
   let head;
   if (st.o === "cargo") {
-    const cap = partyCapacity(state, st.party), load = cargoLoad(st.party.cargo);
-    head = `<div class="spread"><b${tip("Found cargo the team carries. Each item takes 3 carry space (a pack also counts what is in it). Supplies share the same space.")}>Team cargo</b><span class="small ${load > cap ? "danger" : "muted"}">load ${Math.round(load)}/${cap}</span></div>
+    const cap = partyCapacity(state, st.party), load = poolLoad(st.party);
+    head = `<div class="spread"><b${tip("Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>Team cargo</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
       <div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap * 0.9 ? "var(--danger)" : "var(--info)"}"></i></div>`;
   } else head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items</span></div>`;
   const tiles = st.list.map((it, i) => {
     const l = `${loc}:${i}`;
-    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${st.o === "cargo" ? tip(`Takes ${itemLoad(it)} carry space`) : ""}>${tile(it, l, user)}</div>`;
+    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}</div>`;
   }).join("");
   const sup = st.o === "cargo" ? Object.entries(st.party.cargo.supplies).filter(([, v]) => v >= 1).map(([k, v]) => `${Math.floor(v)} ${k}`).join(", ") : "";
   return `${head}<div class="istore" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${tiles || `<span class="small muted">Empty. Drop items here.</span>`}</div>
@@ -199,7 +212,7 @@ function lootModal(state, ui) {
       ${body.sid != null ? `<div class="small muted">Your fallen. Whatever you leave stays at their death site.</div>` : ""}
       ${h ? doll(state, ui, h, `body:${bi}`, bodyPortrait(state, b, body), { user: s }) : ""}
       <div class="invlabel"${tip("Supplies go straight to the team's found cargo (or the base stock). Click to take.")}>Supplies</div>
-      <div class="invgrid">${sups.length ? sups.map(([k, v]) => `<div class="islot" data-action="loot-sup" data-i="${bi}" data-key="${k}"${tip(`Take ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()} (${(SUPPLIES[k].weight * v).toFixed(1)} carry space)`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || "▪"}</span><span class="iname">${Math.floor(v)} ${esc(SUPPLIES[k].name)}</span></div></div>`).join("") : `<span class="small muted">None</span>`}</div>`;
+      <div class="invgrid">${sups.length ? sups.map(([k, v]) => `<div class="islot" data-action="loot-sup" data-i="${bi}" data-key="${k}"${tip(`Take ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()} (${(SUPPLIES[k].weight * v).toFixed(1)} kg)`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || "▪"}</span><span class="iname">${Math.floor(v)} ${esc(SUPPLIES[k].name)}</span></div></div>`).join("") : `<span class="small muted">None</span>`}</div>`;
   }
   const you = s ? doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { user: s }) : `<div class="small muted">Nobody left standing to carry anything.</div>`;
   const r = b.result;
@@ -213,7 +226,7 @@ function lootModal(state, ui) {
       <div class="invcol">${storageBox(state, ui, place, s)}<div class="small muted" style="margin-top:0.5rem">Taken so far: ${got.length ? esc(got.join(", ")) : "nothing"}</div></div>
     </div>
     ${selBar(state, ui, place)}
-    <div class="small muted" style="margin-top:0.5rem">Click an item on a body, then a slot on your survivor or the cargo box (or drag it). Click it twice to take it straight away. Pockets and packs do not use the team's carry space; the cargo does. Whatever you leave stays where they fell: a death site that scavengers strip over the next days.</div>
+    <div class="small muted" style="margin-top:0.5rem">Click an item on a body, then a slot on your survivor or the cargo box (or drag it). Click it twice to take it straight away. Everything taken adds its weight to the team, on a person or in the cargo. Whatever you leave stays where they fell: a death site that scavengers strip over the next days.</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end">
       <button data-action="loot-takeall"${tip("Take everything that fits from every body")}>Take everything</button>
       <button class="primary" data-action="loot-done"${tip("Back to the battle result")}>Done</button></div>

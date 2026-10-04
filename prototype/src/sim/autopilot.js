@@ -16,7 +16,8 @@ import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, skill, combatPower, gearEffect, factionById, snapshot } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
-  hoursLeft, planPath, partyCapacity, cargoLoad, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards,
+  hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards,
+  STANCES, paceOpts, modeSpeed, partyPace,
 } from "./parties.js";
 import { startOrder, resumeQueue } from "./orders.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
@@ -33,7 +34,8 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, stations, baseBeds, baseWalls, farmSlots, assignStations } from "./buildings.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue } from "./crafting.js";
-import { vehiclesAtBase, refuel, repair, canRepair } from "./vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
+import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
@@ -519,11 +521,12 @@ const partyFuelOf = (state, p) => {
 };
 // Rough hours until a team is home: the way left, plus (going out) the job and the same way back.
 const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 2 * hoursLeft(state, p) + 10);
-// Days of food and water a team carries (extra = more mouths).
+// Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js).
 function carriedDays(state, p, extra = 0) {
-  const n = partyMembers(state, p).length + extra;
+  const n = partyMembers(state, p).length;
+  const perDay = (n ? partyPace(state, p).eatMove : 0) + extra;
   const have = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0);
-  return Math.min(have("food"), have("water")) / Math.max(1, n);
+  return Math.min(have("food"), have("water")) / Math.max(1, perDay);
 }
 
 // Conflict cards (conflicts.js): every option is scored from the odds the card shows.
@@ -611,7 +614,7 @@ function teamAct(state, p) {
   if (hiveAgain(state, p)) return;
   // The badly hurt get carried meds before a long walk home.
   const back = planPath(state, partyTile(p), home.tile, p.vehicle);
-  const hoursHome = back ? travelHours(state, back.path, { vehicle: p.vehicle, speed: partySpeed(p) }).hours : 0;
+  const hoursHome = back ? travelHours(state, back.path, { vehicle: p.vehicle, ...paceOpts(p) }).hours : 0;
   const hurt = partyMembers(state, p).filter((s) => (s.woundInfected || s.health < 35) && fieldTreatInfo(state, p, s).ok);
   if (hurt.length && hoursHome > 10) {
     p.orders = [...hurt.slice(1).map((s) => ({ type: "treat", survivorId: s.id })), { type: "home" }];
@@ -625,7 +628,7 @@ function teamAct(state, p) {
     p.apReconDone = true;
     const s = siteScore(state, p.ap.tile, needs(state), P);
     const fit = partyMembers(state, p).every((x) => x.health >= P.hurtStop + 10 && !x.woundInfected);
-    const room = partyCapacity(state, p) - cargoLoad(p.cargo) >= partyCapacity(state, p) * 0.5;
+    const room = cargoRoom(state, p) >= partyCapacity(state, p) * 0.5;
     if (s && s.value >= 0.3 && fit && room && !state.engagement && carriedDays(state, p) >= ((hoursHome + P.searchHours + 2) / 24) * 1.25 &&
         orderOptions(state, p).some((o) => o.mission === "scavenge" && !o.disabled)) {
       say(state, `${teamName(state, p)} had a look around ${tileLabel(state, p.ap.tile)}: worth a search.`);
@@ -645,7 +648,7 @@ function teamAct(state, p) {
 function chainNext(state, p) {
   const members = partyMembers(state, p);
   if (!members.length || members.some((s) => s.health < 60 || s.woundInfected)) return false;
-  const room = partyCapacity(state, p) - cargoLoad(p.cargo);
+  const room = cargoRoom(state, p);
   if (room < partyCapacity(state, p) * 0.5) return false;
   const here = partyTile(p);
   const need = needs(state);
@@ -663,7 +666,7 @@ function chainNext(state, p) {
   if (!best) return false;
   const home = state.bases.find((b) => b.id === p.homeBaseId) || hub(state);
   const back = planPath(state, best.id, home.tile, p.vehicle);
-  const hours = best.cost + P.searchHours + (back ? back.cost : 48) + 6;
+  const hours = (best.cost + (back ? back.cost : 48)) / Math.max(0.3, partySpeed(p)) + P.searchHours + 6; // at its loaded pace
   if (carriedDays(state, p) < (hours / 24) * 1.25) return false;
   p.apChain = (p.apChain || 0) + 1;
   orderMove(state, p, best.id);
@@ -738,7 +741,7 @@ function engagementHour(state) {
   const t = state.tiles[e.tile];
   g.visited[e.tile] = { day: day(state), hour: state.hour, loot: t.loot };
   g.stats.extractions++;
-  say(state, `${teamName(state, p)} leaves ${tileLabel(state, e.tile)} after ${e.hours}h (Heat ${Math.round(e.heat)}, ${foundLoad(e)} carry space of finds).`);
+  say(state, `${teamName(state, p)} leaves ${tileLabel(state, e.tile)} after ${e.hours}h (Heat ${Math.round(e.heat)}, ${foundLoad(e)} kg of finds).`);
   extract(state);
 }
 
@@ -759,7 +762,7 @@ function shouldExtract(state, p, e) {
   // Cautious: while the hub is short of something, two more hours (the Heat limit stays where it is).
   if (e.hours >= P.searchHours + (reserveShort(state).length ? 2 : 0) || e.heat >= P.searchHeat) return true;
   if (members.some((s) => s.health < P.hurtStop)) return true;
-  const room = partyCapacity(state, p) - cargoLoad(p.cargo);
+  const room = cargoRoom(state, p);
   if (foundLoad(e) >= room * 0.95) return true;
   if ((p.supplies.ammo || 0) < members.length * 2 && e.heat >= 25) return true;
   const recent = e.log.slice(-2);
@@ -794,7 +797,7 @@ function handleTrade(state) {
   const road = Math.ceil((n * ((back ? back.cost : 24) + 8)) / 24 * 1.3) + 1;
   // Offer what the hub has plenty of (keeping food and water for the road), ask for what it needs most.
   const spare = {};
-  const keep = { food: road, water: road, meds: 2, ammo: 5 * n, fuel: p.vehicle && back ? Math.ceil(back.cost) : 0 };
+  const keep = { food: road, water: road, meds: 2, ammo: 5 * n, fuel: p.vehicle === true && back ? Math.ceil(back.cost) : 0 };
   for (const k of Object.keys(SUPPLIES)) if (need[k] <= 0.8) spare[k] = Math.max(0, (have[k] || 0) - (keep[k] || 0));
   // Prices move with the amount (trade.js: a big sale pays less a unit, a big buy costs more), so every amount is
   // priced as a whole, the way the trade window totals it; asking at single-unit prices got deals refused.
@@ -803,7 +806,7 @@ function handleTrade(state) {
   const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20 };
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
-  let room = partyCapacity(state, p) - cargoLoad(p.cargo);
+  let room = cargoRoom(state, p);
   for (const k of Object.keys(need).sort((a, b) => need[b] - need[a])) {
     if (need[k] < 1.2 || budget <= 0 || !SUPPLIES[k]) continue;
     const q = maxBuyable(state, f, k, speech, budget, Math.min(caps[k] || 10, Math.floor(room / SUPPLIES[k].weight)));
@@ -868,7 +871,7 @@ function needs(state) {
   const h = hub(state);
   const st = h.stock;
   const n = Math.max(1, atBase(state, h.id).length);
-  const vehicle = state.vehicles.some((v) => v.loc.kind === "base" || v.loc.kind === "party");
+  const vehicle = state.vehicles.some((v) => isCar(v) && (v.loc.kind === "base" || v.loc.kind === "party"));
   const foodDays = edibleFood(h) / n; // fresh + preserved (storage.js)
   const pick = (v, steps) => { for (const [lim, w] of steps) if (v < lim) return w; return steps[steps.length - 1][1]; };
   const out = {
@@ -941,7 +944,7 @@ export function reserveStatus(state, base = hub(state)) {
   const threat = reserveThreat(state, base);
   const sk = wxSeason(state).key;
   const cold = sk === "autumn" || sk === "winter";
-  const vehicle = base.type === "hub" ? state.vehicles.some((v) => v.loc.kind === "base" || v.loc.kind === "party") : vehiclesAtBase(state, base.id).length > 0;
+  const vehicle = base.type === "hub" ? state.vehicles.some((v) => isCar(v) && (v.loc.kind === "base" || v.loc.kind === "party")) : carsAtBase(state, base.id).length > 0;
   const row = (have, target, days, why, short = have < target) => ({ have: Math.floor(have), target: Math.round(target), days: days == null || !Number.isFinite(days) ? null : Math.round(days), short, low: have < target / 2, why });
   const out = { threat };
   // Food (fresh + preserved): the food planner's numbers (foodTarget, the winter outlook), not this table's.
@@ -1371,7 +1374,7 @@ function buildWishes(state, base) {
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
   else if (!base.radio && pop >= 12 && day(state) >= 60 && (st.parts || 0) >= BUILDINGS.radio.cost.parts && best("mechanics") >= 4 && state.factions.some((f) => f.alive && f.known && !isMember(state, f))) add("radio", "radio contact with the groups for the coalition");
-  if (!count(base, "garage") && vehiclesAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
+  if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   if (people + 2 > beds && (st.scrap || 0) >= 45) add("bunkhouse", "room for newcomers");
   if (count(base, "walls") < 2 && (st.scrap || 0) >= 70) add("walls", "stronger defense");
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
@@ -1468,7 +1471,7 @@ function planCrafts(state, base) {
   if ((st.water || 0) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and clean water means less dysentery)", 15)) return;
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
-  if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "more carry space for teams", 55)) return;
+  if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
   if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
   if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
 }
@@ -1664,9 +1667,11 @@ function planTrip(state) {
     if (state.grid.distance(m.tile, h.tile) > P.range) continue;
     if (state.parties.some((p) => p.owner === "player" && p.dest === m.tile)) continue;
     if ((m.type === "cache" || m.type === "camp") && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: m.type === "cache" ? 2.6 : 1.8, crew: 2, why: `check the ${m.label.toLowerCase()}` });
-    if (m.type === "car" && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: vehiclesAtBase(state, h.id).length ? 1 : 2.2, crew: 2, why: "a wrecked car to restore or strip", supplies: { parts: 2, fuel: 6 } });
+    if (m.type === "car" && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: carsAtBase(state, h.id).length ? 1 : 2.2, crew: 2, why: "a wrecked car to restore or strip", supplies: { parts: 2, fuel: 6 } });
     if (m.type === "death" && m.info && m.info.items > 0) cands.push({ mission: "recover", tile: m.tile, score: Math.min(2.5, 0.8 + m.info.items * 0.3), crew: 2, why: "recover our dead's gear" });
-    if (m.type === "vehicle" && !vehiclesAtBase(state, h.id).length) {
+    const lostBikes = m.type === "vehicle" && isBike(state.vehicles.find((x) => x.id === m.info?.vehicleId));
+    if (lostBikes) cands.push({ mission: "getvehicle", tile: m.tile, score: 1.6, crew: 2, why: "bring our bikes home", supplies: { scrap: 1 } });
+    else if (m.type === "vehicle" && !carsAtBase(state, h.id).length) {
       const bad = m.info && m.info.condition < 15;
       // It starts again only with 2 fuel between its tank and the team (no fuel to bring: no trip, not a wasted one).
       cands.push({ mission: "getvehicle", tile: m.tile, score: 2.4, crew: 2, why: "bring our vehicle home", supplies: { fuel: 12, parts: bad ? 1 : 0 }, min: { fuel: Math.max(0, 2 - ((m.info && m.info.fuel) || 0)) } });
@@ -2013,37 +2018,78 @@ function launchTrip(state, c, pool, spareHands) {
   const dist = state.grid.distance(h.tile, c.tile);
   // A vehicle for longer trips if it can make the round trip.
   let v = null;
-  const cand = vehiclesAtBase(state, h.id).filter((x) => x.condition > 0).sort((a, b) => b.condition - a.condition)[0];
+  const cand = carsAtBase(state, h.id).filter((x) => x.condition > 0).sort((a, b) => b.condition - a.condition)[0];
   // The vehicle is repaired and refuelled for the estimate; if the trip is called off, the parts and the fuel
-  // go back (a trip that never leaves costs nothing).
+  // go back (a trip that never leaves costs nothing). Armor left home for the trip goes back on too.
   const before = cand ? { condition: cand.condition, fuel: cand.fuel, parts: h.stock.parts, hubFuel: h.stock.fuel } : null;
+  const stashed = []; // [survivor, armor] left at the hub for this trip
   const off = () => {
     if (before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; }
+    for (const [s, a] of stashed) { const i = h.armory.indexOf(a); if (i >= 0 && !s.gear.armor) { h.armory.splice(i, 1); s.gear.armor = a; } }
+    stashed.length = 0;
     return null;
   };
+  const n = ids.length;
   if (cand && dist >= 3 && c.mission !== "outpost" && c.mission !== "rescue") {
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
-    const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, stance: P.stance });
+    const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4)) v = cand;
   }
   if (v) refuel(state, h, v);
-  const est = estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: !!v, stance: P.stance, fuel: v ? v.fuel + (h.stock.fuel || 0) : 0 });
+  // No car: bikes, one each, for anything past the next couple of tiles (no fuel, faster on roads, racks for the haul).
+  if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
+    const stack = parkBikes(state, h);
+    if (stack && stack.condition >= 25) v = stack;
+  }
+  const plannedV = isBike(v) ? { ...v, count: n } : v;
+  const onSite = c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  // The estimate with what the team would pack (its load sets its pace and rations, load.js).
+  const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
+  let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
   if (!est || est.hoursOut > (c.mission === "hive" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
-  const n = ids.length;
-  const onSite = c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
-  const days = (est.hours + onSite) / 24;
+  let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.
   if (P.reserves && est.hours > 12 && severeSoon(state, Math.ceil(days) + 1)) return off();
   const stock = (k) => Math.floor(h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
+  // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
+  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission);
+  const worstBand = (e) => (e && e.load ? Math.max(-1, ...e.load.people.map((x) => x.band)) : -1);
+  if (looting && !isCar(v) && est.hours > 24) {
+    for (const s of [...crew].sort((a, b) => wornLoad(b) - wornLoad(a))) {
+      if (worstBand(estimateTrip(state, tripOpts(roughSupplies(n, days)))) < 2) break;
+      const a = s.gear.armor;
+      if (a && (GEAR[a.key]?.weight || 0) >= 7) { s.gear.armor = null; h.armory.push(a); stashed.push([s, a]); }
+    }
+  }
+  // On foot the team keeps its loot to a band (parties.js cargoRoom): Medium for the cautious, Heavy otherwise, so the
+  // way home is not a crawl; the rations count the way back at that load.
+  const haulBand = !v && looting ? (P.reserves ? 1 : 2) : null;
+  const ration = (e) => {
+    let r = e.food + (n * onSite) / 24; // the planner's rations (more on the move under a load) and the time on site
+    if (haulBand != null) {
+      const b = LOAD_BANDS[haulBand];
+      const haulPace = (STANCES[P.stance]?.speed || 1) * (1 - b.slow);
+      r += (n * e.hoursBack * Math.max(0, ((e.pace.footSpeed || 1) / haulPace) * (1 + b.eat) - e.pace.eatFoot / Math.max(1, n))) / 24;
+    }
+    return r;
+  };
   const sup = {
-    food: Math.ceil(n * days * 1.25) + 1 + (c.mission === "outpost" ? 6 : 0),
-    water: Math.ceil(n * days * 1.25) + 1 + (c.mission === "outpost" ? 4 : 0),
+    food: 0, water: 0,
     ammo: Math.min(Math.max(0, stock("ammo") - 20), 15 * n),
     meds: stock("meds") >= 4 ? Math.min(2, Math.ceil(n / 2)) : 0,
-    fuel: v ? Math.max(0, Math.min(stock("fuel"), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0,
+    fuel: 0,
   };
+  // Weighed twice: what the team packs changes its load, and so its pace and what it eats.
+  for (let pass = 0; pass < 2; pass++) {
+    const r = ration(est);
+    sup.food = Math.ceil(r * 1.25) + 1 + (c.mission === "outpost" ? 6 : 0);
+    sup.water = Math.ceil(r * 1.25) + 1 + (c.mission === "outpost" ? 4 : 0);
+    sup.fuel = isCar(v) ? Math.max(0, Math.min(stock("fuel"), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0;
+    if (pass === 0) est = estimateTrip(state, tripOpts({ ...sup, ...(c.supplies || {}) })) || est;
+  }
+  days = (est.hours + onSite) / 24;
   for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0) sup[k] = (sup[k] || 0) + q;
   if (P.reserves) {
     // Cautious: a farther trip packs a quarter more food and water; the ammo above the hub's reserve goes along
@@ -2054,8 +2100,10 @@ function launchTrip(state, c, pool, spareHands) {
   if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
-  const cap = carryCapacity(state, crew, v);
+  const cap = carryCapacity(state, crew, plannedV);
   if (supplyLoad(sup) > cap) sup.ammo = Math.min(sup.ammo, 5 * n);
+  // Not Overloaded unless it has to be: on foot, less ammo before anyone leaves Overloaded.
+  if (!v && worstBand(estimateTrip(state, tripOpts(sup))) >= 3) sup.ammo = Math.min(sup.ammo, 5 * n);
   for (const [k, q] of Object.entries(c.supplies || {})) {
     const over = supplyLoad(sup) - cap;
     if (over > 0) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / SUPPLIES[k].weight));
@@ -2064,15 +2112,19 @@ function launchTrip(state, c, pool, spareHands) {
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
   const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup });
   if (res.error) return off();
-  if (!v && before) off(); // repaired or looked at, but the team went on foot
+  if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
-  if (v) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
+  if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
+  if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
   if (c.mission === "hive") g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1;
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
-  say(state, `Sent ${names(crew)} (${c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.`);
+  say(state, `Sent ${names(crew)} (${c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
 }
+
+// Food and water for a first estimate: n people for `days` with a quarter more, and some ammo (load.js weighs it).
+const roughSupplies = (n, days) => ({ food: Math.ceil(n * days * 1.25) + 1, water: Math.ceil(n * days * 1.25) + 1, ammo: 10 * n });
 
 // ---------- supply runs to outposts ----------
 function tidySupplyJobs(state) {

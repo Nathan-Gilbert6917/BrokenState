@@ -75,9 +75,10 @@ section("Launch: carry limit, crew and mission checks (T-9, T-15, T-29, P-16)");
   const heavy = launchExpedition(state, { memberIds: [a.id], dest, mission: "move", stance: "normal", supplies: { food: 40, water: 35, scrap: 25 } });
   check(heavy.error && /carry/i.test(heavy.error), `one walker left with a 100 load: ${heavy.error || "no error"}`);
   check(h.stock.food === 300, "a refused launch took stock from the hub");
+  // By weight (sim/load.js): 10 food (5 kg) + 5 water (5 kg) + scrap (2 kg each) up to the walker's 40 kg.
   const cap = carryCapacity(state, [a], null);
-  const fits = { food: 5, water: 5, scrap: cap - 10 };
-  check(supplyLoad(fits) === cap, "test setup: load equals capacity");
+  const fits = { food: 10, water: 5, scrap: (cap - 10) / 2 };
+  check(cap === 40 && supplyLoad(fits) === cap, `test setup: load equals capacity (${supplyLoad(fits)} of ${cap})`);
   const ok = launchExpedition(state, { memberIds: [a.id], dest, mission: "move", stance: "normal", supplies: fits });
   check(!ok.error, `a load equal to the carry space was refused: ${ok.error}`);
   check(ok.party && ["food", "water", "fuel", "meds", "ammo", "parts", "scrap"].every((k) => Number.isFinite(ok.party.supplies[k])), "a supply key is missing on the team (later maths would give NaN)");
@@ -85,7 +86,7 @@ section("Launch: carry limit, crew and mission checks (T-9, T-15, T-29, P-16)");
   // A worn pack adds carry space, at launch like everywhere else.
   b.gear.backpack = newItem("assaultpack");
   const capB = carryCapacity(state, [b], null);
-  check(capB > 15, "test setup: the pack adds carry space");
+  check(capB === 40 + 10 - 2, `test setup: the assault pack adds 10 kg (and weighs 2): ${capB}`);
   const packed = launchExpedition(state, { memberIds: [b.id], dest, mission: "move", stance: "normal", supplies: { food: capB } });
   check(!packed.error, `a worn pack did not count at launch: ${packed.error}`);
   // Crew: on a team already, dead, or the same person twice.
@@ -369,7 +370,7 @@ section("Water: gathering and boats (T-8, T-17, P-17, P-19)");
     done = true;
     const crew = crewOf(state, 2);
     const inland = tileNear(state, h.tile, 2, 4, { filter: (t) => !crossingsFrom(state, t.id).length });
-    const p = send(state, crew.map((s) => s.id), inland, "move", { grant: { food: 80, water: 80 } });
+    const p = send(state, crew.map((s) => s.id), inland, "move", { grant: { food: 40, water: 30 } });
     arriveAt(state, p);
     state.cards.length = 0;
     startOrder(state, p, { type: "gather" });
@@ -505,13 +506,15 @@ section("Carry space for items; markers cleared when nothing is there (T-12, T-1
   dead.gear.armor = newItem("plate");
   dead.pockets = [newItem("pistol"), newItem("knife"), newItem("milradio"), newItem("surgkit")];
   const n = allItems(dead).length;
+  // The one left carries most of what it can already (sim/load.js: by weight), so not everything fits.
+  p.supplies.water = (p.supplies.water || 0) + 26;
   hurt(state, dead, 999, partyTile(p), "for the test");
   giveOrder(state, p, "recover");
   check(cargoLoad(p.cargo) <= partyCapacity(state, p) + 1e-9, `recover overfilled the cargo: ${cargoLoad(p.cargo)} of ${partyCapacity(state, p)}`);
   const site = state.deathSites.find((d) => d.tile === far);
   check(p.cargo.gear.length > 0 && site && site.items.length === n - p.cargo.gear.length, "what did not fit is not left at the death site");
   check(/No room to carry/.test(ordersCardOf(state, p)?.text || ""), "recover does not say what was left behind");
-  check(!addGearToCargo(state, p, newItem("ar")), "addGearToCargo put an item into a full cargo");
+  check(!addGearToCargo(state, p, newItem("plate")), "addGearToCargo put an 8 kg item into a cargo with less room");
   // Somebody else takes the rest; a second team finds nothing and the marker goes when it reports.
   state.cards.length = 0;
   startReturn(state, p);

@@ -1,28 +1,96 @@
-// Vehicles: fuel tanks, condition, breakdowns, abandonment and recovery.
+// Vehicles: fuel tanks, condition, breakdowns, abandonment and recovery; bicycles.
+//
+// Cars (truck, sedan): the people riding feel none of their load (load.js), everything goes in the vehicle.
+// payload = kg the car takes, riders included (RIDER_KG each plus what they wear). Fuel per tile (road 0.6,
+// off-road 1.5) rises with how full it is: ×1 up to 60%, ×1.3 at 100%, and it can be loaded past its payload up to
+// 125% ("overloaded": up to ×1.6 fuel, 15% slower, wears faster and breaks down more). The team's load is weighed
+// when it sets off (load.js weighTeam), so the fuel and the speed a trip planner shows are the ones the trip uses.
+//
+// Bicycles (type "bike"): one record is a stack of bikes (v.count), parked at a base or riding with a team (a team
+// needs one bike per person). No fuel. Faster than walking on roads, walking pace off-road (parties.js moveCost),
+// mountains pushed at walking pace. Each bike's rack takes up to 15 kg of the team's load and riding takes 55% of
+// the load's slow-down and extra rations away (load.js). Found as cargo (data.js GEAR.bicycle) or built in a
+// workshop (crafting.js); a bicycle item in a base's armory joins the base's bikes (parkBikes).
 import { TERRAIN } from "./data.js";
 import { newId, log, day, atBase, skill } from "./world.js";
 import { count } from "./buildings.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
 
 export const VEHICLE_TYPES = {
-  truck: { name: "Pickup truck", tank: 30, capacity: 120 },
-  sedan: { name: "Old sedan",    tank: 18, capacity: 60 },
+  truck: { name: "Pickup truck", tank: 30, payload: 650, motor: true },
+  sedan: { name: "Old sedan",    tank: 18, payload: 400, motor: true },
+  bike:  { name: "Bicycles",     tank: 0,  rack: 15, motor: false },
 };
+export const RIDER_KG = 80;        // a person in a car, before what they wear
+export const OVERLOAD_MAX = 1.25;  // a car can be loaded to 125% of its payload
+export const FUEL_FULL = { from: 0.6, atFull: 1.3, atMax: 1.6 }; // fuel multiplier by how full a car is
+export const OVERLOAD_SPEED = 0.85;   // an overloaded car (past 100%) is this much slower
+export const OVERLOAD_WEAR = 1.5;     // and wears / breaks down this much more
+export const ROAD_FUEL = 0.6, OFFROAD_FUEL = 1.5; // fuel per tile entered, by road or off-road
+
+export const isBike = (v) => !!v && v.type === "bike";
+export const isCar = (v) => !!v && !!VEHICLE_TYPES[v.type]?.motor;
+// How a team with this vehicle moves: false (on foot), true (a car) or "bike" (parties.js moveCost, planPath).
+export const travelMode = (v) => (!v ? false : isBike(v) ? "bike" : true);
 
 export function createVehicle(state, type, loc, opts = {}) {
   const v = {
     id: newId(), type, name: opts.name || VEHICLE_TYPES[type].name,
-    fuel: opts.fuel ?? 20, condition: opts.condition ?? 80, loc,
+    fuel: type === "bike" ? 0 : opts.fuel ?? 20, condition: opts.condition ?? 80, loc,
   };
+  if (type === "bike") v.count = Math.max(1, opts.count || 1);
   state.vehicles.push(v);
   return v;
 }
 
 export const vehicleById = (state, id) => state.vehicles.find((v) => v.id === id);
 export const vehiclesAtBase = (state, baseId) => state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === baseId);
+// Cars only (supply runs, trade routes and caravans need an engine).
+export const carsAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isCar);
+export const bikesAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isBike).reduce((n, v) => n + (v.count || 1), 0);
 export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.vehicleId) : null);
 export const tank = (v) => VEHICLE_TYPES[v.type].tank;
-export const vehicleCapacity = (v) => (v ? VEHICLE_TYPES[v.type].capacity : 0);
+// Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks.
+export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : VEHICLE_TYPES[v.type].payload);
+export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.name);
+
+// Fuel multiplier for a car this full (load / payload): 1 up to 60%, 1.3 at 100%, 1.6 at 125% (the most).
+export function fuelMultFor(fill) {
+  const f = Math.max(0, fill || 0);
+  let m = 1;
+  if (f > 1) m = FUEL_FULL.atFull + ((FUEL_FULL.atMax - FUEL_FULL.atFull) * Math.min(f - 1, OVERLOAD_MAX - 1)) / (OVERLOAD_MAX - 1);
+  else if (f > FUEL_FULL.from) m = 1 + ((FUEL_FULL.atFull - 1) * (f - FUEL_FULL.from)) / (1 - FUEL_FULL.from);
+  return Math.round(m * 100) / 100;
+}
+// Fuel to enter one tile: by road or off-road, times the load multiplier; bikes use none.
+export const tileFuel = (mode, onRoad, mult = 1) => (mode === true ? (onRoad ? ROAD_FUEL : OFFROAD_FUEL) * mult : 0);
+
+// ---------- bicycles ----------
+// All the bikes parked at a base in one stack (and bicycle items in its armory join them). Returns the stack or null.
+export function parkBikes(state, base) {
+  if (!base) return null;
+  const items = (base.armory || []).filter((it) => it && it.key === "bicycle");
+  if (items.length) base.armory = base.armory.filter((it) => !(it && it.key === "bicycle"));
+  const stacks = state.vehicles.filter((v) => isBike(v) && v.loc.kind === "base" && v.loc.baseId === base.id);
+  const n = stacks.reduce((s, v) => s + (v.count || 1), 0) + items.length;
+  if (!n) return null;
+  // Condition: the average over every bike (a found bicycle counts at its own condition).
+  const cond = stacks.reduce((s, v) => s + v.condition * (v.count || 1), 0) + items.reduce((s, it) => s + 100 * Math.max(0.2, it.quality ?? 1), 0);
+  const keep = stacks[0] || createVehicle(state, "bike", { kind: "base", baseId: base.id }, { count: 1, condition: 80 });
+  for (const v of stacks.slice(1)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
+  keep.count = n;
+  keep.condition = Math.round((cond / n) * 10) / 10;
+  keep.fuel = 0;
+  return keep;
+}
+// Takes n bikes from a base's stack for a team: the stack itself when it has exactly n, else a new stack of n.
+export function takeBikes(state, base, n) {
+  const stack = parkBikes(state, base);
+  if (!stack || stack.count < n) return null;
+  if (stack.count === n) return stack;
+  stack.count -= n;
+  return createVehicle(state, "bike", { kind: "base", baseId: base.id }, { count: n, condition: stack.condition });
+}
 
 // Fuel a party can use: the vehicle's tank plus jerry cans carried as supplies.
 export function partyFuel(state, p) {
@@ -45,12 +113,16 @@ export function useFuel(state, p, amount) {
   return need <= 1e-9;
 }
 
-export function breakdownChance(v) {
-  return 0.01 + ((100 - v.condition) / 100) * 0.08;
+// Chance a tile of driving brings a breakdown (bikes: a flat or a snapped chain, much rarer); an overloaded car
+// (past 100% of its payload) breaks down 1.5× as often.
+export function breakdownChance(v, fill = 0) {
+  if (isBike(v)) return 0.003 + ((100 - v.condition) / 100) * 0.02;
+  return (0.01 + ((100 - v.condition) / 100) * 0.08) * (fill > 1 ? OVERLOAD_WEAR : 1);
 }
 
-export function wear(v, onRoad) {
-  v.condition = Math.max(0, v.condition - (onRoad ? 0.25 : 0.9));
+export function wear(v, onRoad, fill = 0) {
+  const w = isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1);
+  v.condition = Math.max(0, v.condition - w);
 }
 
 // The team leaves the vehicle where it stopped; it becomes a marker they know about.
@@ -64,6 +136,7 @@ export function abandonVehicle(state, p, tile, reason) {
 }
 
 export function refuel(state, base, v) {
+  if (isBike(v)) return "Bikes run on legs.";
   const want = Math.max(0, tank(v) - v.fuel);
   const give = Math.max(0, Math.min(want, Math.floor(base.stock.fuel || 0)));
   base.stock.fuel = Math.max(0, (base.stock.fuel || 0) - give);
@@ -79,6 +152,15 @@ export function canRepair(state, base) {
 }
 
 export function repair(state, base, v) {
+  if (isBike(v)) {
+    // Bikes: patches, a chain link, spokes. Anyone can do it with a bit of scrap per bike.
+    const need = Math.max(1, Math.ceil((v.count || 1) / 2));
+    if (v.condition >= 100) return "Already in top shape.";
+    if ((base.stock.scrap || 0) < need) return `Needs ${need} scrap.`;
+    base.stock.scrap -= need;
+    v.condition = Math.min(100, v.condition + 30);
+    return `Patched up the bikes to ${Math.round(v.condition)}% (${need} scrap).`;
+  }
   const r = canRepair(state, base);
   if (!r.ok) return "Needs a garage or a Mechanics 4+ survivor at this base.";
   if ((base.stock.parts || 0) < 1) return "Needs 1 part.";
@@ -93,6 +175,8 @@ export function repair(state, base, v) {
 // Abandoned vehicles get siphoned and stripped by passers-by, like death sites.
 export function vehiclesDaily(state) {
   const rng = state.rng;
+  // Bicycles carried home as cargo join the bikes parked at the base (no random numbers).
+  for (const b of state.bases) if (b.armory.some((it) => it && it.key === "bicycle") || state.vehicles.filter((v) => isBike(v) && v.loc.kind === "base" && v.loc.baseId === b.id).length > 1) parkBikes(state, b);
   for (const v of [...state.vehicles]) {
     if (v.loc.kind !== "abandoned") continue;
     const t = state.tiles[v.loc.tile];

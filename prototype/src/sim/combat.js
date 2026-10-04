@@ -29,10 +29,10 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect } from "./world.js";
-import { partyMembers, partyTile, partyCapacity, cargoLoad, unitsThatFit, wipeParty } from "./parties.js";
+import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad } from "./inventory.js";
 import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth } from "./stealth.js";
@@ -1880,7 +1880,7 @@ function searchBox(state, b, u, box) {
   }
   const got = [];
   const left = [];
-  let room = party ? partyCapacity(state, party) - cargoLoad(party.cargo) : 0;
+  let room = party ? cargoRoom(state, party) : 0;
   for (const [k, q] of Object.entries(box.contents.sup)) {
     const take = party ? Math.min(q, unitsThatFit(room, k)) : 0;
     if (take > 0) {
@@ -1893,10 +1893,10 @@ function searchBox(state, b, u, box) {
     box.contents.sup[k] = q - take;
   }
   box.contents.gear = box.contents.gear.filter((g) => {
-    if (party && room >= 3) {
+    if (party && room >= itemLoad(g)) {
       party.cargo.gear.push(g);
       R.foundGear.push(g);
-      room -= 3;
+      room -= itemLoad(g);
       got.push(g.name);
       return false;
     }
@@ -1982,7 +1982,7 @@ function autoRaidTurn(state) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   for (const u of b.units.filter((x) => x.side === "player")) {
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
-      const full = party && partyCapacity(state, party) - cargoLoad(party.cargo) < 3;
+      const full = party && cargoRoom(state, party) < 2;
       const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some((c) => !botDone(c)); // botDone: searched, or a lock it gave up on (locks.js)
       const z = zoneAt(b, u.x, u.y);
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }

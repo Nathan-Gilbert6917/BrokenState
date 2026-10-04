@@ -68,7 +68,7 @@ import {
   supplyValue, skill, baseVision,
 } from "./world.js";
 import {
-  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, unitsThatFit, carried, takeSupply,
+  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply,
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
@@ -1607,7 +1607,7 @@ function cargoAdd(state, p, sup) {
   const got = {};
   for (const [k, q0] of Object.entries(sup)) {
     if (!SUPPLIES[k] || q0 < 1) continue;
-    const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+    const room = cargoRoom(state, p);
     const q = Math.min(Math.floor(q0), unitsThatFit(room, k));
     if (q <= 0) continue;
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;

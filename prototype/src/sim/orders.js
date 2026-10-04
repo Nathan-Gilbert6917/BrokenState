@@ -5,7 +5,7 @@
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed,
 } from "./parties.js";
 import { partyVehicle, partyFuel } from "./vehicles.js";
 import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
@@ -73,8 +73,8 @@ export function orderStatus(state, p) {
 // Travel uses the same stepping as real movement (travelHours); missions on the spot have no fixed time.
 export function queueEstimate(state, p) {
   let tile = p.dest ?? partyTile(p);
-  let vehicle = p.vehicle;
-  let fuel = vehicle ? partyFuel(state, p) : 0;
+  let vehicle = p.vehicle || false;
+  let fuel = vehicle === true ? partyFuel(state, p) : 0;
   if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
   // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
   let owed = Math.min(0, p.progress || 0);
@@ -82,7 +82,7 @@ export function queueEstimate(state, p) {
   let at = state.hour + (p.phase === "task" && p.task?.hours != null ? Math.max(0, p.task.hours - p.task.done) : 0);
   let left = p.progress || 0; // progress left over on arrival (a recon spends it first)
   if ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) {
-    const cur = travelHours(state, p.path.slice(p.idx), { vehicle, speed: partySpeed(p), progress: p.progress, fuel });
+    const cur = travelHours(state, p.path.slice(p.idx), { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), progress: p.progress, fuel });
     at += cur.hours;
     tile = p.path[p.path.length - 1];
     vehicle = cur.vehicle;
@@ -91,13 +91,13 @@ export function queueEstimate(state, p) {
     left = cur.progress;
   }
   // A recon on arrival spends two hours looking around, paid by the next move (parties.js survey).
-  if (p.phase === "out" && p.mission === "recon") owed = Math.min(0, left - 2 * partySpeed(p));
+  if (p.phase === "out" && p.mission === "recon") owed = Math.min(0, left - 2 * modeSpeed(p, vehicle));
   return (p.orders || []).map((o) => {
     let hours = null;
     if (o.type === "move") {
       const res = planPath(state, tile, o.tile, vehicle);
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed, startHour: at });
+        const t = travelHours(state, res.path, { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), fuel, progress: owed, startHour: at });
         owed = 0;
         hours = t.hours;
         vehicle = t.vehicle;
@@ -123,7 +123,7 @@ export function queueEstimate(state, p) {
       let res = planPath(state, tile, home.tile, vehicle);
       if (!res && vehicle) { res = planPath(state, tile, home.tile, false); vehicle = false; fuel = 0; }
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed, startHour: at });
+        const t = travelHours(state, res.path, { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), fuel, progress: owed, startHour: at });
         owed = 0;
         hours = t.hours;
         vehicle = t.vehicle;

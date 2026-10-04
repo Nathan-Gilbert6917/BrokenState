@@ -23,7 +23,9 @@ import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count,
 } from "../sim/buildings.js";
-import { VEHICLE_TYPES, tank, vehiclesAtBase, partyVehicle, canRepair, partyFuel } from "../sim/vehicles.js";
+import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
+import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
+import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
 import { ageText, liveSet } from "./render.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
@@ -288,8 +290,8 @@ function renderTeams(state, ui) {
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
-      ${members.map(first).join(", ")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}<br>
-      ${showLive ? `Food ${n0((p.supplies.food || 0) + (p.supplies.preserved || 0))} · Water ${n0(p.supplies.water)}${v ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(cargoLoad(p.cargo))}/${partyCapacity(state, p)}<br>` : ""}
+      ${members.map(first).join(", ")} · ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}<br>
+      ${showLive ? `Food ${n0((p.supplies.food || 0) + (p.supplies.preserved || 0))} · Water ${n0(p.supplies.water)}${isCar(v) ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg<br>` : ""}
       ${status}
       ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}
       ${canOrder && p.kind !== "convoy" && commandable(state, p) ? `<div class="row" style="margin-top:0.35rem">
@@ -498,7 +500,7 @@ function helpModal() {
     <b>World size:</b> chosen on the new-run screen. Small (48×32) is tight and close: fewer towns, 3–6 groups, the hives a short walk away. Normal (64×42) is the standard state with 5–10 groups. Large (80×52) adds a third city and a second outbreak, 7–14 groups. Huge (100×66) has four cities, three outbreaks and 10–18 groups: trips are long (take vehicles, build outposts), the groups mostly keep to their own corner, but more hives are within reach of your walls. Every size has about the same towns, sites and hives per tile.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue, the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving kitchen</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
-    <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Packed supplies count against carry space (15 per person, 8 with a bad back, more with packs and vehicles). Teams report only when they get home, unless a radio station is built and they are in range.<br>
+    <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Everything has a weight: what people wear plus the packed supplies and found cargo, shared out among the team (max load 40 kg each, 28 with a Bad Back, more with a pack or Packrat). Load bands slow a team on foot and make it eat and drink more on the move: Light up to 18 kg, Medium up to 28 (−10% pace, +15% rations), Heavy up to 38 (−25%, +35%), Overloaded above (−45%, +60%). Scouting eases it (up to half at 20). A car takes the whole load off its riders (it burns more fuel the fuller it is); bikes (one each) carry 15 kg on the rack and take 55% of the rest away. Teams report only when they get home, unless a radio station is built and they are in range.<br>
     <b>Team panel:</b> click a team on the map, in the Teams tab or in the Running orders list. It shows people, gear, supplies, the vehicle and the order queue. Orders: move, return home, scavenge, look around (2h), camp, roadside repair, treat someone with carried meds (1h), field crafting, boat crossings. A waiting team starts an order at once; a moving team (or queue mode) adds it to its queue. When the queue is empty the team reports in with a card.<br>
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("S")}). Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("E")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds, ${k("R")} retreat (from the edge zone), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits.<br>
@@ -581,17 +583,23 @@ function conflictModal(state, card) {
     }).join("")}</div></div>`;
 }
 
-// The planner's load: packed supplies against what the crew (worn packs included) and the vehicle can carry.
-// The same carryCapacity the sim uses for found cargo and checks again at launch.
+// The vehicle the planner means: a car, or the hub's bikes (one for each person on the crew).
+export function plannerVehicle(state, pl) {
+  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  return isBike(v) ? { ...v, count: Math.max(1, pl.crew.size || 0) } : v;
+}
+// The planner's load: packed supplies against what the crew can carry on top of what they wear (sim/load.js), plus
+// the bikes' racks or the car. The same carryCapacity the sim checks at launch; t = everyone's load and band.
 export function plannerLoad(state, pl) {
   const members = [...pl.crew].map((id) => survivorById(state, id)).filter(Boolean);
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  const v = plannerVehicle(state, pl);
   const cap = carryCapacity(state, members, v);
   const packed = {};
   for (const [k, q] of Object.entries(pl.supplies || {})) if (SUPPLIES[k] && q > 0) packed[k] = q;
   const load = supplyLoad(packed);
   const over = members.length > 0 && load > cap + 1e-9;
-  return { cap, load, over, why: over ? `Too heavy: the packed supplies weigh ${n1(load)}, the crew${v ? ` and the ${v.name}` : ""} can carry ${cap}. Pack less${v ? "" : ", take more people or a vehicle"}.` : "" };
+  const t = members.length ? teamLoad(members, load, v) : null;
+  return { cap, load, over, t, worn: t ? t.worn : 0, why: over ? `Too heavy: the packed supplies weigh ${n1(load)} kg, the crew${v ? ` and the ${vehicleLabel(v)}` : ""} can carry ${n1(cap)} kg on top of what they wear. Pack less${v ? "" : ", take more people, bikes or a vehicle"}.` : "" };
 }
 
 function plannerModal(state, ui) {
@@ -599,8 +607,8 @@ function plannerModal(state, ui) {
   const h = hub(state);
   const crewPool = atBase(state, h.id);
   const ids = [...pl.crew];
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance, fuel: v ? v.fuel + (pl.supplies.fuel || 0) : 0 });
+  const v = plannerVehicle(state, pl);
+  const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, supplies: pl.supplies });
   // The PLAN section (ui/plan.js): with steps, food, water and fuel are checked against the whole plan.
   const pe = est && pl.mission !== "outpost" ? planAutofill(state, pl) : null;
   const need = pe || est, needFor = pe ? "for the whole plan" : "for the round trip";
@@ -617,14 +625,18 @@ function plannerModal(state, ui) {
     const rations = (pl.supplies.food || 0) + (pl.supplies.preserved || 0);
     if (rations < need.food) warn.push(`Food: packing ${rations}${pl.supplies.preserved ? ` (${pl.supplies.preserved} preserved)` : ""}, need about ${need.food} ${needFor}`);
     if ((pl.supplies.water || 0) < need.water) warn.push(`Water: packing ${pl.supplies.water || 0}, need about ${need.water} ${needFor}`);
-    if (v && v.fuel + (pl.supplies.fuel || 0) < need.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${need.fuel} ${needFor}`);
+    if (isCar(v) && v.fuel + (pl.supplies.fuel || 0) < need.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${need.fuel} ${needFor}`);
   }
+  if (isBike(v) && bikesAtBase(state, h.id) < ids.length) warn.push(`Bikes: ${ids.length} people, ${bikesAtBase(state, h.id)} bikes at the hub (one each)`);
+  warn.push(...loadWarnings(carry.t));
   if (pl.mission === "outpost" && (pl.supplies.scrap || 0) < 15) warn.push("Outposts need 15 scrap carried");
   if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
   if (carry.over) warn.push(carry.why);
   const missions = Object.entries(MISSIONS).filter(([, m]) => !m.hidden);
   const keySkills = ["scouting", "stealth", "shooting", "scavenging", "speech", "medicine", "mechanics"];
-  const parked = vehiclesAtBase(state, h.id);
+  const parked = carsAtBase(state, h.id);
+  const bikeStack = vehiclesAtBase(state, h.id).find(isBike);
+  const nBikes = bikesAtBase(state, h.id);
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
     ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
@@ -636,14 +648,15 @@ function plannerModal(state, ui) {
       <label class="${pl.crew.has(s.id) ? "on" : ""}"${tip(`${s.name}: ${ROLES[s.role]?.name || s.role} at the hub. Taking them pauses that work.`)}><input type="checkbox" data-action="pl-crew" data-id="${s.id}" ${pl.crew.has(s.id) ? "checked" : ""}>
         <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b> <span class="muted small">HP ${n0(s.health)} · ${ROLES[s.role]?.name || s.role}</span><br>
         <span class="small">${keySkills.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
-        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"}${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
+        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
     <div class="grid2" style="margin-top:0.6rem">
       <div>
         <h3>Transport</h3>
         <div class="choices">
-          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. Carry space comes only from people.")}>On foot</button>
-          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road. Carries +${VEHICLE_TYPES[x.type].capacity}. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · +${VEHICLE_TYPES[x.type].capacity} carry</span></button>`).join("")}
-          ${parked.length ? "" : `<span class="small muted">No vehicles parked at the hub.</span>`}
+          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. People carry everything: heavy loads slow the team and make it eat and drink more (load bands).")}>On foot</button>
+          ${nBikes && bikeStack ? `<button data-action="pl-vehicle" data-v="${bikeStack.id}" class="${isBike(v) ? "active" : ""}" ${bikeStack.condition <= 0 ? "disabled" : ""}${tip(`One bike each (${nBikes} at the hub). No fuel. Faster than walking on roads, walking pace off-road. Each rack carries ${VEHICLE_TYPES.bike.rack} kg and riding takes 55% of the load's slow-down and extra rations away. Quiet.`)}>Bicycles<span class="hint">${nBikes} at the hub · condition ${Math.round(bikeStack.condition)}%${ids.length > nBikes ? ` · need ${ids.length}` : ""}</span></button>` : ""}
+          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${VEHICLE_TYPES[x.type].payload} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${VEHICLE_TYPES[x.type].payload} kg payload</span></button>`).join("")}
+          ${parked.length || nBikes ? "" : `<span class="small muted">No vehicles or bikes at the hub.</span>`}
         </div>
         <h3>Stance</h3>
         <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
@@ -652,8 +665,9 @@ function plannerModal(state, ui) {
           <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span>${weatherEta(est)}</div>
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
-          <div>Needs</div><div>${est.food} food · ${est.water} water${v ? ` · ${est.fuel} fuel` : ""}</div>
-          <div${tip("What the packed supplies weigh against what the crew (15 each, 8 with a bad back, more with a worn pack) and the vehicle can carry. Loot found on the trip needs the space that is left.")}>Carry space</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} packed of ${carry.cap}${carry.over ? " · too heavy" : ""}</div></div>
+          <div${tip("Food and water for the trip: one ration a person a day, more on the move under a load (Medium +15%, Heavy +35%, Overloaded +60%, less with Scouting or on bikes, none extra in a car), the hours on site at the normal rate.")}>Needs</div><div>${est.food} food · ${est.water} water${isCar(v) ? ` · ${est.fuel} fuel${est.fuelMult > 1 ? ` (×${est.fuelMult.toFixed(2)} for the load)` : ""}` : ""}</div>
+          <div${tip(`What the packed supplies weigh, against what the crew can carry on top of what they wear (max load 40 kg each, 28 with a Bad Back, more with a pack or Packrat)${v ? " plus the bikes' racks or the car" : ""}. Loot found on the trip needs what is left. ${BANDS_HELP}`)}>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed + ${n1(carry.worn)} kg worn · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more${carry.over ? " · too heavy" : ""}</div></div>
+          ${carry.t ? `<div style="margin-top:0.3rem">${paceLine(carry.t)}${carLine(carry.t, v && v.name)}${carry.t.mode === true ? "" : loadRows(carry.t)}</div>` : ""}
           ${pl.mission === "outpost" && v ? `<div class="small muted" style="margin-top:0.3rem">The ${esc(v.name)} stays at the new outpost with the team.</div>` : ""}` : `<div class="danger">No route to this tile${v ? " by vehicle" : ""}.${v ? "" : " Water in the way? Send a team to the shore and build a boat there."}</div>`}
       </div>
       <div>
@@ -681,7 +695,7 @@ function engagementModal(state) {
   }
   const stage = heatStage(e.heat);
   const members = p ? partyMembers(state, p) : [];
-  const cap = p ? partyCapacity(state, p) - cargoLoad(p.cargo) : 0;
+  const cap = p ? Parties.cargoRoom(state, p) : 0;
   const load = foundLoad(e);
   const found = [...Object.entries(e.found.supplies).filter(([, v]) => v >= 1).map(([k, v]) => `${n0(v)} ${k}`), ...e.found.gear.map((g) => g.name)];
   return `<div class="box wide"><h1>Scavenging ${esc(tileLabel(state, e.tile))} · ${APPROACHES[e.approach].name}</h1>
@@ -691,7 +705,7 @@ function engagementModal(state) {
       <div><h3>Log</h3><div class="elog" id="elog">${e.log.map((l) => `<div>${esc(l)}</div>`).join("")}</div></div>
       <div><h3>Team</h3>${members.map((m) => `<div class="row small"><span style="width:7rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div></div>`).join("")}
         <div class="small muted" style="margin-top:0.3rem">Ammo ${n0(p ? p.supplies.ammo : 0)} · Food ${n0(p ? p.supplies.food : 0)}</div>
-        <h3>Found (${Math.ceil(load)} / ${Math.max(0, Math.floor(cap))} carry space)</h3>
+        <h3>Found (${Math.ceil(load)} / ${Math.max(0, Math.floor(cap))} kg the team can still carry)</h3>
         <div class="small">${found.length ? found.map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing yet</span>"}</div>
         ${load > cap ? `<div class="small danger">More than you can carry. The cheapest goods will be left behind.</div>` : ""}
       </div>
@@ -1131,15 +1145,18 @@ function baseVehicles(state, b) {
   };
   return `
     <h3>Parked here</h3>
-    ${here.length ? here.map((v) => `<div class="card small">
-      <div class="spread"><b>${esc(v.name)}</b><span class="muted">+${VEHICLE_TYPES[v.type].capacity} carry</span></div>
+    ${here.length ? here.map((v) => isBike(v) ? `<div class="card small"${tip("Bikes: one each for a team (pick them in the trip planner). No fuel; faster than walking on roads, walking pace off-road; each rack carries 15 kg and riding takes 55% of the load's slow-down and extra rations away. Bicycles found on searches join them when a team brings them home; a workshop can build more.")}>
+      <div class="spread"><b>🚲 ${esc(vehicleLabel(v))}</b><span class="muted">${VEHICLE_TYPES.bike.rack} kg rack each</span></div>
+      <div class="row"><span style="width:5.5rem" class="muted">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
+      <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${(b.stock.scrap || 0) >= Math.ceil((v.count || 1) / 2) && v.condition < 100 ? "" : "disabled"}${tip("Patches, chain links, spokes: anyone can do it")}>Patch up (${Math.ceil((v.count || 1) / 2)} scrap)</button></div></div>` : `<div class="card small">
+      <div class="spread"><b>${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).`)}>${VEHICLE_TYPES[v.type].payload} kg payload</span></div>
       <div class="row"><span style="width:5.5rem" class="muted"${tip("Low condition means more breakdowns on the road")}>Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
       <div class="row"><span style="width:5.5rem" class="muted">Fuel</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:3rem">${n0(v.fuel)}/${tank(v)}</span></div>
       <div class="row" style="margin-top:0.3rem">
         <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
         <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && (b.stock.parts || 0) >= 1 && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button>
       </div></div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
-    ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(v.name)}</b> · ${where(v)}</div>`).join("")}` : ""}`;
+    ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;
 }
 
 // ---------- supply runs ----------
@@ -1204,7 +1221,7 @@ function supplyFormView(state, b, ui) {
       <span class="small">${SR_SKILLS.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
       <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"}</span></span></label>`;
   const awayNote = (s) => (!s.alive ? "dead" : isCaptive(s) ? "held captive" : s.location.kind === "base" ? `at ${baseById(state, s.location.baseId)?.name || "another base"}` : "away");
-  const parked = vehiclesAtBase(state, b.id);
+  const parked = carsAtBase(state, b.id);
   const jobV = f.vehicleId && !parked.some((x) => x.id === f.vehicleId) ? state.vehicles.find((x) => x.id === f.vehicleId) : null;
   const lineRows = (list, from) => `${f[list].map((l, i) => `<div class="row srline">
       <select data-action="sr-line" data-list="${list}" data-i="${i}" data-f="key"${tip("Which supply")}>${SUPPLY_KEYS.map((k) => `<option value="${k}" ${l.key === k ? "selected" : ""}>${SUPPLIES[k].name}</option>`).join("")}</select>
@@ -1221,7 +1238,7 @@ function supplyFormView(state, b, ui) {
       <div class="crew" style="grid-template-columns:1fr">${here.map((s) => crewBox(s, "")).join("")}${away.map((s) => crewBox(s, awayNote(s))).join("")}${here.length || away.length ? "" : `<span class="muted">Nobody is here.</span>`}</div>
       <h3>Transport</h3>
       <div class="choices">
-        <button data-action="sr-vehicle" data-v="" class="${!f.vehicleId ? "active" : ""}"${tip("Hand carts: slower, quiet, carry only what people can (15 each, 8 with a bad back)")}>On foot with hand carts</button>
+        <button data-action="sr-vehicle" data-v="" class="${!f.vehicleId ? "active" : ""}"${tip("Hand carts: slower, quiet, carry only what people can (by weight: 40 kg each less what they wear, 28 with a bad back)")}>On foot with hand carts</button>
         ${parked.map((x) => `<button data-action="sr-vehicle" data-v="${x.id}" class="${f.vehicleId === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road; the tank is topped up from ${b.name}'s fuel on departure. Carries +${VEHICLE_TYPES[x.type].capacity}. If it is missing, broken or short of fuel on departure day, the convoy goes on foot when the load fits, otherwise it waits.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · +${VEHICLE_TYPES[x.type].capacity} carry</span></button>`).join("")}
         ${jobV ? `<button class="active" data-action="sr-vehicle" data-v="${jobV.id}"${tip("Picked earlier, but not parked here right now")}>${esc(jobV.name)}<span class="hint">Not parked here right now</span></button>` : ""}
       </div>

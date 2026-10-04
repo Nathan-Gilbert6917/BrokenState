@@ -1038,7 +1038,8 @@ function markerLook(state, m) {
   const i = m.info || {};
   if (m.type === "vehicle") {
     const v = i.vehicleId != null ? vehicleById(state, i.vehicleId) : null;
-    return { vehicle: v && v.type === "sedan" ? "sedan" : "truck", needsFuel: i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
+    const bike = v && v.type === "bike";
+    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
   }
   if (m.type === "death") return { empty: i.items === 0 };
   return { emptied: !!i.emptied };
@@ -1155,7 +1156,7 @@ function partyLook(state, p) {
   const v = p.vehicle ? vehicleById(state, p.vehicleId) : null;
   const supply = p.routeKind === "supply";
   const kind = p.kind === "convoy" ? (p.vehicle ? (supply ? "supply" : "convoy") : supply ? "supplycart" : "cart")
-    : p.vehicle ? (v && v.type === "sedan" ? "sedan" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
+    : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
   return { color, kind, count: (p.members || []).length };
 }
 

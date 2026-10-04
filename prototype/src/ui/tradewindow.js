@@ -19,7 +19,7 @@ import {
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
-import { vehiclesAtBase, vehicleById, tank } from "../sim/vehicles.js";
+import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 
@@ -236,7 +236,7 @@ export function caravanPlanModal(state, ui) {
         <h3>Crew (${members.length})</h3>
         <div class="crew" style="grid-template-columns:1fr">${pool.map((s) => `<label class="${form.crew.includes(s.id) ? "on" : ""}"><input type="checkbox" data-action="cp-crew" data-id="${s.id}" ${form.crew.includes(s.id) ? "checked" : ""}> ${esc(s.name)} <span class="small muted">Speech ${skill(s, "speech")} · Combat ${combatPower(s).toFixed(1)}</span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
         <h3>Transport</h3>
-        <div class="row"><button data-action="cp-vehicle" data-v="" class="${!v ? "active" : ""}">On foot</button>${vehiclesAtBase(state, h.id).map((x) => `<button data-action="cp-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fuel ${n0(x.fuel)}/${tank(x)}, condition ${Math.round(x.condition)}%`)}>${esc(x.name)}</button>`).join("")}</div>
+        <div class="row"><button data-action="cp-vehicle" data-v="" class="${!v ? "active" : ""}">On foot</button>${carsAtBase(state, h.id).map((x) => `<button data-action="cp-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fuel ${n0(x.fuel)}/${tank(x)}, condition ${Math.round(x.condition)}%`)}>${esc(x.name)}</button>`).join("")}</div>
         <div class="row" style="margin-top:0.3rem">${Object.entries(STANCES).map(([k, s]) => `<button data-action="cp-stance" data-v="${k}" class="${form.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
       </div>
       <div>
