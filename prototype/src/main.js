@@ -44,6 +44,8 @@ import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
+import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
+import { loadOptions, saveOptions } from "./ui/saves.js";
 
 const HOURS_PER_SECOND = 1 / 3; // at 1× speed an hour takes 3 seconds and a day 72 seconds
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -66,8 +68,13 @@ const freshUi = () => ({
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null,
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
+  settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
 const ui = { scale: 1, factionCount: 7, legendCollapsed: false, ordersCollapsed: false, crewEdited: false, ...freshUi() };
+// The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
+const options = loadOptions();
+ui.scale = options.uiScale;
+if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
@@ -108,7 +115,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade);
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -131,7 +138,7 @@ function step(now) {
   const dt = Math.min(0.25, gap / 1000);
   last = now;
   let ticks = 0;
-  if (state.autopilot && ui.started && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click
+  if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   if (!blocked() && ui.speed > 0 && !ui.moveParty) {
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
@@ -147,9 +154,10 @@ function step(now) {
     if (ticks >= 12) acc = Math.min(acc, 1); // too slow to keep up: drop the backlog instead of running on after a speed change
     if (ticks) ui.armed = newArmed();        // time moved: nothing is waiting for the unpause any more
   }
+  autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {
-    if (combatTick(state, now)) dirtyNow = true;
+    if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
   } else render(state);
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
@@ -209,6 +217,19 @@ document.addEventListener("mouseup", releaseHold, true); // the click that follo
 document.addEventListener("dragend", releaseHold, true);
 document.addEventListener("focusin", (e) => { if (e.target && e.target.tagName === "SELECT") selectFocusAt = performance.now(); });
 window.addEventListener("blur", releaseHold);
+// Options: pause when the window loses focus; in a browser tab, ask before closing it with progress not saved (the
+// desktop app quits through the menu, so it never asks there).
+window.addEventListener("blur", () => {
+  if (!options.pauseOnBlur || !ui.started || ui.speed === 0) return;
+  if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed;
+  ui.speed = 0;
+  dirtyNow = true;
+});
+window.addEventListener("beforeunload", (e) => {
+  if (!options.confirmQuit || settingsApi.desktop || !unsaved(state, ui) || state.gameOver) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 
 // Screens and panels that point at something that no longer exists (a lost outpost, a team that got home) close.
 function tidyUi() {
@@ -687,6 +708,8 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
+// The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
+for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 document.addEventListener("dragstart", (ev) => {
@@ -709,7 +732,7 @@ document.addEventListener("drop", (ev) => {
 });
 
 const changeActions = {
-  uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(resize, 50); },
+  uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(resize, 50); options.uiScale = ui.scale; saveOptions(options); },
   role: (el) => {
     const s = survivorById(state, Number(el.dataset.id));
     if (!s) return;
@@ -804,6 +827,7 @@ for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -823,6 +847,58 @@ function newWorld(seed, keepCrew = false) {
   fpsLog.length = 0;
   centerOn(state, hub(state).tile);
 }
+
+// A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
+function adopt(st, entry) {
+  if (ui.timelapse) closeTimelapse(state, ui);
+  Object.assign(ui, freshUi());
+  ui.crewEdited = false;
+  state = st;
+  ui.started = true;
+  ui.speed = 0;
+  ui.slot = entry ? entry.id : null;
+  ui.savedMark = { state, hour: state.hour };
+  resetView();
+  hideCtx();
+  hideTip();
+  $("tooltip").classList.add("hidden");
+  acc = 0;
+  fpsLog.length = 0;
+  const h = hub(state);
+  centerOn(state, h ? h.tile : state.bases[0].tile);
+  dirtyNow = true;
+}
+
+// A small picture of the map (or the battle) for the save list. Empty when the canvas cannot be read.
+function thumbnail() {
+  try {
+    const src = state.combat ? $("combatmap") : canvas;
+    if (!src || !(src.width > 0) || !(src.height > 0)) return "";
+    const c = document.createElement("canvas");
+    c.width = 160;
+    c.height = Math.max(40, Math.min(120, Math.round((160 * src.height) / src.width)));
+    const g = c.getContext("2d");
+    g.drawImage(src, 0, 0, c.width, c.height);
+    const url = c.toDataURL("image/jpeg", 0.7);
+    return typeof url === "string" && url.startsWith("data:image/") && url.length < 30000 ? url : "";
+  } catch { return ""; }
+}
+
+// What the menu needs from here (ui/settings.js). Saves and loads are asynchronous (compression); track() keeps the
+// promises so tools can wait for them (window.game.settle()).
+const pendingIo = new Set();
+const settingsApi = {
+  options,
+  desktop: inDesktopApp(),
+  refresh: () => { dirtyNow = true; refresh(false); },
+  track: (p) => { pendingIo.add(p); p.finally(() => pendingIo.delete(p)); },
+  adopt,
+  newWorld: () => newWorld(randomSeed()),
+  thumb: thumbnail,
+  quit: () => { try { window.close(); } catch { /* not allowed here */ } },
+  autosaveInfo: autosaveState,
+};
+initSettings(settingsApi);
 
 function act(fn) {
   const before = armSnap();
@@ -1043,7 +1119,7 @@ function hideCtx() {
 
 // ---------- combat input ----------
 // The enemy turn keeps playing even when animation frames are throttled (hidden tab).
-setInterval(() => { if (state.combat && combatTick(state, performance.now())) refresh(false); }, 200);
+setInterval(() => { if (state.combat && !ui.settings && combatTick(state, performance.now())) refresh(false); }, 200);
 const cbCanvas = $("combatmap");
 const cbPos = (e) => { const r = cbCanvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 cbCanvas.addEventListener("mousemove", (e) => { if (state.combat) combatMouse(state, ...cbPos(e)); });
@@ -1063,6 +1139,11 @@ cbCanvas.addEventListener("contextmenu", (e) => {
 function closeTopLayer() {
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
+  if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
+    if (ui.settings.confirm) ui.settings.confirm = null;
+    else if (!ui.settings.busy) ui.settings = null;
+    return true;
+  }
   if (ui.inv) { // drops the selection first, then closes
     if (ui.invSel) ui.invSel = null;
     else { ui.inv = null; ui.invMsg = ""; }
@@ -1110,7 +1191,9 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.code === "Escape" && closeTopLayer()) { e.preventDefault(); refresh(); return; }
-  if (ui.zombieLook || ui.inv) return; // these screens take the keyboard
+  // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
+  if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
+  if (ui.zombieLook || ui.inv || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
@@ -1149,7 +1232,9 @@ window.addEventListener("keyup", (e) => {
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
-  frameErrors, devSpeeds: DEV_SPEEDS,
+  frameErrors, devSpeeds: DEV_SPEEDS, options,
+  // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
+  settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {
     ui: cui,
     start: (setup) => { const b = startCombat(state, setup); refresh(); return b; },

@@ -71,8 +71,11 @@ const indexes = new WeakMap();
 const firstOf = (name) => String(name || "").split(/\s+/)[0];
 function nameIndex(state) {
   const sig = `${state.survivors.length}|${state.survivors.map((s) => s.name).join("/")}|${state.bases.map((b) => `${b.id}:${b.name}`).join("/")}|${state.factions.length}`;
+  // Crash sites name a tile for a while (crashes.js placeSite / expire): the places are read again when that changes, so
+  // the index never depends on when it was first built (a loaded save builds it fresh).
+  const siteSig = (state.crashes || []).filter((c) => { const t = state.tiles[c.tile]; return t && t.loc && t.loc.crash === c.id; }).map((c) => c.id).join(",");
   let ix = indexes.get(state);
-  if (ix && ix.sig === sig) return ix;
+  if (ix && ix.sig === sig && ix.siteSig === siteSig) return ix;
   const names = [];
   const firsts = new Map();
   for (const s of state.survivors) {
@@ -94,8 +97,8 @@ function nameIndex(state) {
   }
   for (const b of state.bases) names.push([b.name, "b", b.id]);
   for (const f of state.factions) if (f.name) names.push([f.name, "f", f.id]);
-  if (!ix || !ix.sites) {
-    ix = { sites: [] };
+  if (!ix || !ix.sites || ix.siteSig !== siteSig) {
+    ix = { sites: [], siteSig };
     for (const t of state.tiles) if (t.loc && t.loc.name) ix.sites.push([t.loc.name, "t", t.id]);
   }
   ix.sig = sig;

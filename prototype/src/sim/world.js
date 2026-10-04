@@ -43,6 +43,11 @@ export const RADIO_RANGE = 8;
 
 let nextId = 1;
 export const newId = () => nextId++;
+// Saves (save.js): the next id is part of a save, so a loaded world hands out the same ids it would have.
+export const peekNextId = () => nextId;
+export function setNextId(n) {
+  if (Number.isInteger(n) && n >= 1) nextId = n;
+}
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.

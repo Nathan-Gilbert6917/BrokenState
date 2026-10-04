@@ -369,7 +369,9 @@ export function renderCombatPanel(state) {
   const u = selUnit(b);
   const phase = b.over ? `<b>${b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
-  let html = b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
+  // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
+  let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>`;
+  html += b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
     <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>

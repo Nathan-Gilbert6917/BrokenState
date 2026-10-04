@@ -406,3 +406,24 @@ a.lk:hover { color: var(--accent); text-decoration-style: solid; }
 .perk.avail:hover { background: #4a3816; }
 .perk.locked { opacity: 0.55; }
 .perk.passed { opacity: 0.35; text-decoration: line-through; }
+/* Menu: save, load, options (ui/settings.js) */
+.settings .settabs { margin: 0.2rem 0 0.6rem; }
+.settings .setrow { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.35rem 0; }
+.settings .setname input { width: 15rem; }
+.settings .setmsg { margin: 0.3rem 0 0.5rem; padding: 0.4rem 0.6rem; background: var(--panel-2); border-left: 3px solid var(--accent); border-radius: 4px; }
+.settings .setconfirm { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.3rem 0 0.6rem; padding: 0.5rem 0.6rem; background: #3a2516; border: 1px solid var(--accent); border-radius: 6px; }
+.settings .setconfirm span { flex: 1 1 16rem; }
+.settings .slots { display: flex; flex-direction: column; gap: 0.4rem; max-height: 46vh; overflow-y: auto; }
+.settings .slot { display: flex; gap: 0.6rem; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.5rem; }
+.settings .slot.cur { border-color: var(--accent); }
+.settings .sthumb { width: 6.5rem; height: 3.9rem; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); flex: none; }
+.settings .sthumb.none { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; }
+.settings .sinfo { flex: 1; min-width: 0; }
+.settings .sbtns { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+.settings .tag { font-size: 0.75rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 0.3rem; margin-left: 0.3rem; }
+.settings .btnlike { display: inline-block; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer; }
+.settings .btnlike:hover { border-color: var(--accent); }
+.settings .btnlike.disabled { opacity: 0.4; pointer-events: none; }
+.settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
+.settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+#cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }

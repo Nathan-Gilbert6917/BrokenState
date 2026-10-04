@@ -2,6 +2,7 @@
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill } from "../sim/world.js";
+import { latestSave, listSaves } from "./saves.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -105,8 +106,18 @@ export function newRunScreen(state, ui) {
     </div>
     ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
-    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="begin">Start</button></div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button class="primary" data-action="begin">Start</button></div>
   </div>`;
+}
+
+// Continue (the latest save) and Load game (the menu's save list), when this browser has saves (ui/saves.js).
+function loadButtons() {
+  const last = latestSave();
+  if (!last) return "";
+  const n = listSaves().length;
+  return `<button data-action="set-continue"${tip(`Load the latest save: ${last.name} (day ${last.day}, ${last.survivors} alive, seed ${last.seed})`)}>▶ Continue: ${esc(last.name)}</button>
+    <button data-action="set-open" data-tab="game"${tip(`Pick one of your ${n} save${n === 1 ? "" : "s"}, or load a save file`)}>Load game…</button>
+    <span style="flex:1"></span>`;
 }
 
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
