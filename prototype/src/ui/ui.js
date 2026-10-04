@@ -56,6 +56,7 @@ import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
+import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
@@ -355,13 +356,10 @@ export function renderRight(state, ui) {
   const id = ui.selected;
   if (id < 0) {
     return `<h2>State of Calder</h2>
-      <div class="small" style="line-height:1.55">
-      <b>Left-click</b> a tile to inspect it. <b>Right-click</b> for actions. <b>Drag</b> to pan, <b>wheel</b> to zoom. Hover anything for a description.<br><br>
-      <b>Space</b> pause / run · <b>1–4</b> speed · <b>W A S D</b> or arrows pan · <b>H</b> find hub · <b>I</b> infection overlay · <b>Esc</b> close the top window<br><br>
-      The game starts <b>paused</b>. Orders you give while paused start when you unpause.<br><br>
-      Bright tiles are live (around your bases, or near a team in radio range). Dim tiles show what your people last reported, with its age. Dark tiles have no current intel.<br><br>
-      Teams report only when they get home, unless you have a radio station and they are in range. When a team finishes a job it waits for your orders: act there, move anywhere, or come home.
-      </div>`;
+      <div class="small hints"><div><b>Click</b> a tile to inspect it · <b>right-click</b> for actions</div>
+      <div><b>Drag</b> or <b>W A S D</b> to pan · <b>wheel</b> to zoom · <b>Space</b> run / pause</div>
+      <div class="muted">Hover anything for a description.</div>
+      <button class="mini" data-action="help-open" data-sec="map"${tip("Help: the map, what the bright, dim and dark tiles mean, the keys")}>? How the map works</button></div>`;
   }
   const t = state.tiles[id];
   const isLive = liveSet(state).has(id); // dev Reveal map shows the true tile here too
@@ -415,11 +413,13 @@ export function renderRight(state, ui) {
 }
 
 // ---------- legend / map layers ----------
+// One short line per layer (hover: a one-line description); what each layer and symbol means is in Help → Map
+// layers / Map legend (ui/help.js), behind the "?" button.
+const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
 export function renderLegend(view, ui) {
-  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show map layers")}>Layers ▸</button>`;
-  return `<div class="spread"><b>Map layers</b><button data-action="legendtoggle" class="mini"${tip("Hide this panel")}>▾</button></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}> ${l.name}</label>`).join("")}
-    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…), their scavengers carry a stuffed sack · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; the more faded, the less loot left as you last saw it: rich, some, little, picked clean, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen; a grey brute with a concrete fist at its head = Wallbreaker) · red glowing mound = infestation hive, its land tinted dark red (sites there show at least 3 skulls) and the ring around it brighter with red skulls (much tougher dead) · a raw mound with bones and a red bar = a hive being built (the bar: dead gathered of 1,000) · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · dashed circles = radio coverage (station 8 tiles, linked relay 6; red = relay not linked or off the air) · a group's wagon or truck beside your base = their caravan · ! = waiting for orders · ? = estimated team position</div>`;
+  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
+    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}</label>`).join("")}`;
 }
 
 // ---------- log ----------
@@ -455,7 +455,6 @@ function pickModal(state, ui) {
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
   if (ui.roster) return ["roster", () => rosterModal(state, ui)]; // ui/roster.js (the survivor and base screens open over it)
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
-  if (ui.help) return ["help", () => helpModal()];
   return null;
 }
 export function renderModal(state, ui) {
@@ -494,9 +493,11 @@ function gameOverScreen(state) {
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
 }
 
-function helpModal() {
+// The game's help, one paragraph per topic, each starting with its bold title (the menu's Help tab splits it into
+// topics: ui/help.js).
+export function helpText() {
   const k = (t) => `<b>${t}</b>`;
-  return `<div class="box wide"><h1>How to play</h1><div class="text small" style="line-height:1.6">
+  return `
     <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You <b>win</b> when every infestation hive is destroyed (and no new one is being built); you lose when the last survivor is dead, gone or lost.<br><br>
     <b>Time:</b> the game starts <b>paused</b>; a banner at the top of the map says so. Press ${k("Space")} or pick a speed (${k("1–4")}) to run the clock. Orders you give while paused are queued and start when you unpause (the banner counts them). Cards and windows (planner, base, help) stop the clock while they are open.<br>
     <b>Seasons and weather:</b> a year is four seasons of 28 days (spring, summer, autumn, winter); a run starts in mid-spring. Next to the clock: season, day of the season, today's weather and the temperature; hover it for what the weather does and the forecast (3 days; 4 with a watchtower, 5 with a radio station; the further out, the less sure). Rain and melting snow leave mud that slows off-road travel (vehicles most); snow cover slows everything, off-road most; storms and blizzards slow everyone a lot, can hurt people on the road and make boat crossings riskier; fog cuts sight by a tile and makes ambushes likelier; heat waves slow walkers. Arrival times in the planner and panels already include the weather hour by hour (the planner shows how many hours it adds). Crops grow only in their seasons and best in mild, moist weather; frost, hard freezes, blizzards, drought, heat and storms can kill them, and wet weather rots ripe ones. Cold and heat can make people outdoors ill, the dead slow down in deep cold, and the map's <i>Weather</i> layer shows snow, rain, fog and heat as a wash over the land.<br>
@@ -528,8 +529,7 @@ function helpModal() {
     <b>Saving:</b> ${k("⚙ Menu")} in the top bar (or ${k("Esc")} with nothing open; ${k("⚙ Menu")} in a battle's panel) opens the menu: <i>Save</i>, <i>Load</i>, <i>Save and exit</i> (back to the new-run screen, where <i>Continue</i> picks the latest save up again), <i>New campaign</i>, save files (<i>Export</i>, <i>Save to file</i>, <i>Load from file</i>) and the options (autosave every day or few days at dawn, confirmations, pause when the window loses focus, UI size, the battle's end-turn question, zombie look, the keys). Saves are kept in this browser, compressed: up to 12 named saves plus the autosave, which also saves when a hive assault starts and when the run ends. A save holds everything, a battle under way included; a card waiting for an answer cannot be saved, so answer it first (the autosave waits for that too). Loading pauses the game.<br>
     <b>Dev tools</b> (${k("`")} key or the Dev button): reveal the map, infection overlay, autopilot (${k("Shift+P")}: an AI governor plays for you), fast forward 60× / 300× / 1200×, show FPS, and the timelapse so far.<br>
     <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–4")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("Shift+P")} autopilot (dev) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
-    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.</div>
-    <button class="primary" data-action="closehelp">Close</button></div>`;
+    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.`;
 }
 
 function cardModal(state, card) {

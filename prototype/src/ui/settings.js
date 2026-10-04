@@ -1,7 +1,7 @@
 // The settings view (⚙ in the top bar, the ⚙ Menu button in a battle, or Esc on the map with nothing else open):
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
 // Options (autosave, confirmations, pause on focus loss, UI size, the battle's end-turn question, zombie look, the
-// keys) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
@@ -12,6 +12,7 @@ import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, worldSizeOf, sizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd } from "./combat.js";
+import { helpTab } from "./help.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -26,8 +27,9 @@ export const inDesktopApp = () => typeof navigator !== "undefined" && /Electron/
 let API = null;
 export function initSettings(api) { API = api; }
 
-export const openSettings = (ui, tab = "game") => {
-  ui.settings = { tab, msg: "", err: false, confirm: null, name: "", busy: false };
+// sec: the Help tab's topic (a ui/help.js topic id).
+export const openSettings = (ui, tab = "game", sec = "") => {
+  ui.settings = { tab, msg: "", err: false, confirm: null, name: "", busy: false, help: sec };
 };
 
 // Has the world moved on since it was last saved or loaded (the autosave counts)?
@@ -52,11 +54,11 @@ const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${esc(
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {
   const S = ui.settings;
-  const tabs = [["game", "Game"], ["options", "Options"], ["about", "About"]];
+  const tabs = [["game", "Game"], ["options", "Options"], ["help", "Help"], ["about", "About"]];
   const head = `<div class="row settabs">${tabs.map(([k, l]) => `<button data-action="set-tab" data-tab="${k}" class="${S.tab === k ? "active" : ""}">${l}</button>`).join("")}
     <span style="margin-left:auto"></span><button class="primary" data-action="set-close"${tip("Back to the game (Esc)")}>${ui.started ? "Resume" : "Back"}</button></div>`;
   const msg = S.msg ? `<div class="setmsg ${S.err ? "danger" : "good"}">${esc(S.msg)}</div>` : "";
-  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "about" ? aboutTab(state, ui, api) : gameTab(state, ui, api);
+  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help) : gameTab(state, ui, api);
   return `<div class="box wide settings"><h1>⚙ Menu</h1>${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
@@ -206,6 +208,12 @@ export const SETTINGS_ACTIONS = {
   "set-open": (state, ui, d) => openSettings(ui, d.tab || "game"),
   "set-close": (state, ui) => { if (!ui.settings || !ui.settings.busy) ui.settings = null; },
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },
+  // Help: a topic of the Help tab; help-open (the "?" buttons, the top bar's Help) opens the menu at a topic.
+  "set-help": (state, ui, d) => { if (ui.settings) ui.settings.help = d.sec || ""; },
+  "help-open": (state, ui, d) => {
+    if (!ui.settings) { openSettings(ui, "help", d.sec || ""); return; }
+    Object.assign(ui.settings, { tab: "help", help: d.sec || "", msg: "", confirm: null });
+  },
   "set-no": (state, ui) => { ui.settings.confirm = null; },
   "set-yes": (state, ui) => { const c = ui.settings.confirm; ui.settings.confirm = null; if (c && c.go) c.go(); },
   // Save to the slot this game came from (or a new one); with data-id, over that slot (asks first).

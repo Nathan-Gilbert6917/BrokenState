@@ -420,6 +420,11 @@ console.log("The settings view");
     views.push(["card open + question", settingsModal(st, ui, { ...api, desktop: false })]);
     st.cards.length = 0;
   }
+  for (const [started, sec] of [[false, ""], [true, "map-layers"], [true, "map-legend"], [true, "keys-on-the-map"]]) { // the Help tab (ui/help.js)
+    const ui = { started, scale: 1, speed: 0, slot: null };
+    openSettings(ui, "help", sec);
+    views.push([`${started ? "in game" : "new run"} / help${sec ? ` / ${sec}` : ""}`, settingsModal(st, ui, api)]);
+  }
   let probs = [], acts = new Set(), missing = new Set();
   for (const [where, html] of views) {
     probs.push(...scan(html, where));

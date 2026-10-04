@@ -9,6 +9,8 @@
 // - keys: B P G T, Shift+P, Tab / N, J, R, F1–F9, Ctrl/Alt+1–9 and Shift+1–9, each listed in the README
 // - the roster: sort by every column, filters, the role drop-down, ticking rows and setting a role for all
 // - the Repairs tab after a raid: the last raid's damage, Repair all with the bill, Patch on a damaged building
+// - help: the menu's Help tab (every topic, Map layers / Map legend), the compact Layers box and idle right panel,
+//   the ? buttons opening Help at a topic that exists
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -597,6 +599,71 @@ section("Repairs tab after a raid (ui/explore.js, sim/breakdowns.js raidDamage)"
   EXPLORE_ACTIONS["rp-all"](w, ui, { base: String(h.id) });
   check((h.repairs || []).length >= Math.min(1, rep.broken.length) && /starts/.test(ui.baseMsg || ""), `Repair all starts the jobs ("${(ui.baseMsg || "").slice(0, 100)}")`);
   htmlOk(repairsTab(w, h), "repairs tab with jobs under way");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Help: the menu's Help tab, the Layers box and the ? buttons (ui/help.js)");
+{
+  const { renderLegend, renderRight } = await import("../src/ui/ui.js");
+  const { helpTopics, helpTab } = await import("../src/ui/help.js");
+  const { settingsModal, openSettings, SETTINGS_ACTIONS } = await import("../src/ui/settings.js");
+  const { LAYERS } = await import("../src/sim/markers.js");
+  const { view } = await import("../src/ui/render.js");
+  Object.assign(CLICK, SETTINGS_ACTIONS);
+  const strip = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const w = createWorld({ seed: seed + 11, factionCount: 6 });
+  const topics = helpTopics();
+  const ids = new Set(topics.map((t) => t.id));
+  check(ids.size === topics.length, `topic ids are unique (${topics.length} topics)`);
+  check(topics.length >= 20 && ["goal", "time", "map", "map-layers", "map-legend", "keys-on-the-map"].every((k) => ids.has(k)), `the help's paragraphs are topics, with Map layers and Map legend (${[...ids].slice(0, 6).join(", ")}…)`);
+  check(topics.every((t) => t.title && strip(t.html).length > 20), "every topic has a title and text");
+  const layersHtml = topics.find((t) => t.id === "map-layers").html;
+  check(Object.values(LAYERS).every((l) => layersHtml.includes(`<b>${l.name}</b>`)), "Map layers explains every layer");
+  const legendText = strip(topics.find((t) => t.id === "map-legend").html);
+  check(["Wallbreaker", "radio", "Siege", "skulls", "estimated", "dim tiles"].every((s) => legendText.toLowerCase().includes(s.toLowerCase())), "Map legend keeps what the old Layers box spelled out");
+
+  // The Layers box: a short line per layer, no wall of text, a ? to Help, folds away.
+  const ui = { ...freshUi(), legendCollapsed: false };
+  const lg = renderLegend(view, ui);
+  htmlOk(lg, "Layers box");
+  check((lg.match(/class="layer"/g) || []).length === Object.keys(LAYERS).length, "one line per layer");
+  check(strip(lg).length < 60 + Object.values(LAYERS).reduce((s, l) => s + l.name.length + 1, 0), `no explanation text in the box (${strip(lg).length} characters)`);
+  check(/data-action="help-open" data-sec="map-layers"/.test(lg) && /data-action="legendtoggle"/.test(lg), "the box has ? (Help → Map layers) and fold buttons");
+  check([...lg.matchAll(/data-tip="([^"]*)"/g)].every((m) => m[1].length <= 60), "its hover descriptions are one short line");
+  const folded = renderLegend(view, { ...ui, legendCollapsed: true });
+  htmlOk(folded, "Layers box folded");
+  check(strip(folded).length < 15, "folded it is one button");
+
+  // The right panel with nothing selected: a few lines and a ? to Help → Map.
+  const idle = renderRight(w, { ...freshUi(), selected: -1, expedition: null });
+  htmlOk(idle, "right panel, nothing selected");
+  check(strip(idle).length < 220 && /data-action="help-open" data-sec="map"/.test(idle), `the idle right panel is short with a ? to Help (${strip(idle).length} characters)`);
+
+  // Every ? in the UI points at a topic that exists (the banner's lives in main.js).
+  const secs = [...`${lg}${idle}${mainSrc}`.matchAll(/data-action="help-open" data-sec="([^"]+)"/g)].map((m) => m[1]);
+  check(secs.length >= 3 && secs.every((s) => ids.has(s)), `every ? opens an existing topic (${[...new Set(secs)].join(", ")})`);
+  check(/help: \(\) => openSettings\(ui, "help"\)/.test(mainSrc), "the top bar's Help opens the menu's Help tab");
+
+  // help-open from the map, then from inside the menu; set-help switches topic; every topic renders clean.
+  const u2 = { started: true, scale: 1, speed: 0, slot: null, settings: null };
+  SETTINGS_ACTIONS["help-open"](w, u2, { sec: "map-layers" });
+  check(u2.settings && u2.settings.tab === "help" && u2.settings.help === "map-layers", "? opens the menu at Help → Map layers");
+  let html = settingsModal(w, u2, { options: { autosave: true, autosaveDays: 1 }, desktop: false, autosaveInfo: () => ({}) });
+  check(/data-action="set-help" data-sec="map-layers" class="active"/.test(html) && html.includes("<h2>Map layers</h2>"), "the topic is picked and shown");
+  SETTINGS_ACTIONS["set-tab"](w, u2, { tab: "game" });
+  SETTINGS_ACTIONS["help-open"](w, u2, { sec: "time" });
+  check(u2.settings.tab === "help" && u2.settings.help === "time", "? with the menu open switches it to that topic");
+  let bad = 0;
+  for (const t of topics) {
+    SETTINGS_ACTIONS["set-help"](w, u2, { sec: t.id });
+    html = helpTab(u2.settings.help);
+    if (!html.includes(`<h2>${t.title.replace(/&/g, "&amp;")}</h2>`)) bad++;
+    htmlOk(html, `Help → ${t.title}`);
+  }
+  check(!bad, `set-help shows each topic (${bad} wrong)`);
+  check(helpTab("no-such-topic").includes(`<h2>${topics[0].title}</h2>`), "an unknown topic shows the first one");
+  openSettings(u2, "help");
+  htmlOk(settingsModal(w, u2, { options: { autosave: true, autosaveDays: 1 }, desktop: false, autosaveInfo: () => ({}) }), "menu: Help tab");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
