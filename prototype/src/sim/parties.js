@@ -22,6 +22,7 @@ import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText } from "./orders.js";
+import { applyPlan, fieldHour } from "./plans.js";
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
@@ -176,7 +177,7 @@ export function travelHours(state, path, { vehicle = false, speed = 1, progress 
       else f -= use;
     }
   }
-  return { hours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached: sim.path[sim.path.length - 1] === path[path.length - 1] };
+  return { hours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached: sim.path[sim.path.length - 1] === path[path.length - 1], progress: sim.progress };
 }
 
 // The plan the hub knows about: a new move given while in contact replaces it (no way back assumed).
@@ -198,10 +199,11 @@ export function plannedTile(state, p) {
   const t = state.hour - start;
   const opts = { vehicle: !!p.planVehicle, speed: partySpeed(p), fuel: p.planFuel ?? Infinity, startHour: start };
   if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
-  const tb = t - p.etaOut - 6;
+  const stay = p.planStay ?? 6; // hours at the target before heading back (a plan sets its own, plans.js)
+  const tb = t - p.etaOut - stay;
   if (p.etaBack == null || tb <= 0) return plan[plan.length - 1];
   const go = travelHours(state, plan, opts);
-  return plan[plan.length - 1 - travelHours(state, [...plan].reverse(), { ...opts, vehicle: go.vehicle, fuel: go.fuelLeft, maxHours: tb, startHour: start + p.etaOut + 6 }).idx];
+  return plan[plan.length - 1 - travelHours(state, [...plan].reverse(), { ...opts, vehicle: go.vehicle, fuel: go.fuelLeft, maxHours: tb, startHour: start + p.etaOut + stay }).idx];
 }
 
 // Hours left for a team on its current path (what the order queue and the panels show).
@@ -313,10 +315,14 @@ export function launchExpedition(state, opts) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
-  const days = Math.ceil(est.days);
+  // A plan from the planner (plans.js): the steps after the target become the order queue.
+  if (opts.plan) applyPlan(state, p, opts.plan);
+  const days = Math.ceil((opts.plan ? p.plannedHours : est.hours) / 24);
+  const planHome = opts.plan && p.orders.some((o) => o.type === "home");
+  const waits = opts.plan ? !planHome : stays;
   const after = mission === "outpost" ? ` The team stays there as its first staff${v ? `, and the ${v.name} stays at the outpost` : ""}.` :
-    stays ? " The team waits there for orders." : "";
-  log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${stays ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
+    opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
+  log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
   return { party: p };
 }
 
@@ -459,6 +465,9 @@ function playerPartyHour(state, p) {
   }
   consume(state, p, members);
   if (!state.parties.includes(p)) return;
+  // Heat from staying put, the plan's conditions and finds, check-ins out of contact (plans.js, fieldheat.js).
+  fieldHour(state, p);
+  if (!state.parties.includes(p)) return;
   if (p.phase === "engaged" || p.phase === "helping" || p.phase === "waiting") {
     updateRadio(state, p);
     return;
@@ -488,13 +497,25 @@ function consume(state, p, members) {
   const s = p.supplies;
   s.food = (s.food || 0) - n / 24;
   s.water = (s.water || 0) - n / 24;
-  // Found food and water in the cargo is used once packed supplies run out.
+  // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
+  // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
+  // preserved food.
+  if (s.food < 0 && (s.preserved || 0) > 0) {
+    const take = Math.min(-s.food, s.preserved);
+    s.preserved -= take;
+    s.food += take;
+  }
   for (const k of ["food", "water"]) {
     if (s[k] < 0 && (p.cargo.supplies[k] || 0) > 0) {
       const take = Math.min(-s[k], p.cargo.supplies[k]);
       p.cargo.supplies[k] -= take;
       s[k] += take;
     }
+  }
+  if (s.food < 0 && (p.cargo.supplies.preserved || 0) > 0) {
+    const take = Math.min(-s.food, p.cargo.supplies.preserved);
+    p.cargo.supplies.preserved -= take;
+    s.food += take;
   }
   // Out of food or water this hour (orders.js: no camp healing while it lasts). Hunger and thirst are not
   // softened by armor or toughness (world.js hurt, raw).

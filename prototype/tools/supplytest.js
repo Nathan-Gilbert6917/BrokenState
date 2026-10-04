@@ -47,7 +47,8 @@ function resolveCards(state) {
     if (++n > 50) { check(false, `card loop: ${state.cards[0].title}`); state.cards.length = 0; break; }
     const c = state.cards.shift();
     const opts = c.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
-    const ch = opts.find((x) => !/fight|attack|storm|ambush|killzone/i.test(x.label)) || opts[0];
+    // Newcomers are turned away: this test is about supply runs, and a crowded hub loses people (morale.js).
+    const ch = (c.recruit && opts.find((x) => x.kind === "away")) || opts.find((x) => !/fight|attack|storm|ambush|killzone/i.test(x.label)) || opts[0];
     if (ch) ch.resolve(state);
   }
 }
@@ -67,6 +68,7 @@ for (const seed of seeds) {
   const h = hub(state);
   Object.assign(h.stock, { food: 700, water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 });
   for (let i = 0; i < 6; i++) state.survivors.push({ ...state.survivors[i], id: newId(), name: `Extra${i} Hand`, leader: false, gear: { weapon: null, armor: null, tool: null }, skills: { ...state.survivors[i].skills }, traits: [], location: { kind: "base", baseId: h.id } });
+  addBuilding(h, "bunkhouse"); // beds for the 6 extra hands, so crowding (morale.js) does not drive the crews away
   const people = atBase(state, h.id);
   const tA = freeTile(state, h.tile, 3, 6);
   const tB = tA && freeTile(state, tA.id, 3, 6, [h.tile]);

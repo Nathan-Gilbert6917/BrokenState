@@ -164,7 +164,7 @@ const tileIdOf = (setup) => (setup.tile && typeof setup.tile === "object" ? setu
 export const MAP_W = 18, MAP_H = 13;
 // Current battle size. Only one battle runs at a time; createBattle / createRaid set these.
 let W = MAP_W, H = MAP_H;
-const MOVE = 5, ZOMBIE_MOVE = 2, ZOMBIE_FAST = 3; // tiles per action point (zombies halved: 4/5 → 2/3)
+const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action point (zombies: the middle ground between the old 4/5 and the halved 2/3, review C-10)
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
 export const HUNKER_DEF = 20;

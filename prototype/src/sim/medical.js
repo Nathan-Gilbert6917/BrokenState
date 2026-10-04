@@ -1,11 +1,24 @@
 // Medical care: hospital tiers, passive healing, infected wounds, and treating people with meds
 // at a base or out in the field. Hospital buildings live in BUILDINGS (family "hospital");
 // their medical numbers sit in the `med` block of each entry.
-import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents } from "./world.js";
+//
+// Treatment limits (B-20, P-10):
+//   - one wound treatment per patient per day (base or field; illnesses: one per condition a day, health.js);
+//   - treating takes a medic's time: each Medic-role survivor at a base gives 3 + Medicine/4 treatments a day
+//     (less while ill: x their work factor); with nobody on the role, the best treater there gives 2 a day between
+//     other work. Surgery on a severe wound takes 3 of them from one medic (most of a day); with no medic that free
+//     the patient gets a plain treatment;
+//   - automatic care (each night, one rule for wounds and illnesses): worst off first, wounds below 70 health or
+//     infected, illnesses that matter; never takes the base's meds below its reserve (base.medsReserve), never
+//     beyond the medics' time. It can be switched off per base (base.autoTreat).
+// Beds (B-10): a per-base admit line (base.admitBelow, default 70, 30-100): people below it, with a severe or
+// infected wound, or too ill to work take beds, worst off first; everyone else keeps working and heals slowly.
+// A hospital without enough medics for its tier runs as the highest tier its medics can staff.
+import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents, day } from "./world.js";
 import { BUILDINGS } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
-import { isSick } from "./health.js";
+import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, applyCondition, autoWantsCondition, conditionDanger } from "./health.js";
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -19,7 +32,24 @@ export const TREAT_MEDS = 1;             // meds per treatment
 export const CURE_MEDS = 1;              // extra meds to clean an infected wound
 export const FIELD_TREAT_HOURS = 1;      // time a field treatment takes (for timed orders)
 const FIELD_HEAL = 8;                    // heal per field treatment before Medicine
-const AUTO_BELOW = 70;                   // daily auto-use of meds below this health (old behaviour)
+export const AUTO_BELOW = 70;            // automatic care treats wounds below this health (and any infected wound)
+
+// Medic time.
+export const TREATS_PER_MEDIC = 3;       // treatments a day per Medic-role survivor, + Medicine / 4
+export const UNTRAINED_TREATS = 2;       // with nobody on the Medic role: the best treater here, between other work
+export const SURGERY_LOAD = 3;           // treatments' worth of one medic's day that a surgery takes
+
+// The admit line for hospital beds.
+export const ADMIT_DEFAULT = 70, ADMIT_MIN = 30, ADMIT_MAX = 100, ADMIT_STEP = 10;
+export const admitBelow = (base) => {
+  const v = Number(base && base.admitBelow);
+  return Number.isFinite(v) && base.admitBelow != null ? Math.max(ADMIT_MIN, Math.min(ADMIT_MAX, Math.round(v))) : ADMIT_DEFAULT;
+};
+export const medsReserve = (base) => Math.max(0, Number(base && base.medsReserve) || 0);
+export const autoCareOn = (base) => !!base && base.autoTreat !== false;
+
+const hoursToMidnight = (state) => 24 - (state.hour % 24);
+export const nextDayText = (state) => `from midnight (in ${hoursToMidnight(state)}h)`;
 
 // Hospital building types in tier order (a function: BUILDINGS may not exist yet while modules load).
 export const hospitalTypes = () => Object.keys(BUILDINGS).filter((k) => BUILDINGS[k].family === "hospital").sort((a, b) => BUILDINGS[a].tier - BUILDINGS[b].tier);
@@ -39,12 +69,12 @@ export function hospitalTier(base) {
   return b ? BUILDINGS[b.type].tier : 0;
 }
 
+const defOf = (type) => ({ tier: BUILDINGS[type].tier, name: BUILDINGS[type].name, type, ...BUILDINGS[type].med });
+
 // The full stats of the hospital as built (ignores staffing).
 export function hospitalDef(base) {
   const b = hospitalBuilding(base);
-  if (!b) return NO_HOSPITAL;
-  const d = BUILDINGS[b.type];
-  return { tier: d.tier, name: d.name, type: b.type, ...d.med };
+  return b ? defOf(b.type) : NO_HOSPITAL;
 }
 
 // Next upgrade step (building type) or null at the top tier.
@@ -57,32 +87,61 @@ export function nextHospitalType(base) {
 export const medicStaff = (state, base) => atBase(state, base.id).filter((s) => s.role === "medic");
 const bestMed = (people) => Math.max(0, ...people.map((s) => skill(s, "medicine")));
 
-// What actually runs: a hospital with too few medics works as no hospital (buildings need people).
+// What actually runs: buildings need people. With too few medics for the tier as built, the hospital runs as the
+// highest tier its medics can staff (a Clinic with one medic works as a Field hospital); with none, as no hospital.
 export function activeHospital(state, base) {
   const def = hospitalDef(base);
   const staff = medicStaff(state, base);
   const staffed = def.tier > 0 && staff.length >= def.staff;
+  let run = NO_HOSPITAL;
+  if (staffed) run = def;
+  else if (def.tier > 0) {
+    const fit = hospitalTypes().filter((k) => BUILDINGS[k].tier < def.tier && staff.length >= BUILDINGS[k].med.staff).pop();
+    if (fit) run = defOf(fit);
+  }
   return {
-    ...(staffed ? def : NO_HOSPITAL),
+    ...run,
     built: def,
     staffed,
+    fallback: def.tier > 0 && !staffed && run.tier > 0, // running below the tier built
     staff,
     staffSkill: bestMed(staff),
     baseSkill: bestMed(atBase(state, base.id)),
   };
 }
 
-export const isHurt = (s) => s.alive && (s.health < 100 || !!s.woundInfected);
+export const isHurt = (s) => !!s && s.alive && (s.health < 100 || !!s.woundInfected);
 
-export const isSevere = (s) => s.alive && s.health < SEVERE_BELOW;
+export const isSevere = (s) => !!s && s.alive && s.health < SEVERE_BELOW;
 
-// Who gets a hospital bed: the worst off first, capped by beds. Medics are staff, never patients.
+// How badly someone needs care: the order for beds and automatic treatment (worst off first).
+export function careNeed(s) {
+  if (!s || !s.alive) return -1;
+  let n = 100 - s.health;
+  if (s.woundInfected) n += 40;
+  if (s.health < SEVERE_BELOW) n += 20;
+  for (const c of conditionsOf(s)) n += conditionDanger(c);
+  return n;
+}
+
+// Why someone would take a hospital bed at this base ("" = they keep working). Medics on duty never do.
+export function bedReason(state, base, s) {
+  if (!s || !s.alive) return "";
+  if (s.role === "medic" && s.location.kind === "base") return "";
+  if (isSevere(s)) return `severe wound (below ${SEVERE_BELOW} health)`;
+  if (s.woundInfected) return "infected wound";
+  const line = admitBelow(base);
+  if (s.health < line) return `below ${line} health`;
+  if (tooIllToWork(s)) return "too ill to work";
+  return "";
+}
+
+// Who gets a hospital bed: the people who need one (bedReason), worst off first, capped by beds.
 // Patients do not work their role while in bed (s.inBed, set hourly in medicalHour).
 export function patients(state, base, h = activeHospital(state, base)) {
   if (!h.beds) return [];
   // Residents: the people here plus (hub) trade-route escorts waiting between trips.
-  // The sick (health.js conditions) get beds too: they recover faster in one.
-  return residents(state, base.id).filter((s) => (isHurt(s) || isSick(s)) && !(s.role === "medic" && s.location.kind === "base")).sort((a, b) => (b.woundInfected ? 1 : 0) - (a.woundInfected ? 1 : 0) || a.health - b.health).slice(0, h.beds);
+  return residents(state, base.id).filter((s) => bedReason(state, base, s)).sort((a, b) => careNeed(b) - careNeed(a)).slice(0, h.beds);
 }
 
 // Passive heal per hour for one survivor at a base.
@@ -105,6 +164,7 @@ export function medicalHour(state) {
   for (const s of state.survivors) if (s.inBed) s.inBed = false;
   for (const base of state.bases) {
     const hosp = activeHospital(state, base);
+    understaffedCheck(state, base, hosp);
     const beds = new Set(patients(state, base, hosp).map((s) => s.id));
     const here = residents(state, base.id);
     for (const s of here) if (beds.has(s.id)) s.inBed = true;
@@ -124,24 +184,26 @@ export function medicalHour(state) {
   }
 }
 
-// Daily: automatic meds for the badly hurt (as before), infections setting in or clearing.
+// A new hospital tier that its medics cannot staff gets a warning (once per tier built).
+function understaffedCheck(state, base, hosp) {
+  const type = hosp.built.type || null;
+  if (base.hospSeen === undefined) { base.hospSeen = type; return; }
+  if (base.hospSeen === type) return;
+  base.hospSeen = type;
+  if (!type || hosp.staffed) return;
+  const n = hosp.staff.length;
+  log(state, `The ${hosp.built.name} at ${base.name} needs ${hosp.built.staff} medic${hosp.built.staff === 1 ? "" : "s"} and has ${n}: it runs as ${hosp.tier ? `a ${hosp.name}` : "no hospital"} until ${hosp.built.staff - n} more ${hosp.built.staff - n === 1 ? "person takes" : "people take"} the Medic role.`, "danger");
+}
+
+// Daily: infections setting in or clearing. (Meds are used by automatic care, autoCare, run from health.js.)
 export function medicalDaily(state, base) {
   const rng = state.rng;
-  const st = base.stock;
   const hosp = activeHospital(state, base);
   const beds = new Set(patients(state, base).map((s) => s.id));
   for (const s of residents(state, base.id)) {
     if (!s.alive) continue;
-    if (s.health < AUTO_BELOW && (st.meds || 0) >= 1) {
-      st.meds -= 1;
-      s.health = Math.min(100, s.health + 10 * hosp.eff);
-    }
     if (s.woundInfected) {
-      if (hosp.cures && beds.has(s.id) && (st.meds || 0) >= CURE_MEDS) {
-        st.meds -= CURE_MEDS;
-        s.woundInfected = false;
-        log(state, `${s.name}'s infected wound was cleaned at the ${hosp.name} in ${base.name}.`, "good");
-      } else if (s.health >= 50 && rng.chance(0.1)) {
+      if (s.health >= 50 && rng.chance(0.1)) {
         s.woundInfected = false;
         log(state, `${s.name}'s infected wound cleared up on its own.`, "good");
       }
@@ -176,27 +238,109 @@ function bestMedic(people) {
   return { medic: best, value: Math.max(0, bestVal) };
 }
 
+// Treatments a Medic-role survivor can give in a day.
+export function medicCapacity(s) {
+  return Math.max(0, Math.floor((TREATS_PER_MEDIC + Math.floor(skill(s, "medicine") / 4)) * workFactor(s) + 1e-9));
+}
+
+// Who treats at this base and how many treatments a day each: the Medic-role people there (best first); with
+// nobody on the role, the best treater here (2 a day).
+export function treaters(state, base) {
+  const here = atBase(state, base.id);
+  const medics = here.filter((s) => s.role === "medic");
+  let list;
+  if (medics.length) list = medics.map((m) => ({ s: m, cap: medicCapacity(m), trained: true }));
+  else {
+    const { medic } = bestMedic(here);
+    list = medic ? [{ s: medic, cap: UNTRAINED_TREATS, trained: false }] : [];
+  }
+  for (const t of list) t.value = skill(t.s, "medicine") + medKitBonus(t.s);
+  return list.sort((a, b) => b.value - a.value);
+}
+
+// Today's ledger of medic time at a base (resets each day).
+function ledger(state, base) {
+  const d = day(state);
+  if (!base.medWork || base.medWork.day !== d) base.medWork = { day: d, used: {} };
+  return base.medWork;
+}
+
+// A context for treatment checks: the meds and medic time available. plan = tonight's automatic care (a fresh day,
+// nobody treated yet); auto = an automatic dose (keeps the reserve).
+export function careCtx(state, base, { auto = false, plan = false } = {}) {
+  const d = day(state);
+  const used = plan ? {} : { ...(base.medWork && base.medWork.day === d ? base.medWork.used : {}) };
+  return { day: plan ? d + 1 : d, meds: base.stock.meds || 0, used, auto: auto || plan, plan, reserve: medsReserve(base), treaters: treaters(state, base) };
+}
+
+// The best treater with at least `load` treatments of time left today.
+export function pickTreater(ctx, load = 1) {
+  return ctx.treaters.find((t) => t.cap - (ctx.used[t.s.id] || 0) >= load) || null;
+}
+
+const timeTotals = (ctx) => {
+  let cap = 0, used = 0;
+  for (const t of ctx.treaters) { cap += t.cap; used += Math.min(t.cap, ctx.used[t.s.id] || 0); }
+  return { cap, used, left: cap - used };
+};
+
+// Why there is no treater with time (a reason string).
+export function noTimeReason(state, ctx) {
+  if (!ctx.treaters.length) return "Nobody here can treat.";
+  const t = timeTotals(ctx);
+  if (!t.cap) return "Nobody here is fit to treat today.";
+  return `No medic time left today (${t.used} of ${t.cap} treatments given). More ${nextDayText(state)}.`;
+}
+
+// Medic time at a base today, for the UI: each treater's capacity and use.
+export function medicTime(state, base) {
+  const ctx = careCtx(state, base);
+  const list = ctx.treaters.map((t) => ({ ...t, used: Math.min(t.cap, ctx.used[t.s.id] || 0), left: Math.max(0, t.cap - (ctx.used[t.s.id] || 0)) }));
+  return { list, ...timeTotals(ctx), trained: list.some((t) => t.trained) };
+}
+
+// Uses a treater's time (after a treatment).
+export function spendMedicTime(state, base, treater, load) {
+  if (!treater) return;
+  const L = ledger(state, base);
+  L.used[treater.s.id] = (L.used[treater.s.id] || 0) + load;
+}
+
 // ---------- treating at a base ----------
-export function treatAtBaseInfo(state, base, s) {
+function woundInfo(state, base, s, ctx) {
   const hosp = activeHospital(state, base);
-  const { medic, value } = bestMedic(atBase(state, base.id));
   const cost = TREAT_MEDS + (s && s.woundInfected ? CURE_MEDS : 0);
-  const surgery = !!(s && isSevere(s) && hosp.surgery);
+  const wantSurgery = !!(s && isSevere(s) && hosp.surgery);
+  let t = wantSurgery ? pickTreater(ctx, SURGERY_LOAD) : null;
+  const surgery = !!t;
+  if (!t) t = pickTreater(ctx, 1);
+  const shown = t || ctx.treaters[0] || null;
+  const value = shown ? shown.value : 0;
   const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? SURGERY_MULT : 1));
   const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
+  const treatedToday = !!s && s.woundTreatedDay === ctx.day;
   let reason = "";
   if (!s || !s.alive) reason = "Nobody to treat.";
   else if (!residents(state, base.id).includes(s)) reason = `${s.name} is not at ${base.name}.`;
   else if (!isHurt(s)) reason = `${s.name} is not hurt.`;
-  else if ((base.stock.meds || 0) < cost) reason = `Needs ${cost} meds (have ${Math.floor(base.stock.meds || 0)}).`;
-  return { ok: !reason, reason, cost, heal, cureChance, hosp, surgery, medic };
+  else if (treatedToday) reason = `Already treated today. Next treatment ${nextDayText(state)}.`;
+  else if (!t) reason = noTimeReason(state, ctx);
+  else if (ctx.meds < cost) reason = `Needs ${cost} meds (have ${Math.floor(ctx.meds)}).`;
+  else if (ctx.auto && ctx.meds - cost < ctx.reserve) reason = `Would take the meds below the reserve of ${ctx.reserve}.`;
+  return {
+    ok: !reason, reason, cost, heal, cureChance, hosp, surgery, medic: t ? t.s : null, treater: t,
+    load: surgery ? SURGERY_LOAD : 1, noSurgeryTime: wantSurgery && !surgery, treatedToday,
+  };
 }
 
-export function treatAtBase(state, base, survivorId) {
-  const s = survivorById(state, survivorId);
-  const info = treatAtBaseInfo(state, base, s);
-  if (!info.ok) return info.reason;
-  base.stock.meds = Math.max(0, base.stock.meds - info.cost);
+export function treatAtBaseInfo(state, base, s, opts = {}) {
+  return woundInfo(state, base, s, opts.ctx || careCtx(state, base, opts));
+}
+
+function applyWound(state, base, s, info) {
+  base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
+  spendMedicTime(state, base, info.treater, info.load);
+  s.woundTreatedDay = day(state);
   useMedKit(state, info.medic);
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);
@@ -206,7 +350,113 @@ export function treatAtBase(state, base, survivorId) {
     else cure = " The wound is still infected.";
   }
   const where = info.hosp.tier ? `in the ${info.hosp.name.toLowerCase()}` : "on a cot";
-  return `${s.name} ${info.surgery ? "operated on" : "treated"} ${where} at ${base.name}: health ${Math.floor(before)} → ${Math.floor(s.health)} (${info.cost} meds).${cure}`;
+  const by = info.medic && info.medic.id !== s.id ? ` by ${info.medic.name.split(" ")[0]}` : "";
+  return `${s.name} ${info.surgery ? "operated on" : "treated"}${by} ${where} at ${base.name}: health ${Math.floor(before)} → ${Math.floor(s.health)} (${info.cost} meds).${cure}`;
+}
+
+export function treatAtBase(state, base, survivorId, opts = {}) {
+  const s = survivorById(state, survivorId);
+  const info = treatAtBaseInfo(state, base, s, opts);
+  if (!info.ok) return info.reason;
+  return applyWound(state, base, s, info);
+}
+
+// ---------- automatic care ----------
+// One rule for every automatic dose (wounds and illnesses), run each night (health.healthDaily) and shown ahead
+// in the Medical tab (plan: true, nothing changes). Worst off first (careNeed); for one person an infected or
+// severe wound comes before their illnesses, the rest by danger. Wounds below AUTO_BELOW health or infected;
+// illnesses that matter (health.autoWantsCondition). Each dose keeps the reserve and needs medic time.
+// Returns { off, list: [{ s, kind: "wound"|"cond", key, cost, heal, amount }], skipped: [{ s, kind, key, reason }] }.
+export function autoCare(state, base, { plan = false } = {}) {
+  const out = { off: !autoCareOn(base), list: [], skipped: [], meds: 0 };
+  if (out.off) return out;
+  let ctx = careCtx(state, base, { auto: true, plan });
+  const people = residents(state, base.id).filter((s) => s.alive).sort((a, b) => careNeed(b) - careNeed(a));
+  // A plan looks ahead to midnight: whether a wound is still below AUTO_BELOW by then (passive healing until then).
+  const hosp = plan ? activeHospital(state, base) : null;
+  const hpAtNight = (s) => (plan ? projectHealth(state, base, s, { hosp, inBed: !!s.inBed }).night : s.health);
+  for (const s of people) {
+    const jobs = [];
+    const hp = hpAtNight(s);
+    const woundDue = isHurt(s) && (hp < 100 || s.woundInfected) && (hp < AUTO_BELOW || s.woundInfected);
+    const woundFirst = s.woundInfected || isSevere(s);
+    const conds = conditionsOf(s).filter((c) => autoWantsCondition(c)).sort((a, b) => conditionDanger(b) - conditionDanger(a));
+    if (woundDue && woundFirst) jobs.push({ kind: "wound" });
+    for (const c of conds) jobs.push({ kind: "cond", key: c.key });
+    if (woundDue && !woundFirst) jobs.push({ kind: "wound" });
+    for (const j of jobs) {
+      if (!s.alive) break;
+      const info = j.kind === "wound" ? woundInfo(state, base, s, ctx) : conditionInfoCtx(state, base, s, j.key, ctx);
+      if (!info.ok) { out.skipped.push({ s, ...j, reason: info.reason }); continue; }
+      const entry = { s, ...j, cost: info.cost, heal: info.heal || 0, amount: info.amount || 0, surgery: !!info.surgery };
+      if (plan) {
+        ctx.meds -= info.cost;
+        ctx.used[info.treater.s.id] = (ctx.used[info.treater.s.id] || 0) + info.load;
+      } else {
+        if (j.kind === "wound") applyWound(state, base, s, info);
+        else applyCondition(state, base, s, j.key, info);
+        ctx = careCtx(state, base, { auto: true });
+      }
+      out.meds += info.cost;
+      out.list.push(entry);
+    }
+  }
+  if (!plan && out.list.length) {
+    const byPerson = new Map();
+    for (const e of out.list) {
+      const what = e.kind === "wound" ? (e.surgery ? "surgery" : "wounds") : CONDITIONS[e.key].name.toLowerCase();
+      byPerson.set(e.s, [...(byPerson.get(e.s) || []), what]);
+    }
+    log(state, `Night care at ${base.name}: ${[...byPerson].map(([s, w]) => `${s.name.split(" ")[0]} (${w.join(", ")})`).join(", ")}. ${out.meds} meds used.`, "good");
+  }
+  return out;
+}
+
+// Health someone loses tonight to their illnesses (health.js, conditions older than a day).
+function illnessTonight(s) {
+  let n = 0;
+  for (const c of conditionsOf(s)) if (c.days > 0 && CONDITIONS[c.key]) n += CONDITIONS[c.key].hp * c.sev / 100;
+  return n;
+}
+
+// Projects someone's health hour by hour over the next 24 hours at a base, in the order the game runs it: passive
+// healing each hour (leaving the bed once nothing keeps them there), and at midnight their illness, then tonight's
+// treatment (`treat`, health). Returns { night: health when night care looks at them, end: health in 24 hours,
+// passive: what passive healing alone added }.
+export function projectHealth(state, base, s, { hosp = activeHospital(state, base), inBed = null, treat = 0 } = {}) {
+  const bedNow = inBed != null ? inBed : patients(state, base, hosp).includes(s);
+  const H = hoursToMidnight(state);
+  const ill = illnessTonight(s);
+  let hp = s.health, night = s.health, passive = 0;
+  for (let i = 1; i <= 24; i++) {
+    const t = { ...s, health: hp };
+    const bed = bedNow && !!bedReason(state, base, t);
+    const rate = healRatePerHour(state, base, t, hosp, bed);
+    const next = rate >= 0 ? Math.min(100, hp + rate) : hp + rate;
+    passive += next - hp;
+    hp = next;
+    if (i === H) {
+      hp -= ill;
+      night = hp;
+      if (treat) hp = Math.min(100, hp + treat);
+    }
+  }
+  return { night, end: hp, passive };
+}
+
+// Expected health change over the next day for someone at a base (the Medical tab's figure, P-21): passive healing
+// for 24 hours (hour by hour, out of bed once healed past the admit line), tonight's automatic treatment if they are
+// in the plan, and what their illnesses cost. Pass `plan` (autoCare(..., { plan: true })) to share one plan.
+export function dailyHealthChange(state, base, s, { hosp = activeHospital(state, base), inBed = null, plan = null } = {}) {
+  const p = plan || autoCare(state, base, { plan: true });
+  const mine = p.list.filter((e) => e.s === s);
+  const wound = mine.find((e) => e.kind === "wound");
+  const r = projectHealth(state, base, s, { hosp, inBed, treat: wound ? wound.heal : 0 });
+  const illness = illnessTonight(s);
+  const total = r.end - s.health;
+  const treat = wound ? Math.max(0, total - r.passive + illness) : 0; // what the treatment adds (after the cap at 100)
+  const skipped = p.skipped.find((e) => e.s === s && e.kind === "wound");
+  return { total, passive: r.passive, treat, illness, wound: wound || null, conds: mine.filter((e) => e.kind === "cond"), skipped: skipped ? skipped.reason : "", off: p.off };
 }
 
 // ---------- treating in the field ----------
@@ -228,12 +478,14 @@ export function fieldTreatInfo(state, party, s) {
   const cost = TREAT_MEDS + (s && s.woundInfected ? CURE_MEDS : 0);
   const heal = Math.round(FIELD_HEAL + value * 0.6);
   const cureChance = s && s.woundInfected ? Math.min(0.85, 0.2 + value * 0.04) : 0;
+  const treatedToday = !!s && s.woundTreatedDay === day(state);
   let reason = "";
   if (!s || !s.alive) reason = "Nobody to treat.";
   else if (!party || !(party.members || []).includes(s.id) || s.location.kind !== "party") reason = `${s.name} is not with this team.`;
   else if (!isHurt(s)) reason = `${s.name} is not hurt.`;
+  else if (treatedToday) reason = `Already treated today. Next treatment ${nextDayText(state)}.`;
   else if (partyMeds(party) < cost) reason = `Needs ${cost} meds; the team carries ${Math.floor(partyMeds(party))}.`;
-  return { ok: !reason, reason, cost, heal, cureChance, medic, hours: FIELD_TREAT_HOURS };
+  return { ok: !reason, reason, cost, heal, cureChance, medic, hours: FIELD_TREAT_HOURS, treatedToday };
 }
 
 export function fieldTreat(state, party, survivorId) {
@@ -242,6 +494,7 @@ export function fieldTreat(state, party, survivorId) {
   if (!info.ok) return info.reason;
   takeMeds(party, info.cost);
   useMedKit(state, info.medic);
+  s.woundTreatedDay = day(state);
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);
   let cure = "";
@@ -271,5 +524,7 @@ export function medicalSummary(state, base) {
   const h = activeHospital(state, base);
   const built = h.built;
   if (!built.tier) return "None (slow healing, meds work weakly)";
-  return `${built.name}${h.staffed ? "" : ` (needs ${built.staff} medic${built.staff === 1 ? "" : "s"}, unstaffed)`}`;
+  if (h.staffed) return built.name;
+  return `${built.name} (needs ${built.staff} medic${built.staff === 1 ? "" : "s"}; runs as ${h.tier ? h.name : "no hospital"})`;
 }
+

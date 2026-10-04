@@ -40,9 +40,10 @@ export function itemValue(item) {
 }
 
 // Stock per head at which a group is comfortable (need 1 at the reference, 0.5 at 1.5× it, 2.2 at none).
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3 };
+// Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve.
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1 };
 // Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0 };
+const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0, preserved: 0.5, jars: 0 };
 // Groups always have some water (wells, rain barrels): with no figure yet they count as comfortable.
 const stockOf = (f, key) => Math.max(0, f.stock[key] ?? (key === "water" ? f.pop * REF.water : 0));
 

@@ -66,7 +66,9 @@ export function createWorld({ seed, factionCount, crew = null }) {
   const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
-    stock: { food: 60, water: 40, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25 }, // fuel is scarce (economy rework)
+    // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
+    // town hall's cellar (storage.js); water for the first dry days while the sown fields get going.
+    stock: { food: 80, water: 50, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];

@@ -11,6 +11,7 @@ import { rollConflict } from "./conflicts.js";
 import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects } from "./weather.js";
+import { makeCandidate, recruitCard } from "./recruits.js";
 
 // ---------- helpers ----------
 function check(state, p, key, dc) {
@@ -194,17 +195,11 @@ const EVENTS = [
   },
   {
     id: "loner", weight: 2, when: () => true,
+    // A recruit card (recruits.js): take them along if the team's rations allow, send them to a base on foot,
+    // give them supplies and part ways, or turn them away.
     card: (st, p) => {
-      const s0 = makeSurvivor(st, 0.85);
-      return {
-        title: "A survivor alone",
-        text: `${s0.name} has been living in a hunting stand. They ask to come with you. Strongest skill: ${Object.entries(s0.skills).sort((a, b) => b[1] - a[1])[0].join(" ")}.`,
-        choices: [
-          { label: "Take them along", resolve: (s) => { s0.location = { kind: "party", partyId: p.id }; s.survivors.push(s0); p.members.push(s0.id); s.stats.peopleSaved += 1; return `${s0.name} joins the team.`; } },
-          { label: "Point them toward the hub", resolve: (s) => { if (s.rng.chance(0.6)) { s0.location = { kind: "base", baseId: hub(s).id }; s.survivors.push(s0); s.stats.peopleSaved += 1; return `${s0.name} made it to the hub.`; } return `${s0.name} never arrived.`; } },
-          { label: "Leave them", resolve: () => "You move on." },
-        ],
-      };
+      const s0 = makeCandidate(st, { quality: 0.85, minHealth: 50 });
+      return recruitCard(st, [s0], { source: "loner", partyId: p.id, title: "A survivor alone", intro: `${s0.name} has been living in a hunting stand and asks to come with you.` });
     },
   },
   {

@@ -7,6 +7,7 @@ import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
 import { weatherTint } from "../sim/weather.js";
 import { radioNodes } from "../sim/radio.js";
+import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
@@ -719,6 +720,15 @@ function pill(x, y, text, bg, s) {
   ctx.fillText(text, x, y + 0.5);
 }
 
+// A team's Heat (sim/fieldheat.js) as a small bar under its sprite: green, amber, orange, red by level.
+function heatBar(px, py, heat) {
+  const s = zoomBoost(), w = 22 * s, h = Math.max(2, 3 * s), x = px - w / 2, y = py + 8 * s;
+  ctx.fillStyle = "rgba(13,15,18,0.85)";
+  ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = heat < 25 ? "#6cc48a" : heat < 50 ? "#e8d06a" : heat < 75 ? "#e0a84f" : "#e2685f";
+  ctx.fillRect(x, y, (w * Math.min(100, heat)) / 100, h);
+}
+
 function drawPlayerParty(state, p) {
   const g = state.grid;
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? "#9be39b" : "#7fd0ff";
@@ -772,6 +782,7 @@ function drawPlayerParty(state, p) {
     const cvp = partySpriteCanvas(look.kind, look.color, look.count), wp = spriteW(look.kind) * k2;
     drawMapSprite(ctx, cvp, px, py - 3, wp, { facing });
     noteSprite(px, py - 3, wp, spriteH(cvp, wp));
+    if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
@@ -826,6 +837,8 @@ export function tileTooltip(state, id) {
   else lines.push(`<span class="muted">No current intel</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
+  // Heat of your teams standing here (sim/fieldheat.js): what the bar under the sprite means.
+  for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || p.radioLive) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   return lines.join("<br>");

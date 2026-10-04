@@ -234,7 +234,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const h = hub(st);
   const ppl = atBase(st, h.id);
   ppl.forEach((s) => { plain(s); s.role = "rest"; s.skills.medicine = 12; });
-  h.stock.food = 0; h.stock.meds = 0;
+  h.stock.food = 0; h.stock.preserved = 0; h.stock.meds = 0;
   const tough = ppl[1];
   tough.traits = ["tough"];
   tough.gear.armor = newItem("plate"); tough.gear.head = newItem("riothelmet");
@@ -244,7 +244,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   let days = 1;
   while (alive(st).length === 6 && days < 30) {
     for (let i = 0; i < 24; i++) medicalHour(st);
-    h.stock.food = 0;
+    h.stock.food = 0; h.stock.preserved = 0;
     basesDaily(st);
     st.cards.length = 0;
     ppl.forEach((s) => (s.mood = 60)); // keep them from walking away: this is about health
@@ -256,7 +256,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const st2 = W();
   const h2 = hub(st2);
   atBase(st2, h2.id).forEach((s) => (s.role = "rest"));
-  h2.stock.food = 0;
+  h2.stock.food = 0; h2.stock.preserved = 0;
   basesDaily(st2);
   check(h2.hungerDays === 1, "a day without food is counted");
   h2.stock.food = 500;
@@ -334,6 +334,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   for (let i = 0; i < 24; i++) medicalHour(st);
   check(e.health > hp, `the escort heals at the hub (${hp.toFixed(1)} → ${e.health.toFixed(1)})`);
   e.health = 30;
+  e.woundTreatedDay = null; // the night's automatic care already treated them today (one wound treatment a day)
   const msg = treatAnywhere(st, e.id);
   check(e.health > 30 && /treated|operated/.test(msg), `the escort can be treated with the hub's meds (${msg})`);
 }

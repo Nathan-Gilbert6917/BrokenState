@@ -29,6 +29,7 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRai
 import { perceptionChance } from "./markers.js";
 import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
+import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
 
 // ---------- small helpers ----------
@@ -194,14 +195,15 @@ function injure(state, p, min, max, cause) {
   return v.alive ? `${first(v)} was hurt.` : `${v.name} was killed.`;
 }
 
+// Someone who asks to join after a road fight: a candidate, not in the group yet (recruits.js). askToJoin puts them
+// on a recruit card: take them along if the team's rations allow, send them to a base on foot, give them supplies
+// and part ways, or turn them away (stats.conflicts.joined counts those who join the team).
 function newRecruit(state, p) {
-  const s = makeSurvivor(state, 0.85);
-  s.location = { kind: "party", partyId: p.id };
-  state.survivors.push(s);
-  p.members.push(s.id);
-  state.stats.peopleSaved += 1;
-  stats(state).joined += 1;
-  return s;
+  return makeCandidate(state, { quality: 0.85, minHealth: 40 });
+}
+function askToJoin(state, p, list, intro = "") {
+  if (!list.length || !state.parties.includes(p)) return;
+  offerRecruits(state, list, { source: "road", partyId: p.id, title: list.length === 1 ? "Someone asks to join" : "Survivors ask to join", intro });
 }
 
 // ---------- captives ----------
@@ -348,6 +350,26 @@ export function rollConflict(state, p, tileId) {
   return card;
 }
 
+// A team that stayed in one place too long (fieldheat.js decides when): the same cards as on the road. Who comes
+// is drawn from the road's sources here plus the dead that always wander (weight 0.3); a horde within 3 tiles
+// (opts.horde) is drawn in as a bigger surge. Lookouts at a camp spot trouble a little more often (+10%).
+// Returns the card (not added) or null when the team saw them first and let them pass.
+export function stationaryEncounter(state, p, opts = {}) {
+  const tile = partyTile(p);
+  const { sources } = conflictChance(state, p, tile);
+  const src = state.rng.weighted([...sources, { zombies: true, w: 0.3 + (opts.horde ? 0.6 : 0) }], (s) => s.w);
+  const spotted = state.rng.chance(Math.min(0.9, spotFirstChance(state, p) + 0.1));
+  let card;
+  if (src.zombies && opts.horde && !spotted) {
+    const scale = Math.min(2.2, 1.2 + opts.horde.size / 150);
+    card = forcedCard(state, p, makeConflict(state, p, "surge", null, enemyGroup(state, p, null, scale), { identified: true, horde: opts.horde.size }));
+  } else card = src.zombies ? zombieEncounter(state, p, spotted) : factionEncounter(state, p, src.f, spotted, src.aiParty);
+  if (!card) return null;
+  p.lastConflict = state.hour;
+  p.conflictCount = (p.conflictCount || 0) + 1;
+  return card;
+}
+
 // Build a conflict of a given type for a party (also used by the test tools and the console).
 export function triggerConflict(state, p, type, factionId) {
   const f = factionId != null ? factionById(state, factionId) : null;
@@ -379,14 +401,20 @@ function makeConflict(state, p, type, f, enemy, extra = {}) {
 
 function halt(p) {
   if (p.phase !== "engaged") {
-    p.conflictResume = p.phase === "back" ? "back" : "out";
+    // A team found while standing still (fieldheat.js) goes back to its camp or work, or to waiting.
+    p.conflictResume = p.phase === "back" ? "back" : p.phase === "task" && p.task ? "task" : p.phase === "waiting" ? "waiting" : "out";
     p.phase = "engaged";
   }
 }
 function resume(state, p) {
   if (!state.parties.includes(p)) return;
-  if (p.phase === "engaged") p.phase = p.conflictResume || "out";
+  const was = p.conflictResume;
   delete p.conflictResume;
+  if (p.phase !== "engaged") return;
+  if (was === "task" && !p.task) { awaitOrders(state, p, "", { failed: true, hold: true }); return; }
+  // A team that was waiting reports in again (its old card was answered or dropped).
+  if (was === "waiting") { awaitOrders(state, p, "", { failed: true, hold: true }); return; }
+  p.phase = was || "out";
 }
 
 function forcedTypeFor(state, p, f) {
@@ -848,7 +876,8 @@ function distractChoice(state, p, c) {
           text += ` They are ${victim.name} people, and will remember this.`;
         } else if (st.rng.chance(0.5)) {
           const s = newRecruit(st, p);
-          text += ` ${s.name} decides to come with you.`;
+          text += ` ${s.name} asks to come with you.`;
+          askToJoin(st, p, [s], `${s.name} got out of the swarm with your help.`);
         }
         resume(st, p);
         return text;
@@ -928,8 +957,9 @@ function buyPrisonersCard(state, p, c, f) {
         const fresh = [];
         for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(st, p));
         bump(st, "outcomes", "bought-prisoners");
+        askToJoin(st, p, fresh, `You paid for their freedom.`);
         resume(st, p);
-        return `Paid ${planText(pl)}. ${names([...held, ...fresh])} join the team.`;
+        return `Paid ${planText(pl)}.${held.length ? ` ${names(held)} ${held.length === 1 ? "joins" : "join"} the team.` : ""}${fresh.length ? ` ${names(fresh)} ${fresh.length === 1 ? "asks" : "ask"} to come with you.` : ""}`;
       },
     },
     { label: "Leave them", hint: "Move on", resolve: (st) => { resume(st, p); return "You leave the column behind."; } },
@@ -970,11 +1000,14 @@ function afterFight(state, p, c, text) {
     return;
   }
   p.phase = "engaged";
-  p.conflictResume = "out";
+  // Found while camping or working on the spot (fieldheat.js): carry on with that; otherwise the trip.
+  const still = c.resumePhase === "task" && p.task ? "task" : c.resumePhase === "waiting" ? "waiting" : "out";
+  p.conflictResume = still;
   addCard(state, {
     title: "After the fight", text, partyId: p.id, where: tileLabel(state, partyTile(p)),
     choices: [
-      { label: `Continue to ${tileLabel(state, p.dest)}`, hint: "Carry on with the original trip", resolve: (st) => { resume(st, p); return ""; } },
+      still === "out" ? { label: `Continue to ${tileLabel(state, p.dest)}`, hint: "Carry on with the original trip", resolve: (st) => { resume(st, p); return ""; } }
+        : { label: still === "task" ? "Carry on here" : "Wait here", hint: still === "task" ? "Back to what the team was doing on this tile (it is still drawing attention: Heat)" : "The team reports in for orders", resolve: (st) => { resume(st, p); return ""; } },
       { label: "Return home", hint: "Head back to base with the wounded and whatever was won", resolve: (st) => { delete p.conflictResume; startReturn(st, p); return "The team heads home."; } },
       { label: "Stop and wait for orders", hint: "Choose what the team does next", resolve: (st) => { delete p.conflictResume; awaitOrders(st, p, ""); return ""; } },
     ],
@@ -1043,15 +1076,17 @@ function victoryRewards(state, p, c, result) {
     }
     const fresh = [];
     for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(state, p));
-    if (fresh.length) out.push(`${names(fresh)} ${fresh.length === 1 ? "asks" : "ask"} to come with you, and join the team.`);
+    if (fresh.length) out.push(`${names(fresh)} ${fresh.length === 1 ? "asks" : "ask"} to come with you.`);
+    askToJoin(state, p, fresh, "The robbers' victims are free.");
     out.push(`The robbers' haul: ${addCargo(state, p, "food", rng.int(6, 14))} food, ${addCargo(state, p, "scrap", rng.int(4, 10))} scrap.`);
   } else if (c.type === "prisoners") {
     const held = (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s));
     for (const s of held) freeCaptive(state, s, p);
     const fresh = [];
     for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(state, p));
-    const all = [...held, ...fresh];
-    if (all.length) out.push(`Freed: ${names(all)}. They join the team.`);
+    if (held.length) out.push(`Freed: ${names(held)}, back with the team.`);
+    if (fresh.length) out.push(`${held.length ? "The other prisoners" : "The prisoners"}, ${names(fresh)}, ${fresh.length === 1 ? "asks" : "ask"} to come with you.`);
+    askToJoin(state, p, fresh, "Freed from the prisoner column.");
   } else if (c.type === "camp" || c.type === "ambush" || c.type === "roadblock" || c.type === "checkpoint" || c.type === "zealotpatrol" || c.type === "challenge") {
     if (result && result.tactical) {
       // Fought on the map: the dead were there to search (the loot screen, or "Take all"), and that is the loot.
@@ -1072,11 +1107,16 @@ function victoryRewards(state, p, c, result) {
     if (victim) {
       changeGoodwill(state, victim, 12, "you saved their people");
       out.push(`The survivors are ${victim.name} people. They will remember this.`);
-      if (rng.chance(0.3)) out.push(`${newRecruit(state, p).name} stays with you anyway.`);
+      if (rng.chance(0.3)) {
+        const s = newRecruit(state, p);
+        out.push(`${s.name} asks to stay with you anyway.`);
+        askToJoin(state, p, [s], `${s.name} would rather stay with you than go back to ${victim.name}.`);
+      }
     } else {
       const fresh = [];
       for (let i = 0; i < (c.strangers || 1); i++) fresh.push(newRecruit(state, p));
-      out.push(`The survivors, ${names(fresh)}, join the team.`);
+      out.push(`The survivors, ${names(fresh)}, ask to join the team.`);
+      askToJoin(state, p, fresh, "You cut them out of the swarm.");
     }
   } else if (c.type === "skirmish") {
     const helped = factionById(state, c.helpedId);

@@ -21,6 +21,12 @@ export const SUPPLIES = {
   ammo:  { name: "Ammo",  value: 0.5, weight: 0.05 },
   parts: { name: "Parts", value: 8,   weight: 1 },
   scrap: { name: "Scrap", value: 1,   weight: 1 },
+  // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
+  // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
+  // are what the preserving kitchen fills: found in kitchens, shops and farms, and most come back when the food
+  // in them is eaten at a base.
+  preserved: { name: "Preserved food", value: 4, weight: 0.6 },
+  jars:  { name: "Jars",  value: 0.5, weight: 0.4 },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 
@@ -70,11 +76,11 @@ export const GEAR = {
 // (0 quiet countryside … 3 hospitals, prisons and military bases); richness = starting loot (urban sites are richer).
 // The buildings a raid map gets per type are in combat.js (AREA_SETS).
 export const LOCATIONS = {
-  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 1, ammo: 1, fuel: 0.3 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet"], richness: 0.6 },
+  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 1, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet"], richness: 0.6 },
   city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 2, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun"], richness: 1.0 },
-  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1 }, gear: ["huntrifle", "machete"], richness: 0.5 },
+  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete"], richness: 0.5 },
   gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol"], richness: 0.4 },
-  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 1, parts: 1 }, gear: ["knife", "machete", "backpack"], richness: 0.9 },
+  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 1, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack"], richness: 0.9 },
   hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 5, scrap: 1, parts: 1 }, gear: ["surgkit"], richness: 0.8 },
   police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 1, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet"], richness: 0.7 },
   military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 1 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack"], richness: 1.1 },
@@ -87,30 +93,30 @@ export const LOCATIONS = {
   // City blocks: lootier, and more of the dead.
   autoshop:    { name: "Auto shop",          glyph: "Au", cat: "urban", danger: 2, loot: { parts: 4, fuel: 1, scrap: 3 }, gear: ["crowbar", "spikedbat", "kneeguards"], richness: 0.7 },
   pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit"], richness: 0.8 },
-  supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 1, scrap: 1 }, gear: ["knife"], richness: 0.95 },
+  supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 1, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife"], richness: 0.95 },
   gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards"], richness: 0.85 },
   hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards"], richness: 0.8 },
-  apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, ammo: 1 }, gear: ["knife", "pistol", "bikehelmet", "backpack"], richness: 0.8 },
+  apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack"], richness: 0.8 },
   office:      { name: "Office tower",       glyph: "O",  cat: "urban", danger: 2, loot: { scrap: 3, water: 2, parts: 1, meds: 1 }, gear: ["backpack"], richness: 0.6 },
-  school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2 }, gear: ["sportspads", "footballhelmet", "backpack"], richness: 0.6 },
+  school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, jars: 0.25 }, gear: ["sportspads", "footballhelmet", "backpack"], richness: 0.6 },
   firestation: { name: "Fire station",       glyph: "Fs", cat: "urban", danger: 2, loot: { meds: 3, fuel: 0.8, parts: 2, scrap: 1 }, gear: ["bikehelmet", "crowbar", "bandagekit"], richness: 0.7 },
-  warehouse:   { name: "Warehouse district", glyph: "W",  cat: "urban", danger: 2, loot: { scrap: 4, food: 3, parts: 2, fuel: 0.4 }, gear: ["crowbar"], richness: 0.9 },
+  warehouse:   { name: "Warehouse district", glyph: "W",  cat: "urban", danger: 2, loot: { scrap: 4, food: 3, parts: 2, fuel: 0.4, jars: 0.5 }, gear: ["crowbar"], richness: 0.9 },
   // Small-town shops and services (police stations, auto shops, gas stations and pharmacies stand in towns too).
-  grocery:     { name: "Grocery store",      glyph: "Gr", cat: "town",  danger: 1, loot: { food: 5, water: 2, meds: 1, scrap: 1 }, gear: ["knife"], richness: 0.6 },
-  diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1 }, gear: ["knife"], richness: 0.5 },
-  motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 1, scrap: 2, ammo: 1 }, gear: ["pistol", "knife", "backpack"], richness: 0.5 },
-  church:      { name: "Church",             glyph: "†",  cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1, scrap: 1 }, gear: ["bandagekit"], richness: 0.45 },
+  grocery:     { name: "Grocery store",      glyph: "Gr", cat: "town",  danger: 1, loot: { food: 5, water: 2, meds: 1, scrap: 1, preserved: 1, jars: 0.75 }, gear: ["knife"], richness: 0.6 },
+  diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.75 }, gear: ["knife"], richness: 0.5 },
+  motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 1, scrap: 2, ammo: 1, jars: 0.25 }, gear: ["pistol", "knife", "backpack"], richness: 0.5 },
+  church:      { name: "Church",             glyph: "†",  cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1, scrap: 1, jars: 0.75 }, gear: ["bandagekit"], richness: 0.45 },
   clinic:      { name: "Clinic",             glyph: "Cl", cat: "town",  danger: 1, loot: { meds: 4, water: 1, scrap: 1 }, gear: ["surgkit", "bandagekit"], richness: 0.55 },
-  feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1 }, gear: ["machete", "huntrifle"], richness: 0.5 },
+  feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1, jars: 1 }, gear: ["machete", "huntrifle"], richness: 0.5 },
   // Countryside: sparse, quiet and poorer, often off the road.
-  barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2 }, gear: ["machete", "pipespear"], richness: 0.35 },
-  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3 }, gear: ["huntrifle", "shotgun", "machete"], richness: 0.55 },
-  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 1 }, gear: ["huntrifle", "machete", "waterfilter"], richness: 0.35 },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 1 }, gear: ["huntrifle", "shotgun", "machete"], richness: 0.55 },
+  barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "pipespear"], richness: 0.35 },
+  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete"], richness: 0.55 },
+  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 1, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter"], richness: 0.35 },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 1, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete"], richness: 0.55 },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1 }, gear: ["knife", "pipespear", "waterfilter", "backpack"], richness: 0.4 },
   ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 2, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit"], richness: 0.5 },
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: [], richness: 0.4 },
-  truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2 }, gear: ["pistol", "shotgun"], richness: 0.7 },
+  truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2, preserved: 0.5 }, gear: ["pistol", "shotgun"], richness: 0.7 },
   crashsite:   { name: "Crash site",         glyph: "X",  cat: "rural", danger: 1, loot: { scrap: 4, parts: 2, fuel: 0.8, meds: 1 }, gear: ["pistol", "vest"], richness: 0.6 },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.

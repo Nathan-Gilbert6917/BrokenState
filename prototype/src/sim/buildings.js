@@ -2,11 +2,14 @@
 import { log, atBase, skill, newId } from "./world.js";
 import { SKILL_NAMES } from "./data.js";
 import { workFactor } from "./health.js";
+import { storeCapacity, storeSpaces } from "./storage.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
   meds:  { name: "Meds",  in: { scrap: 2, food: 1 }, out: { meds: 1 },  skill: "medicine",  desc: "2 scrap + 1 food → 1 meds per day (+1 with Medicine 8+, +1 with a staffed Clinic or better here)" },
   parts: { name: "Parts", in: { scrap: 6 },          out: { parts: 1 }, skill: "mechanics", minSkill: 4, desc: "6 scrap → 1 part per day (Mechanics 4+, otherwise half the time it fails)" },
+  // storage.js: jarred food barely spoils and needs no cellar room; the jars come back when it is eaten at a base.
+  preserve: { name: "Preserving", in: { food: 9, water: 3, scrap: 1, jars: 4 }, out: { preserved: 8 }, skill: "farming", desc: "9 fresh food + 3 water + 1 scrap (stove fuel, lids) + 4 empty jars → 8 preserved food per day (9 with Farming 8+). Preserved food barely spoils, needs no cellar room, is lighter to carry and sells well; most jars come back when it is eaten here." },
 };
 
 export const BUILDINGS = {
@@ -28,12 +31,16 @@ export const BUILDINGS = {
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
   relay:        { name: "Radio relay",    cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
   garage:       { name: "Garage",         cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed." },
-  storehouse:   { name: "Storehouse",     cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked storage: raiders steal half as much from this base, and stored food spoils 25% slower." },
+  storehouse:   { name: "Storehouse",     cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked dry-goods store: +150 food storage room (0.8% a day, less in the cold), and raiders steal half as much from this base." },
   // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
   well:         { name: "Well",           cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
   rain_catcher: { name: "Rain catcher",   cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
   cistern:      { name: "Cistern",        cost: { scrap: 25 },            hours: 30, max: 3, desc: "+150 water capacity (the hub holds 80 without one, an outpost 40)." },
-  cellar:       { name: "Root cellar",    cost: { scrap: 15 },            hours: 20, max: 1, desc: "Cool storage: stored food spoils half as fast." },
+  // Food storage (storage.js): room for fresh food; food above the room is stored outside and spoils fast.
+  cellar:       { name: "Root cellar",    cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 food storage room underground: food in a cellar spoils slowly (0.5% a day, 0.3% in the cold). The hub already has a small cellar (200), an outpost only a pantry (40); food above the room is stored outside and spoils fast (3% a day, more in heat and rain)." },
+  coldstore:    { name: "Cold store",     cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
+  kitchen:      { name: "Preserving kitchen", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
+  smoker:       { name: "Drying rack",    cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   greenhouse:   { name: "Greenhouse",     cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Hospital tiers (family "hospital"): each one upgrades the one below and replaces it when finished.
   // med: beds = patients that get the bonus, heal = extra health per day in a bed, eff = meds multiplier,
@@ -121,6 +128,7 @@ export function recipeOutput(s, recipe, base = null, state = null) {
     if (recipe === "ammo") q = Math.round(v * (1 + skill(s, "mechanics") * 0.04));
     if (recipe === "meds" && skill(s, "medicine") >= 8) q += 1;
     if (recipe === "meds") q += hospitalCraft(state, base);
+    if (recipe === "preserve" && skill(s, "farming") >= 8) q += 1;
     out[k] = q;
   }
   return out;
@@ -149,6 +157,7 @@ export function runStations(state, base) {
     for (const [k, v] of Object.entries(r.in)) base.stock[k] -= v;
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
     for (const [k, v] of Object.entries(status.out)) base.stock[k] = (base.stock[k] || 0) + v;
+    if (r.in.jars) base.jarsInUse = (base.jarsInUse || 0) + r.in.jars; // filled jars (storage.js)
   }
 }
 
@@ -222,7 +231,8 @@ export function buildingSummary(state, base) {
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
     ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],
     ["Water", `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
-    ["Food keeping", count(base, "cellar") && count(base, "storehouse") ? "Cellar and storehouse: spoils 62% slower" : count(base, "cellar") ? "Root cellar: spoils half as fast" : count(base, "storehouse") ? "Storehouse: spoils 25% slower" : "Spoils about 1.2% a day"],
+    ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
+    ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} kitchen${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
     ["Medical", (() => {
       const h = base.buildings.find((x) => BUILDINGS[x.type].family === "hospital");
       if (!h) return "No hospital (severe wounds heal slowly)";

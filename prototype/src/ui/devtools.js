@@ -6,7 +6,7 @@ import { FACTION_TYPES } from "../sim/data.js";
 import { strength } from "../sim/factions.js";
 import { hiveTracker } from "../sim/hives.js";
 import { view } from "./render.js";
-import { PERSONALITIES, autopilotPersonality, autopilotSummary } from "../sim/autopilot.js";
+import { PERSONALITIES, autopilotPersonality, autopilotSummary, reserveText } from "../sim/autopilot.js";
 
 export const DEV_SPEEDS = [10, 50, 200]; // 200×: a day in about 0.4 seconds
 const INFECTED = 0.6; // a tile counts as a hotzone at this infection or more (about the worst 15% at the start)
@@ -73,7 +73,7 @@ export function renderDevPanel(state, ui) {
       ${box("dev-infection", "Infection overlay", view.layers.has("infection"), "Zombie hotzones (same as the I key)")}
       ${box("dev-autopilot", "Autopilot: the AI runs your holdout (P)", !!state.autopilot, "An AI governor takes over: roles, building, crafting, medicine, trips, supply runs, outposts, every card and battle. Its moves show in the log with 🤖. Turn it off to take control back as things stand.")}
       <div class="row">Style ${Object.entries(PERSONALITIES).map(([k, p]) => `<button data-action="dev-persona" data-v="${k}" class="${autopilotPersonality(state) === k ? "active" : ""}" title="${esc(p.desc)}">${p.name}</button>`).join("")}</div>
-      ${state.autopilot ? `<div class="muted small">🤖 ${esc(autopilotSummary(state))}</div>` : ""}
+      ${state.autopilot ? `<div class="muted small" title="${esc(reserveText(state))}">🤖 ${esc(autopilotSummary(state))}</div>` : ""}
       <div class="row">Fast forward ${DEV_SPEEDS.map((s) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}">${s}×</button>`).join("")}</div>
       ${box("dev-fps", "Show FPS", !!ui.showFps, "A small overlay in the map's corner: frames per second and frame time (average and worst over the last second), script time per frame, and simulation ticks per second.")}
       <div class="row"><button data-action="tl-open" data-from="dev" title="Replay the game so far, sped up with the fog of war off (ui/timelapse.js). The game is paused while it plays; Close comes back here.">Timelapse so far</button></div>

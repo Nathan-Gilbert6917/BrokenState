@@ -147,7 +147,7 @@ export function searchHour(state) {
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now)
+    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (qty > 0) {
       e.found.supplies[key] = (e.found.supplies[key] || 0) + qty;
       finds.push(`${qty} ${key}`);

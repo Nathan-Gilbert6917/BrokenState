@@ -20,6 +20,8 @@ import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, v
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, routeCheck } from "./ui/ui.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
+import { commandable, NO_RADIO } from "./sim/plans.js";
+import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts } from "./ui/plan.js";
 import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatAction, cui } from "./ui/combat.js";
@@ -344,7 +346,8 @@ function autofill(pl) {
   const h = hub(state);
   const ids = [...pl.crew];
   const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance });
+  // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip.
+  const est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance });
   view.preview = est ? est.path : null;
   if (!est) return;
   const n = Math.max(1, ids.length);
@@ -497,7 +500,7 @@ const actions = {
   "xp-orderstoggle": () => { ui.ordersCollapsed = !ui.ordersCollapsed; },
   "xp-order": (d) => {
     const p = partyById(d.id);
-    if (!p || !contactable(p)) return;
+    if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
     const o = { type: d.type };
     if (d.mission) o.mission = d.mission;
     if (d.type === "camp") o.hours = d.hours ? Number(d.hours) : null;
@@ -575,7 +578,7 @@ const actions = {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies } });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl) });
     if (res.error) { ui.plannerError = res.error; return; }
     ui.planner = null;
     view.preview = null;
@@ -585,6 +588,8 @@ const actions = {
     const c = card && card.choices[Number(d.i)];
     if (!c) return;
     state.cards.shift();
+    // Answering a team's card is a moment of contact: orders from its panel work for the rest of this hour.
+    if (card.partyId != null) { const cp = partyById(card.partyId); if (cp) cp.contactHour = state.hour; }
     const text = c.resolve(state);
     if (Parties.pruneCards) Parties.pruneCards(state); // cards about a team or person that is gone now (parties.js)
     if (c.uiAction && c.uiAction.type === "move") {
@@ -636,7 +641,9 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-auto", "cb-close"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close"]) actions[k] = (d) => combatAction(state, k, d);
+// The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
+for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!ui.planner) return; fn(state, ui, d); autofill(ui.planner); ui.plannerError = ""; };
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
@@ -758,6 +765,7 @@ const changeActions = {
   },
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -905,6 +913,7 @@ window.addEventListener("mouseup", (e) => {
 // keeps the mode on, so the team is not left standing with the clock running.
 function pickMove(p, id) {
   let msg, ok;
+  if (!commandable(state, p)) { ui.moveMsg = NO_RADIO; if (ui.expedition === p.id) ui.xpMsg = NO_RADIO; return; } // radio rule (plans.js)
   if (ui.moveQueue) {
     const from = queueEndTile(state, p);
     ok = id !== from && !!planPath(state, from, id, p.vehicle);
@@ -933,7 +942,7 @@ canvas.addEventListener("contextmenu", (e) => {
   view.selected = id;
   const t = state.tiles[id];
   const acts = tileActions(state, id);
-  const waiting = state.parties.filter((p) => contactable(p));
+  const waiting = state.parties.filter((p) => contactable(p) && commandable(state, p)); // radio rule (plans.js)
   const own = state.bases.some((b) => b.tile === id);
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
@@ -970,6 +979,16 @@ actions.ctxmove = (d) => {
   endMoveMode(); // the menu's move replaces a pick that was still open
   hideCtx();
 };
+// Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
+// cards it raises (answering one opens contact for that hour) or once it is back in coverage.
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "ctxmove", "ctxcross"]) {
+  const fn = actions[k];
+  actions[k] = (d) => {
+    const p = partyById(d.id);
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    return fn(d);
+  };
+}
 
 // Team panel actions: start now if the team is waiting or working on the spot (unless queue mode is on in its
 // panel), otherwise add to the end of its queue. Nothing here touches the speed: an order given while the game

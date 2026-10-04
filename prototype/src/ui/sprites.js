@@ -352,7 +352,7 @@ export function zombieVariant(u, seed, look = zlook) {
   if (look.variants === "walkers") return "walker";
   if (look.variants === "mixed") return rng.pick(["walker", "walker", "runner", "bloated", "brute"]);
   const power = u.power ?? ((u.maxHp || 22) - 15) / 7;
-  if (u.mob >= 3) return rng.pick(["runner", "runner", "runner", "brute", "walker"]); // really fast (ZOMBIE_FAST in combat.js)
+  if (u.mob >= 4) return rng.pick(["runner", "runner", "runner", "brute", "walker"]); // really fast (ZOMBIE_FAST = 4 in combat.js; ordinary dead move 3)
   const odds = VARIANT_ODDS.find(([min]) => power >= min)[1];
   let roll = rng.next();
   for (let i = 0; i < 4; i++) { roll -= odds[i]; if (roll < 0) return ZOMBIE_VARIANTS[i]; }

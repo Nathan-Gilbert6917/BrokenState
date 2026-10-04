@@ -94,3 +94,28 @@ Reading:
 
 ## Review suggestions the requests above already decide
 Difficulty (hub cannot fall, raids and hordes too weak), walls against hordes, stock piling up, water unused at bases, meds unused, loot never regrowing, trade route exploits.
+
+---
+
+# Batch 3 (requested 2026-10-03, after suggestions-2.md)
+
+User's words:
+> Add a settings view with Save, Load, save and exit game
+> Skill growth with use and teaching (add book items that can be read to learn skills)
+> Add a production order until x and add optional for quality
+> Add a diary which shows logs day by day
+> Add Manuals and blueprints that can be recovered
+> Add some perks at skill milestones maybe a skill tree with different options to choose from
+> Add #3, #4, #5, #11, #12, #13, #14, #15, #22, #24, #25, #16 (Alliance must control over half the map all groups left are part of the alliance and all hives are gone)
+> Friendly groups have a wants list and show surplus
+> Add event hub tasks to handle things breaking like a well pump etc
+> Add events like seeing a helicoptor/plane crash and see a general area on the map where it occurred, send a recon to find it and explore it.
+> Add the ability to pick locks (add locked boxes, lockers, doors, etc)
+> Set a steward that will auto run a base and survivors in the base and be able to take over at any time.
+
+Numbers refer to docs/suggestions-2.md.
+
+Plan (waves, so agents don't collide in the same files):
+- Wave 1: skills (growth, teaching, books, perks/skill tree) · production orders + quality + power (#5) + steward per base · diary + alerts/log/hotkeys (#22) + roster table (#24) · map performance (#25) · relationships/service record/memorial (#3) + mood effects (#4)
+- Wave 2: exploration (manuals/blueprints, lockpicking and locked containers, crash events with a search area, hub breakdown tasks) · combat (#11 knock-outs and prisoners, #12 stealth kit, #13 deploy phase) · diplomacy (#14 jobs, #15 group wars, #16 alliance victory, wants/surplus lists)
+- Wave 3: settings view with Save / Load / Save and exit (last, so it captures every system's state)

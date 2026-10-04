@@ -4,8 +4,10 @@
 import {
   CROPS, CROP_KEYS, farmOf, careToday, expectedYield, daysToRipe, plotWeatherNote, plantCheck, bestCrop, plantPlot,
   harvestPlot, clearPlot, setPlotWant, setAutoReplant, plotLimit, greenhouseLimit, siteFarm, farmers, recentGrowth,
+  cropForecast, winterOutlook,
 } from "../sim/farming.js";
-import { foodOutlook, waterOutlook, spoilRate, RATION, RATION_DAYS } from "../sim/economy.js";
+import { foodOutlook, waterOutlook, RATION, RATION_DAYS } from "../sim/economy.js";
+import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
@@ -22,14 +24,27 @@ const SEASON_NAMES = { spring: "Spring", summer: "Summer", autumn: "Autumn", win
 // Food: the forecast line that replaces "food per day".
 export function foodLine(state, b) {
   const o = foodOutlook(state, b);
+  const sl = storeLine(state, b);
   const next = o.harvests[0];
-  const text = `${n0(o.stock)} in store · eaten ${n1(o.eat)}/day · spoils ${n1(o.spoil)}/day${o.used ? ` · workshops ${n1(o.used)}/day` : ""} · ${days(o.daysLeft)} days left without harvests`;
+  const text = `${n0(o.stock)} in store (${n0(o.fresh)} fresh + ${n0(o.preserved)} preserved) · eaten ${n1(o.eat)}/day · spoils ${n1(o.spoil)}/day${o.used > 0.05 ? ` · workshops ${n1(o.used)}/day` : ""} · ${days(o.daysLeft)} days left without harvests`;
   const nextText = next ? `next harvest: ${next.name} in ${next.inDays} day${next.inDays === 1 ? "" : "s"} (~${n0(next.food)} food)` : "nothing growing";
-  const why = `Crops do not give food every day: each plot is harvested once, when it ripens (Farming tab). ${text}. Expected from the plots over the next 30 days: about ${n1(o.farm)} a day. ${nextText}.${b.rationing ? ` On short rations (${Math.round(RATION * 100)}%): under ${RATION_DAYS} days of food.` : ""} Loot brought home by teams and convoys comes on top.`;
-  const cls = o.daysLeft < 7 ? "danger" : o.daysLeft < 20 ? "" : "good";
+  const why = `Crops do not give food every day: each plot is harvested once, when it ripens (Farming tab). ${text}. Fresh food ${sl.short}. Expected from the plots over the next 30 days: about ${n1(o.farm)} a day. ${nextText}.${b.rationing ? ` On short rations (${Math.round(RATION * 100)}%): under ${RATION_DAYS} days of food.` : ""}${o.store.outside >= 1 ? " The stores are full: food stored outside spoils fast." : ""} Loot brought home by teams and convoys comes on top. ${sl.tip}`;
+  const cls = o.daysLeft < 7 || o.store.outside >= 1 ? "danger" : o.daysLeft < 20 ? "" : "good";
   return { cls, short: `${days(o.daysLeft)}d · ${next ? `${next.name} in ${next.inDays}d` : "no crops"}`, text: `${text}; ${nextText}`, tip: why };
 }
 export const foodCellHtml = (state, b) => { const f = foodLine(state, b); return `<div class="${f.cls}"${tip(f.tip)}>${esc(f.short)}</div>`; };
+// Food storage for the base panel: "in cellar 180/200, outside 40 (spoiling 2.3/day)" and the preserved stock.
+export const storeCellHtml = (state, b) => { const sl = storeLine(state, b); return `<div class="${sl.cls}"${tip(sl.tip)}>${esc(sl.short)}<div class="small muted">${esc(sl.pres)}</div></div>`; };
+
+// The winter outlook (farming.js winterOutlook), one line: food to reach the first spring harvest against what
+// is in store and in the ground.
+export function winterLine(state, b) {
+  const w = winterOutlook(state, b);
+  const firstHarvest = w.gap.end + 1;
+  const tipText = `Planning figure for ${b.name}: from today to the first spring harvest (around day ${firstHarvest}; winter starts on day ${w.gap.start + 1}) the ${w.people} here eat about ${w.need} (more in the cold) and about ${w.spoil} spoils on the way. In store: ${w.have}. The crops in the ground (and one more sowing of the free plots) should bring about ${w.crops}, by the usual weather and the chance they survive. Seed for the spring sowing: ${w.seed}. ${w.short > 0 ? `Short by about ${w.short}${w.runsOut != null ? `: the food runs out around day ${w.runsOut + 1}` : ""}.` : `About ${Math.max(0, w.end)} to spare.`} Loot, trade and crops sown later come on top. Keep the winter stock in a cellar (or preserve it): food stored outside spoils fast.`;
+  const text = w.short > 0 ? `short by ~${w.short} (runs out ~day ${(w.runsOut ?? w.gap.end) + 1})` : `enough (~${Math.max(0, w.end)} to spare)`;
+  return { w, text: `${text} · need ~${w.need} to day ${firstHarvest}`, tip: tipText, cls: w.short > 0 ? "danger" : "good" };
+}
 
 export function waterLine(state, b) {
   const o = waterOutlook(state, b);
@@ -94,22 +109,30 @@ export function baseFarming(state, b) {
     </tr>`;
   }).join("");
   const harvests = fo.harvests.slice(0, 4).map((h) => `${esc(h.name)} in ${h.inDays}d (~${n0(h.food)})`).join(", ");
+  const sl = storeLine(state, b);
+  const wl = winterLine(state, b);
+  const today = Math.floor(state.hour / 24);
   const guide = CROP_KEYS.map((k) => {
     const c = CROPS[k], cl = c.climate;
     const g = recentGrowth(state, k, false);
-    return `<tr${tip(c.desc)}><td><b>${esc(c.name)}</b></td><td>${c.days}</td><td>${c.yield}</td><td>${c.seed}</td><td>${c.water}</td><td class="small">${cl.seasons.map((x) => SEASON_NAMES[x]).join(", ")}</td>
-      <td>${Math.round(cl.hardy * 100)}%</td><td>${Math.round((1 - cl.thirst) * 100)}%</td><td>${Math.round(c.heatTol * 100)}%</td><td>${c.spoil}d</td><td>${Math.round(g * 100)}%</td></tr>`;
+    const fc = cropForecast(k, false, today);
+    const sowable = cl.seasons.includes(s ? s.key : "summer") && (!c.sowIn || c.sowIn.includes(s ? s.key : "summer"));
+    const sow = !sowable ? "<span class='muted'>not now</span>" : isFinite(fc.days) ? `<span class="${fc.survival < 0.5 ? "danger" : ""}">~${fc.days}d, ${Math.round(fc.survival * 100)}%</span>` : "<span class='muted'>won't ripen</span>";
+    return `<tr${tip(c.desc)}><td><b>${esc(c.name)}</b></td><td>${c.days}</td><td>${c.yield}</td><td>${c.seed}</td><td>${c.water}</td><td class="small">${cl.seasons.map((x) => SEASON_NAMES[x]).join(", ")}${c.sowIn ? ` <span class="muted">(sow in ${c.sowIn.map((x) => SEASON_NAMES[x].toLowerCase()).join(", ")})</span>` : ""}</td>
+      <td>${Math.round(cl.hardy * 100)}%</td><td>${Math.round((1 - cl.thirst) * 100)}%</td><td>${Math.round(c.heatTol * 100)}%</td><td>${c.spoil}d</td><td>${c.store === "preserved" ? "preserved" : "fresh"}</td><td>${Math.round(g * 100)}%</td><td class="small">${sow}</td></tr>`;
   }).join("");
   return `<div class="grid2">
     <div>
       <h3>Outlook</h3>
       <div class="kv small">
         <div${tip(wxTip)}>Season</div><div${tip(wxTip)}>${esc(wx || (s ? s.name : ""))}</div>
-        <div>Food in store</div><div class="${fo.daysLeft < 7 ? "danger" : ""}">${n0(fo.stock)}${b.rationing ? " · <b>short rations</b>" : ""}</div>
+        <div>Food in store</div><div class="${fo.daysLeft < 7 ? "danger" : ""}">${n0(fo.stock)} <span class="muted">(${n0(fo.fresh)} fresh + ${n0(fo.preserved)} preserved)</span>${b.rationing ? " · <b>short rations</b>" : ""}</div>
+        <div${tip(sl.tip)}>Storage</div><div class="${sl.cls}"${tip(sl.tip)}>${esc(sl.short)}<div class="small muted">${esc(sl.pres)}</div></div>
         <div${tip("What everyone living here eats a day (more in the cold)")}>Eaten</div><div>${n1(fo.eat)} a day</div>
-        <div${tip(`Stored food spoils ${n1(spoilRate(state, b) * 100)}% a day now (more as the pile grows, less in the cold). A storehouse keeps it 25% better, a root cellar 50%.`)}>Spoiling</div><div>${n1(fo.spoil)} a day</div>
+        <div${tip(`Fresh food spoils ${n1(fo.store.rate * 100)}% a day on average now (by where it is stored), preserved food ${n1(fo.store.presRate * 100)}%. ${sl.tip}`)}>Spoiling</div><div class="${fo.store.outside >= 1 ? "danger" : ""}">${n1(fo.spoil)} a day${fo.store.outside >= 1 ? ` (${n1(fo.store.outLoss)} of it outside)` : ""}</div>
         <div${tip("Days the stock lasts at today's rate, with no harvests and no loot")}>Days of food</div><div class="${fo.daysLeft < 7 ? "danger" : fo.daysLeft < 20 ? "" : "good"}">${days(fo.daysLeft)}</div>
         <div>Next harvests</div><div>${harvests || "<span class='muted'>nothing growing</span>"}</div>
+        <div${tip(wl.tip)}>Winter outlook</div><div class="${wl.cls}"${tip(wl.tip)}>${esc(wl.text)}</div>
         <div${tip(waterLine(state, b).tip)}>Water</div><div class="${waterLine(state, b).cls}">${esc(waterLine(state, b).short)}</div>
       </div>
       <h3>Farmers</h3>
@@ -127,12 +150,13 @@ export function baseFarming(state, b) {
     <div>
       <h3>How farming works</h3>
       <div class="small muted">A crop takes days to ripen (slower in cold or dry weather, not at all out of season) and is harvested in one go. Seed costs a little food. Frost, storms, drought and heat can kill a standing crop; wet weather rots a ripe one, and a ripe crop not harvested within its window is lost. Growing crops need watering on dry days (people drink first). More plots: Farm plot (+2), Greenhouse (+2 under glass, grows in winter).</div>
+      <div class="small muted" style="margin-top:0.35rem"><b>Winter:</b> nothing grows outdoors in winter and the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored before it. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans are threshed or dried and go into the preserved stock. Fresh food fills the cellar first and spoils fast once it is stored outside: build root cellars, a storehouse or a cold store, and preserve the surplus (Preserving kitchen with jars, Drying racks).</div>
     </div>
   </div>
   <h3>Plots</h3>
   <table class="t"><tr><th>#</th><th>Crop</th><th>Stage</th><th>Ripe in</th><th${tip("Food at harvest from the care so far (farmers, skill, ground)")}>Yield</th><th>Weather</th><th>Next crop</th><th></th></tr>${rows}</table>
   <h3>Crop guide</h3>
-  <table class="t small"><tr><th>Crop</th><th${tip("Growing days at full growth")}>Days</th><th${tip("Food per plot at care ×1")}>Yield</th><th>Seed</th><th${tip("Water per plot on a dry day")}>Water</th><th>Seasons</th><th>Frost</th><th>Drought</th><th>Heat</th><th${tip("Days a ripe crop keeps in the field")}>Keeps</th><th${tip("Growth over the last week outdoors")}>Growth</th></tr>${guide}</table>`;
+  <table class="t small"><tr><th>Crop</th><th${tip("Growing days at full growth")}>Days</th><th${tip("Food per plot at care ×1")}>Yield</th><th>Seed</th><th${tip("Water per plot on a dry day")}>Water</th><th>Seasons</th><th>Frost</th><th>Drought</th><th>Heat</th><th${tip("Days a ripe crop keeps in the field")}>Keeps</th><th${tip("Where the harvest goes: fresh food (cellar, spoils) or the preserved stock (dry grain and beans: barely spoils, no cellar room)")}>Store</th><th${tip("Growth over the last week outdoors")}>Growth</th><th${tip("Sown outdoors today: about how many days until it is ripe and the chance it lives that long, by the usual weather for the time of year (frost, storms, heat)")}>Sow now</th></tr>${guide}</table>`;
 }
 
 // ---------- actions ----------

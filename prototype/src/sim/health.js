@@ -18,10 +18,11 @@
 //   - contagion: each contagious case at a base passes it on with its own chance per person (x1.6 crowded,
 //     x0.4 in quarantine); medics catch it half again as often (treating the sick).
 import { log, addCard, alive, atBase, residents, skill, hurt, day, baseById } from "./world.js";
-import { activeHospital } from "./medical.js";
+import { activeHospital, careCtx, pickTreater, noTimeReason, nextDayText, spendMedicTime, autoCare, autoCareOn } from "./medical.js";
 import * as Weather from "./weather.js";
 import { GEAR } from "./data.js";
 import { count, baseBeds } from "./buildings.js";
+import { crowding } from "./morale.js";
 
 // sev = starting severity [min, max]; drift = change per day untreated (before rest and care);
 // hp = health lost per day at severity 100; work = how much they can work at severity 100 (1 = fully);
@@ -65,6 +66,19 @@ export function workFactor(s) {
   return Math.max(0, Math.round(f * 100) / 100);
 }
 
+// Below this work factor someone is too ill to work: they leave a workshop station and take a hospital bed
+// (medical.bedReason). Quarantine is left out here: it keeps people from work, not in bed.
+export const WORK_STOP = 0.35;
+export const tooIllToWork = (s) => !!s && s.alive && conditionsOf(s).length > 0 && workFactor({ conditions: conditionsOf(s) }) < WORK_STOP;
+
+// How dangerous a condition is (for "worst off first" in beds and automatic care): health it costs, pneumonia
+// above everything, and some weight for severity.
+export function conditionDanger(c) {
+  const d = CONDITIONS[c.key];
+  if (!d) return 0;
+  return d.hp * c.sev / 100 * 4 + (c.key === "pneumonia" ? 50 : 0) + c.sev * 0.1;
+}
+
 // Gives someone a condition (or makes the one they have worse). Returns the condition, or null.
 export function addCondition(state, s, key, why = "", opts = {}) {
   const d = CONDITIONS[key];
@@ -88,31 +102,38 @@ export function removeCondition(s, key) {
 }
 
 // ---------- treatment ----------
-const lastTreatedToday = (state, c) => c.treatedDay === day(state);
-
-export function treatConditionInfo(state, base, s, key) {
+// One treatment per condition a day, with base meds and a medic's time (medical.js: careCtx, the same medic time
+// as wound treatments). opts.auto = an automatic dose (keeps the base's meds reserve).
+export function conditionInfoCtx(state, base, s, key, ctx) {
   const c = conditionsOf(s).find((x) => x.key === key);
   const d = CONDITIONS[key];
+  const t = ctx ? pickTreater(ctx, 1) : null;
+  const shown = t || (ctx && ctx.treaters[0]) || null;
+  const treatedToday = !!c && !!ctx && c.treatedDay === ctx.day;
   let reason = "";
   if (!s || !s.alive) reason = "Nobody to treat.";
   else if (!c || !d) reason = `${s.name} does not have that.`;
   else if (!base || !residents(state, base.id).includes(s)) reason = `${s.name} is not at ${base ? base.name : "a base"}.`;
-  else if (lastTreatedToday(state, c)) reason = "Already treated today.";
-  else if ((base.stock.meds || 0) < d.meds) reason = `Needs ${d.meds} meds (have ${Math.floor(base.stock.meds || 0)}).`;
+  else if (treatedToday) reason = `Already treated today. Next treatment ${nextDayText(state)}.`;
+  else if (!t) reason = noTimeReason(state, ctx);
+  else if (ctx.meds < d.meds) reason = `Needs ${d.meds} meds (have ${Math.floor(ctx.meds)}).`;
+  else if (ctx.auto && ctx.meds - d.meds < ctx.reserve) reason = `Would take the meds below the reserve of ${ctx.reserve}.`;
   const hosp = base ? activeHospital(state, base) : null;
-  const medSkill = hosp ? hosp.baseSkill : 0;
+  const medSkill = shown ? skill(shown.s, "medicine") : 0;
   const amount = d ? Math.round(d.treat * (hosp ? hosp.eff : 1) * (1 + medSkill * 0.02)) : 0;
-  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev : false };
+  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev : false, treater: t, medic: t ? t.s : null, load: 1, treatedToday };
 }
 
-// One treatment with base meds: the severity drops (cured if it reaches 0) and it does not worsen today.
-export function treatCondition(state, base, survivorId, key) {
-  const s = state.survivors.find((x) => x.id === Number(survivorId));
-  const info = treatConditionInfo(state, base, s, key);
-  if (!info.ok) return info.reason;
+export function treatConditionInfo(state, base, s, key, opts = {}) {
+  return conditionInfoCtx(state, base, s, key, base ? opts.ctx || careCtx(state, base, opts) : null);
+}
+
+// Applies a checked treatment: the severity drops (cured if it reaches 0) and it does not worsen today.
+export function applyCondition(state, base, s, key, info) {
   const c = conditionsOf(s).find((x) => x.key === key);
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   state.medsUsed = (state.medsUsed || 0) + info.cost;
+  spendMedicTime(state, base, info.treater, info.load);
   c.sev -= info.amount;
   c.treatedDay = day(state);
   const name = CONDITIONS[key].name.toLowerCase();
@@ -123,30 +144,32 @@ export function treatCondition(state, base, survivorId, key) {
   return `${s.name}'s ${name} was treated at ${base.name} (${info.cost} meds): severity now ${Math.round(c.sev)}.`;
 }
 
+// One treatment with base meds.
+export function treatCondition(state, base, survivorId, key, opts = {}) {
+  const s = state.survivors.find((x) => x.id === Number(survivorId));
+  const info = treatConditionInfo(state, base, s, key, opts);
+  if (!info.ok) return info.reason;
+  return applyCondition(state, base, s, key, info);
+}
+
 // Meds a base would need today to treat everyone sick here once.
 export function medsToTreatAll(state, base) {
   let n = 0;
-  for (const s of residents(state, base.id)) for (const c of conditionsOf(s)) if (!lastTreatedToday(state, c)) n += CONDITIONS[c.key].meds;
+  for (const s of residents(state, base.id)) for (const c of conditionsOf(s)) if (c.treatedDay !== day(state)) n += CONDITIONS[c.key].meds;
   return n;
 }
 
-// Base setting: treat the sick automatically each day with base meds, keeping a reserve (base.medsReserve).
-export const autoTreatOn = (base) => base.autoTreat !== false;
+// Base setting: automatic care each night (medical.autoCare: wounds and illnesses, worst off first, keeping the
+// base's meds reserve, base.medsReserve, and within the medics' time).
+export const autoTreatOn = autoCareOn;
 
-function autoTreatBase(state, base) {
-  if (!autoTreatOn(base)) return;
-  const reserve = base.medsReserve || 0;
-  const list = [];
-  for (const s of residents(state, base.id)) for (const c of conditionsOf(s)) list.push({ s, c, d: CONDITIONS[c.key] });
-  // Worst first: anything that can kill, then by severity.
-  list.sort((a, b) => b.d.hp * b.c.sev - a.d.hp * a.c.sev || b.c.sev - a.c.sev);
-  for (const { s, c, d } of list) {
-    const urgent = d.hp * c.sev / 100 >= 6 || c.key === "pneumonia";
-    if (!urgent && (c.sev < 30 && c.key !== "cut")) continue;
-    if ((base.stock.meds || 0) - d.meds < (urgent ? 0 : reserve)) continue;
-    const msg = treatCondition(state, base, s.id, c.key);
-    if (/meds\)/.test(msg)) log(state, msg, "good");
-  }
+// Illnesses automatic care treats: anything that costs real health or can kill, any deep cut (it can get
+// infected), the rest from severity 30.
+export function autoWantsCondition(c) {
+  const d = CONDITIONS[c.key];
+  if (!d) return false;
+  const urgent = d.hp * c.sev / 100 >= 6 || c.key === "pneumonia";
+  return urgent || c.sev >= 30 || c.key === "cut";
 }
 
 // ---------- the daily tick ----------
@@ -206,7 +229,7 @@ export function healthDaily(state) {
   for (const base of state.bases) baseOnsets(state, base);
   teamOnsets(state);
   for (const base of state.bases) {
-    autoTreatBase(state, base);
+    autoCare(state, base);
     outbreakCheck(state, base);
   }
 }
@@ -234,8 +257,10 @@ function baseOnsets(state, base) {
   const rng = state.rng;
   const people = residents(state, base.id);
   if (!people.length) return;
-  const crowd = people.length - baseBeds(base);
-  const crowdFlu = crowd > 0 ? Math.min(0.03, 0.002 + 0.01 * crowd / Math.max(1, baseBeds(base))) : 0;
+  // Crowding: people per bed (morale.crowding, shared with the mood rules); over = how far above one per bed.
+  const over = crowding(state, base) - 1;
+  const crowd = over > 0 ? over : 0;
+  const crowdFlu = crowd > 0 ? Math.min(0.03, 0.002 + 0.01 * crowd) : 0;
   const filter = hasWaterFilter(state, base);
   const dirty = (filter ? 0.001 : 0.004) * (base.thirstDays > 0 ? 3 : 1);
   const outside = exposure(state, false), inside = exposure(state, true);
@@ -373,7 +398,7 @@ function outbreakCheck(state, base) {
             const msg = treatCondition(st, b, s.id, c.key);
             if (/meds\)/.test(msg)) used += CONDITIONS[c.key].meds;
           }
-          return used ? `Treated the sick at ${b.name} (${used} meds).` : "There were not enough meds to treat anyone.";
+          return used ? `Treated the sick at ${b.name} (${used} meds)${medsToTreatAll(st, b) ? "; the rest wait for meds or medic time" : ""}.` : "There were not enough meds or medic time to treat anyone.";
         },
       },
       { label: "Carry on", hint: "No cost now", resolve: () => "Life goes on. The sick keep working as they can." },
@@ -392,7 +417,7 @@ export function conditionTip(state, s, c) {
   const bits = [d.desc, `Severity ${Math.round(c.sev)} of 100, day ${c.days + 1}${c.why ? `, ${c.why}` : ""}.`];
   if (d.hp) bits.push(`Costs about ${r1(d.hp * c.sev / 100)} health a day.`);
   bits.push(`Can work at ${Math.round(workFactor({ conditions: [c] }) * 100)}%.`);
-  bits.push(`Treatment: ${d.meds} meds, takes off about ${d.treat} severity (more with a hospital and Medicine); once a day.`);
+  bits.push(`Treatment: ${d.meds} meds and one of a medic's treatments for the day, takes off about ${d.treat} severity (more with a hospital and Medicine); once a day.`);
   if (d.spread) bits.push("Contagious.");
   return bits.join(" ");
 }

@@ -8,6 +8,7 @@ import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from
 import { baseWalls, count } from "./buildings.js";
 import { radioBasesInRange, removeBase } from "./world.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
+import { makeCandidate, offerRecruits } from "./recruits.js";
 
 const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
@@ -46,7 +47,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3 },
+      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 }, // preserved / jars: storage.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
   });
@@ -325,15 +326,13 @@ export function collapseFaction(state, f) {
   recomputeOwnership(state);
   clearStaleAlerts(state);
   // Some survivors look for a new home.
+  // A recruit card (recruits.js): 1–3 of them, with the hub's beds, food and water.
   if (state.rng.chance(0.6)) {
-    addCard(state, {
-      title: "Refugees at the gate",
-      text: `Survivors from ${knownName(f, "a group that fell apart out in the dead lands")} have reached ${hub(state).name}. They ask to join you.`,
-      choices: [
-        { label: "Take them in (2 survivors, -10 food)", resolve: (st) => recruit(st, 2, -10) },
-        { label: "Take one in", resolve: (st) => recruit(st, 1, -5) },
-        { label: "Turn them away", resolve: () => "They walk back into the dead lands." },
-      ],
+    const n = state.rng.int(1, 3);
+    const list = Array.from({ length: n }, () => makeCandidate(state, { quality: 0.9, minHealth: 45 }));
+    offerRecruits(state, list, {
+      source: "refugees", baseId: hub(state).id, title: "Refugees at the gate",
+      intro: `Survivors from ${knownName(f, "a group that fell apart out in the dead lands")} have reached ${hub(state).name}. They ask to join you.`,
     });
   }
 }

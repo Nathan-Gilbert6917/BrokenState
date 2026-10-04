@@ -14,6 +14,8 @@ import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
+import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
+import { heatInfo } from "../sim/fieldheat.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -53,18 +55,20 @@ export function armedList(state, ui) {
 function statusLine(state, ui, p) {
   const st = orderStatus(state, p);
   const live = contactable(p);
+  // Out of radio contact a team runs its plan by itself (sim/plans.js).
+  const onPlan = p.plan && p.plan.active && !p.radioLive && p.phase !== "waiting" ? " · following its plan (no radio)" : "";
   if (startsWhenUnpaused(state, ui, p)) return { text: `${esc(st.label)} · starts when unpaused`, pct: null, cls: "armed" };
   if (!live) {
     // A one-way move (no way back planned) arrives and waits; other trips come home.
     if (p.etaBack == null && p.etaOut != null) {
       const at = (p.planStart ?? p.departed) + p.etaOut;
-      return { text: `${esc(st.label)} · no contact (${at > state.hour ? "arrives" : "should have arrived"} around day ${Math.floor(at / 24) + 1}, ${at % 24}:00)`, pct: null, cls: "muted" };
+      return { text: `${esc(st.label)} · no contact (${at > state.hour ? "arrives" : "should have arrived"} around day ${Math.floor(at / 24) + 1}, ${at % 24}:00)${onPlan}`, pct: null, cls: "muted" };
     }
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
-    return { text: `${esc(st.label)} · no contact (back around day ${back})`, pct: null, cls: "muted" };
+    return { text: `${esc(st.label)} · no contact (back around day ${back})${onPlan}`, pct: null, cls: "muted" };
   }
   const left = st.left == null ? (p.phase === "task" ? "until you stop it" : "") : st.left > 0 ? `${hrs(st.left)} left` : "";
-  return { text: `${esc(st.label)}${left ? ` · ${left}` : ""}`, pct: st.pct, cls: p.phase === "waiting" ? "warn" : "" };
+  return { text: `${esc(st.label)}${left ? ` · ${left}` : ""}${onPlan}`, pct: st.pct, cls: p.phase === "waiting" ? "warn" : "" };
 }
 
 // ---------- running orders (map overlay) ----------
@@ -88,7 +92,10 @@ export function renderRunningOrders(state, ui) {
 export function renderExpedition(state, ui, p) {
   const members = partyMembers(state, p);
   const v = partyVehicle(state, p);
-  const live = contactable(p);
+  // Radio rule (sim/plans.js): orders only in radio contact, or while answering one of the team's cards (which
+  // also tells you where it is and how it is doing).
+  const cmd = commandable(state, p);
+  const live = contactable(p) || cmd;
   const s = statusLine(state, ui, p);
   const tile = partyTile(p);
   const home = baseById(state, p.homeBaseId) || hub(state);
@@ -107,11 +114,13 @@ export function renderExpedition(state, ui, p) {
       ${s.pct != null && p.phase !== "waiting" ? bar(s.pct * 100, "var(--accent)") : ""}
       ${live ? `<div class="muted">At ${esc(tileLabel(state, tile))}${p.phase === "out" || p.phase === "back" ? ` → ${esc(tileLabel(state, p.path[p.path.length - 1]))}` : ""}</div>` : ""}
       ${live ? weatherLine(state, p, v) : ""}
-      ${queueBlock(state, p, live)}
+      ${queueBlock(state, p, cmd)}
+      ${planBlock(state, p)}
+      ${live ? heatBlock(state, p) : ""}
     </div>`;
 
-  if (!live) {
-    return head + status + `<div class="card small muted">No radio contact. The team follows its orders and reports when it checks in, gets home, or comes into radio range.</div>` +
+  if (!cmd) {
+    return head + status + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
@@ -239,7 +248,7 @@ function suppliesBlock(state, p) {
   const load = cargoLoad(p.cargo);
   const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
   const n = partyMembers(state, p).length || 1;
-  const daysOf = (k) => n0(((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)) / n);
+  const daysOf = (k) => n0(((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n);
   return `<h3>Supplies and cargo</h3><div class="card small">
     <table class="t"><tr><th></th><th${tip("Packed at the start (used first on the road)")}>Packed</th><th${tip("Found on the way (carried home; food and water here are eaten when packed runs out)")}>Found</th></tr>
       ${packed.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
@@ -258,4 +267,19 @@ function vehicleBlock(state, p, v) {
     <div class="row"><span class="muted" style="width:5rem">Tank</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:2.5rem;text-align:right">${n0(v.fuel)}/${tank(v)}</span></div>
     <div class="muted">Fuel cans ${n0(p.supplies.fuel)} · parts ${n0((p.supplies.parts || 0) + (p.cargo.supplies.parts || 0))} · worn vehicles break down more</div>
   </div>`;
+}
+
+// Heat (sim/fieldheat.js): a bar and what it means for a team standing still.
+export function heatBlock(state, p) {
+  const h = heatInfo(state, p);
+  if (h.heat < 1 && !h.activity) return "";
+  const color = h.heat < 25 ? "var(--good)" : h.heat < 50 ? "var(--accent)" : h.heat < 75 ? "#e0a84f" : "var(--danger)";
+  return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>`;
+}
+
+// The plan the team left with (sim/plans.js): name, steps left and its "come home" rule.
+function planBlock(state, p) {
+  if (!p.plan) return "";
+  const c = conditionText(p.plan.conditions);
+  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. Out of radio contact the team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; in contact you can change it any time.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
 }

@@ -144,6 +144,45 @@ function attack(state, u, t) {
   act(state, { type: "shoot", unit: u.id, target: t.id });
 }
 
+// ---------- ending the turn (review U-18) ----------
+// Space is pause on the State Map, so a habitual Space must not throw away a turn: while units still have
+// actions, the first Space (or End turn click) asks in the panel and a second Space, a second click or Enter
+// ends it. The question lapses as soon as anything happens on the map (b.rev) or the turn changes. It can be
+// switched off (the panel's checkbox), remembered in the browser when storage works.
+const CONFIRM_KEY = "brokenstate.confirmEndTurn";
+cui.confirmEnd = (() => { try { return typeof localStorage === "undefined" || localStorage.getItem(CONFIRM_KEY) !== "0"; } catch { return true; } })();
+cui.endAsk = null; // { turn, rev } of the open question
+export const unitsWithActions = (b) => players(b).filter((u) => active(u) && u.ap > 0).length;
+
+// Pure rule (fieldtest): what a press does. key "space" | "enter" | "button"; asked: a question is open for
+// this turn and nothing happened since. Returns "end" or "ask".
+export function endTurnDecision({ left, asked, confirm, key }) {
+  if (!confirm || left <= 0 || key === "enter" || asked) return "end";
+  return "ask";
+}
+
+export function requestEndTurn(state, key) {
+  const b = state.combat;
+  if (!b || b.over || b.phase !== "player") return "";
+  const asked = !!cui.endAsk && cui.endAsk.turn === b.turn && cui.endAsk.rev === b.rev;
+  const left = unitsWithActions(b);
+  if (endTurnDecision({ left, asked, confirm: cui.confirmEnd, key }) === "ask") {
+    cui.endAsk = { turn: b.turn, rev: b.rev, left };
+    return "ask";
+  }
+  cui.endAsk = null;
+  act(state, { type: "end" });
+  return "end";
+}
+
+export function setConfirmEnd(on) {
+  cui.confirmEnd = !!on;
+  cui.endAsk = null;
+  try { localStorage.setItem(CONFIRM_KEY, on ? "1" : "0"); } catch { /* storage blocked: this session only */ }
+}
+
+const endAskOpen = (b) => !!cui.endAsk && cui.endAsk.turn === b.turn && cui.endAsk.rev === b.rev && b.phase === "player" && !b.over;
+
 export function combatKey(state, e) {
   const b = state.combat;
   if (!b) return false;
@@ -166,8 +205,8 @@ export function combatKey(state, e) {
     if (u && active(u)) { cui.sel = u.id; cui.mode = "move"; }
     return true;
   }
-  if (e.code === "Space" || e.code === "Enter") { act(state, { type: "end" }); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; return true; }
+  if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
+  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; return true; }
   const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
@@ -186,7 +225,8 @@ export function combatAction(state, key, d) {
     finishCombat(state, b.setup, autoResolveCombat(state, b.setup));
     return;
   }
-  if (key === "cb-end") return void act(state, { type: "end" });
+  if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
+  if (key === "cb-confirm") return void setConfirmEnd(!cui.confirmEnd);
   if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; return; }
   if (key === "cb-target") {
     const t = unitById(b, Number(d.id));
@@ -297,10 +337,17 @@ export function renderCombatPanel(state) {
   }
 
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
+  if (endAskOpen(b)) {
+    const n = unitsWithActions(b);
+    html += `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — press Space again or Enter to end the turn (Esc to keep playing).
+      <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
+      <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
+  }
   html += `<div class="cbfoot">
-    <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing. (Space or Enter)">End turn</button>
+    <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
     ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
-  </div>`;
+  </div>
+  <div class="small muted" style="margin-top:0.3rem"><button class="${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button></div>`;
   return html;
 }
 

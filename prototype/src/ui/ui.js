@@ -16,8 +16,8 @@ import { holdLimit, wallTier } from "../sim/defences.js";
 import { hiveDanger, hiveTracker } from "../sim/hives.js";
 import { HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
-import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine } from "./farming.js";
-import { conditionChips, conditionTreatRow, illnessCard, isSick } from "./health.js";
+import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, storeCellHtml } from "./farming.js";
+import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
@@ -33,12 +33,15 @@ import { survivorURL, spriteImg } from "./sprites.js";
 import { renderExpedition, startsWhenUnpaused } from "./expedition.js";
 import { shortName } from "./names.js";
 import { orderStatus, contactable } from "../sim/orders.js";
+import { planSection, planAutofill, planEstimate } from "./plan.js";
+import { commandable, NO_RADIO } from "../sim/plans.js";
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal } from "./inventory.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLines } from "./tradewindow.js";
+import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -50,7 +53,7 @@ const clock = (state) => `${String(hourOfDay(state)).padStart(2, "0")}:00`;
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it (names.js)
 // Short skill labels for crew lists (whole words, never cut mid-word).
 const SKILL_SHORT = { scouting: "Scout", stealth: "Stealth", shooting: "Shoot", scavenging: "Scav", speech: "Speech", medicine: "Med", mechanics: "Mech", farming: "Farm", leadership: "Lead" };
-const bedTag = (s) => (s.inBed ? ` <span class="muted"${tip("In a hospital bed: does not work until healed (Medical tab)")}>(in bed)</span>` : "");
+const bedTag = (s) => (s.inBed ? ` <span class="muted"${tip("In a hospital bed: does not work while admitted (Medical tab)")}>(in bed)</span>` : "");
 // Whether you know how someone is right now: at a base or on a convoy yes; on a team only while it is in contact
 // (waiting, working on the spot, or in radio range); captives no.
 function inContact(state, s) {
@@ -73,7 +76,8 @@ export function topbarParts(state, ui) {
     speed: speeds.map(([s, l, t]) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}"${tip(t)}>${l}</button>`).join("") +
       (ui.speed > 3 ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
     // Food and water also show days left (economy.js outlook; the tooltip has the details).
-    stock: SUPPLY_KEYS.map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : null; return `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.${ln ? ` ${ln.tip}` : ""}`)}><b>${SUPPLIES[k].name}</b>${n0(h.stock[k])}${ln ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
+    stock: SUPPLY_KEYS.filter((k) => k !== "jars").map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; return `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.${extra}${ln ? ` ${ln.tip}` : ""}`)}><b>${k === "preserved" ? "Preserved" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${ln ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     tools: `UI
       <select data-action="uiscale"${tip("Interface size. Larger is easier to read from the couch.")}>${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select>
@@ -121,7 +125,7 @@ function foodPerDay(state, b) {
   let used = 0;
   for (const st of stations(b)) {
     const ss = stationStatus(state, b, st);
-    if (ss.running) used += RECIPES[ss.recipe].in.food || 0;
+    if (ss.running) used += (RECIPES[ss.recipe].in.food || 0) - (ss.out.preserved || 0); // the kitchen jars food: only its loss counts
   }
   const total = farm + scav - used - eat;
   return { total, text: `Farms +${n1(farm)}${scav >= 0.05 ? `, scavenging +${n1(scav)}` : ""}${used ? `, workshops -${n1(used)}` : ""}, eating -${n1(eat)}. Loot brought home by teams and convoys comes on top.` };
@@ -180,8 +184,8 @@ function personCard(state, s) {
     ${known ? `<div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
     ${isSick(s) ? `<div class="small">${conditionChips(state, s)}</div>` : ""}
-    <div class="row small"><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>` :
-    isCaptive(s) ? "" : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
+    <div class="row small"><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) ? `<div class="small">${moodRiskChip(s)}</div>` : ""}` :
+    isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
     <div>${topSkills}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
   </div>`;
 }
@@ -202,6 +206,8 @@ function renderPeople(state) {
   if (away.length) groups.push(["Away on teams", away]);
   const routes = alive(state).filter((s) => s.location.kind === "route");
   if (routes.length) groups.push(["Convoy escorts", routes]);
+  const errands = alive(state).filter((s) => s.location.kind === "errand"); // hubevents.js: away a few days
+  if (errands.length) groups.push(["Away on personal errands", errands]);
   const held = alive(state).filter(isCaptive);
   if (held.length) groups.push(["Held captive", held]);
   return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("");
@@ -266,9 +272,10 @@ function renderTeams(state, ui) {
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
       ${members.map(first).join(", ")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}<br>
-      ${showLive ? `Food ${n0(p.supplies.food)} · Water ${n0(p.supplies.water)}${v ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(cargoLoad(p.cargo))}/${partyCapacity(state, p)}<br>` : ""}
+      ${showLive ? `Food ${n0((p.supplies.food || 0) + (p.supplies.preserved || 0))} · Water ${n0(p.supplies.water)}${v ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(cargoLoad(p.cargo))}/${partyCapacity(state, p)}<br>` : ""}
       ${status}
-      ${canOrder && p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">
+      ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}
+      ${canOrder && p.kind !== "convoy" && commandable(state, p) ? `<div class="row" style="margin-top:0.35rem">
         ${waiting ? `<button class="primary" data-action="orders" data-id="${p.id}"${tip("Choose what the team does here")}>Orders</button>` : ""}
         <button data-action="movemode" data-id="${p.id}"${tip("Then click any tile on the map. The team goes there and waits for orders.")}>${ui.moveParty === p.id ? "Click a tile…" : waiting ? "Move…" : "Redirect…"}</button>
         <button data-action="gohome" data-id="${p.id}"${tip("Head back home now. This drops the team's queue.")}>Return home</button>
@@ -373,7 +380,7 @@ export function renderRight(state, ui) {
     ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
-    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button><button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
+    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
     ${actions.length ? `<h3>Send a team from the hub</h3><div class="row">${actions.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${tip(MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
 }
 
@@ -451,13 +458,14 @@ function helpModal() {
     <b>Seasons and weather:</b> a year is four seasons of 28 days (spring, summer, autumn, winter); a run starts in mid-spring. Next to the clock: season, day of the season, today's weather and the temperature; hover it for what the weather does and the forecast (3 days; 4 with a watchtower, 5 with a radio station; the further out, the less sure). Rain and melting snow leave mud that slows off-road travel (vehicles most); snow cover slows everything, off-road most; storms and blizzards slow everyone a lot, can hurt people on the road and make boat crossings riskier; fog cuts sight by a tile and makes ambushes likelier; heat waves slow walkers. Arrival times in the planner and panels already include the weather hour by hour (the planner shows how many hours it adds). Crops grow only in their seasons and best in mild, moist weather; frost, hard freezes, blizzards, drought, heat and storms can kill them, and wet weather rots ripe ones. Cold and heat can make people outdoors ill, the dead slow down in deep cold, and the map's <i>Weather</i> layer shows snow, rain, fog and heat as a wash over the land.<br>
     <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. Toggle layers in the map's corner.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue, the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
+    <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving kitchen</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
     <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Packed supplies count against carry space (15 per person, 8 with a bad back, more with packs and vehicles). Teams report only when they get home, unless a radio station is built and they are in range.<br>
     <b>Team panel:</b> click a team on the map, in the Teams tab or in the Running orders list. It shows people, gear, supplies, the vehicle and the order queue. Orders: move, return home, scavenge, look around (2h), camp, roadside repair, treat someone with carried meds (1h), field crafting, boat crossings. A waiting team starts an order at once; a moving team (or queue mode) adds it to its queue. When the queue is empty the team reports in with a card.<br>
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("S")}). Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("E")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds, ${k("R")} retreat (from the edge zone), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits.<br>
     <b>Boats:</b> water blocks travel. A team on a shore can build a one-use boat and cross one water tile (team panel, or right-click the far shore). It costs scrap and hours; a vehicle needs a raft or is left on the shore.<br>
     <b>Supply runs and trade routes:</b> supply runs are convoy jobs between your own bases (a base's Supply runs tab): crew, vehicle, goods each way, once or on a schedule. Trade routes are repeating convoys to a group you have a trade pact with (Groups tab); the terms must be worth it to them at their prices.<br>
-    <b>Medical:</b> everyone at a base heals slowly; below 70 health a dose of meds a day is used automatically. Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds that heal faster. Treat buttons use meds at once at a base; on a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
+    <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
     <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. Makeshift gear wears out. Teams can make the simplest things in the field.<br>
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it).<br>
     <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. One left behind is marked on the map: bring fuel (and a part if it is badly damaged) to recover it.<br>
@@ -474,6 +482,7 @@ function helpModal() {
 
 function cardModal(state, card) {
   if (card.kind === "conflict" && card.conflict) return conflictModal(state, card);
+  if (card.recruit) return recruitModal(state, card); // who asks to join, with beds, food and water (people.js)
   return `<div class="box">
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
@@ -547,17 +556,23 @@ function plannerModal(state, ui) {
   const ids = [...pl.crew];
   const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
   const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance, fuel: v ? v.fuel + (pl.supplies.fuel || 0) : 0 });
+  // The PLAN section (ui/plan.js): with steps, food, water and fuel are checked against the whole plan.
+  const pe = est && pl.mission !== "outpost" ? planAutofill(state, pl) : null;
+  const need = pe || est, needFor = pe ? "for the whole plan" : "for the round trip";
   const members = ids.map((id) => survivorById(state, id)).filter(Boolean);
   const at = (hr) => `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:00`;
   const stays = (Parties.STAY_MISSIONS || ["move", "recon", "outpost"]).includes(pl.mission); // waits there for orders (or stays)
   const carry = plannerLoad(state, pl);
   // Why this mission cannot go to this tile at all (parties.js checks the same at launch).
   const problem = Parties.missionProblem ? Parties.missionProblem(state, pl.dest, pl.mission) : null;
-  const showKeys = ["food", "water", "fuel", "meds", "ammo", "parts", "scrap"];
+  const showKeys = ["food", "preserved", "water", "fuel", "meds", "ammo", "parts", "scrap"];
   const warn = [];
   if (est) {
-    for (const k of ["food", "water"]) if ((pl.supplies[k] || 0) < est[k]) warn.push(`${SUPPLIES[k].name}: packing ${pl.supplies[k] || 0}, need about ${est[k]} for the round trip`);
-    if (v && v.fuel + (pl.supplies.fuel || 0) < est.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${est.fuel} for the round trip`);
+    // Preserved food (storage.js) is a ration like food, and lighter.
+    const rations = (pl.supplies.food || 0) + (pl.supplies.preserved || 0);
+    if (rations < need.food) warn.push(`Food: packing ${rations}${pl.supplies.preserved ? ` (${pl.supplies.preserved} preserved)` : ""}, need about ${need.food} ${needFor}`);
+    if ((pl.supplies.water || 0) < need.water) warn.push(`Water: packing ${pl.supplies.water || 0}, need about ${need.water} ${needFor}`);
+    if (v && v.fuel + (pl.supplies.fuel || 0) < need.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${need.fuel} ${needFor}`);
   }
   if (pl.mission === "outpost" && (pl.supplies.scrap || 0) < 15) warn.push("Outposts need 15 scrap carried");
   if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
@@ -597,11 +612,12 @@ function plannerModal(state, ui) {
       </div>
       <div>
         <h3>Supplies (from hub)</h3>
-        <table class="t">${showKeys.map((k) => `<tr${tip(k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : "")}><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">hub ${n0(h.stock[k])}</td></tr>`).join("")}</table>
+        <table class="t">${showKeys.map((k) => `<tr${tip(k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : "")}><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">hub ${n0(h.stock[k])}</td></tr>`).join("")}</table>
         <button data-action="pl-autofill" style="margin-top:0.4rem"${tip("Pack enough for the round trip plus 25%")}>Auto-fill (+25% margin)</button>
         ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
       </div>
     </div>
+    ${pl.mission === "outpost" ? `<div class="small muted" style="margin-top:0.5rem">The team stays at the new outpost: no plan after it.</div>` : planSection(state, pl, pe || (est ? planEstimate(state, pl) : null))}
     ${problem ? `<div class="danger" style="margin-top:0.6rem">${esc(problem)}</div>` : ""}
     ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || !est || carry.over || problem ? "disabled" : ""}${tip(!ids.length ? "Pick at least one person" : !est ? "No route" : carry.over ? carry.why : problem || "The team leaves now. If the game is paused, it sets off when you unpause.")}>Send team</button></div>
@@ -810,18 +826,18 @@ function treatButton(state, s) {
   if (s.location.kind === "base") {
     const b = baseById(state, s.location.baseId);
     const info = treatAtBaseInfo(state, b, s);
-    return `<button class="mini" data-action="treat" data-base="${b.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds: +${info.heal} health${info.surgery ? " (surgery on a severe wound)" : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Better with a hospital and Medicine.` : info.reason)}>Treat (${info.cost} meds)</button>`;
+    return `<button class="mini" data-action="treat" data-base="${b.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds: +${info.heal} health${info.surgery ? ` (surgery on a severe wound: most of ${info.medic ? info.medic.name.split(" ")[0] + "'s" : "a medic's"} day)` : info.medic ? `, one of ${info.medic.name.split(" ")[0]}'s treatments for today` : ""}${info.noSurgeryTime ? "; no medic has time for surgery today" : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Once a day. Better with a hospital and Medicine.` : info.reason)}>Treat (${info.cost} meds)</button>`;
   }
   if (s.location.kind === "route") {
     // A trade-route escort waiting at the hub between trips is treated there (medical.js); on the road, not at all.
     const h = hub(state);
     const info = treatAtBaseInfo(state, h, s);
-    return info.ok ? `<button class="mini" data-action="treat" data-base="${h.id}" data-id="${s.id}"${tip(`Use ${info.cost} of ${h.name}'s meds: +${info.heal} health.`)}>Treat (${info.cost} meds)</button>` : "";
+    return `<button class="mini" data-action="treat" data-base="${h.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${h.name}'s meds: +${info.heal} health. Once a day.` : info.reason)}>Treat (${info.cost} meds)</button>`;
   }
   if (s.location.kind === "party") {
     // In the field treating is a team order that takes an hour, and the team has to be in contact (same as the team panel).
     const p = state.parties.find((x) => x.id === s.location.partyId);
-    if (!p || !contactable(p)) return "";
+    if (!p || !contactable(p) || !commandable(state, p)) return ""; // radio rule (sim/plans.js)
     const info = fieldTreatInfo(state, p, s);
     const queued = !(p.phase === "waiting" || p.phase === "task");
     return `<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="treat" data-sid="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Field treatment, a ${info.hours || 1}-hour team order${queued ? " (added to the team's queue)" : ""}, with the team's meds (${n0(partyMeds(p))} carried): ${info.cost} meds, about +${info.heal} health${info.medic ? ` (by ${info.medic.name}, Medicine ${skill(info.medic, "medicine")})` : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Weaker than care at a base.` : info.reason)}>Treat (${info.cost} meds, 1h)</button>`;
@@ -829,24 +845,14 @@ function treatButton(state, s) {
   return "";
 }
 
-// Health per day for a patient as shown in the Medical tab: passive healing plus the automatic daily dose of
-// meds (below 70 health, while the base has meds), and a note saying what is in the number.
-function healPerDayText(state, b, s, h, inBed) {
-  const passive = healRatePerHour(state, b, s, h, inBed) * 24;
-  const below = Medical.AUTO_BELOW ?? 70;
-  const dosed = s.health < below && (b.stock.meds || 0) >= 1;
-  const dose = dosed ? 10 * h.eff : 0;
-  const total = passive + dose;
-  const note = b.hungerDays > 0 ? "nobody heals while the base is out of food" : dosed ? `incl. +${n1(dose)} from the daily dose of meds` : s.health < below ? "no meds in stock for the daily dose" : `no daily dose at ${below}+ health`;
-  return `${total >= 0 ? "+" : ""}${n1(total)} health/day <span${tip(`Passive healing ${passive >= 0 ? "+" : ""}${n1(passive)} a day${dosed ? `, plus one dose of meds a day (+${n1(dose)}, uses 1 meds) while they are below ${below} health` : ""}.`)}>(${note})</span>`;
-}
-
+// Health per day, bed chips and next-treatment lines for patients: ui/health.js (healPerDayText, bedChip, nextTreatLine).
 function baseMedical(state, b) {
   const h = activeHospital(state, b);
   const built = h.built;
   const people = atBase(state, b.id);
   const hurtList = people.filter((s) => isHurt(s) || isSick(s)).sort((x, y) => x.health - y.health);
   const beds = new Set(patients(state, b).map((s) => s.id));
+  const carePlan = Medical.autoCare(state, b, { plan: true }); // tonight's automatic care, shared by every patient row
   const next = nextHospitalType(b);
   const queued = b.construction.find((c) => BUILDINGS[c.type].family === "hospital");
   const others = people.filter((s) => s.role !== "medic");
@@ -854,12 +860,12 @@ function baseMedical(state, b) {
     <div>
       <h3>Care</h3>
       <div class="card small">
-        <div class="spread"><b>${built.tier ? esc(built.name) : "No hospital"}</b>${built.tier ? `<span class="chip ${h.staffed ? "on" : "off"}"${tip("Buildings need people: each tier needs Medic-role staff to run. Unstaffed it works like no hospital.")}>${h.staffed ? "Staffed" : `Needs ${built.staff} medic${built.staff === 1 ? "" : "s"}`}</span>` : ""}</div>
+        <div class="spread"><b>${built.tier ? esc(built.name) : "No hospital"}</b>${built.tier ? `<span class="chip ${h.staffed ? "on" : "off"}"${tip(`Buildings need people: each tier needs Medic-role staff to run. With too few medics it runs as the highest tier they can staff${h.staffed ? "" : ` (now ${h.tier ? `as a ${h.name}` : "as no hospital"}; needs ${built.staff})`}.`)}>${h.staffed ? "Staffed" : h.fallback ? `Runs as ${esc(h.name)}` : `Needs ${built.staff} medic${built.staff === 1 ? "" : "s"}`}</span>` : ""}</div>
         <div class="kv" style="margin-top:0.3rem">
           <div>Beds</div><div>${h.beds ? `${beds.size} of ${h.beds} in use` : "none"}</div>
           <div${tip("Extra health per day for patients in a bed, plus the best medic's Medicine × 0.5")}>Bed healing</div><div>${h.tier ? `+${h.heal} / day (+${n1(h.staffSkill * 0.5)} from medics)` : "—"}</div>
           <div${tip("Everyone at the base heals this much per day: 4 + best Medicine here × 0.4")}>Everyone</div><div>+${n1(4 + h.baseSkill * 0.4)} / day</div>
-          <div${tip("Multiplier on what each dose of meds heals, for treatments and the automatic dose below 70 health")}>Meds effect</div><div>×${h.eff}</div>
+          <div${tip("Multiplier on what each dose of meds heals, for your treatments and the automatic night care")}>Meds effect</div><div>×${h.eff}</div>
           <div>Infected wounds</div><div>${h.cures ? "Cleaned in bed" : h.guards ? "Prevented in bed" : "Risky below 40 health"}</div>
           <div${tip("Below 30 health, healing runs at 40% speed without a bed; the hospital tier sets the speed in a bed. Surgery (Clinic and up) also makes treatments 50% bigger for severe wounds.")}>Severe wounds</div><div>${h.tier ? `${Math.round(h.severe * 100)}% speed in bed` : "40% speed"}${h.surgery ? " · surgery" : ""}</div>
           <div>Meds in stock</div><div>${n0(b.stock.meds)}</div>
@@ -886,10 +892,11 @@ function baseMedical(state, b) {
       ${hurtList.length ? hurtList.map((s) => `<div class="card small">
         <div class="spread"><a data-action="survivor" data-id="${s.id}" class="link">${esc(s.name)}</a>${treatButton(state, s)}</div>
         <div class="row"><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem;text-align:right">${n0(s.health)}</span></div>
-        <div>${beds.has(s.id) ? `<span class="chip on"${tip("In a hospital bed: gets the bed healing bonus and +3 mood a day, but does not work their role until healed")}>In bed</span>` : h.beds ? `<span class="chip"${tip(s.role === "medic" ? "Medics stay on duty and are never admitted as patients" : "No free bed: the worst off get beds first")}>No bed</span>` : ""}${s.health < 30 ? `<span class="chip off"${tip("Severe wound (below 30 health): heals at 40% speed without a bed; a hospital bed and surgery help")}>Severe</span>` : ""}${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed and loses 2 health a day. Treat with meds; a Clinic or better cleans it in bed.")}>Infected wound</span>` : ""}<span class="muted">${healPerDayText(state, b, s, h, beds.has(s.id))}</span></div>
+        <div>${bedChip(state, b, s, h, beds.has(s.id))}${s.health < 30 ? `<span class="chip off"${tip("Severe wound (below 30 health): heals at 40% speed without a bed; a hospital bed and surgery help")}>Severe</span>` : ""}${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed and loses 2 health a day. Treat with meds; a Clinic or better cleans it in bed.")}>Infected wound</span>` : ""}<span class="muted">${healPerDayText(state, b, s, h, beds.has(s.id), carePlan)}</span></div>
+        ${nextTreatLine(state, b, s)}
         ${conditionTreatRow(state, b, s)}
       </div>`).join("") : `<div class="muted small">Nobody here is hurt or ill.</div>`}
-      <div class="small muted" style="margin-top:0.4rem">The rate includes the daily dose: anyone below 70 health gets one dose of meds a day automatically (at midnight, 1 meds each) while stock lasts.</div>
+      <div class="small muted" style="margin-top:0.4rem">The rate is the expected change over the next day: passive healing, tonight's automatic care (if they get it) and what illness costs. One treatment per wound or illness a day, each takes a medic's time.</div>
     </div>
   </div>`;
 }
@@ -909,8 +916,9 @@ function baseOverview(state, b) {
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
+        <div${tip("Where the fresh food is kept and what spoils a day (storage room: cellars, storehouse, cold store; above it, food is stored outside and spoils fast), and the preserved stock")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
-        <div>Beds</div><div>${baseBeds(b)} for ${people.length}</div>
+        ${crowdingRow(state, b)}
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
       </div>
     </div>

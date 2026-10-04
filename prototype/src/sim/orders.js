@@ -11,6 +11,7 @@ import { partyVehicle, partyFuel } from "./vehicles.js";
 import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
 import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_HOURS } from "./crossing.js";
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
+import { estimatePlan, startNearby } from "./plans.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const SURVEY_HOURS = 2;   // Look around
@@ -29,6 +30,8 @@ export function describeOrder(state, o) {
     case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
     case "gather": return "Gather boat materials";
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
+    case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
+    case "wait": return `Wait ${o.hours}h`;
   }
   return o.type;
 }
@@ -75,6 +78,7 @@ export function queueEstimate(state, p) {
   let owed = Math.min(0, p.progress || 0);
   // at: the hour each queued order starts (weather sets travel times by the hour, weather.js).
   let at = state.hour + (p.phase === "task" && p.task?.hours != null ? Math.max(0, p.task.hours - p.task.done) : 0);
+  let left = p.progress || 0; // progress left over on arrival (a recon spends it first)
   if ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) {
     const cur = travelHours(state, p.path.slice(p.idx), { vehicle, speed: partySpeed(p), progress: p.progress, fuel });
     at += cur.hours;
@@ -82,7 +86,10 @@ export function queueEstimate(state, p) {
     vehicle = cur.vehicle;
     fuel = cur.fuelLeft;
     owed = 0;
+    left = cur.progress;
   }
+  // A recon on arrival spends two hours looking around, paid by the next move (parties.js survey).
+  if (p.phase === "out" && p.mission === "recon") owed = Math.min(0, left - 2 * partySpeed(p));
   return (p.orders || []).map((o) => {
     let hours = null;
     if (o.type === "move") {
@@ -101,6 +108,12 @@ export function queueEstimate(state, p) {
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
+    else if (o.type === "wait") hours = o.hours;
+    else if (o.type === "nearby") {
+      // The sites the team would pick from here now (plans.js); the real pick happens when the step starts.
+      const r = estimatePlan(state, { memberIds: p.members, dest: tile, vehicle, stance: p.stance, fuel, mission: "move", steps: [{ kind: "nearby", radius: o.radius, count: o.count, center: o.center }], homeBaseId: p.homeBaseId, from: tile, startHour: at, p });
+      if (r) { hours = r.hours; tile = r.endTile; vehicle = r.vehicle; fuel = r.fuelLeft; owed = 0; }
+    }
     else if (o.type === "home") {
       // The way home from where the queue leaves the team, planned like startReturn does (on foot if the
       // vehicle has no road home). No estimate when water cuts the team off.
@@ -229,6 +242,12 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "craft", recipe: o.recipe, hours: opt.hours });
       return `Crafting ${opt.name.toLowerCase()} (${opt.hours}h).`;
     }
+    case "nearby":
+      // Scavenge the best site within reach (plans.js): picked now, from what the team knows.
+      return startNearby(state, p, o);
+    case "wait":
+      startTask(state, p, { type: "wait", hours: Math.max(1, o.hours || 6) });
+      return `The team waits here for ${Math.max(1, o.hours || 6)} hours.`;
     case "gather": {
       // Only on a shore with land across the water, and only while there is something left to find there.
       const why = gatherProblem(state, partyTile(p));
@@ -301,6 +320,7 @@ function finishTask(state, p) {
   else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);
   else if (t.type === "gather") text = gatherMaterials(state, p, partyTile(p));
   else if (t.type === "craft") text = fieldCraft(state, p, t.recipe);
+  else if (t.type === "wait") text = `Waited ${t.done} hour${t.done === 1 ? "" : "s"}.`;
   else if (t.type === "cross") text = landBoat(state, p);
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
