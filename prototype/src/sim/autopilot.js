@@ -52,6 +52,7 @@ import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, broodForce } from "./hives.js";
 import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
+import { siteKnown } from "./discovery.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -1594,6 +1595,7 @@ export const EMPTY_SITES = 3, EMPTY_RING = 8, EMPTY_REACH = 1.6;
 function siteScore(state, id, need, P) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water" || state.bases.some((b) => b.tile === id)) return null;
+  if (t.loc && !siteKnown(state, id)) return null; // a hidden site nobody has found yet (discovery.js)
   const k = intel(state, id);
   if (k && k.factionBase) return null;
   if (knownGroupBases(state).has(id)) return null;
@@ -1715,7 +1717,7 @@ function planTrip(state) {
   const scan = (r, outer) => {
     for (const id of state.grid.within(h.tile, r)) {
       const t = state.tiles[id];
-      if (!t.loc || id === h.tile || (outer && state.grid.distance(id, h.tile) <= radius)) continue;
+      if (!t.loc || id === h.tile || (outer && state.grid.distance(id, h.tile) <= radius) || !siteKnown(state, id)) continue;
       if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
       const s = siteScore(state, id, need, P);
       if (!s || s.value <= 0.05 || (P.reserves && s.risk > 0.8)) continue;

@@ -13,6 +13,7 @@ import { diaryEntries, diarySync, decodeRefs } from "../sim/diary.js";
 import { camera } from "./render.js";
 import { brokenAt, fixtureName, jobFor, FIXTURES } from "../sim/breakdowns.js";
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
+import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { visitorAlerts } from "./visitors.js";
@@ -135,7 +136,7 @@ const SECTIONS = {
       const def = CRASH_KINDS[c.kind];
       const left = daysLeft(state, c);
       const name = c.found && state.tiles[c.tile].loc ? state.tiles[c.tile].loc.name : `Downed ${def.name.toLowerCase()}`;
-      out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${state.tiles[c.center].loc ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
+      out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${knownLoc(state, c.center) ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
     }
   },
   outsiders(state, out) { // raiders from outside near a base, merchants at one (ui/visitors.js)

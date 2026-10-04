@@ -32,6 +32,7 @@ import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { HIVE, BOSS_NAMES } from "./hiveconst.js";
 import { worldScale } from "./worldsize.js";
+import { isPublicSite, knownLoc } from "./discovery.js";
 
 // Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
 // (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
@@ -81,12 +82,13 @@ function newHive(state, tile, res) {
   return { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, res, born: state.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(state, tile) };
 }
 
+// Named after a place everyone knows (discovery.js: not a hidden site, so the name gives nothing away).
 export function hiveName(state, tile) {
   const t = state.tiles[tile];
-  if (t.loc) return `the hive at ${t.loc.name}`;
+  if (t.loc && isPublicSite(state, tile)) return `the hive at ${t.loc.name}`;
   let best = null, bd = 99;
   for (const id of state.grid.within(tile, 5)) {
-    const loc = state.tiles[id].loc, d = state.grid.distance(tile, id);
+    const loc = isPublicSite(state, id) ? state.tiles[id].loc : null, d = state.grid.distance(tile, id);
     if (loc && d < bd) { best = loc; bd = d; }
   }
   return best ? `the hive near ${best.name}` : `the hive in the wilds (${t.x},${t.y})`;
@@ -264,7 +266,7 @@ function pickSite(state) {
   return site;
 }
 
-const placeOf = (state, tile) => (state.tiles[tile].loc ? `at ${state.tiles[tile].loc.name}` : `near ${tileLabel(state, tile)}`);
+const placeOf = (state, tile) => (knownLoc(state, tile) ? `at ${state.tiles[tile].loc.name}` : `near ${tileLabel(state, tile)}`);
 
 // A horde that reaches its build site joins the mass gathered there (hordes.js merges them).
 export function deliverToSite(state, h, site) {
