@@ -305,10 +305,10 @@ export function spawnVisitor(state, kind, opts = {}) {
 
 // ---------- goals and paths ----------
 function setGoal(state, v, goal, act) {
-  // Raiders moving on to another of your bases: the lookouts there warn again (a card for that base).
-  const newBase = goal.kind === "base" && !(v.goal && v.goal.kind === "base" && v.goal.baseId === goal.baseId);
+  // A band that comes for another of your bases (after a raid elsewhere, a chase, a roam) is warned of again:
+  // v.warned belonged to the last base it came for (raidWarning sets v.warnedBase).
+  if (goal.kind === "base" && v.warnedBase !== goal.baseId) v.warned = false;
   if (goal.tile === v.tile) {
-    if (newBase) v.warned = false;
     v.goal = goal;
     v.path = [v.tile];
     v.idx = 0;
@@ -318,7 +318,6 @@ function setGoal(state, v, goal, act) {
   }
   const res = planPath(state, v.tile, goal.tile, false);
   if (!res) return false;
-  if (newBase) v.warned = false;
   v.goal = goal;
   v.path = res.path;
   v.idx = 0;
@@ -668,6 +667,7 @@ const talkChance = (speech) => clamp(0.1 + 0.035 * speech, 0.1, 0.75);
 function raidWarning(state, v) {
   const base = baseById(state, v.goal.baseId);
   if (!base) return;
+  v.warnedBase = base.id;
   v.known = true;
   v.seen = { tile: v.tile, hour: state.hour };
   const def = baseDefense(state, base);

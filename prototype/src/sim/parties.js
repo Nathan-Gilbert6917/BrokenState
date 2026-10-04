@@ -1343,6 +1343,11 @@ function convoyArrive(state, p) {
 
 // ---------- AI parties ----------
 function aiPartyHour(state, p) {
+  // Turned back (a raid bought off with tribute, even one already at the walls): gone, nothing more to settle.
+  if (p.returning) {
+    removeParty(state, p);
+    return;
+  }
   if (p.phase === "siege") {
     if (p.helpCall && state.hour >= p.helpCall.arrivesAt && !p.helpCall.delivered) {
       p.helpCall.delivered = true;
@@ -1350,10 +1355,6 @@ function aiPartyHour(state, p) {
     }
     p.siegeLeft -= 1;
     if (p.siegeLeft <= 0) finishSiege(state, p);
-    return;
-  }
-  if (p.returning) {
-    removeParty(state, p);
     return;
   }
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)

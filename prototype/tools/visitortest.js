@@ -138,6 +138,16 @@ section("Raiders at your base");
   const repelled = st.stats.raidsRepelled;
   for (let i = 0; i < 9 && st.visitors.includes(weak) && weak.phase === "siege"; i++) tick(st);
   check(st.stats.raidsRepelled === repelled + 1 && st.log.slice(0, 8).some((l) => /drove off/.test(l.text)), "held: the raid is repelled");
+  // A band already warned of at another base (it raided an outpost first) is warned of again when it comes here.
+  clearCards(st);
+  const again = V.spawnVisitor(st, "raiders", { size: 3, power: 2.6 });
+  place(st, again, ringLand(st, h.tile, 3)[1] ?? ringLand(st, h.tile, 3)[0]);
+  again.warned = true; again.warnedBase = -1;
+  again.goal = { kind: "base", baseId: h.id, tile: h.tile };
+  for (let i = 0; i < 30 && again.phase !== "siege"; i++) tick(st);
+  check(again.phase === "siege" && !!cardWith(st, /^Outsider raiders heading for/), "a band warned of at another base gets a new warning card at this one");
+  clearCards(st);
+  V.leaveMap(st, again);
   // A strong band: a break-in, and what they take, they carry.
   clearCards(st);
   for (const s of atBase(st, h.id)) s.health = 15;

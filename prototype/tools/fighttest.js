@@ -20,6 +20,7 @@ import { hordesHour, reduceHorde, HORDE_MAX_SIZE, HORDE_MIN_SIZE } from "../src/
 import { endTrade, tradePending, routeProblem, routeWorth, routeExchange, createRoute } from "../src/sim/trade.js";
 import { routesDaily } from "../src/sim/economy.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
+import { startWar } from "../src/sim/diplomacy.js";
 import { newItem } from "../src/sim/inventory.js";
 import { makeItem } from "../src/sim/crafting.js";
 
@@ -420,6 +421,43 @@ const groupOf = (state, type) => {
   st.parties = st.parties.filter((q) => q.owner === "player");
   factionsDaily(st);
   check(h.alert === false, "\"Prepare defenses\" ends when no raid is coming any more");
+
+  // Seen only when it reached the walls (the warning comes on arrival): tribute paid then still ends the raid.
+  {
+    const s3 = world(seed + 77);
+    const h3 = hub(s3);
+    const f3 = groupOf(s3, "raider");
+    f3.goodwill = -80; f3.raidCooldown = 99;
+    Object.assign(h3.stock, { food: 100, ammo: 100, scrap: 100 });
+    const r3 = spawnAiParty(s3, f3, "raid", f3.bases[0], h3.tile, { strength: 300, target: { kind: "player", baseId: h3.id, tile: h3.tile } });
+    if (check(!!r3, "a raid can be sent at the hub (tribute at the walls)")) {
+      r3.path = [h3.tile]; r3.idx = 0; r3.phase = "siege"; r3.siegeLeft = 8; r3.warned = true;
+      raidWarning(s3, r3);
+      pick(s3.cards.pop(), /^Pay tribute/).resolve(s3);
+      for (let k = 0; k < 12; k++) { s3.cards.length = 0; tickHour(s3); }
+      const hit = s3.log.some((l) => l.text.startsWith(`${f3.name} overran`) || l.text.startsWith(`${f3.name} broke into`) || l.text.includes(`drove off the ${f3.name} raid`));
+      check(!s3.parties.includes(r3) && !hit && h3.stock.scrap === 100, `tribute paid at the walls ends the raid: no break-in afterwards (scrap ${h3.stock.scrap})`);
+    }
+  }
+  // A war raid beaten off in person counts for your side of the war, like one held by the numbers.
+  {
+    const s4 = world(seed + 78);
+    const h4 = hub(s4);
+    const a = groupOf(s4, "raider"), b = s4.factions.find((x) => x.alive && x !== a);
+    a.goodwill = -80;
+    const w = startWar(s4, a, b, "land");
+    w.playerSide = b.id;
+    const r4 = spawnAiParty(s4, a, "raid", a.bases[0], h4.tile, { strength: 1, target: { kind: "player", baseId: h4.id, tile: h4.tile } });
+    if (check(!!r4, "a war raid can be sent at the hub")) {
+      r4.warId = w.id;
+      h4.alert = true;
+      s4.cards.length = 0;
+      defendInPerson(s4, r4);
+      const won = s4.cards.some((c) => c.title === "Raid defense" && /beat off/.test(c.text));
+      check(!won || (w.score[b.id] || 0) === 2, `a war raid beaten in person scores 2 for your side (score ${w.score[b.id] || 0}, won ${won})`);
+      check(won, "a strength-1 war raid is beaten in person");
+    }
+  }
 
   const target = groupOf(st, "commune"), attacker = st.factions.find((x) => x.alive && x !== target);
   target.known = false; attacker.known = false; target.goodwill = 30; target.pop = 20;
