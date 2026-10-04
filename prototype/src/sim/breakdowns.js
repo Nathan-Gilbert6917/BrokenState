@@ -45,6 +45,7 @@ import { stationStatus } from "./buildings.js";
 import { weatherOnDay } from "./weather.js";
 import { stewardOn } from "./steward.js";
 import { vehiclesAtBase } from "./vehicles.js";
+import { isManaged, prio } from "./work.js";
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -226,12 +227,15 @@ export function breakCard(state, base, fx, { pumpStorm = null } = {}) {
 }
 
 // The autopilot (all bases) and a steward with Building on fix things themselves.
-export const autoHands = (state, base) => !!state.autopilot || (stewardOn(base) && base.steward.areas.building !== false);
+// So does a base where someone on work priorities has Repair set (work.js).
+export const autoHands = (state, base) => !!state.autopilot || (stewardOn(base) && base.steward.areas.building !== false) ||
+  (!!state.work && atBase(state, base.id).some((s) => isManaged(state, s) && prio(state, s, "repair") > 0));
+const handIcon = (state, base) => (state.autopilot ? "🤖" : stewardOn(base) && base.steward.areas.building !== false ? "🧭" : "🔧");
 function autoRepair(state, base, fx) {
   if (!fx.broken || jobFor(base, fx)) return "";
   const rep = repairPlan(state, base, fx, "repair");
   const msg = rep.ok ? startRepair(state, base, fx, "repair") : repairPlan(state, base, fx, "rig").ok ? startRepair(state, base, fx, "rig") : "";
-  if (msg) log(state, `${state.autopilot ? "🤖" : "🧭"} ${msg}`, "info");
+  if (msg) log(state, `${handIcon(state, base)} ${msg}`, "info");
   return msg;
 }
 
@@ -275,7 +279,7 @@ export function breakdownsHour(state) {
       // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (20 kept back).
       for (const fx of fixtures(base).filter((x) => !x.broken && FIXTURES[x.type].outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
         const plan = repairPlan(state, base, fx, "repair");
-        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= 20) log(state, `${state.autopilot ? "🤖" : "🧭"} ${startRepair(state, base, fx, "repair")}`, "info");
+        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= 20) log(state, `${handIcon(state, base)} ${startRepair(state, base, fx, "repair")}`, "info");
       }
     }
   }

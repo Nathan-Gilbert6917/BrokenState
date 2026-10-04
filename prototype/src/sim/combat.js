@@ -28,11 +28,11 @@
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
-import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect } from "./world.js";
-import { partyMembers, partyTile, partyCapacity, cargoLoad, unitsThatFit, wipeParty } from "./parties.js";
+import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight } from "./world.js";
+import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad } from "./inventory.js";
 import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth } from "./stealth.js";
@@ -622,6 +622,7 @@ function playerUnit(b, s) {
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
+    scouting: skill(s, "scouting"), load: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
     ap: 2, aware: true, x: 0, y: 0,
   };
@@ -667,7 +668,7 @@ export function createBattle(state, setup) {
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
     ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
-    losCache: new Int8Array(W * H * W * H), rng,
+    losCache: new Int8Array(W * H * W * H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
   b.reinfMax = Math.round(b.infection * 5);
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
@@ -754,7 +755,7 @@ export function createBattle(state, setup) {
       if (shot) fire(b, u, shot.t, { volley: true });
     }
   }
-  if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat.`, "info");
+  if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
   checkEnd(state, b);
   return b;
 }
@@ -953,6 +954,8 @@ export function combatAct(state, act) {
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
+  // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry.
+  if (act.type === "soundRetreat") return soundRetreat(state, { leave: act.leave || [] });
   if (b.phase === "deploy") return deployAct(state, b, act); // deploy.js: placing the defenders before a break-in
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   const u = unitById(b, act.unit);
@@ -1025,7 +1028,7 @@ export function combatAct(state, act) {
       break;
     }
     case "retreat":
-      if (!inEvac(b, u.x, u.y)) return "Move into the evacuation zone first.";
+      if (!evacAt(b, u.x, u.y)) return "Move into the evacuation zone first.";
       u.left = true; u.ap = 0; u.ow = u.hunker = false;
       say(b, `${u.name} slips away from the fight.`, "info");
       break;
@@ -1304,13 +1307,236 @@ function flee(b, u) {
   u.ap = 0;
 }
 
+// ---------- sounding the retreat ----------
+// The evac strip. Everything that asks "is this cell on the way out?" goes through here (and inEvac), so a strip on
+// another map edge (a base battle: deploy.js sets b.evacMask and b.evacSide, away from the attack) goes through inEvac.
+export const evacAt = (b, x, y) => inEvac(b, x, y);
+function evacCells(b) {
+  const out = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (evacAt(b, x, y) && cellAt(b, x, y).walk) out.push([x, y]);
+  return out;
+}
+
+// The escape check when the retreat is sounded (in percent): 100 − 3 a tile to the strip (walking) − 25 for each
+// enemy right next to them − 6 for each shooter that sees them and 4 for each of the dead (or a brawler) within two
+// moves (together at most 35) − up to 30 for wounds − 2 a point of armor worn + 1 a point of Scouting + 10 at night;
+// carrying a downed teammate −10 and 4.5 a tile instead of 3; 5–95. Safe (100) on the strip with nobody next to
+// them, or anywhere with no enemy next to them, in sight or close and nobody to carry. Caught: one blow for each
+// enemy next to them (one from the pursuers if none), 18–32 each before armor; at 0 health they are down and left
+// behind, otherwise they tear free and get out hurt. A carrier who is caught drops whoever they carried.
+export const RETREAT = {
+  PER_TILE: 3, CARRY_TILE: 4.5, MAX_TILES: 20, PINNED: 25, SHOOTER: 6, CHASER: 4, THREAT_MAX: 35,
+  WOUNDS: 30, ARMOR: 2, SCOUTING: 1, NIGHT: 10, CARRY: 10, MIN: 5, MAX: 95, BLOW: [18, 32],
+};
+
+// Why the retreat cannot be sounded now ("" when it can).
+export function retreatRefusal(b) {
+  if (!b || b.over) return "The battle is over.";
+  if (b.raid) return "In a raid you leave by extracting: move into a green extraction zone and press X.";
+  if (!b.evacCols) return "There is no way out of this fight: it has to be won or lost here.";
+  if (b.phase !== "player") return b.phase === "deploy" ? "The fight has not started yet." : "Wait for the enemy turn to finish.";
+  if (!b.units.some((u) => u.side === "player" && active(u))) return "Nobody is left standing to run.";
+  return "";
+}
+
+const pursuers = (b) => b.units.filter((e) => e.side === "enemy" && active(e) && e.aware && !e.fleeing);
+
+// One unit's escape odds. carrying: the downed teammate it would carry out. field: walking distance to the strip.
+export function escapeOdds(b, u, carrying = null, field = null) {
+  bindDims(b);
+  field = field || distField(b, evacCells(b));
+  const foes = pursuers(b);
+  const pinned = foes.filter((e) => adjacent(u, e)).length;
+  let shooters = 0, chasers = 0;
+  for (const e of foes) {
+    if (adjacent(u, e)) continue;
+    if (e.kind === "human" && canFire(b, e) && canSee(b, e, u)) shooters++;
+    else if ((e.kind === "zombie" || !canFire(b, e)) && dist(e.x, e.y, u.x, u.y) <= e.mob * 2) chasers++;
+  }
+  const onStrip = evacAt(b, u.x, u.y);
+  const raw = onStrip ? 0 : field[idx(u.x, u.y)];
+  const tiles = Math.round(Math.min(RETREAT.MAX_TILES, isFinite(raw) ? raw : RETREAT.MAX_TILES));
+  const threat = Math.min(RETREAT.THREAT_MAX, shooters * RETREAT.SHOOTER + chasers * RETREAT.CHASER);
+  const parts = [];
+  const add = (label, v) => { if (Math.round(v)) parts.push([label, Math.round(v)]); };
+  add(`${tiles} tile${tiles === 1 ? "" : "s"} to the strip`, -tiles * (carrying ? RETREAT.CARRY_TILE : RETREAT.PER_TILE));
+  add(`${pinned} enem${pinned === 1 ? "y" : "ies"} next to them`, -pinned * RETREAT.PINNED);
+  add([shooters ? `${shooters} shooter${shooters === 1 ? "" : "s"} in sight` : "", chasers ? `${chasers} close behind` : ""].filter(Boolean).join(", "), -threat);
+  add("wounds", -RETREAT.WOUNDS * Math.max(0, 1 - u.hp / u.maxHp));
+  add("armor worn", -RETREAT.ARMOR * (u.load || 0));
+  add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
+  add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
+  add(carrying ? `carrying ${carrying.name}` : "", carrying ? -RETREAT.CARRY : 0);
+  const safe = !pinned && (onStrip ? !carrying : !threat && !carrying);
+  const chance = safe ? 100 : Math.max(RETREAT.MIN, Math.min(RETREAT.MAX, 100 + parts.reduce((a, p) => a + p[1], 0)));
+  // If caught: the chance the blows put them down (and so leave them behind).
+  const lostIfCaught = safe ? 0 : downChance(Math.max(1, pinned), u.hp / Math.max(0.05, u.armor));
+  return { chance, safe, parts, pinned, shooters, chasers, tiles, onStrip, lostIfCaught };
+}
+
+// Chance that n blows of BLOW[0]..BLOW[1] each add up to at least hp.
+function downChance(n, hp) {
+  const [lo, hi] = RETREAT.BLOW;
+  let sums = new Map([[0, 1]]);
+  for (let i = 0; i < n; i++) {
+    const next = new Map();
+    for (const [s, p] of sums) for (let v = lo; v <= hi; v++) next.set(s + v, (next.get(s + v) || 0) + p / (hi - lo + 1));
+    sums = next;
+  }
+  let pr = 0;
+  for (const [s, p] of sums) if (s >= hp) pr += p;
+  return pr;
+}
+
+// A downed teammate who could be carried out (one already lying on the strip is carried out at the end anyway).
+const carryable = (b, t) => t.side === "player" && t.down && !t.dead && !t.left && !evacAt(b, t.x, t.y);
+
+// The plan if the retreat is sounded now: every standing unit's odds and who carries whom. leave: ids of downed
+// teammates not to carry (the confirm's checkboxes). Each downed teammate next to someone standing is carried by the
+// one with the best odds (each carries one).
+export function retreatPlan(b, leave = []) {
+  bindDims(b);
+  const field = distField(b, evacCells(b));
+  const standing = b.units.filter((u) => u.side === "player" && active(u));
+  const carrier = new Map(); // downed unit id → carrier
+  const busy = new Set();
+  for (const t of b.units.filter((x) => carryable(b, x) && !leave.includes(x.id))) {
+    let best = null;
+    for (const u of standing) {
+      if (busy.has(u.id) || !adjacent(u, t)) continue;
+      const o = escapeOdds(b, u, t, field);
+      if (!best || o.chance > best.o.chance) best = { u, o };
+    }
+    if (best) { carrier.set(t.id, best.u); busy.add(best.u.id); }
+  }
+  const units = standing.map((u) => {
+    const tid = [...carrier.keys()].find((k) => carrier.get(k) === u);
+    const t = tid != null ? unitById(b, tid) : null;
+    return { id: u.id, sid: u.sid, name: u.name, carrying: t ? t.id : null, carryingName: t ? t.name : null, ...escapeOdds(b, u, t, field) };
+  });
+  const downed = b.units.filter((t) => t.side === "player" && t.down && !t.dead && !t.left).map((t) => ({
+    id: t.id, name: t.name, onStrip: evacAt(b, t.x, t.y), stab: !!t.stab, left: leave.includes(t.id),
+    by: carrier.has(t.id) ? carrier.get(t.id).name : null, canCarry: carryable(b, t) && standing.some((u) => adjacent(u, t)),
+  }));
+  const expected = units.reduce((a, p) => a + p.chance / 100, 0);
+  const lost = units.reduce((a, p) => a + (1 - p.chance / 100) * p.lostIfCaught, 0);
+  return { units, downed, expected, lost };
+}
+
+// Sounds the retreat: every unit still standing tries to get out now (escapeOdds), carrying the downed next to
+// them. The battle ends as a retreat (a defeat if nobody got out). Returns an error, or "" when it happened.
+// opts.leave: downed teammates not to carry; opts.by "ai" (with opts.why) when the AI gives the order.
+export function soundRetreat(state, opts = {}) {
+  const b = state.combat;
+  bindDims(b);
+  const err = retreatRefusal(b);
+  if (err) return err;
+  const rng = b.rng;
+  const plan = retreatPlan(b, opts.leave || []);
+  const rec = b.retreatOrder = { turn: b.turn, by: opts.by || "player", escaped: [], caught: [], carried: [], dropped: [], lines: [] };
+  say(b, opts.by === "ai" ? `Your people sound the retreat: ${opts.why || "the fight is lost"}. Everyone runs for the evac strip.` : "You sound the retreat. Everyone runs for the evac strip.", "danger");
+  for (const p of plan.units) {
+    const u = unitById(b, p.id);
+    if (!u || !active(u)) continue;
+    const t = p.carrying != null ? unitById(b, p.carrying) : null;
+    u.ap = 0; u.ow = u.hunker = false;
+    if (p.safe || rng.chance(p.chance / 100)) {
+      u.left = true;
+      rec.escaped.push(u.sid);
+      if (t) { t.left = true; t.carried = true; rec.carried.push(t.sid); }
+      const line = `${u.name} ${p.safe ? "gets out" : `makes it out (${p.chance}%)`}${t ? `, carrying ${t.name}` : ""}.`;
+      say(b, line, "good");
+      rec.lines.push(line);
+      continue;
+    }
+    // Caught: a blow from each enemy next to them (one from the pursuers if none).
+    let rawDmg = 0;
+    for (let i = 0; i < Math.max(1, p.pinned); i++) rawDmg += rng.int(RETREAT.BLOW[0], RETREAT.BLOW[1]);
+    const eff = Math.round(rawDmg * u.armor);
+    u.hp = Math.max(0, u.hp - eff);
+    rec.caught.push(u.sid);
+    fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: eff, side: "enemy" });
+    let line;
+    if (u.hp <= 0) {
+      u.down = true;
+      u.bleed = BLEED_TURNS;
+      (b.downedIds || (b.downedIds = [])).push(u.sid); // service record (relations.js)
+      line = `${u.name} is caught (${p.chance}% to get away) and dragged down (${eff}): left behind.`;
+    } else {
+      u.left = true;
+      rec.escaped.push(u.sid);
+      line = `${u.name} is caught (${p.chance}% to get away) but tears free (${eff} damage) and gets out.`;
+    }
+    if (t) { rec.dropped.push(t.sid); line += ` ${t.name} has to be dropped.`; }
+    say(b, line, "death");
+    rec.lines.push(line);
+  }
+  b.acted = true;
+  bump(b);
+  checkEnd(state, b);
+  return "";
+}
+
+// ---------- the AI's sense of a lost fight ----------
+// Rough fighting strength of each side, Lanchester-style: total firepower × total health (health ÷ armor). A gun
+// counts its hit chance (−20 against people, for cover) × its damage; melee and the dead count 40% (they have to
+// close in first, through overwatch). Returns the ratio yours ÷ theirs and the share of your team that is down.
+function firepower(b, u, vsPeople) {
+  const w = WEAPONS[u.weapon];
+  if (canFire(b, u)) {
+    const ch = Math.max(10, Math.min(95, u.aim + (w.aim || 0) - (vsPeople ? COVER_DEF[1] : 0)));
+    return (ch / 100) * ((w.dmg[0] + w.dmg[1]) / 2) * u.dmgMult;
+  }
+  const d = w.melee ? w.dmg : BASH;
+  return (Math.max(10, Math.min(95, u.meleeAim)) / 100) * ((d[0] + d[1]) / 2) * (w.melee ? u.dmgMult : 1) * 0.4;
+}
+export function fightOutlook(b) {
+  bindDims(b);
+  const mine = b.units.filter((u) => u.side === "player" && active(u));
+  const theirs = b.units.filter((u) => u.side === "enemy" && active(u) && !u.fleeing);
+  const team = b.units.filter((u) => u.side === "player" && !(u.left && !u.carried));
+  const people = theirs.filter((u) => u.kind === "human").length / Math.max(1, theirs.length);
+  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople), 0);
+  const life = (list) => list.reduce((a, u) => a + u.hp / Math.max(0.05, u.armor), 0);
+  const ours = fire(mine, people >= 0.5) * life(mine), them = fire(theirs, true) * life(theirs);
+  return {
+    ratio: them > 0 ? ours / them : Infinity, mine: mine.length, theirs: theirs.length,
+    down: team.filter((u) => u.down || u.dead).length / Math.max(1, team.length),
+  };
+}
+
+// When the AI sounds the retreat, by style: below this strength ratio, or with this share of the team down and the
+// ratio under 1. Cautious pulls out earlier, Aggressive later.
+export const RETREAT_AI = {
+  cautious: { ratio: 0.45, down: 0.34 },
+  balanced: { ratio: 0.3, down: 0.5 },
+  aggressive: { ratio: 0.18, down: 0.67 },
+};
+// The style the AI fights in: the caller's, the battle's (setup.aiStyle), the autopilot's, else Balanced.
+const aiStyle = (state, b, opts) => opts.style || b.setup.aiStyle || (state.autopilot && state.governor && state.governor.personality) || "balanced";
+export function retreatAdvice(b, style = "balanced") {
+  if (retreatRefusal(b)) return null;
+  // Defending a base (a break-in map with a way out): giving up means abandoning it, so every style holds on as
+  // long as Aggressive does.
+  const home = b.setup.layout === "baseDefence" || b.setup.deploy;
+  const T = home ? RETREAT_AI.aggressive : RETREAT_AI[style] || RETREAT_AI.balanced;
+  const o = fightOutlook(b);
+  if (o.ratio < T.ratio) return { why: "they are outgunned", ...o };
+  if (o.down >= T.down && o.ratio < 1) return { why: "too many of them are down", ...o };
+  return null;
+}
+
 // Runs a whole player turn with the AI (used by headless tests).
-export function autoPlayerTurn(state) {
+// opts.style: the style it fights in (aiStyle); opts.retreat === false: it never sounds the retreat (tools measuring it).
+export function autoPlayerTurn(state, opts = {}) {
   const b = state.combat;
   bindDims(b);
   if (b && !b.over && b.phase === "deploy") return void endDeploy(b); // deploy.js: default positions, then fight
   if (!b || b.over || b.phase !== "player") return;
   if (b.raid) return autoRaidTurn(state);
+  // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them.
+  const giveUp = opts.retreat === false || state.autoRetreat === false ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
+  if (giveUp) return void soundRetreat(state, { by: "ai", why: giveUp.why });
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
     if (active(u) && u.ap > 0) aiUnit(b, u);
@@ -1346,24 +1572,32 @@ function endBattle(state, b, outcome) {
   const hurtIds = [], deadIds = [];
   const lines = [];
   const medic = Math.max(0, ...b.units.filter((u) => u.side === "player" && active(u)).map((u) => u.medicine));
+  // A retreat: the downed carried out by the sounded retreat (soundRetreat) or dragged onto the evac strip go with
+  // the others, and pull through like the downed after a win (the medic among those who got out).
+  const outMedic = Math.max(0, ...b.units.filter((u) => u.side === "player" && u.left && !u.down && !u.dead).map((u) => u.medicine));
+  const carriedIds = [];
   for (const u of b.units) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     let dies = u.dead;
-    if (!dies && u.down) {
+    const carried = outcome === "retreat" && !u.dead && u.down && (u.carried || evacAt(b, u.x, u.y));
+    if (carried) {
+      dies = !rng.chance(u.stab || u.stabSure ? 1 : 0.5 + outMedic * 0.02);
+      if (!dies) carriedIds.push(s.id);
+    } else if (!dies && u.down) {
       let live;
       if (outcome === "victory") live = u.stab ? 1 : 0.5 + medic * 0.02;
       else if (outcome === "retreat") live = 0;
       else live = (setup.downedLive ?? (zombies ? 0.1 : 0.35)) + (u.stab ? 0.3 : 0); // setup.downedLive: at your own base the downed can be dragged inside (defences.js)
       if (u.stabSure && outcome !== "retreat") live = 1; // stabilized by a Miracle Worker (skills.js)
       dies = !rng.chance(live);
-      if (outcome === "retreat") lines.push(`${u.name} was left behind.`);
+      if (outcome === "retreat") { lines.push(`${u.name} was left behind and is lost.`); u.lostBehind = true; }
     }
     if (dies) {
       hurt(state, s, 9999, b.tileId, cause);
       deadIds.push(s.id);
-      lines.push(`${u.name} died.`);
+      if (!u.lostBehind) lines.push(carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`);
       continue;
     }
     const hp = u.down ? rng.int(5, 15) : u.hp;
@@ -1371,8 +1605,9 @@ function endBattle(state, b, outcome) {
     else s.health = Math.min(100, Math.max(s.health, hp));
     if (!s.alive) { deadIds.push(s.id); continue; }
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
-    if (u.down) lines.push(`${u.name} pulled through, barely (health ${Math.round(s.health)}).`);
+    if (u.down) lines.push(carried ? `${u.name} was carried out, barely alive (health ${Math.round(s.health)}).` : `${u.name} pulled through, barely (health ${Math.round(s.health)}).`);
   }
+  if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, true);
 
   const enemies = b.units.filter((u) => u.side === "enemy");
@@ -1401,6 +1636,9 @@ function endBattle(state, b, outcome) {
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
     tactical: true, worn: true, bodies: b.bodies.length,
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js: taken home by finishCombat
+    carriedIds, // the downed taken out in a retreat
+    // The retreat was sounded (soundRetreat): who got out, who was caught, who was carried or had to be dropped.
+    retreatOrder: b.retreatOrder ? { by: b.retreatOrder.by, turn: b.retreatOrder.turn, escaped: b.retreatOrder.escaped.slice(), caught: b.retreatOrder.caught.slice(), carried: b.retreatOrder.carried.slice(), dropped: b.retreatOrder.dropped.slice() } : null,
   };
   b.summary = lines;
   say(b, outcome === "victory" ? "Victory. The area is clear." : outcome === "retreat" ? "You pulled out of the fight." : "Defeat. Your team is down.", outcome === "victory" ? "good" : "death");
@@ -1882,7 +2120,7 @@ function searchBox(state, b, u, box) {
   }
   const got = [];
   const left = [];
-  let room = party ? partyCapacity(state, party) - cargoLoad(party.cargo) : 0;
+  let room = party ? cargoRoom(state, party) : 0;
   for (const [k, q] of Object.entries(box.contents.sup)) {
     const take = party ? Math.min(q, unitsThatFit(room, k)) : 0;
     if (take > 0) {
@@ -1895,10 +2133,10 @@ function searchBox(state, b, u, box) {
     box.contents.sup[k] = q - take;
   }
   box.contents.gear = box.contents.gear.filter((g) => {
-    if (party && room >= 3) {
+    if (party && room >= itemLoad(g)) {
       party.cargo.gear.push(g);
       R.foundGear.push(g);
-      room -= 3;
+      room -= itemLoad(g);
       got.push(g.name);
       return false;
     }
@@ -1984,7 +2222,7 @@ function autoRaidTurn(state) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   for (const u of b.units.filter((x) => x.side === "player")) {
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
-      const full = party && partyCapacity(state, party) - cargoLoad(party.cargo) < 3;
+      const full = party && cargoRoom(state, party) < 2;
       const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some((c) => !botDone(c)); // botDone: searched, or a lock it gave up on (locks.js)
       const z = zoneAt(b, u.x, u.y);
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }

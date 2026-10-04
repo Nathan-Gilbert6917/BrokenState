@@ -128,7 +128,7 @@ const KEYS = [
   ["B / P / G / T", "Bases / People / Groups / Teams tab"], ["Tab or N", "Next team waiting for orders (Shift+Tab back)"],
   ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
   ["J", "Diary"], ["R", "Roster"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
-  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat, Enter ends the turn"],
+  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone), Enter ends the turn"],
   ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
 ];
 

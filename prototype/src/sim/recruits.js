@@ -87,7 +87,7 @@ export function teamOutlook(state, p, k = 0) {
   // No base left (conquest.js exiles): the team itself is home for now.
   const home = baseById(state, p.homeBaseId) || hub(state) || { name: "the road (no base)", tile: partyTile(p) };
   const speed = partySpeed(p) || 1;
-  const homeFrom = (tile) => { const r = planPath(state, tile, home.tile, !!p.vehicle) || planPath(state, tile, home.tile, false); return r ? r.cost / speed : 48; };
+  const homeFrom = (tile) => { const r = planPath(state, tile, home.tile, p.vehicle || false) || planPath(state, tile, home.tile, false); return r ? r.cost / speed : 48; };
   const left = p.path && p.idx < p.path.length - 1 ? hoursLeft(state, p) : 0;
   const hours = p.phase === "back" ? left : left + (p.dest != null && left > 0 ? 6 + homeFrom(p.dest) : homeFrom(partyTile(p)));
   const days = Math.max(0.5, hours / 24);

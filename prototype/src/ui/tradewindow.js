@@ -6,9 +6,10 @@ import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPow
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
 import {
-  tradeContext, tradeTotals, tradeVerdict, sellPrice, buyPrice, spread, itemValue, intelOffer, setQty, toggleGear, setIntel, balanceWith,
-  executeTrade, giftAll, proposePact, endTrade, openCaravanTrade,
+  tradeContext, tradeTotals, tradeVerdict, sellPrice, buyPrice, spread, intelOffer, setQty, toggleGear, setIntel, balanceWith,
+  executeTrade, giftAll, proposePact, endTrade, openCaravanTrade, priceWhy, supplyInfo, gearInfo, goodsWorth,
 } from "../sim/trade.js";
+import { situation, tastes, profileLabel, catName, catOf, margin } from "../sim/valuation.js";
 import {
   radioNodes, hasNetwork, canRadioGroup, radioScan, radioGreet, radioNews, radioRequestCaravan, radioDeal, radioHelp, radioPact, dealQuote,
   radioCooldown, refusal, tradeBase, radioSummary, RELAY_RANGE, GROUP_REACH,
@@ -19,7 +20,7 @@ import {
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
-import { vehiclesAtBase, vehicleById, tank } from "../sim/vehicles.js";
+import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 
@@ -37,11 +38,14 @@ function gearLabel(item) {
   const dur = itemDur(item);
   return `${esc(item.name)} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${d.dur} uses` : ""}</span>`;
 }
-const gearTip = (item) => {
+// No base value anywhere: what this group pays or charges, and why (sim/valuation.js).
+const gearTip = (item, price, mine, why) => {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${d.name}: base value ${d.value} × condition ${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` × ${dur} of ${d.dur} uses left` : ""} = ${p1(itemValue(item))}. ${d.desc || ""}`.trim();
+  return `${d.name}: condition ${Math.round((item.quality ?? 1) * 100)}%${dur != null ? `, ${dur} of ${d.dur} uses left` : ""}. ${mine ? "They pay" : "They charge"} ${p1(price)}${why.length ? ` (${why.map((w) => w.text.toLowerCase()).join("; ")})` : ""}. ${d.desc || ""}`.trim();
 };
+// The "why" lines under a row: what moves this group's price for it (no numbers).
+const whyHtml = (why) => why.map((w) => `<span class="tw-why ${w.dir}">${w.dir === "up" ? "▲" : w.dir === "down" ? "▼" : "✕"} ${esc(w.text)}</span>`).join("");
 
 function supplyRows(state, ctx, side) {
   const { t, f, speech } = ctx;
@@ -50,10 +54,12 @@ function supplyRows(state, ctx, side) {
     const have = mine ? ctx.have[k] || 0 : ctx.theirHave[k] || 0;
     const q = (mine ? t.offer[k] : t.ask[k]) || 0;
     const unit = mine ? sellPrice(state, f, k, speech, Math.max(1, q)) : buyPrice(state, f, k, speech, Math.max(1, q));
-    const btn = (dd, label, dis) => `<button class="mini" data-action="tw-qty" data-side="${side}" data-k="${k}" data-d="${dd}" ${dis ? "disabled" : ""}>${label}</button>`;
-    return `<tr${tip(mine ? `What they give you per ${SUPPLIES[k].name.toLowerCase()} (${p1(unit)} each for this many). Prices fall as they take more.` : `What they charge per ${SUPPLIES[k].name.toLowerCase()} (${p1(unit)} each for this many). Prices rise as they part with more.`)}>
-      <td><b>${SUPPLIES[k].name}</b></td><td class="muted">${n0(have)}</td><td class="muted">${p1(unit)}</td>
-      <td class="tw-step">${btn(-10, "−10", q <= 0)}${btn(-1, "−", q <= 0)}<input type="number" min="0" max="${n0(have)}" class="tw-qty" data-action="tw-set" data-side="${side}" data-k="${k}" value="${q}">${btn(1, "+", q >= have)}${btn(10, "+10", q >= have)}${btn("max", "All", q >= have)}</td></tr>`;
+    const no = supplyInfo(state, f, k).refused;
+    const why = mine || no ? priceWhy(state, f, k) : []; // the why lines once, on your side (the same reasons move both prices)
+    const btn = (dd, label, dis) => `<button class="mini" data-action="tw-qty" data-side="${side}" data-k="${k}" data-d="${dd}" ${dis || no ? "disabled" : ""}>${label}</button>`;
+    return `<tr${tip(no ? `They will not touch ${catName(catOf(k))}.` : mine ? `What they give you per ${SUPPLIES[k].name.toLowerCase()} (${p1(unit)} each for this many). Prices fall as they take more.` : `What they charge per ${SUPPLIES[k].name.toLowerCase()} (${p1(unit)} each for this many). Prices rise as they part with more.`)}>
+      <td><b>${SUPPLIES[k].name}</b>${whyHtml(why)}</td><td class="muted">${n0(have)}</td><td class="muted">${no ? "—" : p1(unit)}</td>
+      <td class="tw-step">${btn(-10, "−10", q <= 0)}${btn(-1, "−", q <= 0)}<input type="number" min="0" max="${n0(have)}" class="tw-qty" data-action="tw-set" data-side="${side}" data-k="${k}" value="${q}"${no ? " disabled" : ""}>${btn(1, "+", q >= have)}${btn(10, "+10", q >= have)}${btn("max", "All", q >= have)}</td></tr>`;
   }).join("");
 }
 
@@ -62,11 +68,13 @@ function gearRows(state, ctx, side) {
   const pool = mine ? ctx.myGear : ctx.theirGear;
   const chosen = mine ? ctx.t.offerGear : ctx.t.askGear;
   if (!pool.length) return `<div class="small muted">${mine ? (ctx.kind === "visit" ? "No items in the team's cargo." : "No items in the armory.") : "No items for sale."}</div>`;
-  const sp = spread(ctx.f, ctx.speech);
+  const prices = tradeTotals(state).lines.gear; // this group's price for each item (one not in the deal: as the next of its kind)
   return `<table class="t">${pool.map((g, i) => {
     const on = chosen.includes(g);
-    const price = itemValue(g) * (mine ? sp.sell : sp.buy);
-    return `<tr${tip(gearTip(g))}><td>${gearLabel(g)}</td><td class="muted">${p1(price)}</td><td><button class="mini ${on ? "active" : ""}" data-action="tw-gear" data-side="${side}" data-i="${i}">${on ? "✓ In the deal" : mine ? "Offer" : "Take"}</button></td></tr>`;
+    const price = prices.get(g) || 0;
+    const no = gearInfo(state, ctx.f, g).refused;
+    const why = priceWhy(state, ctx.f, g, { pool: ctx.theirGear });
+    return `<tr${tip(gearTip(g, price, mine, why))}><td>${gearLabel(g)}${whyHtml(why)}</td><td class="muted">${no ? "—" : p1(price)}</td><td><button class="mini ${on ? "active" : ""}" data-action="tw-gear" data-side="${side}" data-i="${i}"${no && !on ? " disabled" : ""}>${on ? "✓ In the deal" : no ? "Won't touch" : mine ? "Offer" : "Take"}</button></td></tr>`;
   }).join("")}</table>`;
 }
 
@@ -79,6 +87,17 @@ function intelBlock(state, ctx) {
     <div class="row small" style="flex-wrap:wrap">${io.areas.map((a) => `<button class="mini ${it.area === a.key ? "active" : ""}" data-action="tw-intel" data-f="area" data-v="${a.key}"${tip(`${a.tiles} tiles ${where}: ${p1(a.value * sp.buy)} in trade value`)}>${esc(a.name)} · ${p1(a.value * sp.buy)}</button>`).join("")}
       <button class="mini ${it.sightings ? "active" : ""}" data-action="tw-intel" data-f="sightings"${tip(`Every horde and hive within 12 tiles of them (${io.sightings.hordes} hordes, ${io.sightings.nests} hives that they know of)`)}>Horde and hive sightings · ${p1(io.sightings.value * sp.buy)}</button>
       <button class="mini ${it.sell ? "active" : ""}" data-action="tw-intel" data-f="sell" ${io.sell.ok || it.sell ? "" : "disabled"}${tip(io.sell.ok ? `Sell your own maps: ${io.sell.tiles} tiles you know well near them` : io.sell.why)}>Sell your maps · ${p1(io.sell.value * sp.sell)}</button></div>`;
+}
+
+// What moves this group's prices right now, and what their kind prizes and shuns (no numbers).
+const marginOf = (f) => margin(f);
+export function moodBlock(state, f) {
+  const s = situation(state, f);
+  const t = tastes(f);
+  const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+  return `<div class="tw-mood small"${tip("What moves their prices. Goods they want more than usual are marked ▲ (they pay more for them, and charge more), goods they care little for ▼, goods they will not touch ✕.")}>
+    <div><b>${esc(profileLabel(f))}</b>${t.likes.length ? ` · prize ${esc(t.likes.slice(0, 4).join(", "))}` : ""}${t.dislikes.length ? ` · little use for ${esc(t.dislikes.slice(0, 3).join(", "))}` : ""}${t.refuses.length ? ` · <span class="danger">will not touch ${esc(t.refuses.join(", "))}</span>` : ""}${t.dear ? " · they sell dear" : ""}</div>
+    ${s.length ? `<div>Right now: ${esc(cap(s.join(", ")))}.</div>` : ""}</div>`;
 }
 
 export function tradeWindow(state, ui) {
@@ -104,7 +123,8 @@ export function tradeWindow(state, ui) {
     <div class="small muted">${where}</div>
     ${held.length ? `<div class="small danger">They hold ${held.map(first).join(", ")}. A ransom was offered when you arrived; a Rescue team can also get them out.</div>` : ""}
     ${t.deal ? `<div class="small good">Agreed over the radio: you give ${Object.entries(t.deal.offer).map(([k, q]) => `${q} ${k}`).join(", ")} for ${Object.entries(t.deal.ask).map(([k, q]) => `${q} ${k}`).join(", ")}. They honour it as agreed.</div>` : ""}
-    <div class="small muted" style="margin:0.3rem 0"${tip("Every item is valued by what it is (base value), its condition and, for makeshift gear, the uses left. Supplies follow their stock: they pay more for what they are short of. They pay you less than they charge: Speech and goodwill narrow the gap.")}>They pay ${Math.round(sp.sell * 100)}% of an item's value and charge ${Math.round(sp.buy * 100)}% (Speech ${speech}, goodwill ${Math.round(f.goodwill)}).</div>
+    ${moodBlock(state, f)}
+    <div class="small muted" style="margin:0.3rem 0"${tip("Every group prices things its own way: what kind of group it is, the state it is in (war, hordes, hunger, sickness, the season, wealth) and how much of it it already has. An item's condition and uses left count too. They pay you less than they charge: Speech and goodwill narrow the gap.")}>Haggling: they pay you about ${Math.round((sp.sell / (sp.buy * marginOf(f))) * 100)}% of what they would charge for the same thing (Speech ${speech}, goodwill ${Math.round(f.goodwill)}${marginOf(f) > 1 ? "; they sell dear" : ""}).</div>
     <div class="grid2 tw-cols">
       <div><h3>You give</h3><table class="t"><tr><th></th><th>Have</th><th>Each</th><th>In the deal</th></tr>${supplyRows(state, ctx, "mine")}</table>
         <h3>Your items</h3>${gearRows(state, ctx, "mine")}</div>
@@ -167,10 +187,12 @@ export function radioModal(state, ui) {
         <div class="row small" style="margin-top:0.3rem">paying <input type="number" min="1" class="tw-qty" data-action="rd-dealf" data-f="payQty" value="${d.payQty}"> ${sel("payKey", d.payKey)}</div>
         <div class="small ${q.ok ? "good" : "danger"}" style="margin-top:0.3rem">${esc(q.reason)}${!q.ok && q.minPay != null ? "" : ""}</div>
         <div class="small muted">They have ${n0(f.stock[d.wantKey])} ${esc(d.wantKey)}; at most ${q.maxWant ?? 0} for that payment.${q.minPay != null ? ` For ${d.wantQty} they want at least ${q.minPay} ${esc(d.payKey)}.` : ""}</div>
+        <div>${whyHtml(priceWhy(state, f, d.wantKey, { max: 1 }))}${whyHtml(priceWhy(state, f, d.payKey, { max: 1 }))}</div>
         ${btn("rd-deal", "Propose this deal", noTrade || (coming.length ? "Their caravan is already out" : q.ok ? `Their caravan brings it to ${base ? base.name : "your base"}` : q.reason), !!noTrade || !q.ok || coming.length, "")}
         ${coming.length ? `<div class="small" style="margin-top:0.4rem">${coming.map((c) => c.phase === "trading" ? `Their caravan is at ${esc(baseById(state, c.baseId)?.name || "your base")} until ${when(c.stayUntil)}.` : `Their caravan is on the way to ${esc(baseById(state, c.baseId)?.name || "your base")}.`).join(" ")}</div>` : ""}
       </div>
     </div>
+    ${moodBlock(state, f)}
     ${radioDiploBlock(state, f) /* ui/diplomacy.js: wants and surplus, wars, the coalition */}
     ${ui.radioMsg ? `<div class="result">${esc(ui.radioMsg)}</div>` : ""}
     ${(f.radioLog || []).length ? `<h3>On the radio</h3><div class="small">${f.radioLog.map((l) => `<div><span class="muted">Day ${l.day}</span> ${esc(l.text)}</div>`).join("")}</div>` : ""}
@@ -209,6 +231,24 @@ export function caravanLines(state, base) {
 // ---------- trade caravan planner ----------
 export const newCaravanForm = () => ({ crew: [], vehicleId: null, stance: "normal", goods: {}, travel: { food: 0, water: 0, fuel: 0 }, gear: [], stops: [] });
 
+// What each group on the route would give for the goods and items loaded (today's prices, before Speech), with
+// what moves it: the planner's way to pick the best buyer without seeing any base value.
+function worthAtStops(state, form) {
+  const h = hub(state);
+  const gear = form.gear.map((i) => h.armory[i]).filter(Boolean);
+  const goods = Object.fromEntries(Object.entries(form.goods).filter(([, q]) => q > 0));
+  if (!Object.keys(goods).length && !gear.length) return "";
+  const rows = [];
+  for (const tile of form.stops) {
+    const f = state.factions.find((x) => x.alive && x.bases.includes(tile));
+    if (!f || rows.some((r) => r.f === f)) continue;
+    const why = [...Object.keys(goods), ...gear].map((w) => priceWhy(state, f, w, { max: 1 })[0]).filter(Boolean);
+    rows.push({ f, worth: goodsWorth(state, f, goods, gear), why: why.filter((w, i) => why.findIndex((x) => x.text === w.text) === i).slice(0, 2) });
+  }
+  if (!rows.length) return "";
+  return `<h3${tip("What each group on the route would give for what you load, at today's prices (your Speech adds to it). Their kind, their state and their stock all move it.")}>Worth to them</h3><table class="t">${rows.map((r) => `<tr><td>${esc(r.f.name)}${whyHtml(r.why)}</td><td class="muted">${p1(r.worth)}</td></tr>`).join("")}</table>`;
+}
+
 export function caravanPlanModal(state, ui) {
   const form = ui.caravanPlan;
   const h = hub(state);
@@ -233,10 +273,11 @@ export function caravanPlanModal(state, ui) {
           <tr><td>Home to ${esc(h.name)}</td><td class="muted">${est.back != null ? `${est.back}h` : "no route"}</td><td></td></tr></table>` : `<div class="small muted">No destinations yet.</div>`}
         <div class="row small" style="margin-top:0.3rem">Add <select data-action="cp-addstop"><option value="">pick a destination…</option>${dests.map((x) => `<option value="${x.tile}">${esc(x.name)}${x.hostile ? " (hostile)" : ""}</option>`).join("")}</select></div>
         <div class="small muted" style="margin-top:0.3rem">At each stop: trade there, unload (your outposts), stay a day, go on, or return home. Planned: about ${Math.round(est.hours)}h with 6h at each stop.</div>
+        ${worthAtStops(state, form)}
         <h3>Crew (${members.length})</h3>
         <div class="crew" style="grid-template-columns:1fr">${pool.map((s) => `<label class="${form.crew.includes(s.id) ? "on" : ""}"><input type="checkbox" data-action="cp-crew" data-id="${s.id}" ${form.crew.includes(s.id) ? "checked" : ""}> ${esc(s.name)} <span class="small muted">Speech ${skill(s, "speech")} · Combat ${combatPower(s).toFixed(1)}</span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
         <h3>Transport</h3>
-        <div class="row"><button data-action="cp-vehicle" data-v="" class="${!v ? "active" : ""}">On foot</button>${vehiclesAtBase(state, h.id).map((x) => `<button data-action="cp-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fuel ${n0(x.fuel)}/${tank(x)}, condition ${Math.round(x.condition)}%`)}>${esc(x.name)}</button>`).join("")}</div>
+        <div class="row"><button data-action="cp-vehicle" data-v="" class="${!v ? "active" : ""}">On foot</button>${carsAtBase(state, h.id).map((x) => `<button data-action="cp-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fuel ${n0(x.fuel)}/${tank(x)}, condition ${Math.round(x.condition)}%`)}>${esc(x.name)}</button>`).join("")}</div>
         <div class="row" style="margin-top:0.3rem">${Object.entries(STANCES).map(([k, s]) => `<button data-action="cp-stance" data-v="${k}" class="${form.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
       </div>
       <div>

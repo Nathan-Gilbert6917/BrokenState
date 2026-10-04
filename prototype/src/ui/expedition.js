@@ -4,8 +4,10 @@
 // (sim/orders.js); buttons use data-action handlers in main.js.
 import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions } from "../sim/parties.js";
-import { partyVehicle, tank } from "../sim/vehicles.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions } from "../sim/parties.js";
+import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
+import { bandName } from "../sim/load.js";
+import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { crossingsFrom, boatPlan, boatTip, gatherInfo, matsText } from "../sim/crossing.js";
 import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
@@ -245,22 +247,32 @@ function memberCard(state, p, m, live, queueing) {
 
 function suppliesBlock(state, p) {
   const cap = partyCapacity(state, p);
-  const load = cargoLoad(p.cargo);
+  const load = poolLoad(p);
   const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
-  const n = partyMembers(state, p).length || 1;
+  // Days at the rate it eats on the move (more under a load, sim/load.js).
+  const n = Math.max(1, partyPace(state, p).eatMove);
   const daysOf = (k) => n0(((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n);
+  const t = partyLoad(state, p);
+  const b = p.burden;
+  const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;
   return `<h3>Supplies and cargo</h3><div class="card small">
     <table class="t"><tr><th></th><th${tip("Packed at the start (used first on the road)")}>Packed</th><th${tip("Found on the way (carried home; food and water here are eaten when packed runs out)")}>Found</th></tr>
       ${packed.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
     </table>
-    <div class="muted" style="margin-top:0.3rem">Food for ~${daysOf("food")} days, water for ~${daysOf("water")} days · meds ${n0(partyMeds(p))}</div>
-    <div class="row" style="margin-top:0.3rem"><span class="muted" style="width:5.5rem"${tip("Found cargo against carry space (people + vehicle)")}>Load ${n0(load)}/${cap}</span><div style="flex:1">${bar((load / Math.max(1, cap)) * 100, load > cap * 0.9 ? "var(--danger)" : "var(--info)")}</div></div>
+    <div class="muted" style="margin-top:0.3rem">Food for ~${daysOf("food")} days, water for ~${daysOf("water")} days on the move · meds ${n0(partyMeds(p))}</div>
+    <div class="row" style="margin-top:0.3rem"><span class="muted" style="width:7rem"${tip(`Supplies and cargo (kg) against what the team can carry on top of what it wears${p.vehicle ? " (plus the vehicle)" : ""}. ${BANDS_HELP}`)}>Load ${n0(load)}/${n0(cap)} kg</span><div style="flex:1">${bar((load / Math.max(1, cap)) * 100, load > cap * 0.9 ? "var(--danger)" : "var(--info)")}</div></div>
+    <div style="margin-top:0.3rem"${tip("The team is weighed when it sets off and each hour it waits: eating on the way does not lighten its pace until it stops, but anything picked up on the move counts at once.")}>${p.vehicle === true ? "" : `<div class="small">Pace from its load: ${pace < 1 ? `<span class="warn">−${Math.round((1 - pace) * 100)}%</span>` : "full"}${b && b.band >= 0 ? ` (worst band when weighed: ${bandName(b.band)})` : ""}</div>`}${paceLine(t)}${carLine(t, partyVehicle(state, p)?.name)}${t.mode === true ? "" : loadRows(t)}</div>
     ${p.cargo.gear.length ? `<div style="margin-top:0.3rem">${p.cargo.gear.map((g) => `<span class="chip">${esc(g.name)}</span>`).join("")}</div>` : ""}
   </div>`;
 }
 
 function vehicleBlock(state, p, v) {
   if (!v) return `<h3>Vehicle</h3><div class="card small muted">On foot.</div>`;
+  if (isBike(v)) return `<h3>Vehicle</h3><div class="card small">
+    <b>${esc(vehicleLabel(v))}</b>
+    <div class="row"><span class="muted" style="width:5rem">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.5rem;text-align:right">${Math.round(v.condition)}%</span></div>
+    <div class="muted">No fuel. Racks carry 15 kg a bike; riding takes 55% of the load's slow-down away. A part or a bit of scrap patches them on the road.</div>
+  </div>`;
   return `<h3>Vehicle</h3><div class="card small">
     <b>${esc(v.name)}</b>
     <div class="row"><span class="muted" style="width:5rem">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.5rem;text-align:right">${Math.round(v.condition)}%</span></div>

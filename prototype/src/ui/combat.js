@@ -1,13 +1,13 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
 import {
-  MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, inEvac, reachable, pathTo, shotOdds, meleeOdds,
+  MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
 } from "../sim/combat.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
-import { partyCapacity, cargoLoad } from "../sim/parties.js";
+import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
@@ -225,6 +225,44 @@ export function setConfirmEnd(on) {
 
 const endAskOpen = (b) => !!cui.endAsk && cui.endAsk.turn === b.turn && cui.endAsk.rev === b.rev && b.phase === "player" && !b.over;
 
+// ---------- sounding the retreat (sim/combat.js soundRetreat) ----------
+// The button (or Shift+R) opens a confirm in the panel with each unit's odds of getting out and who carries whom;
+// Sound the retreat (or Enter) gives the order, Keep fighting (or Esc) closes it. It lapses when anything happens.
+cui.retreatAsk = null; // { turn, rev, leave: [downed unit ids the player chose not to carry] }
+export const retreatAskOpen = (b) => !!cui.retreatAsk && cui.retreatAsk.turn === b.turn && cui.retreatAsk.rev === b.rev && b.phase === "player" && !b.over;
+let planCache = { key: "", plan: null };
+function askPlan(b) {
+  const leave = (cui.retreatAsk && cui.retreatAsk.leave) || [];
+  const key = `${b.rev}:${leave.join(",")}`;
+  if (planCache.key !== key || planCache.b !== b) planCache = { key, b, plan: retreatPlan(b, leave) };
+  return planCache.plan;
+}
+const oddsClass = (c) => (c >= 75 ? "good" : c >= 45 ? "warn" : "danger");
+
+// The confirm: per unit the odds (hover for the sum), carrying, the chance of being lost; the downed and who
+// carries them (a button to leave them instead); what the retreat costs. Pure HTML from the plan (fieldtest-safe).
+export function retreatConfirmHtml(b, plan) {
+  const n = plan.units.length;
+  const rows = plan.units.map((p) => {
+    const lost = Math.round((1 - p.chance / 100) * p.lostIfCaught * 100);
+    const tip = p.safe ? (p.onStrip ? "On the strip with nobody next to them: gets out." : "Nobody close, in sight or next to them: gets out.")
+      : `100 ${p.parts.map(([l, v]) => `${v > 0 ? "+" : "−"} ${Math.abs(v)} ${l}`).join(" ")} = ${p.chance}% (between 5 and 95). If caught: ${Math.max(1, p.pinned)} blow${p.pinned > 1 ? "s" : ""} of 18–32 before armor${p.lostIfCaught ? `, ${Math.round(p.lostIfCaught * 100)}% that it puts them down and they are left behind` : "; they would tear free and get out hurt"}${p.carrying != null ? ", and whoever they carry is dropped" : ""}.`;
+    return `<div class="spread" data-tip="${esc(tip)}"><span>${esc(p.name)}${p.carryingName ? ` <span class="muted small">carrying ${esc(p.carryingName)}</span>` : ""}</span>
+      <span>${lost ? `<span class="danger small">${lost}% lost</span> ` : ""}<b class="${p.safe ? "good" : oddsClass(p.chance)}">${p.safe ? "safe" : `${p.chance}%`}</b></span></div>`;
+  }).join("");
+  const downed = plan.downed.map((d) => {
+    const fate = d.onStrip ? `<span class="good">on the strip: carried out</span>` : d.by ? `<span class="good">carried by ${esc(d.by)}</span>` : d.left && d.canCarry ? `<span class="danger">left behind</span>` : `<span class="danger">nobody next to them: left behind</span>`;
+    const toggle = d.canCarry ? ` <button class="mini" data-action="cb-retreat" data-v="toggle" data-id="${d.id}" data-tip="${esc(d.left ? `Carry ${d.name} out (slower: the carrier's odds drop).` : `Leave ${d.name} behind: the carrier runs free. Someone downed and left behind is lost.`)}">${d.left ? "Carry" : "Leave"}</button>` : "";
+    return `<div class="spread small"><span>${esc(d.name)} <span class="muted">(down, ${d.stab ? "stabilized: lives if carried out" : "bleeding: about half pull through if carried out"})</span></span><span>${fate}${toggle}</span></div>`;
+  }).join("");
+  const behind = plan.downed.filter((d) => !d.onStrip && !d.by).length;
+  return `<div class="small cbmsg cbconfirm cbretreat"><b class="danger">Sound the retreat?</b> Everyone still standing runs for the evac strip now. Each one's chance to get away is below (hover it for why); the caught take a blow from each enemy next to them, and anyone it puts down is left behind.
+    <div class="cbodds" style="margin:0.35rem 0">${rows}${downed ? `<div class="muted small" style="margin-top:0.25rem">Downed:</div>${downed}` : ""}</div>
+    <div class="small">Expected out: <b>${plan.expected.toFixed(1)}</b> of ${n} standing${plan.lost >= 0.05 ? ` · likely lost when caught: <b class="danger">${plan.lost.toFixed(1)}</b>` : ""}${behind ? ` · left behind: <b class="danger">${behind}</b>` : ""}. The fight counts as a retreat: no bodies to loot, and the enemy keeps the field.</div>
+    <div style="margin-top:0.35rem"><button class="primary" data-action="cb-retreat" data-v="go" data-tip="Give the order. (Enter)">Sound the retreat</button>
+    <button data-action="cb-retreat" data-v="cancel" data-tip="Close this and keep fighting. (Esc)">Keep fighting</button></div></div>`;
+}
+
 export function combatKey(state, e) {
   const b = state.combat;
   if (!b) return false;
@@ -252,9 +290,13 @@ export function combatKey(state, e) {
     if (u && active(u)) { cui.sel = u.id; cui.mode = "move"; }
     return true;
   }
+  // The retreat confirm: Enter gives the order, Space does nothing (too easy to press by habit), Esc closes it.
+  if (retreatAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-retreat", { v: "go" }); return true; }
+  if (retreatAskOpen(b) && e.code === "Space") { cui.msg = "Press Enter or Sound the retreat to give the order, Esc to keep fighting."; return true; }
   if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.dragId = null; return true; }
+  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.dragId = null; return true; }
   if (b.phase === "deploy") return false;
+  if (e.code === "KeyR" && e.shiftKey) { combatAction(state, "cb-retreat", { v: "ask" }); return true; }
   const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
@@ -275,6 +317,25 @@ export function combatAction(state, key, d) {
   }
   if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
   if (key === "cb-confirm") return void setConfirmEnd(!cui.confirmEnd);
+  // Sounding the retreat: ask (the confirm), toggle carrying a downed teammate, go, cancel.
+  if (key === "cb-retreat") {
+    if (d.v === "cancel") { cui.retreatAsk = null; return; }
+    const err = retreatRefusal(b);
+    if (err) { cui.retreatAsk = null; cui.msg = err; return; }
+    if (d.v === "ask") { cui.retreatAsk = retreatAskOpen(b) ? null : { turn: b.turn, rev: b.rev, leave: [] }; cui.endAsk = null; cui.msg = ""; return; }
+    if (!retreatAskOpen(b)) return;
+    if (d.v === "toggle") {
+      const id = Number(d.id), L = cui.retreatAsk.leave;
+      cui.retreatAsk.leave = L.includes(id) ? L.filter((x) => x !== id) : [...L, id];
+      return;
+    }
+    if (d.v === "go") {
+      const leave = cui.retreatAsk.leave;
+      cui.retreatAsk = null;
+      act(state, { type: "soundRetreat", leave });
+    }
+    return;
+  }
   if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; return; }
   // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
   if (key === "cb-deploy") {
@@ -382,7 +443,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
-      [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", inEvac(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !active(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = active(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
@@ -395,6 +456,7 @@ export function renderCombatPanel(state) {
 
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
+  if (retreatAskOpen(b)) html += retreatConfirmHtml(b, askPlan(b)); // right under the team, where it is seen
 
   if (u && active(u) && b.phase === "player") {
     const ap = u.ap;
@@ -409,7 +471,7 @@ export function renderCombatPanel(state) {
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${stealthButtons(state, b, u, btn)}
-      ${b.evacCols ? btn("retreat", "Retreat", "Leave the battle. Only from the green evac strip. Anyone left behind who is down is lost.", ap > 0 && inEvac(b, u.x, u.y), "R") : ""}
+      ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
@@ -437,7 +499,9 @@ export function renderCombatPanel(state) {
       <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
       <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
   }
+  const noRetreat = b.evacCols && !b.raid ? retreatRefusal(b) : null;
   html += `<div class="cbfoot">
+    ${noRetreat != null ? `<button class="${retreatAskOpen(b) ? "active" : ""}" data-action="cb-retreat" data-v="ask" ${noRetreat ? "disabled" : ""} data-tip="${esc(noRetreat || "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried. (Shift+R)")}">Sound the retreat</button>` : ""}
     <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
     ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
   </div>
@@ -449,7 +513,7 @@ export function renderCombatPanel(state) {
 function raidHead(state, b, phase) {
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
-  const cap = party ? partyCapacity(state, party) : 0, load = party ? Math.round(cargoLoad(party.cargo)) : 0;
+  const cap = party ? Math.round(partyCapacity(state, party)) : 0, load = party ? Math.round(poolLoad(party)) : 0; // kg (sim/load.js)
   const stage = Math.min(3, Math.floor(R.heat / 25));
   const left = R.containers.filter((c) => !c.searched && c.kind !== "body").length;
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];
@@ -581,6 +645,10 @@ function resultHtml(state, b) {
       <div>Enemies left</div><div>${r.enemiesLeft}</div>
       <div>Wounded</div><div>${r.survivorsHurt.length ? names(r.survivorsHurt) : "none"}</div>
       <div>Dead</div><div class="${r.survivorsDead.length ? "danger" : ""}">${r.survivorsDead.length ? names(r.survivorsDead) : "none"}</div>
+      ${r.retreatOrder ? `<div>Retreat</div><div>sounded ${r.retreatOrder.by === "ai" ? "by your people" : "by you"} on turn ${r.retreatOrder.turn}</div>
+      <div>Got out</div><div class="good">${r.retreatOrder.escaped.length ? names(r.retreatOrder.escaped) : "nobody"}</div>
+      ${r.retreatOrder.caught.length ? `<div>Caught</div><div class="warn">${names(r.retreatOrder.caught)}</div>` : ""}` : ""}
+      ${r.carriedIds && r.carriedIds.length ? `<div>Carried out</div><div class="good">${names(r.carriedIds)}</div>` : ""}
       <div>Ammo used</div><div>${r.ammoUsed}</div>
       <div>${bodies ? "Taken" : "Loot"}</div><div>${loot.length ? esc(loot.join(", ")) : "nothing"}</div>
       ${bodies ? `<div>Bodies</div><div>${bodies} with things on them</div>` : ""}
@@ -659,7 +727,7 @@ function previewHtml(b) {
     const d = v.reach.dist[h.y * W + h.x];
     if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
   }
-  if (inEvac(b, h.x, h.y)) s += " Evac zone: you can retreat from here.";
+  if (evacAt(b, h.x, h.y)) s += " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
   return s;
 }
@@ -798,6 +866,27 @@ export function drawCombat(state, now) {
     if (t.side === "enemy" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
     const pos = animPos(b, t, now);
     drawUnit(state, b, t, pos[0], pos[1], cs, t.id === cui.sel);
+  }
+
+  // The retreat confirm is open: each unit's odds of getting out over its head.
+  if (retreatAskOpen(b)) {
+    ctx.font = `700 ${Math.max(10, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center";
+    for (const p of askPlan(b).units) {
+      const t = unitById(b, p.id);
+      const label = p.safe ? "SAFE" : `${p.chance}%`;
+      const col = p.safe || p.chance >= 75 ? "#6cc48a" : p.chance >= 45 ? "#e0a84f" : "#e2685f";
+      const x = ox + (t.x + 0.5) * cs, y = oy + t.y * cs + 2;
+      const tw = ctx.measureText(label).width + 10, th = Math.max(14, cs * 0.36);
+      ctx.fillStyle = "rgba(15,17,20,0.88)";
+      roundRect(x - tw / 2, y - th, tw, th, 4);
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.fillText(label, x, y - th * 0.28);
+    }
   }
 
   // Line of fire to the hovered enemy.

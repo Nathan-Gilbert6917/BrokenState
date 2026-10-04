@@ -50,7 +50,7 @@ import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou
 import { allianceRaidHelp } from "./alliance.js";
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
-import { worldScale } from "./worldsize.js";
+import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE } from "./alliance.js";
@@ -100,8 +100,12 @@ export function createFactions(state, count) {
     const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && g.distance(t.id, hubTile) >= 8 &&
       state.factions.every((f) => f.bases.every((b) => g.distance(b, t.id) >= 8)));
     if (!sites.length) return;
-    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= Math.round(30 * Math.sqrt(worldScale(state))));
-    const pool = reach.length ? reach : sites;
+    // Large and Huge maps (worldsize.js nearGroups): only the first few start within raid reach of the hub; the
+    // rest settle beyond it and come into reach as they expand.
+    const nearCap = sizeDef(worldSizeOf(state)).nearGroups;
+    const far = nearCap != null && i >= nearCap ? sites.filter((t) => g.distance(t.id, hubTile) > RAIDS.REACH + 2) : [];
+    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= (nearCap != null && i < nearCap ? RAIDS.REACH : Math.round(30 * Math.sqrt(worldScale(state)))));
+    const pool = far.length ? far : reach.length ? reach : sites;
     const pref = pool.filter((t) => PREFERRED_SITES[type].includes(t.loc.type));
     const site = rng.pick(pref.length ? pref : pool);
     let name = rng.pick(def.names);
@@ -361,7 +365,7 @@ function launchRaid(state, f) {
     for (const b of state.bases) {
       const from = nearestOwnBase(state, f, b.tile);
       const d = g.distance(from, b.tile);
-      if (d > RAIDS.REACH * Math.sqrt(worldScale(state))) continue; // groups settle farther apart on a bigger map (worldsize.js)
+      if (d > RAIDS.REACH) continue; // the same reach on every map size: on a bigger one the far groups must expand toward you first
       targets.push({ kind: "player", baseId: b.id, tile: b.tile, from, w: playerRaidWeight(state, f, b, d) });
     }
   }
@@ -555,6 +559,9 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const target = factionById(state, party.target.factionId);
   const attacker = typeof party.owner === "number" ? factionById(state, party.owner) : null;
   if (!target || !target.alive) return;
+  // Trade prices remember it (valuation.js): raided lately, or a horde at their walls.
+  target.hitDay = day(state);
+  if (!attacker && !party.raidName) target.hordeHitDay = day(state);
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
@@ -592,6 +599,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
     if (target.bases.length > 1 && rng.chance(0.5)) {
       const lost = party.target.tile;
       target.bases = target.bases.filter((b) => b !== lost);
+      target.lostBaseDay = day(state); // valuation.js: they want weapons and defences, and sell off fine things
       if (attacker && rng.chance(keepChance(state, attacker, lost))) attacker.bases.push(lost); // keepChance: type, distance, room (was 80% / 50%)
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }

@@ -371,6 +371,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   }
   if (defeated && f.alive) {
     C.stats.defeated++;
+    f.brokenByYou = day(state); // tools: a group you conquered, not one the wars or the dead broke
     history(state, `${f.name} is finished.`);
     collapseFaction(state, f);
     log(state, `${f.name} is no more: you took ${f.bases.length ? "the heart out of it" : "its last base"}.`, "good");

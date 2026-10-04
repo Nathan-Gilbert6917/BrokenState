@@ -20,7 +20,7 @@ import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
 } from "./world.js";
 import {
-  partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, unitsThatFit, wipeParty, awaitOrders,
+  partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, awaitOrders,
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
@@ -90,7 +90,7 @@ function check(state, p, key, dc, bonus = 0) {
 }
 
 function addCargo(state, p, key, qty) {
-  const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+  const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), Math.max(0, Math.floor(qty)));
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
   return take;
@@ -105,7 +105,7 @@ function stowGear(state, p, item) {
     Parties.addGearToCargo(state, p, item);
     return p.cargo.gear.includes(item);
   }
-  if (partyCapacity(state, p) - cargoLoad(p.cargo) < itemLoad(item)) return false;
+  if (cargoRoom(state, p) < itemLoad(item)) return false;
   p.cargo.gear.push(item);
   return true;
 }

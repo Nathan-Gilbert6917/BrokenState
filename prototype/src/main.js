@@ -17,7 +17,8 @@ import {
 import { treatAtBase } from "./sim/medical.js";
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView } from "./ui/render.js";
-import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, routeCheck } from "./ui/ui.js";
+import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
+import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
@@ -48,6 +49,8 @@ import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
+import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
+import { toManual } from "./sim/work.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -386,19 +389,23 @@ function armDiff(before) {
 function autofill(pl) {
   const h = hub(state);
   const ids = [...pl.crew];
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip.
-  const est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance });
-  view.preview = est ? est.path : null;
-  if (!est) return;
+  const v = plannerVehicle(state, pl);
+  // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
+  // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
-  const want = {
-    food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
-    fuel: (v ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-    meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
-    scrap: pl.mission === "outpost" ? 15 : 0,
-  };
-  for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
+  let est = null;
+  for (let pass = 0; pass < 2; pass++) {
+    est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies });
+    view.preview = est ? est.path : null;
+    if (!est) return;
+    const want = {
+      food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
+      fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
+      meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      scrap: pl.mission === "outpost" ? 15 : 0,
+    };
+    for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
+  }
   // Too heavy for the crew (and vehicle): less ammo, then fewer meds, then the 25% margin on food and water.
   if (!ids.length) return;
   const trim = (k, floor) => {
@@ -682,7 +689,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -714,6 +721,8 @@ for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...RO
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
+// The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
+for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 document.addEventListener("dragstart", (ev) => {
@@ -737,16 +746,17 @@ document.addEventListener("drop", (ev) => {
 
 const changeActions = {
   uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(resize, 50); options.uiScale = ui.scale; saveOptions(options); },
+  // A work role ("w:…", priorities) or a fixed job (Manual) (ui/work.js).
   role: (el) => {
     const s = survivorById(state, Number(el.dataset.id));
     if (!s) return;
-    s.role = el.value;
-    if (s.role !== "operate") s.station = null;
-    if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
+    const msg = applyRoleChoice(state, s, el.value);
+    if (msg && ui.baseView) ui.baseMsg = msg;
   },
   medicop: (el) => {
     if (!el.value) return;
     const s = survivorById(state, Number(el.value));
+    toManual(state, s); // a job picked by hand: off work priorities
     s.role = "medic";
     s.station = null;
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
@@ -755,6 +765,7 @@ const changeActions = {
   craftop: (el) => {
     if (!el.value) return;
     const s = survivorById(state, Number(el.value));
+    toManual(state, s);
     s.role = "craft";
     s.station = null;
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
@@ -773,6 +784,7 @@ const changeActions = {
     ui.baseMsg = "Station has no operator.";
     if (el.value) {
       const s = survivorById(state, Number(el.value));
+      toManual(state, s);
       s.role = "operate";
       s.station = stationId;
       ui.baseMsg = `${s.name} now runs this station.`;
@@ -834,6 +846,7 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -926,9 +939,25 @@ document.addEventListener("click", (ev) => {
   if (el.tagName === "INPUT" && el.type === "checkbox" && el.dataset.action !== "layer") ev.preventDefault();
   releaseHold();
   if (ui.nrMsg) ui.nrMsg = "";
-  act(() => fn(el.dataset));
+  act(() => fn(el.dataset, ev));
   dropFocus();
   refresh();
+});
+// Right-click on a Work tab cell counts down (ui/work.js); elsewhere the browser's menu is left alone.
+document.addEventListener("contextmenu", (ev) => {
+  const el = ev.target.closest && ev.target.closest("[data-rc]");
+  if (!el) return;
+  ev.preventDefault();
+  const fn = actions[el.dataset.action];
+  if (!fn) return;
+  releaseHold();
+  act(() => fn(el.dataset, { button: 2, shiftKey: ev.shiftKey }));
+  refresh();
+});
+// The Work tab cell under the mouse takes the number keys (workKey).
+document.addEventListener("mouseover", (ev) => {
+  const el = ev.target.closest && ev.target.closest(".wcell");
+  ui.workHover = el ? { ...el.dataset } : null;
 });
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
@@ -1204,6 +1233,8 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
+  if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.

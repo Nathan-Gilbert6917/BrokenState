@@ -8,7 +8,7 @@
 // re-estimates the remaining time every hour: arrival must match the last re-estimate exactly.
 // Usage: node tools/etatest.js [cases per seed] [seeds...]
 import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
-import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES } from "../src/sim/parties.js";
+import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../src/sim/crossing.js";
@@ -25,10 +25,14 @@ function resolveCards(state, p, stats) {
     if (c.isOrders) { i++; continue; }
     state.cards.splice(i, 1);
     const before = p.progress;
+    const pace = JSON.stringify([p.members, cargoLoad(p.cargo)]);
     const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     if (ch) ch.resolve(state);
     stats.cards += 1;
     if (p.progress < before) stats.delay += Math.round(((before - p.progress) / (STANCES[p.stance]?.speed || 1)) * 10) / 10; // delays are real hours at any pace
+    // A card that hands the team something to carry (a find) or someone to carry it with changes its load, and a
+    // heavier load slows it at once (sim/load.js): an event effect like a delay (flagged as a 0.01h delay).
+    if (JSON.stringify([p.members, cargoLoad(p.cargo)]) !== pace && stats.delay === 0) stats.delay = 0.01;
   }
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders) state.cards.splice(i, 1);
 }
@@ -75,16 +79,15 @@ for (const seed of seeds) {
     if (!dest) continue;
     const crew = atBase(state, h.id).slice(0, 2).map((s) => s.id);
     if (byTruck) { truck.fuel = lowFuel ? 2 : 30; truck.condition = 100; }
-    const supplies = { food: 30, water: 30, meds: 4, parts: 2, fuel: byTruck && !lowFuel ? 10 : 0 };
-    const fuel = byTruck ? truck.fuel + supplies.fuel : 0;
-    const est = estimateTrip(state, { memberIds: crew, dest: dest.id, vehicle: !!byTruck, stance, fuel });
+    // What the team packs is part of its load (sim/load.js): it sets the pace, so the estimate gets it too. On foot
+    // the pair packs a little less (they carry it all; by truck the truck does).
+    const supplies = byTruck ? { food: 30, water: 30, meds: 4, parts: 2, fuel: !lowFuel ? 10 : 0 } : { food: 24, water: 22, meds: 4, parts: 2 };
+    const fuel = byTruck ? truck.fuel + (supplies.fuel || 0) : 0;
+    const est = estimateTrip(state, { memberIds: crew, dest: dest.id, vehicle: !!byTruck, v: byTruck ? truck : null, stance, fuel, supplies });
     const oldEst = planPath(state, h.tile, dest.id, !!byTruck).cost / STANCES[stance].speed; // the old formula
-    // Packed supplies count against carry space at launch: a team on foot leaves light and is handed the rest
-    // (this tool checks movement, not packing).
-    const res = launchExpedition(state, { memberIds: crew, dest: dest.id, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies: byTruck ? supplies : { food: 4, water: 4 } });
+    const res = launchExpedition(state, { memberIds: crew, dest: dest.id, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies });
     if (!check(!res.error, `launch: ${res.error}`)) continue;
     const p = res.party;
-    Object.assign(p.supplies, supplies);
     // The carry limit itself: the same crew on foot cannot leave with the full load.
     if (c === 0) {
       const heavy = launchExpedition(state, { memberIds: atBase(state, h.id).slice(0, 1).map((s) => s.id), dest: dest.id, mission: "move", stance, supplies: { food: 60, water: 60 } });

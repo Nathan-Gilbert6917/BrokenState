@@ -5,12 +5,12 @@
 import { createWorld, makeSurvivor, combatPower, hub, hurt, killSurvivor, newId, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { makeItem, wearAfterFight } from "../src/sim/crafting.js";
-import { partyCapacity, cargoLoad, carryCapacity } from "../src/sim/parties.js";
+import { partyCapacity, cargoLoad, carryCapacity, poolLoad } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, unitById } from "../src/sim/combat.js";
 import { takeCaptive } from "../src/sim/conflicts.js";
 import {
   ensureInv, armorPower, armorMult, ARMOR_CAP, fitReason, moveItem, quickMove, toStorage, itemAt, packOf, carryBonus, itemLoad,
-  allItems, battleBodies, takeSupply, takeAllBody, takeAllBodies, bodyEmpty, stow, spriteArmorKey,
+  allItems, battleBodies, takeSupply, takeAllBody, takeAllBodies, bodyEmpty, stow, spriteArmorKey, stripAll,
 } from "../src/sim/inventory.js";
 
 const N = Number(process.argv[2] || 60);
@@ -145,27 +145,36 @@ function makeParty(members, tile = h.tile) {
   return p;
 }
 {
+  // Carrying is by weight (sim/load.js): everyone can carry 40 kg (a pack and Packrat add), less what they wear;
+  // the team's supplies and cargo share that.
   const a = person(), b = person();
   a.traits = []; b.traits = [];
+  stripAll(a); stripAll(b);
   const p = makeParty([a, b]);
-  check(partyCapacity(state, p) === 30, `two people carry 30 (got ${partyCapacity(state, p)})`);
+  check(partyCapacity(state, p) === 80, `two people with nothing on carry 80 kg (got ${partyCapacity(state, p)})`);
   a.gear.backpack = item("backpack");
-  check(carryBonus(a) === 6 && partyCapacity(state, p) === 36, "a worn backpack adds 6 carry space for the team");
+  check(carryBonus(a) === 6 && partyCapacity(state, p) === 85, `a worn improvised backpack adds 6 kg and weighs 1 (got ${partyCapacity(state, p)})`);
   a.gear.backpack = item("assaultpack");
-  check(partyCapacity(state, p) === 40, "an assault pack adds 10");
+  check(partyCapacity(state, p) === 88, `an assault pack adds 10 kg and weighs 2 (got ${partyCapacity(state, p)})`);
   packOf(a)[0] = item("vest");
   packOf(a)[1] = item("machete");
-  check(itemLoad(a.gear.backpack) === 9, "a pack in the cargo counts what is inside (3 + 2×3)");
-  // Fill the cargo, then try to put a pocket item in.
-  p.cargo.supplies.scrap = partyCapacity(state, p) - 1;
+  check(itemLoad(a.gear.backpack) === 7, `a pack weighs what is inside it too (2 + 4 + 1 = ${itemLoad(a.gear.backpack)})`);
+  check(partyCapacity(state, p) === 83, "what is in the pack counts against what the team can carry");
+  // Fill the team to its limit: moving a thing between a person and the cargo weighs the same, so it is allowed;
+  // taking the pack off (its 10 kg of max load go) is not.
+  p.cargo.supplies.scrap = Math.floor((partyCapacity(state, p) - poolLoad(p)) / 2);
   a.pockets[0] = item("knife");
-  check(/No room/.test(moveItem(state, `s:${a.id}:pocket:0`, `cargo:${p.id}:list`)) && a.pockets[0], "a full cargo refuses another item");
-  check(/No room/.test(toStorage(state, `s:${a.id}:backpack`)), "taking off a pack into a full cargo is refused (its carry space goes too)");
+  const capFull = partyCapacity(state, p);
+  check(!/Too heavy/.test(moveItem(state, `s:${a.id}:pocket:0`, `cargo:${p.id}:list`)) && !a.pockets[0] && p.cargo.gear.some((g) => g.key === "knife"), "a full team can still move a knife from a pocket into its cargo (same weight)");
+  check(Math.abs(partyCapacity(state, p) - (capFull + 0.3)) < 1e-9, "the knife's weight moved from the person to the shared load");
+  moveItem(state, `cargo:${p.id}:list:0`, `s:${a.id}:pocket:0`);
+  check(/Too heavy/.test(toStorage(state, `s:${a.id}:backpack`)) && a.gear.backpack, "taking off a pack when the team is full is refused (its 10 kg of max load go too)");
   p.cargo.supplies.scrap = 0;
   moveItem(state, `s:${a.id}:pocket:0`, `cargo:${p.id}:list`);
-  check(p.cargo.gear.some((g) => g.key === "knife") && cargoLoad(p.cargo) === 3, "with room the knife goes to the cargo (load 3)");
+  check(p.cargo.gear.some((g) => g.key === "knife") && Math.abs(cargoLoad(p.cargo) - 0.3) < 1e-9, "the knife in the cargo weighs 0.3 kg");
   moveItem(state, `cargo:${p.id}:list:0`, `s:${b.id}:pocket:2`);
-  check(b.pockets[2] && b.pockets[2].key === "knife" && cargoLoad(p.cargo) === 0, "cargo item into a teammate's pocket frees the space");
+  check(b.pockets[2] && b.pockets[2].key === "knife" && cargoLoad(p.cargo) === 0, "cargo item into a teammate's pocket");
+  check(fitReason(item("bicycle"), "pack") && fitReason(item("bicycle"), "pocket"), "a bicycle fits neither a pack nor a pocket (cargo only)");
   check(/same base/.test(moveItem(state, `s:${b.id}:pocket:2`, `armory:${h.id}:list`)), "a team in the field cannot reach the hub armory");
   state.parties.splice(state.parties.indexOf(p), 1);
 }
@@ -241,9 +250,9 @@ function strongTeam(n) {
   moveItem(state, `body:${ai}:pocket:0`, `s:${team[1].id}:pocket:3`);
   check(team[1].pockets[3] === kit && !state.deathSites.some((d) => d.items.some((e) => e.item === kit)), "a fallen friend's kit taken from the body leaves the death site");
   // Carry limit: fill the cargo, Take all leaves the rest.
-  p.cargo.supplies.scrap = partyCapacity(state, p) - cargoLoad(p.cargo) - 2;
+  p.cargo.supplies.scrap = Math.max(0, Math.floor((partyCapacity(state, p) - poolLoad(p) - 3) / 2));
   const r = takeAllBody(state, bodies.indexOf(enemyB[enemyB.length - 1]));
-  check(cargoLoad(p.cargo) <= partyCapacity(state, p) + 1e-9, `Take all respects the carry limit (load ${cargoLoad(p.cargo).toFixed(1)}/${partyCapacity(state, p)}, ${r.left} left)`);
+  check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, `Take all respects the carry limit (load ${poolLoad(p).toFixed(1)}/${partyCapacity(state, p).toFixed(1)} kg, ${r.left} left)`);
   p.cargo.supplies.scrap = 0;
   // Leave the rest: what is left on enemy bodies goes to a death site on that tile.
   const leftItems = bodies.filter((x) => x.sid == null).reduce((a, x) => a + allItems(x).length, 0);
@@ -267,7 +276,7 @@ function strongTeam(n) {
   }
   const got = b.result.loot.gear.length + Object.keys(b.result.loot.supplies).length;
   check(got > 0 && p.cargo.gear.length === b.result.loot.gear.length, `headless battle auto-takes loot (${b.result.loot.gear.map((g) => g.name).join(", ")})`);
-  check(cargoLoad(p.cargo) <= partyCapacity(state, p) + 1e-9, `auto-loot respects the carry limit (${cargoLoad(p.cargo).toFixed(1)}/${partyCapacity(state, p)})`);
+  check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, `auto-loot respects the carry limit (${poolLoad(p).toFixed(1)}/${partyCapacity(state, p).toFixed(1)} kg)`);
   closeCombat(state);
   check(!state.combat, "closes cleanly");
   // Base defense: everything goes to the armory, no carry limit.

@@ -365,6 +365,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     const tile = party.target.tile;
     if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35 * Math.min(1, keepChance(state, attacker, tile) / 0.6))) { // factions.js keepChance: the same wish to keep a base as an ordinary raid
       target.bases = target.bases.filter((x) => x !== tile);
+      target.lostBaseDay = day(state); // valuation.js
       attacker.bases.push(tile);
       recomputeOwnership(state);
       took = true;
@@ -419,6 +420,7 @@ export function makePeace(state, w, how = "terms") {
     const g = state.grid;
     const tile = lose.bases.slice(1).sort((x, y) => Math.min(...win.bases.map((z) => g.distance(x, z))) - Math.min(...win.bases.map((z) => g.distance(y, z))))[0];
     lose.bases = lose.bases.filter((x) => x !== tile);
+    lose.lostBaseDay = day(state); // valuation.js
     if (youWon) d.reserved[tile] = day(state) + DIPLO.RESERVE_DAYS;
     else if (win.bases.length < 5) win.bases.push(tile);
     recomputeOwnership(state);

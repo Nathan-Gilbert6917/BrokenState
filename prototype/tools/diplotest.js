@@ -18,7 +18,7 @@ import { newItem } from "../src/sim/inventory.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { canRadioGroup, offerCard as radioOfferCard } from "../src/sim/radio.js";
 import {
-  need, available, sellPrice, buyPrice, gearSellPrice, gearBuyPrice, marketLists, refreshMarket, marketOf, marketBoard, priceTrend, WANT_NEED, SURPLUS_NEED,
+  need, demand, wantQty, available, sellPrice, buyPrice, gearSellPrice, gearBuyPrice, marketLists, refreshMarket, marketOf, marketBoard, priceTrend, WANT_NEED, SURPLUS_NEED,
 } from "../src/sim/trade.js";
 import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
@@ -108,7 +108,7 @@ if (COLLAPSE) {
   const died = {};
   while (day(st) <= 365 && !st.gameOver) {
     tickHour(st);
-    if (st.hour % 24 === 0) for (const f of st.factions) if (!f.alive && died[f.id] == null) died[f.id] = day(st);
+    if (st.hour % 24 === 0) for (const f of st.factions) if (!f.alive && !f.brokenByYou && died[f.id] == null) died[f.id] = day(st); // groups the autopilot conquered (conquest.js) are not the wars' doing
   }
   process.stdout.write(JSON.stringify({ end: day(st), died: Object.values(died), stats: st.diplo.stats, gone: st.diplo.ended.filter((e) => e.terms === "none").length }));
   process.exit(0);
@@ -410,17 +410,17 @@ section("Relations between groups, pacts and wars");
   const t = b;
   t.stock.ammo = t.pop * 12; t.stock.meds = t.pop * 1.2;
   t.atWar = 0;
-  const avPeace = available(t, "ammo"), sp = sellPrice(st, t, "ammo", 5, 10), gp = gearSellPrice(t, newItem("shotgun"), 5);
+  const avPeace = available(t, "ammo"), sp = sellPrice(st, t, "ammo", 5, 10), gp = gearSellPrice(st, t, newItem("shotgun"), 5);
   t.atWar = 1;
   check(available(t, "ammo") < avPeace, `at war they have less ammo to trade (${avPeace} → ${available(t, "ammo")})`);
   check(Math.abs(sellPrice(st, t, "ammo", 5, 10) / sp - 1.35) < 1e-9, "at war they pay 35% more for ammo");
-  check(Math.abs(gearSellPrice(t, newItem("shotgun"), 5) / gp - 1.3) < 1e-9, "and 30% more for weapons");
+  check(Math.abs(gearSellPrice(st, t, newItem("shotgun"), 5) / gp - 1.3) < 1e-9, "and 30% more for weapons");
   let loses = true;
   for (const k of SUPPLY_KEYS) for (const sp2 of [0, 10, 20]) for (const gw of [-100, 0, 100]) {
     t.goodwill = gw;
     if (buyPrice(st, t, k, sp2, 5) <= sellPrice(st, t, k, sp2, 5)) loses = false;
     const it = newItem("ar");
-    if (gearBuyPrice(t, it, sp2) <= gearSellPrice(t, it, sp2)) loses = false;
+    if (gearBuyPrice(st, t, it, sp2) <= gearSellPrice(st, t, it, sp2)) loses = false;
   }
   check(loses, "at war, buying back what you sold still loses (every good, Speech 0–20, goodwill −100..100)");
   t.atWar = 0;
@@ -637,11 +637,11 @@ section("Wants and surplus, the market board");
     const m = refreshMarket(st, f);
     nlists += m.wants.length + m.surplus.length;
     for (const k of SUPPLY_KEYS) {
-      const n = need(f, k);
+      const n = demand(st, f, k); // stock, their kind and their state (trade.js)
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;
       if ((n <= SURPLUS_NEED && available(f, k) >= 5) !== !!s) bad++;
-      if (w && (w.qty !== Math.max(1, Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0))) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 }[k])) > 1e-9)) bad++;
+      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 }[k])) > 1e-9)) bad++;
       if (s && s.qty !== available(f, k)) bad++;
     }
     if (!m.wants.some((x) => x.key === "meds") || !m.surplus.some((x) => x.key === "food")) bad++;

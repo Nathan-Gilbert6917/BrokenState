@@ -1,4 +1,6 @@
 // Radio and trade: item values, the one price model (no buy-back profit, fairness, carry limits, goodwill caps),
+// what things are worth to whom (valuation.js: kinds of group, their state, refusals, arbitrage that pays then
+// shrinks, valuables, the autopilot's sales, no base value on screen),
 // radio relays and coverage chains, radio contact rules, a radio deal brought by a caravan, attacking a caravan
 // (hostility and raids), a trade caravan of yours through three stops with every arrival option, intel that lifts
 // the fog only where paid, determinism, a render check of the trade window and its handlers, and 200-day runs
@@ -6,7 +8,10 @@
 // Usage: node tools/tradetest.js [seed] [days]
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, radioBasesInRange, day, newId } from "../src/sim/world.js";
-import { GEAR, SUPPLY_KEYS } from "../src/sim/data.js";
+import { GEAR, SUPPLY_KEYS, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "../src/sim/data.js";
+import { itemLoad } from "../src/sim/inventory.js";
+import { itemCat, groupSick, worthTier } from "../src/sim/valuation.js";
+import { itemTip } from "../src/ui/inventory.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { launchExpedition, planPath, partyTile, giveOrder } from "../src/sim/parties.js";
 import { attitude } from "../src/sim/factions.js";
@@ -14,7 +19,7 @@ import { newItem } from "../src/sim/inventory.js";
 import { makeItem } from "../src/sim/crafting.js";
 import {
   itemValue, sellPrice, buyPrice, spread, need, tradeContext, tradeVerdict, tradeTotals, executeTrade, endTrade, setQty, balanceWith,
-  setIntel, toggleGear, openTrade, INTEL,
+  setIntel, toggleGear, openTrade, INTEL, gearSellPrice, gearBuyPrice, gearInfo, supplyInfo, priceWhy, marketLists, autoGearOffer,
 } from "../src/sim/trade.js";
 import {
   radioNodes, inCoverage, canRadioGroup, radioScan, radioDeal, dealQuote, radioNews, radioRequestCaravan, radioDaily, RELAY_RANGE, GROUP_REACH,
@@ -208,6 +213,162 @@ function visit(st, f, n = 2, cargo = {}) {
   check(f.goodwill - gw0 <= 4 + 1e-9 && f.goodwill > gw0, `goodwill from trading is capped at 4 a day (+${(f.goodwill - gw0).toFixed(2)} from 20 trades; ${gwr})`);
   endTrade(st);
   check(!st.trade && p.phase === "waiting", "leaving the window: the team waits for orders");
+}
+
+// 3b. Hidden values, kinds of group, their state, refusals, arbitrage (valuation.js).
+{
+  console.log("What things are worth to whom");
+  const st = world(seed + 11);
+  st.hordes = [];
+  st.hour = 5 * 24; // spring
+  const base = st.factions[0];
+  base.pop = 20;
+  // A group of each kind in the same shape: comfortable stock, no war, nothing on the shelf.
+  const comfy = { food: 120, water: 100, fuel: 40, meds: 20, ammo: 200, parts: 10, scrap: 60, preserved: 40, jars: 20 };
+  const group = (type, extra = {}) => ({ ...base, type, stock: { ...comfy }, wares: [], atWar: 0, goodwill: 30, hitDay: undefined, hordeHitDay: undefined, lostBaseDay: undefined, ...extra });
+  const mil = group("military"), com = group("commune"), rai = group("raider"), zea = group("zealot"), tra = group("traders"), fort = group("fortress");
+  const ar = newItem("ar", 1), gold = newItem("goldring", 1), whiskey = newItem("whiskey", 1), coffee = newItem("coffee", 1), batt = newItem("batteries", 1);
+  const pay = (f, it, sp = 0) => gearSellPrice(st, f, it, sp);
+  // Kinds.
+  check(pay(mil, ar) > pay(tra, ar) && pay(tra, ar) > pay(com, ar) && near(pay(mil, ar) / pay(com, ar), 1.5 / 0.5), `the same assault rifle: military ${pay(mil, ar).toFixed(1)}, traders ${pay(tra, ar).toFixed(1)}, commune ${pay(com, ar).toFixed(1)}`);
+  check(pay(rai, whiskey) > pay(com, whiskey) && pay(rai, gold) > pay(com, gold) && pay(com, coffee) / pay(com, gold) > pay(rai, coffee) / pay(rai, gold) && pay(mil, batt) > pay(rai, batt), "raiders pay for liquor and gold, the commune for coffee over gold, the military for batteries");
+  check(pay(fort, newItem("scrapvest", 1)) > pay(com, newItem("scrapvest", 1)) && sellPrice(st, fort, "scrap", 0, 10) > sellPrice(st, mil, "scrap", 0, 10), "a fortress wants armor and scrap");
+  check(gearBuyPrice(st, tra, ar, 0) / pay(tra, ar) > gearBuyPrice(st, mil, ar, 0) / pay(mil, ar) + 0.1, "traders sell dear (a margin on what they charge)");
+  check(gearInfo(st, zea, whiskey).refused && gearInfo(st, zea, newItem("cigarettes")).refused && pay(zea, whiskey) === 0 && pay(zea, gold) < pay(rai, gold) * 0.5, "zealots refuse liquor and cigarettes, and think little of gold (vanity)");
+  GEAR._testgun = { name: "Test rifle", slot: "weapon", skill: "shooting", power: 5, req: 3, value: 50, noise: 3 };
+  check(itemCat("_testgun") === "rifle" && CATEGORIES[itemCat("goldring")].group === "valuables", "an untagged new item gets a sensible category; valuables are their own family");
+  delete GEAR._testgun;
+  check(GEAR.goldring.valuable && itemLoad(gold) < itemLoad(newItem("pistol")) / 10 && itemLoad(coffee) < itemLoad(newItem("pistol")), "valuables are light for their worth");
+  // State.
+  const ratio = (f, it, set) => { const a = pay(f, it); set(); return pay(f, it) / a; };
+  const w = group("commune");
+  check(near(ratio(w, ar, () => { w.atWar = 1; }), 1.3) && near(pay(w, gold) / pay(group("commune"), gold), 0.85), "at war: weapons 30% dearer, trinkets 15% cheaper");
+  const h1 = group("commune");
+  const ammoCalm = sellPrice(st, h1, "ammo", 0, 10);
+  const hr = ratio(h1, ar, () => st.hordes.push({ id: 999999, tile: h1.bases[0], size: 60 }));
+  check(near(hr, 1.2) && near(sellPrice(st, h1, "ammo", 0, 10) / ammoCalm, 1.25) && priceWhy(st, h1, ar, { max: 3 }).some((x) => x.text.startsWith("Hordes")), `a horde of 60 at their walls: weapons ×${hr.toFixed(2)}, ammo ×1.25 ("${priceWhy(st, h1, ar, { max: 3 }).map((x) => x.text).join("; ")}")`);
+  st.hordes = [];
+  const h2 = group("commune", { hordeHitDay: day(st), hitDay: day(st) }); // factions.js sets both
+  check(near(pay(h2, ar) / pay(group("commune"), ar), 1.2 * 1.15), "a horde attack in the last two weeks counts the same (and as a raid)");
+  const r1 = group("commune", { hitDay: day(st) }), r2 = group("commune", { lostBaseDay: day(st) });
+  check(near(pay(r1, ar) / pay(com, ar), 1.15) && near(pay(r2, ar) / pay(com, ar), 1.25) && near(pay(r2, gold) / pay(com, gold), 0.75), "raided lately: weapons ×1.15; a base lost: ×1.25, and they sell off gold");
+  const s1 = group("raider");
+  const food0 = sellPrice(st, s1, "food", 0, 10), gold0 = pay(s1, gold);
+  s1.stock.food = 0; s1.stock.preserved = 0;
+  const sf = sellPrice(st, s1, "food", 0, 10) / food0;
+  check(sf > 2.6 && pay(s1, gold) / gold0 <= 0.6 + 1e-9 && priceWhy(st, s1, gold).some((x) => /Starving/.test(x.text)) && priceWhy(st, s1, "food").some((x) => /Starving/.test(x.text)), `starving: food ×${sf.toFixed(2)} (shortage alone would be at most ×2.2), gold ×${(pay(s1, gold) / gold0).toFixed(2)} ("they cannot eat it")`);
+  const t1 = group("raider");
+  t1.stock.water = 0;
+  check(sellPrice(st, t1, "water", 0, 10) / sellPrice(st, rai, "water", 0, 10) > 2.6, "thirsty: water skyrockets");
+  const fuelSpring = sellPrice(st, com, "fuel", 0, 10);
+  st.hour = 80 * 24; // winter
+  const fuelWinter = sellPrice(st, com, "fuel", 0, 10);
+  check(near(fuelWinter / fuelSpring, 1.4) && priceWhy(st, com, "fuel").some((x) => /^Winter/.test(x.text)), `winter: fuel ×${(fuelWinter / fuelSpring).toFixed(2)} ("${priceWhy(st, com, "fuel")[0].text}")`);
+  st.hour = 64 * 24; // late autumn
+  check(near(sellPrice(st, com, "fuel", 0, 10) / fuelSpring, 1.25) && /Winter is coming/.test(priceWhy(st, com, "fuel")[0].text), "late autumn: winter is coming, fuel ×1.25");
+  st.hour = 5 * 24;
+  // Sickness: some spell in the year makes them pay 50% more for meds.
+  const sk = group("commune");
+  let sickDay = null, wellDay = null;
+  for (let d = 0; d < 400 && (sickDay == null || wellDay == null); d++) { st.hour = d * 24; if (groupSick(st, sk)) sickDay = sickDay ?? d; else wellDay = wellDay ?? d; }
+  if (check(sickDay != null && wellDay != null, `sickness comes and goes (sick on day ${sickDay + 1})`)) {
+    st.hour = sickDay * 24; const ms = sellPrice(st, sk, "meds", 0, 5); const why = priceWhy(st, sk, "meds")[0];
+    st.hour = wellDay * 24; const mw = sellPrice(st, sk, "meds", 0, 5);
+    check(near(ms / mw, 1.5) && /Sickness/.test(why.text), `sickness in their camp: meds ×${(ms / mw).toFixed(2)} ("${why.text}")`);
+  }
+  st.hour = 5 * 24;
+  const all = group("commune", { atWar: 1, hitDay: day(st), lostBaseDay: day(st), hordeHitDay: day(st) });
+  check(gearInfo(st, all, ar).state <= 2.6 + 1e-9, `everything at once is held to ×2.6 (${gearInfo(st, all, ar).state.toFixed(2)})`);
+  // Wealth: rich groups pay more for fine things.
+  const rich = group("commune", { stock: Object.fromEntries(Object.entries(comfy).map(([k, v]) => [k, v * 3])) });
+  check(near(pay(rich, gold) / pay(com, gold), 1.2) && near(pay(rich, ar) / pay(com, ar), 1), "rich and at peace: fine things ×1.2 (weapons as before)");
+  // Selling and buying back loses, for every kind, in every state, for every good and item.
+  let worst = Infinity, cases = 0;
+  const states = [{}, { atWar: 1 }, { hitDay: day(st), lostBaseDay: day(st) }, { stock: { ...comfy, food: 0, preserved: 0, water: 0 } }];
+  for (const type of [...Object.keys(TRADE_PREFS).filter((k) => FACTION_TYPES[k])]) for (const s of states) for (const hour of [5 * 24, 80 * 24]) {
+    st.hour = hour;
+    const f = group(type, s);
+    for (const k of SUPPLY_KEYS) for (const q of [1, 10, 60]) for (const sp of [0, 20]) for (const gw of [-100, 100]) {
+      if (supplyInfo(st, f, k).refused) continue;
+      f.goodwill = gw;
+      const before = f.stock[k];
+      const got = q * sellPrice(st, f, k, sp, q);
+      f.stock[k] = before + q;
+      const cost = q * buyPrice(st, f, k, sp, q);
+      f.stock[k] = before;
+      worst = Math.min(worst, cost - got); cases++;
+    }
+    for (const key of Object.keys(GEAR)) for (const sp of [0, 20]) {
+      const it = newItem(key, 0.8);
+      if (gearInfo(st, f, it).refused) continue;
+      f.goodwill = 100;
+      const got = gearSellPrice(st, f, it, sp);
+      f.wares.push(it);
+      const cost = gearBuyPrice(st, f, it, sp);
+      f.wares.pop();
+      worst = Math.min(worst, cost - got); cases++;
+    }
+  }
+  st.hour = 5 * 24;
+  check(worst > 0, `every kind, at war, raided, starving, in winter: selling and buying back still loses (${cases} cases, smallest loss ${worst.toFixed(3)})`);
+  // Arbitrage: buy rifles where they are plentiful, sell where they are wanted. It pays, then the buyer fills up.
+  const seller = group("commune", { wares: Array.from({ length: 10 }, () => newItem("ar", 1)) });
+  const buyer = group("military", { atWar: 1 });
+  const margins = [];
+  for (let i = 0; i < 10; i++) {
+    const it = seller.wares[0];
+    const cost = gearBuyPrice(st, seller, it, 10);
+    const got = gearSellPrice(st, buyer, it, 10);
+    seller.wares.shift(); buyer.wares.push(it);
+    margins.push(got - cost);
+  }
+  const firstLoss = margins.findIndex((m) => m <= 0);
+  check(margins[0] > 0 && margins.every((m, i) => !i || m <= margins[i - 1] + 1e-9) && firstLoss > 0, `rifles from a commune to the military at war: +${margins[0].toFixed(1)} on the first, shrinking, a loss from rifle ${firstLoss + 1}`);
+  const farm = group("commune", { stock: { ...comfy, food: 600 } });
+  const hungry = group("raider", { stock: { ...comfy, food: 0, preserved: 0 } });
+  const lots = [];
+  for (let i = 0; i < 30; i++) {
+    const cost = 20 * buyPrice(st, farm, "food", 10, 20), got = 20 * sellPrice(st, hungry, "food", 10, 20);
+    farm.stock.food -= 20; hungry.stock.food += 20;
+    lots.push(got - cost);
+  }
+  const lossAt = lots.findIndex((m) => m <= 0);
+  check(lots[0] > 0 && lossAt > 0 && lots.every((m, i) => !i || m <= lots[i - 1] + 1e-9), `food from a farm to starving raiders: +${lots[0].toFixed(1)} on the first 20, shrinking, a loss from lot ${lossAt + 1} (${lots.slice(0, lossAt).reduce((a, b) => a + b, 0).toFixed(0)} in all)`);
+  // Market lists use the same demand: a sick commune asks for meds, a group at war for ammo.
+  const warm = group("expansionist", { atWar: 1 });
+  check(marketLists(st, warm).wants.some((x) => x.key === "ammo") && !marketLists(st, group("expansionist")).wants.some((x) => x.key === "ammo"), "a group at war puts ammo on its wants list (the same stock at peace does not)");
+  // The autopilot's sales: valuables, and spare weapons to a group that prizes them.
+  const h = hub(st);
+  const armory = [gold, newItem("pistol", 1), newItem("ar", 1), newItem("ar", 0.9), newItem("huntrifle", 1), newItem("vest", 1)];
+  const offer = autoGearOffer(st, { base: h, myGear: armory, f: buyer });
+  const weapons = offer.filter((g) => GEAR[g.key].slot === "weapon").length;
+  check(!offer.includes(gold) && autoGearOffer(st, { base: h, myGear: armory, f: rai }).includes(gold) && weapons >= 1 && armory.filter((g) => GEAR[g.key].slot === "weapon").length - weapons >= 2, `the autopilot offers ${weapons} spare weapon(s) to the military at war, keeping spares (the gold ring goes to raiders)`);
+  check(!autoGearOffer(st, { base: h, myGear: armory, f: com }).some((g) => GEAR[g.key].slot === "weapon"), "and keeps its weapons when the buyer does not prize them");
+}
+
+// 3c. Refusals and the window: zealots will not touch liquor; no base value anywhere on screen.
+{
+  console.log("Refusals and hidden values on screen");
+  const st = world(seed + 12);
+  const f = friend(st);
+  f.type = "zealot";
+  const p = visit(st, f, 2, { food: 30, ammo: 100 });
+  const bottle = newItem("whiskey", 1);
+  p.cargo.gear.push(newItem("ar", 0.9), bottle, newItem("goldring", 1));
+  toggleGear(st, "mine", p.cargo.gear.indexOf(bottle));
+  check(!st.trade.offerGear.includes(bottle), "zealots: the whiskey cannot be put on the table");
+  st.trade.offerGear = [bottle];
+  const v = tradeVerdict(st);
+  check(!v.ok && /will not touch liquor/.test(v.reason), `and a deal with it is refused ("${v.reason}")`);
+  st.trade.offerGear = [];
+  toggleGear(st, "mine", 0);
+  const html = tradeWindow(st, { tradeMsg: "", attackConfirm: null });
+  const raw = /base value|\bvalue \d|Value \d|Barter value/.exec(html);
+  check(!raw, `the trade window shows no base value${raw ? ` (${html.slice(raw.index - 60, raw.index + 40)})` : ""}`);
+  check(/tw-why/.test(html) && /Won't touch/.test(html) && /will not touch/.test(html) && /Zealots/.test(html), "it shows why lines, the refusal and what their kind prizes and shuns");
+  check(Object.keys(GEAR).every((k) => !new RegExp(`\\bvalue ${GEAR[k].value}\\b`, "i").test(itemTip(newItem(k, 1)))) && /worth: (junk|cheap|decent|valuable|rare)/.test(itemTip(newItem("ar", 1))), "item tooltips give a worth tier, never the number");
+  check(worthTier(newItem("ar", 1)) === "rare" && worthTier(newItem("pipespear", 1)) === "junk" && worthTier(newItem("goldring", 1)) === "decent", "worth tiers: an assault rifle is rare, a pipe spear junk, a gold ring decent");
+  endTrade(st);
 }
 
 // 4. Relays: coverage chains back to a station; upkeep.

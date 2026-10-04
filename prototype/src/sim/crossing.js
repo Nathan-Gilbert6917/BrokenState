@@ -8,21 +8,22 @@
 import { TERRAIN, SUPPLIES } from "./data.js";
 import { log, hurt, snapshot } from "./world.js";
 import {
-  partyMembers, bestSkill, supplyLoad, cargoLoad, carryCapacity, partyCapacity, unitsThatFit, tileLabel, leaveVehicle, sightRadius,
+  partyMembers, bestSkill, supplyLoad, cargoLoad, cargoRoom, carryCapacity, partyCapacity, unitsThatFit, tileLabel, leaveVehicle, sightRadius,
   carried, takeSupply, wipeIfEmpty,
 } from "./parties.js";
 import { partyVehicle } from "./vehicles.js";
 import { travelEffects } from "./weather.js";
 
-// Cost model. Scrap = frame + per person + 1 per `loadPerScrap` carry units (+ raft); hours likewise.
+// Cost model. Scrap = frame + per person + 1 per `loadPerScrap` kg of load (+ raft); hours likewise.
 export const BOAT = {
-  scrap: 4, perPerson: 2, loadPerScrap: 20,             // materials
-  hours: 2, hoursPerPerson: 0.5, loadPerHour: 40,        // build time before Mechanics
+  scrap: 4, perPerson: 2, loadPerScrap: 40,             // materials
+  hours: 2, hoursPerPerson: 0.5, loadPerHour: 80,        // build time before Mechanics
   mechCut: 0.05, maxCut: 0.5,                            // -5% build time per Mechanics point, at most -50%
   crossHours: 1, raftCrossHours: 1,                      // on the water (+1h poling a raft)
   raft: {                                                // floating a vehicle across
     truck: { scrap: 14, parts: 2, hours: 4 },
     sedan: { scrap: 9, parts: 1, hours: 3 },
+    bike:  { scrap: 1, parts: 0, hours: 0.5 },          // bikes ride in the boat (a little more frame)
   },
 };
 export const GATHER_HOURS = 3; // Gather materials on the shore
@@ -58,7 +59,7 @@ export function boatPlan(state, p, from, to, mode = "raft") {
   const raft = v && mode !== "leave" ? BOAT.raft[v.type] || BOAT.raft.truck : null;
   // Leaving the vehicle: found cargo beyond what people can carry stays behind with it.
   const cargo = cargoLoad(p.cargo);
-  const load = Math.round(supplyLoad(p.supplies) + (v && !raft ? Math.min(cargo, carryCapacity(state, members, null)) : cargo));
+  const load = Math.round(supplyLoad(p.supplies) + (v && !raft ? Math.min(cargo, Math.max(0, carryCapacity(state, members, null) - supplyLoad(p.supplies))) : cargo));
   const loadScrap = Math.ceil(load / BOAT.loadPerScrap);
   const mats = { scrap: BOAT.scrap + n * BOAT.perPerson + loadScrap + (raft ? raft.scrap : 0), parts: raft ? raft.parts : 0 };
   const mech = bestSkill(state, p, "mechanics");
@@ -69,7 +70,7 @@ export function boatPlan(state, p, from, to, mode = "raft") {
   const have = { scrap: Math.floor(carried(p, "scrap")), parts: Math.floor(carried(p, "parts")) };
   const missing = {};
   for (const k of Object.keys(mats)) if (mats[k] > have[k]) missing[k] = mats[k] - have[k];
-  const risk = Math.max(0.02, Math.min(0.3, 0.05 + (raft ? 0.06 : 0) + n * 0.01 + load / 400 - mech * 0.005));
+  const risk = Math.max(0.02, Math.min(0.3, 0.05 + (raft && v.type !== "bike" ? 0.06 : 0) + n * 0.01 + load / 800 - mech * 0.005));
   // Breakdown for the tooltip / panel: [what, scrap, parts, hours before Mechanics].
   const lines = [
     ["Boat frame", BOAT.scrap, 0, BOAT.hours],
@@ -81,7 +82,7 @@ export function boatPlan(state, p, from, to, mode = "raft") {
   const farT = state.tiles[to];
   if (!crossing) reason = "No crossing there: it must be the land tile straight across one water tile.";
   else if (!n) reason = "Nobody in the team.";
-  else if (raft && TERRAIN[farT.terrain].vehicle === Infinity && !farT.road) reason = `The far shore is too rough for the ${v.name}. Leave it behind.`;
+  else if (raft && v.type !== "bike" && TERRAIN[farT.terrain].vehicle === Infinity && !farT.road) reason = `The far shore is too rough for the ${v.name}. Leave it behind.`;
   else if (Object.keys(missing).length) reason = `Needs ${matsText(mats)}; short ${matsText(missing)}. Gather materials on the shore or bring scrap.`;
   return { ok: !reason, reason, crossing, n, load, vehicle: v, raft, mode: v ? (raft ? "raft" : "leave") : "none", mats, have, missing, mech, cut, build, cross, hours: build + cross, risk, lines };
 }
@@ -176,7 +177,7 @@ export function gatherInfo(state, p, tile) {
   const t = state.tiles[tile];
   const scav = bestSkill(state, p, "scavenging");
   const bonus = { forest: 2, suburb: 2, city: 3 }[t.terrain] || 0;
-  const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+  const room = cargoRoom(state, p);
   const left = crossingsFrom(state, tile).length ? Math.floor(shoreScrap(state, tile)) : 0;
   return { min: Math.min(left, 2 + bonus + Math.floor(scav / 3)), max: Math.min(left, 5 + bonus + Math.floor(scav / 3)), room: unitsThatFit(room, "scrap"), hours: GATHER_HOURS, left };
 }

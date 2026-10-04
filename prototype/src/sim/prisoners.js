@@ -170,7 +170,7 @@ export function wantsIntel(state, fid) {
 // Walking prisoners slow a team on foot (parties.js partySpeed reads p.prisonSpeed).
 export function teamPace(state, party) {
   const n = prisonersWith(state, party.id).length;
-  party.prisonSpeed = !n || party.vehicle ? 1 : Math.max(PRISON.ROAD_MIN, 1 - PRISON.ROAD_SLOW * n);
+  party.prisonSpeed = !n || party.vehicle === true ? 1 : Math.max(PRISON.ROAD_MIN, 1 - PRISON.ROAD_SLOW * n);
   if (party.prisonSpeed === 1) delete party.prisonSpeed;
 }
 

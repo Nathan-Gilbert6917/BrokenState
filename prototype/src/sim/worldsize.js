@@ -6,6 +6,12 @@
 // highway stops, rivers (by width), hot spots and starting hives (about the same hive density), the border hordes'
 // pace and the hives' build sites (hives.js), and how far from the hub the groups settle (factions.js, by the
 // square root). Cities, the extra hot spots and the guaranteed military bases are set per size below.
+//
+// Bigger maps are for longer games: they start no harsher than a Normal one and the pressure grows as the world
+// does. nearGroups: at most this many groups start within raid reach of the hub (factions.js RAIDS.REACH, the
+// same 30 tiles on every size), the rest farther out, so raids grow as the groups expand toward you.
+// hiveClear: the hub is placed at least this far from the outbreak origin (and 4 less from the extra hot spots),
+// so about as many hives start within striking range of it as on a Normal map; the rest reach it as they spread.
 export const BASE_W = 64;
 export const BASE_H = 42;
 
@@ -13,8 +19,8 @@ export const WORLD_SIZES = {
   //        hexes          AI groups: range and default   cities  military bases (+50% one more)  hives at the outbreak origin; extra hot spots and their hives
   small:  { key: "small",  label: "Small",  w: 48,  h: 32, groups: [3, 6],   defGroups: 4,  cities: 2, military: 1, originHives: 3, hotspots: 0, spotHives: 0 },
   normal: { key: "normal", label: "Normal", w: 64,  h: 42, groups: [5, 10],  defGroups: 7,  cities: 2, military: 1, originHives: 4, hotspots: 0, spotHives: 0 },
-  large:  { key: "large",  label: "Large",  w: 80,  h: 52, groups: [7, 14],  defGroups: 10, cities: 3, military: 1, originHives: 4, hotspots: 1, spotHives: 3 },
-  huge:   { key: "huge",   label: "Huge",   w: 100, h: 66, groups: [10, 18], defGroups: 15, cities: 4, military: 2, originHives: 5, hotspots: 2, spotHives: 3 },
+  large:  { key: "large",  label: "Large",  w: 80,  h: 52, groups: [7, 14],  defGroups: 10, cities: 3, military: 1, originHives: 4, hotspots: 1, spotHives: 3, nearGroups: 5, hiveClear: 28 },
+  huge:   { key: "huge",   label: "Huge",   w: 100, h: 66, groups: [10, 18], defGroups: 15, cities: 4, military: 2, originHives: 5, hotspots: 2, spotHives: 3, nearGroups: 4, hiveClear: 34 },
 };
 export const SIZE_KEYS = Object.keys(WORLD_SIZES);
 export const DEFAULT_SIZE = "normal";

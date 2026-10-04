@@ -2,10 +2,10 @@
 import { TERRAIN, GEAR, LOCATIONS } from "./data.js";
 import { log, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, newId, day, combatPower } from "./world.js";
 import {
-  partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, unitsThatFit, partySpeed,
+  partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, breakdownChance } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
@@ -40,7 +40,7 @@ function delay(p, hours) {
   p.progress -= hours * partySpeed(p);
 }
 function addCargo(state, p, key, qty) {
-  const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+  const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
   return take < qty ? `${take} ${key} (no room for the rest)` : `${take} ${key}`;
@@ -83,7 +83,7 @@ function factionNear(state, tileId, filter, radius = 3) {
 const EVENTS = [
   // Hazards
   {
-    id: "blocked", weight: 3, when: (st, p, t) => p.vehicle && t.road,
+    id: "blocked", weight: 3, when: (st, p, t) => p.vehicle === true && t.road, // bikes are lifted over the wrecks
     card: (st, p, t) => ({
       title: "Blocked highway",
       text: `Wrecked cars choke the road near ${tileLabel(st, t.id)}.`,
@@ -336,7 +336,7 @@ export function rollTravelEvent(state, p, tileId) {
   if (horde) return guarded(state, p, hordeCard(state, p, horde), tileId);
   // Worn vehicles break down more often.
   const v = p.vehicle ? partyVehicle(state, p) : null;
-  if (v && state.rng.chance(breakdownChance(v))) return guarded(state, p, breakdownCard(state, p, v), tileId);
+  if (v && state.rng.chance(breakdownChance(v, p.burden ? p.burden.fill : 0))) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
   chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state).events; // storms and blizzards: more trouble on the road (weather.js)
@@ -369,7 +369,7 @@ function breakdownCard(state, p, v) {
   const gone = `The ${v.name} is no longer with the team.`;
   return {
     title: "Breakdown",
-    text: `The ${v.name} coughs and dies. Condition ${Math.round(v.condition)}%, fuel ${Math.round(v.fuel)}.`,
+    text: isBike(v) ? `A tire blows and a chain snaps on one of the bikes. Condition ${Math.round(v.condition)}%.` : `The ${v.name} coughs and dies. Condition ${Math.round(v.condition)}%, fuel ${Math.round(v.fuel)}.`,
     partyId: p.id,
     vehicleId: v.id, // dropped if the team loses this vehicle before it is answered (parties.js cardStale)
     choices: [
@@ -400,7 +400,7 @@ function breakdownCard(state, p, v) {
 // The horde's score (hordes.js hordeScore) sets how hard it is to hide from and how badly a fight goes; on a
 // hive's land the dead are tougher still (hives.js zombieToughness).
 function hordeCard(state, p, horde) {
-  const drive = () => p.vehicle && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything
+  const drive = () => p.vehicle === true && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything (bikes cannot)
   const score = hordeScore(horde.size);
   const tough = 1 + zombieToughness(state, horde.tile) * 0.35;
   const dc = 5 + Math.round(score / 3);
@@ -412,10 +412,10 @@ function hordeCard(state, p, horde) {
       { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", dc), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", dc).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },
       {
         label: "Outrun it",
-        get hint() { return drive() ? "By vehicle: safe, uses 4 fuel" : p.vehicle ? "Less than 4 fuel: the vehicle cannot outrun it. On foot: risky" : "On foot: risky"; },
+        get hint() { return drive() ? "By vehicle: safe, uses 4 fuel" : p.vehicle === true ? "Less than 4 fuel: the vehicle cannot outrun it. On foot: risky" : "On foot: risky"; },
         resolve: (s) => {
           if (drive()) { useFuel(s, p, 4); return "The vehicle tears through and away."; }
-          const dry = p.vehicle ? "The tank is all but dry, so the team runs for it on foot and comes back for the vehicle after. " : "";
+          const dry = p.vehicle === true ? "The tank is all but dry, so the team runs for it on foot and comes back for the vehicle after. " : "";
           return s.rng.chance(0.5) ? `${dry}You run until your lungs burn, and make it.` : `${dry}Not everyone is fast enough. ${injureRandom(s, p, 30, 80, "running from a horde")}`;
         },
       },

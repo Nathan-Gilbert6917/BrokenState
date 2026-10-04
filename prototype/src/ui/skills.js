@@ -4,6 +4,7 @@
 import { SKILLS, SKILL_NAMES, GEAR } from "../sim/data.js";
 import { skill, survivorById, baseById, atBase } from "../sim/world.js";
 import { assignStations } from "../sim/buildings.js";
+import { toManual } from "../sim/work.js";
 import {
   skillProgress, pendingPerks, PERK_TREE, MILESTONES, hasPerk, perkReason, choosePerk, CAP_USE, CAP_STUDY, xpNeed,
   lessonOf, bestLesson, learnersFor, learnReason, teachRate, TEACH_GAP, MAX_LEARNERS, bookDef, bookHours, readReason, READ_HOURS, BOOK_XP,
@@ -125,6 +126,7 @@ export const SKILL_ACTIONS = {
   "study-role": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
     if (!s || !s.alive || s.location.kind !== "base" || !["teach", "read"].includes(d.role)) return;
+    toManual(state, s); // a job picked by hand: off work priorities (sim/work.js)
     s.role = d.role;
     s.station = null;
     assignStations(state, baseById(state, s.location.baseId));

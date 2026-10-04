@@ -73,7 +73,7 @@ export function placeName(state, id, bare = false) {
 // owner code << 8.
 function partyCode(state, c, p) {
   let sprite = 0;
-  if (p.vehicle) {
+  if (p.vehicle === true) {
     const v = p.vehicleId != null ? vehicleById(state, p.vehicleId) : null;
     sprite = v && v.type === "sedan" ? 2 : 1;
   } else if (p.kind === "raid") sprite = 3;

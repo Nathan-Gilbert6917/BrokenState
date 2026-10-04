@@ -12,6 +12,8 @@ import { armorPower } from "../sim/inventory.js";
 import { contactable } from "../sim/orders.js";
 import { MISSIONS } from "../sim/parties.js";
 import * as Skills from "../sim/skills.js";
+import { roleOf, roleById, toManual } from "../sim/work.js";
+import { roleSelect, taskChip, applyRoleChoice } from "./work.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -110,7 +112,7 @@ export function rosterModal(state, ui) {
   p.sel = p.sel.filter((id) => living.some((s) => s.id === id)); // the dead and departed drop out of the selection
   const sel = new Set(p.sel);
   const th = (k, label, t) => `<th><button class="ro-th ${p.sort === k ? "on" : ""}" data-action="ro-sort" data-k="${k}"${tip(`${t ? `${t} ` : ""}Click to sort${p.sort === k ? " the other way" : ""}`)}>${label}${p.sort === k ? (p.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`;
-  const roleSel = (s) => `<select data-action="role" data-id="${s.id}"${tip(ROLES[s.role] ? ROLES[s.role].desc : "Role")}>${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${s.role === k ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select>`;
+  const roleSel = (s) => `${roleSelect(state, s)}${taskChip(state, s)}`; // work roles and fixed jobs (ui/work.js)
   const body = rows.map(({ s, w, k }) => {
     const risk = k ? moodRisk(s) : null;
     const conds = condText(s);
@@ -148,7 +150,7 @@ export function rosterModal(state, ui) {
       ${sel1("ro-filter-status", p.status, Object.entries(STATUS).map(([k, v]) => [k, v[0]]), "Show by health and mood")}
       <span class="ro-sep"></span>
       <span${tip("People away from a base keep their role until they are back")}>Set role for ${sel.size} ticked:</span>
-      <select data-action="ro-bulkrole" ${sel.size ? "" : "disabled"}${tip("Pick a role: everyone ticked who is at a base gets it")}><option value="">Choose…</option>${Object.entries(ROLES).map(([k, r]) => `<option value="${k}">${esc(r.name)}</option>`).join("")}</select>
+      <select data-action="ro-bulkrole" ${sel.size ? "" : "disabled"}${tip("Pick a role: everyone ticked who is at a base gets it")}><option value="">Choose…</option>${state.work ? `<optgroup label="Work roles (priorities)">${state.work.roles.map((r) => `<option value="w:${esc(r.id)}">${esc(r.name)}</option>`).join("")}</optgroup>` : ""}<optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}">${esc(r.name)}</option>`).join("")}</optgroup></select>
       ${sel.size ? `<button data-action="ro-clearsel"${tip("Untick everyone")}>Clear</button>` : ""}
       ${p.msg ? `<span class="warn">${esc(p.msg)}</span>` : ""}
     </div>
@@ -165,7 +167,10 @@ export function rosterModal(state, ui) {
 // Same rule as the role drop-down on the People tab (main.js): off a station unless operating, then the base's
 // stations are handed out again.
 export function setRole(state, s, role) {
-  if (!s || !ROLES[role] || !s.location || s.location.kind !== "base") return false;
+  if (!s || !s.location || s.location.kind !== "base") return false;
+  if (String(role).startsWith("w:")) return !!applyRoleChoice(state, s, role) && !!roleOf(state, s); // a work role (ui/work.js)
+  if (!ROLES[role]) return false;
+  toManual(state, s); // a fixed job: off work priorities
   s.role = role;
   if (role !== "operate") s.station = null;
   const b = baseById(state, s.location.baseId);
@@ -191,9 +196,10 @@ export const ROSTER_CHANGE = {
   "ro-filter-status": (state, ui, el) => { prefs(ui).status = el.value || "all"; },
   "ro-bulkrole": (state, ui, el) => {
     const p = prefs(ui), role = el.value;
-    if (!ROLES[role]) return;
+    const work = String(role).startsWith("w:") ? roleById(state, role.slice(2)) : null;
+    if (!ROLES[role] && !work) return;
     let done = 0, skipped = 0;
     for (const id of p.sel) setRole(state, state.survivors.find((s) => s.id === id), role) ? done++ : skipped++;
-    p.msg = `${done} set to ${ROLES[role].name}${skipped ? `; ${skipped} not at a base kept their role` : ""}.`;
+    p.msg = `${done} set to ${work ? work.name : ROLES[role].name}${skipped ? `; ${skipped} not at a base kept their role` : ""}.`;
   },
 };

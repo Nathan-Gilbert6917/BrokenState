@@ -2,7 +2,7 @@
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById } from "./world.js";
 import {
-  partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
+  partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
   wipeIfEmpty, leaveVehicle, addGearToCargo,
 } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
@@ -12,6 +12,7 @@ import { tickHour } from "./world.js";
 import { searchHazards } from "./health.js";
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
+import { itemLoad } from "./inventory.js";
 import { lockedSearchHour } from "./locks.js";
 
 export const APPROACHES = {
@@ -68,6 +69,17 @@ export function searchBusy(state, p) {
 export function startScavenge(state, p) {
   const t = state.tiles[p.dest];
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
+  // A crew's team (crews.js) searches hour by hour on its own, never in the shared slot or on a battle map: a job
+  // on the spot that crews.js works and ends.
+  if (p.crewRole != null) {
+    p.phase = "task";
+    p.task = { type: "crewsearch", hours: null, done: 0 };
+    p.crewSearch = {
+      partyId: p.id, tile: p.dest, heat: isNight(state) ? 0 : 5, hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
+      guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
+    };
+    return true;
+  }
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
     const groups = raidEnemies(state, p.dest);
@@ -222,7 +234,7 @@ export function searchHour(state) {
 }
 
 export function foundLoad(e) {
-  return Math.round(supplyLoad(e.found.supplies) + e.found.gear.length * 3);
+  return Math.round(supplyLoad(e.found.supplies) + e.found.gear.reduce((a, g) => a + itemLoad(g), 0));
 }
 
 export function extract(state) {
@@ -264,7 +276,7 @@ export function extract(state) {
   const left = [];
   const gear = [...e.found.gear].sort((a, b) => (GEAR[b.key]?.value || 0) - (GEAR[a.key]?.value || 0));
   for (const g of gear) if (!addGearToCargo(state, p, g)) left.push(g.name);
-  let room = partyCapacity(state, p) - cargoLoad(p.cargo);
+  let room = cargoRoom(state, p);
   // Best value per unit of carry space goes in first.
   const keys = Object.keys(e.found.supplies).sort((a, b) => SUPPLIES[b].value / SUPPLIES[b].weight - SUPPLIES[a].value / SUPPLIES[a].weight);
   for (const k of keys) {

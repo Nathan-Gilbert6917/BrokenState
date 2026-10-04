@@ -28,6 +28,8 @@ import { startChronicle, recordChronicle } from "./chronicle.js";
 import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
+import { workHour, workDayRoles } from "./work.js";
+import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
 import { coverNodes, radioDaily } from "./radio.js";
@@ -80,7 +82,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const farFrom = (t, origin, city, mil) => g.distance(t.id, state.originId) >= origin && map.spotIds.every((s) => g.distance(t.id, s) >= origin - 4) &&
     state.cityIds.every((c) => g.distance(t.id, c) >= city) && state.militaryIds.every((m) => g.distance(t.id, m) >= mil);
   const central = (t) => t.x >= 4 && t.y >= 3 && t.x < g.width - 4 && t.y < g.height - 3 && state.cityIds.some((c) => g.distance(t.id, c) <= 30);
-  const hubCandidates = towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
+  // Large and Huge maps (worldsize.js hiveClear): farther from the hives at first, so the early game is no harsher
+  // than a Normal map's.
+  const clear = sizeDef(worldSize).hiveClear;
+  const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
+  const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
   const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
   state.bases.push({
@@ -558,6 +564,7 @@ export function tickHour(state) {
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   if (state.hour % 24 === 0) {
+    workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
@@ -581,6 +588,8 @@ export function tickHour(state) {
   for (const b of state.bases) for (const k of Object.keys(b.stock)) if (b.stock[k] < 0) b.stock[k] = 0;
   checkGameOver(state);
   updateVision(state);
+  workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
+  crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)

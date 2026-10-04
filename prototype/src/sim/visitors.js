@@ -41,7 +41,10 @@
 //   invited over the radio, or unannounced 55% of the time when nobody hears them. They carry what the map is short
 //   of: fuel 15–40, meds 8–22, preserved food 20–50, parts 3–9, ammo 60–160, a manual or blueprint (75%, a second
 //   25%), 1–3 books and 2–4 pieces of good gear, and want food, water, scrap and jars. Prices follow trade.js (their
-//   stock per head sets their need: cheap fuel and meds, dear food). At your base they stay 24 hours and the trade
+//   stock per head sets their need: cheap fuel and meds, dear food) with their own profile (data.js TRADE_PREFS
+//   "merchants": food, water, scrap and jars wanted, valuables and collectibles prized for resale, fuel, meds and ammo
+//   cheaper, and a margin: they sell dear; travellers: "explorers", food, water, meds and camp gear). They trade with
+//   the groups by demand on both sides (stock, kind and state). At your base they stay 24 hours and the trade
 //   window opens; a team that meets them can trade on the road too.
 // - Attack them (trade window or a road card) and word spreads: merchant reputation −45 (new merchants arrive with
 //   goodwill 15 + reputation, hostile at −40: no trade, and they skip your bases from −30), known traders −15,
@@ -68,7 +71,7 @@ import {
   supplyValue, skill, baseVision,
 } from "./world.js";
 import {
-  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, unitsThatFit, carried, takeSupply,
+  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply,
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
@@ -83,7 +86,7 @@ import { newItem } from "./inventory.js";
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor } from "./weather.js";
-import { available, need, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear } from "./trade.js";
 import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
@@ -1047,17 +1050,19 @@ function merchantsAtBase(state, v, base) {
 // The goods the merchants sell a group and what they take for them: what the group is short of (need 1.2+) for what
 // the merchants lack, at the group's need on both sides (value for value), at most a third of the merchants' stock.
 export function tradeWithGroup(state, v, f) {
-  const sells = SUPPLY_KEYS.filter((k) => need(f, k) >= 1.2 && available(v, k) > 0).sort((a, b) => need(f, b) - need(f, a));
-  const wants = SUPPLY_KEYS.filter((k) => need(v, k) >= 1.2 && available(f, k) > 0).sort((a, b) => need(v, b) - need(v, a));
+  // demand (trade.js): stock, kind and state on each side (a group at war wants ammo; merchants want food and scrap).
+  const want = (x, k) => demand(state, x, k);
+  const sells = SUPPLY_KEYS.filter((k) => want(f, k) >= 1.2 && available(v, k) > 0).sort((a, b) => want(f, b) - want(f, a));
+  const wants = SUPPLY_KEYS.filter((k) => want(v, k) >= 1.2 && available(f, k) > 0).sort((a, b) => want(v, b) - want(v, a));
   const gave = [], got = [];
   for (const k of sells.slice(0, 2)) {
     const q = Math.min(available(v, k), Math.ceil((v.stock[k] || 0) / 3));
     if (q <= 0) continue;
-    let value = q * SUPPLIES[k].value * need(f, k) * 0.9;
+    let value = q * SUPPLIES[k].value * want(f, k) * 0.9;
     const pay = {};
     for (const w of wants) {
       if (value <= 0) break;
-      const per = SUPPLIES[w].value * need(v, w);
+      const per = SUPPLIES[w].value * want(v, w);
       const take = Math.min(available(f, w) - (pay[w] || 0), Math.ceil(value / per));
       if (take <= 0) continue;
       pay[w] = (pay[w] || 0) + take;
@@ -1182,7 +1187,8 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced") {
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = []; t.askGear = []; t.deal = null;
   const out = [];
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => needs[a] - needs[b]);
+  // Pay with what they want most (trade.js demand) among what the hub has plenty of.
+  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, ctx.f, b) - demand(state, ctx.f, a) || needs[a] - needs[b]);
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
   const tryDeal = () => {
     for (const k of plenty) { if (tradeVerdict(state).ok) break; if (!t.ask[k]) balanceWith(state, k); }
@@ -1195,6 +1201,8 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced") {
   if (bp >= 0 && plenty.length && styleKey !== "aggressive") { t.askGear = [ctx.theirGear[bp]]; tryDeal(); }
   for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
   if (short.length) tryDeal();
+  // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).
+  if (ctx.base && tradeContext(state)) { const r = autoSellGear(state, needs); if (/^Traded/.test(r)) out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); }
   if (ctx.p) {
     // A team: carry space decides; the visit ends and the team goes on.
     endTrade(state);
@@ -1609,7 +1617,7 @@ function cargoAdd(state, p, sup) {
   const got = {};
   for (const [k, q0] of Object.entries(sup)) {
     if (!SUPPLIES[k] || q0 < 1) continue;
-    const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+    const room = cargoRoom(state, p);
     const q = Math.min(Math.floor(q0), unitsThatFit(room, k));
     if (q <= 0) continue;
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;

@@ -1038,7 +1038,8 @@ function markerLook(state, m) {
   const i = m.info || {};
   if (m.type === "vehicle") {
     const v = i.vehicleId != null ? vehicleById(state, i.vehicleId) : null;
-    return { vehicle: v && v.type === "sedan" ? "sedan" : "truck", needsFuel: i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
+    const bike = v && v.type === "bike";
+    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
   }
   if (m.type === "death") return { empty: i.items === 0 };
   return { emptied: !!i.emptied };
@@ -1155,7 +1156,7 @@ function partyLook(state, p) {
   const v = p.vehicle ? vehicleById(state, p.vehicleId) : null;
   const supply = p.routeKind === "supply";
   const kind = p.kind === "convoy" ? (p.vehicle ? (supply ? "supply" : "convoy") : supply ? "supplycart" : "cart")
-    : p.vehicle ? (v && v.type === "sedan" ? "sedan" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
+    : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
   return { color, kind, count: (p.members || []).length };
 }
 
@@ -1244,6 +1245,7 @@ function drawPlayerParty(state, p) {
         const s = zoomBoost();
         sprite(wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
         sprite(partySpriteCanvas(kind, look.color), px, py, spriteW(kind), { facing });
+        crewTag(p, px, py);
         return;
       }
     }
@@ -1262,6 +1264,7 @@ function drawPlayerParty(state, p) {
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
+    crewTag(p, px, py);
     return;
   }
   // No contact: dashed planned route and an estimated position.
@@ -1293,6 +1296,24 @@ function drawPlayerParty(state, p) {
   sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));
   badge(ex, ey, "unknown", color);
+  crewTag(p, ex, ey);
+}
+
+// A crew's team (sim/crews.js) carries its role's name above the sprite.
+function crewTag(p, x, y) {
+  if (!p.crewName) return;
+  const s = zoomBoost();
+  const size = 10 * s;
+  ctx.save();
+  ctx.font = `bold ${size.toFixed(1)}px Segoe UI`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = size * 0.3;
+  ctx.strokeStyle = "rgba(13,15,18,0.85)";
+  ctx.strokeText(p.crewName, x, y - 22 * s);
+  ctx.fillStyle = "#e0a84f";
+  ctx.fillText(p.crewName, x, y - 22 * s);
+  ctx.restore();
 }
 
 export function tileTooltip(state, id) {
