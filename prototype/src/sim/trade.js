@@ -26,7 +26,7 @@
 //   flat +1 per trade could be farmed with tiny deals). Gifts give up to 15 a day.
 import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
 import { log, day, newId, survivorById, factionById, baseById, atBase, skill, snapshot, mergeKnowledge } from "./world.js";
-import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad } from "./parties.js";
+import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, newItem } from "./inventory.js";
@@ -501,8 +501,8 @@ export function tradeVerdict(state) {
   // Carry space: a team carries what it gets; their caravan carries what it takes.
   if (ctx.kind === "visit") {
     const p = ctx.p;
-    const freed = Object.entries(t.offer).reduce((s, [k, q]) => s + Math.min(q, Math.floor(p.cargo.supplies[k] || 0)) * SUPPLIES[k].weight, 0) + gearWeight(offerGear);
-    const room = partyCapacity(state, p) - cargoLoad(p.cargo) + freed;
+    const freed = weigh(t.offer) + gearWeight(offerGear); // what leaves the team is weight it no longer carries (sim/load.js: one pool)
+    const room = cargoRoom(state, p) + freed;
     const need = weigh(t.ask) + gearWeight(askGear);
     // Only a deal that adds weight is held to it (a team that is already loaded can still hand goods over).
     if (need > room + 1e-9 && need > freed + 1e-9) return out(false, `The team cannot carry that much: what you ask for weighs ${Math.ceil(need)}, and there is room for ${Math.max(0, Math.floor(room))}.`);

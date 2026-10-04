@@ -23,10 +23,11 @@ const ensure = (pl) => (pl.plan = pl.plan || defaultPlan(pl.mission));
 // Estimate for the whole plan (null without a route). ids/v: the planner's crew and vehicle.
 export function planEstimate(state, pl) {
   const plan = ensure(pl);
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  const v0 = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  const v = v0 && v0.type === "bike" ? { ...v0, count: Math.max(1, pl.crew.size || 0) } : v0; // one bike each
   return estimatePlan(state, {
-    memberIds: [...pl.crew].length ? [...pl.crew] : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance,
-    fuel: v ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps,
+    memberIds: [...pl.crew].length ? [...pl.crew] : [0], dest: pl.dest, vehicle: !v ? false : v.type === "bike" ? "bike" : true, v, stance: pl.stance,
+    fuel: v && v.type !== "bike" ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps, supplies: pl.supplies,
   });
 }
 // For main.js autofill: the plan's needs when it has steps, else null (the plain round-trip estimate is used).

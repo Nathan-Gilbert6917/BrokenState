@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, radioBasesInRange, day, newId } from "../src/sim/world.js";
 import { GEAR, SUPPLY_KEYS, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "../src/sim/data.js";
-import { itemLoad, ITEM_LOAD } from "../src/sim/inventory.js";
+import { itemLoad } from "../src/sim/inventory.js";
 import { itemCat, groupSick, worthTier } from "../src/sim/valuation.js";
 import { itemTip } from "../src/ui/inventory.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -238,7 +238,7 @@ function visit(st, f, n = 2, cargo = {}) {
   GEAR._testgun = { name: "Test rifle", slot: "weapon", skill: "shooting", power: 5, req: 3, value: 50, noise: 3 };
   check(itemCat("_testgun") === "rifle" && CATEGORIES[itemCat("goldring")].group === "valuables", "an untagged new item gets a sensible category; valuables are their own family");
   delete GEAR._testgun;
-  check(GEAR.goldring.valuable && itemLoad(gold) < ITEM_LOAD / 10 && itemLoad(coffee) < ITEM_LOAD, "valuables are light for their worth");
+  check(GEAR.goldring.valuable && itemLoad(gold) < itemLoad(newItem("pistol")) / 10 && itemLoad(coffee) < itemLoad(newItem("pistol")), "valuables are light for their worth");
   // State.
   const ratio = (f, it, set) => { const a = pay(f, it); set(); return pay(f, it) / a; };
   const w = group("commune");

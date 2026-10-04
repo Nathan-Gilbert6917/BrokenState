@@ -36,6 +36,8 @@ export const CRAFTS = {
   firecracker: { gear: "firecracker", in: { scrap: 1, ammo: 8 },  hours: 3,  skill: "mechanics", min: 2, field: true },
   flashlight:  { gear: "flashlight",  in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 3 },
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
+  // A bicycle built from frames and wheels (vehicles.js): it joins the base's bikes.
+  bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
 };
 
 export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
@@ -63,7 +65,8 @@ export function craftOutputText(key) {
   // What the thing does, by kind: weapons have power, armor has armor, packs carry, tools give their bonus.
   if (d.slot === "weapon") bits.push(`weapon, power ${d.power}`);
   else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
-  else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} carry space`);
+  else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
+  else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);

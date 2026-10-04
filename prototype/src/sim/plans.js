@@ -14,12 +14,14 @@
 // raises a card (once each per trip): a horde in sight, a rich site in sight that is not on the plan, supplies
 // running short of the way home. The plan's "If … then come home" conditions turn the team home by themselves
 // (anyone hurt below N health, food below N days, cargo full) and say so on a card that can undo it.
-import { log, addCard, baseById, hub, snapshot } from "./world.js";
+import { log, addCard, baseById, hub, snapshot, survivorById } from "./world.js";
 import { LOCATIONS, siteDanger } from "./data.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, travelHours, partySpeed, startReturn, awaitOrders,
-  ordersCard, partyCapacity, cargoLoad, carried, sightRadius, fuelForPath, STANCES, MISSIONS,
+  ordersCard, partyCapacity, cargoRoom, carried, sightRadius, fuelForPath, STANCES, MISSIONS,
+  plannedPace, partyPace, plannedVehicle, rationsPerHour, paceOpts, modeSpeed,
 } from "./parties.js";
+import { travelMode } from "./vehicles.js";
 import { startOrder } from "./orders.js";
 import { fieldHeatHour } from "./fieldheat.js";
 
@@ -120,32 +122,40 @@ export const stepLabel = (state, s) => {
 // Same stepping as the trip: the way out, the mission at the target (recon 0h with 2h debit like the real recon,
 // a search 6h, a recovery or other mission 1h), each step in turn, and the way home if the plan has one.
 // Returns null without a route to the target.
-// from / startHour / p: estimate from where a team stands now (orders.js queueEstimate), with what it knows.
-export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null }) {
+// from / startHour / p: estimate from where a team stands now (orders.js queueEstimate), with what it knows (its
+// pace and rations from its last weighing, load.js); otherwise the pace comes from the crew and what it packs
+// (supplies) with vehicle v (an object or id; `vehicle` true = a truck, "bike" = bikes).
+export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null, supplies = {}, v = null }) {
   const home = baseById(state, homeBaseId || hub(state).id);
-  const sp = STANCES[stance]?.speed || 1;
-  let veh = !!vehicle, f = vehicle ? fuel ?? Infinity : 0, at = startHour, tile = from ?? home.tile, fuelUse = 0;
+  const members = (memberIds || []).map((id) => survivorById(state, id)).filter(Boolean);
+  const pv = p ? null : plannedVehicle(state, vehicle, v, members.length || (memberIds || []).length);
+  const pace = p ? partyPace(state, p) : plannedPace(state, { members, supplies, v: pv, stance });
+  const startMode = p ? (vehicle === true || vehicle === "bike" ? vehicle : vehicle ? p.vehicle || true : false) : travelMode(pv);
+  const sp = pace.footSpeed; // on foot (a recon's two hours are paid at this pace)
+  let veh = startMode, f = veh === true ? fuel ?? Infinity : 0, at = startHour, tile = from ?? home.tile, fuelUse = 0;
   let owed = 0; // hours of a recon still owed: paid by the next move, as in the real trip (parties.js survey)
+  let moveH = 0, rideH = 0, restH = 0; // for the rations: hours on the move (riding) and resting
   const legs = [];
   const travel = (to, label) => {
     if (to === tile) return true;
     let res = planPath(state, tile, to, veh);
     if (!res && veh) { res = planPath(state, tile, to, false); if (res) { veh = false; f = 0; } }
     if (!res) return false;
-    if (veh) fuelUse += fuelForPath(state, res.path);
-    const t = travelHours(state, res.path, { vehicle: veh, speed: sp, fuel: f, startHour: at, progress: owed });
+    if (veh === true) fuelUse += fuelForPath(state, res.path, pace.fuelMult);
+    const t = travelHours(state, res.path, { vehicle: veh, speed: veh ? pace.rideSpeed ?? pace.speed : pace.footSpeed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, fuel: f, startHour: at, progress: owed });
     veh = t.vehicle; f = t.fuelLeft; owed = 0;
+    moveH += t.hours; rideH += t.rideHours;
     legs.push({ label, hours: t.hours, from: tile, to, path: res.path, start: at, left: t.progress });
     at += t.hours; tile = to;
     return true;
   };
-  const stay = (label, hours) => { legs.push({ label, hours, from: tile, to: tile, start: at }); at += hours; };
+  const stay = (label, hours) => { legs.push({ label, hours, from: tile, to: tile, start: at }); at += hours; restH += hours; };
   if (!travel(dest, `To ${tileLabel(state, dest)}`)) return null;
   const outPath = legs[0] ? legs[0].path : [tile], hoursOut = legs[0] ? legs[0].hours : 0;
   // On site: a search 6h, a recovery or other mission 1h; a recon's 2 hours are paid by the next move.
   const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" ? 0 : 1;
   if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite);
-  if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * sp); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }
+  if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * (veh ? pace.rideSpeed ?? pace.speed : sp)); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }
   let returns = false, open = false;
   const chosen = [];
   for (const s of steps || []) {
@@ -175,13 +185,18 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   let backHours = 0;
   if (!returns && tile !== home.tile) {
     const res = planPath(state, tile, home.tile, veh) || planPath(state, tile, home.tile, false);
-    backHours = res ? travelHours(state, res.path, { vehicle: veh && !!planPath(state, tile, home.tile, true), speed: sp, fuel: f, startHour: at }).hours : 0;
+    const bm = veh && planPath(state, tile, home.tile, veh) ? veh : false;
+    const t = res ? travelHours(state, res.path, { vehicle: bm, speed: bm ? pace.rideSpeed ?? pace.speed : pace.footSpeed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, fuel: f, startHour: at }) : null;
+    backHours = t ? t.hours : 0;
+    if (t) { moveH += t.hours; rideH += t.rideHours; }
   }
   const total = hours + backHours;
+  // Rations: on the move each person eats more under a load (load.js), at rest one a day.
+  const eat = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + n * restH) / 24 : (n * total) / 24;
   return {
     legs, hours, hoursOut, backHours, total, returns, open, sites: chosen, endTile: tile, path: outPath, vehicle: veh, fuelLeft: f,
-    food: Math.ceil((n * total) / 24), water: Math.ceil((n * total) / 24),
-    fuel: vehicle ? Math.ceil(fuelUse * (returns ? 1 : 2)) : 0, days: total / 24,
+    food: Math.ceil(eat - 1e-9), water: Math.ceil(eat - 1e-9), pace,
+    fuel: startMode === true ? Math.ceil(fuelUse * (returns ? 1 : 2) - 1e-9) : 0, days: total / 24,
   };
 }
 
@@ -196,7 +211,7 @@ export function applyPlan(state, p, plan) {
     conditions: { hurt: cond.hurt ?? null, food: cond.food ?? null, cargo: !!cond.cargo },
     active: true, fired: {}, hordes: [], sites: [], searched: p.mission === "scavenge" ? [p.dest] : [], started: state.hour,
   };
-  const est = estimatePlan(state, { memberIds: p.members, dest: p.dest, vehicle: p.vehicle, stance: p.stance, fuel: p.planFuel, mission: p.mission, steps, homeBaseId: p.homeBaseId });
+  const est = estimatePlan(state, { memberIds: p.members, dest: p.dest, vehicle: p.vehicle, stance: p.stance, fuel: p.planFuel, mission: p.mission, steps, homeBaseId: p.homeBaseId, p });
   if (est) {
     p.plannedHours = est.total;
     // The hub's estimated position ("?" sprite, parties.js plannedTile): out, the plan's time away from the
@@ -261,11 +276,18 @@ function checkIn(state, p) {
   addCard(state, card);
 }
 
-const foodDays = (state, p) => (carried(p, "food") + carried(p, "preserved")) / Math.max(1, partyMembers(state, p).length);
+// Days of food left at the rate the team eats on the move (more under a load, load.js), as the plan's "food falls
+// below N days" rule counts it.
+const foodDays = (state, p) => {
+  const m = partyMembers(state, p);
+  const perDay = Math.max(1, partyPace(state, p).eatMove, m.length);
+  return (carried(p, "food") + carried(p, "preserved")) / perDay;
+};
 function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   const res = planPath(state, partyTile(p), home.tile, p.vehicle) || planPath(state, partyTile(p), home.tile, false);
-  return res ? travelHours(state, res.path, { vehicle: p.vehicle, speed: partySpeed(p) }).hours : null;
+  const mode = res && p.vehicle && planPath(state, partyTile(p), home.tile, p.vehicle) ? p.vehicle : false;
+  return res ? travelHours(state, res.path, { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode) }).hours : null;
 }
 
 // The plan's conditions and the finds worth a card.
@@ -280,7 +302,7 @@ function planWatch(state, p) {
   const why =
     c.hurt != null && !pl.fired.hurt && members.some((m) => m.health < c.hurt) ? ["hurt", `${members.filter((m) => m.health < c.hurt).map((m) => `${m.name.split(" ")[0]} (${Math.floor(m.health)})`).join(", ")} hurt below ${c.hurt}`] :
     c.food != null && !pl.fired.food && foodDays(state, p) < c.food ? ["food", `food down to ${foodDays(state, p).toFixed(1)} days`] :
-    c.cargo && !pl.fired.cargo && cargoLoad(p.cargo) >= partyCapacity(state, p) * 0.95 ? ["cargo", "the cargo is full"] : null;
+    c.cargo && !pl.fired.cargo && cargoRoom(state, p) <= partyCapacity(state, p) * 0.05 ? ["cargo", "the cargo is full"] : null;
   if (why) return comeHome(state, p, why[0], why[1]);
   const tile = partyTile(p);
   const sight = sightRadius(state, p) + 1;

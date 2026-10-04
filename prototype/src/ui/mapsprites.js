@@ -1919,8 +1919,22 @@ function paintIcon(kind, color = "#ffd166") {
 // ---------- map markers ----------
 // Abandoned vehicle: your truck or sedan parked and dusty; a red jerry can over it when it needs fuel, smoke and an
 // open hood when it is badly damaged.
+// Bicycles left lying on the ground: two wheels, a frame in the team color.
+function paintBikes(color, damaged) {
+  const p = painter(20, 14);
+  const frame = desatHex(color, 0.35);
+  const wheel = (cx, cy) => { for (const [x, y] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) p.set(cx + x, cy + y, TIRE); p.set(cx, cy, HUB); };
+  wheel(4, 10); wheel(13, 10);
+  p.rect(5, 7, 11, 7, frame); p.set(4, 8, frame); p.set(8, 8, frame); p.set(9, 9, frame); p.set(12, 8, frame); p.set(13, 9, frame);
+  p.rect(5, 6, 6, 6, "#2a2a2a"); p.rect(11, 5, 12, 5, "#3a3a3a"); // saddle, bars
+  if (damaged) { p.clear(15, 10); p.clear(15, 9); p.set(16, 12, TIRE); }
+  wheel(15, 4); p.rect(16, 2, 19, 2, shade(frame, -0.2)); // a second bike leaning behind
+  return p;
+}
+
 function paintParked(type, color, needsFuel, damaged) {
-  const base = type === "sedan" ? paintSedan(desatHex(color, 0.45)) : paintTruck(desatHex(color, 0.45));
+  if (type === "bike") return paintBikes(color, damaged);
+  const base =type === "sedan" ? paintSedan(desatHex(color, 0.45)) : paintTruck(desatHex(color, 0.45));
   const p = painter(base.w + 2, base.h + 6);
   blit(p, base, 0, 6);
   for (const [x, y] of [[3, 13], [7, 14], [12, 13], [16, 14], [9, 12], [18, 12]]) if (p.get(x, y)) p.set(x, y, "#9a8a6a");

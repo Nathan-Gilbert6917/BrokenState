@@ -22,12 +22,12 @@ import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
 import { log, day, hub, baseById, factionById, addCard, atBase, survivorById } from "./world.js";
 import {
   planPath, travelHours, spawnAiParty, removeParty, partyTile, tileLabel, partyMembers, awaitOrders, startReturn, launchExpedition,
-  partySpeed, carryCapacity, supplyLoad, fuelForPath,
+  partySpeed, carryCapacity, supplyLoad, fuelForPath, plannedPace, paceOpts, modeSpeed, rationsFor,
 } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType, baseDefense } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { startOrder } from "./orders.js";
-import { partyVehicle, partyFuel, vehicleById } from "./vehicles.js";
+import { partyVehicle, partyFuel, vehicleById, isCar } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
   available, need, demand, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
@@ -281,24 +281,32 @@ const destName = (state, tile) => {
 // Leg by leg estimate for a planned caravan: { legs: [{ tile, name, hours | null }], back, hours, food, water, fuel }.
 export function caravanEstimate(state, form) {
   const h = hub(state);
-  const v = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
-  const speed = { stealthy: 0.75, normal: 1, rushed: 1.3 }[form.stance] || 1;
-  let from = h.tile, at = state.hour, total = 0, fuel = 0, ok = true;
+  const v0 = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
+  const v = isCar(v0) ? v0 : null; // caravans go by car or on foot
+  // The caravan's load (goods and road supplies, load.js) sets its pace and rations, as for any team.
+  const members = (form.crew || []).map((id) => survivorById(state, id)).filter(Boolean);
+  const sup = {};
+  for (const [k, q] of Object.entries(form.goods || {})) if (SUPPLIES[k] && q > 0) sup[k] = (sup[k] || 0) + q;
+  for (const [k, q] of Object.entries(form.travel || {})) if (SUPPLIES[k] && q > 0) sup[k] = (sup[k] || 0) + q;
+  const pace = plannedPace(state, { members, supplies: sup, v, stance: form.stance || "normal" });
+  let from = h.tile, at = state.hour, total = 0, fuel = 0, ok = true, moveH = 0, rideH = 0, restH = 0;
   const legs = [];
   const leg = (to) => {
     const r = planPath(state, from, to, !!v) || null;
     if (!r) { ok = false; return null; }
-    const t = travelHours(state, r.path, { vehicle: !!v, speed, startHour: at });
-    fuel += v ? fuelForPath(state, r.path) : 0;
+    const t = travelHours(state, r.path, { vehicle: !!v, speed: pace.speed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, startHour: at });
+    fuel += v ? fuelForPath(state, r.path, pace.fuelMult) : 0;
     at += t.hours + 6;
     total += t.hours + 6;
+    moveH += t.hours; rideH += t.rideHours; restH += 6;
     from = to;
     return t.hours;
   };
   for (const tile of form.stops || []) legs.push({ tile, name: destName(state, tile), hours: leg(tile) });
   const back = (form.stops || []).length ? leg(h.tile) : 0;
   const n = Math.max(1, (form.crew || []).length);
-  return { legs, back, hours: total, ok, food: Math.ceil((n * total) / 24 * 1.25), water: Math.ceil((n * total) / 24 * 1.25), fuel: Math.ceil(fuel * 1.15) };
+  const eat = members.length ? rationsFor(pace, moveH, rideH, restH, n) : (n * total) / 24;
+  return { legs, back, hours: total, ok, food: Math.ceil(eat * 1.25), water: Math.ceil(eat * 1.25), fuel: Math.ceil(fuel * 1.15), pace };
 }
 
 // Launches a trade caravan from the hub. form: { crew: [ids], vehicleId, stance, goods: { key: qty } to trade,
@@ -337,7 +345,8 @@ export function launchCaravan(state, form) {
 export function legHours(state, p, from, to) {
   const r = planPath(state, from, to, p.vehicle) || (p.vehicle ? planPath(state, from, to, false) : null);
   if (!r) return null;
-  return travelHours(state, r.path, { vehicle: p.vehicle && !!planPath(state, from, to, true), speed: partySpeed(p), fuel: p.vehicle ? partyFuel(state, p) : 0 }).hours;
+  const mode = p.vehicle && planPath(state, from, to, p.vehicle) ? p.vehicle : false;
+  return travelHours(state, r.path, { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: mode === true ? partyFuel(state, p) : 0 }).hours;
 }
 
 // The caravan stop order (parties.js arrive, mission "caravan").

@@ -449,6 +449,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     // The stealth kit (stealth.js): thrown things and the suppressor are carried, not worn.
     else if (d.throw) check(!/power|armor/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
     else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
+    else if (d.slot === "cargo") check(!/power|armor/.test(text) && /bike/.test(text), `${key}: a bicycle says it is a bike for the base (${text})`); // sim/vehicles.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

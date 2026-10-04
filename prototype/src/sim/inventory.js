@@ -4,8 +4,10 @@
 //   armor = Body, head / arms / legs = more armor (power adds up, see armorPower),
 //   backpack = a pack; the pack item's own `contents` array holds more items (slots from GEAR[key].slots).
 // s.pockets = POCKETS slots for small items (GEAR[key].small). Items in pockets and packs do nothing until
-// equipped, and they do not use the team's carry space (the pack is the limit); items in a team's cargo take
-// ITEM_LOAD each. Supplies (food, water, ammo, meds, scrap...) are not kept per person: a team pools them
+// equipped. Everything has a weight (data.js GEAR weight, kg): what a person wears, holds and keeps in pockets and pack is
+// part of their load, and the team's cargo and supplies are shared out among them (load.js). Pockets and pack
+// slots only say where a thing is kept; weight is the limit. Bulky things (a bicycle) only go in storage.
+// Supplies (food, water, ammo, meds, scrap...) are not kept per person: a team pools them
 // (party supplies and cargo), a base keeps them in stock. Bodies hold supply stacks that go straight there.
 //
 // Locations are short strings so the UI can keep them in data attributes:
@@ -15,14 +17,13 @@
 // Items only move between people, storage and bodies at the same place (one base, or one team).
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
-import { partyCapacity, cargoLoad, unitsThatFit } from "./parties.js";
+import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 
 export const POCKETS = 4;
-export const ITEM_LOAD = 3;     // carry space one item takes in a team's cargo
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
 export const ARMOR_SLOTS = ["head", "armor", "arms", "legs"];
 export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "backpack"];
-export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", backpack: "Backpack", pocket: "Pocket", pack: "Pack" };
+export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo" };
 const INV_VERSION = 1;
 
 // Odd things the dead still carry (a zombie body has one now and then).
@@ -40,12 +41,10 @@ export function newItem(key, quality = 1) {
 export const isSmall = (key) => !!(GEAR[key] && GEAR[key].small);
 export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slots) || 0;
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
-// An item def may set its own weight (data.js GEAR weight: light valuables); a pack adds what is in it.
-export const itemLoad = (item) => {
-  const d = item && GEAR[item.key];
-  const own = d && Number.isFinite(d.weight) ? d.weight : ITEM_LOAD;
-  return own + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0);
-};
+export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
+// What an item weighs (kg): its own weight, and a pack also what is inside it.
+export const itemKg = (item) => (item && GEAR[item.key] && Number.isFinite(GEAR[item.key].weight) ? GEAR[item.key].weight : 1);
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0);
 
 export function ensurePack(item) {
   const n = packSize(item);
@@ -101,7 +100,7 @@ export function armorPower(s) {
 }
 export const armorMult = (s) => 1 - armorPower(s) * 0.06;
 
-// Extra carry space a person brings to a team: the pack (and an old-style backpack still in the tool slot).
+// Kg a person's pack adds to their max load (load.js maxLoad), and an old-style backpack still in the tool slot.
 export function carryBonus(s) {
   const g = s && s.gear;
   if (!g) return 0;
@@ -139,7 +138,7 @@ export function stow(s, item, prefix = `s:${s.id}`) {
     if (i >= 0) { s.pockets[i] = item; return `${prefix}:pocket:${i}`; }
   }
   const pk = packOf(s);
-  if (pk && !packSize(item)) {
+  if (pk && !packSize(item) && !isBulky(item.key)) {
     const i = pk.indexOf(null);
     if (i >= 0) { pk[i] = item; return `${prefix}:pack:${i}`; }
   }
@@ -151,7 +150,7 @@ export function fitReason(item, slot) {
   const d = GEAR[item.key];
   if (!d) return "Unknown item.";
   if (slot === "pocket") return d.small ? "" : `The ${item.name} is too big for a pocket.`;
-  if (slot === "pack") return packSize(item) ? "A pack does not fit inside a pack." : "";
+  if (slot === "pack") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack: it goes in the cargo.` : "";
   if (EQUIP_SLOTS.includes(slot)) return d.slot === slot ? "" : `The ${item.name} goes in ${SLOT_NAMES[d.slot]}, not ${SLOT_NAMES[slot]}.`;
   return "";
 }
@@ -240,13 +239,14 @@ export function itemAt(state, str) {
   return r ? r.get() : null;
 }
 
-// Room in a team's cargo for an item coming in (freed = load leaving at the same time, lost = carry space lost).
-function roomCheck(st, item, freed = 0, lost = 0) {
-  if (!st || st.o !== "cargo") return "";
+// Can a team take on `gained` kg (an item from a body) while losing `lost` kg of max load (a pack taken off)?
+// Moving things between its people and its cargo weighs nothing extra: the team's load is one pool (load.js).
+function roomCheck(st, item, gained = 0, lost = 0) {
+  if (!st || st.o !== "cargo" || (gained <= 0 && lost <= 0)) return "";
   const p = st.party;
   const cap = partyCapacity(st.state, p) - lost;
-  const load = cargoLoad(p.cargo) - freed;
-  return load + itemLoad(item) <= cap + 1e-9 ? "" : `No room in the team's cargo for the ${item.name} (load ${Math.round(load)} of ${cap}).`;
+  const load = poolLoad(p);
+  return load + gained <= cap + 1e-9 ? "" : `Too heavy: the team cannot carry the ${item.name} as well (${item ? `${Math.round(itemLoad(item) * 10) / 10} kg; ` : ""}load ${Math.round(load)} of ${Math.round(cap)} kg).`;
 }
 
 // Something left a body: it counts as battle loot, and a fallen survivor's things leave their death site too.
@@ -280,10 +280,12 @@ export function moveItem(state, fromStr, toStr) {
   if (!item) return "Nothing there.";
   const store = storageFor(state, place);
   const lostFrom = from.slot === "backpack" ? carryOf(item) : 0;
+  // Taken from a body, it adds to what the team carries; between people and cargo it weighs the same.
+  const gained = from.o === "body" ? itemLoad(item) : 0;
 
   if (B.list) {
     if (A.list) return "";
-    const err = roomCheck(store, item, 0, lostFrom);
+    const err = roomCheck(store, item, gained, lostFrom);
     if (err) return err;
     A.remove(item);
     B.put(item);
@@ -294,6 +296,12 @@ export function moveItem(state, fromStr, toStr) {
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
   const cur = B.get();
+  if (gained || lostFrom) {
+    // Onto a person from a body (the team gets heavier), or a worn pack moved (its wearer's max load drops).
+    const gain = to.slot === "backpack" ? (cur ? carryOf(cur) : 0) - carryOf(item) : 0;
+    const err = roomCheck(store, item, gained, lostFrom + gain);
+    if (err) return err;
+  }
   if (cur && !A.list && from.o !== "body" && !fitReason(cur, from.slot)) {
     // Straight swap between two slots.
     A.set(cur);
@@ -303,7 +311,7 @@ export function moveItem(state, fromStr, toStr) {
   if (cur) {
     if (!store) return "No room for the item already there.";
     const lost = to.slot === "backpack" ? carryOf(cur) - carryOf(item) : 0;
-    const err = roomCheck(store, cur, A.list ? itemLoad(item) : 0, lost + lostFrom);
+    const err = roomCheck(store, cur, 0, lost + lostFrom);
     if (err) return err;
     A.remove(item);
     B.set(item);
@@ -329,7 +337,8 @@ export function quickMove(state, fromStr, sid) {
   const tries = EQUIP_SLOTS.includes(slot) ? [`s:${sid}:${slot}`] : []; // books (slot "pack") go in the pack
   if (isSmall(item.key)) s.pockets.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pocket:${i}`); });
   const pk = packOf(s);
-  if (pk && !packSize(item)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
+  if (pk && !packSize(item) && !isBulky(item.key)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
+  if (isBulky(item.key) && !tries.length) return from.o === "body" || from.o === "s" ? toStorage(state, fromStr) : `The ${item.name} only goes in storage.`;
   // An empty spot first; else swap into the item's own slot.
   const empty = tries.find((t) => !itemAt(state, t));
   if (!tries.length) return `No pack slot for the ${item.name}: ${s.name.split(" ")[0]} needs a pack with room.`;
@@ -388,7 +397,7 @@ export function takeSupply(state, bi, key) {
   let n = qty;
   if (st.o === "cargo") {
     const p = st.party;
-    n = Math.min(qty, unitsThatFit(partyCapacity(state, p) - cargoLoad(p.cargo), key));
+    n = Math.min(qty, unitsThatFit(cargoRoom(state, p), key));
     if (n > 0) p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + n;
   } else {
     const base = baseById(state, st.id);

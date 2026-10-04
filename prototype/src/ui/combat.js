@@ -7,7 +7,7 @@ import {
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
-import { partyCapacity, cargoLoad } from "../sim/parties.js";
+import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
@@ -513,7 +513,7 @@ export function renderCombatPanel(state) {
 function raidHead(state, b, phase) {
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
-  const cap = party ? partyCapacity(state, party) : 0, load = party ? Math.round(cargoLoad(party.cargo)) : 0;
+  const cap = party ? Math.round(partyCapacity(state, party)) : 0, load = party ? Math.round(poolLoad(party)) : 0; // kg (sim/load.js)
   const stage = Math.min(3, Math.floor(R.heat / 25));
   const left = R.containers.filter((c) => !c.searched && c.kind !== "body").length;
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];

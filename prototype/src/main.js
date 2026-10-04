@@ -17,7 +17,8 @@ import {
 import { treatAtBase } from "./sim/medical.js";
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView } from "./ui/render.js";
-import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, routeCheck } from "./ui/ui.js";
+import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
+import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
@@ -386,19 +387,23 @@ function armDiff(before) {
 function autofill(pl) {
   const h = hub(state);
   const ids = [...pl.crew];
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip.
-  const est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: !!v, stance: pl.stance });
-  view.preview = est ? est.path : null;
-  if (!est) return;
+  const v = plannerVehicle(state, pl);
+  // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
+  // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
-  const want = {
-    food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
-    fuel: (v ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-    meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
-    scrap: pl.mission === "outpost" ? 15 : 0,
-  };
-  for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
+  let est = null;
+  for (let pass = 0; pass < 2; pass++) {
+    est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies });
+    view.preview = est ? est.path : null;
+    if (!est) return;
+    const want = {
+      food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
+      fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
+      meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      scrap: pl.mission === "outpost" ? 15 : 0,
+    };
+    for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
+  }
   // Too heavy for the crew (and vehicle): less ammo, then fewer meds, then the 25% margin on food and water.
   if (!ids.length) return;
   const trim = (k, floor) => {

@@ -86,7 +86,7 @@ export const PERK_TREE = {
   scavenging: {
     5: [P("scrounger", "Scrounger", "+30% chance a day of a find when scavenging around a base.", [2, 2, 1], "economy.js scavChance"),
         P("tinkerseye", "Tinker's Eye", "Hour-by-hour searches with them on the team find 50% more parts and fuel.", [2, 2, 2], "scavenge.js searchHour")],
-    10: [P("packrat", "Packrat", "+8 carry space for their team.", [2, 2, 3], "parties.js carryCapacity"),
+    10: [P("packrat", "Packrat", "+8 kg max load: they carry more of their team's load before it slows them down.", [2, 2, 3], "load.js maxLoad"),
          P("treasure", "Treasure Hunter", "Hour-by-hour searches with them on the team find 20% more supplies, gear twice as often and books twice as often; containers they search in a raid on the map count Scavenging +5.", [2, 3, 2], "scavenge.js searchHour; combat.js searchBox")],
     15: [P("salvager", "Salvager", "Searches with them on the team pick a site over 40% slower (it keeps its loot for more trips).", [2, 2, 2], "scavenge.js searchHour"),
          P("sixthsense", "Sixth Sense", "Hour-by-hour searches with them on the team run into trouble 30% less often.", [3, 2, 1], "scavenge.js searchHour")],

@@ -62,7 +62,7 @@ for (const [id, d] of Object.entries(BLUEPRINTS)) {
 for (const [id, d] of Object.entries(BLUEPRINTS)) {
   const opens = [...(d.unlocks.buildings || []).map((t) => t), ...(d.unlocks.crafts || [])];
   GEAR[bpItemKey(id)] = {
-    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: d.value, noise: 0, blueprint: id, cat: "manuals",
+    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: d.value, noise: 0, blueprint: id, cat: "manuals", weight: 0.2, // a folder of papers (load.js)
     desc: `${d.desc} Study it at a base (Read role, ${SKILL_NAMES[d.skill]} ${d.min}+, ${d.hours}h) to unlock: ${opens.map(unlockName).join(", ")}.`,
   };
 }

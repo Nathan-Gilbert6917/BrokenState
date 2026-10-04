@@ -7,7 +7,7 @@
 import { SUPPLIES } from "./data.js";
 import { newId, log, day, hub, baseById, survivorById, hurt, mergeKnowledge } from "./world.js";
 import {
-  STANCES, planPath, fuelForPath, carryCapacity, supplyLoad, unitsThatFit, partyCapacity, cargoLoad,
+  STANCES, planPath, fuelForPath, carryCapacity, supplyLoad, unitsThatFit, partyCapacity, cargoLoad, cargoRoom,
   partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty,
 } from "./parties.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
@@ -290,7 +290,7 @@ function headHome(state, p, job) {
     if (job && (p.atDest || job.atDest) !== "disband") {
       const got = [], short = [];
       for (const l of cleanLines(p.pickup || job.pickup)) {
-        const room = Math.max(0, partyCapacity(state, p) - cargoLoad(p.cargo));
+        const room = cargoRoom(state, p);
         const take = Math.max(0, Math.min(l.qty, Math.floor(dest.stock[l.key] || 0), unitsThatFit(room, l.key)));
         if (take > 0) {
           dest.stock[l.key] -= take;

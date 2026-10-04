@@ -10,7 +10,7 @@ import {
   registerCombatHandler, canSee, active, zoneAt,
 } from "../src/sim/combat.js";
 import {
-  launchExpedition, partyMembers, partyTile, partyCapacity, cargoLoad, planPath, giveOrder, spawnAiParty,
+  launchExpedition, partyMembers, partyTile, partyCapacity, cargoLoad, poolLoad, planPath, giveOrder, spawnAiParty,
 } from "../src/sim/parties.js";
 import { triggerConflict, guardsFor, fightOdds, raidForce, engagedWith, defendInPerson } from "../src/sim/conflicts.js";
 import {
@@ -283,7 +283,7 @@ const groupOf = (state, type) => {
       check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && (p.cargo.supplies.food || 0) - food0 === (loot.supplies.food || 0),
         `the team gains exactly what was on the bodies (ammo +${(p.cargo.supplies.ammo || 0) - ammo0}, on bodies ${loot.supplies.ammo || 0})`);
       check(p.cargo.gear.length - gear0 === loot.gear.length, "no bonus gun on top of the looted ones");
-      check(cargoLoad(p.cargo) <= partyCapacity(st, p) + 1e-6, "the cargo is not over capacity");
+      check(poolLoad(p) <= partyCapacity(st, p) + 1e-6, "the team is not over what it can carry");
       check(!!after && /Taken from the bodies/.test(after.text) === (Object.values(loot.supplies).some((q) => q > 0) || loot.gear.length > 0), "the card lists what was taken, once");
     }
   });
@@ -299,13 +299,13 @@ const groupOf = (state, type) => {
     const card = triggerConflict(st, p, "camp", f.id);
     st.cards.length = 0;
     card.conflict.enemy.count = 2; card.conflict.enemy.power = 1;
-    p.cargo.supplies.scrap = Math.floor(partyCapacity(st, p) - cargoLoad(p.cargo) - 1); // one unit of space left
+    p.cargo.supplies.scrap = Math.floor((partyCapacity(st, p) - poolLoad(p) - 1) / 2); // about a kg of room left (scrap is 2 kg, sim/load.js)
     pick(card, /^Ambush the camp/).resolve(st);
     const after = st.cards.find((c) => c.title === "After the fight");
     if (!after || !st.parties.includes(p)) continue;
     if (/Taken from the bodies/.test(after.text)) paid++;
     if (/No room to carry/.test(after.text)) left++;
-    if (cargoLoad(p.cargo) > partyCapacity(st, p) + 1e-6 && partyMembers(st, p).length === 3) over++;
+    if (poolLoad(p) > partyCapacity(st, p) + 1e-6 && partyMembers(st, p).length === 3) over++;
   }
   check(paid >= 20 && over === 0, `by the numbers the card pays (${paid} times) and never overfills the cargo (${over} over, ${left} guns left behind)`);
 }
