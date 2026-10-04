@@ -8,7 +8,7 @@ import { hiveTracker } from "../sim/hives.js";
 import { view } from "./render.js";
 import { PERSONALITIES, autopilotPersonality, autopilotSummary, reserveText } from "../sim/autopilot.js";
 
-export const DEV_SPEEDS = [10, 50, 200]; // 200×: a day in about 0.4 seconds
+export const DEV_SPEEDS = [60, 300, 1200]; // 1200×: a day in about 0.4 seconds (1× is 20 seconds an hour)
 const INFECTED = 0.6; // a tile counts as a hotzone at this infection or more (about the worst 15% at the start)
 
 // One sample per in-game day, so the panel can show how things changed over the last week.

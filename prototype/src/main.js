@@ -49,7 +49,7 @@ import { LOCK_ACTIONS } from "./ui/locks.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
 
-const HOURS_PER_SECOND = 1 / 3; // at 1× speed an hour takes 3 seconds and a day 72 seconds
+const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
 const SLOW_REFRESH_MS = 250;    // above MAX_SPEED the panels are redrawn about 4 times a second, not every tick
 
