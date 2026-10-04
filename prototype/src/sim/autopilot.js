@@ -759,7 +759,7 @@ function handleTrade(state) {
   }
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
-    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality)}.`);
+    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality).replace(/\.$/, "")}.`);
     return;
   }
   const { p, f, speech } = ctx;

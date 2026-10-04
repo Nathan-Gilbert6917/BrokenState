@@ -1254,7 +1254,7 @@ function gateCard(state, v, base, lead) {
         if (!here(st)) return gone;
         v.done.news = true;
         let text = `"${rumor(st, v)}"`;
-        if (v.sub !== "scouts") text += ` They mark the way they came on your map (${giveIntel(st, v, 1)} tiles).`;
+        if (v.sub !== "scouts") { const k = giveIntel(st, v, 1); text += k ? ` They mark the way they came on your map (${k} tiles).` : " The way they came is already on your map."; }
         else {
           let h = 0;
           for (const id of new Set(v.trail)) if (st.hordes.some((x) => st.grid.distance(x.tile, id) <= 2)) { st.knowledge[id] = snapshot(st, id); h++; }

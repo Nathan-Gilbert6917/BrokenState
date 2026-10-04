@@ -138,6 +138,7 @@ function retreat(state, h, base) {
   h.busy = false;
   if (h.role === "attack") { h.role = "roam"; h.goal = null; }
   h.lureUntil = state.hour + 48;
+  h.warned = false; // if it turns back for a base later, the lookouts warn again (as after a decoy fire)
   const g = state.grid;
   h.target = g.neighbors(h.tile).sort((a, b) => g.distance(b, base.tile) - g.distance(a, base.tile))[0] ?? null;
 }

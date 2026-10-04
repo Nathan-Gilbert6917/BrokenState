@@ -395,6 +395,9 @@ export function cardStale(state, card) {
   const p = state.parties.find((q) => q.id === card.partyId);
   if (!p) return true;
   if (p.owner === "player" && !partyMembers(state, p).length) return true;
+  // A card about the team's vehicle (a breakdown) after the vehicle was left behind: a fast vehicle enters
+  // several tiles in an hour, and can run dry on a later one in the same hour the breakdown came up.
+  if (card.vehicleId != null && p.vehicleId !== card.vehicleId) return true;
   return (card.survivorIds || []).some((id) => {
     const s = survivorById(state, id);
     return !s || !s.alive || !p.members.includes(id);
