@@ -5,7 +5,7 @@ export const HIVE = {
   START_RES: 5,       // resources of every hive on the map at the start
   RES_CAP: 80,        // a hive stores no more than this
   BOSS_COST: 40,      // a Wallbreaker
-  BOSS_DAY: 120,      // no Wallbreakers before this day
+  BOSS_DAY: 200,      // no Wallbreakers before this day
   TERRITORY: 4,       // land a hive holds (sites inside show at least 3 skulls)
   RING: 1,            // red-skull ground around the hive: much tougher dead
   RADIATE: 6,         // infection reaches this far
@@ -14,8 +14,8 @@ export const HIVE = {
   SITE_SCORE: 30,     // construction starts at this combined horde score
   SITE_BIOMASS: 1000, // ... and the hive stands when this many of the dead have gone into it
   SITE_INTAKE: 40,    // ... at most this many a day (a quarter of the gathered mass, at least 25): about 25 days
-  SITE_DAYS: [50, 80], // days between new build sites
-  SITE_MAX: 2,        // build sites at a time
+  SITE_DAYS: [120, 180], // days between new build sites (slow enough that a hive war can be won)
+  SITE_MAX: 1,        // build sites at a time
   BORDER_DAYS: [5, 9],
   GUARD_MIN: 40,      // a hive rebuilds its guard below this
   START_ORIGIN: 4,    // hives placed around the outbreak origin at the start on a Normal map (mapgen.js; worldsize.js for the others)

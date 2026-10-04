@@ -1,6 +1,6 @@
 // Hives and hordes (src/sim/hives.js, hordes.js, defences.js): resource income by cluster size, horde costs and
 // sizes, 5–6 hives with no hordes and 5 resources each at the start, hordes moving at most 2 tiles a day, merging
-// and splitting (parts of at least 10), a new build site every 50–80 days, the 30-score / 1,000-dead rule for a new
+// and splitting (parts of at least 10), a new build site every 120–180 days, the 30-score / 1,000-dead rule for a new
 // hive (at most 40 a day going in), the Wallbreaker for 40 and 90 days between a hive's Wallbreakers, hordes from
 // the border, wall hold limits by tier, a held horde falling back and leaving the base be, a break-in turning into a battle,
 // infection fading after a hive dies, the win condition, determinism, and 365-day runs without NaN. Then the two
@@ -121,13 +121,13 @@ const t0 = Date.now();
   void big1; void big2;
 }
 
-// 4. Build sites: every 50–80 days, 30 score to start, 1,000 dead to finish at most 40 a day.
+// 4. Build sites: every 120–180 days, 30 score to start, 1,000 dead to finish at most 40 a day.
 {
   console.log("New hives");
   const st = world(3);
   const picks = [];
   let seen = new Set();
-  const end = 260 * 24;
+  const end = (HIVE.SITE_DAYS[1] * 3 + 30) * 24; // room for three sites
   // Only the hives and hordes run (no colony to fall and stop the clock).
   while (st.hour < end) {
     st.hour++;
@@ -138,7 +138,7 @@ const t0 = Date.now();
   const gaps = picks.slice(1).map((d, i) => d - picks[i]);
   const [lo, hi] = HIVE.SITE_DAYS;
   check(picks.length >= 3 && picks[0] >= lo && picks[0] <= hi + 1 && gaps.every((x) => x >= lo && x <= hi + 1), `build sites picked on days ${picks.join(", ")} (gaps ${gaps.join(", ")}; ${lo}–${hi} apart)`);
-  check(st.hiveInfo.stats.built >= 1, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day 260, ${st.hives.length} standing)`);
+  check(st.hiveInfo.stats.built >= 1, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day ${day(st)}, ${st.hives.length} standing)`);
   // The rule by hand.
   const s2 = world(4);
   const hv = s2.hives[0];

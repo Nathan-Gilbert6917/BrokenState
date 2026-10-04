@@ -5,11 +5,11 @@
 // A Normal map starts with 5–6 hives (four around the outbreak origin, one at each other hot spot: mapgen.js; other
 // world sizes keep about the same hives per tile, worldsize.js), each
 // with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15:
-// hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (from day 120, then at most one every 90 days per hive):
+// hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (from day 200, then at most one every 90 days per hive):
 // a hive boss that joins a horde and smashes defences when it attacks a base (defences.js). Inside every hive
 // waits the Broodmother, the boss a team fights when it storms the hive.
 //
-// Each hive keeps a guard horde at home. Every 50–80 days a site for a new hive is picked near the current ones;
+// Each hive keeps a guard horde at home. Every 120–180 days a site for a new hive is picked near the current ones;
 // hives within 10 tiles of it send hordes there, the rest defend: they send hordes out to roam and to attack
 // bases (medium hordes only before day 60; 20% of new roamers attack at first, 40% on day 30, 65% from about day
 // 70; your bases weigh 2.5× a group's and are attacked from up to 45 tiles). Hordes reaching the site gather into one mass; once the hordes delivered add up
