@@ -23,6 +23,7 @@
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive } from "./world.js";
+import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 
 export const SAVE_FORMAT = "broken-state-save";
 // Bump when the state changes in a way an older save cannot just be loaded into, and add a migration below.
@@ -58,7 +59,7 @@ export function saveMeta(state) {
   return {
     day: day(state), hour: state.hour % 24, hub: h ? h.name : "", survivors: alive(state).length,
     seed: state.seed, groups: (state.factions || []).length, gameOver: !!state.gameOver, victory: !!state.victory,
-    autopilot: !!state.autopilot,
+    autopilot: !!state.autopilot, world: worldSizeOf(state), // "world", not "size": the save list keeps the byte size under that key (ui/saves.js)
   };
 }
 
@@ -100,6 +101,8 @@ export function deserializeState(save) {
   }
   if (!state || !Array.isArray(state.tiles) || !state.grid || !Array.isArray(state.bases)) throw new SaveError("The save is damaged and cannot be loaded (no map or bases).", "damaged");
   setNextId(Number(s.nextId));
+  // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
+  if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state);
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   return state;
 }

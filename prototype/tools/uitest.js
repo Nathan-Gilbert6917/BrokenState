@@ -550,5 +550,30 @@ section("Roster: sort, filter, roles");
   check(Object.keys(ROLES).length > 3, "roles listed");
 }
 
+section("New-run screen: world size and AI groups (sim/worldsize.js)");
+{
+  const { newRunScreen, LOOK_ACTIONS, LOOK_CHANGE_ACTIONS } = await import("../src/ui/newgame.js");
+  Object.assign(CLICK, LOOK_ACTIONS); // main.js registers the new-run screen's own handlers
+  Object.assign(CHANGE, LOOK_CHANGE_ACTIONS);
+  const { WORLD_SIZES, SIZE_KEYS, clampGroups } = await import("../src/sim/worldsize.js");
+  for (const k of SIZE_KEYS) {
+    const d = WORLD_SIZES[k];
+    const w = createWorld({ seed: seed + 9, factionCount: d.defGroups, size: k });
+    const ui = { worldSize: k, factionCount: d.defGroups, nrMsg: "" };
+    const html = newRunScreen(w, ui);
+    htmlOk(html, `new-run screen (${d.label})`);
+    const sizeSel = /<select data-action="worldsize">([\s\S]*?)<\/select>/.exec(html);
+    check(sizeSel && (sizeSel[1].match(/<option/g) || []).length === SIZE_KEYS.length && new RegExp(`value="${k}" selected`).test(sizeSel[1]), `${d.label}: the size list has every size, this one selected`);
+    const groupSel = /<select data-action="factioncount">([\s\S]*?)<\/select>/.exec(html);
+    const opts = groupSel ? [...groupSel[1].matchAll(/<option[^>]*>(\d+)</g)].map((m) => Number(m[1])) : [];
+    check(opts[0] === d.groups[0] && opts[opts.length - 1] === d.groups[1] && opts.length === d.groups[1] - d.groups[0] + 1, `${d.label}: AI groups ${d.groups.join("–")} (got ${opts.join(",")})`);
+    check(new RegExp(`<option selected>${d.defGroups}<`).test(groupSel ? groupSel[1] : ""), `${d.label}: ${d.defGroups} groups selected`);
+    check(html.includes(`${w.factions.length} other groups`), `${d.label}: the text counts the groups`);
+    check(clampGroups(k, 99) === d.groups[1] && clampGroups(k, 0) === d.groups[0], `${d.label}: group count clamped to its range`);
+  }
+  check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
+  console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

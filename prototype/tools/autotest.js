@@ -2,13 +2,18 @@
 // compares them with simtest.js's simple auto-player on the same seeds. Reports days survived, population,
 // buildings, outposts, trips launched, cards resolved and hub stock, and checks for crashes, cards left
 // unanswered and teams stuck with nothing to resolve.
-// Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...]
+// Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...] [size=small|normal|large|huge]
+// (Normal by default; other sizes play with their default group count, sim/worldsize.js.)
 import { createWorld, tickHour, day, alive, hub } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, startReturn } from "../src/sim/parties.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, autopilotResolve, PERSONALITIES } from "../src/sim/autopilot.js";
+import { sizeDef } from "../src/sim/worldsize.js";
+import { takeSize } from "./sizearg.js";
+
+const SIZE = takeSize();
 
 const days = Number(process.argv[2] || 120);
 const which = process.argv[3] || "balanced";
@@ -18,7 +23,7 @@ if (styles.some((s) => !PERSONALITIES[s])) {
   console.log(`Unknown style "${which}". Use ${Object.keys(PERSONALITIES).join(", ")} or all.`);
   process.exit(1);
 }
-const FACTIONS = 8;
+const FACTIONS = SIZE === "normal" ? 8 : sizeDef(SIZE).defGroups;
 
 // simtest.js's auto-player (kept in step with tools/simtest.js): first enabled choice or "Return home",
 // three search hours, teams home, a 2-person scavenging trip every 6 days.
@@ -58,7 +63,7 @@ function simtestAutoplay(state, m) {
 }
 
 function run(seed, style) {
-  const state = createWorld({ seed, factionCount: FACTIONS });
+  const state = createWorld({ seed, factionCount: FACTIONS, size: SIZE });
   state.started = true;
   const m = { seed, style: style || "simtest", cards: 0, launched: 0, peak: alive(state).length, problems: [], ms: 0 };
   if (style) setAutopilot(state, true, style);
@@ -113,6 +118,7 @@ const line = (m) => `${pad(m.style, 10)} seed ${pad(m.seed, 4)} day ${pad(m.day 
   `bldg ${pad(m.buildings, 3)} outposts ${pad(m.outposts, 2)} trips ${pad(m.launched, 3)} cards ${pad(m.cards, 4)} raids held ${pad(m.raids, 2)} ` +
   `stock food ${pad(m.stock.food, 4)} meds ${pad(m.stock.meds, 3)} scrap ${pad(m.stock.scrap, 4)} parts ${pad(m.stock.parts, 3)} ammo ${pad(m.stock.ammo, 4)} ${Math.round(m.ms)}ms`;
 
+if (SIZE !== "normal") console.log(`World size: ${sizeDef(SIZE).label} (${sizeDef(SIZE).w}×${sizeDef(SIZE).h}), ${FACTIONS} groups.`);
 const results = { simtest: [] };
 for (const st of styles) results[st] = [];
 let problems = 0;
@@ -145,7 +151,7 @@ function takeover(seed) {
   const out = [];
   globalThis.window = globalThis.window || {};
   try {
-    const state = createWorld({ seed, factionCount: FACTIONS });
+    const state = createWorld({ seed, factionCount: FACTIONS, size: SIZE });
     state.started = true;
     const h = hub(state);
     const crew = alive(state).slice(1, 3).map((s) => s.id);

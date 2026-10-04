@@ -425,6 +425,7 @@ export function chronicleReader(state) {
   // Small per-frame caches (hordes / parties by key, overlay info): playback asks for the same two frames ~60
   // times a second.
   const memo = new Map();
+  const shown = { k: -1, k1: -1, fallen: null }; // the frames the tiles hold now (frameState)
   const cached = (key, make) => {
     let v = memo.get(key);
     if (v === undefined) {
@@ -472,14 +473,23 @@ export function chronicleReader(state) {
     const A = decode(k), B = k1 !== k ? decode(k1) : A;
     const info = frameInfo(k);
     // Tiles. On the last frame of a lost game your land and bases are gone (graves are drawn by the viewer).
-    for (let i = 0; i < n; i++) {
-      const ft = tiles[i];
-      const code = A.own[i];
-      ft.owner = info.fallen && code === 1 ? null : ownerOf(code);
-      ft.infection = (A.inf[i] + (B.inf[i] - A.inf[i]) * frac) / INF_Q;
-      ft.hive = false;
+    // Playback asks for the same pair of frames many times in a row: then only the tiles whose infection changes
+    // between the two are written (a Huge map has 6,600 tiles).
+    const same = A.k === shown.k && B.k === shown.k1 && info.fallen === shown.fallen;
+    if (!same) {
+      for (let i = 0; i < n; i++) {
+        const ft = tiles[i];
+        const code = A.own[i];
+        ft.owner = info.fallen && code === 1 ? null : ownerOf(code);
+        ft.infection = (A.inf[i] + (B.inf[i] - A.inf[i]) * frac) / INF_Q;
+        ft.hive = false;
+      }
+      for (const id of f0.hives) tiles[id].hive = true;
+      Object.assign(shown, { k: A.k, k1: B.k, fallen: info.fallen });
+    } else {
+      const a = A.inf, b = B.inf;
+      for (let i = 0; i < n; i++) if (a[i] !== b[i]) tiles[i].infection = (a[i] + (b[i] - a[i]) * frac) / INF_Q;
     }
-    for (const id of f0.hives) tiles[id].hive = true;
     const hiveSites = (f0.sites || []).map(([tile, biomass, started], i) => ({ id: -1 - i, tile, biomass, started: started ? f0.h : null, score: 0 }));
     const factions = info.groups.map((m, i) => ({ id: m.id, name: m.name, color: m.color, type: m.type, alive: m.alive, pop: m.pop, bases: m.alive ? f0.fb[i] || [] : [], goodwill: 0 }));
     const bases = info.fallen ? [] : f0.bases.map(baseOf);

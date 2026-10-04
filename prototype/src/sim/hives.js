@@ -2,7 +2,8 @@
 //
 // Every hive gains resources each day, more when other hives stand within 5 tiles of it (a cluster):
 // alone 1 a day, two together 3 each, three 6 each, then +2 for every further hive up to 12 (hiveIncome).
-// The map starts with 5–6 hives (four around the outbreak origin, one at each other hot spot: mapgen.js), each
+// A Normal map starts with 5–6 hives (four around the outbreak origin, one at each other hot spot: mapgen.js; other
+// world sizes keep about the same hives per tile, worldsize.js), each
 // with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15:
 // hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (from day 120, then at most one every 90 days per hive):
 // a hive boss that joins a horde and smashes defences when it attacks a base (defences.js). Inside every hive
@@ -30,6 +31,12 @@ import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { HIVE, BOSS_NAMES } from "./hiveconst.js";
+import { worldScale } from "./worldsize.js";
+
+// Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
+// (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
+const paced = (state, days) => { const a = worldScale(state); return a === 1 ? days : Math.max(1, Math.round(days / a)); };
+const siteMax = (state) => Math.max(HIVE.SITE_MAX, Math.round(HIVE.SITE_MAX * worldScale(state)));
 import { hiveAllies, broodAfterAllies } from "./alliance.js";
 
 // HIVE and BOSS_NAMES live in hiveconst.js (no imports, so any module can read them at load time).
@@ -106,11 +113,11 @@ export function hivesDaily(state) {
   for (const site of [...state.hiveSites]) siteDaily(state, site);
   if (d >= info.nextSiteDay) {
     pickSite(state);
-    info.nextSiteDay = d + state.rng.int(HIVE.SITE_DAYS[0], HIVE.SITE_DAYS[1]);
+    info.nextSiteDay = d + paced(state, state.rng.int(HIVE.SITE_DAYS[0], HIVE.SITE_DAYS[1]));
   }
   if (d >= info.nextBorderDay) {
     borderSpawn(state);
-    info.nextBorderDay = d + state.rng.int(HIVE.BORDER_DAYS[0], HIVE.BORDER_DAYS[1]);
+    info.nextBorderDay = d + paced(state, state.rng.int(HIVE.BORDER_DAYS[0], HIVE.BORDER_DAYS[1]));
   }
   radiate(state);
 }
@@ -232,7 +239,7 @@ function supportSite(state, hive) {
 // ---------- build sites ----------
 function pickSite(state) {
   const g = state.grid, rng = state.rng;
-  if (!state.hives.length || state.hiveSites.length >= HIVE.SITE_MAX) return null;
+  if (!state.hives.length || state.hiveSites.length >= siteMax(state)) return null;
   const people = [...state.bases.map((b) => b.tile), ...state.factions.filter((f) => f.alive).flatMap((f) => f.bases)];
   const cands = [];
   for (const t of state.tiles) {

@@ -2,6 +2,7 @@
 // Pure simulation: no DOM or canvas code lives here.
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
+import { DEFAULT_SIZE, sizeDef } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { appearanceFor } from "./appearance.js";
 export { radioBasesInRange };
@@ -52,11 +53,13 @@ export function setNextId(n) {
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
-export function createWorld({ seed, factionCount, crew = null }) {
+// size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map).
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE }) {
   const rng = new Rng(seed);
-  const map = generateMap(rng);
+  const worldSize = sizeDef(size).key;
+  const map = generateMap(rng, worldSize);
   const state = {
-    seed, rng,
+    seed, rng, worldSize,
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -72,7 +75,8 @@ export function createWorld({ seed, factionCount, crew = null }) {
   // corner of the state: within 30 tiles of a city and a few tiles from the map edge.
   const g = state.grid;
   const towns = state.tiles.filter((t) => t.loc && t.loc.type === "town");
-  const farFrom = (t, origin, city, mil) => g.distance(t.id, state.originId) >= origin &&
+  // The extra hot spots of Large and Huge maps (mapgen.js spotIds) count as the origin does.
+  const farFrom = (t, origin, city, mil) => g.distance(t.id, state.originId) >= origin && map.spotIds.every((s) => g.distance(t.id, s) >= origin - 4) &&
     state.cityIds.every((c) => g.distance(t.id, c) >= city) && state.militaryIds.every((m) => g.distance(t.id, m) >= mil);
   const central = (t) => t.x >= 4 && t.y >= 3 && t.x < g.width - 4 && t.y < g.height - 3 && state.cityIds.some((c) => g.distance(t.id, c) <= 30);
   const hubCandidates = towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));

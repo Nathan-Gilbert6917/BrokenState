@@ -9,17 +9,26 @@
 //   crash sites, plus truck stops and gas stations on the highways. Most of them are off the road.
 // - Landmarks: at least one National Guard base (off-road, away from settlements), a prison, a dam, an airport,
 //   factories.
-// A placed site is tile.loc = { type, name, zone, settlement? }: zone = urban | town | rural | special (data.js
+// World sizes (worldsize.js): the counts above are a Normal 64 × 42 map's. Large and Huge maps get more cities (3, 4),
+// towns, countryside sites, landmarks and highway stops by area, extra hot spots with a small cluster of hives each,
+// and more guaranteed military bases on a Huge map; a Small map gets fewer by area. A Normal map draws exactly the
+// random numbers it always did, so old seeds build the same map.
+// A placed site is tile.loc ={ type, name, zone, settlement? }: zone = urban | town | rural | special (data.js
 // SITE_ZONES); settlement = center tile id of the city or town it belongs to.
 import { HexGrid, findPath } from "./hex.js";
 import { LOCATIONS, TOWN_NAMES } from "./data.js";
 import { HIVE } from "./hiveconst.js";
+import { sizeDef, areaScale, BASE_W, BASE_H } from "./worldsize.js";
 
-export const MAP_W = 64;
-export const MAP_H = 42;
+// The Normal map (worldsize.js has every size; a world's own size is state.grid.width × height).
+export const MAP_W = BASE_W;
+export const MAP_H = BASE_H;
 
-const TOWN_COUNT = 13;
-const SECOND_CITY_NAMES = ["Granite City", "Fairmont", "Kingsbridge", "Port Ashby", "Easton"];
+const TOWN_COUNT = 13; // on a Normal map; scaled by area on the others
+// Town names for Large and Huge maps once data.js TOWN_NAMES are all taken (kept apart so Normal maps draw the same).
+const MORE_TOWN_NAMES = ["Thornton", "Bridgeport", "Maple Grove", "Dover Flats", "Clearwater", "Hadley", "Sawyer", "Whitmore", "Linden",
+  "Carver", "Brookfield", "Iron Gap", "Winslow", "Meadowvale", "Rockport", "Garland", "Tallow Creek", "Beckett", "Norwood", "Shiloh"];
+const SECOND_CITY_NAMES =["Granite City", "Fairmont", "Kingsbridge", "Port Ashby", "Easton"];
 const SURNAMES = ["Miller", "Hollis", "Ostrander", "Baker", "Kline", "Rourke", "Dale", "Pruitt", "Harmon", "Whitaker", "Calloway",
   "Brandt", "Yoder", "Lindgren", "Mercer", "Tate", "Grady", "Hensley", "Pickett", "Voss", "Sorensen", "Ames", "Caldwell", "Fenn"];
 const PLACE_NAMES = ["Elk Ridge", "Bear Lake", "Pine Hollow", "Cedar Hollow", "Eagle Rock", "Wolf Creek", "Stony Brook", "Blue Spruce",
@@ -87,7 +96,13 @@ function makeNoise(rng, w, h, cell) {
   };
 }
 
-export function generateMap(rng) {
+// size: a worldsize.js key (Normal when left out). Counts of towns, sites and landmarks scale with the map's area;
+// on a Normal map every count and every random draw is the original one, so old seeds build the same map.
+export function generateMap(rng, size = "normal") {
+  const def = sizeDef(size);
+  const MAP_W = def.w, MAP_H = def.h;
+  const A = areaScale(def); // land relative to Normal
+  const scaled = (n) => Math.round(n * A);
   const grid = new HexGrid(MAP_W, MAP_H);
   const n1 = makeNoise(rng, MAP_W, MAP_H, 9);
   const n2 = makeNoise(rng, MAP_W, MAP_H, 4.5);
@@ -110,7 +125,7 @@ export function generateMap(rng) {
   }
 
   // Rivers run from the northern highlands toward the south edge, their sources spread apart.
-  const riverCount = 3 + (rng.chance(0.5) ? 1 : 0);
+  const riverCount = Math.round((3 + (rng.chance(0.5) ? 1 : 0)) * (MAP_W / BASE_W)); // 3–4 on a Normal map, more on a wider one
   const highs = tiles.filter((t) => t.y < MAP_H * 0.3 && (t.terrain === "hills" || t.terrain === "mountain"));
   const sources = [];
   for (let r = 0; r < riverCount && highs.length; r++) {
@@ -152,7 +167,8 @@ export function generateMap(rng) {
   const pickName = (make, tries = 8) => uniqueName(...Array.from({ length: tries }, make));
   const nameFor = () => {
     const left = TOWN_NAMES.filter((n) => !usedNames.has(n));
-    const n = left.length ? rng.pick(left) : `${rng.pick(TOWN_NAMES)} ${usedNames.size}`;
+    const more = left.length ? left : MORE_TOWN_NAMES.filter((n) => !usedNames.has(n)); // big maps run out of the first list
+    const n = more.length ? rng.pick(more) : `${rng.pick(TOWN_NAMES)} ${usedNames.size}`;
     usedNames.add(n);
     return n;
   };
@@ -190,14 +206,17 @@ export function generateMap(rng) {
   const southOk = (t) => t.y > MAP_H * 0.6 && t.y < MAP_H - 5 && t.x > 10 && t.x < MAP_W - 10 && t.terrain !== "water" && t.terrain !== "mountain";
   const cityCandidates = tiles.filter(southOk);
   addCity(rng.pick(cityCandidates.length ? cityCandidates : tiles.filter((t) => t.y > MAP_H / 2 && !t.river)), "Calder City", true);
-  // A second, smaller city far from it.
+  // A second, smaller city far from it (Large and Huge maps get more of them, each far from the others).
   const main = cities[0].center;
-  for (const minD of [24, 18]) {
-    const c = tiles.filter((t) => t.x >= 8 && t.x < MAP_W - 8 && t.y >= 5 && t.y < MAP_H - 5 && !t.river &&
-      ["plains", "forest", "hills"].includes(t.terrain) && grid.distance(t.id, main.id) >= minD);
-    if (!c.length) continue;
-    addCity(rng.pick(c), rng.pick(SECOND_CITY_NAMES), false);
-    break;
+  for (let k = 1; k < def.cities; k++) {
+    for (const minD of [24, 18, 12]) {
+      const c = tiles.filter((t) => t.x >= 8 && t.x < MAP_W - 8 && t.y >= 5 && t.y < MAP_H - 5 && !t.river &&
+        ["plains", "forest", "hills"].includes(t.terrain) && cities.every((o) => grid.distance(t.id, o.center.id) >= minD));
+      if (!c.length) continue;
+      const names = SECOND_CITY_NAMES.filter((n) => !usedNames.has(n));
+      addCity(rng.pick(c), rng.pick(k === 1 || !names.length ? SECOND_CITY_NAMES : names), false);
+      break;
+    }
   }
   // Fill the blocks: the basics first, then more of a kind in the big city.
   const districtOf = (city, t) => {
@@ -241,7 +260,7 @@ export function generateMap(rng) {
   let townCands = tiles.filter((t) => buildable(t) && !urbanTile(t) && t.x >= 2 && t.x < MAP_W - 2 && t.y >= 2 && t.y < MAP_H - 2 &&
     cities.every((c) => grid.distance(c.center.id, t.id) >= 9) &&
     grid.neighbors(t.id).filter((n) => buildable(tiles[n]) && !urbanTile(tiles[n])).length >= 4);
-  for (let i = 0; i < TOWN_COUNT && townCands.length; i++) {
+  for (let i = 0; i < scaled(TOWN_COUNT) && townCands.length; i++) {
     const t = pickSpread(townCands, [...towns, ...cities.map((c) => c.center)], 8);
     placeLoc(t, "town", nameFor(), "town", t.id);
     towns.push(t);
@@ -292,18 +311,36 @@ export function generateMap(rng) {
     (t) => extra(t),
   ];
   military.push(landmark("military", milFilters(() => true), (t) => uniqueName(`${nearName(t)} National Guard base`)));
+  // Bigger maps: more bases for sure (Huge: 2), each at least 22 tiles from the others; then a 50% chance of one more.
+  const apartMil = (t) => military.every((m) => grid.distance(t.id, m.id) >= 22);
+  for (let k = 1; k < def.military; k++) {
+    const more = landmark("military", milFilters(apartMil), (t) => uniqueName(`${nearName(t)} National Guard base`, `${nearName(t)} Army depot`));
+    if (more) military.push(more);
+  }
   if (rng.chance(0.5)) {
-    const second = landmark("military", milFilters((t) => grid.distance(t.id, military[0].id) >= 22).slice(0, 2), (t) => uniqueName(`${nearName(t)} Army depot`));
+    const second = landmark("military", milFilters(apartMil).slice(0, 2), (t) => uniqueName(`${nearName(t)} Army depot`));
     if (second) military.push(second);
   }
   for (const m of military) offRoad.add(m.id);
-  landmark("prison", [(t) => isPlains(t) && cityDist(t) >= 14 && townDist(t) >= 4 && crowd[t.id] >= 4, (t) => !urbanTile(t) && cityDist(t) >= 10 && crowd[t.id] >= 3],
-    (t) => uniqueName(`${nearName(t)} State prison`));
-  landmark("dam", [(t) => isWoods(t) && grid.neighbors(t.id).some((n) => tiles[n].river) && crowd[t.id] >= 3],
-    (t) => uniqueName(`${nearName(t)} Dam`));
-  landmark("airport", [(t) => isPlains(t) && !urbanTile(t) && grid.distance(t.id, main.id) >= 5 && grid.distance(t.id, main.id) <= 12 && crowd[t.id] >= 3,
-    (t) => isPlains(t) && !urbanTile(t) && crowd[t.id] >= 3], () => uniqueName(`${cities[0].name} Regional airport`));
-  for (let i = 0; i < 2; i++) {
+  // One prison, dam and airport on a Normal map (two on Large and Huge ones, kept apart), two factories (by area).
+  const apart = (type, d) => (t) => sites.every((s) => s.loc.type !== type || grid.distance(s.id, t.id) >= d);
+  const perArea = (n) => Math.max(1, scaled(n));
+  for (let i = 0; i < perArea(1); i++) {
+    const far = apart("prison", 16);
+    landmark("prison", [(t) => far(t) && isPlains(t) && cityDist(t) >= 14 && townDist(t) >= 4 && crowd[t.id] >= 4, (t) => far(t) && !urbanTile(t) && cityDist(t) >= 10 && crowd[t.id] >= 3],
+      (t) => uniqueName(`${nearName(t)} State prison`));
+  }
+  for (let i = 0; i < perArea(1); i++) {
+    const far = apart("dam", 12);
+    landmark("dam", [(t) => far(t) && isWoods(t) && grid.neighbors(t.id).some((n) => tiles[n].river) && crowd[t.id] >= 3],
+      (t) => uniqueName(`${nearName(t)} Dam`));
+  }
+  for (let i = 0; i < perArea(1); i++) {
+    const city = cities[Math.min(i, cities.length - 1)].center, far = apart("airport", 12);
+    landmark("airport", [(t) => far(t) && isPlains(t) && !urbanTile(t) && grid.distance(t.id, city.id) >= 5 && grid.distance(t.id, city.id) <= 12 && crowd[t.id] >= 3,
+      (t) => far(t) && isPlains(t) && !urbanTile(t) && crowd[t.id] >= 3], () => uniqueName(`${city.loc.name} Regional airport`));
+  }
+  for (let i = 0; i < scaled(2); i++) {
     landmark("factory", [(t) => !urbanTile(t) && townDist(t) >= 2 && townDist(t) <= 4 && crowd[t.id] >= 2],
       (t) => uniqueName(`${nearName(t)} Factory`, `${nearName(t)} Mill`, `${nearName(t)} Plant`));
   }
@@ -321,7 +358,7 @@ export function generateMap(rng) {
   };
   for (const [type, n, ok] of COUNTRYSIDE) {
     let cands = tiles.filter((t) => buildable(t) && !urbanTile(t) && ok(t) && crowd[t.id] >= 3 && townDist(t) >= 3);
-    for (let i = 0; i < n && cands.length; i++) {
+    for (let i = 0; i < scaled(n) && cands.length; i++) {
       const t = pickSpread(cands, sites.filter((s) => s.loc.type === type), 4);
       placeLoc(t, type, countryName(type), "rural");
       cands = cands.filter((c) => crowd[c.id] >= 3);
@@ -401,8 +438,8 @@ export function generateMap(rng) {
       placeLoc(t, type, name(t), "rural");
     }
   };
-  highway("truckstop", 3, 10, () => countryName("truckstop"));
-  highway("gas", 4, 8, (t) => uniqueName(`${nearName(t)} Gas`, `${nearName(t)} Highway Gas`, `${rng.pick(PLACE_NAMES)} Gas`));
+  highway("truckstop", scaled(3), 10, () => countryName("truckstop"));
+  highway("gas", scaled(4), 8, (t) => uniqueName(`${nearName(t)} Gas`, `${nearName(t)} Highway Gas`, `${rng.pick(PLACE_NAMES)} Gas`));
 
   // Minor scavenging value everywhere else.
   for (const t of tiles) {
@@ -424,6 +461,17 @@ export function generateMap(rng) {
   const origin = rng.pick(originCandidates);
   const seeds = [{ id: origin.id, peak: 1, r: 30 }];
   for (const c of cities) if (grid.distance(c.center.id, origin.id) > 10) seeds.push({ id: c.center.id, peak: 0.8, r: 12 });
+  // Large and Huge maps: extra hot spots at landmarks far from the others (a lone hive each), so the hives cover the
+  // state about as densely as on a Normal map.
+  const spotIds = [];
+  const spotTypes = new Set(["military", "prison", "airport", "factory", "dam", "quarry", "crashsite", "campground", "lodge"]);
+  for (let k = 0; k < def.hotspots; k++) {
+    const cands = sites.filter((t) => spotTypes.has(t.loc.type) && seeds.every((s) => grid.distance(s.id, t.id) >= (s.r >= 30 ? 22 : 14)));
+    const t = pickSpread(cands, seeds.map((s) => tiles[s.id]), 6);
+    if (!t) break;
+    seeds.push({ id: t.id, peak: 0.75, r: 10 });
+    spotIds.push(t.id);
+  }
   for (const t of tiles) {
     let inf = 0;
     for (const s of seeds) inf = Math.max(inf, s.peak * (1 - grid.distance(s.id, t.id) / s.r));
@@ -431,14 +479,19 @@ export function generateMap(rng) {
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
-  // Infestation hives (hives.js): four around the origin, one around each other hot spot (HIVE.START_ORIGIN, START_SPOT).
+  // Infestation hives (hives.js): four around the origin (HIVE.START_ORIGIN on a Normal map; worldsize.js
+  // originHives on the others), one around each other hot spot (HIVE.START_SPOT).
+  // The extra hot spots of Large and Huge maps hold a small cluster each (worldsize.js spotHives): hive income
+  // grows with the cluster (hives.js hiveIncome), so this keeps the dead per tile of land near a Normal map's.
+  const originHives = def.key === "normal" ? HIVE.START_ORIGIN : def.originHives;
   for (const [i, s] of seeds.entries()) {
     const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.hive));
-    for (const n of spots.slice(0, i ? HIVE.START_SPOT : HIVE.START_ORIGIN)) n.hive = true;
+    const n = !i ? originHives : spotIds.includes(s.id) ? def.spotHives || HIVE.START_SPOT : HIVE.START_SPOT;
+    for (const t of spots.slice(0, n)) t.hive = true;
   }
 
   return {
     grid, tiles, cityId: main.id, originId: origin.id,
-    cityIds: cities.map((c) => c.center.id), townIds: towns.map((t) => t.id), militaryIds: military.map((m) => m.id),
+    cityIds: cities.map((c) => c.center.id), townIds: towns.map((t) => t.id), militaryIds: military.map((m) => m.id), spotIds,
   };
 }

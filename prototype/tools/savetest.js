@@ -131,6 +131,36 @@ console.log("Loaded in a fresh process");
   } finally { try { unlinkSync(file); } catch { /* ignore */ } }
 }
 
+// ---------- 1b. world sizes (sim/worldsize.js) ----------
+// A Small and a Huge world saved on day 20, played on and loaded: identical, with their size. A save from before
+// sizes (no worldSize on the state) loads as what its grid is: a Normal 64 × 42 map, or whatever it really is.
+console.log("World sizes");
+for (const size of ["small", "huge"]) {
+  const st = createWorld({ seed: 31, factionCount: 6, size });
+  st.started = true;
+  setAutopilot(st, true, "balanced");
+  playTo(st, 20);
+  while (st.cards.length && !st.gameOver) tickHour(st);
+  const save = serializeState(st);
+  check(save.meta.world === size, `${size}: the save list says ${save.meta.world}`);
+  const B = branch(`${size} world (${st.grid.width}×${st.grid.height})`, st, (w) => playTo(w, 30));
+  check(B.worldSize === size && B.grid.width === st.grid.width && B.grid.height === st.grid.height && B.tiles.length === st.tiles.length &&
+    B.knowledge.length === B.tiles.length, `${size}: loaded as ${B.worldSize} ${B.grid.width}×${B.grid.height}`);
+}
+{
+  const st = createWorld({ seed: 32, factionCount: 6 });
+  const old = { ...st };
+  delete old.worldSize;
+  const B = deserializeState(JSON.parse(JSON.stringify(serializeState(old))));
+  check(B.worldSize === "normal" && B.grid.width === 64 && B.grid.height === 42, `a save without a size loads as ${B.worldSize}`);
+  const hu = createWorld({ seed: 33, factionCount: 10, size: "huge" });
+  const oldHuge = { ...hu };
+  delete oldHuge.worldSize;
+  const C = deserializeState(JSON.parse(JSON.stringify(serializeState(oldHuge))));
+  check(C.worldSize === "huge", `a Huge save without its size loads as ${C.worldSize}`);
+  console.log(`  a save without a size loads as ${B.worldSize} (${B.grid.width}×${B.grid.height}); a 100×66 one as ${C.worldSize}`);
+}
+
 // ---------- 2. saved at awkward moments ----------
 // Saves the world, plays it on with `go`, loads the save, plays that on the same way: the same world?
 function branch(label, st, go, extra = () => "") {

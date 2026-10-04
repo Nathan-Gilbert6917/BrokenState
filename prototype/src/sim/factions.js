@@ -13,6 +13,7 @@ import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou
 import { allianceRaidHelp } from "./alliance.js";
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
+import { worldScale } from "./worldsize.js";
 
 const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
@@ -35,11 +36,12 @@ export function createFactions(state, count) {
   const usedNames = new Set();
   types.forEach((type, i) => {
     const def = FACTION_TYPES[type];
-    // Groups start outside the cities, spread apart, and within reach of the hub (8–30 tiles) when there is room.
+    // Groups start outside the cities, spread apart, and within reach of the hub (8–30 tiles on a Normal map; by
+    // the square root of the area on the others, worldsize.js) when there is room.
     const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && g.distance(t.id, hubTile) >= 8 &&
       state.factions.every((f) => f.bases.every((b) => g.distance(b, t.id) >= 8)));
     if (!sites.length) return;
-    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= 30);
+    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= Math.round(30 * Math.sqrt(worldScale(state))));
     const pool = reach.length ? reach : sites;
     const pref = pool.filter((t) => PREFERRED_SITES[type].includes(t.loc.type));
     const site = rng.pick(pref.length ? pref : pool);

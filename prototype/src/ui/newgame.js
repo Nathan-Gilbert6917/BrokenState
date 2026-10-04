@@ -3,6 +3,7 @@
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
+import { WORLD_SIZES, SIZE_KEYS, sizeDef } from "../sim/worldsize.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -92,6 +93,27 @@ function crewCard(state, ui, s) {
   </div>`;
 }
 
+// World size (sim/worldsize.js) and the group counts that size allows.
+const SIZE_TIPS = {
+  small: "A tight state: shorter trips, fewer towns, hives and groups close by",
+  normal: "The standard State of Calder",
+  large: "More towns, a third city and a second infestation; longer trips",
+  huge: "A sprawling state: four cities, two more infestations, many groups. Long trips: vehicles and outposts matter",
+};
+function worldSizeSelect(ui) {
+  const opts = SIZE_KEYS.map((k) => {
+    const d = WORLD_SIZES[k];
+    return `<option value="${k}" ${k === ui.worldSize ? "selected" : ""}>${d.label} (${d.w}×${d.h})</option>`;
+  }).join("");
+  return `<label${tip(`Map size in hexes. ${SIZE_TIPS[sizeDef(ui.worldSize).key]}. Changing it builds a new map on the same seed`)}>World size <select data-action="worldsize">${opts}</select></label>`;
+}
+function groupOptions(ui) {
+  const [lo, hi] = sizeDef(ui.worldSize).groups;
+  const out = [];
+  for (let v = lo; v <= hi; v++) out.push(`<option ${v === ui.factionCount ? "selected" : ""}>${v}</option>`);
+  return out.join("");
+}
+
 export function newRunScreen(state, ui) {
   const people = state.survivors;
   return `<div class="box wide">
@@ -99,7 +121,8 @@ export function newRunScreen(state, ui) {
     <div class="text small">Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes. Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
-      <label${tip("How many other survivor groups share the state (5–10)")}>AI groups <select data-action="factioncount">${[5, 6, 7, 8, 9, 10].map((v) => `<option ${v === ui.factionCount ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+      ${worldSizeSelect(ui)}
+      <label${tip(`How many other survivor groups share the state (${sizeDef(ui.worldSize).groups.join("–")} on a ${sizeDef(ui.worldSize).label} map)`)}>AI groups <select data-action="factioncount">${groupOptions(ui)}</select></label>
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
       <button data-action="nr-allcrew"${tip("Randomize every colonist's name, skills and look (skill totals stay the same)")}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>

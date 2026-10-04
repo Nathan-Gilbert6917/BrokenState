@@ -5,7 +5,7 @@
 // cards as they are added, the memorial wall, survivor flags) and changes no rule, so every run plays out exactly
 // as it would without it.
 //
-// Usage: node tools/balancesim.js [days] [--runs N] [--seeds 1-34|1,2,5] [--styles all|cautious,balanced]
+// Usage: node tools/balancesim.js [days] [--runs N] [--seeds 1-34|1,2,5] [--styles all|cautious,balanced] [--size huge]
 //                                 [--workers N] [--json path] [--quiet]
 // Defaults: 730 days, seeds 1-34 x the three styles trimmed to 100 runs, workers = CPU cores - 2 (max 12).
 import { Worker, isMainThread, parentPort } from "node:worker_threads";
@@ -16,8 +16,9 @@ import { createWorld, tickHour, day, alive, hub, setNextId } from "../src/sim/wo
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats } from "../src/sim/hives.js";
 import { allianceMembers, controlledLand } from "../src/sim/alliance.js";
+import { WORLD_SIZES, sizeDef } from "../src/sim/worldsize.js";
 
-const FACTIONS = 8;
+const FACTIONS = 8; // on a Normal map; other sizes (--size) play with their default group count (sim/worldsize.js)
 const SAMPLE = 30; // days between samples
 const DAILY_KEYS = ["cards", "decisions", "teamCards", "raidG", "raidO", "hordeHit", "hordeWarn", "death", "desert", "illness", "outbreak", "hungry", "thirsty", "shortRations"];
 
@@ -44,9 +45,9 @@ function deathBucket(m, baseNames) {
   return "fight / scavenging in the field";
 }
 
-export function runCampaign({ seed, style, days }) {
+export function runCampaign({ seed, style, days, size = "normal" }) {
   setNextId(1); // every run starts from the ids a fresh process would hand out (same run in any order / worker)
-  const state = createWorld({ seed, factionCount: FACTIONS });
+  const state = createWorld({ seed, factionCount: size === "normal" ? FACTIONS : sizeDef(size).defGroups, size });
   state.started = true;
   setAutopilot(state, true, style);
   const D = days + 1;
@@ -575,7 +576,7 @@ function report(results, days) {
 // Main thread: run list, workers, report
 // ======================================================================================
 function parseArgs(argv) {
-  const o = { days: 730, runs: 100, seeds: null, styles: Object.keys(PERSONALITIES), workers: Math.max(1, Math.min(12, os.cpus().length - 2)), json: null, quiet: false };
+  const o = { days: 730, runs: 100, size: "normal", seeds: null, styles: Object.keys(PERSONALITIES), workers: Math.max(1, Math.min(12, os.cpus().length - 2)), json: null, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--runs") o.runs = Number(argv[++i]);
@@ -587,6 +588,8 @@ function parseArgs(argv) {
     else if (a === "--workers") o.workers = Number(argv[++i]);
     else if (a === "--json") o.json = argv[++i];
     else if (a === "--quiet") o.quiet = true;
+    else if (a === "--size" || /^(--)?size=/.test(a)) o.size = sizeDef(a.includes("=") ? a.split("=")[1] : argv[++i]).key;
+    else if (WORLD_SIZES[a]) o.size = a;
     else if (/^\d+$/.test(a)) o.days = Number(a);
   }
   if (!o.seeds) o.seeds = Array.from({ length: Math.ceil(o.runs / o.styles.length) }, (_, k) => k + 1);
@@ -597,9 +600,9 @@ function parseArgs(argv) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  let specs = o.seeds.flatMap((seed) => o.styles.map((style) => ({ seed, style, days: o.days })));
+  let specs = o.seeds.flatMap((seed) => o.styles.map((style) => ({ seed, style, days: o.days, size: o.size })));
   if (!process.argv.includes("--seeds") || process.argv.includes("--runs")) specs = specs.slice(0, o.runs);
-  console.log(`Balance census: ${specs.length} autopilot runs, up to ${o.days} days, seeds ${o.seeds[0]}–${o.seeds[o.seeds.length - 1]}, styles ${o.styles.join("/")}, ${o.workers} worker(s).`);
+  console.log(`Balance census: ${specs.length} autopilot runs, up to ${o.days} days, seeds ${o.seeds[0]}–${o.seeds[o.seeds.length - 1]}, styles ${o.styles.join("/")}, ${o.workers} worker(s)${o.size !== "normal" ? `, ${sizeDef(o.size).label} map` : ""}.`);
   const t0 = performance.now();
   const results = new Array(specs.length);
   let next = 0, done = 0;

@@ -26,6 +26,7 @@ import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatAction, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
+import { DEFAULT_SIZE, sizeDef, clampGroups } from "./sim/worldsize.js";
 import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -71,12 +72,12 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, legendCollapsed: false, ordersCollapsed: false, crewEdited: false, ...freshUi() };
+const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, legendCollapsed: false, ordersCollapsed: false, crewEdited: false, ...freshUi() };
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
 ui.scale = options.uiScale;
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
-let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount });
+let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
 
@@ -804,7 +805,9 @@ const changeActions = {
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   seed: (el) => newWorld(cleanSeed(el.value), true),
-  factioncount: (el) => { ui.factionCount = Number(el.value); newWorld(state.seed, true); },
+  factioncount: (el) => { ui.factionCount = clampGroups(ui.worldSize, el.value); newWorld(state.seed, true); },
+  // A new world size: the same seed on the new map, with that size's usual number of groups (sim/worldsize.js).
+  worldsize: (el) => { ui.worldSize = sizeDef(el.value).key; ui.factionCount = sizeDef(ui.worldSize).defGroups; newWorld(state.seed, true); },
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -841,7 +844,7 @@ function newWorld(seed, keepCrew = false) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize });
   resetView();
   hideCtx();
   hideTip();

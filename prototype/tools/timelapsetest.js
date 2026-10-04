@@ -4,7 +4,8 @@
 // scaled to 365 days), captions, decoding (sequential vs random access, and against the live world sampled during
 // the run), the recorder leaving the simulation untouched (same seed without recording), a frame state for every
 // day and every frame drawn by the real map renderer on a stub canvas, and the viewer's overlay HTML.
-// Usage: node tools/timelapsetest.js [days] [seed] [factions]
+// Usage: node tools/timelapsetest.js [days] [seed] [factions] [size=small|normal|large|huge]
+// The memory budget (2 MB on a Normal map) scales with the map's tile count.
 import v8 from "node:v8";
 import vm from "node:vm";
 import { createWorld, tickHour, day, alive, hub, killSurvivor } from "../src/sim/world.js";
@@ -12,6 +13,10 @@ import { launchExpedition, estimateTrip, startReturn } from "../src/sim/parties.
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
 import { chronicleReader, chronicleSize, finishChronicle, INF_Q } from "../src/sim/chronicle.js";
+import { sizeDef, areaScale } from "../src/sim/worldsize.js";
+import { takeSize } from "./sizearg.js";
+
+const mapSize = takeSize();
 
 const days = Number(process.argv[2] || 240);
 const seed = Number(process.argv[3] || 42);
@@ -62,7 +67,7 @@ function sample(state) {
 }
 
 function campaign(record) {
-  const state = createWorld({ seed, factionCount });
+  const state = createWorld({ seed, factionCount, size: mapSize });
   if (!record) state.chronicle = null;
   const truth = [];
   let forced = 0;
@@ -81,7 +86,7 @@ function campaign(record) {
   return { state, ms: performance.now() - t0, truth, forced };
 }
 
-console.log(`Timelapse test: ${days}+ days, seed ${seed}, ${factionCount} groups.`);
+console.log(`Timelapse test: ${days}+ days, seed ${seed}, ${factionCount} groups, ${sizeDef(mapSize).label} map (${sizeDef(mapSize).w}×${sizeDef(mapSize).h}).`);
 const run = campaign(true);
 const state = run.state, c = state.chronicle;
 const lastDay = day(state);
@@ -136,7 +141,8 @@ const per365 = (b) => kb((b / lastDay) * 365);
 console.log(`  ${size.frames} frames (${size.keyframes} keyframes), ${size.interned} distinct base / group-base / hive / site lists, ${size.captions} captions`);
 console.log(`  typed-array payload ${kb(size.payload)}, captions ~${kb(size.captionBytes)}, estimated total ${kb(size.approx)}${heap != null ? `, measured heap ${kb(heap)}` : ""}`);
 console.log(`  scaled to 365 days: estimate ${per365(size.approx)}${heap != null ? `, measured ${per365(heap)}` : ""}`);
-check(size.approx < 2 * 1024 * 1024, "under 2 MB");
+const budget = 2 * Math.max(1, areaScale(sizeDef(mapSize))); // MB: 2 on a Normal map, by tile count on a bigger one
+check(size.approx < budget * 1024 * 1024, `under ${budget.toFixed(1)} MB`);
 
 // ---------- captions ----------
 console.log("\nCaptions");
