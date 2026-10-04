@@ -305,7 +305,10 @@ export function spawnVisitor(state, kind, opts = {}) {
 
 // ---------- goals and paths ----------
 function setGoal(state, v, goal, act) {
+  // Raiders moving on to another of your bases: the lookouts there warn again (a card for that base).
+  const newBase = goal.kind === "base" && !(v.goal && v.goal.kind === "base" && v.goal.baseId === goal.baseId);
   if (goal.tile === v.tile) {
+    if (newBase) v.warned = false;
     v.goal = goal;
     v.path = [v.tile];
     v.idx = 0;
@@ -315,6 +318,7 @@ function setGoal(state, v, goal, act) {
   }
   const res = planPath(state, v.tile, goal.tile, false);
   if (!res) return false;
+  if (newBase) v.warned = false;
   v.goal = goal;
   v.path = res.path;
   v.idx = 0;

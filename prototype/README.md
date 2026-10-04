@@ -98,6 +98,12 @@ node tools/autotest.js 120 all 1 2 3 4 5
 Autopilot: plays 120 days on seeds 1–5 with the AI governor in charge (`src/sim/autopilot.js`; style `cautious`, `balanced`, `aggressive` or `all`), next to simtest's simple auto-player on the same seeds. Per run: days survived, population (now and peak), deaths, desertions, captives, buildings, outposts, trips launched, cards resolved, raids held off and hub stock, plus what the governor did (builds, crafts, gear handed out, treatments, search hours, supply runs, outposts, trades, role changes). Then a takeover check on the browser code paths: switch on while a raid battle is open, play 10 days the way the game loop does, switch off (auto-combat restored, teams untouched). Flags crashes, cards left open after a tick and teams stuck with nothing to resolve.
 
 ```bash
+node tools/balancesim.js 730
+```
+
+Balance census: 100 autopilot campaigns (seeds 1–34 × the three styles, trimmed to 100; or `node tools/balancesim.js [days] [--runs N] [--seeds 1-34|1,2,5] [--styles all|cautious,balanced] [--workers N] [--json path] [--quiet]`), each up to 730 days or until the holdout falls or wins, spread over worker threads (about 3 minutes on 12). It only watches the world between ticks (new log lines, cards as they are added, the memorial wall, survivor flags) and changes no rule, so every run plays out as it would without it. Prints Markdown tables per style: outcomes (fell / hive victory / alliance victory / survived) with the day spread and a survival curve; deaths by cause, desertions, what took the last people and the last 3 days before a fall; population over time; pressure per 30-day phase (group and outsider raids, horde attacks and warnings, deaths, desertions, serious illness, cards and decisions a day, overlap days, hungry or thirsty days); first death / raid / horde / break-in / overrun / desertion; days between big threats; cards a day (mean, p90, busiest day, distribution, most common titles); longest stretches with no card and with no threat; "overlap" (days with two or more of raid, horde attack, sickness, death, hunger or thirst within 3 days); hives, hordes and the dead on the map over time, horde attacks by result and hive assaults; raids by result and attacker; wars, collapses and the coalition; stocks over time and days out of food or water. Flags crashes, NaN, cards left open and stuck teams. `--json` writes every run's raw data (daily counters, samples every 30 days, each raid and horde attack). Findings: `review/balance-census.md`.
+
+```bash
 node tools/maptest.js 60
 ```
 
