@@ -24,7 +24,7 @@ function makeOutpost(state, tile, name, staff) {
   };
   state.bases.push(base);
   for (const s of staff) { s.location = { kind: "base", baseId: base.id }; s.role = "guard"; }
-  for (let i = 0; i < 3; i++) addBuilding(base, "walls"); // sturdy enough that raids rarely take it
+  for (let i = 0; i < 3; i++) addBuilding(base, "walls");
   recomputeOwnership(state);
   return base;
 }
@@ -66,6 +66,10 @@ for (const seed of seeds) {
   allLogs = [];
   state.started = true;
   state.visitorsOff = true; // no outsiders (visitors.js): their trade windows and cards are not this test's business
+  // No raids by the groups either: they are sized to a base's defence and come when its people are out, so the
+  // test outposts (whose crews are on the road) would be lost; raids are tested in fighttest.js and raidcensus.js.
+  for (const f of state.factions) f.raidCooldown = 1e9;
+  state.noNewGangs = true;
   const h = hub(state);
   Object.assign(h.stock, { food: 700, water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 });
   for (let i = 0; i < 6; i++) state.survivors.push({ ...state.survivors[i], id: newId(), name: `Extra${i} Hand`, leader: false, gear: { weapon: null, armor: null, tool: null }, skills: { ...state.survivors[i].skills }, traits: [], location: { kind: "base", baseId: h.id } });

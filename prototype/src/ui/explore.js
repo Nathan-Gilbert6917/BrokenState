@@ -6,7 +6,7 @@ import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
 import { blueprintRows, lockNote } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
-import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, FIXTURES, WEAR } from "../sim/breakdowns.js";
+import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, FIXTURES, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
 import { vehiclesAtBase, canRepair } from "../sim/vehicles.js";
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 
@@ -43,6 +43,7 @@ export function keyRingCard(state) {
 }
 
 // ---------- Repairs tab ----------
+const RAID_OUTCOME = { held: "driven off", won: "beaten in person", broken: "a break-in", overrun: "overrun" };
 export function repairsTab(state, base) {
   const rows = repairRows(state, base);
   const broken = rows.filter((r) => r.fx.broken);
@@ -65,18 +66,34 @@ export function repairsTab(state, base) {
         `<div class="row" style="margin-top:0.25rem;flex-wrap:wrap;gap:0.3rem">${btn(r, "repair")}${btn(r, "rig")}</div>`}
     </div>`;
   }).join("") : `<div class="muted small">Nothing is broken at ${esc(base.name)}.</div>`;
+  // The bill for everything broken that nobody works on yet, and the last raid's damage (breakdowns.js raidDamage).
+  const open = brokenAt(base).filter((fx) => !jobFor(base, fx));
+  const bill = repairBill(open);
+  const allHtml = open.length > 1 ? `<div class="row" style="margin:0.3rem 0"><button class="mini" data-action="rp-all" data-base="${base.id}"${tip(`Every broken building here gets a repairer: a proper repair where it can be paid and someone fit is free, else a jury-rig. Proper repairs of all ${open.length}: ${costText(bill.cost)}, about ${bill.hours} work-hours.`)}>Repair all (${esc(costText(bill.cost))})</button></div>` : "";
+  const lr = base.lastRaid;
+  const how = lr ? RAID_OUTCOME[lr.outcome] || lr.outcome : "";
+  const raidHtml = lr ? `<div class="card small"${tip("What the last raid on this base smashed: the longer the siege and the worse it went, the more. Broken buildings do nothing until repaired; damaged ones (wear 60+) may give way any day, and damaged walls give 2 wall strength instead of 3.")}>
+      <div class="spread"><b>Last raid: day ${lr.day}</b><span class="muted">${esc(lr.by)} · ${esc(how)} · ${lr.hours}h at the walls</span></div>
+      <div class="${lr.broken.length || lr.destroyed ? "danger" : "muted"}">${esc(lr.text)}</div></div>` : "";
+  const patch = (r) => {
+    const plan = repairPlan(state, base, r.fx, "repair");
+    return `<button class="mini" data-action="rp-start" data-base="${base.id}" data-fx="${r.fx.id}" data-m="repair" ${plan.ok ? "" : "disabled"}${tip(plan.ok ? `Patch it up before it gives way: ${firstName(plan.who)}, ${plan.hours} work-hours, ${costText(plan.cost)}. Wear back to ${WEAR.repairWear}.` : plan.why)}>Patch</button>`;
+  };
   const wearRows = rows.map((r) => {
     const w = r.wear;
     const color = r.fx.broken ? "var(--danger)" : w >= WEAR.riskFrom ? "var(--warn, #e0a84f)" : "var(--good)";
-    const state2 = r.fx.broken ? "Broken" : r.fx.rigged ? "Jury-rigged" : w >= WEAR.riskFrom ? "Worn: may break" : "OK";
-    return `<tr${tip(`${r.name}: ${r.def.what} when it breaks. Wear builds with use, age and weather; at ${WEAR.riskFrom}+ it can break any day, at ${WEAR.breakAt} it does. Builders with no construction job do upkeep.`)}><td>${esc(r.name)}</td><td style="width:40%">${bar(w, color)}</td><td>${w}%</td><td class="${r.fx.broken ? "danger" : r.fx.rigged || w >= WEAR.riskFrom ? "warn" : "muted"}">${state2}</td></tr>`;
+    const state2 = r.fx.broken ? "Broken" : r.job ? "Being patched" : r.fx.rigged ? "Jury-rigged" : w >= RAID_DAMAGE.damaged && r.def.raidOnly ? "Damaged: may break" : w >= WEAR.riskFrom ? "Worn: may break" : "OK";
+    const btn = !r.fx.broken && !r.job && w >= RAID_DAMAGE.damaged ? ` ${patch(r)}` : "";
+    return `<tr${tip(`${r.name}: ${r.def.what} when it breaks. ${r.def.raidOnly ? "It only wears from raid damage." : "Wear builds with use, age and weather."} At ${WEAR.riskFrom}+ it can break any day, at ${WEAR.breakAt} it does. Builders with no construction job do upkeep; a damaged one can be patched up with a proper repair.`)}><td>${esc(r.name)}</td><td style="width:40%">${bar(w, color)}</td><td>${w}%</td><td class="${r.fx.broken ? "danger" : r.fx.rigged || w >= WEAR.riskFrom ? "warn" : "muted"}">${state2}${btn}</td></tr>`;
   }).join("");
   const rep = canRepair(state, base);
   const cars = vehiclesAtBase(state, base.id).filter((v) => v.condition < 100);
   const carsHtml = cars.length ? cars.map((v) => `<div class="spread small"><span>${esc(v.name)} · ${Math.round(v.condition)}%${v.condition < 35 ? ` <span class="danger">(breaks down often)</span>` : ""}</span><button class="mini" data-action="repairv" data-base="${base.id}" data-id="${v.id}" ${rep.ok && (base.stock.parts || 0) >= 1 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button></div>`).join("") : `<div class="muted small">No parked vehicle needs work.</div>`;
   return `<div class="grid2">
     <div>
-      <h3${tip("A broken building does nothing until someone fixes it. Repair properly (the job's hours, scrap and parts, Mechanics) or jury-rig it (cheap and quick, but it breaks again sooner). The repairer keeps their role and works the job 08:00–20:00. A steward with Building on, and the autopilot, start repairs themselves.")}>Repairs (${broken.length})</h3>
+      <h3${tip("A broken building does nothing until someone fixes it. Repair properly (the job's hours, scrap and parts, Mechanics) or jury-rig it (cheap and quick, but it breaks again sooner). The repairer keeps their role and works the job 08:00–20:00, but not while the base is on alert or under siege. A steward with Building on, and the autopilot, start repairs themselves.")}>Repairs (${broken.length})</h3>
+      ${raidHtml}
+      ${allHtml}
       ${brokenHtml}
       <h3>Parked vehicles</h3>
       ${carsHtml}
@@ -85,7 +102,7 @@ export function repairsTab(state, base) {
     <div>
       <h3>Wear</h3>
       <table class="t small"><tr><th>Building</th><th>Wear</th><th></th><th>State</th></tr>${wearRows || `<tr><td colspan="4" class="muted">Nothing here wears out yet.</td></tr>`}</table>
-      <div class="small muted" style="margin-top:0.3rem">Wear a day: use (a running station, a pumping well) × age, plus frost (pumps), storms (pumps, the radio mast, the storehouse roof) and attacks (walls, gate). A good mechanic on a station, a Grease Monkey (−20%) or Handy (−15%) survivor here slow it; builders with nothing to build take ${WEAR.upkeep} wear a day off the most worn.</div>
+      <div class="small muted" style="margin-top:0.3rem">Wear a day: use (a running station, a pumping well) × age, plus frost (pumps), storms (pumps, the radio mast, the storehouse roof) and hordes (walls, gate). Raids smash buildings by their strength and how long they stay at the walls: the defences first, then what is inside. A good mechanic on a station, a Grease Monkey (−20%) or Handy (−15%) survivor here slow it; builders with nothing to build take ${WEAR.upkeep} wear a day off the most worn.</div>
     </div>
   </div>`;
 }
@@ -105,6 +122,10 @@ export const EXPLORE_ACTIONS = {
     const fx = base && fixtureById(base, d.fx);
     if (!fx) return;
     ui.baseMsg = startRepair(state, base, fx, d.m === "rig" ? "rig" : "repair");
+  },
+  "rp-all": (state, ui, d) => {
+    const base = baseById(state, Number(d.base));
+    if (base) ui.baseMsg = startAllRepairs(state, base);
   },
   "rp-cancel": (state, ui, d) => {
     const base = baseById(state, Number(d.base));

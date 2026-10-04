@@ -564,8 +564,10 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
   let bad = null, err = null;
   try {
     for (let i = 0; i < 200 * 24 && !st.gameOver; i++) {
-      // A medical soak: hordes cleared and food and water topped up so the hands-off colony lasts the 200 days.
+      // A medical soak: hordes and the groups' raids on the hub cleared (raids are sized to the hub's defence now,
+      // and a hands-off colony never prepares for them) and food and water topped up so it lasts the 200 days.
       st.hordes.length = 0;
+      st.parties = st.parties.filter((p) => !(p.kind === "raid" && p.target && p.target.kind === "player"));
       h.stock.food = Math.max(h.stock.food, 150); h.stock.water = Math.max(h.stock.water, 60);
       tickHour(st);
       st.cards.length = 0;

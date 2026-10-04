@@ -5,10 +5,24 @@
 // lose condition on frost days (repaired as before, from the Vehicles tab or the Repairs list).
 //
 // Wear (0–100) builds up every day: use (a station that ran, a well that pumped) × age (+1/240 a day since it was
-// built) + weather (frost for pumps, storms for pumps, masts and roofs) + attacks (a horde or a raid on the walls),
+// built) + weather (frost for pumps, storms for pumps, masts and roofs) + attacks (a horde at the walls; raids: raidDamage below),
 // × the operator's Mechanics (−2.5% a point, from ×1.15, at least ×0.65), × a Grease Monkey (×0.8) or Handy (×0.85)
 // survivor living there, × 1.6 while jury-rigged. Builders with no construction job do upkeep: 1.5 wear off the most
 // worn fixture per builder a day. A fixture breaks at 100, and from 60 up with a daily chance ((wear − 60) / 40)² × 30%.
+//
+// Raid damage (raidDamage, called when a raid on your base is settled: factions.js, conflicts.js, visitors.js).
+// Raiders smash what they reach: the damage is a budget of wear points = the raid's strength × 3 × (hours the
+// siege lasted / 8, between 0.15 and 1.5) × the outcome (driven off 1, beaten in a stand-up fight 0.5, a break-in
+// 2.5, overrun 4.5). The budget is spent in hits of 30–70 wear: the outer line first (walls, the reinforced gate,
+// barricades, floodlights, the watchtower: 85% of the hits when they are driven off, 50% in a break-in, 35% when
+// they overrun the base), the rest on the buildings inside (bunkhouses, stores, workshops, the radio, wells…); 40%
+// of the hits after the first fall on the building hit last, if it still stands (they hammer at a weak spot).
+// A building pushed to 100 wear breaks (it does nothing until repaired, as above); one at 60+ is damaged and may
+// break any day (damaged walls give 2 wall strength instead of 3, buildings.js baseWalls). An overrun base also
+// loses one broken building outright (60%: torn down or burned, never the walls). Raiders that are driven off
+// quickly leave scratches; a long siege, a break-in or an overrun leaves a repair bill (the result card and the
+// log list it; the Repairs tab keeps the last raid's damage). Nobody repairs or builds at a base while it is on
+// alert or under siege (the builders and mechanics are on the walls): that is what "Prepare defenses" costs.
 //
 // A broken fixture: a station does nothing, a well gives no water (the hub's pump: 6 less a day), the radio station
 // is off the air, walls lose their +3 wall strength, the gate its horde bonus, the storehouse its room. It shows in
@@ -23,7 +37,7 @@
 // their role. The autopilot, and a steward with Building on, start the repairs themselves (repair if they can pay,
 // else jury-rig) and replace a repairer who left. The old storm "broken well pump" hub event is this system now.
 // Rolls use hash01 (skills.js), never the world's random numbers.
-import { BUILDINGS } from "./buildings.js";
+import { BUILDINGS, count, assignStations, underAttack } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
@@ -49,6 +63,30 @@ export const FIXTURES = {
   walls:       { age: 0.05, attack: 18, repair: { hours: 12, cost: { scrap: 10 }, min: 0 }, rig: { hours: 4, cost: { scrap: 4 }, min: 0 }, what: "−3 wall strength" },
   gate:        { age: 0.05, attack: 22, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "the gate no longer holds hordes back" },
   storehouse:  { age: 0.1, storm: 8, rain: 1, repair: { hours: 6, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a leaking roof: no food room and no protection from raiders" },
+  // Raid damage only (raidOnly: no wear from use, age or weather; outer: the defensive line raiders hit first).
+  barricades:  { raidOnly: true, outer: true, repair: { hours: 4, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a gap in the barricades: 12% less of a horde held back, no cover there on the battle map" },
+  floodlights: { raidOnly: true, outer: true, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "dark walls: no floodlight bonus" },
+  watchtower:  { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no lookout post: 2 tiles less vision and later warnings" },
+  bunkhouse:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "6 fewer beds" },
+  cistern:     { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a holed tank: 150 less water room" },
+  cellar:      { raidOnly: true, repair: { hours: 6, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a caved-in cellar: 200 less food room" },
+  coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" },
+  garage:      { raidOnly: true, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "vehicle repairs at the field rate" },
+  cells:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 5, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "broken bars: 3 fewer places for prisoners" },
+  common_room: { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no mood from the common room" },
+  chapel:      { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no mood from the chapel" },
+  smoker:      { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no drying" },
+  rain_catcher:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no rain water from it" },
+  relay:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 4, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 2 }, min: 1 }, what: "the relay is off the air" },
+};
+FIXTURES.walls.outer = true;
+FIXTURES.gate.outer = true;
+// Raid damage (see the header): budget = strength × perStrength × clamp(hours / 8, minHours, maxHours) × outcome.
+export const RAID_DAMAGE = {
+  perStrength: 3, focus: 0.4, minHours: 0.15, maxHours: 1.5, hit: [30, 70], damaged: 60,
+  outcome: { held: 1, won: 0.5, broken: 2.5, overrun: 4.5 },
+  outerShare: { held: 0.85, won: 0.85, broken: 0.5, overrun: 0.35 },
+  destroy: 0.6,
 };
 export const WEAR = { ageDays: 240, breakAt: 100, riskFrom: 60, riskMax: 0.3, rigWear: 65, repairWear: 8, rigMult: 1.6, upkeep: 1.5, greaseMonkey: 0.8, handy: 0.85, workFrom: 8, workTo: 20, vehicleFrost: 1, vehicleBlizzard: 2 };
 
@@ -72,13 +110,13 @@ const jobs = (base) => base.repairs || (base.repairs = []);
 export const jobFor = (base, fx) => jobs(base).find((j) => String(j.fx) === String(fx.id)) || null;
 
 // ---------- breaking and fixing ----------
-export function breakFixture(state, base, fx, cause = "worn out", { card = true } = {}) {
+export function breakFixture(state, base, fx, cause = "worn out", { card = true, quiet = false } = {}) {
   if (!fx || fx.broken) return false;
   fx.broken = { day: day(state), cause };
   fx.wear = Math.max(fx.wear || 0, WEAR.breakAt);
   applyEffect(state, base, fx);
   const def = FIXTURES[fx.type];
-  log(state, `⚠ The ${fixtureName(fx).toLowerCase()} at ${base.name} broke (${cause}): ${def.what} until it is repaired.`, "danger");
+  if (!quiet) log(state, `⚠ The ${fixtureName(fx).toLowerCase()} at ${base.name} broke (${cause}): ${def.what} until it is repaired.`, "danger");
   state.stats.breakdowns = (state.stats.breakdowns || 0) + 1;
   if (autoHands(state, base)) autoRepair(state, base, fx);
   else if (card) addCard(state, breakCard(state, base, fx));
@@ -89,6 +127,7 @@ export function breakFixture(state, base, fx, cause = "worn out", { card = true 
 function applyEffect(state, base, fx) {
   if (fx.type === "pump") base.wellDown = { until: 1e9, water: WELL_WATER, broken: true };
   if (fx.type === "radio") base.radio = false;
+  if (fx.type === "watchtower") base.watchtower = count(base, "watchtower") > 0;
 }
 function fixed(state, base, fx, method) {
   fx.broken = null;
@@ -96,6 +135,7 @@ function fixed(state, base, fx, method) {
   fx.rigged = method === "rig";
   if (fx.type === "pump") delete base.wellDown;
   if (fx.type === "radio") base.radio = true;
+  if (fx.type === "watchtower") base.watchtower = true;
 }
 
 // What a repair takes: { ok, why, who, hours, cost, method }.
@@ -113,7 +153,8 @@ export function repairPlan(state, base, fx, method = "repair", whoId = null) {
   const lack = Math.max(0, (cost.scrap || 0) - Math.floor(base.stock.scrap || 0));
   if (lack > 0) { cost.scrap -= lack; cost.parts = (cost.parts || 0) + Math.ceil(lack / SCRAP_PER_PART); if (!cost.scrap) delete cost.scrap; }
   const short = Object.entries(cost).filter(([k, v]) => (base.stock[k] || 0) < v);
-  const why = !fx.broken ? "Not broken." : jobFor(base, fx) ? "Already being worked on." : !who ? (r.min ? `Needs a free survivor with Mechanics ${r.min}+ here.` : "Nobody here is free and well enough.") :
+  // A damaged fixture (wear 60+, not broken yet) can be patched up with a proper repair before it gives way.
+  const why = !fx.broken && !(method === "repair" && (fx.wear || 0) >= RAID_DAMAGE.damaged) ? "Not broken." : jobFor(base, fx) ? "Already being worked on." : !who ? (r.min ? `Needs a free survivor with Mechanics ${r.min}+ here.` : "Nobody here is free and well enough.") :
     short.length ? `Needs ${costText(r.cost)} (short scrap can be made up with parts, 1 for ${SCRAP_PER_PART}).` : "";
   return { ok: !why, why, who, hours, cost, method, min: r.min };
 }
@@ -200,9 +241,14 @@ export function breakdownsHour(state) {
   for (const base of state.bases) {
     attackWear(state, base);
     const list = jobs(base);
+    const onWalls = underAttack(state, base); // on alert or under siege: nobody is free to repair
     for (const j of [...list]) {
       const fx = fixtureById(base, j.fx);
-      if (!fx || !fx.broken) { list.splice(list.indexOf(j), 1); continue; }
+      if (!fx || (!fx.broken && (fx.wear || 0) < RAID_DAMAGE.damaged)) { // gone, or patched by upkeep first: the materials go back
+        if (fx) for (const [k, v] of Object.entries(j.paid || {})) base.stock[k] = (base.stock[k] || 0) + v;
+        list.splice(list.indexOf(j), 1);
+        continue;
+      }
       const s = j.who != null ? survivorById(state, j.who) : null;
       const here = s && s.alive && s.location.kind === "base" && s.location.baseId === base.id;
       if (!here) { j.who = null; }
@@ -212,7 +258,7 @@ export function breakdownsHour(state) {
         const pick = atBase(state, base.id).filter((o) => !o.inBed && workFactor(o) >= 0.35 && !busy.has(o.id) && skill(o, "mechanics") >= r.min).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id)[0];
         if (pick) j.who = pick.id;
       }
-      if (j.who == null || h < WEAR.workFrom || h >= WEAR.workTo) continue;
+      if (j.who == null || onWalls || h < WEAR.workFrom || h >= WEAR.workTo) continue;
       const w = survivorById(state, j.who);
       if (!w || w.inBed || workFactor(w) < 0.35) continue;
       j.done += Math.max(0.5, workFactor(w)) * buildMult(w);
@@ -224,18 +270,22 @@ export function breakdownsHour(state) {
       }
     }
     // The autopilot and stewards start the repairs nobody has started.
-    if (autoHands(state, base) && h === WEAR.workFrom) for (const fx of brokenAt(base)) autoRepair(state, base, fx);
+    if (autoHands(state, base) && h === WEAR.workFrom && !onWalls) {
+      for (const fx of brokenAt(base)) autoRepair(state, base, fx);
+      // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (20 kept back).
+      for (const fx of fixtures(base).filter((x) => !x.broken && FIXTURES[x.type].outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
+        const plan = repairPlan(state, base, fx, "repair");
+        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= 20) log(state, `${state.autopilot ? "🤖" : "🧭"} ${startRepair(state, base, fx, "repair")}`, "info");
+      }
+    }
   }
 }
-// Horde attacks (base.hordeHits, defences.js) and raids (a siege on the base that ended) wear the walls and gate.
+// Horde attacks (base.hordeHits, defences.js) wear the walls and gate. Raids do their own damage (raidDamage).
 function attackWear(state, base) {
   const hits = base.hordeHits || 0;
   if (base.wearHits == null) base.wearHits = hits;
-  let attacks = hits - base.wearHits;
+  const attacks = hits - base.wearHits;
   base.wearHits = hits;
-  const besieged = state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id);
-  if (base.wasBesieged && !besieged) attacks++;
-  base.wasBesieged = besieged;
   if (attacks <= 0) return;
   for (const fx of fixtures(base)) {
     const def = FIXTURES[fx.type];
@@ -278,7 +328,7 @@ export function breakdownsDaily(state) {
   for (const base of state.bases) {
     const list = fixtures(base);
     // What the holdout started with is not new: the hub's pump 30–50 wear, the rest 5–25.
-    for (const fx of list) if (fx.built == null) { fx.built = d; if (d <= 2) fx.wear = (fx.type === "pump" ? 30 : 5) + 20 * hash01(state.seed, "wear0", fxKey(base, fx)); }
+    for (const fx of list) if (fx.built == null) { fx.built = d; if (d <= 2 && !FIXTURES[fx.type].raidOnly) fx.wear = (fx.type === "pump" ? 30 : 5) + 20 * hash01(state.seed, "wear0", fxKey(base, fx)); }
     for (const fx of list) {
       if (fx.broken) continue;
       fx.wear = Math.min(WEAR.breakAt, (fx.wear || 0) + dailyWear(state, base, fx, wx));
@@ -307,4 +357,111 @@ export function breakdownsDaily(state) {
 // For the UI and the alerts.
 export function repairRows(state, base) {
   return fixtures(base).map((fx) => ({ fx, name: fixtureName(fx), def: FIXTURES[fx.type], job: jobFor(base, fx), wear: Math.round(fx.wear || 0) }));
+}
+
+// ---------- raid damage (see the header) ----------
+const addCost = (into, cost) => { for (const [k, v] of Object.entries(cost)) into[k] = (into[k] || 0) + v; return into; };
+// "2 wall sections and the ammo bench", and whether it takes a plural verb.
+const NOUNS = { walls: ["a wall section", "wall sections"], barricades: ["a barricade", "barricades"], floodlights: ["the floodlights", "floodlights"], rain_catcher: ["a rain catcher", "rain catchers"], smoker: ["a drying rack", "drying racks"] };
+function namesText(list, base = null) {
+  const n = new Map();
+  for (const fx of list) n.set(fx.type, (n.get(fx.type) || 0) + 1);
+  const parts = [...n.entries()].map(([type, k]) => {
+    const name = fixtureName({ type }).toLowerCase();
+    const several = base && base.buildings.filter((b) => b.type === type).length + (list.some((fx) => fx.type === type && !base.buildings.includes(fx)) ? 1 : 0) > 1;
+    const [one, many] = NOUNS[type] || [several ? `${/^[aeiou]/.test(name) ? "an" : "a"} ${name}` : `the ${name}`, /(ch|sh|s)$/.test(name) ? `${name}es` : `${name}s`];
+    return k > 1 ? `${k} ${many}` : one;
+  });
+  const text = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "";
+  return { text, plural: list.length > 1 || (list[0] && list[0].type === "floodlights") };
+}
+// What the proper repair of these broken fixtures takes (the bill on the raid card): { cost, hours }.
+export function repairBill(list) {
+  const cost = {};
+  let hours = 0;
+  for (const fx of list) { addCost(cost, FIXTURES[fx.type].repair.cost); hours += FIXTURES[fx.type].repair.hours; }
+  return { cost, hours };
+}
+// A raid on your base has been settled: smash what they reached. opts: strength (the raid's), hours (how long the
+// siege lasted before it ended), outcome ("held" | "won" | "broken" | "overrun"), by (who, for the log).
+// Returns the report (also kept as base.lastRaid for the Repairs tab): broken / damaged / scratched names, the one
+// destroyed building, the repair bill and a sentence for the log and the result card.
+export function raidDamage(state, base, { strength = 0, hours = 8, outcome = "held", by = "the raiders" } = {}) {
+  const R = RAID_DAMAGE;
+  const scale = Math.max(R.minHours, Math.min(R.maxHours, hours / 8));
+  let budget = Math.round(Math.max(0, strength) * R.perStrength * scale * (R.outcome[outcome] ?? 1));
+  const total = budget;
+  const key = `${base.tile}:${state.hour}:${outcome}`;
+  const hit = new Set();
+  let last = null;
+  for (let i = 0; budget > 0 && i < 40; i++) {
+    const all = fixtures(base).filter((fx) => !fx.broken && (fx.wear || 0) < WEAR.breakAt);
+    if (!all.length) break;
+    const outer = all.filter((fx) => FIXTURES[fx.type].outer), inner = all.filter((fx) => !FIXTURES[fx.type].outer);
+    const pool = outer.length && (!inner.length || hash01(state.seed, "rdo", key, i) < (R.outerShare[outcome] ?? 0.85)) ? outer : inner;
+    const again = last && all.includes(last) && hash01(state.seed, "rdf", key, i) < R.focus;
+    const fx = again ? last : pool[Math.min(pool.length - 1, Math.floor(hash01(state.seed, "rdp", key, i) * pool.length))];
+    last = fx;
+    const dmg = Math.min(budget, Math.round(R.hit[0] + (R.hit[1] - R.hit[0]) * hash01(state.seed, "rdh", key, i)));
+    budget -= dmg;
+    fx.wear = Math.min(WEAR.breakAt, (fx.wear || 0) + dmg);
+    hit.add(fx);
+  }
+  const toBreak = [...hit].filter((fx) => fx.wear >= WEAR.breakAt);
+  // Overrun: one building they wrecked is gone for good (never the walls or the hub's pump).
+  let destroyed = null;
+  const doomed = toBreak.filter((fx) => fx.type !== "walls" && fx.type !== "pump");
+  if (outcome === "overrun" && doomed.length && hash01(state.seed, "rdx", key) < R.destroy) {
+    destroyed = doomed[Math.floor(hash01(state.seed, "rdy", key) * doomed.length) % doomed.length];
+    base.buildings.splice(base.buildings.indexOf(destroyed), 1);
+    toBreak.splice(toBreak.indexOf(destroyed), 1);
+    hit.delete(destroyed);
+    if (destroyed.type === "watchtower") base.watchtower = count(base, "watchtower") > 0;
+    if (destroyed.type === "radio") base.radio = false;
+    assignStations(state, base);
+  }
+  const damaged = [...hit].filter((fx) => fx.wear >= R.damaged && fx.wear < WEAR.breakAt);
+  const scratched = [...hit].filter((fx) => fx.wear < R.damaged);
+  const bill = repairBill(toBreak);
+  for (const fx of toBreak) breakFixture(state, base, fx, "damaged in a raid", { card: false, quiet: true });
+  const bits = [];
+  const wreckedN = namesText(toBreak, base), damagedN = namesText(damaged, base);
+  if (toBreak.length) bits.push(`${wreckedN.text} ${wreckedN.plural ? "were" : "was"} wrecked (repair: ${costText(bill.cost)}, about ${bill.hours} work-hours)`);
+  if (destroyed) { const d = namesText([destroyed], base); bits.push(`${d.text} ${d.plural ? "were" : "was"} torn down for good`); }
+  if (damaged.length) bits.push(`${damagedN.text} ${damagedN.plural ? "are" : "is"} damaged and may give way`);
+  const text = bits.length ? `Damage: ${bits.join("; ")}.` : scratched.length ? `Only scratches on ${namesText(scratched, base).text}.` : "No damage to the buildings.";
+  const rep = {
+    day: day(state), by, outcome, hours: Math.round(hours * 10) / 10, budget: total,
+    broken: toBreak.map((fx) => fixtureName(fx)), damaged: damaged.map((fx) => fixtureName(fx)), scratched: scratched.map((fx) => fixtureName(fx)),
+    destroyed: destroyed ? fixtureName(destroyed) : null, cost: bill.cost, workHours: bill.hours, text,
+  };
+  base.lastRaid = rep;
+  const st = state.stats;
+  st.raidBroken = (st.raidBroken || 0) + toBreak.length;
+  st.raidDestroyed = (st.raidDestroyed || 0) + (destroyed ? 1 : 0);
+  return rep;
+}
+// The card after a raid on your base (factions.js, visitors.js): what happened, what it cost, and the repairs. Where
+// the autopilot or a steward keeps the base, the repairs are already under way and the card only reports.
+export function raidReportCard(state, base, { title, text, dmg }) {
+  const open = brokenAt(base).filter((fx) => !jobFor(base, fx));
+  const bill = repairBill(open);
+  const choices = open.length && !autoHands(state, base) ? [
+    { label: `Start the repairs (${costText(bill.cost)})`, hint: `Every broken building at ${base.name} gets a repairer (a proper repair where it can be paid, else a jury-rig). About ${bill.hours} work-hours in all.`,
+      resolve: (st) => (st.bases.includes(base) ? startAllRepairs(st, base) : "") },
+    { label: "Later (the Repairs tab)", hint: "They stay broken until someone fixes them.", resolve: () => `The damage at ${base.name} waits in its Repairs tab.` },
+  ] : [{ label: "OK", resolve: () => "" }];
+  addCard(state, { title, text, raidReport: { baseId: base.id }, choices });
+}
+
+// Start every repair nobody has started at a base (the raid card's "Start the repairs", the Repairs tab): a proper
+// repair where it can be paid and someone fit is free, else a jury-rig. Returns what was started, as one line.
+export function startAllRepairs(state, base) {
+  const out = [];
+  for (const fx of brokenAt(base)) {
+    if (jobFor(base, fx)) continue;
+    const msg = repairPlan(state, base, fx, "repair").ok ? startRepair(state, base, fx, "repair") : repairPlan(state, base, fx, "rig").ok ? startRepair(state, base, fx, "rig") : "";
+    if (msg) out.push(msg);
+  }
+  return out.length ? out.join(" ") : "Nothing could be started: no materials or nobody free with the skill (Repairs tab).";
 }

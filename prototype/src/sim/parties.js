@@ -9,7 +9,7 @@ import {
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
-  attitude, recomputeOwnership,
+  attitude, recomputeOwnership, siegePace,
 } from "./factions.js";
 import { rollTravelEvent, convoyLegEvent } from "./events.js";
 import { startScavenge } from "./scavenge.js";
@@ -1353,7 +1353,9 @@ function aiPartyHour(state, p) {
       p.helpCall.delivered = true;
       deliverHelpCall(state, p);
     }
-    p.siegeLeft -= 1;
+    // At your walls a strong defence drives them off sooner (factions.js siegePace); the hours it lasted set the damage.
+    p.siegeHours = (p.siegeHours || 0) + 1;
+    p.siegeLeft -= p.target.kind === "player" ? siegePace(state, baseById(state, p.target.baseId), p.strength) : 1;
     if (p.siegeLeft <= 0) finishSiege(state, p);
     return;
   }

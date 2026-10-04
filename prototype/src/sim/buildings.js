@@ -81,7 +81,14 @@ export const BUILDINGS = {
 // Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
 export const count = (base, type) => base.buildings.filter((b) => b.type === type && !b.broken).length;
 export const countAll = (base, type) => base.buildings.filter((b) => b.type === type).length;
-export const baseWalls = (base) => (base.type === "hub" ? 3 : 1) + count(base, "walls") * 3;
+// Wall strength: the hub 3, an outpost 1, +3 a wall section, +2 for a section damaged in a raid (wear 60+,
+// breakdowns.js RAID_DAMAGE.damaged) and nothing for a broken one.
+export const baseWalls = (base) => (base.type === "hub" ? 3 : 1) + base.buildings.reduce((a, b) => a + (b.type !== "walls" || b.broken ? 0 : (b.wear || 0) >= 60 ? 2 : 3), 0);
+// A base on alert or under siege (a raid at its walls): builders and mechanics are on the walls, so construction
+// and repairs stop until it is over (the price of "Prepare defenses").
+export const underAttack = (state, base) => !!base.alert ||
+  state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
+  (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
 export const baseBeds = (base) => (base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
 // Crop plots (farming.js plotLimit): hub 4, outpost 2, +2 per Farm plot building.
 export const farmSlots = (base) => (base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
@@ -239,7 +246,7 @@ export function buildRate(state, base) {
 export function constructionHour(state) {
   for (const base of state.bases) {
     const job = base.construction[0];
-    if (!job) continue;
+    if (!job || underAttack(state, base)) continue;
     job.progress += buildRate(state, base);
     if (job.progress >= job.hours) {
       base.construction.shift();
