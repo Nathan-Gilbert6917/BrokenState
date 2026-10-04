@@ -25,6 +25,13 @@ node tools/cardcount.js
 Counts which event cards fire across five 90-day runs, then lists the hub events (`src/sim/hubevents.js`) by id, recruit cards by source and warnings before desertion.
 
 ```bash
+node tools/pacing.js 365 all
+node tools/pacing.js log 120 balanced 3
+```
+
+Pacing and decision quality (findings in `review/pacing.md`; or `node tools/pacing.js [days] [cautious|balanced|aggressive|all] [seeds...]`, seeds 1–14 by default, about 8 minutes for 42 full years): plays autopilot campaigns and catches every card as it is added, whatever module adds it (the module, the hour, its choices and the autopilot's answer). Reports cards per in-game day (mean, p90, max, per 30-day bucket; all cards and decisions only), cards and clock stops per real minute at 1× and 3× (an hour is 3 s at 1×; every card pauses the clock), other pausing screens (search, trade, battle), bursts (most cards in 6 and 24 hours), quiet stretches, crises stacking (raid, horde at the walls, illness, a team in trouble within 3 days), team cards against base cards, the low-stakes share and the rate without it, big moments from the log next to the cards that warn of them (raids, hordes at the walls, groups turning hostile, hives, short rations), the mix by module, the top 25 cards (repeats within a week, the autopilot's answers) and the decisions with one answer 90%+ of the time. Fails on a crash or a card with no choice that can be taken; flags duplicate cards and cards answered after their subject was gone. `log` prints one run's full log day by day (the log panel keeps only 200 lines).
+
+```bash
 node tools/combattest.js 300 5
 ```
 

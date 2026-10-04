@@ -371,6 +371,7 @@ function breakdownCard(state, p, v) {
     title: "Breakdown",
     text: `The ${v.name} coughs and dies. Condition ${Math.round(v.condition)}%, fuel ${Math.round(v.fuel)}.`,
     partyId: p.id,
+    vehicleId: v.id, // dropped if the team loses this vehicle before it is answered (parties.js cardStale)
     choices: [
       { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
       {
