@@ -34,6 +34,7 @@ import { travelEffects } from "./weather.js";
 import { noteRescue } from "./relations.js";
 import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 import { driveOff } from "./aiscav.js";
+import { warRaidOnPlayer } from "./diplomacy.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1439,6 +1440,7 @@ function onRaidDefenseCombat(state, result, setup) {
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.7));
   let text;
   if (result.outcome === "victory") {
+    if (raid) warRaidOnPlayer(state, raid, true); // diplomacy.js: a war raid beaten off counts for the war, as one held by the numbers
     if (raid) removeParty(state, raid);
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
