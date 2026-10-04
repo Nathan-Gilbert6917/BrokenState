@@ -1,16 +1,25 @@
 // Barter with AI groups. One price model for every trade: visits by your teams (and trade caravans), their
 // caravans at your gates, deals made over the radio (radio.js) and trade routes.
 //
-// Price model
+// Price model (the worth of things to each group: valuation.js, whose header has the numbers)
+// - Every good has a hidden base value (data.js) that the player never sees: the trade window shows what this
+//   group pays or charges and why ("At war: rifles wanted"), other screens at most a worth tier.
 // - Gear: itemValue(item) = base value (data.js GEAR) × quality factor (0.2 + 0.8 × condition) × durability factor
 //   (makeshift gear: 0.3 + 0.7 × uses left / full uses; real gear does not wear and counts 1). A pack adds its contents.
+//   Then × the group's kind and state for its category (valuation.js priceInfo) × how much like it they hold
+//   (gearNeed: their shelf; each piece in a deal priced at the holding halfway through it).
 // - Supplies: base value (data.js SUPPLIES) × the group's need for it (their stock per head against a reference:
-//   0.5 when they have plenty, up to 2.2 when they have none). Every unit of a deal is priced along that curve:
+//   0.5 when they have plenty, up to 2.2 when they have none; food and water up to 60% more again when they starve
+//   or thirst) × their kind and state. Every unit of a deal is priced along that curve:
 //   q units are priced at the stock level halfway through the deal (stock + q/2 when they buy, stock − q/2 when
 //   they sell), so a big sale pays less per unit and selling something then buying it back always loses.
-// - Spread: they pay you value × (0.75 + Speech bonus + goodwill bonus) and charge you value × (1.3 − both).
+// - Spread: they pay you value × (0.75 + Speech bonus + goodwill bonus) and charge you value × (1.3 − both)
+//   (× a margin for traders and merchants from outside: they sell dear).
 //   Speech bonus = 0.008 per point of your best Speech (up to 0.12), goodwill bonus = goodwill / 1000 (−0.1 … +0.1),
 //   so what they charge is always more than what they pay for the same thing.
+// - Refusals: a group never deals in a category its kind refuses (zealots: liquor, drugs, cigarettes).
+// - Buying from one group and selling to another can pay (that is what trade routes are for), but every sale moves
+//   the buyer's stock or shelf, so the margin shrinks with each unit.
 // - A deal is fair for them when what you give, at their buying price, is worth at least what you take, at
 //   their selling price. Deals agreed over the radio are honoured at the agreed amounts.
 // - Goodwill from trading grows with the deal's size and with what you overpay, at most 4 a day per group (the old
@@ -21,7 +30,7 @@ import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLo
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, newItem } from "./inventory.js";
-import { itemDur } from "./crafting.js";
+import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE } from "./skills.js";
@@ -31,16 +40,8 @@ import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------- item and supply values ----------
-export function itemValue(item) {
-  const d = item && GEAR[item.key];
-  if (!d) return 0;
-  const q = clamp(Number.isFinite(item.quality) ? item.quality : 1, 0, 1.5);
-  const dur = itemDur(item);
-  const durF = dur == null ? 1 : 0.3 + 0.7 * clamp(dur / d.dur, 0, 1);
-  let v = d.value * (0.2 + 0.8 * q) * durF;
-  if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);
-  return v;
-}
+// The hidden worth of an item (valuation.js): base value × condition × uses left; a pack adds its contents.
+export { itemValue };
 
 // Stock per head at which a group is comfortable (need 1 at the reference, 0.5 at 1.5× it, 2.2 at none).
 // Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve.
@@ -53,8 +54,10 @@ const stockOf = (f, key) => Math.max(0, f.stock[key] ?? (key === "water" ? f.pop
 // How much this group values one unit at a given stock level (default: what they hold now).
 export function need(f, key, stock = stockOf(f, key)) {
   const per = Math.max(0, stock) / Math.max(1, f.pop);
-  return clamp(2 - per / REF[key], 0.5, 2.2);
+  return clamp(2 - per / (REF[key] || 1), 0.5, 2.2);
 }
+// Need with the starving / thirsty boost (valuation.js starveBoost): what their stock alone does to the price.
+export const scarcity = (f, key, stock = stockOf(f, key)) => need(f, key, stock) * starveBoost(f, key, stock);
 export function spread(f, speech = 0) {
   const s = Math.min(0.12, Math.max(0, speech || 0) * 0.008);
   const g = clamp((f.goodwill || 0) / 1000, -0.1, 0.1);
@@ -62,42 +65,125 @@ export function spread(f, speech = 0) {
 }
 // A group at war (diplomacy.js, f.atWar = wars it is in) values ammo and meds 35% more and weapons and armor 30%
 // more, both ways (so selling and buying back still loses), and keeps twice its reserve of food, ammo, meds and
-// fuel: it has less to trade.
+// fuel: it has less to trade. These premiums are valuation.js STATE_MODS "war" (with hordes, raids, sickness,
+// the seasons, hunger and wealth).
 export const WAR_PREMIUM = { ammo: 1.35, meds: 1.35 };
 export const WAR_GEAR_PREMIUM = 1.3;
 const WAR_RESERVE = { food: 2, ammo: 2, meds: 2, fuel: 2 };
-const warMult = (f, key) => (f && f.atWar ? WAR_PREMIUM[key] || 1 : 1);
-const gearWar = (f, item) => (f && f.atWar && item && GEAR[item.key] && (GEAR[item.key].slot === "weapon" || GEAR[item.key].slot === "armor") ? WAR_GEAR_PREMIUM : 1);
+// Their kind and state for a supply key or an item (valuation.js priceInfo: mult, refused, the "why" notes).
+export const supplyInfo = (state, f, key) => priceInfo(state, f, catOf(key), false);
+export const gearInfo = (state, f, item) => priceInfo(state, f, itemCat(item.key), true);
+// What a unit is worth to them before the spread, as a multiple of its base value: stock, kind and state together
+// (1 = an ordinary price). The market lists, the autopilot and outsiders use it.
+export const demand = (state, f, key, stock = stockOf(f, key)) => scarcity(f, key, stock) * supplyInfo(state, f, key).mult;
 // What they pay you per unit when they take qty units (stock rising as they do).
 export function sellPrice(state, f, key, speech, qty = 1) {
   const q = Math.max(1, qty);
-  return SUPPLIES[key].value * need(f, key, stockOf(f, key) + q / 2) * spread(f, speech).sell * warMult(f, key);
+  return SUPPLIES[key].value * demand(state, f, key, stockOf(f, key) + q / 2) * spread(f, speech).sell;
 }
-// What you pay them per unit when you take qty units (stock falling as you do).
+// What you pay them per unit when you take qty units (stock falling as you do). Traders add their margin.
 export function buyPrice(state, f, key, speech, qty = 1) {
   const q = Math.max(1, qty);
-  return SUPPLIES[key].value * need(f, key, stockOf(f, key) - q / 2) * spread(f, speech).buy * warMult(f, key);
+  return SUPPLIES[key].value * demand(state, f, key, stockOf(f, key) - q / 2) * margin(f) * spread(f, speech).buy;
 }
-export const gearSellPrice = (f, item, speech) => itemValue(item) * spread(f, speech).sell * gearWar(f, item);
-export const gearBuyPrice = (f, item, speech) => itemValue(item) * spread(f, speech).buy * gearWar(f, item);
-// What a group can spare of a supply (they keep a reserve per head; twice that of some goods at war).
-export const available = (f, key) => Math.max(0, Math.floor(stockOf(f, key) - (RESERVE[key] || 0) * f.pop * (f.atWar ? WAR_RESERVE[key] || 1 : 1)));
+// Gear: worth × kind and state × what they hold like it (valuation.js gearNeed; pool = their shelf: their wares
+// unless given, e.g. a caravan's goods; nth = how many like it come before it in the same deal) × spread.
+const gearPool = (f, pool) => pool || f.wares || [];
+export function gearSellPrice(state, f, item, speech, { pool = null, nth = 0 } = {}) {
+  return itemValue(item) * gearInfo(state, f, item).mult * gearNeed(f, itemCat(item.key), heldLike(item, gearPool(f, pool)) + 0.5 + nth) * spread(f, speech).sell;
+}
+export function gearBuyPrice(state, f, item, speech, { pool = null, nth = 0 } = {}) {
+  const p = gearPool(f, pool);
+  const held = heldLike(item, p) + (p.includes(item) ? 0 : 1); // it is theirs: it counts in what they hold
+  return itemValue(item) * gearInfo(state, f, item).mult * gearNeed(f, itemCat(item.key), held - 0.5 - nth) * margin(f) * spread(f, speech).buy;
+}
+// What a group can spare of a supply (they keep a reserve per head; twice that of some goods at war). Nothing of
+// what they refuse to deal in.
+export const available = (f, key) => (refuses(f, key) ? 0 : Math.max(0, Math.floor(stockOf(f, key) - (RESERVE[key] || 0) * f.pop * (f.atWar ? WAR_RESERVE[key] || 1 : 1))));
+// Why this group prices a supply key or an item the way it does, in words (the trade window's "why" lines; never a
+// number): [{ text, dir: "up" | "down" | "no" }], the strongest first, at most `max`. pool: their shelf for an item.
+export function priceWhy(state, f, what, { pool = null, max = 2 } = {}) {
+  const gear = typeof what === "object";
+  const key = gear ? what.key : what;
+  const info = gear ? gearInfo(state, f, what) : supplyInfo(state, f, key);
+  const out = info.notes.filter((n) => !info.refused || n.m === 0) // refused: that is all there is to say
+    .map((n) => ({ text: n.text, dir: n.m === 0 ? "no" : n.m > 1 ? "up" : "down", w: n.m === 0 ? 99 : Math.abs(Math.log(n.m)) }));
+  const name = catName(catOf(key));
+  if (!info.refused) {
+    if (gear) {
+      const p = gearPool(f, pool);
+      const g = gearNeed(f, itemCat(key), heldLike(what, p) - (p.includes(what) ? 1 : 0) + 0.5); // the others like it
+      if (g <= 0.85) out.push({ text: `They already have spare ${name}`, dir: "down", w: Math.abs(Math.log(g)) });
+    } else {
+      const sb = starveBoost(f, key, stockOf(f, key));
+      const n = need(f, key);
+      if (sb >= 1.15) out.push({ text: key === "water" ? "Thirsty: water wanted badly" : "Starving: food wanted badly", dir: "up", w: Math.log(sb * n) });
+      else if (n >= 1.4) out.push({ text: `Short of ${SUPPLIES[key].name.toLowerCase()}`, dir: "up", w: Math.log(n) });
+      else if (n <= 0.7) out.push({ text: `Plenty of ${SUPPLIES[key].name.toLowerCase()} already`, dir: "down", w: Math.abs(Math.log(n)) });
+    }
+  }
+  return out.sort((a, b) => b.w - a.w).slice(0, max).map(({ text, dir }) => ({ text, dir }));
+}
+// ---------- the autopilot's sales ----------
+// Items the governor can spare from the base's armory (their caravan or merchants at your gates): valuables (good
+// for nothing but trade) when they pay at least an ordinary price, and weapons and armor beyond the spares the base
+// keeps (a third of its people, at least 2 of each, the weakest go first) when this group prizes them (×1.2 or
+// more: a group at war, hordes at its walls, the military for rifles...). At most `max` items.
+const ARMOR_SLOTS_ALL = ["armor", "head", "arms", "legs"];
+export function autoGearOffer(state, ctx, max = 3) {
+  if (!ctx || !ctx.base) return [];
+  const pool = ctx.myGear || [];
+  const keep = Math.max(2, Math.ceil(atBase(state, ctx.base.id).length / 3));
+  const out = [];
+  const mult = (g) => gearInfo(state, ctx.f, g).mult;
+  for (const g of pool) if (GEAR[g.key] && GEAR[g.key].valuable && mult(g) >= 0.95) out.push(g);
+  for (const slots of [["weapon"], ARMOR_SLOTS_ALL]) {
+    const list = pool.filter((g) => GEAR[g.key] && slots.includes(GEAR[g.key].slot) && !g.contents).sort((a, b) => GEAR[a.key].power - GEAR[b.key].power || itemValue(a) - itemValue(b));
+    for (const g of list.slice(0, Math.max(0, list.length - keep))) if (mult(g) >= 1.2) out.push(g);
+  }
+  return out.filter((g) => !refuses(ctx.f, g.key)).slice(0, max);
+}
+// Offers those items for the good the base needs most that they have (needs: autopilot.js, 0 … 3), balanced to a
+// fair deal. Returns the trade text or "".
+export function autoSellGear(state, needs) {
+  const ctx = tradeContext(state);
+  if (!ctx) return "";
+  const items = autoGearOffer(state, ctx);
+  if (!items.length) return "";
+  const t = ctx.t;
+  t.offer = {}; t.ask = {}; t.offerGear = [...items]; t.askGear = []; t.deal = null;
+  const want = Object.keys(needs).filter((k) => SUPPLIES[k] && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a] || a.localeCompare(b))[0];
+  if (want) balanceWith(state, want);
+  const v = tradeVerdict(state);
+  if (!v.ok || !Object.values(t.ask).some((q) => q > 0)) { t.offer = {}; t.ask = {}; t.offerGear = []; return ""; }
+  return executeTrade(state);
+}
+// What a load would fetch from them, before Speech (the autopilot picks a buyer with it; the caravan planner shows it).
+export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
+  let v = 0;
+  for (const [k, q] of Object.entries(supplies || {})) if (q > 0 && SUPPLIES[k]) v += q * sellPrice(state, f, k, speech, q);
+  gear.forEach((g, i) => { if (g) v += gearSellPrice(state, f, g, speech, { nth: gear.slice(0, i).filter((x) => x && itemCat(x.key) === itemCat(g.key)).length }); });
+  return v;
+}
 
 // ---------- wants and surplus (the market board) ----------
 // Refreshed every 7 days from the group's real stock and need (refreshMarkets, from diplomacy.js once a day):
-// wants = goods with need 1.25+ (what they pay you per unit for a lot of LOT[k], before Speech), qty = what
-// would bring them back to comfortable (need 1); surplus = goods with need 0.9 or less and 5+ to spare (what they
-// charge per unit for a lot), qty = what they can spare. prices: both prices for every good; prev: last week's.
+// wants = goods with demand 1.25+ (stock, kind and state: demand above; what they pay you per unit for a lot of
+// LOT[k], before Speech), qty = what would bring them back to comfortable (need 1), at least half a lot; surplus =
+// goods with demand 0.9 or less and 5+ to spare (what they charge per unit for a lot), qty = what they can spare.
+// Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
 export const LOT = { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 };
+export const wantQty = (f, k) => Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[k] * f.pop - stockOf(f, k)));
 export function marketLists(state, f, speech = 0) {
   const wants = [], surplus = [], prices = {};
   for (const k of SUPPLY_KEYS) {
     const lot = LOT[k] || 10;
     prices[k] = { pay: sellPrice(state, f, k, speech, lot), ask: buyPrice(state, f, k, speech, lot) };
-    const n = need(f, k);
-    if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: Math.max(1, Math.ceil(REF[k] * f.pop - stockOf(f, k))), price: prices[k].pay });
+    if (refuses(f, k)) continue;
+    const n = demand(state, f, k);
+    if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: wantQty(f, k), price: prices[k].pay });
     else if (n <= SURPLUS_NEED && available(f, k) >= 5) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });
   }
   wants.sort((a, b) => b.need - a.need || a.key.localeCompare(b.key));
@@ -344,7 +430,24 @@ export function tradeContext(state) {
 // The items in the deal that are still where they were (a list can change while the window is open).
 const liveGear = (list, pool) => (list || []).filter((g) => pool.includes(g));
 
-// Totals at the group's prices: offer = what they give you credit for, ask = what they charge. lines: per row.
+// The price of every item in the deal and of every item that could join it, at the group's prices: [item, { price,
+// mine }]. Items of one category in the deal are priced one after another (each moves what they hold); an item not
+// in the deal is priced as the next one of its kind.
+export function dealGearPrices(state, ctx) {
+  const { t, f, speech } = ctx;
+  const out = [];
+  for (const [mine, pool, chosen] of [[true, ctx.myGear, liveGear(t.offerGear, ctx.myGear)], [false, ctx.theirGear, liveGear(t.askGear, ctx.theirGear)]]) {
+    const seen = {};
+    const priceOf = (g, nth) => (mine ? gearSellPrice(state, f, g, speech, { pool: ctx.theirGear, nth }) : gearBuyPrice(state, f, g, speech, { pool: ctx.theirGear, nth }));
+    const keyOf = (g) => { const c = itemCat(g.key); return c === "books" || c === "manuals" ? `${c}:${g.key}` : c; };
+    for (const g of chosen) { const k = keyOf(g); out.push([g, { price: priceOf(g, seen[k] || 0), mine, inDeal: true }]); seen[k] = (seen[k] || 0) + 1; }
+    for (const g of pool) if (g && !chosen.includes(g)) out.push([g, { price: priceOf(g, seen[keyOf(g)] || 0), mine, inDeal: false }]);
+  }
+  return out;
+}
+
+// Totals at the group's prices: offer = what they give you credit for, ask = what they charge. lines: per row
+// (lines.gear: item → its price in the deal).
 export function tradeTotals(state) {
   const ctx = tradeContext(state);
   if (!ctx) return null;
@@ -353,8 +456,12 @@ export function tradeTotals(state) {
   const lines = { offer: {}, ask: {}, intel: {} };
   for (const [k, q] of Object.entries(t.offer)) if (q > 0) { const v = q * sellPrice(state, f, k, speech, q); lines.offer[k] = v; offer += v; }
   for (const [k, q] of Object.entries(t.ask)) if (q > 0) { const v = q * buyPrice(state, f, k, speech, q); lines.ask[k] = v; ask += v; }
-  for (const g of liveGear(t.offerGear, ctx.myGear)) offer += gearSellPrice(f, g, speech);
-  for (const g of liveGear(t.askGear, ctx.theirGear)) ask += gearBuyPrice(f, g, speech);
+  const gearLines = new Map();
+  for (const [g, side] of dealGearPrices(state, ctx)) {
+    gearLines.set(g, side.price);
+    if (side.inDeal) { if (side.mine) offer += side.price; else ask += side.price; }
+  }
+  lines.gear = gearLines;
   const intel = t.intel || {};
   if (intel.area || intel.sightings || intel.sell) {
     const io = intelOffer(state, ctx);
@@ -385,6 +492,10 @@ export function tradeVerdict(state) {
   const offerGear = liveGear(t.offerGear, ctx.myGear), askGear = liveGear(t.askGear, ctx.theirGear);
   const empty = !Object.values(t.offer).some((q) => q > 0) && !Object.values(t.ask).some((q) => q > 0) && !offerGear.length && !askGear.length && !t.intel.area && !t.intel.sightings && !t.intel.sell;
   if (empty) return out(false, "Put something on the table first.");
+  // Their kind refuses some goods outright (valuation.js: zealots and liquor).
+  for (const k of [...Object.keys(t.offer).filter((x) => t.offer[x] > 0), ...Object.keys(t.ask).filter((x) => t.ask[x] > 0), ...offerGear.map((g) => g.key), ...askGear.map((g) => g.key)]) {
+    if (refuses(f, k)) return out(false, `${f.name} will not touch ${catName(catOf(k))}.`);
+  }
   for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${k}.`);
   for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${k}.`);
   // Carry space: a team carries what it gets; their caravan carries what it takes.
@@ -413,7 +524,7 @@ export function tradeVerdict(state) {
 export function setQty(state, side, key, qty) {
   const ctx = tradeContext(state);
   if (!ctx || !SUPPLIES[key]) return;
-  const max = side === "mine" ? ctx.have[key] || 0 : ctx.theirHave[key] || 0;
+  const max = refuses(ctx.f, key) ? 0 : side === "mine" ? ctx.have[key] || 0 : ctx.theirHave[key] || 0;
   const q = clamp(Math.floor(Number(qty) || 0), 0, max);
   const t = ctx.t;
   if (side === "mine") { t.offer[key] = q; if (q) t.ask[key] = 0; }
@@ -428,7 +539,7 @@ export function toggleGear(state, side, index) {
   const list = side === "mine" ? (ctx.t.offerGear = liveGear(ctx.t.offerGear, pool)) : (ctx.t.askGear = liveGear(ctx.t.askGear, pool));
   const i = list.indexOf(item);
   if (i >= 0) list.splice(i, 1);
-  else list.push(item);
+  else if (!refuses(ctx.f, item.key)) list.push(item); // they will not touch it
 }
 export function setIntel(state, field, value) {
   const ctx = tradeContext(state);

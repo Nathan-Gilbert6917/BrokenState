@@ -393,9 +393,10 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   const f = st.factions.find((x) => x.alive && x.type !== "raider" && x.type !== "zealot");
   f.stock.meds = 0; f.stock.food = f.pop * 20;
   const m2 = V.spawnVisitor(st, "merchants");
-  const meds0 = m2.stock.meds, food0 = m2.stock.food;
+  const meds0 = m2.stock.meds, lack0 = ["food", "water", "scrap", "jars"].map((k) => m2.stock[k] || 0);
   const traded = V.tradeWithGroup(st, m2, f);
-  check(traded && f.stock.meds > 0 && m2.stock.meds < meds0 && m2.stock.food > food0, `trade with ${f.name}: meds for food (${meds0} → ${m2.stock.meds} meds)`);
+  const gotLack = ["food", "water", "scrap", "jars"].filter((k, i) => (m2.stock[k] || 0) > lack0[i]);
+  check(traded && f.stock.meds > 0 && m2.stock.meds < meds0 && gotLack.length, `trade with ${f.name}: meds for what the merchants lack (${meds0} → ${m2.stock.meds} meds, for ${gotLack.join(", ")})`);
   // The radio call and the invitation.
   clearCards(st);
   addBuilding(h, "radio"); h.radio = true;

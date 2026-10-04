@@ -317,6 +317,11 @@ body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #bann
 .tw-step { white-space: nowrap; }
 .tw-step button.mini { padding: 0.05rem 0.3rem; }
 input.tw-qty { width: 3.6rem; margin: 0 0.15rem; }
+.tw-why { display: block; font-size: 0.72rem; line-height: 1.15; margin-top: 0.05rem; }
+.tw-why.up { color: var(--good); }
+.tw-why.down { color: var(--muted); }
+.tw-why.no { color: var(--danger); }
+.tw-mood { margin: 0.3rem 0; padding: 0.35rem 0.55rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .tw-totals { margin-top: 0.6rem; padding: 0.5rem 0.6rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .tw-balance { position: relative; height: 0.6rem; margin: 0.35rem 0; background: #5a2f2f; border-radius: 4px; overflow: hidden; }
 .tw-balance > i { display: block; height: 100%; background: var(--good); }

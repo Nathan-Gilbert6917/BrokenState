@@ -30,7 +30,8 @@ import { startOrder } from "./orders.js";
 import { partyVehicle, partyFuel, vehicleById } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
-  available, need, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  available, need, demand, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  autoSellGear,
 } from "./trade.js";
 import { marketOf } from "./trade.js";
 import { escortArrived, pickupArrived } from "./jobs.js";
@@ -245,10 +246,16 @@ export function autoCaravanTrade(state, needs, style) {
   else {
     ctx.t.offer = {}; ctx.t.ask = {}; ctx.t.deal = null;
     const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
-    const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (ctx.have[k] || 0) > 0).sort((a, b) => needs[a] - needs[b]);
+    // Pay with what they want most (trade.js demand: their stock, kind and state) among what the hub has plenty of.
+    const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, f, b) - demand(state, f, a) || needs[a] - needs[b]);
     for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
     for (const k of plenty) { if (tradeVerdict(state).ok) break; if (!ctx.t.ask[k]) balanceWith(state, k); }
     if (short.length && tradeVerdict(state).ok) text = executeTrade(state);
+  }
+  // Spare weapons to a group that prizes them (at war, hordes at its walls...), valuables to anyone who pays.
+  if (tradeContext(state)) {
+    const sold = autoSellGear(state, needs);
+    if (/^Traded/.test(sold)) text = /^Traded/.test(text) ? `${text.replace(/\.$/, "")}; then ${sold.replace(/^Traded with [^:]+: /, "")}` : sold;
   }
   endTrade(state);
   return text;

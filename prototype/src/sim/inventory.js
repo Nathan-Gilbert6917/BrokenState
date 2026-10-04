@@ -40,7 +40,12 @@ export function newItem(key, quality = 1) {
 export const isSmall = (key) => !!(GEAR[key] && GEAR[key].small);
 export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slots) || 0;
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
-export const itemLoad = (item) => ITEM_LOAD * (1 + (item && item.contents ? item.contents.filter(Boolean).length : 0));
+// An item def may set its own weight (data.js GEAR weight: light valuables); a pack adds what is in it.
+export const itemLoad = (item) => {
+  const d = item && GEAR[item.key];
+  const own = d && Number.isFinite(d.weight) ? d.weight : ITEM_LOAD;
+  return own + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0);
+};
 
 export function ensurePack(item) {
   const n = packSize(item);
