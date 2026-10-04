@@ -256,7 +256,7 @@ function logCaptions(state, c) {
     if (l.kind !== "death" && SKIP_LOG.test(l.text)) continue;
     if (l.kind === "death" && /Every survivor is dead/.test(l.text)) continue;
     if (/^Every hive is destroyed/.test(l.text) || (/^The Calder Coalition holds/.test(l.text) && c.overAt == null)) continue; // the chronicle's own victory caption says it (a coalition victory after Keep playing is captioned from its log line)
-    const major = l.kind === "death" || /founded|overran|has been lost|abandoned|joined/.test(l.text);
+    const major = l.kind === "death" || /founded|overran|has been lost|abandoned|joined|^The Calder Coalition holds/.test(l.text); // the coalition's victory after Keep playing is a major caption like the first
     caption(c, { h: l.hour, text: l.text, kind: l.kind, tile: captionTile(state, c, l.text), major });
   }
 }
