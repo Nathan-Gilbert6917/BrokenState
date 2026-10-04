@@ -298,11 +298,17 @@ section("New mood sources, and the breakdown adds up");
   addBuilding(h, "chapel");
   check(factor(st, s, /chapel/)?.v === MOODF.chapel, "a chapel: +1");
   check(!!BUILDINGS.common_room && !!BUILDINGS.chapel && !BUILDINGS.common_room.station && !BUILDINGS.chapel.station, "both need no operator");
-  // Comfort: books.
+  // Comfort: books. The shelf is shared (each book goes round MOODF.shelfShare people); blueprints are not comfort.
   const bookKey = Object.keys(GEAR).find((k) => GEAR[k].book);
   if (bookKey) {
+    const bpKey = Object.keys(GEAR).find((k) => GEAR[k].blueprint);
+    if (bpKey) { h.armory.push(newItem(bpKey), newItem(bpKey), newItem(bpKey), newItem(bpKey)); check(!factor(st, s, /Something to read/), `blueprints on the shelf (${GEAR[bpKey].name}) are study, not comfort`); }
+    const n = residents(st, h.id).length;
     h.armory.push(newItem(bookKey), newItem(bookKey), newItem(bookKey));
-    check(factor(st, s, /Something to read/)?.v === MOODF.comfortMax, `books on the shelf (${GEAR[bookKey].name}): +${MOODF.comfortMax} at most`);
+    const thin = MOODF.comfortPer * 2 * Math.min(1, (3 * MOODF.shelfShare) / n);
+    check(near(factor(st, s, /Something to read/)?.v, thin), `3 books on the shelf for ${n} people: shared, +${factor(st, s, /Something to read/)?.v} (${thin.toFixed(2)})`);
+    while (h.armory.filter((g) => g.key === bookKey).length * MOODF.shelfShare < n) h.armory.push(newItem(bookKey));
+    check(factor(st, s, /Something to read/)?.v === MOODF.comfortMax, `enough books on the shelf (${GEAR[bookKey].name}) for ${n} people: +${MOODF.comfortMax} at most`);
   } else console.log("  (no books in GEAR yet: comfort items not tested)");
   // Weather: cabin fever late in winter; grey days.
   const hour0 = st.hour;
@@ -460,6 +466,29 @@ section("Render: survivor screen and memorial wall");
     ui.REL_ACTIONS["memorial-service"](st, r, { base: h.id });
     check(typeof r.relMsg === "string" && r.relMsg && typeof r.memorialMsg === "string" && r.memorialMsg, `handlers answer: "${r.relMsg}" / "${r.memorialMsg}"`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Where mood settles: the fade against the daily factors");
+{
+  // The whole daily net (every factor, the fade included) applied day after day until it levels out.
+  const settle = (st, s) => { for (let i = 0; i < 150; i++) s.mood = Math.max(0, Math.min(100, s.mood + moodFactors(st, s).net)); return s.mood; };
+  const st = W();
+  const h = hub(st);
+  const ppl = atBase(st, h.id);
+  h.armory = [];
+  for (const a of ppl) { a.perks = []; for (const b of ppl) if (a !== b) setO(st, a, b, 0); }
+  for (const a of ppl) if (a.leader) a.skills.leadership = 5; // an ordinary leader (a great one lifts it more)
+  const s = ppl.find((x) => !x.leader);
+  s.mood = 50;
+  const plain = settle(st, s);
+  const why = moodFactors(st, s).list.filter((f) => !/fade/.test(f.label)).map((f) => `${f.label} ${f.v > 0 ? "+" : ""}${f.v}`).join(", ");
+  check(plain >= 70 && plain <= 82, `a hub with only beds and food settles at ${plain.toFixed(0)} (70-80: ${why})`);
+  addBuilding(h, "kitchen"); addBuilding(h, "common_room");
+  for (const o of ppl.filter((o) => o !== s).slice(0, 3)) setO(st, s, o, 50);
+  const comfy = settle(st, s);
+  console.log(`  settles at ${plain.toFixed(0)} with beds, food and an ordinary leader (${why}); ${comfy.toFixed(0)} with a kitchen, a common room and friends`);
+  check(comfy >= 95, `with a kitchen, a common room and three friends: ${comfy.toFixed(0)} (near 100)`);
 }
 
 // ---------------------------------------------------------------------------------------------------------

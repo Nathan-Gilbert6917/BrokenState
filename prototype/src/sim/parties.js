@@ -27,9 +27,13 @@ import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
+import { caravanGuarded } from "./jobs.js";
+import { crashesHour, crashSurvey } from "./crashes.js";
+import { breakdownsHour } from "./breakdowns.js";
 import { travelFactor, travelEffects, travelHazard } from "./weather.js";
 import { hasPerk, checkBonus, gainXpAll, USE } from "./skills.js";
 import { tripDone } from "./relations.js";
+import { prisonersHome } from "./prisoners.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -158,7 +162,7 @@ export function outpostName(state, tile) {
 // ---------- trip estimates for the planner ----------
 // Travel speed per hour for a player team (trade-route convoys keep a steady pace).
 // p.perkSpeed: Pathfinder's +10% on foot (set each hour by skills.js skillsHour).
-export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1));
+export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1) * (p.prisonSpeed || 1)); // prisonSpeed: prisoners walking with the team (prisoners.js)
 
 // Whole hours to walk/drive a path, using the same hour-by-hour stepping as the real movement
 // (stepAlong): a tile is entered only once enough progress has built up, leftover progress carries
@@ -369,6 +373,8 @@ export function movePartiesHour(state) {
     if (p.owner === "player") playerPartyHour(state, p);
     else aiPartyHour(state, p);
   }
+  crashesHour(state); // crashes.js: crash sites (new ones, the search, the race, burning out)
+  breakdownsHour(state); // breakdowns.js: repair work at the bases, attack damage
   pruneCards(state);
 }
 
@@ -796,7 +802,8 @@ export function survey(state, p, bonus, debit = true) {
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);
-  return found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby.";
+  const crash = crashSurvey(state, p); // crashes.js: a downed aircraft found, or its search circle narrowed
+  return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${crash ? ` ${crash}` : ""}`;
 }
 
 // ---------- arriving and acting ----------
@@ -1202,6 +1209,7 @@ function returnHome(state, p) {
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
   if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
+  if (p.owner === "player") prisonersHome(state, p, home); // prisoners.js: prisoners taken on the trip go to the cells
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
   mergeKnowledge(state, p.seen, p.spotted);
@@ -1354,7 +1362,7 @@ function aiPartyHour(state, p) {
       horde.size = Math.max(0, horde.size - Math.round(p.strength * 0.6));
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
-    if (p.kind === "convoy" || p.kind === "caravan") {
+    if ((p.kind === "convoy" || p.kind === "caravan") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone
       for (const r of state.factions) {
         if (!r.alive || r.type !== "raider" || r.id === p.owner) continue;
         if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && state.rng.chance(0.12)) {

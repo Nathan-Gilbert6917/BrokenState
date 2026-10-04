@@ -3,6 +3,7 @@
 // days), water filters and crowbars at a base, field crafting from a team's supplies, tactical battles with
 // makeshift weapons, and a short campaign with crafters to check nothing crashes.
 // Usage: node tools/crafttest.js [days] [seed]
+import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, tickHour, hub, atBase, combatPower, makeSurvivor, newId } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -18,7 +19,8 @@ const days = Number(process.argv[2] || 30);
 const seed = Number(process.argv[3] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const world = () => createWorld({ seed, factionCount: 5 });
+// Tech locks (blueprints.js) are tested in exploretest.js: here every manual is already studied.
+const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); return st; };
 const runHours = (st, base, max = 400) => { let h = 0; while (craftQueue(base).length && h < max) { craftingHour(st); h++; } return h; };
 const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.traits = s.traits.filter((t) => t !== "lucky" && t !== "medic")));
 

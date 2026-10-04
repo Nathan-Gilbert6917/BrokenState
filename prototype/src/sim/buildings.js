@@ -6,6 +6,7 @@ import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
 import { refreshPower, generatorStatus, powerLine } from "./power.js";
 import { buildMult } from "./skills.js";
+import { buildLock } from "./blueprints.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -33,7 +34,9 @@ export const BUILDINGS = {
   trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, plus two more barricades on the battle map. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
-  watchtower:   { name: "Watchtower",     cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner." },
+  watchtower:   { name: "Watchtower",     cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle map of a break-in it is a tower behind the walls: full cover and +5 aim." },
+  // prisoners.js: where prisoners are held. Someone on the Guard role keeps them from slipping out.
+  cells:        { name: "Holding cells",  cost: { scrap: 16, parts: 1 },  hours: 20, max: 2, desc: "Barred rooms for 3 prisoners each (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded; 8% for anyone kept in a shed when the cells are full)." },
   radio:        { name: "Radio station",  cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
   relay:        { name: "Radio relay",    cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
@@ -75,7 +78,9 @@ export const BUILDINGS = {
                   desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics, and Medicine 10+ and Mechanics 4+ survivors here to build." },
 };
 
-export const count = (base, type) => base.buildings.filter((b) => b.type === type).length;
+// Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
+export const count = (base, type) => base.buildings.filter((b) => b.type === type && !b.broken).length;
+export const countAll = (base, type) => base.buildings.filter((b) => b.type === type).length;
 export const baseWalls = (base) => (base.type === "hub" ? 3 : 1) + count(base, "walls") * 3;
 export const baseBeds = (base) => (base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
 // Crop plots (farming.js plotLimit): hub 4, outpost 2, +2 per Farm plot building.
@@ -95,7 +100,8 @@ export function addBuilding(base, type) {
 
 export function stationOperator(state, base, st) {
   // Patients in a hospital bed (s.inBed, set hourly by medical.js) do not work.
-  // Someone too sick to work (health.js) leaves the station idle.
+  // Someone too sick to work (health.js) leaves the station idle. A broken station (breakdowns.js) has nobody at work.
+  if (st && st.broken) return null;
   return atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id && !s.inBed && workFactor(s) >= 0.35) || null;
 }
 
@@ -151,6 +157,7 @@ export function stationStatus(state, base, st) {
   const recipe = BUILDINGS[st.type].station;
   const r = RECIPES[recipe];
   const op = stationOperator(state, base, st);
+  if (st.broken) return { op: null, running: false, idle: true, broken: true, reason: "Broken: needs repair (Repairs tab)", recipe, out: {}, in: r.in }; // breakdowns.js
   if (!op) {
     const sick = atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id);
     return { op: null, running: false, reason: sick ? (sick.inBed ? "Operator in a hospital bed" : "Operator too sick to work") : "No operator", recipe, out: {}, in: r.in };
@@ -185,7 +192,7 @@ export function runStations(state, base) {
 export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
   const queued = base.construction.filter((c) => c.type === type).length;
-  if (count(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
+  if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
   if (def.family) {
     // Tiered buildings: one step at a time, and only one upgrade in the queue.
     const have = Math.max(0, ...base.buildings.map((x) => (BUILDINGS[x.type].family === def.family ? BUILDINGS[x.type].tier : 0)));
@@ -200,6 +207,8 @@ export function canBuild(state, base, type) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
     }
   }
+  const lock = buildLock(state, base, type); // blueprints.js: upper tiers need a studied manual or blueprint
+  if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
 }
 

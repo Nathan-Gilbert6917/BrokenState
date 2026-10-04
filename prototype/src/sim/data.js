@@ -69,6 +69,13 @@ export const GEAR = {
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging." },
   waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 water a day at the base it is kept at (equipped or in the armory)." },
   backpack:   { name: "Improvised backpack",      slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 carry space for the team." },
+  // The stealth kit (stealth.js). Throwables and the suppressor work from a pocket or the pack; thrown, a throwable is
+  // gone (throw = the key in stealth.js THROWABLES). The suppressor wears a shot at a time (dur = shots).
+  flashlight: { name: "Flashlight",               slot: "tool",   skill: null,       power: 0,   req: 0, value: 8,  noise: 0, small: true, desc: "In the off hand on a night raid: search at full speed and see 9 tiles instead of 7, but guards notice the light from 3 tiles further." },
+  suppressor: { name: "Oil-filter suppressor",    slot: "pack",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, makeshift: true, dur: 12, suppressor: true, desc: "An oil filter threaded onto the muzzle. Carried by someone with a pistol, hunting rifle or assault rifle, their shots make half the noise (half the Heat and earshot). Wears fast: 12 shots." },
+  bottle:     { name: "Empty bottle",             slot: "pack",   skill: null,       power: 0,   req: 0, value: 1,  noise: 0, small: true, throw: "bottle", desc: "Thrown (up to 7 tiles), it smashes and pulls unaware guards and the dead within 6 tiles to look. One use." },
+  noisemaker: { name: "Noise maker",              slot: "pack",   skill: null,       power: 0,   req: 0, value: 3,  noise: 0, small: true, makeshift: true, throw: "noisemaker", desc: "A wind-up kitchen timer taped to a bell. Thrown (up to 7 tiles), it rings for 3 turns and pulls everything unaware within 8 tiles. One use." },
+  firecracker:{ name: "String of firecrackers",   slot: "pack",   skill: null,       power: 0,   req: 0, value: 4,  noise: 0, small: true, throw: "firecracker", desc: "Thrown (up to 8 tiles), the bangs pull everything unaware within 13 tiles, but a raid's Heat jumps 6. One use." },
   // Books (skills.js): read on the Read role at a base from a copy in its armory. book.skill = what it teaches (4 XP an
   // hour, only while the skill is below book.max), book.hours = time to finish it; mood books give book.mood an hour.
   // Not worn: carried in a pack slot or the team's cargo, kept in the armory. Found at fitting sites, sold by traders.
@@ -95,7 +102,7 @@ export const LOCATIONS = {
   town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 1, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet"], richness: 0.6 },
   city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 2, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun"], richness: 1.0 },
   farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete"], richness: 0.5 },
-  gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol"], richness: 0.4 },
+  gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol", "firecracker"], richness: 0.4 },
   mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 1, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack"], richness: 0.9 },
   hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 5, scrap: 1, parts: 1 }, gear: ["surgkit"], richness: 0.8 },
   police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 1, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet"], richness: 0.7 },
@@ -111,7 +118,7 @@ export const LOCATIONS = {
   pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit"], richness: 0.8 },
   supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 1, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife"], richness: 0.95 },
   gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards"], richness: 0.85 },
-  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards"], richness: 0.8 },
+  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight"], richness: 0.8 },
   apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack"], richness: 0.8 },
   office:      { name: "Office tower",       glyph: "O",  cat: "urban", danger: 2, loot: { scrap: 3, water: 2, parts: 1, meds: 1 }, gear: ["backpack"], richness: 0.6 },
   school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, jars: 0.25 }, gear: ["sportspads", "footballhelmet", "backpack"], richness: 0.6 },
@@ -119,7 +126,7 @@ export const LOCATIONS = {
   warehouse:   { name: "Warehouse district", glyph: "W",  cat: "urban", danger: 2, loot: { scrap: 4, food: 3, parts: 2, fuel: 0.4, jars: 0.5 }, gear: ["crowbar"], richness: 0.9 },
   // Small-town shops and services (police stations, auto shops, gas stations and pharmacies stand in towns too).
   grocery:     { name: "Grocery store",      glyph: "Gr", cat: "town",  danger: 1, loot: { food: 5, water: 2, meds: 1, scrap: 1, preserved: 1, jars: 0.75 }, gear: ["knife"], richness: 0.6 },
-  diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.75 }, gear: ["knife"], richness: 0.5 },
+  diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.75 }, gear: ["knife", "bottle"], richness: 0.5 },
   motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 1, scrap: 2, ammo: 1, jars: 0.25 }, gear: ["pistol", "knife", "backpack"], richness: 0.5 },
   church:      { name: "Church",             glyph: "†",  cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1, scrap: 1, jars: 0.75 }, gear: ["bandagekit"], richness: 0.45 },
   clinic:      { name: "Clinic",             glyph: "Cl", cat: "town",  danger: 1, loot: { meds: 4, water: 1, scrap: 1 }, gear: ["surgkit", "bandagekit"], richness: 0.55 },
@@ -134,6 +141,13 @@ export const LOCATIONS = {
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: [], richness: 0.4 },
   truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2, preserved: 0.5 }, gear: ["pistol", "shotgun"], richness: 0.7 },
   crashsite:   { name: "Crash site",         glyph: "X",  cat: "rural", danger: 1, loot: { scrap: 4, parts: 2, fuel: 0.8, meds: 1 }, gear: ["pistol", "vest"], richness: 0.6 },
+  // Temporary sites from crash events (crashes.js): never placed by the map, they appear where something came down
+  // and burn out after 7–10 days. temp: not a permanent site.
+  crash_mil:   { name: "Army helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { ammo: 5, meds: 2, parts: 2, scrap: 2, fuel: 0.5 }, gear: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack"], richness: 1.2 },
+  crash_cargo: { name: "Supply plane wreck",  glyph: "✈", cat: "special", danger: 2, temp: true, loot: { food: 5, water: 3, meds: 2, preserved: 2, parts: 1, scrap: 2, fuel: 0.6 }, gear: ["assaultpack", "vest", "bandagekit", "surgkit"], richness: 1.2 },
+  crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1 },
+  crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["milradio", "backpack", "bikehelmet"], richness: 0.9 },
+  airdrop:     { name: "Supply drop",         glyph: "⇣", cat: "special", danger: 1, temp: true, loot: { food: 6, water: 4, meds: 3, ammo: 3, preserved: 2 }, gear: ["assaultpack", "vest", "bandagekit"], richness: 1.2 },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {

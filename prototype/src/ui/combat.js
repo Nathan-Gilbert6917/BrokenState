@@ -4,10 +4,13 @@ import {
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
 } from "../sim/combat.js";
-import { SUPPLIES } from "../sim/data.js";
+import { SUPPLIES, GEAR } from "../sim/data.js";
+import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
+import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
+import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -92,7 +95,7 @@ function act(state, a) {
   cui.msg = err || "";
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
-    if (!u || !active(u) || u.ap < 1) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -102,12 +105,31 @@ export function combatClick(state, px, py) {
   const b = state.combat;
   if (!b || b.over) return;
   sync(b);
+  if (b.phase === "deploy") return void deployClick(state, b, px, py);
   if (b.phase !== "player") { cui.msg = "Wait for the enemy turn to finish."; return; }
   const c = cellFromPx(px, py);
   if (!c) return;
   const v = view(b);
   const u = selUnit(b);
   const who = unitAt(b, c.x, c.y);
+  // The stealth kit (sim/stealth.js): throw at a tile, drag a body (pick it, then where to), tie up the knocked out.
+  if (u && active(u) && u.ap > 0 && cui.mode === "throw") return void act(state, { type: "throw", unit: u.id, item: cui.throwKey, x: c.x, y: c.y });
+  if (u && active(u) && u.ap > 0 && cui.mode === "drag") {
+    if (cui.dragId == null) {
+      const body = bodyAt(b, c.x, c.y);
+      if (!body || !adjacent(u, body)) { cui.msg = "Click a body, someone knocked out or a downed teammate right next to you."; return; }
+      cui.dragId = body.id;
+      cui.msg = `Now click where to drag ${body.dead ? `${body.name}'s body` : body.name} (up to ${STEALTH.DRAG} tiles).`;
+      return;
+    }
+    const id = cui.dragId;
+    cui.dragId = null;
+    return void act(state, { type: "drag", unit: u.id, target: id, x: c.x, y: c.y });
+  }
+  if (u && active(u) && u.ap > 0 && cui.mode === "tie") {
+    const t = b.units.find((o) => o.side === "enemy" && o.ko && !o.dead && o.x === c.x && o.y === c.y);
+    if (t) return void act(state, { type: "tie", unit: u.id, target: t.id });
+  }
   if (who && who.side === "player") {
     if (cui.mode === "meds" && u && (who === u || adjacent(u, who))) return void act(state, { type: "meds", unit: u.id, target: who.id });
     cui.sel = who.id;
@@ -131,8 +153,28 @@ export function combatClick(state, px, py) {
   else cui.msg = "Out of reach.";
 }
 
+// A body, someone knocked out or a downed teammate on a tile (things Drag can move).
+function bodyAt(b, x, y) {
+  return b.units.find((o) => o.x === x && o.y === y && !o.fled && !o.left && dragable(o)) || null;
+}
+
+// Deploy step (sim/deploy.js): click a defender to pick them, then a green cell to put them there.
+function deployClick(state, b, px, py) {
+  const c = cellFromPx(px, py);
+  if (!c) return;
+  const who = unitAt(b, c.x, c.y);
+  if (who && who.side === "player" && who.id !== cui.sel) { cui.sel = who.id; cui.msg = ""; return; }
+  const u = selUnit(b);
+  if (!u) { cui.msg = "Click one of your people first."; return; }
+  act(state, { type: "place", unit: u.id, x: c.x, y: c.y });
+}
+
 function attack(state, u, t) {
   const b = state.combat;
+  if (cui.mode === "subdue") {
+    if (!canSubdue(u, t)) { cui.msg = "Subdue needs them right next to you."; return; }
+    return void act(state, { type: "subdue", unit: u.id, target: t.id });
+  }
   const wantMelee = cui.mode === "melee" || (!canFire(b, u) && adjacent(u, t));
   if (wantMelee) {
     if (!adjacent(u, t)) { cui.msg = "Melee needs the target right next to you."; return; }
@@ -191,6 +233,11 @@ export function combatKey(state, e) {
     if (e.code === "Enter" || e.code === "Space") { closeCombat(state); return true; }
     return false;
   }
+  // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
+  if (b.phase === "deploy") {
+    if (e.code === "Enter" || e.code === "NumpadEnter") { act(state, { type: "start" }); return true; }
+    if (e.code === "Space") { cui.msg = "Place your defenders, then press Enter or Start the fight."; return true; }
+  }
   const team = players(b).filter((u) => active(u));
   if (e.code === "Tab") {
     const ready = team.filter((u) => u.ap > 0);
@@ -206,8 +253,9 @@ export function combatKey(state, e) {
     return true;
   }
   if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; return true; }
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract" };
+  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.dragId = null; return true; }
+  if (b.phase === "deploy") return false;
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -228,6 +276,16 @@ export function combatAction(state, key, d) {
   if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
   if (key === "cb-confirm") return void setConfirmEnd(!cui.confirmEnd);
   if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; return; }
+  // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
+  if (key === "cb-deploy") {
+    if (d.v === "start") return void act(state, { type: "start" });
+    if (d.v === "defaults") return void act(state, { type: "defaults" });
+    if (d.v === "flood") return void act(state, { type: "flood", zone: d.z });
+    if (d.v === "gate" && u) return void act(state, { type: "gate", unit: u.id });
+    return;
+  }
+  // The result screen: take the knocked out home as prisoners, or leave them tied up (sim/prisoners.js).
+  if (key === "cb-prison") { if (b.over) b.leavePrisoners = d.v === "leave"; return; }
   if (key === "cb-target") {
     const t = unitById(b, Number(d.id));
     if (u && t) attack(state, u, t);
@@ -239,6 +297,38 @@ export function combatAction(state, key, d) {
   if (v === "retreat" && b.raid) { cui.msg = "In a raid you leave by extracting: move into a green extraction zone and press X."; return; }
   if (v === "move") { cui.mode = "move"; return; }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
+  // The stealth kit (sim/stealth.js).
+  if (v === "subdue") {
+    const near = b.units.filter((t) => canSubdue(u, t));
+    if (near.length === 1) return void act(state, { type: "subdue", unit: u.id, target: near[0].id });
+    cui.mode = cui.mode === "subdue" ? "move" : "subdue";
+    cui.msg = near.length ? "Click the person next to you to subdue." : "Subdue needs a person right next to you.";
+    return;
+  }
+  if (v === "tie") {
+    const ko = b.units.filter((t) => t.side === "enemy" && t.ko && !t.tied && !t.dead && adjacent(u, t));
+    if (ko.length === 1) return void act(state, { type: "tie", unit: u.id, target: ko[0].id });
+    cui.mode = ko.length ? "tie" : "move";
+    cui.msg = ko.length ? "Click the one to tie up." : "Tie up someone knocked out, right next to you.";
+    return;
+  }
+  if (v === "throw") {
+    const have = throwablesOf(state, b, u);
+    const k = d.k && have[d.k] ? d.k : THROW_KEYS.find((x) => have[x]);
+    if (!k) { cui.msg = "Nothing to throw: bottles, noise makers and firecrackers come from searching and crafting."; return; }
+    cui.mode = "throw";
+    cui.throwKey = k;
+    cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.`;
+    return;
+  }
+  if (v === "drag") {
+    cui.mode = cui.mode === "drag" ? "move" : "drag";
+    cui.dragId = null;
+    const near = b.units.filter((o) => adjacent(u, o) && dragable(o) && !o.left && !o.fled);
+    if (cui.mode === "drag" && near.length === 1) { cui.dragId = near[0].id; cui.msg = `Click where to drag ${near[0].dead ? `${near[0].name}'s body` : near[0].name} (up to ${STEALTH.DRAG} tiles).`; }
+    else cui.msg = cui.mode === "drag" ? "Click the body (or someone down) next to you, then where to drag it." : "";
+    return;
+  }
   if (v === "meds") {
     const others = players(b).filter((o) => o !== u && !o.dead && !o.left && adjacent(u, o) && (o.down ? !o.stab : o.hp < o.maxHp));
     if (!others.length) return void act(state, { type: "meds", unit: u.id, target: u.id });
@@ -278,7 +368,7 @@ export function renderCombatPanel(state) {
   const e = b.setup.enemy;
   const u = selUnit(b);
   const phase = b.over ? `<b>${b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
-    b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
+    b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   let html = b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
@@ -302,6 +392,7 @@ export function renderCombatPanel(state) {
   html += `</div>`;
 
   if (b.over) return html + resultHtml(state, b);
+  if (b.phase === "deploy") return html + deployPanel(state, b, u);
 
   if (u && active(u) && b.phase === "player") {
     const ap = u.ap;
@@ -315,8 +406,9 @@ export function renderCombatPanel(state) {
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
+      ${stealthButtons(state, b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "Leave the battle. Only from the green evac strip on the left. Anyone left behind who is down is lost.", ap > 0 && inEvac(b, u.x), "R") : ""}
-      ${b.raid ? raidButtons(b, u, btn) : ""}
+      ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
@@ -372,6 +464,8 @@ function raidHead(state, b, phase) {
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
     ${R.vehicleZone >= 0 ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map.">Your vehicle is in the entry zone. Extract there to keep it.</div>` : ""}
+    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. Searching without a light takes both actions.">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
+    ${raidKeyLine(state, b)}
   </div>`;
 }
 
@@ -383,6 +477,64 @@ function raidButtons(b, u, btn) {
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   return `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+}
+
+// ---------- the stealth kit (sim/stealth.js) ----------
+function stealthButtons(state, b, u, btn) {
+  const ap = u.ap;
+  const near = b.units.filter((t) => canSubdue(u, t));
+  const so = near.length ? subdueOdds(b, u, near[0]) : null;
+  const subTip = so ? `${so.label} (${near[0].name}). Ends the turn. Takedowns work on the unaware and on anyone at 30% health or less; a knocked-out enemy wakes in 4–6 turns unless tied up, and after a won fight comes home as a prisoner.`
+    : "Takedown or a non-lethal blow on a person right next to you: knocks them out instead of killing. Best from behind, from cover, with a club and with Stealth.";
+  const ko = b.units.filter((t) => t.side === "enemy" && t.ko && !t.tied && !t.dead && adjacent(u, t));
+  const bodies = b.units.filter((o) => adjacent(u, o) && dragable(o) && !o.left && !o.fled);
+  const have = throwablesOf(state, b, u);
+  const kinds = THROW_KEYS.filter((k) => have[k]);
+  let html = btn("subdue", "Subdue", subTip, ap > 0 && near.length > 0, "C");
+  html += btn("tie", "Tie up", "1 action: tie up someone knocked out next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it).", ap > 0 && ko.length > 0, "T");
+  html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "D");
+  if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
+  for (const k of kinds) {
+    const T = THROWABLES[k];
+    html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}. ${have[k]} left.`)}">Throw ${esc(GEAR[k].name.toLowerCase())} (${have[k]})${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
+  }
+  return html;
+}
+
+// ---------- the deploy step (sim/deploy.js) ----------
+function deployPanel(state, b, u) {
+  const D = b.deploy || {};
+  const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
+  const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
+  let html = `<h3>Deploy · the attack comes from the ${esc(D.side || "east")}</h3>
+    <div class="small muted">Click a defender, then a green cell to place them: anywhere inside the walls, in the gate or a breach (orange: whoever stands there holds it and blocks the way), or on a tower (full cover, +5 aim). The dead come through the openings.</div>
+    <div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
+    <div class="cbactions" style="margin-top:0.4rem">
+      <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
+      <button data-action="cb-deploy" data-v="defaults" data-tip="Back to the default posts: the toughest fighters in the gate (with 7+ defenders), the best shots on the towers, the rest in a line well back from the openings.">Default positions</button>
+    </div>`;
+  if (D.floodlit) {
+    html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the approach: shots at anything in the light get +${b.floodAim}${D.night ? " (night)" : " (day)"}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
+      ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
+  }
+  html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+  if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
+  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
+    ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
+  return html;
+}
+
+// ---------- prisoners on the result screen (sim/prisoners.js) ----------
+function prisonersHtml(b) {
+  const list = (b.result && b.result.prisoners) || [];
+  if (!list.length) return "";
+  const leave = !!b.leavePrisoners;
+  return `<div class="small" style="margin-top:0.5rem"><b>Prisoners:</b> ${esc(list.map((p) => `${p.name} (${p.group})`).join(", "))}. ${leave ? "You will leave them tied up here." : b.setup.baseId != null ? "They go into the cells (1 food and 1 water a day each)." : "They walk home with the team, tied (on foot each slows it 10%, and they may slip away)."}</div>
+    <div class="cbactions" style="margin-top:0.3rem">
+      <button class="${leave ? "" : "active"}" data-action="cb-prison" data-v="take" data-tip="Take them: question them for intel, ransom them, trade them back for goodwill or slowly win them over (the Prisoners tab of the base).">Take them</button>
+      <button class="${leave ? "active" : ""}" data-action="cb-prison" data-v="leave" data-tip="Leave them tied up here. Their group hears of the mercy (goodwill +2).">Leave them</button>
+    </div>`;
 }
 
 function raidResult(state, b) {
@@ -403,6 +555,7 @@ function raidResult(state, b) {
       <div>Killed</div><div>${r.enemiesKilled}${r.extraKilled ? ` (+${r.extraKilled} drawn by Heat)` : ""}</div>
     </div>
     ${b.summary.length ? `<div class="small muted" style="margin-top:0.4rem">${b.summary.map(esc).join("<br>")}</div>` : ""}
+    ${prisonersHtml(b)}
     <button class="primary" style="margin-top:0.7rem;width:100%" data-action="cb-close" data-tip="Return to the State Map. The team then waits for orders.">Continue</button>
   </div>
   <h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
@@ -431,6 +584,7 @@ function resultHtml(state, b) {
       ${bodies ? `<div>Bodies</div><div>${bodies} with things on them</div>` : ""}
     </div>
     ${b.summary.length ? `<div class="small muted" style="margin-top:0.4rem">${b.summary.map(esc).join("<br>")}</div>` : ""}
+    ${prisonersHtml(b)}
     ${bodies ? `<button style="margin-top:0.7rem;width:100%" data-action="loot-open" data-tip="Search the dead one by one: see what each carries and move it to your people or the cargo.">Loot the bodies (${bodies})</button>
     <button class="primary" style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="1" data-tip="Take everything that fits (supplies first, then the most valuable items) and return to the State Map. (Enter)">Take all and continue</button>
     <button style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="0" data-tip="Return to the State Map. What is left on the bodies stays where they fell: a death site scavengers strip over the next days.">Leave the rest and continue</button>` :
@@ -441,6 +595,11 @@ function resultHtml(state, b) {
 
 // Odds for the selected unit against a target: shot if it can, melee if adjacent.
 function odds(b, u, t) {
+  if (cui.mode === "subdue") {
+    if (!canSubdue(u, t)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
+    const o = subdueOdds(b, u, t);
+    return { ...o, ok: true, label: o.label };
+  }
   if ((cui.mode === "melee" || !canFire(b, u)) && adjacent(u, t)) {
     const o = meleeOdds(b, u, t);
     return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage` };
@@ -460,10 +619,26 @@ function previewHtml(b) {
   const t = unitAt(b, h.x, h.y);
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
+    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
-  if (t && t.side === "player") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}</span>`;
+  // The knocked out (sim/stealth.js).
+  if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
+  if (t && t.side === "player") {
+    if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""}</span>`;
+  }
+  if (b.phase === "deploy") {
+    const k = b.cells[h.y * W + h.x].k;
+    const where = k === "gate" ? "The gate: whoever stands here holds it." : k === "breach" ? "A breach in the wall: whoever stands here holds it." : k === "tower" ? "A watchtower: full cover from anything not next to it, +5 aim." : "";
+    if (canPlace(b, h.x, h.y)) return `${where ? `<b>${where}</b> ` : ""}Click to place ${selUnit(b) ? esc(selUnit(b).name) : "the selected defender"} here.`;
+    if (b.lit && b.lit[h.y * W + h.x]) return "Floodlit: shots at anything here get the light's bonus.";
+  }
+  const lure = (b.lures || []).find((l) => l.x === h.x && l.y === h.y);
+  if (lure) return `<b>${esc(GEAR[lure.key].name)}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
   if (b.raid) {
+    const lockText = lockPreview(b, u, h.x, h.y); // ui/locks.js: a locked container or door
+    if (lockText) return lockText;
     const box = boxAt(b, h.x, h.y);
     if (box) {
       const hint = box.kind === "body" ? "Ammo, maybe food, meds or their gear." : areaHint(b.raid.areas[box.area].type) + ".";
@@ -553,10 +728,13 @@ export function drawCombat(state, now) {
   }
 
   if (b.raid) drawRaidOverlay(b, cs);
+  drawBaseOverlay(b, cs); // the deploy step and floodlights (sim/deploy.js)
 
-  // Fog: tiles none of your people can see.
-  ctx.fillStyle = "rgba(5,6,8,0.5)";
+  // Fog: tiles none of your people can see (darker on a night raid).
+  ctx.fillStyle = b.night ? "rgba(3,5,14,0.7)" : "rgba(5,6,8,0.5)";
   for (let i = 0; i < W * H; i++) if (!v.vis[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+  if (b.night) drawLights(b, cs); // flashlight cones (sim/stealth.js)
+  drawLures(b, cs, now); // thrown bottles, noise makers, firecrackers
 
   // Movement range: blue = 1 action, yellow = dash.
   if (v.reach && cui.mode === "move" && u) {
@@ -643,9 +821,11 @@ export function drawCombat(state, now) {
 
   // Phase banner.
   const heatTag = b.raid ? ` · HEAT ${HEAT_NAMES[Math.min(3, Math.floor(b.raid.heat / 25))].toUpperCase()}` : "";
+  const nightTag = b.night ? " · NIGHT" : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}` : `ENEMY TURN${heatTag}`;
-  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "player" ? "#8fb4e0" : "#e2685f";
+    b.phase === "deploy" ? `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}` :
+    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${nightTag}` : `ENEMY TURN${heatTag}${nightTag}`;
+  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center";
   const tw = ctx.measureText(label).width + 28;
@@ -700,6 +880,92 @@ function drawRaidOverlay(b, cs) {
     ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
     ctx.font = `700 ${Math.max(8, Math.round(s * 0.8))}px Segoe UI, sans-serif`;
     ctx.fillText(c.searched ? "✓" : "?", px + cs - s / 2 - 2, py + 2 + s * 0.8);
+  }
+  drawLocks(ctx, b, ox, oy, cs); // ui/locks.js: locked doors and padlocks
+}
+
+// A base's battle map (sim/deploy.js): the floodlit area, and while deploying the cells defenders may take
+// (green), the gate and breaches (orange) and an arrow on the side the attack comes from.
+function drawBaseOverlay(b, cs) {
+  const { ox, oy } = geo;
+  if (b.lit && b.floodAim) {
+    ctx.fillStyle = "rgba(255,236,150,0.16)";
+    for (let i = 0; i < W * H; i++) if (b.lit[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+  }
+  const D = b.deploy;
+  if (!D || b.phase !== "deploy") return;
+  const band = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) band[i] = canPlace(b, i % W, (i / W) | 0) ? 1 : 0;
+  ctx.fillStyle = "rgba(108,196,138,0.13)";
+  for (let i = 0; i < W * H; i++) if (band[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+  outline(band, (k) => k === 1, "rgba(108,196,138,0.8)");
+  ctx.strokeStyle = "#e0a84f";
+  ctx.lineWidth = 2.5;
+  for (const [x, y] of [...D.gate, ...D.breaches]) ctx.strokeRect(ox + x * cs + 2, oy + y * cs + 2, cs - 4, cs - 4);
+  // The arrow: on the edge they come from, pointing in.
+  const dir = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] }[D.side] || [1, 0];
+  const s = cs * 0.5;
+  const ax = ox + (W / 2) * cs + dir[0] * ((W / 2) * cs - s * 1.4), ay = oy + (H / 2) * cs + dir[1] * ((H / 2) * cs - s * 1.4);
+  ctx.fillStyle = "#e2685f";
+  ctx.beginPath();
+  ctx.moveTo(ax - dir[0] * s * 0.2, ay - dir[1] * s * 0.2);
+  ctx.lineTo(ax + dir[0] * s + dir[1] * s * 0.7, ay + dir[1] * s + dir[0] * s * 0.7);
+  ctx.lineTo(ax + dir[0] * s - dir[1] * s * 0.7, ay + dir[1] * s - dir[0] * s * 0.7);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Flashlight cones on a night raid: each light carrier lights a wedge the way it faces.
+function drawLights(b, cs) {
+  const { ox, oy } = geo;
+  for (const u of players(b)) {
+    if (!u.light || !active(u)) continue;
+    const f = u.face && (u.face[0] || u.face[1]) ? u.face : [1, 0];
+    const a = Math.atan2(f[1], f[0]);
+    const cx = ox + (u.x + 0.5) * cs, cy = oy + (u.y + 0.5) * cs, r = cs * 4.5;
+    ctx.fillStyle = "rgba(255,240,170,0.16)";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, a - 0.45, a + 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,240,170,0.12)";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r * 0.55, a - 0.3, a + 0.3);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// Thrown things where they landed: the item, and rings while the noise lasts.
+function drawLures(b, cs, now) {
+  const { ox, oy } = geo;
+  for (const l of b.lures || []) {
+    const cx = ox + (l.x + 0.5) * cs, cy = oy + (l.y + 0.5) * cs;
+    const ph = ((now || 0) % 1200) / 1200;
+    ctx.strokeStyle = `rgba(255,209,102,${0.55 * (1 - ph)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, cs * (0.4 + ph * 1.4), 0, Math.PI * 2); ctx.stroke();
+    drawThrowable(l.key, cx, cy, cs);
+  }
+}
+
+// A thrown item, small, at (cx, cy): a green bottle, a bell on a timer, a red string of firecrackers.
+function drawThrowable(key, cx, cy, cs) {
+  const s = cs * 0.22;
+  if (key === "bottle") {
+    ctx.fillStyle = "#3f7a4a"; roundRect(cx - s * 0.45, cy - s * 0.3, s * 0.9, s * 1.3, s * 0.25); ctx.fill();
+    ctx.fillStyle = "#3f7a4a"; ctx.fillRect(cx - s * 0.18, cy - s * 0.85, s * 0.36, s * 0.6);
+    ctx.fillStyle = "rgba(200,255,210,0.5)"; ctx.fillRect(cx - s * 0.3, cy - s * 0.15, s * 0.14, s * 0.8);
+  } else if (key === "noisemaker") {
+    ctx.fillStyle = "#c9b048"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.7, Math.PI, 0); ctx.lineTo(cx + s * 0.8, cy + s * 0.3); ctx.lineTo(cx - s * 0.8, cy + s * 0.3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#e6e2d8"; ctx.fillRect(cx - s * 0.5, cy + s * 0.3, s, s * 0.45);
+    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(cx - s * 0.05, cy + s * 0.38, s * 0.1, s * 0.3);
+  } else {
+    ctx.fillStyle = "#c8362e";
+    for (let i = 0; i < 4; i++) ctx.fillRect(cx - s * 0.9 + i * s * 0.48, cy - s * 0.25 + (i % 2) * s * 0.2, s * 0.32, s * 0.5);
+    ctx.strokeStyle = "#e0a84f"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy - s * 0.2); ctx.stroke();
   }
 }
 
@@ -884,6 +1150,28 @@ function drawObject(k, px, py, cs, n) {
       ctx.fillStyle = "#4a3a28"; ctx.fillRect(px, py + cs * 0.2, cs, cs * 0.08); ctx.fillRect(px, py + cs * 0.72, cs, cs * 0.08);
       ctx.fillStyle = "#8a6a44"; ctx.fillRect(px + cs * 0.3, py + cs * 0.1, cs * 0.06, cs * 0.25); ctx.fillRect(px + cs * 0.66, py + cs * 0.1, cs * 0.06, cs * 0.25); // stakes
       break;
+    // A base's wall line on a break-in map (sim/deploy.js).
+    case "palisade":
+      ctx.fillStyle = "#3a2e22"; ctx.fillRect(px, py, cs, cs);
+      ctx.fillStyle = "#7a5f40"; for (let i = 0; i < 4; i++) ctx.fillRect(px + cs * (0.05 + i * 0.24), py + cs * 0.06, cs * 0.18, cs * 0.88);
+      ctx.fillStyle = "#9a7a52"; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(px + cs * (0.05 + i * 0.24), py + cs * 0.1); ctx.lineTo(px + cs * (0.14 + i * 0.24), py); ctx.lineTo(px + cs * (0.23 + i * 0.24), py + cs * 0.1); ctx.fill(); }
+      ctx.fillStyle = "#5a5a58"; ctx.fillRect(px, py + cs * 0.42, cs, cs * 0.1); // a sheet-metal brace
+      break;
+    case "gate":
+      ctx.fillStyle = "#5a4630"; ctx.fillRect(px + cs * 0.02, py, cs * 0.16, cs); ctx.fillRect(px + cs * 0.82, py, cs * 0.16, cs);
+      ctx.save(); ctx.translate(px + cs * 0.2, py + cs * 0.1); ctx.rotate(0.5);
+      ctx.fillStyle = "#7a5f40"; ctx.fillRect(0, 0, cs * 0.5, cs * 0.14); ctx.restore(); // a gate leaf hanging off its hinge
+      break;
+    case "breach":
+      ctx.fillStyle = "#6b5a44";
+      for (let i = 0; i < 5; i++) { const n2 = (n * 7 + i * 0.37) % 1; ctx.fillRect(px + cs * (0.1 + n2 * 0.7), py + cs * (0.1 + ((n2 * 5) % 1) * 0.75), cs * 0.16, cs * 0.12); }
+      ctx.strokeStyle = "#3a2e22"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + cs * 0.15, py); ctx.lineTo(px + cs * 0.3, py + cs * 0.25); ctx.moveTo(px + cs * 0.85, py + cs); ctx.lineTo(px + cs * 0.7, py + cs * 0.75); ctx.stroke();
+      break;
+    case "tower":
+      ctx.fillStyle = "#4a3a28"; ctx.fillRect(px + cs * 0.08, py + cs * 0.08, cs * 0.84, cs * 0.84);
+      ctx.strokeStyle = "#8a6a44"; ctx.lineWidth = 2; ctx.strokeRect(px + cs * 0.08, py + cs * 0.08, cs * 0.84, cs * 0.84);
+      ctx.beginPath(); ctx.moveTo(px + cs * 0.08, py + cs * 0.08); ctx.lineTo(px + cs * 0.92, py + cs * 0.92); ctx.moveTo(px + cs * 0.92, py + cs * 0.08); ctx.lineTo(px + cs * 0.08, py + cs * 0.92); ctx.stroke();
+      break;
     case "hivewall":
       ctx.fillStyle = "#3a161c"; ctx.fillRect(px, py, cs, cs);
       ctx.fillStyle = n > 0.5 ? "#6a2a30" : "#5a2a2e"; ctx.beginPath(); ctx.ellipse(cx, cy, cs * 0.46, cs * 0.42, n * 2, 0, Math.PI * 2); ctx.fill();
@@ -913,7 +1201,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     }
     return;
   }
-  if (t.down) ring = t.stab ? "#6cc48a" : "#e2685f";
+  if (t.down) ring = t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f"; // ko: knocked out (sim/stealth.js)
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player" && !t.down;
   // Ground ring (side color) and shadow.
   ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -929,11 +1217,18 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
   }
   drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy - (t.boss ? cs * 0.12 : 0), t.boss ? cs * 1.3 : cs, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 }); // bosses stand taller
+  if (t.down && t.tied) {
+    // Tied up: rope around the wrists and ankles of the lying prisoner.
+    ctx.strokeStyle = "#c9a74a";
+    ctx.lineWidth = Math.max(2, cs * 0.06);
+    for (const dx of [-0.24, 0.2]) { ctx.beginPath(); ctx.ellipse(cx + cs * dx, cy + cs * 0.12, cs * 0.07, cs * 0.16, 0, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(cx - cs * 0.24, cy + cs * 0.12); ctx.quadraticCurveTo(cx, cy + cs * 0.3, cx + cs * 0.2, cy + cs * 0.12); ctx.stroke();
+  }
   if (t.down) {
     ctx.fillStyle = ring;
-    ctx.font = `800 ${Math.round(cs * 0.3)}px Segoe UI, sans-serif`;
+    ctx.font = `800 ${Math.round(cs * (t.ko ? 0.24 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(t.stab ? "+" : "!", cx, cy - cs * 0.12);
+    ctx.fillText(t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", cx, cy - cs * 0.12);
   }
   // Health bar.
   const bw = cs * 0.72, bx = cx - bw / 2, by = cy + cs * 0.42;
@@ -950,7 +1245,8 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   const tags = [];
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
-  if (t.side === "enemy" && !t.aware) tags.push(["?", "#ffd166"]);
+  if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]); // ??: going to look at a noise
+  if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : "T", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
   ctx.font = `700 ${Math.max(9, Math.round(cs * 0.2))}px Segoe UI, sans-serif`;
   tags.forEach(([txt, col], i) => {
@@ -997,8 +1293,19 @@ function drawFx(b, now, cs) {
       ctx.lineTo(tx + (f.hit ? 0 : cs * 0.3), ty + (f.hit ? 0 : -cs * 0.2));
       ctx.stroke();
     }
+    // A throw (sim/stealth.js): the item flies in an arc and lands; the lure ring stays (drawLures).
+    if (f.type === "throw") {
+      if (el < 500) {
+        const k = el / 500, fx0 = ox + (f.from[0] + 0.5) * cs, fy0 = oy + (f.from[1] + 0.5) * cs;
+        const px = fx0 + (tx - fx0) * k, py = fy0 + (ty - fy0) * k - Math.sin(k * Math.PI) * cs * 1.2;
+        ctx.strokeStyle = "rgba(255,209,102,0.35)"; ctx.lineWidth = 1.5; ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(fx0, fy0); ctx.quadraticCurveTo((fx0 + tx) / 2, (fy0 + ty) / 2 - cs * 2.4, tx, ty); ctx.stroke(); ctx.setLineDash([]);
+        drawThrowable(f.item, px, py, cs);
+      }
+      continue;
+    }
     const a = Math.max(0, 1 - el / 1400);
-    const text = f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
+    const text = f.text ? f.text : f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(cs * (f.crit ? 0.36 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
     ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;

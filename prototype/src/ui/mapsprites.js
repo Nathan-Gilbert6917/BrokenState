@@ -1340,6 +1340,71 @@ function paintTownCenter() {
   return p;
 }
 
+// ---- crash events (sim/crashes.js): temporary sites where something came down ----
+// A helicopter on its side on scorched ground, tail boom snapped, a rotor blade bent up, burning. mark: "star"
+// (Army), "cross" (medevac), "stripe" (news).
+function paintHeliWreck(body, trim, mark) {
+  const p = painter(22, 15);
+  p.rect(1, 13, 20, 14, "#3a342c"); p.rect(3, 12, 18, 12, "#4a4034");
+  p.rect(5, 8, 13, 12, body); p.rect(5, 8, 13, 8, shade(body, 0.25)); p.rect(5, 12, 13, 12, shade(body, -0.3));
+  p.rect(12, 9, 14, 11, body); p.set(15, 10, body); p.rect(13, 9, 14, 10, GLASS_BLUE); p.set(14, 10, DARK_WIN);
+  p.rect(7, 9, 8, 11, DARK_WIN);
+  for (let i = 0; i < 5; i++) { p.set(4 - i, 10 - i, shade(body, -0.1)); p.set(4 - i, 11 - i, shade(body, -0.25)); }
+  p.rect(0, 3, 1, 6, trim);
+  for (let i = 0; i < 8; i++) p.set(9 + i, 7 - Math.floor(i / 2), "#2c2c2c");
+  p.rect(9, 7, 10, 7, "#454545");
+  if (mark === "star") star(p, 9, 8, WHITE);
+  if (mark === "cross") { p.rect(9, 9, 11, 11, WHITE); redCross(p, 9, 9); }
+  if (mark === "stripe") { p.rect(5, 10, 6, 10, trim); p.rect(9, 10, 11, 10, trim); }
+  p.set(15, 11, FIRE_RED); p.set(16, 11, FIRE); p.set(16, 10, FIRE_HOT); p.set(17, 11, FIRE); p.set(15, 9, FIRE); p.set(16, 9, "#ffb43b99");
+  for (const [x, y] of [[14, 8], [17, 9], [18, 11]]) p.set(x, y, GLOW);
+  plume(p, 16, 7, 4);
+  for (const [x, y] of [[2, 13], [19, 13], [11, 14]]) p.set(x, y, "#8a8a8a");
+  return p;
+}
+// A cargo plane in olive drab, broken in two, crates spilled from the hold.
+function paintCargoWreck() {
+  const p = painter(22, 15);
+  const B = OLIVE, L = shade(OLIVE, 0.25), D = shade(OLIVE, -0.3);
+  p.rect(0, 13, 21, 14, "#3a342c"); p.rect(2, 12, 19, 12, "#4a4034");
+  p.rect(0, 8, 7, 11, B); p.rect(0, 8, 7, 8, L); p.rect(0, 11, 7, 11, D);
+  p.rect(0, 3, 2, 7, B); p.rect(0, 3, 2, 3, L); p.set(3, 7, B);
+  p.set(3, 9, DARK_WIN); p.set(5, 9, DARK_WIN);
+  p.rect(10, 9, 16, 12, B); p.rect(10, 9, 16, 9, L); p.rect(17, 10, 18, 12, B); p.set(19, 12, B);
+  p.rect(17, 10, 18, 10, GLASS_BLUE); p.set(12, 10, DARK_WIN); p.set(14, 10, DARK_WIN);
+  p.rect(10, 9, 10, 12, "#3a3a3a"); p.rect(7, 8, 7, 11, "#3a3a3a");
+  for (let i = 0; i < 4; i++) { p.set(12 + i, 8 - i, L); p.set(13 + i, 8 - i, D); }
+  crate(p, 7, 12, 3, 2); crate(p, 19, 11, 3, 3, WOOD);
+  p.set(8, 10, FIRE_RED); p.set(9, 10, FIRE); p.set(8, 9, FIRE_HOT); p.set(9, 9, FIRE); p.set(9, 8, "#ffb43b99");
+  for (const [x, y] of [[7, 7], [10, 7]]) p.set(x, y, GLOW);
+  plume(p, 8, 6, 3);
+  return p;
+}
+// A supply drop: a striped parachute draped over the ground, pallets of crates strapped down.
+function paintAirDrop() {
+  const p = painter(20, 14);
+  p.rect(0, 12, 19, 13, shade(YARD, 0.15));
+  for (let y = 3; y <= 7; y++) {
+    const half = y - 2;
+    for (let x = 5 - half; x <= 5 + half; x++) p.set(x, y, ((x + 10) >> 1) % 2 ? "#e8743a" : WHITE);
+  }
+  for (const [x0, x1] of [[1, 6], [5, 7], [9, 8]]) for (let i = 0; i <= 3; i++) p.set(Math.round(x0 + ((x1 - x0) * i) / 3), 8 + i, "#c9c2b0");
+  crate(p, 6, 8, 5, 4, WOOD_LIT); crate(p, 11, 9, 4, 3, WOOD); crate(p, 15, 8, 4, 4, OLIVE);
+  for (const x of [8, 13, 17]) p.rect(x, 8, x, 11, "#2c2c2c");
+  return p;
+}
+// Where something came down but nobody has found it: a smoke column over the trees.
+function paintSearchSmoke() {
+  const p = painter(10, 16);
+  p.rect(1, 14, 8, 15, shade("#3e5a32", -0.1)); p.rect(2, 12, 4, 14, "#3e5a32"); p.rect(5, 11, 7, 14, "#456a38");
+  p.set(4, 12, FIRE); p.set(5, 12, FIRE_RED); p.set(4, 11, "#ffb43b99");
+  for (let i = 0; i < 6; i++) {
+    const cx = 4 + Math.round(Math.sin(i * 0.9) * 1.2), cy = 10 - i * 2;
+    p.set(cx, cy, i < 3 ? "#5a5a5acc" : SMOKE); p.set(cx + 1, cy, SMOKE_FAINT); p.set(cx - 1, cy - 1, SMOKE_FAINT); if (i > 2) p.set(cx + 1, cy - 1, SMOKE_FAINT);
+  }
+  return p;
+}
+
 // Type → painter; the variant (only "depot" for now) and picked-over fading are applied by poiSpriteCanvas.
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
@@ -1349,6 +1414,8 @@ const POI_PAINT = {
   farm: paintFarm, barn: paintBarn, ranch: paintRanch, cabin: paintCabin, lodge: paintLodge, campground: paintCampground, ranger: paintRanger,
   radiotower: paintRadioTower, truckstop: paintTruckStop, quarry: paintQuarry, crashsite: paintCrashSite,
   dam: paintDam, airport: paintAirport, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
+  crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
+  crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
 };
 
 // Grays a painter's colors (keeping see-through pixels see-through): picked-over sites.
@@ -1943,6 +2010,9 @@ export function poiSpriteCanvas(type, variant = "", faded = false) {
     return faded ? fade(p) : p;
   });
 }
+
+// The smoke column over a crash search circle (render.js, sim/crashes.js).
+export const searchSmokeCanvas = () => cached("searchsmoke", paintSearchSmoke);
 
 // Danger pip (a skull): render.js draws a row of them under a site's name when zoomed in.
 export const skullCanvas = () => cached("skull", paintSkull);

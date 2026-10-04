@@ -36,6 +36,8 @@ import { planPath, spawnAiParty } from "./parties.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
+import { marketOf } from "./trade.js";
+import { diplomacyDaily } from "./diplomacy.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -289,6 +291,7 @@ export function radioDaily(state) {
     if (f.wares && today - (f.waresDay || 0) >= 7) ensureWares(state, f, true);
     grudgeRaid(state, f);
   }
+  diplomacyDaily(state); // diplomacy.js: relations, pacts and wars between groups, market lists, jobs, the coalition
   if (!hasNetwork(state)) return;
   for (const f of state.factions) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f)) continue;
@@ -327,9 +330,11 @@ export function offerCard(state, f) {
   if (!base) return null;
   const speech = radioSpeech(state);
   const keys = SUPPLY_KEYS;
-  // What they are short of and you can spare; what they have plenty of.
-  const wants = keys.filter((k) => need(f, k) >= 1.4 && hubSpare(state, k) >= 3).sort((a, b) => need(f, b) - need(f, a));
-  const spare = keys.filter((k) => need(f, k) <= 0.9 && available(f, k) >= 5).sort((a, b) => need(f, a) - need(f, b));
+  // What they are short of and you can spare; what they have plenty of: this week's wants and surplus lists
+  // (trade.js marketOf), most wanted / most plentiful first.
+  const m = marketOf(state, f);
+  const wants = m.wants.map((x) => x.key).filter((k) => hubSpare(state, k) >= 3);
+  const spare = m.surplus.map((x) => x.key).filter((k) => available(f, k) >= 5);
   if (!spare.length) return null;
   const rng = state.rng;
   const payKey = spare[0];

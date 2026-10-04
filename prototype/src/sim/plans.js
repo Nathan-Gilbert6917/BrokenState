@@ -29,6 +29,7 @@ export const GATHER_STEP_HOURS = 3;
 export const CHECKIN_HOURS = 12;    // a waiting team out of contact reports in again after this
 export const CAMP_CHECKIN = 24;     // an open-ended camp out of contact reports in once a day
 export const RICH_LOOT = 0.55;      // a site this rich in sight and not on the plan raises a card
+export const SEARCH_AREA_HOURS = 22; // the estimate for "Search the area": about 3 looks with short moves, then a search
 
 // Step kinds the planner offers (kind → label, default fields).
 export const STEP_KINDS = {
@@ -39,6 +40,7 @@ export const STEP_KINDS = {
   gather:   { label: "Gather boat materials (3h)", desc: "Search the shore for scrap (only on a shore with a crossing)." },
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
+  searcharea: { label: "Search the area", desc: "Find a downed aircraft or supply drop in its search circle: look around at the spots that clear the most unsearched ground (2h each, up to 8), then search the wreck when it turns up (crashes.js)." },
   home:     { label: "Return home", desc: "Head back with everything carried. The plan ends there." },
 };
 
@@ -97,6 +99,7 @@ export function stepsToOrders(state, steps, tile) {
       case "gather": out.push({ type: "gather", ...place }); break;
       case "wait": out.push({ type: "wait", hours: Math.max(1, Math.round(s.hours || 6)) }); break;
       case "move": if (s.tile != null) { out.push({ type: "move", tile: s.tile }); at = s.tile; known = true; } break;
+      case "searcharea": out.push({ type: "searcharea", crash: s.crash ?? null, explore: s.explore !== false }); known = false; break;
       case "home": out.push({ type: "home" }); return out; // nothing runs after going home
     }
   }
@@ -151,6 +154,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     else if (s.kind === "gather") stay("Gather materials", GATHER_STEP_HOURS);
     else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24);
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
+    else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
     else if (s.kind === "move" && s.tile != null) { if (!travel(s.tile, `To ${tileLabel(state, s.tile)}`)) { open = true; break; } }
     else if (s.kind === "nearby") {
       const center = s.center ?? tile;

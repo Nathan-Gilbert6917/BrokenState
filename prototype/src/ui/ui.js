@@ -47,6 +47,10 @@ import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
+import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote } from "./diplomacy.js";
+import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
+import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
+import { prisonTab } from "./prisoners.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -224,7 +228,7 @@ function renderGroups(state) {
   const known = state.factions.filter((f) => f.known);
   const unknown = state.factions.filter((f) => !f.known && f.alive).length;
   const routes = state.routes.filter((r) => r.active);
-  return `${groupsRadioHeader(state)}
+  return `${groupsRadioHeader(state)}${groupsDiploHeader(state)}
     ${known.length ? known.map((f) => {
       const a = attitude(f);
       const route = routes.find((r) => r.factionId === f.id);
@@ -233,6 +237,7 @@ function renderGroups(state) {
         <div class="small muted">${FACTION_TYPES[f.type].label} · about ${f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</div>
         <div class="row small"><span class="muted" style="width:4.5rem"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>Goodwill</span><div style="flex:1">${bar((f.goodwill + 100) / 2, attColor(a))}</div><span>${Math.round(f.goodwill)}</span></div>
         ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
+        ${groupCardExtras(state, f)}
         ${f.alive ? `<div class="row" style="margin-top:0.35rem">
           <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
           ${canRadio(state, f) ? `<button data-action="rd-open" data-id="${f.id}"${tip("Radio panel: greet, ask for news, ask for a trade caravan, make a deal, call for help, pacts")}>Radio…</button>` : ""}${f.heard ? `<span class="small muted"${tip("You found them by scanning the airwaves")}>heard on the radio</span>` : ""}
@@ -420,6 +425,7 @@ function pickModal(state, ui) {
   if (state.cards.length) return ["card", () => cardModal(state, state.cards[0])];
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
   if (state.trade && !state.autopilot) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js
+  if (ui.diplo) return ["diplo", () => diplomacyModal(state, ui)]; // ui/diplomacy.js: jobs, market board, world affairs, coalition (over the radio panel)
   if (ui.radioWith != null) return ["radio", () => radioModal(state, ui)];
   if (ui.caravanPlan) return ["caravan", () => caravanPlanModal(state, ui)];
   if (ui.planner) return ["planner", () => plannerModal(state, ui)];
@@ -446,6 +452,15 @@ export function modalKind(state, ui) {
 // The new-run setup screen lives in ui/newgame.js (newRunScreen).
 
 function gameOverScreen(state) {
+  if (state.victory && state.victoryReason === "alliance") {
+    const st = hiveTracker(state).stats;
+    const a = goalsProgress(state).alliance;
+    return `<div class="box"><h1>${esc(ALLIANCE.NAME)} holds the state</h1>
+    <div class="text">Victory by alliance: the coalition holds ${Math.round(a.land.pct * 100)}% of the land (more than half), every group still standing (${a.groups}) is a member, and no hive is left. ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
+    <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, the hives rising and falling, hordes, teams and your holdout")}>Watch the timelapse</button>` : ""}
+    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    <button class="primary" data-action="restart">New campaign</button></div></div>`;
+  }
   if (state.victory) {
     const st = hiveTracker(state).stats;
     return `<div class="box"><h1>Every hive is destroyed</h1>
@@ -481,6 +496,7 @@ function helpModal() {
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it).<br>
     <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. One left behind is marked on the map: bring fuel (and a part if it is badly damaged) to recover it.<br>
     <b>Groups:</b> neutral groups turn hostile if you crowd them. Radio contact, gifts and trade keep them steady; pacts stop raids and open trade routes. Hostile groups raid and take captives (rescue, ransom or goodwill gets them back).<br>
+    <b>Diplomacy:</b> groups post jobs (Groups tab → Jobs; accepted jobs are tagged on the map and listed in the planner), fight wars and sign pacts with each other (World affairs: broker a ceasefire or join a side), and show what they want and have spare (Market board). Invite groups that trust you into the Calder Coalition: hold over half the land with every group left in it and no hive standing, and the coalition wins.<br>
     <b>Radio:</b> a radio station reaches 8 tiles; a radio relay at an outpost (no operator, 1 part every 10 days) adds 6 tiles when a station or another linked relay is in range, so relays chain coverage outward (dashed circles on the map; red = not linked or off the air). Groups within reach (their radios add 4 tiles) can be called from the Groups tab (Radio…): greet, ask for news, ask for a trade caravan, make a deal ("we want 20 meds, paying 60 ammo"), call for help, pacts. <i>Scan the airwaves</i> finds groups in reach you have not met. Groups call you too, with offers and requests.<br>
     <b>Trade window:</b> two columns, yours and theirs: every supply with steppers, every item one by one. Items are valued by what they are, their condition and the uses left; supplies by how short the group is of them. They pay you less than they charge (Speech and goodwill narrow the gap); a deal goes through when it is fair for them. <i>Balance with</i> ammo, scrap or food fills the gap. Intel: buy a report of the area (only those tiles lose their fog) or horde sightings, or sell your own maps.<br>
     <b>Caravans:</b> a group's caravan comes to your base for a radio deal and stays a day (Bases tab: Trade). You can attack it for its goods, but the group turns hostile and raids you. Your own trade caravans (Groups tab: New trade caravan…) visit a list of destinations; at each stop: trade, unload, stay a day, go on, or return home.<br>
@@ -594,6 +610,7 @@ function plannerModal(state, ui) {
   const parked = vehiclesAtBase(state, h.id);
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
+    ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
     <div class="row" style="margin-bottom:0.6rem">Mission
       <select data-action="pl-mission"${tip(MISSIONS[pl.mission].desc)}>${missions.map(([k, m]) => `<option value="${k}" ${pl.mission === k ? "selected" : ""} title="${esc(m.desc)}">${m.name}</option>`).join("")}</select>
       <span class="small muted">${MISSIONS[pl.mission].desc}</span></div>
@@ -817,13 +834,15 @@ const BASE_TABS = [
   ["vehicles", "Vehicles", "Fuel, condition, refuel and repair"],
   ["convoys", "Supply runs", "Convoy jobs between your bases: send supplies, bring goods back, on a schedule"],
   ["medical", "Medical", "Infirmary or hospital, medics, beds, and treating the injured with meds"],
+  ["repairs", "Repairs", "Broken buildings and equipment, repair jobs, wear and parked vehicles (breakdowns.js)"],
+  ["prisoners", "Prisoners", "People taken prisoner in battle: cells, guards and food; question, ransom, trade back, win over or release them"],
 ];
 
 function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
   const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical }[tab](state, b, ui);
+  const body = { overview: baseOverview, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -898,7 +917,7 @@ function baseMedical(state, b) {
         const chk = isNext ? canBuild(state, b, k) : null;
         const status = d.tier <= built.tier ? `<span class="chip on">Built</span>` : queued && queued.type === k ? `<span class="chip">Queued</span>` : isNext ? `<button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest (Construction tab)" : chk.reason)}>${d.tier === 1 ? "Build" : "Upgrade"}</button>` : `<span class="muted">Later</span>`;
         return `<div class="card small"${tip(d.desc)}><div class="spread"><b>${d.tier}. ${esc(d.name)}</b>${status}</div>
-          <span class="muted">${d.med.beds} beds · +${d.med.heal}/day · meds ×${d.med.eff} · ${d.med.staff} medic${d.med.staff === 1 ? "" : "s"}${d.med.cures ? " · cleans infections" : d.med.guards ? " · prevents infections" : ""}<br>${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours${d.req ? ` · needs ${Object.entries(d.req).map(([sk, l]) => `${SKILL_NAMES[sk]} ${l}+`).join(", ")}` : ""}${isNext && !chk.ok ? ` · <span class="danger">${esc(chk.reason)}</span>` : ""}</span></div>`;
+          <span class="muted">${d.med.beds} beds · +${d.med.heal}/day · meds ×${d.med.eff} · ${d.med.staff} medic${d.med.staff === 1 ? "" : "s"}${d.med.cures ? " · cleans infections" : d.med.guards ? " · prevents infections" : ""}<br>${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours${d.req ? ` · needs ${Object.entries(d.req).map(([sk, l]) => `${SKILL_NAMES[sk]} ${l}+`).join(", ")}` : ""}${isNext && !chk.ok ? ` · <span class="danger">${esc(chk.reason)}</span>` : ""}</span>${d.tier > built.tier ? lockLine(state, b, "building", k) : ""}</div>`;
       }).join("")}
     </div>
     <div>
@@ -976,7 +995,7 @@ function baseBuildings(state, b) {
   for (const x of b.buildings) groups[x.type] = (groups[x.type] || 0) + 1;
   return `<div class="grid2">
     <div><h3>Built here</h3>${Object.keys(groups).length ? Object.entries(groups).map(([t, n]) => `<div class="card small"${tip(BUILDINGS[t].desc)}><b>${BUILDINGS[t].name}${n > 1 ? ` ×${n}` : ""}</b><br><span class="muted">${BUILDINGS[t].desc}</span></div>`).join("") : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
-    <div><h3>Bonuses</h3><div class="kv small">${buildingSummary(state, b).map(([k, v]) => `<div>${k}</div><div>${esc(v)}</div>`).join("")}</div></div>
+    <div><h3>Bonuses</h3><div class="kv small">${buildingSummary(state, b).map(([k, v]) => `<div>${k}</div><div>${esc(v)}</div>`).join("")}</div>${blueprintsCard(state, b)}</div>
   </div>`;
 }
 
@@ -1006,6 +1025,7 @@ function baseConstruction(state, b) {
         return `<div class="card small"${tip(d.desc)}>
           <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
           <span class="muted">${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours · have ${count(b, k)}/${d.max}${chk.ok ? "" : ` · ${esc(chk.reason)}`}</span>
+          ${lockLine(state, b, "building", k)}
         </div>`;
       }).join("")}
     </div>
@@ -1027,7 +1047,8 @@ function baseArmory(state, b) {
       }).join("")}
       <td class="small">${ensureInv(s) && ["head", "arms", "legs", "backpack"].map((k) => s.gear[k]).filter(Boolean).map((g) => `<span class="chip"${tip(gearTip(g))}>${esc(g.name)}${durTag(g)}</span>`).join("") || "<span class='muted'>—</span>"}
         <div class="muted">Armor ${Math.round(armorPower(s) * 10) / 10} · pockets ${s.pockets.filter(Boolean).length}/${s.pockets.length}</div>
-        <button class="mini" data-action="inv-open" data-id="${s.id}"${tip("Open the paper-doll inventory")}>Inventory</button></td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here to equip.</div>`}`;
+        <button class="mini" data-action="inv-open" data-id="${s.id}"${tip("Open the paper-doll inventory")}>Inventory</button></td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here to equip.</div>`}
+    ${keyRingCard(state)}`;
 }
 
 // ---------- crafting (hand-made, no station) ----------
@@ -1074,6 +1095,7 @@ function baseCrafting(state, b) {
           <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs ? `<span class="chip"${tip("Needs an ammo bench or machine shop at this base")}>Workshop</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
           <span class="muted">${Object.entries(r.in).map(([c, v]) => `${v} ${c}`).join(", ")} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+</span><br>
           <span>→ ${esc(craftOutputText(k))}</span>${chk.ok ? "" : ` · <span class="danger">${esc(chk.reason)}</span>`}
+          ${lockLine(state, b, "craft", k)}
         </div>`;
       }).join("")}
     </div>

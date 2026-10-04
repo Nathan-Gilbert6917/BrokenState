@@ -9,10 +9,13 @@ import { weatherTint } from "../sim/weather.js";
 import { radioNodes } from "../sim/radio.js";
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
+import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
+import { hasKey } from "../sim/locks.js";
+import { jobPins } from "./diplomacy.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
-  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW,
+  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 
 export const HEX = 26;
@@ -169,7 +172,7 @@ function geometry(state) {
     [G.q[i], G.r[i]] = g.cube(t.id);
     G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
     G.water[i] = t.terrain === "water" ? 1 : 0;
-    if (t.loc) G.sites.push(i);
+    if (t.loc && !t.loc.crash) G.sites.push(i); // crash sites come and go: drawn on their own (sim/crashes.js)
     if (t.bridge) {
       const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
       const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
@@ -794,6 +797,48 @@ export function render(state) {
     ctx.globalAlpha = 1;
     sprite(cv, x, y, w, { alpha });
   }
+  // Crash events (sim/crashes.js): until someone finds it, a dashed search circle with a smoke column and the days
+  // left; then the wreck itself on its tile. Drawn every frame, not in the cached site layer: they come and go.
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const c of activeCrashes(state)) {
+    const s = zoomBoost();
+    const left = `${Math.max(0, Math.ceil(daysLeft(state, c)))}d`;
+    if (!c.found) {
+      const px = G.x[c.center], py = G.y[c.center], r = (c.radius + 0.5) * HEX * Math.sqrt(3);
+      if (px + r < minX || px - r > maxX || py + r < minY || py - r > maxY) continue;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,150,60,0.07)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,160,70,0.8)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const cv = searchSmokeCanvas();
+      sprite(cv, px, py - 6 * s, 20 * s);
+      pill(px + 13 * s, py - 18 * s, `? ${left}`, "#a0521c", s);
+      continue;
+    }
+    const px = G.x[c.tile], py = G.y[c.tile];
+    if (px < minX || px > maxX || py < minY || py > maxY) continue;
+    const t = state.tiles[c.tile];
+    const cv = poiSpriteCanvas(t.loc ? t.loc.type : "crashsite", "", c.stripped > 0 || (t.loot || 0) < 0.3);
+    const w = (gridW(cv) || 22) * POI_PX * 1.3 * s, h = spriteH(cv, w);
+    ctx.beginPath();
+    ctx.ellipse(px, py + 7 * s, Math.max(9 * s, w * 0.46), 4.5 * s, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fill();
+    ctx.strokeStyle = "#ff9f43";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    sprite(cv, px, py + 7 * s - h / 2, w);
+    pill(px + w / 2, py - h / 2, left, "#a0521c", s);
+    labels.push({ text: t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].name : "Wreck", x: px, y: py + 7 * s + 12, pri: 1, screen: true, color: "#ffb07a", size: 9 });
+  }
+  ctx.restore();
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.
   for (let a = 0; on("hordes") && a < G.nHorde; a++) {
@@ -858,6 +903,11 @@ export function render(state) {
   for (const p of state.parties) {
     if (p.owner !== "player" || !on("teams")) continue;
     drawPlayerParty(state, p);
+  }
+  // Jobs you took for other groups (ui/diplomacy.js jobPins): a gold tag with the job's icon over its target.
+  if (on("teams")) for (const pin of jobPins(state)) {
+    const [px, py] = g.toPixel(pin.tile, HEX);
+    pill(px, py - 24 * zoomBoost(), `${pin.icon} Job`, "#9a7410", zoomBoost());
   }
   // Names (and danger skulls) last, so nothing drawn on the map covers them.
   drawLabels(labels, spriteBoxes);
@@ -1239,10 +1289,13 @@ export function tileTooltip(state, id) {
   else lines.push(`<span class="muted">No current intel</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
+  for (const pin of jobPins(state)) if (pin.tile === id) lines.push(`<span style="color:#e0b84f">${pin.icon} Job: ${pin.label.replace(/[&<>"]/g, "")}</span>`); // ui/diplomacy.js
   // Heat of your teams standing here (sim/fieldheat.js): what the bar under the sprite means.
   for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || p.radioLive) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
+  for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
+  if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   return lines.join("<br>");
 }
 

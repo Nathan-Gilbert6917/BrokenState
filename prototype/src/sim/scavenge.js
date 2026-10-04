@@ -12,6 +12,7 @@ import { tickHour } from "./world.js";
 import { searchHazards } from "./health.js";
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
+import { lockedSearchHour } from "./locks.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -166,6 +167,8 @@ export function searchHour(state) {
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
   const book = rollBook(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`);
   if (book) { e.found.gear.push(book); finds.push(book.name); }
+  // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
+  const locked = lockedSearchHour(state, e, p, members);
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
 
   // Heat.
@@ -176,7 +179,7 @@ export function searchHour(state) {
   const stage = heatStage(e.heat);
 
   // Encounters.
-  let line = finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.";
+  let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + locked;
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0);
     const ammoUse = e.approach === "loud" ? members.length * 6 : members.length * 2;

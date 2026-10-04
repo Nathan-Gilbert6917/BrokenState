@@ -40,9 +40,13 @@ import { ensureInv } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason } from "./weather.js";
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
+import { planBlueprintStudy } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
+import { autoDiplomacyDaily } from "./alliance.js";
+import { jobTripCands } from "./jobs.js";
+import { autopilotPrisoners } from "./prisoners.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -204,6 +208,13 @@ export function autopilotDaily(state) {
   planTrip(state);
   const service = relAutopilotDaily(state); // relations.js: a memorial service when people grieve or spirits are low
   if (service) say(state, service);
+  // Jobs, the coalition and wars (alliance.js): deliveries fetched, qualifying groups invited, Aggressive sells
+  // ammo to groups at war. Job offers and war calls are cards (their choices carry the governor's scores).
+  const diplo = autoDiplomacyDaily(state, gov(state).personality);
+  if (diplo) say(state, diplo);
+  // prisoners.js: question them, then trade back (Cautious), ransom (Balanced) or slowly recruit (Aggressive).
+  const held = autopilotPrisoners(state);
+  if (held) say(state, `Prisoners: ${held}`);
   // Cautious: scan the airwaves and make a radio deal for whatever is below its reserve (reserveRadio).
   if (persona(state).reserves && reserveRadio(state)) return;
   // Short of something and a group in radio reach has it: a radio deal (radio.js), their caravan brings it.
@@ -1047,6 +1058,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
     addGuards(Math.max(threat.standing, threat.urgent * P.guardMargin), Math.ceil(people.length * 0.35));
   }
 
+  // 4c. A manual or blueprint in the armory: the best qualified free person studies it (blueprints.js; the Read role).
+  if (!threat.urgent && foodDays >= 4) planBlueprintStudy(state, base, free, give);
+
   // 5. Builders while something is queued: more for big jobs.
   if (areas.building && base.construction.length) {
     const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0);
@@ -1277,8 +1291,17 @@ function buildWishes(state, base) {
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
-  // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high.
-  if (BUILDINGS.common_room && count(base, "common_room") + queued("common_room") < (here.length > 15 ? 2 : 1) && pop >= 8 && (st.scrap || 0) >= 35 && here.reduce((a, s) => a + s.mood, 0) / Math.max(1, here.length) < 85) add("common_room", "somewhere to unwind (mood)");
+  // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high (saved up for
+  // when they sag below 75), or as planned comfort for a big hub: at 12+ people once there is scrap for it, saved up
+  // for at 15+. A hub with only beds and food settles in the 70s-80s; comfort is what takes it near 100.
+  if (BUILDINGS.common_room && count(base, "common_room") + queued("common_room") < (here.length > 15 ? 2 : 1)) {
+    const avgMood = here.reduce((a, s) => a + s.mood, 0) / Math.max(1, here.length);
+    const none = !count(base, "common_room") && !queued("common_room");
+    if (pop >= 8 && avgMood < 75) add("common_room", "spirits are low (mood)", none);
+    else if (pop >= 8 && (st.scrap || 0) >= 35 && avgMood < 85) add("common_room", "somewhere to unwind (mood)");
+    else if (none && here.length >= 15) add("common_room", "somewhere to unwind for a big hub", true);
+    else if (none && here.length >= 12 && (st.scrap || 0) >= 35) add("common_room", "somewhere to unwind for a growing hub");
+  }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
   if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and the cold store");
@@ -1598,6 +1621,7 @@ function planTrip(state) {
     if (target && cands.includes(target)) cands.splice(cands.indexOf(target), 1); // a look first instead of going straight in
     if (target) cands.push({ ...target, mission: "recon", why: `look for ${short.filter((k) => gives(state.tiles[target.tile]) && (LOCATIONS[state.tiles[target.tile].loc.type].loot[k] || 0) >= 1).join(" and ")} (none known nearby)` });
   }
+  cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
   cands.sort((a, b) => b.score - a.score);
 
   for (const c of cands.slice(0, P.reserves ? 20 : 8)) {

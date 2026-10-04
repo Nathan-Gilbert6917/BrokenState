@@ -18,7 +18,8 @@
 // Daily mood factors added here (the rest stay where they were: beds and the leader in morale.js; food, rationing,
 // rest, hunger and thirst in economy.js; the dog in hubevents.js), all listed with numbers by moodFactors():
 // preserved food only for 7+ days -1 (21+ days -2), hot meals from a kitchen +1, a common room +1.5 (15 people a
-// room), a chapel +1 (grief weighs half), comfort items (books) +0.5 each up to +1, cabin fever after 14 days of
+// room), a chapel +1 (grief weighs half), comfort items (books; the shelf shared, MOODF.shelfShare people a copy;
+// not blueprints) +0.5 each up to +1, the Inspiring perk +0.5 per inspiring person here (up to +1), cabin fever after 14 days of
 // winter -0.5 (21: -1), 3+ gloomy days -0.5, after a rough trip +3 a day resting (else -1) for 4 days, friends,
 // partner and rivals as above, and high spirits fade (-10% of the mood above 50 a day).
 // Breaks: below 12 mood, 10% + 2% per point below 12 a day (cooldown 5 days): sits out a day, binge eats, wanders
@@ -32,12 +33,14 @@ import { crowdInfo, talker } from "./morale.js";
 import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
+import { hasPerk } from "./skills.js";
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
   preserved7: -1, preserved21: -2, hotMeals: 1, common: 1.5, commonCap: 15, chapel: 1, comfortPer: 0.5, comfortMax: 1,
   winter14: -0.5, winter21: -1, gloom: -0.5, friend: 0.4, friendMax: 1.2, partner: 1.5, partnerAway: -0.5,
   rival: -0.6, rivalMax: -1.8, roughRest: 3, rough: -1, roughDays: 4, roughHit: -4, fade: 0.1, fadeFrom: 50,
+  inspire: 0.5, inspireMax: 1, shelfShare: 5,
 };
 export const GRIEF = { hit: 6, hitPer: 14, daysBase: 3, daysPer: 7, daily: 0.5, dailyPer: 1, work: 0.2, acquaint: -3, chapel: 0.5 };
 export const BREAK = { at: 12, base: 0.1, per: 0.02, relief: 8, cooldown: 5, binge: 3, cardWithin: 10 };
@@ -326,12 +329,12 @@ export function moodFactors(state, s) {
       add(`Common room${rooms > 1 ? `s (${rooms})` : ""}${n > rooms * MOODF.commonCap ? ` (crowded: ${n} people)` : ""}`, MOODF.common * Math.min(1, (rooms * MOODF.commonCap) / n), true);
     }
     if (count(base, "chapel")) add("The chapel", MOODF.chapel, true);
-    const books = comfortCount(state, s, base);
-    if (books) add(`Something to read (${books} book${books === 1 ? "" : "s"})`, Math.min(MOODF.comfortMax, books * MOODF.comfortPer), true);
-  } else {
-    const books = comfortCount(state, s, null);
-    if (books) add(`Something to read (${books} book${books === 1 ? "" : "s"})`, Math.min(MOODF.comfortMax, books * MOODF.comfortPer), true);
+    // The Inspiring perk (skills.js PERK_TREE): +0.5 a day from each inspiring person at the base, up to two.
+    const insp = pl.route ? [] : atBase(state, base.id).filter((o) => o !== s && hasPerk(o, "inspiring"));
+    if (insp.length) add(`Inspired by ${listText(insp.slice(0, 2).map(first))}`, Math.min(MOODF.inspireMax, insp.length * MOODF.inspire), true);
   }
+  const ci = comfortInfo(state, s, base);
+  if (ci.n > 0) add(`Something to read (${ci.text})`, Math.min(MOODF.comfortMax, ci.n * MOODF.comfortPer), true);
   // Weather: a long winter, and a run of grey days.
   const se = season(state);
   if (se.key === "winter" && se.dayOfSeason > 21) add(`Cabin fever (day ${se.dayOfSeason} of winter)`, MOODF.winter21, true);
@@ -378,14 +381,24 @@ function gloomDays(state, d) {
 const isComfort = (g) => {
   if (!g) return false;
   const def = GEAR[g.key] || {};
+  if (def.blueprint) return false; // blueprints and technical manuals (blueprints.js) are study, not comfort
   return !!(def.book || def.comfort || def.skillBook || /book|novel|manual|bible|guitar|harmonica/i.test(`${g.key} ${def.name || g.name || ""}`));
 };
-export function comfortCount(state, s, base) {
-  let n = 0;
-  try { n += allItems(s).filter(isComfort).length; } catch { /* no inventory */ }
-  if (base) n += Math.min(2, (base.armory || []).filter(isComfort).length);
-  return n;
+// The shelf is shared: each book on it goes round up to MOODF.shelfShare people, so a big hub needs more of them
+// (n is in books: carried ones count in full, the shelf up to 2 a person, spread thinner when it is crowded).
+export function comfortInfo(state, s, base) {
+  let carried = 0;
+  try { carried = allItems(s).filter(isComfort).length; } catch { /* no inventory */ }
+  const shelf = base ? (base.armory || []).filter(isComfort).length : 0;
+  const people = base ? Math.max(1, residents(state, base.id).length) : 1;
+  const share = shelf ? Math.min(1, (shelf * MOODF.shelfShare) / people) : 0;
+  const n = carried + Math.min(2, shelf) * share;
+  const parts = [];
+  if (carried) parts.push(`${carried} carried`);
+  if (shelf) parts.push(`${shelf} on the shelf${share < 1 ? ` for ${people} people` : ""}`);
+  return { n, carried, shelf, people, text: parts.join(", ") };
 }
+export function comfortCount(state, s, base) { return comfortInfo(state, s, base).n; }
 
 // Preserved-only streak, per base: called from economy.js after eating (fresh food is eaten first, so no fresh food
 // left and preserved food in store means the day's meals were preserved).

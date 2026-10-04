@@ -138,6 +138,7 @@ export function hordesHour(state) {
     h.move -= HOURS_PER_TILE;
     const next = nextStep(state, h);
     if (next == null) continue;
+    h.from = h.tile; // the side a break-in comes from (deploy.js)
     h.tile = next;
     onHordeEnter(state, h);
   }

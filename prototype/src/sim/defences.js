@@ -22,6 +22,7 @@ import {
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { ensureHives, zombieToughness } from "./hives.js";
 import { BOSS_NAMES } from "./hiveconst.js";
+import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 
 export const DEFENCE = {
   WALL_BASE: 15, WALL_PER: 18, GUARD_PER_POWER: 2, ALERT_WEIGHT: 0.8,
@@ -120,8 +121,8 @@ export function hordeAttackBase(state, h, base) {
   fightNow(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "zombies", count: force.count, power: force.power, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
-    ambush: null, canRetreat: false, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4,
-    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state) },
+    ambush: null, canRetreat: false, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true,
+    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null },
   });
 }
 
@@ -263,6 +264,7 @@ export function fightNow(state, setup) {
   if (!combatants(state, setup).length) return startCombat(state, setup); // dropped there
   const b = createBattle(state, setup);
   state.combat = b;
+  endDeploy(b); // deploy.js: nobody to place them by hand, so the default positions
   for (let i = 0; i < 160 && !b.over; i++) {
     if (b.phase === "player") autoPlayerTurn(state);
     else runEnemyPhase(state);
@@ -297,30 +299,19 @@ export function placeUnitRight(b, ctx, u, minX) {
   return true;
 }
 
+// The base's battle map (deploy.js): the wall line with its gate and breaches, barricades, the trench and spike
+// pits, watchtowers; floodlights light the approach; the attack comes from the side the attackers came from, and
+// with setup.deploy the player places the defenders first.
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
-  if (ctx.phase === "map") {
-    const rng = ctx.rng;
-    const k = base ? count(base, "barricades") : 0;
-    // Barricades: a line of cover in front of the defenders.
-    for (let i = 0; i < k * 3 + (base && count(base, "gate") ? 2 : 0); i++) {
-      for (let t = 0; t < 8; t++) { const x = rng.int(4, 6), y = rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, "barricade"); break; } }
-    }
-    // Spike pits in the approach (they were used this attack, so they are on the map).
-    for (let i = 0; i < (c.pits || 0) * 5; i++) {
-      for (let t = 0; t < 8; t++) { const x = rng.int(8, 12), y = rng.int(0, ctx.H - 1); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
-    }
-    // The trench: a ditch across the approach that stops the dead for a turn.
-    if (base && count(base, "trench")) for (let y = 0; y < ctx.H; y++) if (ctx.free(10, y) && y % 4 !== 2) ctx.put(10, y, "trench");
-    return;
-  }
-  // Units: floodlights help the defenders aim at night; the Wallbreakers come in with the dead.
-  if (c.floodlit) for (const u of b.units) if (u.side === "player") u.aim += c.night ? 10 : 4;
+  if (ctx.phase === "map") return deployMap(b, ctx, base, c);
+  // Units: the Wallbreakers come in with the dead; then the defenders' posts and the turn of the map.
   for (let i = 0; i < (setup.enemy.bosses || 0); i++) {
     const boss = bossUnit(b, "wallbreaker");
     if (placeUnitRight(b, ctx, boss, ctx.W - 6)) b.units.push(boss);
   }
+  deployUnits(b, ctx, base, c);
 });
 
 // ---------- autopilot help ----------

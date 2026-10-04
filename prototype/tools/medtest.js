@@ -5,6 +5,7 @@
 // every automatic dose, medic treatment capacity and surgery time; the admit line for beds and an understaffed
 // upgrade running as a lower tier (B-10); the Medical tab's rate against the real change (P-21); 200 days, no NaN.
 // Usage: node tools/medtest.js [days] [seed]
+import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, tickHour, hub, atBase, alive, residents, makeSurvivor, day } from "../src/sim/world.js";
 import { addBuilding, queueBuild, canBuild, constructionHour, BUILDINGS } from "../src/sim/buildings.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -20,7 +21,8 @@ const days = Number(process.argv[2] || 30);
 const seed = Number(process.argv[3] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const world = () => createWorld({ seed, factionCount: 5 });
+// Tech locks (blueprints.js) are tested in exploretest.js: here every manual is already studied.
+const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); return st; };
 const setHospital = (base, type) => { addBuilding(base, type); };
 const plenty = (b) => Object.assign(b.stock, { scrap: 500, parts: 50, meds: 100 });
 const nextDay = (st) => { st.hour += 24; };

@@ -33,6 +33,9 @@ import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
+import { diplomacyHour } from "./diplomacy.js";
+import { allianceVictory } from "./alliance.js";
+import { prisonersHour, prisonersDaily } from "./prisoners.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -373,15 +376,33 @@ export function checkGameOver(state) {
   if (!state.victoryKept && alive(state).length && hivesSecured(state)) {
     state.gameOver = true;
     state.victory = true;
+    // alliance.js: with the coalition holding over half the land and every group left in it, the hives' end is
+    // also the coalition's victory (the screen and the timelapse say so).
+    if (allianceVictory(state)) return coalitionWins(state);
+    state.victoryReason = "hives";
     // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
     log(state, `Every hive is destroyed. The State of Calder is not safe, but it is yours to win back. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
     return true;
+  }
+  // After "Keep playing" on the hive victory, the coalition can still win the state (once).
+  if (state.victoryKept && !state.allianceWon && alive(state).length && allianceVictory(state)) {
+    state.gameOver = true;
+    state.victory = true;
+    return coalitionWins(state);
   }
   if (!state.survivors.length || alive(state).length) return false;
   state.gameOver = true;
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
   const allDead = state.survivors.every((s) => !s.left);
   log(state, `${allDead ? "Every survivor is dead." : "Every survivor is dead or gone."} The holdout has fallen.`, "death");
+  return true;
+}
+
+function coalitionWins(state) {
+  state.victoryReason = "alliance";
+  state.allianceWon = true;
+  // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
+  log(state, `The Calder Coalition holds the State of Calder: more than half the land, every group left standing in the alliance, and no hive left. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
   return true;
 }
 
@@ -514,6 +535,8 @@ export function tickHour(state) {
   craftingHour(state);
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
+  diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
+  prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   if (state.hour % 24 === 0) {
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
@@ -525,6 +548,7 @@ export function tickHour(state) {
     supplyDaily(state);
     deathSitesDaily(state);
     captivesDaily(state);
+    prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     recomputeOwnership(state);

@@ -17,6 +17,7 @@ import { quarrelBoost, quarrelPair, coupleBoost, couplePair, makePartners, relEv
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { foodOutlook } from "./economy.js";
 import { allItems } from "./inventory.js";
+import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -331,25 +332,9 @@ export const HUB_EVENTS = {
   well: {
     name: "Storm damage: the well pump",
     weight: (st, c) => (c.base.type === "hub" && !c.base.wellDown ? (stormy(c) ? 1.5 : wet(c) ? 0.3 : 0) : 0),
-    card: (st, c) => {
-      const mech = c.people.slice().sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0] || null;
-      const chance = mech ? clamp(0.3 + 0.04 * skill(mech, "mechanics"), 0.3, 0.9) : 0;
-      const down = (s2) => { c.base.wellDown = { until: day(s2) + WELL_DOWN.days, water: WELL_DOWN.water }; return `The well gives ${WELL_DOWN.water} less water a day for ${WELL_DOWN.days} days.`; };
-      return {
-        title: `The well pump at ${c.base.name} is broken`,
-        text: `${stormy(c) ? "The storm" : "The weather"} wrecked the pump housing on the well.`,
-        choices: [
-          { label: "Repair it (3 scrap, 1 part)", hint: "Fixed at once", disabled: () => (c.base.stock.scrap || 0) < 3 || (c.base.stock.parts || 0) < 1, ai: () => ((c.base.stock.parts || 0) >= 3 ? 8 : 2), resolve: () => { c.base.stock.scrap -= 3; c.base.stock.parts -= 1; return "The pump is fixed."; } },
-          {
-            label: mech ? `Jury-rig it (${firstName(mech)}, Mechanics ${skill(mech, "mechanics")})` : "Jury-rig it",
-            hint: mech ? `${pct(chance)} it works; otherwise the well gives ${WELL_DOWN.water} less water a day for ${WELL_DOWN.days} days` : "Nobody here to try",
-            disabled: () => !mech, ai: () => chance * 7,
-            resolve: (s2) => (s2.rng.chance(chance) ? `${firstName(mech)} gets it running with wire and a bicycle chain.` : `It will not hold. ${down(s2)}`),
-          },
-          { label: "Make do for now", hint: `The well gives ${WELL_DOWN.water} less water a day for ${WELL_DOWN.days} days`, ai: () => ((c.base.stock.water || 0) >= 60 ? 3 : 0), resolve: (s2) => down(s2) },
-        ],
-      };
-    },
+    // The pump breaks (breakdowns.js): repair it properly, jury-rig it or leave it on the Repairs list; until then the
+    // hub's well gives WELL_DOWN.water less a day.
+    card: (st, c) => breakCard(st, c.base, fixtures(c.base).find((f) => f.type === "pump"), { pumpStorm: stormy(c) }),
   },
 
   feast: {
@@ -450,6 +435,7 @@ export function hubEventCard(state, id, base = hub(state)) {
 
 export function hubEventsDaily(state) {
   hubUpkeepDaily(state);
+  breakdownsDaily(state); // breakdowns.js: wear, and what broke overnight
   const base = hub(state);
   if (!base || state.gameOver) return;
   const d = day(state);

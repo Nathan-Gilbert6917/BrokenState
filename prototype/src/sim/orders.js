@@ -12,6 +12,7 @@ import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHur
 import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_HOURS } from "./crossing.js";
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
+import { startSearchArea } from "./crashes.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const SURVEY_HOURS = 2;   // Look around
@@ -32,6 +33,7 @@ export function describeOrder(state, o) {
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
+    case "searcharea": return "Search the area for the wreck";
   }
   return o.type;
 }
@@ -245,6 +247,9 @@ export function startOrder(state, p, o) {
     case "nearby":
       // Scavenge the best site within reach (plans.js): picked now, from what the team knows.
       return startNearby(state, p, o);
+    case "searcharea":
+      // Look around the crash circle until the wreck turns up, then search it (crashes.js).
+      return startSearchArea(state, p, o);
     case "wait":
       startTask(state, p, { type: "wait", hours: Math.max(1, o.hours || 6) });
       return `The team waits here for ${Math.max(1, o.hours || 6)} hours.`;

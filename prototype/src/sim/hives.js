@@ -26,6 +26,7 @@ import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { HIVE, BOSS_NAMES } from "./hiveconst.js";
+import { hiveAllies, broodAfterAllies } from "./alliance.js";
 
 // HIVE and BOSS_NAMES live in hiveconst.js (no imports, so any module can read them at load time).
 export { HIVE, BOSS_NAMES };
@@ -450,7 +451,8 @@ function hiveCard(state, p, hive) {
     where: tileLabel(state, hive.tile),
     partyId: p.id,
     text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. Deep inside waits the ${BOSS_NAMES.hive}. ` +
-      `Your squad's combat power is ${power}. Storming it means fighting about ${force.count} of the hive's brood, tougher than any dead outside, and the ${BOSS_NAMES.hive} herself. Bring five or six well-armed fighters, armor and meds.`,
+      `Your squad's combat power is ${power}. Storming it means fighting about ${force.count} of the hive's brood, tougher than any dead outside, and the ${BOSS_NAMES.hive} herself. Bring five or six well-armed fighters, armor and meds.` +
+      alliesText(state, hive, force.count), // alliance.js: fighters from coalition members and job givers
     choices: [
       {
         label: "Storm the hive (tactical battle)",
@@ -488,11 +490,20 @@ function hiveCard(state, p, hive) {
   };
 }
 
+// Allied fighters at the mound (alliance.js hiveAllies): each keeps one of the brood off your squad.
+function alliesText(state, hive, count) {
+  const a = hiveAllies(state, hive);
+  return a.fighters ? ` Fighters from ${a.names.join(", ")} will storm it with you: about ${count - broodAfterAllies(count, a.fighters)} of the brood fewer reach your squad.` : "";
+}
+
 export function assaultHive(state, p, hive) {
   const force = hiveForce(state, hive);
+  const allies = hiveAllies(state, hive);
+  const count = broodAfterAllies(force.count, allies.fighters);
+  if (allies.fighters) log(state, `Fighters from ${allies.names.join(", ")} storm ${hive.name} beside your squad.`, "good");
   return fightNow(state, {
     tile: hive.tile, partyId: p.id,
-    enemy: { kind: "zombies", count: force.count, power: force.power, name: `the brood of ${hive.name}` },
+    enemy: { kind: "zombies", count, power: force.power, name: `the brood of ${hive.name}` },
     ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hive",
     context: { hiveId: hive.id, partyId: p.id },
   });

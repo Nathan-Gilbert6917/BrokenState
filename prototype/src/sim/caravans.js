@@ -32,6 +32,8 @@ import { itemLoad } from "./inventory.js";
 import {
   available, need, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
 } from "./trade.js";
+import { marketOf } from "./trade.js";
+import { escortArrived, pickupArrived } from "./jobs.js";
 
 export const CARAVAN_STAY_HOURS = 24;
 const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
@@ -41,16 +43,18 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const isCaravan = (p) => p && p.kind === "caravan";
 export const caravanEnRoute = (state, f) => state.parties.some((p) => isCaravan(p) && p.owner === f.id && !p.leaving);
 export const caravansAt = (state, baseId) => state.parties.filter((p) => isCaravan(p) && p.phase === "trading" && p.baseId === baseId);
-export const incomingCaravans = (state) => state.parties.filter((p) => isCaravan(p) && !p.leaving);
+export const incomingCaravans = (state) => state.parties.filter((p) => isCaravan(p) && !p.leaving && p.escortJob == null); // an escorted caravan (jobs.js) goes to another group
 export const guardPower = (f) => 2.2 + FACTION_TYPES[f.type].arms * 1.6;
 export const caravanGuards = (f, c) => clamp(Math.round(c.strength / guardPower(f)), 1, 8);
 
-// What a group brings when you just ask for a caravan: about half of what it can spare of the goods it has
-// plenty of (up to a value of about 160), and a few items from its wares.
+// What a group brings when you just ask for a caravan: about half of what it can spare of the goods on its
+// surplus list (trade.js marketOf: this week's), then of anything else it has plenty of, up to a value of about
+// 160, and a few items from its wares.
 export function caravanSurplus(state, f) {
   const goods = { supplies: {}, gear: [] };
   let value = 0;
-  for (const k of [...SUPPLY_KEYS].sort((a, b) => need(f, a) - need(f, b))) {
+  const listed = marketOf(state, f).surplus.map((x) => x.key);
+  for (const k of [...listed, ...[...SUPPLY_KEYS].filter((x) => !listed.includes(x)).sort((a, b) => need(f, a) - need(f, b))]) {
     if (need(f, k) > 1.1 || value >= 160) continue;
     const q = Math.min(Math.floor(available(f, k) * 0.5), Math.ceil((160 - value) / SUPPLIES[k].value));
     if (q < 1) continue;
@@ -95,6 +99,14 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
 // parties.js aiPartyHour: a caravan reached the end of its path.
 export function caravanArrive(state, p) {
   const f = factionById(state, p.owner);
+  if (p.escortJob != null && !p.leaving) {
+    // A caravan you escorted (jobs.js) reached the other group: it unloads there and goes home.
+    escortArrived(state, p);
+    const back = f && f.alive ? planPath(state, partyTile(p), p.home, false) : null;
+    if (!back) return removeParty(state, p);
+    Object.assign(p, { leaving: true, phase: "out", path: back.path, idx: 0, progress: 0 });
+    return;
+  }
   if (p.leaving) {
     // Home again: what it carries goes back into their stores.
     if (f && f.alive) {
@@ -106,6 +118,11 @@ export function caravanArrive(state, p) {
   }
   const base = baseById(state, p.baseId);
   if (!base || !f || !f.alive || attitude(f) === "Hostile") {
+    caravanLeave(state, p, "");
+    return;
+  }
+  if (p.pickupJob != null && pickupArrived(state, p, base)) {
+    // They came to fetch a job's goods (jobs.js): taken from the base's stores, then home.
     caravanLeave(state, p, "");
     return;
   }

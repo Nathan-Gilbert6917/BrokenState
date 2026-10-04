@@ -11,6 +11,7 @@ import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, ensurePack } from "./inventory.js";
 import { workFactor } from "./health.js";
 import { hasPerk } from "./skills.js";
+import { craftLock } from "./blueprints.js";
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -30,6 +31,11 @@ export const CRAFTS = {
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2 },
   backpack:    { gear: "backpack",    in: { scrap: 3 },           hours: 5,  skill: "mechanics", min: 0 },
+  // The stealth kit (stealth.js).
+  noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
+  firecracker: { gear: "firecracker", in: { scrap: 1, ammo: 8 },  hours: 3,  skill: "mechanics", min: 2, field: true },
+  flashlight:  { gear: "flashlight",  in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 3 },
+  suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
 };
 
 export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
@@ -63,7 +69,11 @@ export function craftOutputText(key) {
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
     if (d.water) fx.push(`+${d.water} water a day at its base`);
-    bits.push(`tool${fx.length ? `, ${fx.join(", ")}` : ""}`);
+    // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
+    if (d.throw) fx.push("thrown in battle to pull unaware guards and the dead to a spot, one use");
+    if (d.suppressor) fx.push("halves the noise of a pistol or rifle shot");
+    if (r.gear === "flashlight") fx.push("lets your people search at night, but the light is seen");
+    bits.push(`${d.throw || d.suppressor ? "kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
   if (d.dur) bits.push(`lasts ${d.dur} ${durUnit(r.gear)}`);
@@ -74,6 +84,7 @@ export function durUnit(key) {
   const d = GEAR[key];
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
+  if (d.suppressor) return "shots";
   return "days";
 }
 
@@ -101,6 +112,8 @@ export function canCraft(state, base, key) {
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
   if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
   for (const [k, v] of Object.entries(r.in)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(base.stock[k] || 0)})` };
+  const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
+  if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
 }
 

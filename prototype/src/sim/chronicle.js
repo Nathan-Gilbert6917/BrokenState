@@ -211,7 +211,8 @@ function record(state, c) {
   if (state.gameOver && c.overAt == null) {
     c.overAt = state.hour;
     const hb2 = hub(state);
-    if (state.victory) caption(c, { h: state.hour, text: `Every hive is destroyed. ${hb2 ? hb2.name : "The holdout"} has won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
+    if (state.victory && state.victoryReason === "alliance") caption(c, { h: state.hour, text: `The Calder Coalition holds the state. ${hb2 ? hb2.name : "The holdout"} and its allies have won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
+    else if (state.victory) caption(c, { h: state.hour, text: `Every hive is destroyed. ${hb2 ? hb2.name : "The holdout"} has won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
     else caption(c, { h: state.hour, text: `Every survivor is dead. ${hb2 ? hb2.name : "The holdout"} has fallen on day ${Math.floor(state.hour / 24) + 1}.`, kind: "death", tile: hb2 ? hb2.tile : -1, major: true });
   }
   c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, hives: c.hives, sites: c.sites });
@@ -235,7 +236,7 @@ function logCaptions(state, c) {
     if (l.text.startsWith("🤖")) continue; // the governor's own notes (autopilot.js) are not events
     if (l.kind !== "death" && SKIP_LOG.test(l.text)) continue;
     if (l.kind === "death" && /Every survivor is dead/.test(l.text)) continue;
-    if (/^Every hive is destroyed/.test(l.text)) continue; // the chronicle's own victory caption says it
+    if (/^Every hive is destroyed/.test(l.text) || (/^The Calder Coalition holds/.test(l.text) && c.overAt == null)) continue; // the chronicle's own victory caption says it (a coalition victory after Keep playing is captioned from its log line)
     const major = l.kind === "death" || /founded|overran|has been lost|abandoned|joined/.test(l.text);
     caption(c, { h: l.hour, text: l.text, kind: l.kind, tile: captionTile(state, c, l.text), major });
   }

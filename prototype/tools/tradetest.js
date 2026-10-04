@@ -22,6 +22,7 @@ import {
 import { attackCaravan, launchCaravan, caravansAt } from "../src/sim/caravans.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLines, newCaravanForm, TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "../src/ui/tradewindow.js";
+import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
 
 const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 200);
@@ -424,7 +425,7 @@ function dealWorld(s) {
 {
   console.log("Trade window HTML");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS)]);
+  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS), ...Object.keys(DIPLO_ACTIONS), ...Object.keys(DIPLO_CHANGE)]); // main.js registers both tables
   const handled = (a) => known.has(a) || new RegExp(`(^|[\\s{,])"?${a.replace(/[-]/g, "\\-")}"?\\s*:`, "m").test(main);
   const scan = (html, where) => {
     const acts = [...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);

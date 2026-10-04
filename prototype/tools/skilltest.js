@@ -22,6 +22,7 @@ import { startScavenge, searchHour, extract } from "../src/sim/scavenge.js";
 import { radioSpeech } from "../src/sim/radio.js";
 import { newItem } from "../src/sim/inventory.js";
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
+import { moodFactors, MOODF } from "../src/sim/relations.js";
 
 const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -607,10 +608,10 @@ console.log("Perk effects");
   ld.mood = 50;
   give(ld, "inspiring");
   nextDay(w4);
-  const moods0 = others.map((o) => o.mood);
-  S.skillsDaily(w4);
+  const insp = (s) => (moodFactors(w4, s).list.find((f) => /^Inspired by/.test(f.label)) || {}).v || 0;
+  const inspOthers = others.map(insp), inspSelf = insp(ld);
   without(ld, "inspiring");
-  check(others.every((o, i) => o.mood >= moods0[i] + 2 - 1e-9) && ld.mood <= 50 + 6, "Inspiring: everyone else at the base +2 mood a day");
+  check(inspOthers.every((v) => v === MOODF.inspire) && !inspSelf && others.every((o) => !insp(o)), `Inspiring: everyone else at the base +${MOODF.inspire} mood a day (a factor in their mood breakdown; not the inspiring one)`);
   [a, b] = withPerk(ld, "quartermaster", () => eatPerDay(w4, h4));
   check(Math.abs(b - a * 0.9) < 1e-9, `Quartermaster: food eaten ${r1(a)} → ${r1(b)} a day`);
   // Mentor on a trip: +25% use XP for teammates.

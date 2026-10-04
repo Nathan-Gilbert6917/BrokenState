@@ -11,6 +11,8 @@ import { conditionsOf, autoWantsCondition, CONDITIONS } from "../sim/health.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
 import { diaryEntries, diarySync, decodeRefs } from "../sim/diary.js";
 import { camera } from "./render.js";
+import { brokenAt, fixtureName, jobFor, FIXTURES } from "../sim/breakdowns.js";
+import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 
@@ -120,11 +122,26 @@ const SECTIONS = {
       }
     }
   },
+  // Broken buildings (breakdowns.js) and downed aircraft (crashes.js).
+  explore(state, out) {
+    for (const b of state.bases) {
+      const broken = brokenAt(b);
+      if (!broken.length) continue;
+      const idle = broken.filter((fx) => !jobFor(b, fx));
+      out.push({ key: `broken:${b.id}:${broken.map((fx) => fx.id).join(",")}`, kind: "broken", icon: "🔧", tone: idle.length ? "warn" : "info", text: `${broken.length === 1 ? `${fixtureName(broken[0])} broken` : `${broken.length} things broken`} at ${b.name}${idle.length ? "" : " (being fixed)"}`, tip: `${broken.map((fx) => `${fixtureName(fx)}: ${FIXTURES[fx.type].what}${jobFor(b, fx) ? " (being fixed)" : ""}`).join("; ")}. Click to open the Repairs tab.`, go: { base: b.id, tab: "repairs" } });
+    }
+    for (const c of activeCrashes(state)) {
+      const def = CRASH_KINDS[c.kind];
+      const left = daysLeft(state, c);
+      const name = c.found && state.tiles[c.tile].loc ? state.tiles[c.tile].loc.name : `Downed ${def.name.toLowerCase()}`;
+      out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${state.tiles[c.center].loc ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
+    }
+  },
   cards(state, out) {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "horde", "food", "water", "sick", "wait", "plan", "idle", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "horde", "food", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];

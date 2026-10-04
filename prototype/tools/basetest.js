@@ -445,7 +445,10 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     const d = GEAR[r.gear], text = craftOutputText(key);
     if (d.slot === "weapon") check(/power/.test(text), `${key}: a weapon lists its power (${text})`);
     else if (d.slot === "backpack") check(/pack slots/.test(text) && /carry/.test(text) && !/power/.test(text), `${key}: a pack lists slots and carry space (${text})`);
-    else if (d.slot === "tool") check(!/power/.test(text) && /Medicine|Scavenging|water/.test(text), `${key}: a tool lists what it does (${text})`);
+    else if (d.slot === "tool") check(!/power/.test(text) && /Medicine|Scavenging|water|at night/.test(text), `${key}: a tool lists what it does (${text})`);
+    // The stealth kit (stealth.js): thrown things and the suppressor are carried, not worn.
+    else if (d.throw) check(!/power|armor/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
+    else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

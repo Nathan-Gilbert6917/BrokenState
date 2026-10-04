@@ -3,7 +3,9 @@
 // and PLAN_CHANGE (inputs and selects) into its dispatchers.
 import { MISSIONS, tileLabel, STAY_MISSIONS } from "../sim/parties.js";
 import { PRESETS, STEP_KINDS, CONDITIONS, estimatePlan, stepLabel, nearbySites, knownLoot } from "../sim/plans.js";
+import { activeCrashes } from "../sim/crashes.js";
 import { heatPreview } from "../sim/fieldheat.js";
+import { jobTargets } from "./diplomacy.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -36,7 +38,9 @@ export const planLaunchOpts = (pl) => {
 
 // Known sites near the plan's target for "Move to a site" (closest first).
 function moveTargets(state, pl) {
-  return nearbySites(state, { center: pl.dest, radius: 6 }).filter((s) => s.tile !== pl.dest).sort((a, b) => a.dist - b.dist).slice(0, 12);
+  // Jobs you took (ui/diplomacy.js) come first: their targets, wherever they are.
+  const jobs = jobTargets(state).filter((t) => t.tile !== pl.dest).map((t) => ({ ...t, dist: state.grid.distance(pl.dest, t.tile) }));
+  return [...jobs, ...nearbySites(state, { center: pl.dest, radius: 6 }).filter((s) => s.tile !== pl.dest && !jobs.some((j) => j.tile === s.tile)).sort((a, b) => a.dist - b.dist).slice(0, 12)];
 }
 
 // Heat look-ahead for the camp and wait steps at the target (where the plan is when they start, if known).
@@ -96,8 +100,8 @@ export function planSection(state, pl, est) {
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
-      ${addBtn("gather", "Gather")}
-      <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles, loot ~${Math.round(knownLoot(state, t.tile) * 100)}%)</option>`).join("")}</select>
+      ${addBtn("gather", "Gather")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
+      <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles${t.job ? "" : `, loot ~${Math.round((knownLoot(state, t.tile) || 0) * 100)}%`})</option>`).join("")}</select>
       ${addBtn("home", "Return home")}
     </div>
     <div class="small" style="margin-top:0.35rem"><b>If</b> ${["hurt", "food", "cargo"].map(condRow).join(" · ")} <b>then come home</b></div>

@@ -25,6 +25,7 @@ import { workFactor } from "./health.js";
 import { newItem } from "./inventory.js";
 import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
+import { studyBlueprint, blueprintWares } from "./blueprints.js";
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -99,8 +100,8 @@ export const PERK_TREE = {
          P("hunter", "Hunter", "+3 food a day for their team while it is out on a trip (adds to Forager).", [2, 2, 2], "skills.js skillsDaily")],
   },
   mechanics: {
-    5: [P("handy", "Handy", "Their construction work counts 20% more (Build role).", [2, 2, 2], "buildings.js buildRate"),
-        P("greasemonkey", "Grease Monkey", "A vehicle repair at their base restores 25% a part without a garage (instead of 12%) and 35% with one (instead of 25%).", [1, 2, 3], "vehicles.js canRepair")],
+    5: [P("handy", "Handy", "Their construction work counts 20% more (Build role), and so do their repairs; buildings at their base wear 15% slower.", [2, 2, 2], "buildings.js buildRate; breakdowns.js"),
+        P("greasemonkey", "Grease Monkey", "A vehicle repair at their base restores 25% a part without a garage (instead of 12%) and 35% with one (instead of 25%); buildings at their base wear 20% slower.", [1, 2, 3], "vehicles.js canRepair; breakdowns.js")],
     10: [P("tinkerer", "Tinkerer", "Makeshift gear crafted at their base while they are on the Craft role lasts 50% longer (more uses before it breaks).", [2, 2, 2], "crafting.js craftingHour"),
          P("fieldrepair", "Field Repair", "Once a day every worn-down makeshift item on them and on the people with them (their team, or everyone at their base) gets 1 use back.", [2, 2, 3], "skills.js skillsDaily")],
     15: [P("masterbuilder", "Master Builder", "Their construction work counts 40% more (instead of Handy's 20%).", [2, 3, 2], "buildings.js buildRate"),
@@ -115,7 +116,7 @@ export const PERK_TREE = {
          P("herbalist", "Herbalist", "+1 meds every 3 days while they are on the Farm role (medicinal herbs from the plots).", [3, 2, 1], "skills.js skillsDaily")],
   },
   leadership: {
-    5: [P("inspiring", "Inspiring", "Everyone else living at their base gains +2 mood a day.", [3, 2, 2], "skills.js skillsDaily"),
+    5: [P("inspiring", "Inspiring", "Everyone else living at their base gains +0.5 mood a day (two inspiring people: +1); it shows in their mood breakdown.", [3, 2, 2], "relations.js moodFactors"),
         P("mentor", "Mentor", "People they teach learn 50% faster, and teammates on a trip with them gain 25% more skill XP from use.", [2, 2, 2], "skills.js teaching, gainXp")],
     10: [P("rally", "Rally", "In a battle they fight in, every ally gets +5% to hit (guns and melee).", [1, 2, 3], "skills.js battlePerks"),
          P("peacemaker", "Peacemaker", "On the road their team's talk checks count their Leadership in full (not −2), and a failed talk costs no goodwill.", [3, 2, 1], "conflicts.js talkSkill, talkChoice")],
@@ -396,7 +397,8 @@ export function bestBook(s, free) {
 
 // Daily reading at a base: each reader gets a copy (their pick if free, else the best free one).
 function readingDaily(state, base) {
-  const readers = atBase(state, base.id).filter((s) => s.role === "read").sort((a, b) => a.id - b.id);
+  // A blueprint in the armory comes first for anyone who can study it (blueprints.js); the others read books.
+  const readers = atBase(state, base.id).filter((s) => s.role === "read").sort((a, b) => a.id - b.id).filter((s) => !studyBlueprint(state, base, s));
   if (!readers.length) return;
   const free = armoryBooks(base);
   // Readers whose book is still here and still useful keep it first.
@@ -516,10 +518,11 @@ const WARE_BOOKS = {
   fortress: { p: 0.2, books: ["gunbook", "enginebook", "leadbook"] },
 };
 export function bookWares(state, f) {
+  const bp = blueprintWares(state, f, day(state)); // blueprints.js: a manual or blueprint now and then (its own dice)
   const w = WARE_BOOKS[f.type];
-  if (!w || hash01(state.seed, "wares", f.name, day(state)) >= w.p) return [];
+  if (!w || hash01(state.seed, "wares", f.name, day(state)) >= w.p) return bp;
   const list = w.books.filter((k) => GEAR[k]);
-  return list.length ? [newItem(list[Math.floor(hash01(state.seed, "ware", f.name, day(state)) * list.length) % list.length], 1)] : [];
+  return list.length ? [newItem(list[Math.floor(hash01(state.seed, "ware", f.name, day(state)) * list.length) % list.length], 1), ...bp] : bp;
 }
 
 // ======================================================================================
@@ -641,9 +644,7 @@ export function skillsDaily(state) {
     for (const s of people) roleXp(state, base, s);
     teachingDaily(state, base);
     readingDaily(state, base);
-    // Inspiring: everyone else living at the base +2 mood a day (from up to two inspiring people).
-    const insp = people.filter((s) => hasPerk(s, "inspiring"));
-    if (insp.length) for (const s of people) s.mood = Math.min(100, s.mood + 2 * Math.min(2, insp.filter((o) => o !== s).length));
+    // Inspiring: a daily mood factor of its own (relations.js moodFactors), so it shows in the breakdown.
     // Herbalist: herbs from the plots every 3 days.
     if (d % 3 === 0) for (const s of people) if (s.role === "farm" && !s.inBed && hasPerk(s, "herbalist")) base.stock.meds = (base.stock.meds || 0) + 1;
     // Field Repair at a base.

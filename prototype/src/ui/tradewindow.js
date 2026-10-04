@@ -20,6 +20,7 @@ import { captivesOf } from "../sim/conflicts.js";
 import { itemDur } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
 import { vehiclesAtBase, vehicleById, tank } from "../sim/vehicles.js";
+import { radioDiploBlock } from "./diplomacy.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -167,6 +168,7 @@ export function radioModal(state, ui) {
         ${coming.length ? `<div class="small" style="margin-top:0.4rem">${coming.map((c) => c.phase === "trading" ? `Their caravan is at ${esc(baseById(state, c.baseId)?.name || "your base")} until ${when(c.stayUntil)}.` : `Their caravan is on the way to ${esc(baseById(state, c.baseId)?.name || "your base")}.`).join(" ")}</div>` : ""}
       </div>
     </div>
+    ${radioDiploBlock(state, f) /* ui/diplomacy.js: wants and surplus, wars, the coalition */}
     ${ui.radioMsg ? `<div class="result">${esc(ui.radioMsg)}</div>` : ""}
     ${(f.radioLog || []).length ? `<h3>On the radio</h3><div class="small">${f.radioLog.map((l) => `<div><span class="muted">Day ${l.day}</span> ${esc(l.text)}</div>`).join("")}</div>` : ""}
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="rd-close">Close</button></div></div>`;

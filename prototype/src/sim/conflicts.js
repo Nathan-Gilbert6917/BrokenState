@@ -1418,6 +1418,7 @@ export function defendInPerson(state, raid) {
     tile: base.tile, baseId: base.id,
     enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders` },
     ambush: base.alert ? "player" : null, canRetreat: false, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id },
+    layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first
   });
   return "";
 }

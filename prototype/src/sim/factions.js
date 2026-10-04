@@ -9,6 +9,8 @@ import { baseWalls, count } from "./buildings.js";
 import { radioBasesInRange, removeBase } from "./world.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
+import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou } from "./diplomacy.js";
+import { allianceRaidHelp } from "./alliance.js";
 
 const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
@@ -142,7 +144,7 @@ export function factionsDaily(state) {
       for (const b of f.bases) for (const id of g.within(b, 6)) {
         const t = state.tiles[id];
         if (t.loc && t.loc.type !== "city" && (t.owner == null) && !state.bases.some((pb) => pb.tile === id) &&
-          state.factions.every((o) => !o.bases.includes(id))) cands.push(t);
+          state.factions.every((o) => !o.bases.includes(id)) && !reservedForYou(state, id)) cands.push(t); // land left for your outpost after a peace (diplomacy.js)
       }
       if (cands.length) {
         const t = rng.pick(cands);
@@ -210,9 +212,11 @@ function launchRaid(state, f) {
   }
   for (const o of state.factions) {
     if (!o.alive || o === f) continue;
+    const rw = raidWeight(state, f, o); // diplomacy.js: never a pact partner or a fellow coalition member, war enemies first
+    if (!rw) continue;
     for (const b of o.bases) {
       if (g.distance(origin, b) > 14) continue;
-      targets.push({ kind: "faction", factionId: o.id, tile: b, w: o.type === "commune" || o.type === "traders" ? 1.2 : 0.6 });
+      targets.push({ kind: "faction", factionId: o.id, tile: b, w: (o.type === "commune" || o.type === "traders" ? 1.2 : 0.6) * rw });
     }
   }
   if (!targets.length) return;
@@ -243,10 +247,13 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   f.known = true; // they are at your walls: you know who they are
   const beaten = opts.beaten || null;
   const people = beaten ? [] : atBase(state, base.id);
-  const def = baseDefense(state, base);
+  const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
+  const def = baseDefense(state, base) + allies.power;
   const att = party.strength;
+  if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : def / att;
+  warRaidOnPlayer(state, party, ratio >= 1.2); // diplomacy.js: a war raid on your base counts for the war
   if (ratio >= 1.2) {
     state.stats.raidsRepelled += 1;
     log(state, `${base.name} drove off the ${f.name} raid.`, "good");
@@ -280,6 +287,12 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const attacker = typeof party.owner === "number" ? factionById(state, party.owner) : null;
   if (!target || !target.alive) return;
   const helpPower = helpers.reduce((s, h) => s + h, 0);
+  if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
+    const held = resolveWarRaid(state, party, attacker, target, helpPower);
+    if (target.pop <= 2) collapseFaction(state, target);
+    return held;
+  }
+  raidSoured(state, attacker, target);
   const def = 8 + strength(target) * 0.8 + helpPower;
   const att = party.strength;
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not

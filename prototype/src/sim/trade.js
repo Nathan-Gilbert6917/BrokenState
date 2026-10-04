@@ -25,6 +25,7 @@ import { itemDur } from "./crafting.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE } from "./skills.js";
+import { armsSold } from "./diplomacy.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -58,20 +59,82 @@ export function spread(f, speech = 0) {
   const g = clamp((f.goodwill || 0) / 1000, -0.1, 0.1);
   return { sell: 0.75 + s + g, buy: 1.3 - s - g };
 }
+// A group at war (diplomacy.js, f.atWar = wars it is in) values ammo and meds 35% more and weapons and armor 30%
+// more, both ways (so selling and buying back still loses), and keeps twice its reserve of food, ammo, meds and
+// fuel: it has less to trade.
+export const WAR_PREMIUM = { ammo: 1.35, meds: 1.35 };
+export const WAR_GEAR_PREMIUM = 1.3;
+const WAR_RESERVE = { food: 2, ammo: 2, meds: 2, fuel: 2 };
+const warMult = (f, key) => (f && f.atWar ? WAR_PREMIUM[key] || 1 : 1);
+const gearWar = (f, item) => (f && f.atWar && item && GEAR[item.key] && (GEAR[item.key].slot === "weapon" || GEAR[item.key].slot === "armor") ? WAR_GEAR_PREMIUM : 1);
 // What they pay you per unit when they take qty units (stock rising as they do).
 export function sellPrice(state, f, key, speech, qty = 1) {
   const q = Math.max(1, qty);
-  return SUPPLIES[key].value * need(f, key, stockOf(f, key) + q / 2) * spread(f, speech).sell;
+  return SUPPLIES[key].value * need(f, key, stockOf(f, key) + q / 2) * spread(f, speech).sell * warMult(f, key);
 }
 // What you pay them per unit when you take qty units (stock falling as you do).
 export function buyPrice(state, f, key, speech, qty = 1) {
   const q = Math.max(1, qty);
-  return SUPPLIES[key].value * need(f, key, stockOf(f, key) - q / 2) * spread(f, speech).buy;
+  return SUPPLIES[key].value * need(f, key, stockOf(f, key) - q / 2) * spread(f, speech).buy * warMult(f, key);
 }
-export const gearSellPrice = (f, item, speech) => itemValue(item) * spread(f, speech).sell;
-export const gearBuyPrice = (f, item, speech) => itemValue(item) * spread(f, speech).buy;
-// What a group can spare of a supply (they keep a reserve per head).
-export const available = (f, key) => Math.max(0, Math.floor(stockOf(f, key) - (RESERVE[key] || 0) * f.pop));
+export const gearSellPrice = (f, item, speech) => itemValue(item) * spread(f, speech).sell * gearWar(f, item);
+export const gearBuyPrice = (f, item, speech) => itemValue(item) * spread(f, speech).buy * gearWar(f, item);
+// What a group can spare of a supply (they keep a reserve per head; twice that of some goods at war).
+export const available = (f, key) => Math.max(0, Math.floor(stockOf(f, key) - (RESERVE[key] || 0) * f.pop * (f.atWar ? WAR_RESERVE[key] || 1 : 1)));
+
+// ---------- wants and surplus (the market board) ----------
+// Refreshed every 7 days from the group's real stock and need (refreshMarkets, from diplomacy.js once a day):
+// wants = goods with need 1.25+ (what they pay you per unit for a lot of LOT[k], before Speech), qty = what
+// would bring them back to comfortable (need 1); surplus = goods with need 0.9 or less and 5+ to spare (what they
+// charge per unit for a lot), qty = what they can spare. prices: both prices for every good; prev: last week's.
+// Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
+export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
+export const LOT = { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 };
+export function marketLists(state, f, speech = 0) {
+  const wants = [], surplus = [], prices = {};
+  for (const k of SUPPLY_KEYS) {
+    const lot = LOT[k] || 10;
+    prices[k] = { pay: sellPrice(state, f, k, speech, lot), ask: buyPrice(state, f, k, speech, lot) };
+    const n = need(f, k);
+    if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: Math.max(1, Math.ceil(REF[k] * f.pop - stockOf(f, k))), price: prices[k].pay });
+    else if (n <= SURPLUS_NEED && available(f, k) >= 5) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });
+  }
+  wants.sort((a, b) => b.need - a.need || a.key.localeCompare(b.key));
+  surplus.sort((a, b) => a.need - b.need || a.key.localeCompare(b.key));
+  return { wants, surplus, prices };
+}
+export function refreshMarket(state, f) {
+  const m = marketLists(state, f);
+  f.market = { day: day(state), wants: m.wants, surplus: m.surplus, prices: m.prices, prev: f.market ? f.market.prices : null };
+  return f.market;
+}
+export function refreshMarkets(state) {
+  for (const f of state.factions) if (f.alive && (!f.market || day(state) - f.market.day >= MARKET_DAYS)) refreshMarket(state, f);
+}
+// This week's lists (made now if they have none yet).
+export const marketOf = (state, f) => f.market || refreshMarket(state, f);
+// Price trend vs last week for a good: "up" / "down" / "same" (side: "pay" what they pay you, "ask" what they charge).
+export function priceTrend(f, key, side) {
+  const m = f.market;
+  if (!m || !m.prev || !m.prev[key] || !m.prices[key]) return "same";
+  const a = m.prices[key][side], b = m.prev[key][side];
+  return a > b * 1.03 ? "up" : a < b * 0.97 ? "down" : "same";
+}
+// The market board: groups you know in radio reach (not hostile), best price for the good first.
+// side "sell": who pays you most for it; "buy": who charges least.
+export function marketBoard(state, key, side = "sell") {
+  const rows = [];
+  for (const f of state.factions) {
+    if (!f.alive || !f.known || attitude(f) === "Hostile" || !canRadioGroup(state, f)) continue;
+    const m = marketOf(state, f);
+    const p = m.prices[key];
+    if (!p) continue;
+    const want = m.wants.find((x) => x.key === key), spare = m.surplus.find((x) => x.key === key);
+    rows.push({ f, pay: p.pay, ask: p.ask, want: want ? want.qty : 0, spare: spare ? spare.qty : 0, trend: priceTrend(f, key, side === "sell" ? "pay" : "ask"), atWar: !!f.atWar });
+  }
+  rows.sort((a, b) => (side === "sell" ? b.pay - a.pay : a.ask - b.ask) || a.f.id - b.f.id);
+  return rows;
+}
 
 // Largest whole amount of `key` whose total buying price stays within `budget` (binary search, prices move with qty).
 export function maxBuyable(state, f, key, speech, budget, cap = Infinity) {
@@ -454,6 +517,7 @@ export function executeTrade(state) {
   }
   if (t.intel.sell) { f.lastIntelBuy = day(state); gave.push("your maps"); }
   if (v.honoured && ctx.caravan) ctx.caravan.dealDone = true;
+  armsSold(state, f, t.offer.ammo || 0, offerGear.some((g) => GEAR[g.key] && GEAR[g.key].slot === "weapon")); // diplomacy.js: arming one side of a war
   tradeGoodwill(state, f, tot.offer + tot.ask, tot.offer - tot.ask);
   f.lastDiplomacy = day(state);
   t.offer = {};

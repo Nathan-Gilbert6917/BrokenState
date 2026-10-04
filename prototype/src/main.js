@@ -32,14 +32,18 @@ import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
+import { PRISON_ACTIONS } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
+import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
+import { LOCK_ACTIONS } from "./ui/locks.js";
 
 const HOURS_PER_SECOND = 1 / 3; // at 1× speed an hour takes 3 seconds and a day 72 seconds
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -655,7 +659,9 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison"]) actions[k] = (d) => combatAction(state, k, d);
+// Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
+for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
 for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!ui.planner) return; fn(state, ui, d); autofill(ui.planner); ui.plannerError = ""; };
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
@@ -670,6 +676,8 @@ for (const [k, fn] of Object.entries(SKILL_ACTIONS)) actions[k] = (d) => fn(stat
 for (const [k, fn] of Object.entries(PROD_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
 for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Jobs, market board, world affairs and the coalition (ui/diplomacy.js); some reuse the handlers above (plan, center, rd-open).
+for (const [k, fn] of Object.entries(DIPLO_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).
 for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => { if (k === "tl-open" && state.combat) return; fn(state, ui, d); };
 // Relationships, the mood breakdown and the memorial wall (ui/relations.js).
@@ -677,6 +685,8 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
+// Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
+for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 document.addEventListener("dragstart", (ev) => {
@@ -766,6 +776,7 @@ const changeActions = {
   "pl-supply": (el) => { ui.planner.supplies[el.dataset.k] = Math.max(0, Math.floor(Number(el.value) || 0)); ui.plannerError = ""; },
   ...Object.fromEntries(Object.entries(LOOK_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
+  ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   seed: (el) => newWorld(cleanSeed(el.value), true),
   factioncount: (el) => { ui.factionCount = Number(el.value); newWorld(state.seed, true); },
   rename: (el) => {
@@ -792,6 +803,7 @@ for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => f
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -1067,6 +1079,7 @@ function closeTopLayer() {
   if (!state.autopilot && (state.cards.length || state.engagement || state.trade)) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }
+  if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)
   if (ui.radioWith != null) { ui.radioWith = null; ui.radioMsg = ""; return true; }
   if (ui.caravanPlan) { ui.caravanPlan = null; ui.cvMsg = ""; return true; }
   if (ui.survivor != null) {
