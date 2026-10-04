@@ -79,7 +79,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const farFrom = (t, origin, city, mil) => g.distance(t.id, state.originId) >= origin && map.spotIds.every((s) => g.distance(t.id, s) >= origin - 4) &&
     state.cityIds.every((c) => g.distance(t.id, c) >= city) && state.militaryIds.every((m) => g.distance(t.id, m) >= mil);
   const central = (t) => t.x >= 4 && t.y >= 3 && t.x < g.width - 4 && t.y < g.height - 3 && state.cityIds.some((c) => g.distance(t.id, c) <= 30);
-  const hubCandidates = towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
+  // Large and Huge maps (worldsize.js hiveClear): farther from the hives at first, so the early game is no harsher
+  // than a Normal map's.
+  const clear = sizeDef(worldSize).hiveClear;
+  const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
+  const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
   const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
   state.bases.push({

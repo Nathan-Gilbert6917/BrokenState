@@ -50,7 +50,7 @@ import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou
 import { allianceRaidHelp } from "./alliance.js";
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
-import { worldScale } from "./worldsize.js";
+import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 
 export const RAIDS = {
@@ -89,8 +89,12 @@ export function createFactions(state, count) {
     const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && g.distance(t.id, hubTile) >= 8 &&
       state.factions.every((f) => f.bases.every((b) => g.distance(b, t.id) >= 8)));
     if (!sites.length) return;
-    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= Math.round(30 * Math.sqrt(worldScale(state))));
-    const pool = reach.length ? reach : sites;
+    // Large and Huge maps (worldsize.js nearGroups): only the first few start within raid reach of the hub; the
+    // rest settle beyond it and come into reach as they expand.
+    const nearCap = sizeDef(worldSizeOf(state)).nearGroups;
+    const far = nearCap != null && i >= nearCap ? sites.filter((t) => g.distance(t.id, hubTile) > RAIDS.REACH + 2) : [];
+    const reach = sites.filter((t) => g.distance(t.id, hubTile) <= (nearCap != null && i < nearCap ? RAIDS.REACH : Math.round(30 * Math.sqrt(worldScale(state)))));
+    const pool = far.length ? far : reach.length ? reach : sites;
     const pref = pool.filter((t) => PREFERRED_SITES[type].includes(t.loc.type));
     const site = rng.pick(pref.length ? pref : pool);
     let name = rng.pick(def.names);
