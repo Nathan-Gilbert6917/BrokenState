@@ -4,7 +4,7 @@
 //   loaded again after another world has run in the same process (module state left behind, as in dettest); the
 //   original and the loaded world both play to [days] and must end identical: the dettest digest (tools/digest.js)
 //   and the whole saved state. One seed again in a fresh node process (the save handed over in a file).
-// - Saved mid-way through a team's plan, with prisoners in the cells, mid-battle (a fight at the hub, a raid, a
+// - Saved mid-way through a team's plan, with prisoners in the cells, with raid damage and repairs under way, mid-battle (a fight at the hub, a raid, a
 //   break-in on the deploy step, a hive assault): load, play on, identical. An open card cannot be saved (the
 //   reason names it); once answered it can.
 // - Size at day 365: the save's JSON, gzip, and what browser storage holds; serialize and load times.
@@ -26,6 +26,7 @@ import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, clo
 import { addBuilding } from "../src/sim/buildings.js";
 import { captiveRecords, capturePrisoners, prisonersAt } from "../src/sim/prisoners.js";
 import { assaultHive } from "../src/sim/hives.js";
+import { raidDamage, startAllRepairs } from "../src/sim/breakdowns.js";
 import {
   serializeState, deserializeState, saveToString, loadFromString, saveBlocker, checkSave, SAVE_VERSION, SAVE_FORMAT, SaveError,
 } from "../src/sim/save.js";
@@ -211,6 +212,22 @@ console.log("Saved at awkward moments");
   check(prisonersAt(st, h.id).length === 2, `two prisoners in ${h.name}'s cells`);
   tickHour(st);
   branch("with prisoners, 20 more days", st, (w) => playTo(w, day(w) + 20), (w) => JSON.stringify((w.prisoners || []).map((x) => [x.name, x.at, Math.round(x.opinion * 1000)])));
+}
+{
+  // Raid damage (breakdowns.js raidDamage): wrecked and damaged buildings, the last raid's report and the repairs
+  // under way survive a save, and both worlds repair the same way.
+  const st = world(42, 12);
+  setAutopilot(st, false);
+  const h = hub(st);
+  for (const t of ["walls", "walls", "bunkhouse", "watchtower", "cistern"]) addBuilding(h, t);
+  h.stock.scrap = Math.max(h.stock.scrap || 0, 120);
+  const rep = raidDamage(st, h, { strength: 90, hours: 8, outcome: "broken", by: "Test raiders" });
+  const sig = (w) => JSON.stringify([hub(w).buildings.map((b) => [b.type, Math.round(b.wear || 0), !!b.broken]), hub(w).lastRaid && hub(w).lastRaid.text, (hub(w).repairs || []).map((j) => [j.fx, j.method, Math.round(j.done * 10)])]);
+  check(rep.broken.length >= 1 && h.lastRaid === rep, `a break-in by strength 90 wrecks buildings (${rep.text})`);
+  check(sig(loadFromString(saveToString(st))) === sig(st), "the damage (wear, broken flags, the raid report) is the same after loading");
+  startAllRepairs(st, h);
+  check((h.repairs || []).length >= 1, `repairs started (${(h.repairs || []).length})`);
+  branch("raid damage with repairs under way, 6 more days", st, (w) => playTo(w, day(w) + 6), sig);
 }
 {
   // An open card: refused with a reason; answered, it saves.

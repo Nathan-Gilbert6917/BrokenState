@@ -173,6 +173,7 @@ let truthOk = 0;
 for (const tr of run.truth) {
   const fs = seq.frameState(tr.hour);
   const k = fs.frame;
+  if (fs.info.fallen) continue; // the holdout fell in this hour: its last frame shows your land gone on purpose
   const ownOk = fs.tiles.every((t, i) => (t.owner ?? null) === tr.owner[i]);
   const infOk = fs.tiles.every((t, i) => Math.round(t.infection * INF_Q) === tr.inf[i]);
   const hordesOk = fs.hordes.map((h) => `${h.tile}:${h.size}`).sort().join(" ") === tr.hordes;

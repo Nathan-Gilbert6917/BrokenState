@@ -8,6 +8,7 @@
 // - alerts: each kind appears when its cause is set up and clears when it is fixed; click, dismiss, snooze
 // - keys: B P G T, Shift+P, Tab / N, J, R, F1–F9, Ctrl/Alt+1–9 and Shift+1–9, each listed in the README
 // - the roster: sort by every column, filters, the role drop-down, ticking rows and setting a role for all
+// - the Repairs tab after a raid: the last raid's damage, Repair all with the bill, Patch on a damaged building
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -27,6 +28,9 @@ import { diaryModal, renderLogPanel, leaderEntry, DIARY_ACTIONS, DIARY_CHANGE, l
 import { computeAlerts, renderAlerts, ALERT_ACTIONS, mapHotkey } from "../src/ui/alerts.js";
 import { rosterModal, rosterRows, ROSTER_ACTIONS, ROSTER_CHANGE, setRole } from "../src/ui/roster.js";
 import { camera } from "../src/ui/render.js";
+import { repairsTab, EXPLORE_ACTIONS, EXPLORE_CHANGE } from "../src/ui/explore.js";
+import * as BD from "../src/sim/breakdowns.js";
+const { raidDamage } = BD;
 
 const days = Number(process.argv[2] || 120);
 const seed = Number(process.argv[3] || 42);
@@ -58,8 +62,8 @@ const actionsIn = (html) => [...html.matchAll(/<(\w+)([^>]*?)data-action="([^"]+
 // Handlers: the ones in the new modules, plus the names main.js's action tables define (looked up in its source).
 const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS };
-const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE };
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS };
+const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
   for (const a of actionsIn(html)) {
@@ -573,6 +577,26 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   }
   check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
   console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Repairs tab after a raid (ui/explore.js, sim/breakdowns.js raidDamage)");
+{
+  const w = createWorld({ seed: seed + 9, factionCount: 8 });
+  const h = hub(w);
+  for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) Buildings.addBuilding(h, t);
+  Object.assign(h.stock, { scrap: 150, parts: 10 });
+  const rep = raidDamage(w, h, { strength: 60, hours: 8, outcome: "broken", by: "Test raiders" });
+  const ui = freshUi();
+  let html = repairsTab(w, h);
+  htmlOk(html, "repairs tab after a raid");
+  check(html.includes("Last raid: day") && html.includes("Test raiders") && html.includes("a break-in"), "it shows the last raid: who, how it went, the hours");
+  check(rep.broken.length < 2 || /data-action="rp-all"/.test(html), `a Repair all button with the bill when several are broken (${rep.broken.length})`);
+  const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged);
+  check(!damaged || html.includes(">Patch</button>"), "a damaged building can be patched from the wear table");
+  EXPLORE_ACTIONS["rp-all"](w, ui, { base: String(h.id) });
+  check((h.repairs || []).length >= Math.min(1, rep.broken.length) && /starts/.test(ui.baseMsg || ""), `Repair all starts the jobs ("${(ui.baseMsg || "").slice(0, 100)}")`);
+  htmlOk(repairsTab(w, h), "repairs tab with jobs under way");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

@@ -72,7 +72,8 @@ import {
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude } from "./factions.js";
+import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText } from "./factions.js";
+import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -408,7 +409,9 @@ function visitorHour(state, v) {
     return;
   }
   if (v.phase === "siege") {
-    v.siegeLeft -= 1;
+    // At your walls a strong defence drives them off sooner (factions.js siegePace); the hours set the damage.
+    v.siegeHours = (v.siegeHours || 0) + 1;
+    v.siegeLeft -= v.goal.kind === "base" ? siegePace(state, baseById(state, v.goal.baseId), vStrength(v)) : 1;
     if (v.goal.kind === "base" && !v.warned) { v.warned = true; raidWarning(state, v); }
     if (v.siegeLeft <= 0) {
       if (v.goal.kind === "base") resolveRaidOnYou(state, v);
@@ -519,6 +522,7 @@ function arrive(state, v) {
       if (v.kind === "raiders") {
         v.phase = "siege";
         v.siegeLeft = O.raiders.siegeYou;
+        v.siegeHours = 0;
         v.act = `at the walls of ${base.name}`;
         if (!v.warned) { v.warned = true; raidWarning(state, v); }
         return;
@@ -745,11 +749,12 @@ function paidOff(state, v, base) {
 
 function defendAgainst(state, v, base) {
   if (!state.visitors.includes(v)) return "The raiders are gone.";
+  const siegeHours = v.phase === "siege" ? v.siegeHours || 0 : 0;
   v.phase = "battle";
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name) },
-    ambush: base.alert ? "player" : null, canRetreat: false, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile },
+    ambush: base.alert ? "player" : null, canRetreat: false, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours },
     layout: "baseDefence", deploy: true,
   });
   return "";
@@ -776,25 +781,44 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : def / Math.max(1, vStrength(v));
   const store = count(base, "storehouse") > 0;
+  const att = vStrength(v);
+  const hours = beaten ? 8 : Math.max(1, v.siegeHours || O.raiders.siegeYou);
+  const before = { ...base.stock };
   base.alert = false;
+  let outcome, head;
   if (ratio >= 1.2) {
+    outcome = "held";
     state.stats.raidsRepelled += 1;
     v.size -= rng.int(1, 3);
+    head = `${base.name} drove off ${v.name} after ${hours} hour${hours === 1 ? "" : "s"} at the walls.`;
     log(state, `${base.name} drove off ${v.name}, raiders from outside the state.`, "good");
     if (people.length && rng.chance(0.4)) hurt(state, people[rng.int(0, people.length - 1)], rng.int(10, 30), base.tile, `defending ${base.name}`);
     v.spared = [...(v.spared || []), base.id];
   } else if (ratio >= 0.8) {
+    outcome = "broken";
+    head = `${cap1(v.name)} broke into ${base.name} before being pushed out.`;
     log(state, `${cap1(v.name)} broke into ${base.name} before being pushed out. Supplies were stolen.`, "danger");
     steal(base, store ? 0.1 : 0.2, v.stock);
     for (let i = 0; i < 2 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(15, 45), base.tile, `defending ${base.name}`);
     v.size -= 1;
     v.spared = [...(v.spared || []), base.id];
   } else {
+    outcome = "overrun";
+    head = `${cap1(v.name)} overran ${base.name}.`;
     log(state, `${cap1(v.name)} overran ${base.name}.`, "death");
     steal(base, store ? 0.25 : 0.5, v.stock);
     for (let i = 0; i < 3 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(30, 70), base.tile, `when ${base.name} was overrun`);
     v.spared = [...(v.spared || []), base.id];
     if (base.type === "outpost") removeBase(state, base, "has been lost");
+  }
+  // breakdowns.js: what they smashed, by their strength and the hours at the walls; a card with the bill.
+  const kept = state.bases.includes(base);
+  const dmg = kept ? raidDamage(state, base, { strength: att, hours, outcome, by: v.name }) : null;
+  if (dmg && (dmg.broken.length || dmg.destroyed || dmg.damaged.length)) log(state, `${base.name}: ${dmg.text}`, outcome === "held" ? "info" : "danger");
+  v.lastDamage = dmg ? dmg.text : "";
+  if (!beaten && kept) {
+    const took = stolenText(before, base.stock);
+    raidReportCard(state, base, { title: outcome === "held" ? `${cap1(v.name)} driven off` : `Raid on ${base.name}`, text: [head, took ? `They took ${took}.` : "", dmg.text].filter(Boolean).join(" "), dmg });
   }
   if (v.size <= 0) return leaveMap(state, v, "broken");
   v.phase = "travel";
@@ -1668,12 +1692,16 @@ function onOutsiderRaid(state, result, setup) {
     if (v) leaveMap(state, v, "broken");
     text = `${base ? base.name : "The base"} broke ${v ? v.name : "the raiders"} in a stand-up fight.${got.length ? ` What they carried is yours: ${got.join(", ")}.` : ""}`;
     log(state, text, "good");
+    // A stand-up fight at the walls still costs a little (breakdowns.js): a turn counts as 20 minutes of siege.
+    if (base && state.bases.includes(base)) text += ` ${raidDamage(state, base, { strength: c.strength || 0, hours: (c.siegeHours || 0) + Math.max(1, Math.min(8, (result.turns || 6) / 3)), outcome: "won", by: v ? v.name : "the raiders" }).text}`;
   } else {
     const left = (result.enemiesLeft || 0) / Math.max(1, setup.enemy.count);
     const how = left > 0.5 ? "overrun" : "broken";
+    if (v) v.lastDamage = "";
     if (v && base && state.bases.includes(base) && v.size > 0) resolveRaidOnYou(state, v, how);
     else if (v && v.size <= 0) leaveMap(state, v, "broken");
     text = !v ? "The defenders were beaten, but the raiders had already gone." : how === "overrun" ? `The defenders were beaten. ${cap1(v.name)} took what they wanted.` : `The defenders were beaten, but ${v.name} were too badly mauled to hold the base. They grabbed what they could carry.`;
+    if (v && v.lastDamage) text += ` ${v.lastDamage}`;
   }
   addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });
 }

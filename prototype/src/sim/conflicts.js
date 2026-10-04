@@ -25,7 +25,8 @@ import {
 } from "./parties.js";
 import * as Parties from "./parties.js";
 import { partyFuel, useFuel, partyVehicle } from "./vehicles.js";
-import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled } from "./factions.js";
+import { raidDamage } from "./breakdowns.js";
 import { perceptionChance } from "./markers.js";
 import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
@@ -1444,19 +1445,26 @@ function onRaidDefenseCombat(state, result, setup) {
     if (raid) removeParty(state, raid);
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
+    raidRepelled(state, f); // factions.js: a grudge, and their next raid bigger
     text = `${base ? base.name : "The base"} beat off the ${f ? f.name : ""} raid in a stand-up fight.`;
     log(state, text, "good");
+    // A stand-up fight at the walls still costs a little: a turn of the battle counts as 20 minutes of siege.
+    if (base && raid && state.bases.includes(base)) {
+      const dmg = raidDamage(state, base, { strength: raid.strength, hours: (raid.siegeHours || 0) + clamp((result.turns || 6) / 3, 1, 8), outcome: "won", by: f ? f.name : "the raiders" });
+      text += ` ${dmg.text}`;
+    }
   } else {
     // That battle was the raid, and the defenders lost it: the raiders are inside and take what they came for.
     // There is no second fight by the numbers; the people at the base have already taken their losses.
     const left = (result.enemiesLeft || 0) / Math.max(1, setup.enemy.count);
     const how = left > 0.5 ? "overrun" : "broken";
     const name = base ? base.name : "the base";
-    if (raid && base && state.bases.includes(base)) resolveRaidOnPlayer(state, raid, { beaten: how });
+    const res = raid && base && state.bases.includes(base) ? resolveRaidOnPlayer(state, raid, { beaten: how }) : null;
     if (raid) removeParty(state, raid);
     text = !raid ? `The defenders were beaten, but the raiders had already turned back.`
       : how === "overrun" ? `The defenders were beaten. ${f ? f.name : "The raiders"} overran ${name} and took what they wanted.`
       : `The defenders were beaten, but the raiders were too badly mauled to hold ${name}. They grabbed what they could carry and left.`;
+    if (res && res.dmg) text += ` ${res.dmg.text}`;
   }
   if (f && f.pop <= 2) collapseFaction(state, f);
   addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });

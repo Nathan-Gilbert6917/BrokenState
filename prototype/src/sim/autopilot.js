@@ -24,7 +24,7 @@ import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact,
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
-import { attitude, baseDefense, strength, isAggressiveType } from "./factions.js";
+import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction } from "./economy.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
@@ -562,20 +562,22 @@ function utility(ch, P) {
   return 0;
 }
 
-// Raid warning: rally the guards first (roles change at once), then judge the odds with everyone on alert.
+// Raid warning: rally the guards first (roles change at once), then judge the odds with everyone on alert. Below
+// the style's hold ratio it weighs the tribute against what a fight is likely to cost (factions.js raidStakes:
+// stolen stock, wrecked buildings, wounds): Cautious pays when the tribute is under 1.4× that, Balanced under 1×,
+// Aggressive under 0.6× (and it fights in person first when the odds are poor).
+const TRIBUTE_LEAN = { Cautious: 1.4, Balanced: 1, Aggressive: 0.6 };
 function raidWarningChoice(state, card, opts, P) {
   const find = (re) => opts.find((c) => re.test(c.label));
   const base = state.bases.find((b) => card.title === `Raiders heading for ${b.name}`);
   const raid = base && state.parties.find((q) => q.kind === "raid" && q.target && q.target.kind === "player" && q.target.baseId === base.id && !q.returning);
   if (!base || !raid) return find(/^Prepare/);
   planRoles(state, base);
-  const was = base.alert;
-  base.alert = true;
-  const ratio = baseDefense(state, base) / Math.max(1, raid.strength);
-  base.alert = was;
-  if (ratio >= P.holdRatio) return find(/^Prepare/);
-  if (P.raid) return (ratio >= 0.9 ? find(/^Prepare/) : null) || find(/^Defend in person/) || find(/^Pay tribute/) || find(/^Prepare/);
-  return (ratio < 1.15 ? find(/^Pay tribute/) : null) || find(/^Prepare/);
+  const stakes = raidStakes(state, base, raid);
+  if (stakes.ratio >= P.holdRatio) return find(/^Prepare/);
+  const pay = stakes.tribute < stakes.fight * (TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
+  if (P.raid) return (stakes.ratio >= 0.9 ? find(/^Prepare/) : null) || find(/^Defend in person/) || pay || find(/^Prepare/);
+  return pay || find(/^Prepare/);
 }
 
 // ======================================================================================

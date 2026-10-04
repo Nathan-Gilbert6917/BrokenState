@@ -1,7 +1,8 @@
 // Human-raid census: how often hostile people (the map's groups and raiders from outside the state) come for your
 // bases on autopilot campaigns, how strong they are against your defence, what you are warned, what the autopilot
 // chose, how it ended and what it cost; plus the gates behind it (who turns hostile and when, who is in reach) and
-// the raids and wars between the groups themselves.
+// the raids and wars between the groups themselves; what raids smash (buildings wrecked and the repair bill,
+// breakdowns.js raidDamage) and how many groups are still alive, aggressive and hostile on days 365 and 730.
 // Usage: node tools/raidcensus.js [days] [cautious|balanced|aggressive|all] [seeds...] [--runs]
 //   defaults: 365 days, all three styles, seeds 1–20 (60 runs). --runs prints one line per run as well.
 // Read-only: the sim is watched from outside (new raid parties each hour, the log lines of each hour, the
@@ -9,7 +10,7 @@
 import { createWorld, tickHour, day, hub, atBase, supplyValue, factionById, baseById } from "../src/sim/world.js";
 import { setAutopilot, PERSONALITIES } from "../src/sim/autopilot.js";
 import { attitude, baseDefense, strength, isAggressiveType } from "../src/sim/factions.js";
-import { FACTION_TYPES } from "../src/sim/data.js";
+import { FACTION_TYPES, SUPPLIES } from "../src/sim/data.js";
 import { vStrength, visitorInfo } from "../src/sim/visitors.js";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -32,7 +33,7 @@ function run(seed, style) {
   const state = createWorld({ seed, factionCount: 8 });
   state.started = true;
   setAutopilot(state, true, style);
-  const R = { seed, style, raids: [], outsiders: [], rescues: 0, rescueChoices: {}, problems: [], groups: {}, hubDef: {} };
+  const R = { seed, style, raids: [], outsiders: [], rescues: 0, rescueChoices: {}, problems: [], groups: {}, hubDef: {}, alive: {} };
   const byId = new Map();
   const outById = new Map();
   let lines = [];
@@ -44,18 +45,31 @@ function run(seed, style) {
   };
   hookLog();
   // Groups: when each first turns hostile, and the days it could raid you (the ordinary raid's gates).
-  for (const f of state.factions) {
+  const newGroup = (f) => {
     R.groups[f.id] = { type: f.type, agg: isAggressiveType(f), hostile0: attitude(f) === "Hostile", gw0: f.goodwill, hostileDay: attitude(f) === "Hostile" ? 0 : null,
-      hostileDays: 0, eligibleDays: 0, inReachDays: 0, unhostiled: 0, launches: 0, onYou: 0, alive: true, dist0: null };
-  }
+      hostileDays: 0, eligibleDays: 0, inReachDays: 0, unhostiled: 0, launches: 0, onYou: 0, alive: true, dist0: null, late: day(state) > 1 };
+  };
+  for (const f of state.factions) newGroup(f);
   const prevAtt = new Map(state.factions.map((f) => [f.id, attitude(f)]));
   const nearest = (f) => { let best = Infinity; for (const b of state.bases) best = Math.min(best, state.grid.distance(f.bases[0], b.tile)); return best; };
+  const nearestAny = (f) => { let best = Infinity; for (const b of state.bases) for (const fb of f.bases) best = Math.min(best, state.grid.distance(fb, b.tile)); return best; };
+  // The buildings a raid wrecked and the bill (base.lastRaid, breakdowns.js raidDamage) when it was set this hour.
+  const damageOf = (r, b0, base) => {
+    const lr = base && base.lastRaid;
+    if (!lr || !b0 || lr === b0.lastRaid) return;
+    r.broken = lr.broken.length;
+    r.destroyed = lr.destroyed ? 1 : 0;
+    r.damaged = lr.damaged.length;
+    r.repair = Object.entries(lr.cost || {}).reduce((a, [k, q]) => a + q * (SUPPLIES[k] ? SUPPLIES[k].value : 1), 0);
+    r.repairHours = lr.workHours || 0;
+    r.siegeH = lr.hours;
+  };
   for (const f of state.factions) R.groups[f.id].dist0 = f.bases.length ? nearest(f) : null;
   try {
     while (day(state) <= days && !state.gameOver) {
       // Before the hour: the stock and people at each base with a raid near it.
       const before = new Map();
-      for (const b of state.bases) before.set(b.id, { value: supplyValue(b.stock), people: atBase(state, b.id).length, health: atBase(state, b.id).reduce((a, s) => a + s.health, 0) });
+      for (const b of state.bases) before.set(b.id, { value: supplyValue(b.stock), people: atBase(state, b.id).length, health: atBase(state, b.id).reduce((a, s) => a + s.health, 0), lastRaid: b.lastRaid });
       const liveBefore = new Set(state.parties.filter((p) => p.kind === "raid").map((p) => p.id));
       lines = [];
       hookLog();
@@ -108,6 +122,7 @@ function run(seed, style) {
           r.wounds = Math.max(0, b0.health - atBase(state, base.id).reduce((a, s) => a + s.health, 0));
         } else if (b0) r.lost = b0.value;
         if (["held", "break-in", "overrun", "won in person"].includes(r.outcome)) r.deaths = deathLines.length;
+        damageOf(r, b0, base);
       }
       // Raiders from outside heading for your bases.
       for (const v of state.visitors || []) {
@@ -148,6 +163,7 @@ function run(seed, style) {
         const b0 = before.get(cur.baseId), base = baseById(state, cur.baseId);
         if (b0) cur.lost = Math.max(0, b0.value - (base ? supplyValue(base.stock) : 0));
         if (hit) cur.deaths = deathLines.length;
+        damageOf(cur, b0, base);
       }
       for (const t of lines) {
         if (/^Lookouts at .* see .* fighters coming for their people/.test(t)) R.rescues++;
@@ -156,6 +172,14 @@ function run(seed, style) {
       }
       // Once a day: attitudes and the gates.
       if (state.hour % 24 === 0) {
+        for (const f of state.factions) if (!R.groups[f.id]) newGroup(f);
+        if ([365, 730].includes(d) && hub(state)) {
+          const live = state.factions.filter((f) => f.alive);
+          const hostile = live.filter((f) => attitude(f) === "Hostile");
+          const aggr = live.filter((f) => isAggressiveType(f));
+          R.alive[d] = { groups: live.length, aggressive: aggr.length, hostile: hostile.length, inReach: hostile.filter((f) => f.bases.length && nearestAny(f) <= 30).length,
+            aggPop: aggr.reduce((a, f) => a + f.pop, 0) / Math.max(1, aggr.length), aggBases: aggr.reduce((a, f) => a + f.bases.length, 0) / Math.max(1, aggr.length), late: live.filter((f) => R.groups[f.id] && R.groups[f.id].late).length };
+        }
         if ([30, 90, 180, 365].includes(d) && hub(state)) R.hubDef[d] = baseDefense(state, hub(state));
         for (const f of state.factions) {
           const G = R.groups[f.id];
@@ -164,7 +188,7 @@ function run(seed, style) {
           if (a === "Hostile") { G.hostileDays++; if (G.hostileDay == null) G.hostileDay = d; }
           if (prevAtt.get(f.id) === "Hostile" && a !== "Hostile") G.unhostiled++;
           prevAtt.set(f.id, a);
-          const reach = f.bases.length && nearest(f) <= 20;
+          const reach = f.bases.length && nearestAny(f) <= 30; // factions.js RAIDS.REACH, from their nearest base
           if (reach) G.inReachDays++;
           if (a === "Hostile" && reach && f.pop >= 8 && FACTION_TYPES[f.type].raid > 0) G.eligibleDays++;
         }
@@ -180,6 +204,8 @@ function run(seed, style) {
   R.vstats = state.visitorInfo ? { ...visitorInfo(state).stats } : {};
   R.hubPop = hub(state) ? atBase(state, hub(state).id).length : 0;
   R.hubValue = hub(state) ? supplyValue(hub(state).stock) : 0;
+  R.takeovers = state.stats.takeovers || 0;
+  R.newGangs = state.stats.newGangs || 0;
   return R;
 }
 
@@ -231,19 +257,29 @@ for (const style of styles) {
   const ended = onYou.filter((r) => r.outcome);
   console.log(`  outcomes: ${tallyText(tally(ended.map((r) => r.outcome)), ended.length)}`);
   const fought = ended.filter((r) => ["held", "break-in", "overrun", "won in person"].includes(r.outcome));
+  const dmgOf = (xs) => `wrecked ${f1(mean(xs.map((r) => r.broken || 0)))} (damaged ${f1(mean(xs.map((r) => r.damaged || 0)))}, destroyed ${f1(mean(xs.map((r) => r.destroyed || 0)))}), repair ${f1(mean(xs.map((r) => r.repair || 0)))} value / ${f1(mean(xs.map((r) => r.repairHours || 0)))} work-h, siege ${f1(mean(xs.filter((r) => r.siegeH != null).map((r) => r.siegeH)))} h`;
+  console.log(`  damage per raid that reached you: ${dmgOf(fought)} · held: ${dmgOf(fought.filter((r) => r.outcome === "held"))} · break-in: ${dmgOf(fought.filter((r) => r.outcome === "break-in"))} · overrun: ${dmgOf(fought.filter((r) => r.outcome === "overrun"))}`);
   console.log(`  cost per raid that reached you: stock value lost ${f1(mean(fought.map((r) => r.lost)))} (break-in ${f1(mean(fought.filter((r) => r.outcome === "break-in").map((r) => r.lost)))}, overrun ${f1(mean(fought.filter((r) => r.outcome === "overrun").map((r) => r.lost)))}), deaths ${f1(mean(fought.map((r) => r.deaths)))}, health lost ${f1(mean(fought.map((r) => r.wounds)))} · paying cost ${f1(mean(ended.filter((r) => r.outcome === "paid").map((r) => r.lost)))} · hub stock value at end ${f1(mean(runs.map((r) => r.hubValue)))}`);
   // Outsiders.
   const oended = outs.filter((r) => r.outcome);
-  console.log(`Outsider raids on you per run ${f1(outs.length / n)} (bands on the map ${f1(mean(runs.map((r) => r.outsiders.length)))}, raids on groups ${f1(mean(runs.map((r) => r.vstats.raidsOnGroups || 0)))}): warned ${pct(outs.filter((r) => r.warned != null).length, outs.length)}, chose ${tallyText(tally(outs.filter((r) => r.warned != null).map((r) => r.choice || "?")))}, outcomes ${tallyText(tally(oended.map((r) => r.outcome)), oended.length)}, def/att ${f1(median(outs.map((r) => r.def0 / Math.max(1, r.str))))}, lost ${f1(mean(oended.filter((r) => r.outcome !== "paid").map((r) => r.lost)))}, paid ${f1(mean(oended.filter((r) => r.outcome === "paid").map((r) => r.lost)))}`);
+  const ofought = oended.filter((r) => ["held", "break-in", "overrun", "won in person"].includes(r.outcome));
+  console.log(`Outsider raids on you per run ${f1(outs.length / n)} (bands on the map ${f1(mean(runs.map((r) => r.outsiders.length)))}, raids on groups ${f1(mean(runs.map((r) => r.vstats.raidsOnGroups || 0)))}): warned ${pct(outs.filter((r) => r.warned != null).length, outs.length)}, chose ${tallyText(tally(outs.filter((r) => r.warned != null).map((r) => r.choice || "?")))}, outcomes ${tallyText(tally(oended.map((r) => r.outcome)), oended.length)}, def/att ${f1(median(outs.map((r) => r.def0 / Math.max(1, r.str))))}, lost ${f1(mean(oended.filter((r) => r.outcome !== "paid").map((r) => r.lost)))}, paid ${f1(mean(oended.filter((r) => r.outcome === "paid").map((r) => r.lost)))}, wrecked ${f1(mean(ofought.map((r) => r.broken || 0)))}, repair ${f1(mean(ofought.map((r) => r.repair || 0)))}`);
   console.log(`Rescue raids (prisoners) per run ${f1(mean(runs.map((r) => r.rescues)))}: ${tallyText(runs.reduce((o, r) => { for (const [k, v] of Object.entries(r.rescueChoices)) o[k] = (o[k] || 0) + v; return o; }, {}))}`);
   // Groups and gates.
   const groups = runs.flatMap((r) => Object.values(r.groups));
-  const agg = groups.filter((g) => g.agg), peace = groups.filter((g) => !g.agg);
-  console.log(`Groups: aggressive ${f1(agg.length / n)} a run (hostile at start ${pct(agg.filter((g) => g.hostile0).length, agg.length)}, ever ${pct(agg.filter((g) => g.hostileDay != null).length, agg.length)}, base within 20 tiles at start ${pct(agg.filter((g) => g.dist0 <= 20).length, agg.length)}), peaceful ${f1(peace.length / n)} (ever hostile ${pct(peace.filter((g) => g.hostileDay != null).length, peace.length)}, on day ${f1(mean(peace.filter((g) => g.hostileDay).map((g) => g.hostileDay)))}, hostile-days ${f1(mean(peace.map((g) => g.hostileDays)))})`);
+  const agg = groups.filter((g) => g.agg && !g.late), peace = groups.filter((g) => !g.agg && !g.late); // the groups of day 1 (newcomers are counted on the alive lines)
+  console.log(`Groups: aggressive ${f1(agg.length / n)} a run (hostile at start ${pct(agg.filter((g) => g.hostile0).length, agg.length)}, ever ${pct(agg.filter((g) => g.hostileDay != null).length, agg.length)}, base within 30 tiles at start ${pct(agg.filter((g) => g.dist0 <= 30).length, agg.length)}), peaceful ${f1(peace.length / n)} (ever hostile ${pct(peace.filter((g) => g.hostileDay != null).length, peace.length)}, on day ${f1(mean(peace.filter((g) => g.hostileDay).map((g) => g.hostileDay)))}, hostile-days ${f1(mean(peace.map((g) => g.hostileDays)))})`);
   console.log(`  aggressive groups: days hostile+in reach+pop 8 (can raid you) ${f1(mean(agg.map((g) => g.eligibleDays)))} of ${days}, stopped being hostile ${pct(agg.filter((g) => g.unhostiled).length, agg.length)}, launches ${f1(mean(agg.map((g) => g.launches)))} (on you ${f1(mean(agg.map((g) => g.onYou)))}) · by type: ${["raider", "expansionist", "zealot"].map((t) => { const gs = agg.filter((g) => g.type === t); return `${t} ${gs.length} groups, ${f1(mean(gs.map((g) => g.onYou)))} on you, eligible ${f1(mean(gs.map((g) => g.eligibleDays)))}d`; }).join("; ")}`);
   console.log(`  aggressive groups gone (collapsed) by day 90/180/365/730: ${[90, 180, 365, 730].filter((x) => x <= days).map((x) => pct(agg.filter((g) => g.fellDay != null && g.fellDay <= x).length, agg.length)).join(" / ")} · all peaceful groups gone by day ${days}: ${pct(peace.filter((g) => g.fellDay != null).length, peace.length)}`);
   console.log(`  peaceful groups that turned hostile: raids on you ${peace.filter((g) => g.hostileDay != null).reduce((a, g) => a + g.onYou, 0)} in ${peace.filter((g) => g.hostileDay != null).length} groups (ordinary raids need an aggressive type)`);
+  for (const dd of [365, 730].filter((x) => x <= days)) {
+    const rs = runs.filter((r) => r.alive[dd]);
+    if (!rs.length) continue;
+    const m = (k) => f1(mean(rs.map((r) => r.alive[dd][k])));
+    console.log(`  alive on day ${dd} (${rs.length} runs still going): groups ${m("groups")}, aggressive ${m("aggressive")} (people ${m("aggPop")}, bases ${m("aggBases")}), hostile to you ${m("hostile")} (within 30 tiles ${m("inReach")}), groups that arrived later ${m("late")}`);
+  }
   const dsum = (k) => mean(runs.map((r) => r.diplo[k] || 0));
+  console.log(`  takeovers of a broken group's land per run ${f1(mean(runs.map((r) => r.takeovers)))}, new gangs from beyond the border ${f1(mean(runs.map((r) => r.newGangs)))}`);
   console.log(`Wars between groups per run ${f1(dsum("wars"))} (you joined ${f1(dsum("joined"))}), war raids ${f1(dsum("raids"))}, pacts ${f1(dsum("pacts"))}, peace ${f1(dsum("peace"))}\n`);
 }
 const crashes = all.filter((r) => r.problems.length).length;

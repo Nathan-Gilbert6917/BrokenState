@@ -1,6 +1,7 @@
 // Headless regression checks for fights and the living world: who takes the field against you, waking
 // sleepers, loot after a fight, wear and med kits, the battle and trade queues, teams that must never be left
-// halted, raids carried out of, base defence in person, hordes, pacts, collapsed groups and trade-route terms.
+// halted, raids carried out of, base defence in person, hordes, pacts, collapsed groups and trade-route terms; raids on
+// you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
@@ -14,8 +15,10 @@ import {
 import { triggerConflict, guardsFor, fightOdds, raidForce, engagedWith, defendInPerson } from "../src/sim/conflicts.js";
 import {
   attitude, changeGoodwill, collapseFaction, recomputeOwnership, factionsDaily, raidWarning, deliverHelpCall,
-  resolveRaidOnFaction, baseDefense,
+  resolveRaidOnFaction, baseDefense, raidSize, siegePace, raidRepelled, resolveRaidOnPlayer, maxBases, strength, RAIDS,
 } from "../src/sim/factions.js";
+import { raidDamage, repairPlan } from "../src/sim/breakdowns.js";
+import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour } from "../src/sim/buildings.js";
 import { hordesHour, reduceHorde, HORDE_MAX_SIZE, HORDE_MIN_SIZE } from "../src/sim/hordes.js";
 import { endTrade, tradePending, routeProblem, routeWorth, routeExchange, createRoute } from "../src/sim/trade.js";
 import { routesDaily } from "../src/sim/economy.js";
@@ -634,6 +637,143 @@ const groupOf = (state, type) => {
   const out = st.stats.conflicts.outcomes;
   check(Object.keys(out).some((k) => k.startsWith("combat-")), "the conflict handler ran without any card having started a fight first");
   check(!st.parties.includes(p) || engagedWith(st, p) === "card" || p.phase !== "engaged", "and the team is not left halted");
+}
+
+// 17. Raids on you (factions.js RAIDS) and the damage they do (breakdowns.js raidDamage); groups that grow.
+{
+  console.log("Raids: size, escalation, siege, damage, tribute, growth");
+  const st = world(seed + 400);
+  const h = hub(st);
+  const f = groupOf(st, "raider");
+  f.goodwill = -80; f.pop = 40; f.known = true;
+  h.alert = true; const prep = baseDefense(st, h); h.alert = false;
+  const sizes = Array.from({ length: 40 }, () => raidSize(st, f, h));
+  const cap = strength(f) * RAIDS.CAP;
+  check(sizes.every((s) => s <= cap + 1e-9 && (s >= Math.min(cap, prep * RAIDS.SIZE[0]) - 1e-9) && s <= prep * RAIDS.SIZE[1] + 1e-9),
+    `a raid is sized to the prepared defence ${prep.toFixed(0)} (0.6–1.0×) and never above the whole group (${Math.min(...sizes).toFixed(1)}–${Math.max(...sizes).toFixed(1)}, cap ${cap.toFixed(0)})`);
+  const small = { ...f, pop: 4 };
+  check(raidSize(st, small, h) <= Math.max(RAIDS.MIN, strength(small) * RAIDS.CAP) + 1e-9, "a small group's raid is capped by its own strength");
+  // Escalation: each raid beaten makes the next 25% bigger, up to 2×; a raid that gets in resets it.
+  raidRepelled(st, f);
+  check(Math.abs(f.raidEsc - 1.25) < 1e-9 && f.grudge >= 1, `one raid beaten: next raid ×${f.raidEsc}, grudge ${f.grudge}`);
+  for (let i = 0; i < 6; i++) raidRepelled(st, f);
+  check(f.raidEsc === RAIDS.ESC_MAX, `escalation stops at ×${RAIDS.ESC_MAX} (${f.raidEsc})`);
+  // Siege pace: a strong defence ends a siege up to 4× sooner, a weak one takes the full 8 hours.
+  check(siegePace(st, h, 1) === RAIDS.PACE_MAX && siegePace(st, h, baseDefense(st, h) * 5) === 1, "siege pace: 4 hours an hour against a tiny raid, 1 against a strong one");
+  // A raid that broke in: stock taken, buildings wrecked, a card with the bill; escalation reset, recruits won.
+  for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern"]) addBuilding(h, t);
+  Object.assign(h.stock, { food: 200, ammo: 200, scrap: 100, parts: 10 });
+  const pop0 = f.pop;
+  const r1 = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: baseDefense(st, h) / 0.9, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  if (check(!!r1, "a raid can be sent at the hub (break-in)")) {
+    r1.siegeHours = 8;
+    st.cards.length = 0;
+    const res = resolveRaidOnPlayer(st, r1);
+    const card = st.cards.find((c) => /^Raid on /.test(c.title));
+    check(res.outcome === "broken" && f.raidEsc === 1 && f.pop > pop0 - 1, `a break-in resets the escalation and wins them recruits (esc ${f.raidEsc}, people ${pop0} → ${f.pop})`);
+    check(res.dmg.broken.length >= 1 && card && /wrecked \(repair: /.test(card.text) && /They took/.test(card.text), `the result card says what was taken and wrecked: "${card ? card.text.slice(0, 220) : "no card"}"`);
+    check(card && /^Start the repairs/.test(card.choices[0].label), "and offers to start the repairs");
+    const brokenNow = h.buildings.filter((b) => b.broken).length;
+    card.choices[0].resolve(st);
+    check((h.repairs || []).length >= Math.min(1, brokenNow), `"Start the repairs" starts them (${(h.repairs || []).length} jobs for ${brokenNow} broken)`);
+    check(h.lastRaid === res.dmg && /Damage:/.test(st.log.find((l) => l.text.startsWith(`${h.name}: Damage`))?.text || ""), "the log and the Repairs tab (base.lastRaid) keep the damage");
+  }
+  // Damage scales with strength, hours and outcome; the walls and defences take it first.
+  {
+    const total = (s2, outcome, str, hours) => {
+      const b = hub(s2);
+      for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) addBuilding(b, t);
+      return raidDamage(s2, b, { strength: str, hours, outcome });
+    };
+    const quick = total(world(seed + 401), "held", 30, 2), long = total(world(seed + 401), "held", 30, 8);
+    const brk = total(world(seed + 401), "broken", 40, 8), over = total(world(seed + 401), "overrun", 40, 8);
+    check(quick.budget < long.budget && long.budget < brk.budget && brk.budget < over.budget, `budget: quick ${quick.budget} < long ${long.budget} < break-in ${brk.budget} < overrun ${over.budget}`);
+    check(quick.broken.length === 0, `driven off in 2 hours: ${quick.text}`);
+    check(over.broken.length + (over.destroyed ? 1 : 0) >= 2, `overrun: ${over.text}`);
+    const s5 = world(seed + 402), b5 = hub(s5);
+    for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) addBuilding(b5, t);
+    const inner0 = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
+    raidDamage(s5, b5, { strength: 40, hours: 8, outcome: "held" });
+    const outerW = b5.buildings.filter((b) => ["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
+    const innerW = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
+    check(outerW > innerW, `a raid driven off hits the defences first (outer ${outerW.toFixed(0)}, inner ${innerW.toFixed(0)})`);
+    // Damaged and broken buildings work worse or not at all.
+    const wall = b5.buildings.find((b) => b.type === "walls");
+    wall.broken = null; wall.wear = 10;
+    const w0 = baseWalls(b5);
+    wall.wear = 70;
+    check(baseWalls(b5) === w0 - 1, `a damaged wall section gives 2 wall strength instead of 3 (${w0} → ${baseWalls(b5)})`);
+    const bunk = b5.buildings.find((b) => b.type === "bunkhouse");
+    bunk.broken = null;
+    const beds0 = baseBeds(b5);
+    bunk.broken = { day: 1, cause: "test" };
+    check(baseBeds(b5) === beds0 - 6, `a wrecked bunkhouse gives no beds (${beds0} → ${baseBeds(b5)})`);
+    check(repairPlan(s5, b5, wall, "repair").ok || /Needs/.test(repairPlan(s5, b5, wall, "repair").why), "a damaged (unbroken) wall can be patched with a proper repair");
+    // Nobody builds or repairs while the base is on alert.
+    b5.stock.scrap = 200;
+    queueBuild(s5, b5, "smoker");
+    const job = b5.construction[0];
+    b5.alert = true;
+    constructionHour(s5);
+    const p0 = job.progress;
+    b5.alert = false;
+    constructionHour(s5);
+    check(p0 === 0 && job.progress > 0, `construction stops on alert (${p0}) and goes on after (${job.progress.toFixed(1)})`);
+  }
+  // Tribute: +6 goodwill, which fades again at 0.5 a day for an aggressive group.
+  {
+    const s6 = world(seed + 403), h6 = hub(s6), g = groupOf(s6, "raider");
+    g.goodwill = -60; g.raidCooldown = 999; g.pop = 30;
+    Object.assign(h6.stock, { food: 100, ammo: 100 });
+    const r6 = spawnAiParty(s6, g, "raid", g.bases[0], h6.tile, { strength: 20, target: { kind: "player", baseId: h6.id, tile: h6.tile } });
+    if (check(!!r6, "a raid can be sent (tribute)")) {
+      raidWarning(s6, r6);
+      pick(s6.cards.pop(), /^Pay tribute/).resolve(s6);
+      check(g.goodwill === -54 && g.boughtGw === 6, `tribute: goodwill ${g.goodwill}, bought ${g.boughtGw}`);
+      s6.parties = s6.parties.filter((q) => q.owner === "player");
+      for (let d = 0; d < 14; d++) { factionsDaily(s6); s6.parties = s6.parties.filter((q) => q.owner === "player"); s6.cards.length = 0; }
+      check(Math.abs(g.goodwill + 60) < 1e-6 && g.boughtGw === 0, `after 12 days it is gone again (goodwill ${g.goodwill.toFixed(2)})`);
+    }
+  }
+  // A peaceful group you provoked into hostility raids you now and then, and only you.
+  {
+    const s7 = world(seed + 404);
+    const m = groupOf(s7, "military");
+    let onYou = 0, onGroups = 0;
+    for (let d = 0; d < 200; d++) {
+      m.goodwill = -80; m.pop = Math.max(m.pop, 20);
+      for (const o of s7.factions) if (o !== m) o.raidCooldown = 999;
+      factionsDaily(s7);
+      onYou += s7.parties.filter((q) => q.kind === "raid" && q.owner === m.id && q.target.kind === "player").length;
+      onGroups += s7.parties.filter((q) => q.kind === "raid" && q.owner === m.id && q.target.kind === "faction").length;
+      s7.parties = s7.parties.filter((q) => q.owner === "player");
+      s7.cards.length = 0;
+    }
+    check(onYou >= 1 && onGroups === 0, `a hostile military remnant raided you ${onYou} times in 200 days, other groups ${onGroups}`);
+  }
+  // Winners take the land: a collapse hands bases and people to the group that broke them.
+  {
+    const s8 = world(seed + 405);
+    const a = groupOf(s8, "raider");
+    const b = s8.factions.find((x) => x.alive && x !== a);
+    a.pop = 40; a.bases = a.bases.slice(0, 1); b.bases = b.bases.slice(0, 1);
+    const extra = s8.tiles.find((t) => t.loc && t.owner == null && s8.factions.every((o) => !o.bases.includes(t.id)) && !s8.bases.some((pb) => pb.tile === t.id));
+    b.bases.push(extra.id);
+    const pop0 = a.pop, n0 = a.bases.length;
+    collapseFaction(s8, b, a);
+    check(a.bases.length === n0 + 2 && a.pop >= pop0 + 2 && maxBases(a) === 6, `${a.name} took ${a.bases.length - n0} bases and ${a.pop - pop0} people from the group it broke (cap ${maxBases(a)})`);
+  }
+  // With fewer than two aggressive groups left, a new gang moves in.
+  {
+    const s9 = world(seed + 406);
+    for (const g of s9.factions) if (FACTION_TYPES[g.type].attitude === "Aggressive") { g.alive = false; g.bases = []; }
+    const n0 = s9.factions.length;
+    s9.hour = 24 * 70;
+    for (let d = 0; d < 400 && s9.factions.length === n0; d++) { s9.hour += 24; factionsDaily(s9); s9.parties = s9.parties.filter((q) => q.owner === "player"); s9.cards.length = 0; }
+    const g = s9.factions[s9.factions.length - 1];
+    const dist = g.bases.length ? s9.grid.distance(g.bases[0], hub(s9).tile) : -1;
+    check(s9.factions.length === n0 + 1 && g.alive && attitude(g) === "Hostile" && dist >= 12 && dist <= 30, `a new gang settled (${g.name}, ${g.type}, ${g.pop} people, ${dist} tiles from the hub)`);
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
