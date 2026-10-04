@@ -27,6 +27,7 @@ import { log, atBase, skill, newId } from "./world.js";
 import { BUILDINGS, RECIPES, stations, recipeOutput } from "./buildings.js";
 import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName } from "./crafting.js";
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
+import { isManaged } from "./work.js";
 
 export const ORDER_MODES = {
   forever: { name: "Forever", desc: "Runs whenever the operator and the inputs are there." },
@@ -188,7 +189,7 @@ function fallbackHour(state, base) {
     const hold = orderHold(state, base, st);
     if (!hold) continue;
     const op = people.find((s) => s.role === "operate" && s.station === st.id);
-    if (!op || op.pinned) continue;
+    if (!op || op.pinned || isManaged(state, op)) continue; // work priorities (work.js) move them by themselves
     let as, where;
     if (o.fallback.startsWith("st:")) {
       const other = list.find((x) => x.id === Number(o.fallback.slice(3)));

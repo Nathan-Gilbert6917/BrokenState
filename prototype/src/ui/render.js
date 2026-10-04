@@ -1244,6 +1244,7 @@ function drawPlayerParty(state, p) {
         const s = zoomBoost();
         sprite(wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
         sprite(partySpriteCanvas(kind, look.color), px, py, spriteW(kind), { facing });
+        crewTag(p, px, py);
         return;
       }
     }
@@ -1262,6 +1263,7 @@ function drawPlayerParty(state, p) {
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
+    crewTag(p, px, py);
     return;
   }
   // No contact: dashed planned route and an estimated position.
@@ -1293,6 +1295,24 @@ function drawPlayerParty(state, p) {
   sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));
   badge(ex, ey, "unknown", color);
+  crewTag(p, ex, ey);
+}
+
+// A crew's team (sim/crews.js) carries its role's name above the sprite.
+function crewTag(p, x, y) {
+  if (!p.crewName) return;
+  const s = zoomBoost();
+  const size = 10 * s;
+  ctx.save();
+  ctx.font = `bold ${size.toFixed(1)}px Segoe UI`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = size * 0.3;
+  ctx.strokeStyle = "rgba(13,15,18,0.85)";
+  ctx.strokeText(p.crewName, x, y - 22 * s);
+  ctx.fillStyle = "#e0a84f";
+  ctx.fillText(p.crewName, x, y - 22 * s);
+  ctx.restore();
 }
 
 export function tileTooltip(state, id) {

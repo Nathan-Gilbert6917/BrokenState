@@ -68,6 +68,17 @@ export function searchBusy(state, p) {
 export function startScavenge(state, p) {
   const t = state.tiles[p.dest];
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
+  // A crew's team (crews.js) searches hour by hour on its own, never in the shared slot or on a battle map: a job
+  // on the spot that crews.js works and ends.
+  if (p.crewRole != null) {
+    p.phase = "task";
+    p.task = { type: "crewsearch", hours: null, done: 0 };
+    p.crewSearch = {
+      partyId: p.id, tile: p.dest, heat: isNight(state) ? 0 : 5, hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
+      guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
+    };
+    return true;
+  }
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
     const groups = raidEnemies(state, p.dest);

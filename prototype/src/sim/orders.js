@@ -34,6 +34,7 @@ export function describeOrder(state, o) {
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
     case "searcharea": return "Search the area for the wreck";
+    case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
   }
   return o.type;
 }

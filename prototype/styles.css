@@ -427,3 +427,38 @@ a.lk:hover { color: var(--accent); text-decoration-style: solid; }
 .settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
 .settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
 #cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }
+
+/* Work tab (ui/work.js): the priority grid, the role editor, the schedule strip and the crews */
+.worktab .wbar { gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.4rem; }
+.worktab .wscroll { overflow-x: auto; }
+table.worktbl { width: auto; min-width: 100%; }
+table.worktbl td, table.worktbl th { padding: 0.2rem 0.18rem; vertical-align: middle; }
+table.worktbl th.wth { text-align: center; font-size: 0.85rem; min-width: 2.6rem; }
+table.worktbl td.wnow { min-width: 14rem; max-width: 22rem; font-size: 0.9rem; }
+.worktab .wwhy { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+button.wcell { width: 2.4rem; height: 2.2rem; padding: 0; font-weight: 700; font-size: 1.05rem; border-radius: 5px; background: #191c21; color: var(--muted); }
+button.wcell.p1 { background: #24502f; color: #d9ffe0; border-color: #4f9a62; }
+button.wcell.p2 { background: #2e4a2a; color: #e2f5d5; border-color: #5d8a4f; }
+button.wcell.p3 { background: #48472a; color: #f3f0c8; border-color: #8c8650; }
+button.wcell.p4 { background: #4d3b25; color: #f5dfbf; border-color: #8e6a3e; }
+button.wcell.p5 { background: #3b3236; color: #d9c9cf; border-color: #6b5960; }
+button.wcell.over { box-shadow: 0 0 0 2px var(--accent) inset; text-decoration: underline; }
+button.wcell.below { opacity: 0.45; }
+.worktab .wmanual td { opacity: 0.85; }
+.worktab .wtask, .wtask { margin-left: 0.3rem; }
+.worktab .whelp { margin: 0.5rem 0; line-height: 1.35; }
+.worktab .wroles { gap: 0.3rem; flex-wrap: wrap; }
+.worktab .wrolecard { margin-top: 0.4rem; }
+.worktab .wname { font-weight: 700; font-size: 1.05rem; width: 16rem; }
+select.wmin { padding: 0.05rem 0.1rem; font-size: 0.8rem; width: 2.6rem; }
+.worktab .wsched { display: flex; gap: 2px; margin: 0.3rem 0; flex-wrap: wrap; }
+button.wsch { width: 2.1rem; height: 2rem; padding: 0; font-weight: 700; font-size: 0.85rem; }
+button.wsch.s-w { background: #2e4a2a; }
+button.wsch.s-g { background: #5a2a26; border-color: var(--danger); }
+button.wsch.s-f { background: #2a3f5a; }
+button.wsch.s-s { background: #2c2a44; color: var(--muted); }
+.worktab .wcrew { margin-top: 0.4rem; }
+.worktab .wfield, .worktab .wcrewset { gap: 0.5rem 0.9rem; flex-wrap: wrap; align-items: center; margin-top: 0.3rem; }
+.worktab label.wcf { display: inline-flex; align-items: center; gap: 0.3rem; }
+.worktab label.wcf input[type="number"] { width: 4rem; }
+.worksurv { margin-bottom: 0.6rem; }

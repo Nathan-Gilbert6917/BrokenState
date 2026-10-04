@@ -47,7 +47,7 @@ export const craftName = (key) => CRAFTS[key].name || GEAR[CRAFTS[key].gear].nam
 export const craftQueue = (base) => base.crafting || (base.crafting = []);
 export const hasWorkshop = (base) => WORKSHOP_TYPES.some((t) => count(base, t) > 0);
 
-function meetsNeeds(base, r) {
+export function meetsNeeds(base, r) {
   if (!r.needs) return true;
   if (r.needs === "workshop") return hasWorkshop(base);
   return count(base, r.needs) > 0;
