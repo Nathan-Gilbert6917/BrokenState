@@ -28,7 +28,7 @@ import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehi
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
-import { ageText, liveSet } from "./render.js";
+import { ageText, liveSet, mapLoc } from "./render.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
@@ -324,7 +324,7 @@ function knownGroupBase(state, id, isLive, snap) {
 }
 
 // Mission actions available on a tile, based only on what the player knows: the live view, the last report,
-// the pre-war map (where the sites are), markers, and where known groups live. Nothing is offered on open water.
+// the pre-war map (where the public sites are; hidden ones once found, sim/discovery.js), markers, and where known groups live. Nothing is offered on open water.
 export function tileActions(state, id) {
   const t = state.tiles[id];
   const actions = [];
@@ -337,7 +337,7 @@ export function tileActions(state, id) {
   actions.push(["recon", "Send recon"]);
   actions.push(["move", "Send a team here"]);
   // A site nobody has reported on yet is assumed to hold something (the map draws it untouched, too).
-  if (info ? info.loot > 0.05 : !!t.loc) actions.push(["scavenge", "Scavenge / raid"]);
+  if (info ? info.loot > 0.05 : !!mapLoc(state, id)) actions.push(["scavenge", "Scavenge / raid"]);
   const fb = knownGroupBase(state, id, isLive, snap);
   if (fb) actions.push(["trade", "Trade visit"]);
   if (fb && captivesOf(state, fb.id).length) actions.push(["rescue", "Rescue captives"]);
@@ -362,6 +362,7 @@ export function renderRight(state, ui) {
       <b>Space</b> pause / run · <b>1–4</b> speed · <b>W A S D</b> or arrows pan · <b>H</b> find hub · <b>I</b> infection overlay · <b>Esc</b> close the top window<br><br>
       The game starts <b>paused</b>. Orders you give while paused start when you unpause.<br><br>
       Bright tiles are live (around your bases, or near a team in radio range). Dim tiles show what your people last reported, with its age. Dark tiles have no current intel.<br><br>
+      The map shows the places everyone knew before the fall (towns, cities, roadside sites, landmarks). Farms, cabins, lodges and camps off the roads, and crash sites, appear only once your people find them or hear of them.<br><br>
       Teams report only when they get home, unless you have a radio station and they are in range. When a team finishes a job it waits for your orders: act there, move anywhere, or come home.
       </div>`;
   }
@@ -389,10 +390,11 @@ export function renderRight(state, ui) {
   const actions = tileActions(state, id);
   const markers = state.markers.filter((m) => m.tile === id);
   const teamsHere = state.parties.filter((p) => p.owner === "player" && contactable(p) && partyTile(p) === id);
+  const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
   return `
-    <h2>${esc(t.loc ? t.loc.name : TERRAIN[t.terrain].name)}</h2>
-    <div class="small muted">${t.loc ? LOCATIONS[t.loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
-    ${t.loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(t.loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[t.loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => SUPPLIES[k].name.toLowerCase()).join(", ")}${LOCATIONS[t.loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
+    <h2>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</h2>
+    <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
+    ${loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => SUPPLIES[k].name.toLowerCase()).join(", ")}${LOCATIONS[loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
     ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
     <div class="card" style="margin-top:0.6rem">
       <div class="kv small">

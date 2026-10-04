@@ -90,6 +90,7 @@ import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdic
 import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
+import { knownLoc } from "./discovery.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -558,7 +559,7 @@ function arrive(state, v) {
     default: return nextGoal(state, v);
   }
 }
-const placeOf = (state, tile) => { const t = state.tiles[tile]; return t && t.loc ? `at ${t.loc.name}` : `near ${tileLabel(state, tile)}`; };
+const placeOf = (state, tile) => { const t = state.tiles[tile]; return t && knownLoc(state, tile) ? `at ${t.loc.name}` : `near ${tileLabel(state, tile)}`; };
 
 function nextGoal(state, v) {
   if (!state.visitors.includes(v)) return;
@@ -618,7 +619,7 @@ export function raidTargets(state, v) {
     const t = state.tiles[id];
     if (!t.loc || t.loot < R.siteMin || t.owner != null || t.hive || state.bases.some((b) => b.tile === id)) continue;
     if (nearGroups(state, id)) continue; // the groups' own scavenging grounds (aiscav.js): outsiders keep away
-    out.push({ w: t.loot * 1.2 / (1 + g.distance(v.tile, id) / 8), goal: { kind: "site", tile: id }, act: `heading for ${t.loc.name}` });
+    out.push({ w: t.loot * 1.2 / (1 + g.distance(v.tile, id) / 8), goal: { kind: "site", tile: id }, act: `heading for ${tileLabel(state, id)}` });
   }
   return out;
 }
@@ -1021,7 +1022,7 @@ function nextStop(state, v) {
       if (setGoal(state, v, { kind: "base", baseId: b.id, tile: b.tile }, `on the road to ${b.name}`)) return true;
     } else if (s.kind === "site") {
       const t = state.tiles[s.tile];
-      if (setGoal(state, v, { ...s }, `on the way to ${t.loc ? t.loc.name : tileLabel(state, s.tile)}`)) return true;
+      if (setGoal(state, v, { ...s }, `on the way to ${tileLabel(state, s.tile)}`)) return true;
     }
   }
   return false;

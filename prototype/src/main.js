@@ -16,7 +16,7 @@ import {
 } from "./sim/supply.js";
 import { treatAtBase } from "./sim/medical.js";
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
-import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView } from "./ui/render.js";
+import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
@@ -1095,7 +1095,8 @@ canvas.addEventListener("contextmenu", (e) => {
   const own = state.bases.some((b) => b.tile === id);
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
-  menu.innerHTML = `<div class="head">${esc(t.loc ? t.loc.name : `Tile ${t.x},${t.y}`)}</div>` +
+  const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
+  menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     ctxBoats(waiting, id) +
     (acts.length ? acts.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}">${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
