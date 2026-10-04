@@ -162,7 +162,7 @@ export function autoResolveCombat(state, setup) {
     owed -= t;
   }
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
-  let theirs = setup.enemy.count * setup.enemy.power;
+  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1); // fortified: behind their walls (conquest.js)
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
   const ratio = mine / Math.max(0.1, theirs);
@@ -281,7 +281,9 @@ export const active = (u) => !u.dead && !u.down && !u.left && !u.fled;
 const onMap = (u) => !u.dead && !u.left && !u.fled;
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && u.x === x && u.y === y);
 export const unitById = (b, id) => b.units.find((u) => u.id === id);
-export const inEvac = (b, x) => b.evacCols > 0 && x < b.evacCols;
+// The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
+// attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
+export const inEvac = (b, x, y) => b.evacCols > 0 && (b.evacMask ? y != null && !!b.evacMask[y * b.w + x] : x < b.evacCols);
 const bump = (b) => b.rev++;
 
 export function say(b, text, k = "info") {
@@ -752,7 +754,7 @@ export function createBattle(state, setup) {
       if (shot) fire(b, u, shot.t, { volley: true });
     }
   }
-  if (b.evacCols) say(b, "The green strip on the left edge is your way out. Units standing there can retreat.", "info");
+  if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat.`, "info");
   checkEnd(state, b);
   return b;
 }
@@ -1023,7 +1025,7 @@ export function combatAct(state, act) {
       break;
     }
     case "retreat":
-      if (!inEvac(b, u.x)) return "Move into the evacuation zone first.";
+      if (!inEvac(b, u.x, u.y)) return "Move into the evacuation zone first.";
       u.left = true; u.ap = 0; u.ow = u.hunker = false;
       say(b, `${u.name} slips away from the fight.`, "info");
       break;

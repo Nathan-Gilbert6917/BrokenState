@@ -84,7 +84,8 @@ export function outlookText(o, k) {
 export function teamOutlook(state, p, k = 0) {
   const members = partyMembers(state, p).length;
   const food = carried(p, "food"), water = carried(p, "water");
-  const home = baseById(state, p.homeBaseId) || hub(state);
+  // No base left (conquest.js exiles): the team itself is home for now.
+  const home = baseById(state, p.homeBaseId) || hub(state) || { name: "the road (no base)", tile: partyTile(p) };
   const speed = partySpeed(p) || 1;
   const homeFrom = (tile) => { const r = planPath(state, tile, home.tile, !!p.vehicle) || planPath(state, tile, home.tile, false); return r ? r.cost / speed : 48; };
   const left = p.path && p.idx < p.path.length - 1 ? hoursLeft(state, p) : 0;
@@ -267,7 +268,7 @@ export function recruitCard(state, candidates, ctx) {
   const h = p ? hub(state) : base;
   return {
     title: ctx.title || (n === 1 ? "Someone asks to join" : "Survivors ask to join"),
-    text: `${ctx.intro || ""} ${candidates.map(candidateLine).join(". ")}. ${where}${h.name}: ${outlookText(baseOutlook(state, h, n), n)}.`.trim(),
+    text: `${ctx.intro || ""} ${candidates.map(candidateLine).join(". ")}. ${where}${h ? `${h.name}: ${outlookText(baseOutlook(state, h, n), n)}` : "no base to take them to (you have none left)"}.`.trim(),
     partyId: p ? p.id : undefined,
     where: p ? tileLabel(state, partyTile(p)) : undefined,
     recruit: { candidates, source: ctx.source, intro: ctx.intro || "", baseId: base ? base.id : null, partyId: p ? p.id : null },
@@ -276,6 +277,7 @@ export function recruitCard(state, candidates, ctx) {
 }
 
 export function offerRecruits(state, candidates, ctx) {
+  if (!hub(state) && ctx.partyId == null) return null; // no base left (conquest.js exiles): nobody to take them in
   const card = recruitCard(state, candidates, ctx);
   addCard(state, card);
   return card;
@@ -343,7 +345,7 @@ export function recruitView(state, card) {
   const base = p ? hub(state) : baseById(state, r.baseId) || hub(state);
   return {
     candidates: list.map((s) => ({ s, items: allItems(s) })),
-    base, outlook: baseOutlook(state, base, k), k,
+    base: base || { name: "no base", id: null }, outlook: base ? baseOutlook(state, base, k) : null, k, // no base left (conquest.js exiles)
     team: p ? teamOutlook(state, p, k) : null,
   };
 }

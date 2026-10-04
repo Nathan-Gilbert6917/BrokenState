@@ -148,6 +148,14 @@ export function deployUnits(b, ctx, base, c) {
   const side = attackSide(state, base ? base.tile : null, fromTileOf(state, c));
   const tf = transformBattle(b, side);
   const mapAll = (list) => list.map(([x, y]) => tf(x, y));
+  // A way out (setup.canRetreat): the strip of evacCols columns on the far side from the attack, turned with the map
+  // (combat.js inEvac reads b.evacMask, the battle screen draws it).
+  if (b.evacCols) {
+    const mask = new Uint8Array(b.w * b.h);
+    for (let y = 0; y < H0; y++) for (let x = 0; x < b.evacCols; x++) { const [nx, ny] = tf(x, y); mask[ny * b.w + nx] = 1; }
+    b.evacMask = mask;
+    b.evacSide = { east: "west", west: "east", north: "south", south: "north" }[side] || "west";
+  }
   const zone = new Uint8Array(b.w * b.h);
   const zoneX = plan.walled ? DEPLOY.LINE_X : DEPLOY.ZONE_OPEN;
   for (let y = 0; y < H0; y++) for (let x = 0; x <= zoneX; x++) { const [nx, ny] = tf(x, y); zone[ny * b.w + nx] = 1; }

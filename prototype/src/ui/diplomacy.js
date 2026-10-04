@@ -16,8 +16,9 @@ import {
   ensureDiplo, relation, relWord, warsOf, enemyIn, brokerInfo, brokerCeasefire, joinWar, joinProblem, leaveWar, warById, pactsOf, knownAs,
 } from "../sim/diplomacy.js";
 import {
-  ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE,
+  ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
+import { RAIDS } from "../sim/factions.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -52,15 +53,27 @@ function goalsCard(state, g, compact) {
   const a = g.alliance, h = g.hives;
   const ok = (b) => (b ? `<span class="good">✓</span>` : `<span class="muted">✗</span>`);
   const hiveLine = `${ok(h.ok)} Hives: ${h.destroyed} destroyed, <b>${h.left}</b> left${h.building ? `, ${h.building} being built` : ""}${h.sites > h.building ? ` (${h.sites - h.building} site${h.sites - h.building === 1 ? "" : "s"} picked)` : ""}`;
-  return `<div class="card small"${tip("Two ways to win. Destroy every hive (none left standing or being built). Or win with the coalition: it holds more than half the land, every group still alive is a member, and no hive is left.")}>
+  const ADV = { invite: ["good", "invite them"], court: ["muted", "win them over"], defeat: ["danger", "defeat them"], find: ["muted", "find them first"] };
+  const outRow = (o) => {
+    const f = factionById(state, o.id);
+    const [cls, word] = ADV[o.advice];
+    const act = o.advice === "invite" ? `<button class="mini" data-action="al-invite" data-id="${o.id}"${tip("Invite them into the coalition now")}>Invite</button>`
+      : o.known && f && f.bases.length ? `<button class="mini" data-action="job-locate" data-tile="${f.bases[f.bases.length - 1]}"${tip(o.advice === "defeat" ? "Find their bases: right-click one for Assault their base" : "Find them on the map")}>Locate</button>` : "";
+    const why = o.advice === "defeat" ? `hostile: take their ${o.bases} base${o.bases === 1 ? "" : "s"} (about ${o.defenders} defenders at the weakest)` : o.advice === "court" ? o.why : o.advice === "find" ? "you have not met them: scout, scan the airwaves" : "they would join now";
+    return `<div><span class="${cls}">● ${esc(o.name)}: ${word}</span>${compact ? "" : ` <span class="muted">(${esc(why)})</span>`} ${act}</div>`;
+  };
+  const lost = a.lost || [];
+  return `<div class="card small"${tip("Two ways to win, each its own path. Destroy every hive (none left standing or being built). Or win with the coalition: it holds more than half the land and every group still standing is a member (hives or not). Groups that will not join can be broken: take their bases (Assault their base); a group with no base left is gone and no longer counts.")}>
     <div class="spread"><b>🏁 Goals</b>${compact ? `<a class="link" data-action="dp-open" data-tab="coalition">details</a>` : ""}</div>
     <div style="margin-top:0.2rem"><b>Destroy every hive</b></div>
     <div>${hiveLine}</div>
     <div style="margin-top:0.3rem"><b>${esc(ALLIANCE.NAME)}</b></div>
     <div class="row"><span style="width:12rem">${ok(a.landOk)} Land held: <b>${pct(a.land.pct)}</b> of ${pct(ALLIANCE.LAND_NEEDED)}+</span><div style="flex:1;min-width:5rem">${bar(a.land.pct * 100, a.landOk ? "var(--good)" : "var(--accent)")}</div></div>
-    <div>${ok(a.allIn)} Members: <b>${a.members}</b> of ${a.groups} group${a.groups === 1 ? "" : "s"} still alive${a.outside.length && !compact ? ` (outside: ${a.outside.map((id) => esc(nameOf(state, id))).join(", ")})` : ""}</div>
-    <div>${ok(a.hivesOk)} Hives left: <b>${a.hivesLeft}</b>${h.building ? ` (+${h.building} being built)` : ""}</div>
-    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${ALLIANCE.CONTROL_RANGE} of one of your bases or a member's base (${a.land.held} of ${a.land.land}).</div>`}
+    <div>${ok(a.allIn)} Members: <b>${a.members}</b> of ${a.groups} group${a.groups === 1 ? "" : "s"} still standing${a.outsiders.length ? `; outside:` : ""}</div>
+    ${a.outsiders.length ? `<div style="margin-left:0.8rem">${a.outsiders.slice(0, compact ? 4 : 20).map(outRow).join("")}${compact && a.outsiders.length > 4 ? `<div class="muted">and ${a.outsiders.length - 4} more</div>` : ""}</div>` : ""}
+    ${lost.length ? `<div class="danger" style="margin-top:0.2rem">Retake: ${lost.map((o) => `${esc(o.name)} <span class="muted">(${esc(nameOf(state, o.factionId))}, since day ${o.day})</span> <button class="mini" data-action="job-locate" data-tile="${o.tile}">Locate</button>`).join(" · ")}</div>` : ""}
+    ${a.infamy >= 10 ? `<div${tip("Rises with every base you take (2 from a hostile raider-type group, 15 from anyone else, 10 more for finishing them), fades 0.1 a day. Above 20 peaceful groups slowly lose goodwill toward you, and they want more goodwill before they join the coalition.")}>Infamy: <b class="${a.infamy > 20 ? "danger" : ""}">${a.infamy}</b>${a.infamy > 20 ? " (peaceful groups are wary of you)" : ""}</div>` : ""}
+    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${controlRadius(state, "stronghold")} of your hub or a base you took from a group, ${controlRadius(state, "outpost")} of an outpost (${controlRadius(state, "outpost", true)} with walls) or a member's base (${a.land.held} of ${a.land.land}). No new gang settles once the coalition holds ${pct(RAIDS.NEW_GANG_LAND)}.</div>`}
   </div>`;
 }
 

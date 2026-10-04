@@ -1,15 +1,17 @@
 // Win conditions under the autopilot: plays long campaigns (default 3 years) on many seeds per style and counts how
 // each one ends: hive victory (every hive destroyed, none being built: hives.js hivesSecured), coalition victory
-// (alliance.js allianceVictory: over half the land, every living group a member, hives secured; also reachable
-// after "Keep playing" on a hive victory: --keep), loss (everyone dead or gone) or still going. For every victory it
+// (alliance.js allianceVictory: over half the land and every group still standing a member, hives or not; groups
+// broken by conquest.js no longer count; also after "Keep playing" on a hive victory: --keep), loss (everyone dead
+// or gone) or still going. Per style it also counts the conquest (bases taken, groups broken) and the bases the
+// groups took from you (and hubs lost, retreats). For every victory it
 // prints the day and a short timeline (hives destroyed by day, coalition members and land, population); for the
 // runs still going, what blocks each victory at the end. Seeds run in parallel worker threads.
-// Usage: node tools/wintest.js [days=1095] [seeds=30 | 1-30 | 1,2,5] [styles=all | balanced,aggressive] [--keep] [--log N] [--tune T] [--force hive|alliance|loss]
+// Usage: node tools/wintest.js [days=1095] [seeds=30 | 1-30 | 1,2,5] [styles=all | balanced,aggressive] [--keep] [--log N] [--tune T] [--force hive|alliance|conquest|keep|loss]
 //   --keep       on a hive victory, keep playing (as the "Keep playing" button) to see whether the coalition wins too
 //   --log N      print the last N log lines of the first run of each outcome (to read how it played)
 //   --tune T     what-if balance numbers for these runs only (see applyTune), e.g. --tune HIVE.BOSS_DAY=240
 //   --force X    a forced scenario (not natural play): checks the path end to end (game state, log line, chronicle
-//                caption, the end screen) on seed 1: hive, alliance, keep (coalition after Keep playing) or loss.
+//                caption, the end screen) on seed 1: hive, alliance, conquest, keep (coalition after Keep playing) or loss.
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -19,15 +21,17 @@ import { finishChronicle } from "../src/sim/chronicle.js";
 import { GEAR } from "../src/sim/data.js";
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats, destroyHive, ensureHives } from "../src/sim/hives.js";
-import { goalsProgress, inviteProblem, ensureAlliance, isMember, ALLIANCE, controlledLand } from "../src/sim/alliance.js";
+import { goalsProgress, inviteProblem, ensureAlliance, isMember, ALLIANCE, controlledLand, landCentres } from "../src/sim/alliance.js";
 import { HIVE } from "../src/sim/hiveconst.js";
+import { captureBase, ensureConquest } from "../src/sim/conquest.js";
+import { RAIDS } from "../src/sim/factions.js";
 import { DEFENCE } from "../src/sim/defences.js";
 import { HORDE_SIZES } from "../src/sim/hordes.js";
 
 // --tune: try a balance number for this run only (nothing in the game files changes), e.g.
 // --tune HIVE.SITE_DAYS=60:120,HIVE.BOSS_DAY=240. Tables: HIVE (hiveconst.js), DEFENCE (defences.js), ALLIANCE
 // (alliance.js), HORDE_SIZES (hordes.js, e.g. HORDE_SIZES.large.max=150). a:b is a pair.
-const TABLES = { HIVE, DEFENCE, ALLIANCE, HORDE_SIZES };
+const TABLES = { HIVE, DEFENCE, ALLIANCE, HORDE_SIZES, RAIDS };
 function applyTune(spec) {
   for (const part of (spec || "").split(",").filter(Boolean)) {
     const [path, raw] = part.split("=");
@@ -42,7 +46,7 @@ function applyTune(spec) {
 const FACTIONS = 8;
 
 // ---------- one campaign ----------
-const EVENT = /hive was destroyed|hive at .* was destroyed|was destroyed by your team|A new hive has risen|joined The Calder Coalition|left The Calder Coalition|has collapsed|Every hive is destroyed|Calder Coalition holds|holdout has fallen|storming a hive|fell back from the hive|brood drove the team off|\(hive\) to/;
+const EVENT = /Your team took|is no more|has fallen$|moved into|hive was destroyed|hive at .* was destroyed|was destroyed by your team|A new hive has risen|joined The Calder Coalition|left The Calder Coalition|has collapsed|Every hive is destroyed|Calder Coalition holds|holdout has fallen|storming a hive|fell back from the hive|brood drove the team off|\(hive\) to/;
 // What a death line says killed them, in a few buckets.
 function deathCause(text) {
   if (/hunger|starv/.test(text)) return "hunger";
@@ -97,7 +101,8 @@ function runOne({ seed, style, days, keep, logN, tune }) {
     seed, style, outcome, day: day(state), hiveWinDay, error, samples, events, deaths,
     end: { pop: alive(state).length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building, sites: gp.hives.sites,
       members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 1000) / 10, outside, outposts: state.bases.filter((b) => b.type === "outpost").length,
-      hiveTrips: events.filter((x) => /\(hive\) to/.test(x.text)).length, built: hiveStats(state).built, reason: state.victoryReason || null, screen: !!(state.gameOver && state.victory) },
+      hiveTrips: events.filter((x) => /\(hive\) to/.test(x.text)).length, built: hiveStats(state).built, reason: state.victoryReason || null, screen: !!(state.gameOver && state.victory),
+      conquest: { ...ensureConquest(state).stats } },
     log: logN ? state.log.slice(0, logN).reverse().map((l) => `d${Math.floor(l.hour / 24) + 1} ${l.text}`) : null,
   };
   return res;
@@ -109,6 +114,8 @@ function runOne({ seed, style, days, keep, logN, tune }) {
 //   last one (guard cut to 40). The governor answers the hive card and the battle is played out.
 // --force alliance: the same, and before the storm every living group is put in the coalition (pact, goodwill
 //   80) and outposts are placed until the coalition holds over half the land.
+// --force conquest: every group but two broken by taking its bases (conquest.js captureBase), the two left put in
+//   the coalition, outposts placed until over half the land: the coalition's victory with hives still standing.
 // --force keep: the hive victory first, "Keep playing" (as main.js), then the coalition set up as above: the
 //   coalition victory after a hive victory.
 // --force loss: everyone dies.
@@ -118,8 +125,7 @@ function forcedOutposts(state) {
   let added = 0;
   while (controlledLand(state).pct <= ALLIANCE.LAND_NEEDED && added < 40) {
     const held = new Uint8Array(state.tiles.length);
-    for (const c of [...state.bases.map((b) => b.tile), ...state.factions.filter((f) => f.alive && isMember(state, f)).flatMap((f) => f.bases)])
-      for (const id of g.within(c, ALLIANCE.CONTROL_RANGE)) held[id] = 1;
+    for (const c of landCentres(state)) for (const id of g.within(c.tile, c.r)) held[id] = 1;
     let best = null;
     for (const t of state.tiles) {
       if (t.terrain === "water" || t.hive || held[t.id] || state.factions.some((f) => f.bases.includes(t.id))) continue;
@@ -174,10 +180,20 @@ async function forceScenario(kind) {
   if (kind === "loss") {
     for (const p of alive(state)) killSurvivor(state, p, null, "in a forced test");
   } else {
-    if (kind === "alliance") notes.push(`${forcedCoalition(state)} outposts placed, every group in the coalition`);
-    const last = forcedStorm(state);
-    notes.push(`last hive: ${last.name}, ${state.grid.distance(last.tile, hub(state).tile)} tiles from the hub`);
-    while (!state.gameOver && day(state) < 75) tickHour(state);
+    if (kind === "alliance" || kind === "conquest") {
+      // The coalition is its own victory now: no hive needs to fall.
+      if (kind === "conquest") {
+        let broken = 0;
+        for (const f of state.factions.filter((x) => x.alive).slice(2)) { for (const t of [...f.bases]) if (f.alive) captureBase(state, f, t, null, {}); broken++; }
+        notes.push(`${broken} groups broken by taking their bases (${state.bases.filter((b) => b.captured).length} captured bases)`);
+      }
+      notes.push(`${forcedCoalition(state)} outposts placed, every group left in the coalition; ${(state.hives || []).length} hives still stand`);
+      for (let i = 0; i < 48 && !state.gameOver; i++) tickHour(state);
+    } else {
+      const last = forcedStorm(state);
+      notes.push(`last hive: ${last.name}, ${state.grid.distance(last.tile, hub(state).tile)} tiles from the hub`);
+      while (!state.gameOver && day(state) < 75) tickHour(state);
+    }
     if (kind === "keep" && state.gameOver && state.victory) {
       keptAt = { day: day(state), reason: state.victoryReason };
       state.victoryKept = true; state.gameOver = false; // the victory screen's "Keep playing" (main.js)
@@ -265,6 +281,11 @@ async function main() {
       const top = Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 6);
       if (top.length) console.log(`    groups outside the coalition, why: ${top.map(([k, v]) => `${v}× "${k}"`).join("; ")}`);
     }
+    const cq = (k) => (list.reduce((a, r) => a + ((r.end && r.end.conquest && r.end.conquest[k]) || 0), 0) / Math.max(1, list.length)).toFixed(1);
+    const lostRuns = list.filter((r) => r.end && r.end.conquest && r.end.conquest.basesLost > 0).length;
+    const hubRuns = list.filter((r) => r.end && r.end.conquest && r.end.conquest.hubsLost > 0).length;
+    console.log(`    conquest per run: ${cq("assaults")} assaults, ${cq("taken")} bases taken (${cq("retaken")} of them yours back), ${cq("defeated")} groups broken; ` +
+      `lost to raids: ${cq("basesLost")} bases (in ${lostRuns} of ${list.length} runs), the hub in ${hubRuns} runs, ${cq("retreats")} retreats, ${cq("exiles")} times with no base left`);
     const dt = {};
     for (const r of list) for (const [k, v] of Object.entries(r.deaths || {})) dt[k] = (dt[k] || 0) + v;
     console.log(`    deaths per run by cause: ${Object.entries(dt).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / list.length).toFixed(1)}`).join(", ")}`);
@@ -306,7 +327,7 @@ async function runForced(kind) {
   console.log(`  log:     ${r.logLine}`);
   console.log(`  caption: ${r.caption}`);
   console.log(`  screen:  ${r.screen}`);
-  const want = { hive: ["hives", true], alliance: ["alliance", true], keep: ["alliance", true], loss: [null, false] }[kind];
+  const want = { hive: ["hives", true], alliance: ["alliance", true], conquest: ["alliance", true], keep: ["alliance", true], loss: [null, false] }[kind];
   const ok = want && r.gameOver && r.victory === want[1] && r.reason === want[0] && !!r.logLine && !!r.caption;
   console.log(ok ? "  ok" : "  FAIL: the run did not end the way this scenario should");
   process.exit(ok ? 0 : 1);

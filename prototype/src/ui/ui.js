@@ -50,6 +50,7 @@ import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote } from "./diplomacy.js";
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
+import { occupiedAt, occupiedText, assaultWarning, assaultForce } from "../sim/conquest.js";
 import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
@@ -89,7 +90,7 @@ export function topbarParts(state, ui) {
       (ui.speed > 3 ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
     // Food and water also show days left (economy.js outlook; the tooltip has the details).
     // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
-    stock: SUPPLY_KEYS.filter((k) => k !== "jars").map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; return `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.${extra}${ln ? ` ${ln.tip}` : ""}`)}><b>${k === "preserved" ? "Preserved" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${ln ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    stock: !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Build an outpost (it becomes your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : SUPPLY_KEYS.filter((k) => k !== "jars").map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; return `<span${tip(`${SUPPLIES[k].name} at ${h.name}. Barter value ${SUPPLIES[k].value} each, weight ${SUPPLIES[k].weight}.${extra}${ln ? ` ${ln.tip}` : ""}`)}><b>${k === "preserved" ? "Preserved" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${ln ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     tools: `UI
       <select data-action="uiscale"${tip("Interface size. Larger is easier to read from the couch.")}>${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select>
@@ -322,7 +323,7 @@ export function tileActions(state, id) {
   const t = state.tiles[id];
   const actions = [];
   if (t.terrain === "water" && !t.bridge) return actions;
-  if (state.bases.some((b) => b.tile === id)) return actions;
+  if (state.bases.some((b) => b.tile === id) || !hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
   const isLive = state.live.has(id);
   const snap = isLive ? null : state.knowledge[id];
   const info = isLive ? { owner: t.owner, loot: t.loot, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
@@ -334,6 +335,7 @@ export function tileActions(state, id) {
   const fb = knownGroupBase(state, id, isLive, snap);
   if (fb) actions.push(["trade", "Trade visit"]);
   if (fb && captivesOf(state, fb.id).length) actions.push(["rescue", "Rescue captives"]);
+  if (fb) actions.push(["assault", occupiedAt(state, id) ? "Retake the base" : "Assault their base"]);
   if (!fb && t.terrain !== "water" && (!info || info.owner == null || info.owner === "player")) actions.push(["outpost", "Build outpost"]);
   if (markers.some((m) => m.type === "death")) actions.push(["recover", "Recover bodies"]);
   if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
@@ -401,7 +403,8 @@ export function renderRight(state, ui) {
       </div>
       ${walk || base ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.</div></div>` : ""}
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
+    ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
     ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
@@ -452,6 +455,15 @@ function pickModal(state, ui) {
   if (ui.help) return ["help", () => helpModal()];
   return null;
 }
+// The planner's line for an assault: the defenders, and a strong warning when the group is not hostile.
+function assaultNote(state, tile) {
+  const f = state.factions.find((x) => x.alive && x.bases.includes(tile));
+  if (!f) return "";
+  const force = assaultForce(state, f, tile);
+  const warn = assaultWarning(state, f);
+  return `<div class="small ${warn ? "danger" : "muted"}" style="margin:-0.3rem 0 0.4rem">⚔ ${esc(f.name)}: about ${force.count} defenders here (defence ×${force.fortified} behind their walls)${f.bases.length === 1 ? ", their last base" : ""}. ${esc(warn)}</div>`;
+}
+
 export function renderModal(state, ui) {
   const m = pickModal(state, ui);
   return m ? m[1]() : null;
@@ -469,7 +481,7 @@ function gameOverScreen(state) {
     const st = hiveTracker(state).stats;
     const a = goalsProgress(state).alliance;
     return `<div class="box"><h1>${esc(ALLIANCE.NAME)} holds the state</h1>
-    <div class="text">Victory by alliance: the coalition holds ${Math.round(a.land.pct * 100)}% of the land (more than half), every group still standing (${a.groups}) is a member, and no hive is left. ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
+    <div class="text">Victory by alliance: the coalition holds ${Math.round(a.land.pct * 100)}% of the land (more than half), and ${a.groups ? `every group still standing (${a.groups}) is a member` : "no other group is left standing"}${state.conquest && state.conquest.stats.defeated ? ` (you broke ${state.conquest.stats.defeated} that would not join)` : ""}. ${a.hivesLeft ? `${a.hivesLeft} hive${a.hivesLeft === 1 ? " still stands" : "s still stand"}, but the state is in your hands.` : "No hive is left."} ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, took ${state.conquest ? state.conquest.stats.taken : 0} base${state.conquest && state.conquest.stats.taken === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
     <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, the hives rising and falling, hordes, teams and your holdout")}>Watch the timelapse</button>` : ""}
     <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
@@ -491,7 +503,7 @@ function gameOverScreen(state) {
 function helpModal() {
   const k = (t) => `<b>${t}</b>`;
   return `<div class="box wide"><h1>How to play</h1><div class="text small" style="line-height:1.6">
-    <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You <b>win</b> when every infestation hive is destroyed (and no new one is being built); you lose when the last survivor is dead, gone or lost.<br><br>
+    <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You <b>win</b> one of two ways: destroy every infestation hive (and no new one being built), or make the <b>Calder Coalition</b> hold more than half the land with every group still standing in it (invite the willing, break the hostile by taking their bases). You lose when the last survivor is dead, gone or lost.<br><br>
     <b>Time:</b> the game starts <b>paused</b>; a banner at the top of the map says so. Press ${k("Space")} or pick a speed (${k("1–4")}) to run the clock. Orders you give while paused are queued and start when you unpause (the banner counts them). Cards and windows (planner, base, help) stop the clock while they are open.<br>
     <b>Seasons and weather:</b> a year is four seasons of 28 days (spring, summer, autumn, winter); a run starts in mid-spring. Next to the clock: season, day of the season, today's weather and the temperature; hover it for what the weather does and the forecast (3 days; 4 with a watchtower, 5 with a radio station; the further out, the less sure). Rain and melting snow leave mud that slows off-road travel (vehicles most); snow cover slows everything, off-road most; storms and blizzards slow everyone a lot, can hurt people on the road and make boat crossings riskier; fog cuts sight by a tile and makes ambushes likelier; heat waves slow walkers. Arrival times in the planner and panels already include the weather hour by hour (the planner shows how many hours it adds). Crops grow only in their seasons and best in mild, moist weather; frost, hard freezes, blizzards, drought, heat and storms can kill them, and wet weather rots ripe ones. Cold and heat can make people outdoors ill, the dead slow down in deep cold, and the map's <i>Weather</i> layer shows snow, rain, fog and heat as a wash over the land.<br>
     <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. Toggle layers in the map's corner.<br>
@@ -509,9 +521,10 @@ function helpModal() {
     <b>Orders, power and stewards:</b> each workshop station (Workshops tab) takes a standing order: Forever, Until stock reaches N, Keep at least N of an input, or Off, and what its operator does while it waits. The Crafting tab keeps N of an item in the armory at a minimum quality. A generator (needs an operator and 2 fuel a day) powers the cold store, radio, floodlights, machine shop and preserving kitchen; an ethanol still makes fuel from surplus food. <i>Hand to a steward</i> (Overview tab) lets the governor run a base, area by area; pinned people are left alone, and Take over hands it back as it is.<br>
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it).<br>
     <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. One left behind is marked on the map: bring fuel (and a part if it is badly damaged) to recover it.<br>
-    <b>Groups:</b> neutral groups turn hostile if you crowd them. Radio contact, gifts and trade keep them steady; pacts stop raids and open trade routes. Hostile groups raid and take captives (rescue, ransom or goodwill gets them back). Aggressive groups grow: they push new bases out toward you and toward rich ground, take over the land of groups they break, and a new gang moves in when the state runs short of hostile ones.<br>
+    <b>Groups:</b> neutral groups turn hostile if you crowd them. Radio contact, gifts and trade keep them steady; pacts stop raids and open trade routes. Hostile groups raid and take captives (rescue, ransom or goodwill gets them back). Aggressive groups grow: they push new bases out toward you and toward rich ground, take over the land of groups they break, and a new gang moves in when the state runs short of hostile ones (never once the coalition holds 40% of the land, and at most three in a run).<br>
     <b>Raids on your bases:</b> a hostile group within 30 tiles of one of its bases comes for you more often the richer you are, the more land you hold, the bigger it is and the more raids of its you have beaten (each one you beat makes its next raid 25% bigger, up to double). Its scouts size a raid to your defence with everyone at a post, so <i>Prepare defenses</i> usually holds, but not if your fighters are away when they arrive. Building and repairs stop while a base is on alert. A strong defence drives them off within hours; the longer they stay at the walls, and the worse it goes (a break-in, an overrun), the more they smash: walls and defences first, then the buildings inside. Broken buildings do nothing until repaired (the base's Repairs tab, or the card after the raid); damaged walls hold less. Tribute turns a raid back, but an aggressive group's goodwill from it fades again.<br>
-    <b>Diplomacy:</b> groups post jobs (Groups tab → Jobs; accepted jobs are tagged on the map and listed in the planner), fight wars and sign pacts with each other (World affairs: broker a ceasefire or join a side), and show what they want and have spare (Market board). Invite groups that trust you into the Calder Coalition: hold over half the land with every group left in it and no hive standing, and the coalition wins.<br>
+    <b>Diplomacy:</b> groups post jobs (Groups tab → Jobs; accepted jobs are tagged on the map and listed in the planner), fight wars and sign pacts with each other (World affairs: broker a ceasefire or join a side), and show what they want and have spare (Market board). Invite groups that trust you into the Calder Coalition: hold over half the land with every group left standing in it, and the coalition wins (hives or not). Land: within 9 tiles of your hub and of every base you took from a group, 7 of an outpost (8 with walls) or a member's base (on Normal; more on bigger maps).<br>
+    <b>Conquest:</b> <i>Assault their base</i> (right-click a group's base) is a battle against its defenders behind their walls. Win and the base is your outpost, with its land and part of its stores; some defenders join you or are taken prisoner, and a group that loses its last base is finished. Attacking a group that is not hostile ends your pact, costs 30 goodwill and angers its friends and pact partners; every base you take raises your <i>infamy</i>, and peaceful groups grow wary of a conqueror (they want more goodwill before joining). Groups can take <i>your</i> bases too: a raid that overruns a base may keep it, and your people there walk to your nearest base. On the raid warning you can <i>Retreat</i> instead (everyone leaves with what they can carry; the raiders take it without a fight). A lost base keeps its damage: take it back soon, before they repair the walls. Lose the hub and your nearest base becomes the hub; with no base left, your people are a team on the road that must build a new base or take one back.<br>
     <b>Radio:</b> a radio station reaches 8 tiles; a radio relay at an outpost (no operator, 1 part every 10 days) adds 6 tiles when a station or another linked relay is in range, so relays chain coverage outward (dashed circles on the map; red = not linked or off the air). Groups within reach (their radios add 4 tiles) can be called from the Groups tab (Radio…): greet, ask for news, ask for a trade caravan, make a deal ("we want 20 meds, paying 60 ammo"), call for help, pacts. <i>Scan the airwaves</i> finds groups in reach you have not met. Groups call you too, with offers and requests.<br>
     <b>Trade window:</b> two columns, yours and theirs: every supply with steppers, every item one by one. Items are valued by what they are, their condition and the uses left; supplies by how short the group is of them. They pay you less than they charge (Speech and goodwill narrow the gap); a deal goes through when it is fair for them. <i>Balance with</i> ammo, scrap or food fills the gap. Intel: buy a report of the area (only those tiles lose their fog) or horde sightings, or sell your own maps.<br>
     <b>Outsiders:</b> people from beyond the state cross the border now and then and leave again: raider bands (from about day 20, more often later: they go for whatever is weakly defended; pay, talk, fight or avoid them, or pay them to leave over the radio), merchant caravans (rare goods: fuel, meds, manuals, books, good gear; invite them over the radio and trade when they stop at your base) and travellers (news, maps, people who want to join or need shelter). The Groups tab lists the ones you know of.<br>
@@ -597,6 +610,7 @@ export function plannerLoad(state, pl) {
 function plannerModal(state, ui) {
   const pl = ui.planner;
   const h = hub(state);
+  if (!h) return `<div class="box"><h1>No base to send a team from</h1><div class="text">You have no base left. Your people on the road can build one (Build outpost, with 15 scrap: it becomes your hub) or take one back (Assault their base) from their orders.</div><div class="row"><button class="primary" data-action="pl-cancel">Close</button></div></div>`;
   const crewPool = atBase(state, h.id);
   const ids = [...pl.crew];
   const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
@@ -628,6 +642,7 @@ function plannerModal(state, ui) {
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
     ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
+    ${pl.mission === "assault" ? assaultNote(state, pl.dest) : ""}
     <div class="row" style="margin-bottom:0.6rem">Mission
       <select data-action="pl-mission"${tip(MISSIONS[pl.mission].desc)}>${missions.map(([k, m]) => `<option value="${k}" ${pl.mission === k ? "selected" : ""} title="${esc(m.desc)}">${m.name}</option>`).join("")}</select>
       <span class="small muted">${MISSIONS[pl.mission].desc}</span></div>

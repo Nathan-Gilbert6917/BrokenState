@@ -3,7 +3,7 @@
 // captives, peace on terms: land, tribute or a white peace), brokering a ceasefire, joining a war, trade at war
 // (prices up, less to trade, buying back still loses), the coalition (invitations, the council's vote, members
 // leaving, shared sightings, help against raids and hordes, allies at a hive, the seasonal council), the alliance
-// victory (true only when all three conditions hold), wants and surplus lists against the real stock, the market
+// victory (true only when both conditions hold: land and every group still standing in it; hives do not matter), wants and surplus lists against the real stock, the market
 // board, the autopilot's choices, determinism, a 365-day run without NaN and the yearly group collapse rate with
 // and without wars between groups.
 // Usage: node tools/diplotest.js [seed] [days] [collapse seeds, e.g. 1,2,3,4,5,6]
@@ -604,10 +604,10 @@ section("Alliance victory");
   A.inviteToAlliance(st, last);
   check(A.isMember(st, last) && A.allianceVictory(st), "land over half, every group in, no hive: victory");
   st.hives.push({ id: 999, tile: 0, res: 0 });
-  check(!A.allianceVictory(st), "a hive left: no victory");
+  check(A.allianceVictory(st), "a hive still standing does not stop it (the coalition is its own victory)");
   st.hives.length = 0;
   st.hiveSites.push({ id: 1, tile: 5, started: 1, biomass: 10 });
-  check(!A.allianceVictory(st), "a hive being built: no victory");
+  check(A.allianceVictory(st), "nor a hive being built");
   st.hiveSites.length = 0;
   // A collapsed group does not count against you.
   const outsider = st.factions.find((f) => f.alive && A.isMember(st, f));

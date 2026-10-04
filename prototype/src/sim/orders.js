@@ -120,8 +120,8 @@ export function queueEstimate(state, p) {
       // The way home from where the queue leaves the team, planned like startReturn does (on foot if the
       // vehicle has no road home). No estimate when water cuts the team off.
       const home = baseById(state, p.homeBaseId) || hub(state);
-      let res = planPath(state, tile, home.tile, vehicle);
-      if (!res && vehicle) { res = planPath(state, tile, home.tile, false); vehicle = false; fuel = 0; }
+      let res = home ? planPath(state, tile, home.tile, vehicle) : null; // no base left (conquest.js exiles): no way home
+      if (!res && vehicle && home) { res = planPath(state, tile, home.tile, false); vehicle = false; fuel = 0; }
       if (res) {
         const t = travelHours(state, res.path, { vehicle, speed: partySpeed(p), fuel, progress: owed, startHour: at });
         owed = 0;

@@ -382,7 +382,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
-      [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", inEvac(b, p.x) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", inEvac(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !active(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = active(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
@@ -409,7 +409,7 @@ export function renderCombatPanel(state) {
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${stealthButtons(state, b, u, btn)}
-      ${b.evacCols ? btn("retreat", "Retreat", "Leave the battle. Only from the green evac strip on the left. Anyone left behind who is down is lost.", ap > 0 && inEvac(b, u.x), "R") : ""}
+      ${b.evacCols ? btn("retreat", "Retreat", "Leave the battle. Only from the green evac strip. Anyone left behind who is down is lost.", ap > 0 && inEvac(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
@@ -659,7 +659,7 @@ function previewHtml(b) {
     const d = v.reach.dist[h.y * W + h.x];
     if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
   }
-  if (inEvac(b, h.x)) s += " Evac zone: you can retreat from here.";
+  if (inEvac(b, h.x, h.y)) s += " Evac zone: you can retreat from here.";
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
   return s;
 }
@@ -716,7 +716,11 @@ export function drawCombat(state, now) {
   ctx.stroke();
 
   // Evac strip.
-  if (b.evacCols) {
+  if (b.evacCols && b.evacMask) {
+    // A base battle's way out, on the side away from the attack (sim/deploy.js).
+    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.evacMask[y * W + x]) ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
+  } else if (b.evacCols) {
     ctx.fillStyle = "rgba(108,196,138,0.16)";
     ctx.fillRect(ox, oy, b.evacCols * cs, H * cs);
     ctx.strokeStyle = "rgba(108,196,138,0.7)";

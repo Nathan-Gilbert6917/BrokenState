@@ -754,7 +754,7 @@ function defendAgainst(state, v, base) {
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name) },
-    ambush: base.alert ? "player" : null, canRetreat: false, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours },
+    ambush: base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours }, // canRetreat: a way out away from them (deploy.js); they loot and move on
     layout: "baseDefence", deploy: true,
   });
   return "";
@@ -809,7 +809,9 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     steal(base, store ? 0.25 : 0.5, v.stock);
     for (let i = 0; i < 3 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(30, 70), base.tile, `when ${base.name} was overrun`);
     v.spared = [...(v.spared || []), base.id];
-    if (base.type === "outpost") removeBase(state, base, "has been lost");
+    // Raiders from outside never keep a base (they are passing through, conquest.js): an outpost they overrun is
+    // burned and lost as before; one your people pulled out of (the evac strip) they only loot.
+    if (base.type === "outpost" && beaten !== "retreat" && (people.length || beaten)) removeBase(state, base, "has been lost"); // an empty one is looted and left standing
   }
   // breakdowns.js: what they smashed, by their strength and the hours at the walls; a card with the bill.
   const kept = state.bases.includes(base);
@@ -1696,11 +1698,13 @@ function onOutsiderRaid(state, result, setup) {
     if (base && state.bases.includes(base)) text += ` ${raidDamage(state, base, { strength: c.strength || 0, hours: (c.siegeHours || 0) + Math.max(1, Math.min(8, (result.turns || 6) / 3)), outcome: "won", by: v ? v.name : "the raiders" }).text}`;
   } else {
     const left = (result.enemiesLeft || 0) / Math.max(1, setup.enemy.count);
-    const how = left > 0.5 ? "overrun" : "broken";
+    // Pulled out of the fight (the evac strip): raiders from outside do not keep bases; they loot it as an overrun
+    // and move on, and the people who got out come back.
+    const how = result.outcome === "retreat" ? "retreat" : left > 0.5 ? "overrun" : "broken";
     if (v) v.lastDamage = "";
     if (v && base && state.bases.includes(base) && v.size > 0) resolveRaidOnYou(state, v, how);
     else if (v && v.size <= 0) leaveMap(state, v, "broken");
-    text = !v ? "The defenders were beaten, but the raiders had already gone." : how === "overrun" ? `The defenders were beaten. ${cap1(v.name)} took what they wanted.` : `The defenders were beaten, but ${v.name} were too badly mauled to hold the base. They grabbed what they could carry.`;
+    text = !v ? "The defenders were beaten, but the raiders had already gone." : how === "retreat" ? `Your people pulled out. ${cap1(v.name)} took what they wanted and moved on; ${base ? base.name : "the base"} is still yours.` : how === "overrun" ? `The defenders were beaten. ${cap1(v.name)} took what they wanted.` : `The defenders were beaten, but ${v.name} were too badly mauled to hold the base. They grabbed what they could carry.`;
     if (v && v.lastDamage) text += ` ${v.lastDamage}`;
   }
   addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });

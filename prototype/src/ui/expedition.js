@@ -98,7 +98,7 @@ export function renderExpedition(state, ui, p) {
   const live = contactable(p) || cmd;
   const s = statusLine(state, ui, p);
   const tile = partyTile(p);
-  const home = baseById(state, p.homeBaseId) || hub(state);
+  const home = baseById(state, p.homeBaseId) || hub(state) || { name: "no base (on the road)" }; // conquest.js exiles: no base left
   const moving = p.phase === "out" || p.phase === "back";
   // Waiting or working on the spot: actions run now (switching jobs) unless queue mode is on. Moving: queued.
   const queueing = moving || p.phase === "engaged" || !!ui.xpQueue;
@@ -137,7 +137,7 @@ export function renderExpedition(state, ui, p) {
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
         ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
-        ${ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
+        ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Break camp", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
       </div>

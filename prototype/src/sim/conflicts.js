@@ -36,6 +36,7 @@ import { noteRescue } from "./relations.js";
 import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 import { driveOff } from "./aiscav.js";
 import { warRaidOnPlayer } from "./diplomacy.js";
+import { retreatFrom } from "./conquest.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1366,6 +1367,7 @@ export function ransomOnTradeCard(state, p, f) {
 // ---------- captives over time ----------
 export function captivesDaily(state) {
   const rng = state.rng;
+  if (!hub(state)) return; // no base left (conquest.js exiles): nowhere to come home to; they stay where they are
   for (const s of allCaptives(state)) {
     const f = factionById(state, s.location.factionId);
     const days = (state.hour - s.location.since) / 24;
@@ -1427,7 +1429,7 @@ export function defendInPerson(state, raid) {
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders` },
-    ambush: base.alert ? "player" : null, canRetreat: false, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id },
+    ambush: base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id }, // the way out: away from the attack (deploy.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first
   });
   return "";
@@ -1440,6 +1442,16 @@ function onRaidDefenseCombat(state, result, setup) {
   const base = state.bases.find((b) => b.id === c.baseId);
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.7));
   let text;
+  if (result.outcome === "retreat" && base && state.bases.includes(base) && raid && f) {
+    // Pulled out of the fight: the base is abandoned to them (conquest.js), its people walk to the nearest base.
+    retreatFrom(state, base, raid);
+    resolveRaidOnPlayer(state, raid);
+    removeParty(state, raid);
+    text = `Your people pulled out of ${base.name} and left it to ${f.name}.${state.bases.includes(base) ? "" : " They are on their way to another base."}`;
+    if (f.pop <= 2) collapseFaction(state, f);
+    addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });
+    return;
+  }
   if (result.outcome === "victory") {
     if (raid) warRaidOnPlayer(state, raid, true); // diplomacy.js: a war raid beaten off counts for the war, as one held by the numbers
     if (raid) removeParty(state, raid);

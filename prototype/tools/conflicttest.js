@@ -83,7 +83,7 @@ for (const seed of seeds) {
       }
       // Send teams out every 2 days (morning), up to two at a time.
       const mine = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy");
-      if (state.hour % 48 === 8 && mine.length < 2) {
+      if (h && state.hour % 48 === 8 && mine.length < 2) { // no hub: the random player abandoned its last base to a raid (conquest.js retreat)
         const pool = atBase(state, h.id).filter((s) => s.health > 50);
         if (pool.length >= 3) {
           const captives = allCaptives(state);
@@ -116,7 +116,7 @@ for (const seed of seeds) {
         }
       }
       // Keep the hub fed so the campaign keeps sending teams (this test is about conflicts, not farming).
-      if (state.hour % 24 === 0 && h.stock.food < 30) h.stock.food += 30;
+      if (h && state.hour % 24 === 0 && h.stock.food < 30) h.stock.food += 30;
     }
   } catch (e) {
     problems++;

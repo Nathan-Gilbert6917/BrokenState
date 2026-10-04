@@ -46,7 +46,7 @@
 import { Rng } from "./rng.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
-import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
@@ -363,7 +363,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     }
     let took = false;
     const tile = party.target.tile;
-    if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35)) {
+    if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35 * Math.min(1, keepChance(state, attacker, tile) / 0.6))) { // factions.js keepChance: the same wish to keep a base as an ordinary raid
       target.bases = target.bases.filter((x) => x !== tile);
       attacker.bases.push(tile);
       recomputeOwnership(state);
@@ -481,7 +481,7 @@ function askPlayerToJoin(state, w) {
     if (!(f.goodwill >= 40 || f.pact || isMember(state, f))) continue;
     if (!canRadioGroup(state, f)) continue;
     w.asked = true;
-    addCard(state, warCard(state, w, f, foe));
+    if (hub(state)) addCard(state, warCard(state, w, f, foe)); // no base left (conquest.js exiles): nobody to ask
     return;
   }
 }

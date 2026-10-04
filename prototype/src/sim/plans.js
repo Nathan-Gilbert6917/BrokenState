@@ -122,7 +122,8 @@ export const stepLabel = (state, s) => {
 // Returns null without a route to the target.
 // from / startHour / p: estimate from where a team stands now (orders.js queueEstimate), with what it knows.
 export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null }) {
-  const home = baseById(state, homeBaseId || hub(state).id);
+  const home = baseById(state, homeBaseId || (hub(state) || {}).id);
+  if (!home) return null; // no base left (conquest.js exiles)
   const sp = STANCES[stance]?.speed || 1;
   let veh = !!vehicle, f = vehicle ? fuel ?? Infinity : 0, at = startHour, tile = from ?? home.tile, fuelUse = 0;
   let owed = 0; // hours of a recon still owed: paid by the next move, as in the real trip (parties.js survey)
@@ -264,6 +265,7 @@ function checkIn(state, p) {
 const foodDays = (state, p) => (carried(p, "food") + carried(p, "preserved")) / Math.max(1, partyMembers(state, p).length);
 function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
+  if (!home) return null; // no base left (conquest.js exiles)
   const res = planPath(state, partyTile(p), home.tile, p.vehicle) || planPath(state, partyTile(p), home.tile, false);
   return res ? travelHours(state, res.path, { vehicle: p.vehicle, speed: partySpeed(p) }).hours : null;
 }

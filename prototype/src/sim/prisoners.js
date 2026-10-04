@@ -88,6 +88,21 @@ function makeRecord(state, o) {
   return { id: newId(), name: s.name, s, factionId: o.factionId, group: o.group, kit: o.kit, power: o.power, unitName: o.unitName || "", tile: o.tile, at: null, caught: null, mode: "hold", opinion: 0, questioned: null, intelDone: false, ransom: null, unfed: 0, report: "" };
 }
 
+// Defenders who surrendered when you took their base (conquest.js): n prisoners of group f, held at that base.
+// Their group's head count is the caller's (the base's people are counted out there).
+export function takePrisonersAt(state, f, base, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = makeRecord(state, { factionId: f.id, group: f.name, kit: KIND_OF[f.type], power: 3, tile: base.tile });
+    p.at = { kind: "base", baseId: base.id };
+    p.caught = day(state);
+    prisonersOf(state).push(p);
+    out.push(p);
+  }
+  if (out.length) state.stats.prisonersTaken = (state.stats.prisonersTaken || 0) + out.length;
+  return out;
+}
+
 // The base a battle's prisoners would end up in.
 function destination(state, setup) {
   if (setup.baseId != null) return baseById(state, setup.baseId);
@@ -452,7 +467,7 @@ function rescueCard(state, r) {
           const force = raidForce(f, r.strength);
           startCombat(st, {
             tile: base.tile, baseId: base.id, enemy: { kind: KIND_OF[f.type] || "raiders", count: force.count, power: force.power, factionId: f.id, name: `${f.name} rescuers` },
-            ambush: null, canRetreat: false, handler: "prisonRescue", layout: "baseDefence", deploy: true,
+            ambush: null, canRetreat: true, handler: "prisonRescue", layout: "baseDefence", deploy: true, // pulling out: they free their people and go
             context: { baseId: base.id, factionId: f.id, rescue: true },
           });
           return "";
@@ -497,7 +512,7 @@ registerCombatHandler("prisonRescue", (state, result, setup) => {
     text = `${base.name} beat off ${f.name}'s rescue. Their people stay in the cells.`;
   } else {
     const freed = rescueWon(state, f, base);
-    text = `${f.name} broke into ${base.name} and freed ${listNames(freed) || "nobody"}. They carried off a tenth of the stores.`;
+    text = `${result.outcome === "retreat" ? "Your people pulled out. " : ""}${f.name} broke into ${base.name} and freed ${listNames(freed) || "nobody"}. They carried off a tenth of the stores.`;
   }
   log(state, text, result.outcome === "victory" ? "good" : "death");
   addCard(state, { title: "The rescue", text, choices: [{ label: "OK", resolve: () => "" }] });
