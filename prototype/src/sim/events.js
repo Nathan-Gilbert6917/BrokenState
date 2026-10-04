@@ -12,6 +12,7 @@ import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
+import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
 
 // ---------- helpers ----------
 function check(state, p, key, dc) {
@@ -270,19 +271,26 @@ const EVENTS = [
   },
   // Crew
   {
-    id: "argument", weight: 2, when: (st, p) => partyMembers(st, p).length >= 2,
+    // Rivals on a team argue far more often (weight 5), a team of friends rarely (1); relations.js.
+    id: "argument", weight: (st, p) => argumentWeight(st, p), when: (st, p) => partyMembers(st, p).length >= 2,
     card: (st, p) => {
-      const [a, b] = st.rng.shuffle([...partyMembers(st, p)]);
+      const [a0, b0] = st.rng.shuffle([...partyMembers(st, p)]);
+      const [a, b] = argumentPair(st, partyMembers(st, p), a0, b0); // the worst rival pair, if there is one
       return {
         title: "Tempers flare",
         text: `${a.name.split(" ")[0]} and ${b.name.split(" ")[0]} are at each other's throats over rations.`,
         survivorIds: [a.id, b.id],
         choices: [
-          { label: "Step in", hint: hint(st, p, "leadership", 7), resolve: (s) => check(s, p, "leadership", 7).ok ? "Calm returns." : (sulk(a, 10), sulk(b, 10), "It ends badly. Both are sulking.") },
-          { label: "Let them sort it out", resolve: (s) => { if (s.rng.chance(0.3)) { hurt(s, b, 10, partyTile(p), "in a fight"); wipeIfEmpty(s, p); return "Punches are thrown."; } return "It blows over."; } },
+          { label: "Step in", hint: hint(st, p, "leadership", 7), resolve: (s) => check(s, p, "leadership", 7).ok ? (relEvent(s, a, b, 4), "Calm returns.") : (sulk(a, 10), sulk(b, 10), relEvent(s, a, b, -8), "It ends badly. Both are sulking.") },
+          { label: "Let them sort it out", resolve: (s) => { relEvent(s, a, b, -6); if (s.rng.chance(0.3)) { hurt(s, b, 10, partyTile(p), "in a fight"); wipeIfEmpty(s, p); return "Punches are thrown."; } return "It blows over."; } },
         ],
       };
     },
+  },
+  {
+    // Friends on a team: a night of old stories (relations.js).
+    id: "campfire", weight: 1.5, when: (st, p) => partyMembers(st, p).length >= 2 && hasFriendsOnTeam(st, p),
+    card: (st, p) => campfireCard(st, p),
   },
   {
     id: "coward", weight: 2, when: (st, p) => partyMembers(st, p).some((m) => m.traits.includes("coward")) && p.phase === "out",
@@ -339,7 +347,7 @@ export function rollTravelEvent(state, p, tileId) {
   if (!state.rng.chance(chance)) return null;
   const options = EVENTS.filter((e) => e.when(state, p, t));
   if (!options.length) return null;
-  const ev = state.rng.weighted(options, (e) => e.weight);
+  const ev = state.rng.weighted(options, (e) => (typeof e.weight === "function" ? e.weight(state, p) : e.weight));
   return guarded(state, p, ev.card(state, p, t), tileId);
 }
 

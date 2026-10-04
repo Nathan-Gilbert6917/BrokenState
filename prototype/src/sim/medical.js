@@ -19,6 +19,8 @@ import { BUILDINGS } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
 import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, applyCondition, autoWantsCondition, conditionDanger } from "./health.js";
+import { hasPerk, gainXp, USE } from "./skills.js";
+import { noteTreated } from "./relations.js";
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -149,7 +151,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (!isHurt(s)) return 0;
   const bed = inBed != null ? inBed : patients(state, base).includes(s);
   let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;
-  if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5;
+  if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
   // Severe wounds heal slowly without a bed; the hospital tier sets the speed in a bed.
   if (isSevere(s)) perDay *= bed && hosp.tier > 0 ? hosp.severe : SEVERE_NO_BED;
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
@@ -240,7 +242,8 @@ function bestMedic(people) {
 
 // Treatments a Medic-role survivor can give in a day.
 export function medicCapacity(s) {
-  return Math.max(0, Math.floor((TREATS_PER_MEDIC + Math.floor(skill(s, "medicine") / 4)) * workFactor(s) + 1e-9));
+  const cap = Math.max(0, Math.floor((TREATS_PER_MEDIC + Math.floor(skill(s, "medicine") / 4)) * workFactor(s) + 1e-9));
+  return cap > 0 && hasPerk(s, "triage") ? cap + 1 : cap; // Triage (skills.js): +1 treatment a day
 }
 
 // Who treats at this base and how many treatments a day each: the Medic-role people there (best first); with
@@ -252,7 +255,7 @@ export function treaters(state, base) {
   if (medics.length) list = medics.map((m) => ({ s: m, cap: medicCapacity(m), trained: true }));
   else {
     const { medic } = bestMedic(here);
-    list = medic ? [{ s: medic, cap: UNTRAINED_TREATS, trained: false }] : [];
+    list = medic ? [{ s: medic, cap: UNTRAINED_TREATS + (hasPerk(medic, "triage") ? 1 : 0), trained: false }] : [];
   }
   for (const t of list) t.value = skill(t.s, "medicine") + medKitBonus(t.s);
   return list.sort((a, b) => b.value - a.value);
@@ -304,6 +307,7 @@ export function spendMedicTime(state, base, treater, load) {
   if (!treater) return;
   const L = ledger(state, base);
   L.used[treater.s.id] = (L.used[treater.s.id] || 0) + load;
+  noteTreated(state, treater.s); // relations.js: people treated (service record)
 }
 
 // ---------- treating at a base ----------
@@ -316,7 +320,9 @@ function woundInfo(state, base, s, ctx) {
   if (!t) t = pickTreater(ctx, 1);
   const shown = t || ctx.treaters[0] || null;
   const value = shown ? shown.value : 0;
-  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? SURGERY_MULT : 1));
+  // Perks of the one treating (skills.js): Steady Hands +25%, Miracle Worker's surgery 2× instead of 1.5×.
+  const who = t ? t.s : shown ? shown.s : null;
+  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1));
   const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
   const treatedToday = !!s && s.woundTreatedDay === ctx.day;
   let reason = "";
@@ -342,6 +348,7 @@ function applyWound(state, base, s, info) {
   spendMedicTime(state, base, info.treater, info.load);
   s.woundTreatedDay = day(state);
   useMedKit(state, info.medic);
+  gainXp(state, info.medic, "medicine", info.surgery ? USE.surgery : USE.wound); // skills.js
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);
   let cure = "";
@@ -476,8 +483,11 @@ function fieldMedic(state, p) {
 export function fieldTreatInfo(state, party, s) {
   const { medic, value } = fieldMedic(state, party);
   const cost = TREAT_MEDS + (s && s.woundInfected ? CURE_MEDS : 0);
-  const heal = Math.round(FIELD_HEAL + value * 0.6);
-  const cureChance = s && s.woundInfected ? Math.min(0.85, 0.2 + value * 0.04) : 0;
+  // Perks of the team's medic (skills.js): Field Surgeon heals like a base treatment (1.5× on a severe wound) and
+  // cleans infections 90% of the time; Steady Hands +25%.
+  const fs = hasPerk(medic, "fieldsurgeon");
+  const heal = Math.round((fs ? (12 + value * 0.5) * (isSevere(s) ? SURGERY_MULT : 1) : FIELD_HEAL + value * 0.6) * (hasPerk(medic, "steadyhands") ? 1.25 : 1));
+  const cureChance = s && s.woundInfected ? (fs ? 0.9 : Math.min(0.85, 0.2 + value * 0.04)) : 0;
   const treatedToday = !!s && s.woundTreatedDay === day(state);
   let reason = "";
   if (!s || !s.alive) reason = "Nobody to treat.";
@@ -494,6 +504,7 @@ export function fieldTreat(state, party, survivorId) {
   if (!info.ok) return info.reason;
   takeMeds(party, info.cost);
   useMedKit(state, info.medic);
+  gainXp(state, info.medic, "medicine", USE.field); // skills.js
   s.woundTreatedDay = day(state);
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);

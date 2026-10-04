@@ -20,7 +20,10 @@
 // trips, raiders) do not come back.
 import { log, residents, atBase } from "./world.js";
 import { count } from "./buildings.js";
+import { poweredType } from "./power.js";
+import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
+import { spoilMult } from "./skills.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150 };
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
@@ -41,6 +44,7 @@ export function storeRate(kind, temp, { wet = false, heat = false } = {}) {
   if (kind === "cellar") return RATE.cellar * (cold ? 0.6 : hot ? 1.3 : 1);
   if (kind === "dry") return RATE.dry * (cold ? 0.6 : hot ? 1.4 : 1) * (wet ? 1.15 : 1);
   if (kind === "cold") return temp < 0 ? 0.001 : temp < 5 ? 0.002 : temp < 15 ? 0.005 : 0.012;
+  if (kind === "freezer") return temp < 0 ? 0.001 : 0.002; // a cold store on generator power (power.js)
   if (kind === "preserved") return RATE.preserved * (hot ? 1.5 : 1);
   // Outside: frozen food keeps fairly well; heat and rain rot it fast.
   return RATE.outside * (temp < 0 ? 0.3 : cold ? 0.5 : hot ? 1.6 : 1) * (wet ? 1.4 : 1);
@@ -53,7 +57,7 @@ export function storeSpaces(base) {
   if (cellar > 0) out.push({ key: "cellar", name: count(base, "cellar") ? (base.type === "hub" ? "Cellars" : "Root cellar") : "Cellar", kind: "cellar", cap: cellar });
   if (base.type !== "hub") out.push({ key: "pantry", name: "Pantry", kind: "dry", cap: STORE.pantry });
   if (count(base, "storehouse")) out.push({ key: "storehouse", name: "Storehouse", kind: "dry", cap: count(base, "storehouse") * STORE.storehouse });
-  if (count(base, "coldstore")) out.push({ key: "coldstore", name: "Cold store", kind: "cold", cap: count(base, "coldstore") * STORE.coldStore });
+  if (count(base, "coldstore")) out.push({ key: "coldstore", name: poweredType(base, "coldstore") ? "Cold store (powered)" : "Cold store", kind: poweredType(base, "coldstore") ? "freezer" : "cold", cap: count(base, "coldstore") * STORE.coldStore });
   return out;
 }
 export const storeCapacity = (base) => storeSpaces(base).reduce((a, s) => a + s.cap, 0);
@@ -64,7 +68,8 @@ export const storeCapacity = (base) => storeSpaces(base).reduce((a, s) => a + s.
 export function foodStore(state, base, fresh = base.stock.food || 0) {
   const w = wx(state);
   const t = meanTemp(w), wet = isWet(w), heat = w.key === "heat";
-  const spaces = storeSpaces(base).map((s) => ({ ...s, rate: storeRate(s.kind, t, { wet, heat }) })).sort((a, b) => a.rate - b.rate);
+  const sm = spoilMult(state, base); // Root Cellar Lore (skills.js): 25% slower
+  const spaces = storeSpaces(base).map((s) => ({ ...s, rate: storeRate(s.kind, t, { wet, heat }) * sm })).sort((a, b) => a.rate - b.rate);
   let left = Math.max(0, fresh), loss = 0;
   for (const s of spaces) {
     s.held = Math.min(left, s.cap);
@@ -72,10 +77,10 @@ export function foodStore(state, base, fresh = base.stock.food || 0) {
     left -= s.held;
     loss += s.loss;
   }
-  const outRate = storeRate("outside", t, { wet, heat });
+  const outRate = storeRate("outside", t, { wet, heat }) * sm;
   const outLoss = left * outRate;
   const preserved = Math.max(0, base.stock.preserved || 0);
-  const presRate = storeRate("preserved", t, { heat });
+  const presRate = storeRate("preserved", t, { heat }) * sm;
   const presLoss = preserved * presRate;
   const cap = spaces.reduce((a, s) => a + s.cap, 0);
   const f = Math.max(0, fresh);
@@ -136,7 +141,7 @@ export function rackPlan(state, base, fresh = base.stock.food || 0) {
   const wet = isWet(w) || w.key === "fog" || w.key === "snow" || w.key === "blizzard";
   const st = foodStore(state, base, fresh);
   const spare = Math.max(st.outside, fresh - eatRate(state, base) * RACK.keepDays);
-  const take = Math.max(0, Math.min(racks * RACK.food * (wet ? 0.5 : 1), spare));
+  const take = Math.max(0, Math.min(racks * RACK.food * (wet ? 0.5 : 1), spare, rackLimit(state, base, fresh))); // production.js: the racks' order
   return { racks, take, out: take * (RACK.out / RACK.food), wet };
 }
 
@@ -150,6 +155,7 @@ export function storageDaily(state, base) {
     st.preserved = (st.preserved || 0) + rack.out;
   }
   const store = foodStore(state, base);
+  base.mash = Math.round(Math.max(0, store.freshLoss) * 10) / 10; // spoiled food: mash for an ethanol still tomorrow (power.js)
   if (store.freshLoss > 0) st.food = Math.max(0, st.food - store.freshLoss);
   if (store.presLoss > 0) st.preserved = Math.max(0, st.preserved - store.presLoss);
   base.jarsInUse = jarsInUse(base); // jarred food that spoiled, was traded or taken leaves with its jars

@@ -31,6 +31,8 @@ import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
+import { noteRescue } from "./relations.js";
+import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -226,6 +228,7 @@ function freeCaptive(state, s, p) {
   if (!p.members.includes(s.id)) p.members.push(s.id);
   s.mood = Math.min(100, s.mood + 15);
   stats(state).rescued += 1;
+  noteRescue(state, s, p); // relations.js: the rescuers' service record, and a bond with the one they freed
 }
 
 function releaseHome(state, s) {
@@ -588,6 +591,7 @@ function hideChoice(state, p, c) {
     hint: `Stealth check, ${pct(chance)}. Failure: they find you and you fight with no time to set up`,
     resolve: (st) => {
       p.progress -= 4;
+      gainXpAll(st, partyMembers(st, p), "stealth", USE.hide); // skills.js
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "hide-ok");
         resume(st, p);
@@ -603,20 +607,29 @@ function talkDc(f, c) {
   const att = attitude(f);
   return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + (f.type === "zealot" ? 2 : 0) + (c.type === "ambush" ? 1 : 0);
 }
+// Perks (skills.js): Peacemaker's Leadership counts in full; Smooth Talker +2.
 function talkSkill(state, p) {
-  return Math.max(bestSkill(state, p, "speech"), bestSkill(state, p, "leadership") - 2);
+  const team = partyMembers(state, p);
+  const v = Math.max(bestSkill(state, p, "speech"), bestSkill(state, p, "leadership") - 2, ...team.filter((s) => hasPerk(s, "peacemaker")).map((s) => skill(s, "leadership")));
+  return v + (anyPerk(team, "smooth") ? 2 : 0);
 }
+// Who does the talking (Speech XP): the best talker on the team.
+const talker = (state, p) => [...partyMembers(state, p)].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0];
 
 function talkChoice(state, p, c, f) {
-  const chance = skillChance(talkSkill(state, p), talkDc(f, c));
+  const team = partyMembers(state, p);
+  const chance = Math.min(0.95, skillChance(talkSkill(state, p), talkDc(f, c)) + (anyPerk(team, "silvertongue") ? 0.15 : 0)); // Silver Tongue (skills.js)
+  const again = anyPerk(team, "diplomat") && !c.retalk; // Diplomat: one more try after a failed talk
   const deal = (f.type === "traders" || f.type === "military" || f.type === "fortress" || f.type === "commune");
   return {
     label: c.type === "checkpoint" ? "Talk your way through" : "Talk them down",
-    hint: `Speech check, ${pct(chance)} (they are ${attitude(f).toLowerCase()}). Success: you pass and goodwill rises a little${deal ? "; they may share news of the area" : ""}. Failure: goodwill drops and they get angrier (no second chance to talk)`,
+    hint: `Speech check, ${pct(chance)} (they are ${attitude(f).toLowerCase()}). Success: you pass and goodwill rises a little${deal ? "; they may share news of the area" : ""}. Failure: ${anyPerk(team, "peacemaker") ? "" : "goodwill drops and "}they get angrier (${again ? "Diplomat: you may talk once more" : "no second chance to talk"})`,
     resolve: (st) => {
-      if (st.rng.chance(chance)) {
+      const won = st.rng.chance(chance);
+      gainXp(st, talker(st, p), "speech", USE.talk + (won ? USE.talkWon : 0)); // skills.js
+      if (won) {
         bump(st, "outcomes", "talk-ok");
-        changeGoodwill(st, f, 3, "you talked it out");
+        changeGoodwill(st, f, anyPerk(partyMembers(st, p), "charming") ? 6 : 3, "you talked it out"); // Charming (skills.js)
         f.lastDiplomacy = day(st);
         let extra = "";
         if (deal) {
@@ -627,8 +640,8 @@ function talkChoice(state, p, c, f) {
         return `A tense minute, then they lower their weapons and let you through.${extra}`;
       }
       bump(st, "outcomes", "talk-fail");
-      changeGoodwill(st, f, -3, "a bad conversation");
-      const c2 = { ...c, noTalk: true, followText: `They are not buying it. ${f.name}'s ${NOUN_OF[f.type]} close in, angrier now. The price just went up.`, bribeMult: 1.5 };
+      if (!anyPerk(partyMembers(st, p), "peacemaker")) changeGoodwill(st, f, -3, "a bad conversation"); // Peacemaker: no goodwill lost
+      const c2 = { ...c, noTalk: !again, retalk: true, followText: `They are not buying it. ${f.name}'s ${NOUN_OF[f.type]} close in, angrier now. The price just went up.`, bribeMult: 1.5 };
       addCard(st, forcedCard(st, p, c2, true));
       return "";
     },
@@ -643,7 +656,7 @@ function bribeChance(f) {
 }
 
 function bribeChoice(state, p, c, f) {
-  const value = bribeValue(c, f);
+  const value = Math.round(bribeValue(c, f) * (anyPerk(partyMembers(state, p), "negotiator") ? 0.75 : 1)); // Negotiator (skills.js)
   const plan = payPlan(p, value);
   const chance = bribeChance(f);
   const toll = c.type === "roadblock";

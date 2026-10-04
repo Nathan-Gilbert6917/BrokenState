@@ -3,6 +3,9 @@ import { log, atBase, skill, newId } from "./world.js";
 import { SKILL_NAMES } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
+import { stationIO, orderHold } from "./production.js";
+import { refreshPower, generatorStatus, powerLine } from "./power.js";
+import { buildMult } from "./skills.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -10,6 +13,10 @@ export const RECIPES = {
   parts: { name: "Parts", in: { scrap: 6 },          out: { parts: 1 }, skill: "mechanics", minSkill: 4, desc: "6 scrap → 1 part per day (Mechanics 4+, otherwise half the time it fails)" },
   // storage.js: jarred food barely spoils and needs no cellar room; the jars come back when it is eaten at a base.
   preserve: { name: "Preserving", in: { food: 9, water: 3, scrap: 1, jars: 4 }, out: { preserved: 8 }, skill: "farming", desc: "9 fresh food + 3 water + 1 scrap (stove fuel, lids) + 4 empty jars → 8 preserved food per day (9 with Farming 8+). Preserved food barely spoils, needs no cellar room, is lighter to carry and sells well; most jars come back when it is eaten here." },
+  // power.js: the still makes fuel from surplus or spoiled food (up to 4 of the 8 can be yesterday's spoiled food);
+  // the generator burns fuel for power (its fuel is paid in power.js refreshPower, not by runStations).
+  still: { name: "Ethanol", in: { food: 8, water: 2 }, out: { fuel: 3 }, skill: "farming", main: "food", desc: "8 food + 2 water → 3 fuel per day. Up to 4 of the food can be yesterday's spoiled food (mash). Give it a Keep-at-least order so it only takes the surplus." },
+  power: { name: "Power", in: { fuel: 2 }, out: {}, skill: "mechanics", main: "fuel", desc: "2 fuel a day → 6 power while something draws it (stands by otherwise). Loud: +4 Heat while running." },
 };
 
 export const BUILDINGS = {
@@ -41,7 +48,13 @@ export const BUILDINGS = {
   coldstore:    { name: "Cold store",     cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
   kitchen:      { name: "Preserving kitchen", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
   smoker:       { name: "Drying rack",    cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
+  // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
+  generator:    { name: "Generator",      cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving kitchen. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
+  still:        { name: "Ethanol still",  cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 food + 2 water into 3 fuel a day; up to 4 of the food can be yesterday's spoiled food. Set a Keep-at-least order so it only takes the surplus." },
   greenhouse:   { name: "Greenhouse",     cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
+  // Mood (relations.js moodFactors): no operator needed.
+  common_room:  { name: "Common room",    cost: { scrap: 22 },            hours: 30, max: 2, desc: "Chairs, a stove and a card table: +1.5 mood a day for everyone living here, up to 15 people a room (spread thinner above that). No operator." },
+  chapel:       { name: "Chapel",         cost: { scrap: 16 },            hours: 24, max: 1, desc: "A quiet room with candles: +1 mood a day for everyone here, grief weighs half as much, and a memorial service held here lifts everyone 2 more. No operator." },
   // Hospital tiers (family "hospital"): each one upgrades the one below and replaces it when finished.
   // med: beds = patients that get the bonus, heal = extra health per day in a bed, eff = meds multiplier,
   // treat = health per manual treatment before Medicine, staff = Medic-role people needed to run it,
@@ -106,7 +119,7 @@ export function assignStations(state, base) {
 }
 
 // Stations with an operator at work (not in a hospital bed): what makes workshop noise (Heat, hordes.js).
-export const mannedStations = (state, base) => stations(base).filter((st) => stationOperator(state, base, st)).length;
+export const mannedStations = (state, base) => stations(base).filter((st) => stationOperator(state, base, st) && !stationStatus(state, base, st).idle).length; // an order holding it, or a generator on standby: quiet
 
 // Extra meds per day from a med station thanks to the base's hospital (Clinic or better). Like everything else
 // a hospital does, it needs the medics to run it (the same staffing rule as medical.activeHospital).
@@ -140,24 +153,32 @@ export function stationStatus(state, base, st) {
   const op = stationOperator(state, base, st);
   if (!op) {
     const sick = atBase(state, base.id).find((s) => s.role === "operate" && s.station === st.id);
-    return { op: null, running: false, reason: sick ? (sick.inBed ? "Operator in a hospital bed" : "Operator too sick to work") : "No operator", recipe, out: {} };
+    return { op: null, running: false, reason: sick ? (sick.inBed ? "Operator in a hospital bed" : "Operator too sick to work") : "No operator", recipe, out: {}, in: r.in };
   }
-  const missing = Object.entries(r.in).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k]) => k);
-  const out = recipeOutput(op, recipe, base, state);
-  if (missing.length) return { op, running: false, reason: `Waiting for ${missing.join(", ")}`, recipe, out };
-  return { op, running: true, reason: "Running", recipe, out };
+  if (recipe === "power") return generatorStatus(state, base, st, op); // power.js
+  // production.js: today's inputs and outputs (power, the still's mash) and the station's standing order.
+  const io = stationIO(state, base, st, op);
+  const hold = orderHold(state, base, st);
+  if (hold) return { op, running: false, idle: true, reason: hold, recipe, out: io.out, in: io.in, powered: io.powered };
+  const missing = Object.entries(io.in).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k]) => k);
+  const out = io.out;
+  if (missing.length) return { op, running: false, reason: `Waiting for ${missing.join(", ")}`, recipe, out, in: io.in, powered: io.powered };
+  return { op, running: true, reason: io.powered ? "Running (powered)" : "Running", recipe, out, in: io.in, powered: io.powered, mash: io.mash };
 }
 
 export function runStations(state, base) {
   assignStations(state, base);
+  refreshPower(state, base); // power.js: generators burn today's fuel before the powered stations run
   for (const st of stations(base)) {
     const status = stationStatus(state, base, st);
-    if (!status.running) continue;
+    if (!status.running || status.recipe === "power") continue;
     const r = RECIPES[status.recipe];
-    for (const [k, v] of Object.entries(r.in)) base.stock[k] -= v;
+    const inp = status.in || r.in;
+    for (const [k, v] of Object.entries(inp)) base.stock[k] -= v;
+    if (status.mash) base.mash = Math.max(0, (base.mash || 0) - status.mash); // the still's spoiled food (storage.js)
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
     for (const [k, v] of Object.entries(status.out)) base.stock[k] = (base.stock[k] || 0) + v;
-    if (r.in.jars) base.jarsInUse = (base.jarsInUse || 0) + r.in.jars; // filled jars (storage.js)
+    if (inp.jars) base.jarsInUse = (base.jarsInUse || 0) + inp.jars; // filled jars (storage.js)
   }
 }
 
@@ -202,7 +223,7 @@ export function cancelBuild(state, base, id) {
 }
 
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s), 0);
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0); // buildMult: Handy / Master Builder (skills.js)
 }
 
 // Builders work on the first job in the queue, hour by hour.
@@ -233,6 +254,7 @@ export function buildingSummary(state, base) {
     ["Water", `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
     ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
     ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} kitchen${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
+    ["Power", powerLine(state, base)],
     ["Medical", (() => {
       const h = base.buildings.find((x) => BUILDINGS[x.type].family === "hospital");
       if (!h) return "No hospital (severe wounds heal slowly)";

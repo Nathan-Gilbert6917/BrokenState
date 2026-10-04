@@ -24,6 +24,7 @@
 import { partyMembers, partyTile, tileLabel } from "./parties.js";
 import { conflictChance, stationaryEncounter, COOLDOWN_HOURS } from "./conflicts.js";
 import { zombieToughness } from "./hives.js";
+import { heatMult } from "./skills.js";
 
 export const HEAT_MAX = 100;
 export const HEAT_DECAY = 8;          // per hour on the move
@@ -70,6 +71,7 @@ export function heatGain(state, p, activity = stationaryActivity(p), hour = stat
     parts.push(activity === "camp" ? "fire at night ×1.3" : "dark ×0.8");
   }
   if (p.stance === "stealthy") { g *= 0.8; parts.push("stealthy ×0.8"); }
+  if (heatMult(state, p) !== 1) { g *= heatMult(state, p); parts.push(`Ranger ×${heatMult(state, p)}`); } // skills.js perk
   return { gain: g, parts };
 }
 

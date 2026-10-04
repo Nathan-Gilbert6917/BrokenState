@@ -2,6 +2,7 @@
 // Teams spot things as they travel (a perception roll); like all intel, it reaches you
 // when they get home, or right away over the radio.
 import { skill, isNight } from "./world.js";
+import { anyPerk } from "./skills.js";
 
 export const MARKER_TYPES = {
   vehicle: { name: "Abandoned vehicle", glyph: "🚚", desc: "One of your vehicles left behind. Bring fuel to get it running again." },
@@ -57,6 +58,7 @@ export function perceptionChance(state, members) {
   const scout = Math.max(0, ...members.map((m) => skill(m, "scouting")));
   let c = 0.12 + scout * 0.03;
   if (members.some((m) => m.traits.includes("keeneye"))) c += 0.15;
+  if (anyPerk(members, "spotter")) c += 0.15; // Spotter (skills.js)
   if (isNight(state)) c *= 0.6;
   return Math.min(0.9, c);
 }

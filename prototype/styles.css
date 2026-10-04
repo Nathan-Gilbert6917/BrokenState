@@ -124,6 +124,9 @@ button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 .chip.on { background: #21402c; color: var(--good); }
 .chip.off { background: #402424; color: var(--danger); }
 .chip.trait { background: #3a2f1c; }
+.chip.rel { background: #2a2f45; color: #c9b6ff; } /* ui/relations.js: ♥ partner, +friends, −rivals */
+.memorial { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; max-height: 62vh; overflow-y: auto; }
+.memorial .mem { margin: 0; }
 a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
 .basebox { width: min(72rem, 96vw) !important; }
 .basebody { max-height: 62vh; overflow-y: auto; padding-right: 0.3rem; }
@@ -319,3 +322,87 @@ input.tw-qty { width: 3.6rem; margin: 0 0.15rem; }
 .tw-balance > i { display: block; height: 100%; background: var(--good); }
 .tw-balance > b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; opacity: 0.7; }
 button.danger { border-color: var(--danger); }
+/* Production orders, power, stewards (ui/production.js): controls sized for a TV across the room. */
+.prodctl select, .prodctl input, .prodctl button { font-size: 0.95rem; min-height: 1.9rem; }
+.prodctl .row { gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+.prodctl input.po-n { width: 5.2rem; }
+.prodctl .po-fb { margin-top: 0.2rem; font-size: 0.9rem; }
+.stwareas { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin: 0.4rem 0; font-size: 0.95rem; }
+.stwareas label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+.stwareas input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+button.mini.pinned { border-color: var(--accent); color: var(--accent); }
+/* Alerts stack on the right of the map, the log's filter bar and links, the Diary and the Roster
+   (ui/alerts.js, ui/diary.js, ui/roster.js). Sized to read from the couch on a TV. */
+#alerts { position: absolute; right: 0.6rem; top: 0.6rem; width: min(23rem, 45%); max-height: calc(100% - 1.2rem); overflow-y: auto; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 0.3rem; }
+#alerts > * { pointer-events: auto; }
+#mapwrap:has(#banner:not(.hidden)) #alerts { top: 4.6rem; max-height: calc(100% - 5.2rem); }
+#mapwrap:has(#devpanel:not(.hidden)) #alerts { right: calc(min(26rem, 100% - 1.2rem) + 1.2rem); }
+.al { display: flex; align-items: stretch; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-left: 5px solid var(--info); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.al.al-danger { border-left-color: var(--danger); background: rgba(52,24,22,0.94); }
+.al.al-warn { border-left-color: #ffd166; }
+.al.al-good { border-left-color: var(--good); }
+.al-go { flex: 1; text-align: left; border: none; background: none; padding: 0.42rem 0.55rem; font-size: 0.98rem; line-height: 1.3; }
+.al-ico { display: inline-block; width: 1.5rem; text-align: center; margin-right: 0.3rem; }
+.al-btn { border: none; background: none; padding: 0 0.45rem; opacity: 0.55; font-size: 0.9rem; }
+.al-btn:hover:not(:disabled) { opacity: 1; }
+.al-more { align-self: flex-end; font-size: 0.85rem; padding: 0.15rem 0.6rem; background: rgba(20,22,26,0.9); }
+.al-flash { background: rgba(58,44,14,0.96); border: 1px solid #ffd166; border-radius: 8px; padding: 0.4rem 0.6rem; font-size: 0.95rem; }
+.logbar { position: sticky; top: -0.4rem; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; padding: 0.2rem 0 0.3rem; background: var(--panel); }
+.lgchip { padding: 0.05rem 0.5rem; font-size: 0.88rem; }
+.logbar select { font-size: 0.85rem; padding: 0.05rem 0.3rem; }
+a.lk { color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.18em; }
+a.lk:hover { color: var(--accent); text-decoration-style: solid; }
+#modal .box.diarybox { width: min(112rem, 98vw); height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+.dy-filters { margin: 0.25rem 0; gap: 0.3rem; }
+.dy-search { min-width: min(24rem, 60vw); font-size: 1rem; }
+.dy-cols { display: grid; grid-template-columns: minmax(18rem, 30rem) 1fr; gap: 0.9rem; flex: 1; min-height: 0; margin-top: 0.4rem; }
+#modal .diarybox .basebody.dy-days { max-height: none; height: 100%; overflow-y: auto; border-right: 1px solid var(--line); padding-right: 0.5rem; }
+.dy-day { padding: 0.32rem 0.5rem; border-radius: 6px; border: 1px solid transparent; cursor: pointer; line-height: 1.35; }
+.dy-day:hover { border-color: var(--accent); }
+.dy-day.on { background: #4a3816; border-color: var(--accent); }
+.dy-day.dim { opacity: 0.45; }
+.dy-ico { margin: 0 0.2rem; }
+.dy-body { overflow-y: auto; min-height: 0; padding-right: 0.4rem; font-size: 1.02rem; }
+.dy-dayhead { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
+.dy-big { font-size: 1.25rem; color: var(--accent); }
+.dy-note { font-style: italic; background: var(--panel-2); border-left: 3px solid var(--accent); padding: 0.5rem 0.75rem; margin: 0.45rem 0 0.6rem; line-height: 1.5; }
+.dy-line { padding: 0.12rem 0; line-height: 1.45; }
+.dy-line .t { color: var(--muted); margin-right: 0.5rem; font-variant-numeric: tabular-nums; }
+.dy-link { cursor: pointer; }
+.dy-link:hover { text-decoration: underline; }
+#modal .box.rosterbox { width: min(160rem, 99vw); height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.ro-bar { margin: 0.4rem 0; gap: 0.4rem; }
+.ro-sep { flex: 1; }
+#modal .rosterbox .basebody.ro-wrap { max-height: none; flex: 1; min-height: 0; overflow: auto; }
+.ro-table { font-size: 0.95rem; }
+.ro-table th { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 0.2rem 0.25rem; }
+.ro-table td { vertical-align: middle; white-space: nowrap; padding: 0.22rem 0.35rem; }
+.ro-table tr:hover td { background: var(--panel-2); }
+.ro-table tr.on td { background: #2e2a20; }
+.ro-th { border: none; background: none; padding: 0.1rem 0.15rem; color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+.ro-th.on { color: var(--accent); }
+.ro-name a { font-weight: 600; }
+.ro-sk { text-align: center; min-width: 2.7rem; }
+.ro-xp { display: block; height: 0.25rem; background: #2c3139; border-radius: 2px; overflow: hidden; margin-top: 0.12rem; }
+.ro-xp i { display: block; height: 100%; background: var(--accent); }
+.ro-hp { display: flex; flex-direction: column; gap: 0.1rem; min-width: 4.2rem; }
+.ro-table select { padding: 0.1rem 0.25rem; }
+.ro-table input[type="checkbox"], .ro-table th input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+/* Skills, perks and the skill tree in the survivor screen (ui/skills.js). Sizes in rem so they follow the UI scale. */
+.skillrow { display: grid; grid-template-columns: 6.2rem 1fr 1.8rem 2.4rem; align-items: center; gap: 0.45rem; font-size: 0.95rem; margin: 0.18rem 0; }
+.skillrow .sk-bars { display: flex; flex-direction: column; gap: 0.14rem; }
+.skillrow .xpbar { height: 0.26rem; }
+.skillrow .sk-lv { text-align: right; font-weight: 600; }
+.skillrow .sk-perk { color: var(--accent); font-size: 0.85rem; letter-spacing: -0.05em; }
+.skilltree { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.3rem 0 0.4rem; }
+.tree-row { display: grid; grid-template-columns: 8rem repeat(3, 1fr); gap: 0.4rem; align-items: stretch; }
+.tree-head { font-size: 0.85rem; color: var(--muted); text-align: center; }
+.tree-skill { align-self: center; font-size: 0.95rem; }
+.tier { display: flex; gap: 0.3rem; padding: 0.2rem; border: 1px solid transparent; border-radius: 8px; }
+.tier.point { border-color: var(--accent); background: rgba(224, 168, 79, 0.08); }
+.perk { flex: 1; min-width: 0; font-size: 0.85rem; line-height: 1.25; padding: 0.35rem 0.45rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); text-align: center; }
+.perk.taken { border-color: var(--good); background: rgba(108, 196, 138, 0.18); }
+.perk.avail { border-color: var(--accent); cursor: pointer; }
+.perk.avail:hover { background: #4a3816; }
+.perk.locked { opacity: 0.55; }
+.perk.passed { opacity: 0.35; text-decoration: line-through; }

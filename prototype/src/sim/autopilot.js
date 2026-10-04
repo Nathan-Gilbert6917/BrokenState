@@ -39,6 +39,10 @@ import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason } from "./weather.js";
 import { autoRecruitPick } from "./recruits.js";
+import { planStudy } from "./skills.js";
+import { stationOrder, setStationOrder, orderHold } from "./production.js";
+import { POWER, powerWanted } from "./power.js";
+import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -75,7 +79,10 @@ const PLAN_HOUR = 7;      // daily planning: teams leave in the morning
 const STICKY = 2;         // bonus for keeping someone's current role (fewer flips)
 const first = (s) => s.name.split(" ")[0];
 const names = (list) => list.map(first).join(", ");
-const say = (state, text, kind = "info") => log(state, `🤖 ${text}`, kind);
+// While a base steward runs (stewardRun, steward.js) the governor's lines are not logged one by one (the steward
+// writes one summary a day) and the steward's own style is used.
+let stewardCtx = null;
+const say = (state, text, kind = "info") => { if (!stewardCtx) log(state, `🤖 ${text}`, kind); };
 const isDisabled = (state, ch) => (typeof ch.disabled === "function" ? ch.disabled(state) : !!ch.disabled);
 const pctIn = (text) => { const m = /(\d+)%/.exec(text || ""); return m ? Number(m[1]) / 100 : null; };
 
@@ -90,7 +97,7 @@ function gov(state) {
   }
   return state.governor;
 }
-const persona = (state) => PERSONALITIES[gov(state).personality] || PERSONALITIES.balanced;
+const persona = (state) => PERSONALITIES[(stewardCtx && stewardCtx.style) || gov(state).personality] || PERSONALITIES.balanced;
 export const autopilotPersonality = (state) => gov(state).personality;
 
 // ---------- switching ----------
@@ -143,18 +150,46 @@ export function autopilotHour(state) {
     resolvePending(state);
     guardArrivals(state);
     idleTeams(state);
-    for (const b of [...state.bases]) {
-      equipFromArmory(state, b);
-      planTreatment(state, b);
-      planBuilds(state, b);
-      planCrafts(state, b);
-    }
+    for (const b of [...state.bases]) governBase(state, b);
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
-    for (const b of state.bases) planRoles(state, b);
+    for (const b of state.bases) governRoles(state, b);
     resolvePending(state);
   } catch (e) {
     fail(state, e);
   } finally {
+    g.busy = false;
+  }
+}
+
+// ---------- one base (the autopilot's hourly loop and base stewards, steward.js) ----------
+// Areas a steward can hand over; the autopilot runs them all. A wish or a role in an area that is off is left as
+// it is (the player's).
+export const GOVERN_AREAS = ["roles", "building", "production", "medical", "food", "defence"];
+const ALL_AREAS = Object.fromEntries(GOVERN_AREAS.map((k) => [k, true]));
+// The per-base work of one hour: gear, treatment, construction, crafting and station orders.
+export function governBase(state, base, areas = ALL_AREAS) {
+  if (areas.production) equipFromArmory(state, base);
+  if (areas.medical) planTreatment(state, base);
+  if (areas.building) planBuilds(state, base, areas);
+  if (areas.production) { govOrders(state, base); planCrafts(state, base); }
+}
+// Roles at one base (after the day's trip is planned). Returns the number of role changes.
+export function governRoles(state, base, areas = ALL_AREAS) {
+  return areas.roles ? planRoles(state, base, areas) : 0;
+}
+// A base steward's hour (steward.js): the same per-base work for the areas handed over, in the steward's style,
+// with the governor's log lines held back. Never while the dev autopilot runs (it has the whole holdout then).
+export function stewardRun(state, base, areas, style = "balanced") {
+  if (state.autopilot || state.gameOver) return 0;
+  const g = gov(state);
+  if (g.busy) return 0;
+  g.busy = true;
+  stewardCtx = { style: PERSONALITIES[style] ? style : "balanced" };
+  try {
+    governBase(state, base, areas);
+    return governRoles(state, base, areas);
+  } finally {
+    stewardCtx = null;
     g.busy = false;
   }
 }
@@ -167,6 +202,8 @@ export function autopilotDaily(state) {
   tidySupplyJobs(state);
   planSupplyRuns(state);
   planTrip(state);
+  const service = relAutopilotDaily(state); // relations.js: a memorial service when people grieve or spirits are low
+  if (service) say(state, service);
   // Cautious: scan the airwaves and make a radio deal for whatever is below its reserve (reserveRadio).
   if (persona(state).reserves && reserveRadio(state)) return;
   // Short of something and a group in radio reach has it: a radio deal (radio.js), their caravan brings it.
@@ -927,14 +964,21 @@ function threatAt(state, base) {
   return { urgent, standing };
 }
 
-function planRoles(state, base) {
+// The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
+// are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
+const ROLE_AREA = { farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles" };
+
+function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
-  if (!people.length) return;
+  if (!people.length) return 0;
   const g = gov(state);
   const P = persona(state);
   const free = new Set(people);
   const want = new Map();
   const give = (s, role, station = null) => { want.set(s.id, { role, station }); free.delete(s); };
+  // 0. Pinned people (s.pinned, the survivor screen and the base's people list) keep what they do, and so does
+  // anyone in a role whose area this base's steward was not handed.
+  for (const s of people) if (s.pinned || !areas[ROLE_AREA[s.role]]) give(s, s.role, s.role === "operate" ? s.station : null);
   const ranked = (role, score, filter = () => true) => [...free].filter(filter)
     .sort((a, b) => score(b) + (b.role === role ? STICKY : 0) - (score(a) + (a.role === role ? STICKY : 0)));
   const st = base.stock;
@@ -946,14 +990,15 @@ function planRoles(state, base) {
 
   // 1. Patients in a hospital bed do not work anyway; the worn-out rest before they walk away (up to a third,
   // and only while there is food, unless someone is about to leave).
-  for (const s of people) if (s.inBed) give(s, "rest");
-  const low = [...free].filter((s) => s.mood < P.restMood && !s.leader).sort((a, b) => a.mood - b.mood);
+  for (const s of [...free]) if (s.inBed) give(s, "rest");
+  const low = [...free].filter((s) => (s.mood < P.restMood || wantsRest(state, s)) && !s.leader).sort((a, b) => a.mood - b.mood); // wantsRest: low after a rough trip (relations.js)
   low.forEach((s, i) => { if (s.mood < 18 || (i < Math.floor(people.length / 3) && foodDays >= 3)) give(s, "rest"); });
 
   // 2. Farming (farming.js): crops take days to ripen, and more and better farmers per plot give a bigger
   // harvest. Enough farmers for the plots in use (the "ideal" crew when food is short).
   let farmers = 0;
   const farmTo = (target) => {
+    if (!areas.food) return;
     for (const s of ranked("farm", (x) => skill(x, "farming"), (x) => !x.inBed)) {
       if (farmers >= target) break;
       farmers++;
@@ -973,6 +1018,7 @@ function planRoles(state, base) {
     return (st.ammo || 0) < people.length * 3 ? d * 0.7 : d;
   };
   const addGuards = (target, cap) => {
+    if (!areas.defence) return;
     for (const s of ranked("guard", (x) => combatPower(x) * 2, (x) => !x.inBed)) {
       if (defense() >= target || guards.size >= cap) break;
       guards.add(s.id);
@@ -984,7 +1030,7 @@ function planRoles(state, base) {
   // 4. Medics while anyone here is hurt (each hospital tier needs 1-3 to run).
   const hosp = hospitalDef(base);
   const staffed = people.some((s) => s.role === "medic"); // medics on duty stay until everyone is fully healed
-  if (hosp.tier > 0 && people.some((s) => s.woundInfected || (isHurt(s) && s.health < (staffed ? 100 : 95)))) {
+  if (areas.medical && hosp.tier > 0 && people.some((s) => s.woundInfected || (isHurt(s) && s.health < (staffed ? 100 : 95)))) {
     for (const s of ranked("medic", (x) => skill(x, "medicine") - (isHurt(x) ? 6 : 0)).slice(0, hosp.staff)) give(s, "medic");
   }
 
@@ -992,9 +1038,9 @@ function planRoles(state, base) {
   // the med station: stationWorth) get their operator before the plots take every hand, and standing guards
   // come first while hordes or raiders are near.
   if (P.reserves && foodDays >= Math.max(15, foodTarget(state, base)) && winterShort(state, base) <= 0) {
-    for (const station of stations(base)) {
+    for (const station of areas.production ? stations(base) : []) {
       const recipe = BUILDINGS[station.type].station;
-      if (!stationWorth(state, base, recipe)) continue;
+      if (recipe === "power" || [...want.values()].some((w) => w.station === station.id) || !stationWorth(state, base, recipe, station)) continue;
       const op = ranked("operate", (x) => skill(x, RECIPES[recipe].skill) + (x.station === station.id ? 3 : 0), (x) => !x.inBed)[0];
       if (op) give(op, "operate", station.id);
     }
@@ -1002,7 +1048,7 @@ function planRoles(state, base) {
   }
 
   // 5. Builders while something is queued: more for big jobs.
-  if (base.construction.length) {
+  if (areas.building && base.construction.length) {
     const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0);
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
@@ -1014,17 +1060,29 @@ function planRoles(state, base) {
   // ...and only while there are hands to tend them (a plot nobody tends gives little).
   g.farmShort[base.id] = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45;
 
-  // 7. Workshop stations that are worth running today.
-  for (const station of stations(base)) {
+  // 7. Workshop stations that are worth running today and whose standing order wants them run (production.js);
+  // then generators for what the staffed stations and the other powered buildings would draw (power.js).
+  const staffedIds = () => new Set([...want.values()].filter((w) => w.station != null).map((w) => w.station));
+  for (const station of areas.production ? stations(base) : []) {
     const recipe = BUILDINGS[station.type].station;
-    if (!stationWorth(state, base, recipe) || [...want.values()].some((w) => w.station === station.id)) continue; // (4b may have staffed it)
+    if (recipe === "power" || !stationWorth(state, base, recipe, station) || staffedIds().has(station.id)) continue; // (4b may have staffed it)
     const key = RECIPES[recipe].skill;
     const op = ranked("operate", (x) => skill(x, key) + (x.station === station.id ? 3 : 0), (x) => !x.inBed)[0];
     if (op) give(op, "operate", station.id);
   }
+  if (areas.production) {
+    const ids = staffedIds();
+    let gens = Math.ceil(powerWanted(state, base, (b) => ids.has(b.id)) / POWER.genOut) - stations(base).filter((x) => BUILDINGS[x.type].station === "power" && ids.has(x.id)).length;
+    for (const station of stations(base)) {
+      if (gens <= 0) break;
+      if (BUILDINGS[station.type].station !== "power" || ids.has(station.id) || !stationWorth(state, base, "power", station)) continue;
+      const op = ranked("operate", (x) => skill(x, "mechanics") + (x.station === station.id ? 3 : 0), (x) => !x.inBed)[0];
+      if (op) { give(op, "operate", station.id); gens--; }
+    }
+  }
 
   // 8. One crafter while the craft queue has a job someone here can do.
-  const job = craftQueue(base).find((j) => people.some((s) => skill(s, CRAFTS[j.recipe].skill) >= CRAFTS[j.recipe].min));
+  const job = areas.production && craftQueue(base).find((j) => people.some((s) => skill(s, CRAFTS[j.recipe].skill) >= CRAFTS[j.recipe].min));
   if (job) {
     const r = CRAFTS[job.recipe];
     const c = ranked("craft", (x) => skill(x, r.skill), (x) => !x.inBed && skill(x, r.skill) >= r.min)[0];
@@ -1033,13 +1091,14 @@ function planRoles(state, base) {
 
   // 9. Standing guards: known raiders in reach, hordes in sight, and a lookout at the hub.
   addGuards(Math.max(threat.standing, threat.urgent * P.guardMargin), Math.ceil(people.length * (threat.urgent ? 0.7 : 0.35)));
-  if (isHub && people.length >= 4) {
+  if (areas.defence && isHub && people.length >= 4) {
     const need = P.baseGuards - guards.size - (people.length < 7 ? Math.max(0, P.baseGuards - 1) : 0);
     for (const s of ranked("guard", (x) => combatPower(x) * 2, (x) => !x.inBed).slice(0, Math.max(0, need))) { guards.add(s.id); give(s, "guard"); }
   }
 
   // 10. Everyone else: more hands on the plots while food is not plentiful (bigger harvests), rest when spirits
   // are low; base scavenging rarely finds anything, so only the last few go out to pick around.
+  planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
   if (foodDays < Math.max(40, foodTarget(state) * 1.5)) farmTo(Math.ceil(fw.ideal * 1.6));
   for (const s of [...free]) give(s, s.mood < 40 ? "rest" : "scavenge");
 
@@ -1054,9 +1113,14 @@ function planRoles(state, base) {
     g.stats.roleChanges += changed;
     assignStations(state, base);
   }
+  return changed;
 }
 
-function stationWorth(state, base, recipe) {
+// station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
+// player's) comes first: a station it holds is never staffed, and an until / keep order replaces the stock check.
+function stationWorth(state, base, recipe, station = null) {
+  if (station && orderHold(state, base, station)) return false;
+  const byOrder = !!station && stationOrder(base, station).mode !== "forever";
   const st = base.stock;
   const n = Math.max(1, atBase(state, base.id).length);
   // Cautious: a short supply is made from the scrap there is (down to the last day's worth when it is low).
@@ -1064,11 +1128,47 @@ function stationWorth(state, base, recipe) {
     const r = reserveStatus(state, base)[recipe];
     if (r.short && (st.scrap || 0) >= (recipe === "ammo" ? (r.low ? 3 : 10) : (r.low ? 2 : 8)) && (recipe === "ammo" || (st.food || 0) >= n * 6)) return true;
   }
-  if (recipe === "ammo") return (st.ammo || 0) < n * 15 + 60 && (st.scrap || 0) >= 30;
-  if (recipe === "meds") return (st.meds || 0) < Math.max(5, n) && (st.scrap || 0) >= 15 && (st.food || 0) >= n * 6;
-  if (recipe === "parts") return (st.parts || 0) < 8 && (st.scrap || 0) >= 45 && atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4);
+  if (recipe === "ammo") return (byOrder || (st.ammo || 0) < n * 15 + 60) && (st.scrap || 0) >= 30;
+  if (recipe === "meds") return (byOrder || (st.meds || 0) < Math.max(5, n)) && (st.scrap || 0) >= 15 && (st.food || 0) >= n * 6;
+  if (recipe === "parts") return (byOrder || (st.parts || 0) < 8) && (st.scrap || 0) >= 45 && atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4);
   if (recipe === "preserve") return preserveWorth(state, base);
+  if (recipe === "still") return stillWorth(state, base);
+  if (recipe === "power") return (st.fuel || 0) >= fuelFloor(state, base) + POWER.genFuel;
   return false;
+}
+// Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
+const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10);
+// The ethanol still (power.js): only the surplus, never while the winter stores fall short.
+function stillWorth(state, base) {
+  const st = base.stock;
+  const n = Math.max(1, atBase(state, base.id).length);
+  if ((st.water || 0) < n * 2 + RECIPES.still.in.water || winterShort(state, base) > 0) return false;
+  return foodStore(state, base).outside >= 1 || edibleFood(base) / n >= Math.max(30, foodTarget(state, base) * 1.3);
+}
+
+// Standing orders for the stations (production.js), so operators are not flipped hour by hour: make ammo, meds
+// and parts until the stock target (they start again 10% below it), run the still only on the surplus and the
+// generator only above the fuel the base keeps. The player's own orders (by: "player") stand.
+function govOrders(state, base) {
+  const P = persona(state);
+  const n = Math.max(1, atBase(state, base.id).length + returning(state, base));
+  const rs = P.reserves ? reserveStatus(state, base) : null;
+  for (const station of stations(base)) {
+    const cur = stationOrder(base, station);
+    if (cur.by === "player") continue;
+    const recipe = BUILDINGS[station.type].station;
+    let want = null;
+    if (recipe === "ammo") want = { mode: "until", n: Math.max(n * 15 + 60, rs ? Math.ceil(rs.ammo.target) + 20 : 0) };
+    else if (recipe === "meds") want = { mode: "until", n: Math.max(5, n, rs ? Math.ceil(rs.meds.target) + 2 : 0) };
+    else if (recipe === "parts") want = { mode: "until", n: Math.max(8, rs ? Math.ceil(rs.parts.target) + 2 : 0) };
+    else if (recipe === "still") want = { mode: "keep", key: "food", n: n * 25 };
+    else if (recipe === "power") want = { mode: "keep", key: "fuel", n: Math.ceil(fuelFloor(state, base)) };
+    if (!want) continue;
+    if (cur.mode === want.mode && (want.key || cur.key) === cur.key && Math.abs(cur.n - want.n) <= Math.max(2, want.n * 0.1)) continue;
+    setStationOrder(state, base, station.id, want, "ai");
+    const g = gov(state);
+    g.stats.orders = (g.stats.orders || 0) + 1;
+  }
 }
 // The preserving kitchen (storage.js): jars fresh food that would otherwise spoil (stored outside, or the summer
 // and autumn surplus going into the winter store), never the food eaten in the next two weeks, and only with
@@ -1099,12 +1199,19 @@ function roleSummaries(state) {
 }
 
 // ---------- construction ----------
-function planBuilds(state, base) {
+// The steward area each kind of building belongs to (anything else is plain Building).
+const BUILD_AREA = {
+  walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
+  infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
+  farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
+  ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
+};
+function planBuilds(state, base, areas = ALL_AREAS) {
   if (base.construction.length >= (base.type === "hub" ? 2 : 1)) return;
   const g = gov(state);
   for (const w of buildWishes(state, base)) {
     const def = BUILDINGS[w.type];
-    if (!def) continue;
+    if (!def || !areas[BUILD_AREA[w.type] || "building"]) continue;
     const chk = canBuild(state, base, w.type);
     if (!chk.ok) {
       if (w.save && /^Needs \d+ scrap/.test(chk.reason)) return; // save up for it rather than spend on less
@@ -1170,6 +1277,11 @@ function buildWishes(state, base) {
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
+  // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high.
+  if (BUILDINGS.common_room && count(base, "common_room") + queued("common_room") < (here.length > 15 ? 2 : 1) && pop >= 8 && (st.scrap || 0) >= 35 && here.reduce((a, s) => a + s.mood, 0) / Math.max(1, here.length) < 85) add("common_room", "somewhere to unwind (mood)");
+  // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
+  if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
+  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and the cold store");
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   if (!count(base, "garage") && vehiclesAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   if (people + 2 > beds && (st.scrap || 0) >= 45) add("bunkhouse", "room for newcomers");
@@ -1270,7 +1382,7 @@ function itemScore(s, item) {
 
 function equipFromArmory(state, base) {
   if (!base.armory.length) return;
-  const people = atBase(state, base.id).sort((a, b) => combatPower(b) - combatPower(a));
+  const people = atBase(state, base.id).filter((s) => !s.pinned).sort((a, b) => combatPower(b) - combatPower(a)); // pinned people keep their kit too
   if (!people.length) return;
   const handed = [];
   for (const slot of ["weapon", "armor", "head", "arms", "legs", "backpack"]) {
@@ -1571,7 +1683,7 @@ function launchTrip(state, c, pool, spareHands) {
   const fit = (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
     (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
-  const crew = [...pool].sort((a, b) => fit(b) - fit(a)).slice(0, size);
+  const crew = friendlyCrew(state, [...pool].sort((a, b) => fit(b) - fit(a)), size, fit); // near-equal picks: friends together, rivals apart (relations.js)
   const ids = crew.map((s) => s.id);
   const dist = state.grid.distance(h.tile, c.tile);
   // A vehicle for longer trips if it can make the round trip.

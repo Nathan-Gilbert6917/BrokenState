@@ -1971,18 +1971,27 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
 export const gridW = (cv) => (cv ? cv.width / UP : 0);
 
 // Draws a cached sprite centered on (cx, cy), `w` world pixels wide. facing: 1 right, -1 left; angle: turned (radians).
-export function drawMapSprite(ctx, cv, cx, cy, w, { facing = 1, alpha = 1, angle = 0 } = {}) {
+// scale: device pixels per unit of the context's current transform, when the caller knows it (the map renderer
+// does); otherwise it is read from the transform. The context's alpha and smoothing are left as they were.
+export function drawMapSprite(ctx, cv, cx, cy, w, { facing = 1, alpha = 1, angle = 0 } = {}, scale) {
   if (!cv) return;
   const h = w * (cv.height / cv.width);
-  ctx.save();
+  if (scale == null) { const t = ctx.getTransform(); scale = Math.hypot(t.a, t.b); }
+  const a0 = ctx.globalAlpha, s0 = ctx.imageSmoothingEnabled, q0 = ctx.imageSmoothingQuality;
   ctx.globalAlpha = alpha;
   // Crisp pixels when drawn large; smoothed when small so it does not shimmer when zoomed out.
-  const t = ctx.getTransform();
-  ctx.imageSmoothingEnabled = (w * Math.hypot(t.a, t.b)) / (cv.width / UP) < 2;
+  ctx.imageSmoothingEnabled = (w * scale) / (cv.width / UP) < 2;
   ctx.imageSmoothingQuality = "high";
-  ctx.translate(cx, cy);
-  if (angle) ctx.rotate(angle);
-  if (facing < 0) ctx.scale(-1, 1);
-  ctx.drawImage(cv, -w / 2, -h / 2, w, h);
-  ctx.restore();
+  if (!angle && facing >= 0) ctx.drawImage(cv, cx - w / 2, cy - h / 2, w, h);
+  else {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (angle) ctx.rotate(angle);
+    if (facing < 0) ctx.scale(-1, 1);
+    ctx.drawImage(cv, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  ctx.globalAlpha = a0;
+  ctx.imageSmoothingEnabled = s0;
+  ctx.imageSmoothingQuality = q0;
 }

@@ -28,12 +28,18 @@ import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, c
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
+import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
+import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
+import { REL_ACTIONS } from "./ui/relations.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { noteNames } from "./ui/names.js";
+import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
+import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
+import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 
 const HOURS_PER_SECOND = 1 / 3; // at 1× speed an hour takes 3 seconds and a day 72 seconds
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -78,6 +84,13 @@ if (!$("tb-clock")) {
   $("topbar").innerHTML = `<span class="title">BROKEN STATE</span><span class="clock" id="tb-clock"></span><span class="speed row" id="tb-speed"></span>
     <span class="stock" id="tb-stock"></span><span id="tb-people"></span><span class="row small" id="tb-tools"></span>`;
 }
+// The alerts stack on the map (index.html has it; built here when the page does not).
+if (!$("alerts")) {
+  const al = document.createElement("div");
+  al.id = "alerts";
+  al.className = "hidden";
+  $("mapwrap").appendChild(al);
+}
 initRenderer(canvas);
 initCombatUI($("combatmap"));
 centerOn(state, hub(state).tile);
@@ -91,7 +104,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade);
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -143,7 +156,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner"];
+const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -217,12 +230,13 @@ function refresh(user = true) {
   setHTML("tb-tools", tb.tools, user);
   setHTML("left", renderLeft(state, ui), user);
   setHTML("right", renderRight(state, ui), user);
-  setHTML("log", renderLog(state), user);
+  setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
+  setPanel("alerts", renderAlerts(state, ui), user); // the alerts stack on the right of the map (ui/alerts.js)
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   $("banner").classList.toggle("dev", !!ui.dev);
@@ -466,7 +480,7 @@ const actions = {
   refuel: (d) => { ui.baseMsg = refuel(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   repairv: (d) => { ui.baseMsg = repair(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   survivor: (d) => { ui.survivor = Number(d.id); },
-  closesurv: () => { ui.survivor = null; ui.lookEdit = null; },
+  closesurv: () => { ui.survivor = null; ui.lookEdit = null; ui.relMsg = ""; ui.skillTree = null; ui.skillMsg = ""; },
   unequip: (d) => {
     const s = survivorById(state, Number(d.id));
     const b = baseOf(d);
@@ -650,10 +664,19 @@ for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
 for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
+// Skills, perks, teaching and reading in the survivor screen (ui/skills.js).
+for (const [k, fn] of Object.entries(SKILL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Production orders, power, standing craft orders, stewards and pins (ui/production.js).
+for (const [k, fn] of Object.entries(PROD_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
 for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).
 for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => { if (k === "tl-open" && state.combat) return; fn(state, ui, d); };
+// Relationships, the mood breakdown and the memorial wall (ui/relations.js).
+for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
+// use the handlers above (center, openbase, xp-open).
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 document.addEventListener("dragstart", (ev) => {
@@ -765,7 +788,10 @@ const changeActions = {
   },
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
+for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -1048,11 +1074,14 @@ function closeTopLayer() {
     else ui.survivor = null;
     return true;
   }
+  if (ui.memorial) { ui.memorial = null; ui.memorialMsg = ""; return true; } // ui/relations.js
   if (ui.baseView) {
     if (ui.supplyForm) { ui.supplyForm = null; ui.supplyError = ""; }
     else { ui.baseView = null; ui.baseMsg = ""; }
     return true;
   }
+  if (ui.roster) { ui.roster = null; return true; }
+  if (ui.diary) { ui.diary = null; return true; }
   if (ui.help) { ui.help = false; return true; }
   if (ui.moveParty != null) { endMoveMode(); return true; }
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
@@ -1073,6 +1102,8 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
+  if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
   if (e.code === "Space") {
@@ -1083,7 +1114,6 @@ window.addEventListener("keydown", (e) => {
     ui.lastSpeed = ui.speed;
   } else if (e.code === "KeyH") centerOn(state, hub(state).tile);
   else if (e.code === "Backquote") ui.dev = !ui.dev;
-  else if (e.code === "KeyP") actions["dev-autopilot"]();
   else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {
     const pan = 40 / camera.zoom;

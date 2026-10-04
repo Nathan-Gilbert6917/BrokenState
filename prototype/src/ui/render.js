@@ -57,6 +57,7 @@ export function resize() {
   H = r.height;
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
+  forceDraw = true;
 }
 
 export function centerOn(state, tileId) {
@@ -116,129 +117,549 @@ function ageText(state, snap) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export function render(state) {
-  if (!ctx) return;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#0d0f12";
-  ctx.fillRect(0, 0, W, H);
-  ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, -camera.x * dpr * camera.zoom, -camera.y * dpr * camera.zoom);
+// ---------- cached map layers ----------
+// The ground (terrain, weather wash, infection, territory, roads, bridges, hive land with its ring skulls) and the
+// sites (plates, sprites, far-out dots, other groups' bases) are drawn into offscreen square chunks of device pixels,
+// laid out on the world at the current zoom, so a frame copies a few images instead of filling thousands of
+// hexes. Every drawn frame a pass over the tiles works out what each tile shows as far as you know (fog, owner,
+// infection, hive land, the site's look); a tile that changed marks only the chunks it touches, and those are drawn
+// again when they are next on screen. A change that touches everything (another world, a layer switched, the
+// weather wash, the device pixel ratio) drops the cache. Chunks are kept per zoom level (a few levels, oldest
+// dropped first), so zooming back and forth and panning reuse them. Things that move or pulse (parties, hordes,
+// hives, markers, your bases, a besieged group base, names, hover, selection, the planner's path) are drawn on top
+// every frame. When nothing changed and nothing pulses, the frame is not drawn at all (the canvas keeps the last one).
+// Device pixels per side of a chunk: 512 up close, smaller when zoomed out so a chunk never holds too many tiles
+// (a change redraws less).
+const chunkSize = (S) => 64 * Math.max(2, Math.min(8, Math.round(S * 6)));
+const BG = "#0d0f12";      // the map's background (off the map)
+const IDLE_MS = 250;       // nothing seems to change: draw this often anyway (catches changes the frame check misses)
+const ANIM_MS = 25;        // only a pulse animates (a live hive, a siege): about 40 frames a second
+const REACH = HEX + 1.5;   // how far a tile's ground drawing reaches from its center (hexes are drawn at HEX + 0.5)
+const ROAD_REACH = HEX * Math.sqrt(3) + 3; // a road runs to the next tile's center
+const SHADES = [1, 0.72, 0.42]; // terrain brightness: live, known from a report, unknown
+const FAR = 1 << 20;       // hive distance when there is no hive
+const MAX_LEVELS = 4;      // zoom levels kept
 
-  const g = state.grid;
-  setMapPx(g);
-  const live = liveSet(state);
-  const k = state.knowledge;
-  const minX = camera.x - HEX * 2, minY = camera.y - HEX * 2;
-  const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
-  const visible = [];
+let curS = 1; // device pixels per world pixel this frame: passed to drawMapSprite so it need not read the transform
+const sprite = (cv, x, y, w, o) => drawMapSprite(ctx, cv, x, y, w, o, curS);
 
-  // Terrain. Geography is known from pre-war maps; current conditions are not. Only tiles on screen are drawn,
-  // batched by color (one fill per color), so the whole map stays cheap when zoomed out.
-  const batches = new Map();
-  for (const t of state.tiles) {
-    const [px, py] = g.toPixel(t.id, HEX);
-    if (px < minX || px > maxX || py < minY || py > maxY) continue;
-    visible.push(t);
-    const color = shade(TERRAIN[t.terrain].color, live.has(t.id) ? 1 : k[t.id] ? 0.72 : 0.42);
-    let list = batches.get(color);
-    if (!list) batches.set(color, (list = []));
-    list.push(px, py);
-  }
-  for (const [color, list] of batches) {
-    ctx.beginPath();
-    for (let i = 0; i < list.length; i += 2) hexSub(list[i], list[i + 1], HEX + 0.5);
-    ctx.fillStyle = color;
-    ctx.fill();
-  }
-  // Season and weather wash over the land (weather.js): one fill for every visible land tile.
-  const tint = on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
-  if (tint) {
-    ctx.beginPath();
-    for (const t of visible) if (t.terrain !== "water") { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX + 0.5); }
-    ctx.fillStyle = tint;
-    ctx.fill();
-  }
-  for (const t of on("infection") ? visible : []) {
-    const isLive = live.has(t.id), snap = k[t.id];
-    if (!isLive && !snap) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
-    hexPath(px, py, HEX + 0.5);
-    ctx.fillStyle = `rgba(220,40,40,${(isLive ? t.infection : snap.infection) * 0.55})`;
-    ctx.fill();
-  }
-  // Territory (only what you know).
-  for (const t of on("territory") ? visible : []) {
-    const snap = live.has(t.id) ? { owner: t.owner } : k[t.id];
-    if (!snap || snap.owner == null) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
-    let color = "#4f8fd6";
-    if (snap.owner !== "player") {
-      const f = factionById(state, snap.owner);
-      if (!f) continue;
-      color = f.color;
+// Per-world data that never changes (tile centers, terrain colors, bridges, which tiles are sites) plus the arrays
+// the per-frame pass fills, allocated once so a frame allocates nothing that grows with the map.
+let geo = null;
+function geometry(state) {
+  const g = state.grid, tiles = state.tiles;
+  if (geo && geo.tiles === tiles && geo.grid === g && geo.n === tiles.length) return geo;
+  const n = tiles.length, keys = Object.keys(TERRAIN);
+  const G = {
+    tiles, grid: g, n, cols: g.width, rows: g.height,
+    x: new Float64Array(n), y: new Float64Array(n), q: new Int32Array(n), r: new Int32Array(n),
+    color: new Int32Array(n), water: new Uint8Array(n), angle: new Float64Array(n).fill(NaN), sites: [],
+    terrColors: [], ownerIds: new Map(), ownerColors: [null],
+    // What each tile shows: bits 0-1 fog (0 live, 1 reported, 2 unknown), 2-3 hive land (0 hive, 1 ring, 2 land,
+    // 3 none), 4+ owner color (0 none). inf: infection as known (-1 none).
+    key: new Int32Array(n).fill(-1), inf: new Float64Array(n).fill(-2), nkey: new Int32Array(n), ninf: new Float64Array(n),
+    hives: new Int32Array(n), nHives: 0, oldHives: new Int32Array(n), nOld: -1, dist: new Int32Array(n).fill(FAR),
+    hordeT: new Int32Array(n), nHorde: 0, buildT: new Int32Array(n), nBuild: 0,
+    siteCode: new Int32Array(n).fill(-1), siteDesc: new Array(n).fill(null), descZoom: NaN,
+    list: new Int32Array(n), roads: new Int32Array(n), buckets: [],
+  };
+  for (let i = 0; i < n; i++) {
+    const t = tiles[i];
+    [G.x[i], G.y[i]] = g.toPixel(t.id, HEX);
+    [G.q[i], G.r[i]] = g.cube(t.id);
+    G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
+    G.water[i] = t.terrain === "water" ? 1 : 0;
+    if (t.loc) G.sites.push(i);
+    if (t.bridge) {
+      const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
+      const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
+      G.angle[i] = ax === bx && ay === by ? 0 : Math.atan2(by - ay, bx - ax);
     }
-    hexPath(px, py, HEX - 1.5);
-    ctx.fillStyle = color + "2a";
+  }
+  for (const k of keys) for (const f of SHADES) G.terrColors.push(shade(TERRAIN[k].color, f));
+  for (let i = 0; i < G.terrColors.length; i++) G.buckets.push([]);
+  geo = G;
+  dropCache();
+  return G;
+}
+const ownerId = (G, color) => {
+  let id = G.ownerIds.get(color);
+  if (!id) { id = G.ownerColors.length; G.ownerIds.set(color, id); G.ownerColors.push(color); }
+  return id;
+};
+
+// Chunk cache: zoom -> { zoom, S, C (chunk side), chunks: Map(key -> { cv, dirty, empty, used }), used }.
+const levels = new Map();
+const pool = [];           // canvases of dropped chunks, reused
+let cacheKey = "", cacheDpr = 0, frameNo = 0;
+// Chunks that only show something out of date (a tile changed, the weather wash) are drawn again within this many
+// ms a frame, the rest on the next frames; chunks that have never been drawn are always drawn at once.
+export const mapTuning = { budgetMs: 3 };
+// Counters for performance checks (frames drawn and skipped, chunks drawn and the ms spent on them).
+export const mapStats = { drawn: 0, skipped: 0, chunks: 0, chunkMs: 0 };
+const ckey = (i, j) => (i + 1024) * 4096 + (j + 1024);
+function dropLevel(L) {
+  for (const ch of L.chunks.values()) if (ch.cv) pool.push(ch.cv);
+  L.chunks.clear();
+}
+// Everything is to be drawn again (the weather wash or a layer changed), reusing the chunks' canvases.
+function dirtyAll() {
+  for (const L of levels.values()) for (const ch of L.chunks.values()) ch.dirty = true;
+}
+function dropCache() {
+  for (const L of levels.values()) dropLevel(L);
+  levels.clear();
+}
+function levelFor(zoom, S) {
+  let L = levels.get(zoom);
+  if (!L) {
+    L = { zoom, S, C: chunkSize(S), chunks: new Map(), used: 0 };
+    levels.set(zoom, L);
+    if (levels.size > MAX_LEVELS) {
+      let old = null;
+      for (const x of levels.values()) if (x !== L && (!old || x.used < old.used)) old = x;
+      dropLevel(old);
+      levels.delete(old.zoom);
+    }
+  }
+  L.used = frameNo;
+  return L;
+}
+// Marks the chunks under a world rectangle (every kept zoom level) to be drawn again.
+function markDirty(x0, y0, x1, y1) {
+  for (const L of levels.values()) {
+    if (!L.chunks.size) continue;
+    const S = L.S, C = L.C, i0 = Math.floor((x0 * S) / C), i1 = Math.floor((x1 * S) / C), j0 = Math.floor((y0 * S) / C), j1 = Math.floor((y1 * S) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const ch = L.chunks.get(ckey(i, j)); if (ch) ch.dirty = true; }
+  }
+}
+// A site's look changed: its sprites grow when zoomed out, so each level gets a reach that covers them there.
+function markSite(px, py) {
+  for (const L of levels.values()) {
+    if (!L.chunks.size) continue;
+    const r = 64 * Math.max(1, Math.sqrt(0.9 / L.zoom)) + 8, S = L.S, C = L.C;
+    const i0 = Math.floor(((px - r) * S) / C), i1 = Math.floor(((px + r) * S) / C), j0 = Math.floor(((py - r) * S) / C), j1 = Math.floor(((py + r) * S) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const ch = L.chunks.get(ckey(i, j)); if (ch) ch.dirty = true; }
+  }
+}
+// Tile ids (ascending) whose centers lie in a world rectangle, into out; returns the count.
+function tilesIn(G, x0, y0, x1, y1, out) {
+  const rowH = HEX * 1.5, colW = HEX * Math.sqrt(3);
+  const r0 = Math.max(0, Math.ceil(y0 / rowH)), r1 = Math.min(G.rows - 1, Math.floor(y1 / rowH));
+  let n = 0;
+  for (let r = r0; r <= r1; r++) {
+    const off = 0.5 * (r & 1);
+    const c0 = Math.max(0, Math.ceil(x0 / colW - off)), c1 = Math.min(G.cols - 1, Math.floor(x1 / colW - off));
+    for (let c = c0; c <= c1; c++) out[n++] = r * G.cols + c;
+  }
+  return n;
+}
+
+// This frame's switches for the cached layers.
+const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, ringSkulls: false };
+const ownerColor = new Map(), fbAt = new Map(), factionIdx = new Map(), besiegedFb = new Set();
+
+// The per-frame pass: what every tile shows as far as you know (never more: `live` decides), the hives, hordes and
+// hive build sites you know about, and the look of every site. Marks what changed.
+function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
+  const G = geo, tiles = state.tiles, n = G.n;
+  ownerColor.clear();
+  for (const f of state.factions) if (!ownerColor.has(f.id)) ownerColor.set(f.id, f.color);
+  let nh = 0, nhz = 0, nbs = 0;
+  for (let i = 0; i < n; i++) {
+    const t = tiles[i], isLive = live.has(i), snap = isLive ? null : k[i];
+    let key = isLive ? 0 : snap ? 1 : 2, inf = -1;
+    if (key < 2) {
+      if (F.infOn) inf = isLive ? t.infection : snap.infection;
+      if (F.terrOn) {
+        const owner = isLive ? t.owner : snap.owner;
+        if (owner != null) {
+          const color = owner === "player" ? PLAYER_COLOR : ownerColor.get(owner);
+          if (color) key |= ownerId(G, color) << 4;
+        }
+      }
+      if (isLive ? t.hive : snap.hive) G.hives[nh++] = i;
+      if (isLive ? hordeAt.has(i) : snap.hordeSize) G.hordeT[nhz++] = i;
+      if (isLive ? siteAt.has(i) : snap.site) G.buildT[nbs++] = i;
+    }
+    G.nkey[i] = key;
+    G.ninf[i] = inf;
+  }
+  G.nHives = nh; G.nHorde = nhz; G.nBuild = nbs;
+  // Distance to the nearest known hive, worked out again only when the hives you know about change.
+  let same = nh === G.nOld;
+  for (let a = 0; same && a < nh; a++) same = G.hives[a] === G.oldHives[a];
+  if (!same) {
+    G.oldHives.set(G.hives.subarray(0, nh));
+    G.nOld = nh;
+    for (let i = 0; i < n; i++) {
+      let d = FAR;
+      for (let a = 0; a < nh; a++) {
+        const h = G.hives[a], dq = G.q[i] - G.q[h], dr = G.r[i] - G.r[h], x = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
+        if (x < d) d = x;
+      }
+      G.dist[i] = d;
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    let key = G.nkey[i];
+    if (F.hordesOn && nh) { const d = G.dist[i]; key |= (d === 0 ? 0 : d <= HIVE.RING ? 1 : d <= HIVE.TERRITORY ? 2 : 3) << 2; }
+    else key |= 3 << 2;
+    const inf = G.ninf[i], was = G.inf[i];
+    if (key !== G.key[i] || (inf !== was && !(inf !== inf && was !== was))) {
+      G.key[i] = key;
+      G.inf[i] = inf;
+      markDirty(G.x[i] - REACH, G.y[i] - REACH, G.x[i] + REACH, G.y[i] + REACH);
+    }
+  }
+  // Sites: a code for how each looks (0 not drawn; low bits 1 group base, 3 site; 4 busy, 8 faded or besieged;
+  // 16 and up the group). A changed code redraws the chunks around it; a new zoom only works out the sizes again.
+  fbAt.clear(); factionIdx.clear(); besiegedFb.clear();
+  state.factions.forEach((f, i) => {
+    factionIdx.set(f, i);
+    if (f.alive) for (const b of f.bases) if (!fbAt.has(b)) fbAt.set(b, f);
+  });
+  for (const q of state.parties) if (q.phase === "siege" && q.target && q.target.kind === "faction") besiegedFb.add(q.target.tile);
+  const rezoom = G.descZoom !== F.zoom;
+  G.descZoom = F.zoom;
+  for (const id of G.sites) {
+    const t = tiles[id];
+    let code = 0, fb = null;
+    if (!ownBase.has(id)) {
+      const isLive = live.has(id), snap = isLive ? null : k[id];
+      fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
+      if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0);
+      else if (F.poisOn) {
+        // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look untouched.
+        const def = LOCATIONS[t.loc.type], loot = state.timelapse ? null : isLive ? t.loot : snap ? snap.loot : null;
+        const faded = loot != null && t.loc.type !== "city" && t.loc.type !== "town" && loot < 0.35 * def.richness;
+        code = 3 | (busy.has(id) ? 4 : 0) | (faded ? 8 : 0);
+      }
+    }
+    if (code !== G.siteCode[id]) {
+      if (G.siteCode[id] > 0) markSite(G.x[id], G.y[id]);
+      G.siteCode[id] = code;
+      G.siteDesc[id] = code ? siteDesc(state, id, code, fb) : null;
+      if (code) markSite(G.x[id], G.y[id]);
+    } else if (rezoom && code) G.siteDesc[id] = siteDesc(state, id, code, fb);
+  }
+}
+
+// How a site is drawn at this zoom: kind 1 another group's base (dyn: besieged, drawn every frame for the pulse),
+// 2 a dot (minor sites zoomed out), 3 a site sprite on its zone plate. Also where its name goes.
+function siteDesc(state, id, code, fb) {
+  const t = state.tiles[id], px = geo.x[id], py = geo.y[id], kind = code & 3;
+  const zone = SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat] || SITE_ZONES.special;
+  // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins…).
+  const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
+  if (kind === 1) {
+    const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s, cv = factionBaseCanvas(fb.type, fb.color), h = spriteH(cv, w);
+    return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null };
+  }
+  if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, dyn: false }; // zoomed out: a dot in the zone's color
+  return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, !!(code & 8)) };
+}
+
+function paintSite(d, px, py) {
+  if (d.kind === 1) {
+    ownerPlate(px, py, d.fb.color, d.s, 18, d.dyn);
+    sprite(d.cv, px, d.cy, d.w);
+  } else if (d.kind === 2) {
+    ctx.beginPath();
+    ctx.arc(px, py, 2.6 / camera.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = d.zone.color;
     ctx.fill();
-    ctx.strokeStyle = color + "88";
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
+  } else drawSite(d, px, py, d.zone, d.alpha);
+}
+
+// Offscreen canvases need a DOM (the headless tools draw onto a stub context without one).
+const canCache = () => typeof document !== "undefined" && !!document && typeof document.createElement === "function";
+// Without offscreen canvases: the ground and the sites of the visible area drawn straight onto the map.
+function drawDirect(state, S, ox, oy, cw, chh) {
+  const G = geo, x0 = ox / S, y0 = oy / S, x1 = (ox + cw) / S, y1 = (oy + chh) / S;
+  const n = tilesIn(G, x0 - REACH, y0 - REACH, x1 + REACH, y1 + REACH, G.list);
+  let nr = 0;
+  const m = tilesIn(G, x0 - ROAD_REACH, y0 - ROAD_REACH, x1 + ROAD_REACH, y1 + ROAD_REACH, G.roads);
+  for (let a = 0; a < m; a++) if (state.tiles[G.roads[a]].road) G.roads[nr++] = G.roads[a];
+  ctx.setTransform(S, 0, 0, S, -ox, -oy);
+  ctx.lineCap = "round";
+  drawGround(state, n, nr);
+  const pad = 80 * zoomBoost();
+  for (const id of G.sites) {
+    const d = G.siteDesc[id];
+    if (d && !d.dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) paintSite(d, G.x[id], G.y[id]);
+  }
+}
+
+// Draws one chunk: the ground of every tile that reaches into it, then the sites, in the same order as a full frame.
+function paintChunk(state, L, ch, i, j) {
+  const G = geo, S = L.S, C = L.C;
+  const x0 = (i * C) / S, y0 = (j * C) / S, x1 = ((i + 1) * C) / S, y1 = ((j + 1) * C) / S;
+  const n = tilesIn(G, x0 - REACH, y0 - REACH, x1 + REACH, y1 + REACH, G.list);
+  let nr = 0;
+  const m = tilesIn(G, x0 - ROAD_REACH, y0 - ROAD_REACH, x1 + ROAD_REACH, y1 + ROAD_REACH, G.roads);
+  for (let a = 0; a < m; a++) if (state.tiles[G.roads[a]].road) G.roads[nr++] = G.roads[a];
+  let ns = 0;
+  const pad = 80 * Math.max(1, Math.sqrt(0.9 / L.zoom));
+  for (const id of G.sites) if (G.siteDesc[id] && !G.siteDesc[id].dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) ns++;
+  ch.dirty = false;
+  if (!n && !ns && !nr) {
+    ch.empty = true;
+    if (ch.cv) { pool.push(ch.cv); ch.cv = null; }
+    return;
+  }
+  ch.empty = false;
+  if (!ch.cv) {
+    const k = pool.findIndex((cv) => cv.width === C);
+    ch.cv = k >= 0 ? pool.splice(k, 1)[0] : document.createElement("canvas");
+    if (ch.cv.width !== C) ch.cv.width = C;
+    if (ch.cv.height !== C) ch.cv.height = C;
+  }
+  const main = ctx;
+  ctx = ch.cv.getContext("2d");
+  try {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, C, C);
+    ctx.setTransform(S, 0, 0, S, -i * C, -j * C);
+    ctx.lineCap = "round";
+    drawGround(state, n, nr);
+    if (ns) for (const id of G.sites) {
+      const d = G.siteDesc[id];
+      if (d && !d.dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) paintSite(d, G.x[id], G.y[id]);
+    }
+  } finally {
+    ctx = main;
+  }
+}
+
+// The ground of the tiles in geo.list (and the roads of those in geo.roads), into the current context.
+function drawGround(state, n, nr) {
+  const G = geo, list = G.list, X = G.x, Y = G.y;
+  // Terrain. Geography is known from pre-war maps; current conditions are not. Batched by color (one fill each).
+  for (const b of G.buckets) b.length = 0;
+  for (let a = 0; a < n; a++) { const id = list[a]; G.buckets[G.color[id] + (G.key[id] & 3)].push(id); }
+  G.buckets.forEach((b, ci) => {
+    if (!b.length) return;
+    ctx.beginPath();
+    for (const id of b) hexSub(X[id], Y[id], HEX + 0.5);
+    ctx.fillStyle = G.terrColors[ci];
+    ctx.fill();
+  });
+  // Season and weather wash over the land (weather.js): one fill for every land tile.
+  if (F.tint) {
+    ctx.beginPath();
+    for (let a = 0; a < n; a++) if (!G.water[list[a]]) hexSub(X[list[a]], Y[list[a]], HEX + 0.5);
+    ctx.fillStyle = F.tint;
+    ctx.fill();
+  }
+  // Infection as you know it, one fill per shade.
+  if (F.infOn) {
+    const byColor = new Map();
+    for (let a = 0; a < n; a++) {
+      const id = list[a];
+      if ((G.key[id] & 3) === 2 || !(G.inf[id] > 0)) continue;
+      const color = `rgba(220,40,40,${G.inf[id] * 0.55})`;
+      let l = byColor.get(color);
+      if (!l) byColor.set(color, (l = []));
+      l.push(id);
+    }
+    for (const [color, l] of byColor) {
+      ctx.beginPath();
+      for (const id of l) hexSub(X[id], Y[id], HEX + 0.5);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+  // Territory (only what you know): one fill and one outline per owner.
+  if (F.terrOn) {
+    const byOwner = new Map();
+    for (let a = 0; a < n; a++) {
+      const o = G.key[list[a]] >> 4;
+      if (!o) continue;
+      let l = byOwner.get(o);
+      if (!l) byOwner.set(o, (l = []));
+      l.push(list[a]);
+    }
+    for (const [o, l] of byOwner) {
+      const color = G.ownerColors[o];
+      ctx.beginPath();
+      for (const id of l) hexSub(X[id], Y[id], HEX - 1.5);
+      ctx.fillStyle = color + "2a";
+      ctx.fill();
+      ctx.strokeStyle = color + "88";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
   }
   // Roads.
   ctx.strokeStyle = "#cdbb8a";
   ctx.lineWidth = 2.6;
   ctx.lineCap = "round";
   ctx.beginPath();
-  for (const t of visible) {
-    if (!t.road) continue;
-    const [ax, ay] = g.toPixel(t.id, HEX);
-    for (const n of t.roadLinks) {
-      if (n < t.id) continue;
-      const [bx, by] = g.toPixel(n, HEX);
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
+  for (let a = 0; a < nr; a++) {
+    const id = G.roads[a];
+    for (const m of state.tiles[id].roadLinks) {
+      if (m < id) continue;
+      ctx.moveTo(X[id], Y[id]);
+      ctx.lineTo(X[m], Y[m]);
     }
   }
   ctx.stroke();
   // Bridges: a railed deck turned along the road.
-  for (const t of visible) {
-    if (!t.bridge) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
-    const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
-    const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
-    drawMapSprite(ctx, bridgeCanvas(), px, py, 24, { angle: ax === bx && ay === by ? 0 : Math.atan2(by - ay, bx - ax) });
-  }
-
+  for (let a = 0; a < n; a++) { const id = list[a]; if (G.angle[id] === G.angle[id]) sprite(bridgeCanvas(), X[id], Y[id], 24, { angle: G.angle[id] }); }
   // Hives you know about (live, or in the last report): their land is tinted dark red, the ring right around each
   // hive brighter, with a red skull on every ring tile when zoomed in (the dead there are much tougher). Sites
-  // inside a hive's land show at least 3 skulls, red ones on the ring (labels below).
-  const hiveTiles = [];
-  for (const t of state.tiles) if (live.has(t.id) ? t.hive : k[t.id] && k[t.id].hive) hiveTiles.push(t.id);
-  const hiveDist = (id) => { let d = Infinity; for (const h of hiveTiles) { const x = g.distance(h, id); if (x < d) d = x; } return d; };
-  const ringSkulls = [];
-  if (on("hordes") && hiveTiles.length) {
+  // inside a hive's land show at least 3 skulls, red ones on the ring (labels).
+  if (F.hordesOn && G.nHives) {
     ctx.beginPath();
-    for (const t of visible) { const d = hiveDist(t.id); if (d <= HIVE.TERRITORY && d > HIVE.RING) { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX - 0.5); } }
+    for (let a = 0; a < n; a++) { const id = list[a]; if (((G.key[id] >> 2) & 3) === 2) hexSub(X[id], Y[id], HEX - 0.5); }
     ctx.fillStyle = "rgba(150,20,30,0.13)";
     ctx.fill();
     ctx.beginPath();
-    for (const t of visible) { const d = hiveDist(t.id); if (d <= HIVE.RING) { const [px, py] = g.toPixel(t.id, HEX); hexSub(px, py, HEX - 0.5); if (d > 0 && camera.zoom > SKULL_ZOOM * 0.7 && !t.loc) ringSkulls.push([px, py]); } }
+    for (let a = 0; a < n; a++) { const id = list[a]; if (((G.key[id] >> 2) & 3) <= 1) hexSub(X[id], Y[id], HEX - 0.5); }
     ctx.fillStyle = "rgba(200,25,25,0.22)";
     ctx.fill();
     ctx.strokeStyle = "rgba(255,70,60,0.35)";
     ctx.lineWidth = 1;
     ctx.stroke();
-    for (const [px, py] of ringSkulls) drawMapSprite(ctx, redSkullCanvas(), px, py + 13, SKULL_W, { alpha: 0.9 });
+    if (F.ringSkulls) for (let a = 0; a < n; a++) {
+      const id = list[a];
+      if (((G.key[id] >> 2) & 3) === 1 && !state.tiles[id].loc) sprite(redSkullCanvas(), X[id], Y[id] + 13, SKULL_W, { alpha: 0.9 });
+    }
   }
+}
+
+// ---------- frame check: skip a frame when nothing on the map changed ----------
+const last = { canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false };
+let forceDraw = true;
+// A cheap fingerprint of what moves on the map between ticks (orders given while paused, a base built, a horde).
+function moverHash(state) {
+  let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0);
+  for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
+  for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
+  for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
+  return h;
+}
+function unchanged(state, now) {
+  let layers = "";
+  for (const k of view.layers) layers += k + ",";
+  const live = liveSet(state), hash = moverHash(state), plen = view.preview ? view.preview.length : -1;
+  const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
+    last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
+    last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
+    last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash;
+  if (same && now - last.at < (last.anim ? ANIM_MS : IDLE_MS)) return true;
+  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false });
+  forceDraw = false;
+  return false;
+}
+// The next render draws even if nothing seems to have changed; all: also draw the cached layers again from scratch.
+export function redrawMap(all = false) {
+  forceDraw = true;
+  if (all) { dropCache(); geo = null; }
+}
+
+export function render(state) {
+  if (!ctx) return;
+  const now = performance.now();
+  if (!state.timelapse && unchanged(state, now)) { mapStats.skipped++; return; }
+  frameNo++;
+  mapStats.drawn++;
+  const g = state.grid;
+  setMapPx(g);
+  const live = liveSet(state);
+  const k = state.knowledge;
+  const G = geometry(state);
+  const zoom = camera.zoom, S = dpr * zoom;
+  curS = S;
+  F.zoom = zoom;
+  F.infOn = on("infection");
+  F.terrOn = on("territory");
+  F.hordesOn = on("hordes");
+  F.poisOn = on("pois");
+  F.tint = on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
+  F.ringSkulls = zoom > SKULL_ZOOM * 0.7;
+  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${!!state.timelapse}|${state.factions.length}`;
+  if (dpr !== cacheDpr) { cacheDpr = dpr; dropCache(); }
+  else if (key !== cacheKey) dirtyAll();
+  cacheKey = key;
+
+  const ownBase = new Set(state.bases.map((b) => b.tile));
+  const busy = busyTiles(state, live);
+  const hordeAt = new Map();
+  for (const h of on("hordes") ? state.hordes : []) {
+    const e = hordeAt.get(h.tile);
+    if (e) { e.size += h.size; e.bosses += h.bosses || 0; }
+    else hordeAt.set(h.tile, { size: h.size, target: h.target, bosses: h.bosses || 0 });
+  }
+  const siteAt = new Map((state.hiveSites || []).map((x) => [x.tile, x]));
+  scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase);
+
+  // The cached layers: the chunks on screen, drawn again where something changed, then copied 1:1 to whole device
+  // pixels (the camera is rounded to a device pixel, so the copies are exact).
+  const L = levelFor(zoom, S);
+  const ox = Math.round(camera.x * S), oy = Math.round(camera.y * S), cw = canvas.width, chh = canvas.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, cw, chh);
+  if (canCache()) {
+    ctx.imageSmoothingEnabled = false;
+    let spent = 0, behind = false;
+    const C = L.C, i0 = Math.floor(ox / C), i1 = Math.floor((ox + cw - 1) / C), j0 = Math.floor(oy / C), j1 = Math.floor((oy + chh - 1) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const ck = ckey(i, j);
+      let ch = L.chunks.get(ck);
+      if (!ch) L.chunks.set(ck, (ch = { cv: null, dirty: true, empty: false, drawn: false, used: 0, i, j }));
+      if (ch.dirty) {
+        if (!ch.drawn || state.timelapse || spent < mapTuning.budgetMs) { // the timelapse redraws every frame anyway
+          const t0 = performance.now();
+          paintChunk(state, L, ch, i, j);
+          ch.drawn = true;
+          spent += performance.now() - t0;
+          mapStats.chunks++;
+        } else behind = true;
+      }
+      ch.used = frameNo;
+      if (!ch.empty) ctx.drawImage(ch.cv, i * C - ox, j * C - oy);
+    }
+    ctx.imageSmoothingEnabled = true;
+    // Keep about twice the screen's worth of chunks (plus some), dropping the longest unused first.
+    const budget = 2 * (i1 - i0 + 1) * (j1 - j0 + 1) + 24;
+    let held = 0;
+    for (const x of levels.values()) for (const ch of x.chunks.values()) if (ch.cv) held++;
+    if (held > budget) {
+      const all = [];
+      for (const x of levels.values()) for (const [ck, ch] of x.chunks) if (ch.used !== frameNo) all.push([ch.used, x, ck, ch]);
+      all.sort((a, b) => a[0] - b[0]);
+      for (let a = 0; a < all.length && held > budget; a++) {
+        const [, x, ck, ch] = all[a];
+        if (ch.cv) { pool.push(ch.cv); held--; }
+        x.chunks.delete(ck);
+      }
+      if (pool.length > 32) pool.length = 32;
+    }
+    if (behind) forceDraw = true; // chunks still out of date: draw again next frame
+    mapStats.chunkMs += spent;
+  } else drawDirect(state, S, ox, oy, cw, chh); // no offscreen canvases (headless tools): the cached layers straight onto the map
+
+  ctx.setTransform(S, 0, 0, S, -ox, -oy);
+  ctx.lineCap = "round";
+  const minX = camera.x - HEX * 2, minY = camera.y - HEX * 2;
+  const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
+  const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
+  let animating = false;
 
   // Locations: other groups' bases as compound sprites in their color, plain sites as pixel sprites (one per site
   // type) on a plate in their zone's color (city, small town, countryside, landmark); picked-over sites are faded
   // and up close skulls show the danger. Zoomed out, minor sites shrink to dots and only the bigger places keep
   // their names. Tiles with one of your bases are drawn with the base below. A site with a team, horde or marker
-  // on it is drawn faded so they stand out.
+  // on it is drawn faded so they stand out. All of them are in the cached chunks except a besieged group base
+  // (its ring pulses), drawn here.
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const ownBase = new Set(state.bases.map((b) => b.tile));
-  const busy = busyTiles(state, live);
   // Base tiles with a horde, a siege or a party standing beside the base: the base's name moves below them.
   const crowded = (id) => busy.has(id) || (on("hordes") && !live.has(id) && !!k[id] && k[id].hordeSize > 0);
   // Tiles drawn as a base (yours, or another group's as far as you know), with half the sprite's width.
@@ -246,76 +667,57 @@ export function render(state) {
   spriteBoxes = [];
   besideCount = new Map();
   const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
-  for (const t of visible) {
-    if (!t.loc || ownBase.has(t.id)) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
-    const isLive = live.has(t.id);
-    const snap = isLive ? null : k[t.id];
-    const fb = isLive ? state.factions.find((f) => f.alive && f.bases.includes(t.id)) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
-    if (!fb && !on("pois")) continue; // the Locations layer hides plain sites, not other groups' bases
-    // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins…).
-    const zone = SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat] || SITE_ZONES.special;
-    const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
-    let labelY = py + 19, side = null;
+  const hasHives = G.nHives > 0;
+  for (const id of G.sites) {
+    const d = G.siteDesc[id];
+    if (!d || d.kind === 2 || !inView(id)) continue;
+    const t = state.tiles[id], px = G.x[id], py = G.y[id], fb = d.kind === 1;
+    let labelY = d.labelY;
     if (fb) {
-      const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s;
-      const besieged = isLive && state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "faction" && q.target.tile === t.id);
-      ownerPlate(px, py, fb.color, s, 18, besieged);
-      const cv = factionBaseCanvas(fb.type, fb.color);
-      drawMapSprite(ctx, cv, px, cy, w);
-      noteSprite(px, cy, w, spriteH(cv, w));
-      baseTiles.set(t.id, w / 2);
-      labelY = crowded(t.id) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + spriteH(cv, w) / 2 + 6;
-    } else if (tier === 2 && camera.zoom < 0.7) {
-      // Zoomed out, minor sites are small dots in their zone's color so the map does not clutter.
-      ctx.beginPath();
-      ctx.arc(px, py, 2.6 / camera.zoom, 0, Math.PI * 2);
-      ctx.fillStyle = zone.color;
-      ctx.fill();
-      continue;
-    } else {
-      const d = drawSite(state, t, px, py, tier, zone, isLive, snap, busy.has(t.id) ? 0.55 : 1);
-      labelY = d.labelY;
-      side = d.side;
+      if (d.dyn) { paintSite(d, px, py); animating = true; }
+      noteSprite(px, d.cy, d.w, d.h);
+      baseTiles.set(id, d.w / 2);
+      if (crowded(id)) labelY = py + BESIDE_LABEL_Y * Math.min(d.s, BESIDE_MAX);
     }
     // Danger skulls go in a row under the name; where the name is not shown at this zoom, under the sprite.
     // Cities, towns, landmarks and group bases keep their names at every zoom (overlapping ones give way, the
     // most important first); small sites only up close.
-    const named = tier < 2 || camera.zoom > 1.3;
-    const hd = hiveTiles.length && !fb ? hiveDist(t.id) : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
+    const tier = d.tier, named = tier < 2 || camera.zoom > 1.3;
+    const hd = hasHives && !fb ? G.dist[id] : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
     const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(t.loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side });
+      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
     }
   }
   // Hives you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 420);
-  for (const t of on("hordes") ? visible : []) {
-    const isLive = live.has(t.id);
-    const snap = k[t.id];
-    const hive = isLive ? t.hive : snap && snap.hive;
-    if (!hive) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
+  for (let a = 0; on("hordes") && a < G.nHives; a++) {
+    const id = G.hives[a];
+    if (!inView(id)) continue;
+    const t = state.tiles[id], isLive = live.has(id), snap = k[id];
+    const px = G.x[id], py = G.y[id];
     const s = zoomBoost(), inf = (isLive ? t.infection : snap.infection) || 0;
     const level = inf >= 0.8 ? 2 : inf >= 0.5 ? 1 : 0, w = (28 + level * 4) * s;
     if (isLive) {
+      animating = true;
       ctx.beginPath();
       ctx.ellipse(px, py + 5 * s, w * 0.55, w * 0.22, 0, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255,50,35,${(0.1 + 0.16 * pulse * (1 + level * 0.4)).toFixed(3)})`;
       ctx.fill();
     }
-    drawMapSprite(ctx, hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
+    sprite(hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
   }
   // Hive build sites you know about: a raw mound of the dead with bones sticking up (glowing once the building has
   // started) and how much of the 1,000 dead it needs has gone into it.
-  const siteAt = new Map((state.hiveSites || []).map((x) => [x.tile, x]));
-  for (const t of on("hordes") ? visible : []) {
-    const isLive = live.has(t.id);
-    const st = isLive ? siteAt.get(t.id) : k[t.id] && k[t.id].site;
+  for (let a = 0; on("hordes") && a < G.nBuild; a++) {
+    const id = G.buildT[a];
+    if (!inView(id)) continue;
+    const isLive = live.has(id);
+    const st = isLive ? siteAt.get(id) : k[id] && k[id].site;
     if (!st) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
+    const px = G.x[id], py = G.y[id];
     const s = zoomBoost(), w = 26 * s, started = st.started != null && st.started !== false;
-    drawMapSprite(ctx, siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
+    sprite(siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
     const bw = 24 * s, bx = px - bw / 2, by = py + 11 * s, frac = Math.max(0, Math.min(1, (st.biomass || 0) / HIVE.SITE_BIOMASS));
     ctx.fillStyle = "rgba(13,15,18,0.8)";
     ctx.fillRect(bx - 1, by - 1, bw + 2, 4 * s + 2);
@@ -323,20 +725,22 @@ export function render(state) {
     ctx.fillRect(bx, by, bw * frac, 4 * s);
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
+  const nodes = radioNodes(state);
   for (const b of state.bases) {
     const [px, py] = g.toPixel(b.tile, HEX);
     const s = zoomBoost(), isHub = b.type === "hub";
     const w = (isHub ? PLACE_W.hub : PLACE_W.outpost) * s, cy = py - (isHub ? 6 : 5) * s;
     const besieged = state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === b.id);
+    if (besieged) animating = true;
     ownerPlate(px, py, PLAYER_COLOR, s, isHub ? 22 : 16, besieged);
     const cv = baseSpriteCanvas(baseLook(b));
-    drawMapSprite(ctx, cv, px, cy, w);
+    sprite(cv, px, cy, w);
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
-    if (b.alert) drawMapSprite(ctx, iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
+    if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
     labels.push({ text: b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
-    const node = radioNodes(state).find((n) => n.base === b);
+    const node = nodes.find((n) => n.base === b);
     if (node) {
       ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
       ctx.lineWidth = 1.5;
@@ -353,7 +757,7 @@ export function render(state) {
   for (const m of state.markers) if (on(LAYER_OF[m.type])) perTile.set(m.tile, (perTile.get(m.tile) || 0) + 1);
   for (const m of state.markers) {
     if (!on(LAYER_OF[m.type])) continue;
-    const [px, py] = g.toPixel(m.tile, HEX);
+    const px = G.x[m.tile], py = G.y[m.tile];
     if (px < minX || px > maxX || py < minY || py > maxY) continue;
     const n = slot.get(m.tile) || 0;
     slot.set(m.tile, n + 1);
@@ -388,29 +792,25 @@ export function render(state) {
     ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.globalAlpha = 1;
-    drawMapSprite(ctx, cv, x, y, w, { alpha });
+    sprite(cv, x, y, w, { alpha });
   }
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.
-  const hordeAt = new Map();
-  for (const h of on("hordes") ? state.hordes : []) {
-    const e = hordeAt.get(h.tile);
-    if (e) { e.size += h.size; e.bosses += h.bosses || 0; }
-    else hordeAt.set(h.tile, { size: h.size, target: h.target, bosses: h.bosses || 0 });
-  }
-  for (const t of on("hordes") ? visible : []) {
-    const isLive = live.has(t.id);
+  for (let a = 0; on("hordes") && a < G.nHorde; a++) {
+    const id = G.hordeT[a];
+    if (!inView(id)) continue;
+    const isLive = live.has(id);
     let size = 0, stale = false, target = null, bosses = 0;
-    if (isLive) ({ size = 0, target = null, bosses = 0 } = hordeAt.get(t.id) || {});
-    else if (k[t.id] && k[t.id].hordeSize) { size = k[t.id].hordeSize; bosses = k[t.id].hordeBoss || 0; stale = true; }
+    if (isLive) ({ size = 0, target = null, bosses = 0 } = hordeAt.get(id) || {});
+    else if (k[id] && k[id].hordeSize) { size = k[id].hordeSize; bosses = k[id].hordeBoss || 0; stale = true; }
     if (!size) continue;
-    const [px, py] = g.toPixel(t.id, HEX);
+    const px = G.x[id], py = G.y[id];
     // Beside, not on top of: a base you can see or last saw there (never one you do not know about), a hive or a build site.
-    const based = baseTiles.has(t.id) || hiveTiles.includes(t.id) || siteAt.has(t.id) || !!(k[t.id] && k[t.id].site && !isLive);
+    const based = baseTiles.has(id) || (hasHives && G.dist[id] === 0) || siteAt.has(id) || !!(k[id] && k[id].site && !isLive);
     const s = zoomBoost() * (based ? 0.85 : 1), o = Math.min(zoomBoost(), BESIDE_MAX); // the offset stays inside the tile when zoomed out
     const x = based ? px + 17 * o : px, y = based ? py + 13 * o : py + 3 * s;
     const cv = hordeSpriteCanvas(hordeFigures(size)), w = gridW(cv) * 1.15 * s, h = spriteH(cv, w);
-    const facing = target != null && target !== t.id && g.toPixel(target, HEX)[0] < px ? -1 : 1;
+    const facing = target != null && target !== id && G.x[target] < px ? -1 : 1;
     ctx.beginPath();
     ctx.ellipse(x, y + h / 2 - 1.5 * s, w * 0.52, 4 * s, 0, 0, Math.PI * 2);
     ctx.fillStyle = stale ? "rgba(120,20,20,0.18)" : "rgba(120,20,20,0.42)";
@@ -420,9 +820,9 @@ export function render(state) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.setLineDash([]);
-    drawMapSprite(ctx, cv, x, y, w, { facing, alpha: stale ? 0.45 : 1 });
+    sprite(cv, x, y, w, { facing, alpha: stale ? 0.45 : 1 });
     // A Wallbreaker with the horde: the brute with the concrete fist stands at its head.
-    if (bosses) drawMapSprite(ctx, wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s, 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
+    if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s, 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
     pill(x + w / 2, y - h / 2 + 2 * s, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
   }
   // Other groups' parties you can currently see, by group type: convoys by vehicle (spiked pickup, humvee, armored
@@ -441,17 +841,17 @@ export function render(state) {
     const w = gridW(cv) * (kind === "convoy" ? 1.2 : 1.1) * s;
     if (p.phase === "siege") {
       const o = Math.min(s, BESIDE_MAX);
-      drawMapSprite(ctx, siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
+      sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
       groundRing(px + 24 * o, py + 12 * o, color, false, true);
-      drawMapSprite(ctx, cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
-      drawMapSprite(ctx, iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
+      sprite(cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
+      sprite(iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
       noteSprite(px + 24 * o, py + 12 * o - 3, w, spriteH(cv, w));
       continue;
     }
     // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
-    drawMapSprite(ctx, cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
+    sprite(cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Your parties: actual position with radio contact, otherwise only the plan.
@@ -484,6 +884,7 @@ export function render(state) {
     ctx.lineWidth = w;
     ctx.stroke();
   }
+  last.anim = animating;
 }
 
 // ---------- party sprites ----------
@@ -521,27 +922,28 @@ function besideBase(tile, px, py) {
   return [px - Math.min(baseTiles.get(tile) * 0.8 + 8, 28) - 12 * n * o, py + 12 * o, 0.85];
 }
 
-// A site's sprite on its zone plate, picked-over sites faded. Returns where its label goes (labelY) and the spot
-// beside the plate (side) that the danger skulls fall back to when there is no room under the name.
-function drawSite(state, t, px, py, tier, zone, isLive, snap, alpha) {
+// Where a site's sprite goes on its zone plate, where its label goes (labelY), and the spot beside the plate (side)
+// that the danger skulls fall back to when there is no room under the name. faded: picked over.
+function siteLook(t, px, py, tier, faded) {
   const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[t.loc.type];
-  // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look untouched.
-  const loot = state.timelapse ? null : isLive ? t.loot : snap ? snap.loot : null;
-  const faded = loot != null && t.loc.type !== "city" && t.loc.type !== "town" && loot < 0.35 * def.richness;
   const cv = poiSpriteCanvas(t.loc.type, t.loc.type === "military" && / depot$/i.test(t.loc.name) ? "depot" : "", faded);
   const w = gridW(cv) * POI_PX * s * ((ZONE_K[t.loc.zone] || 1) / (ZONE_K[t.loc.type === "city" ? "urban" : def.cat] || 1));
   const h = spriteH(cv, w), foot = py + 7 * s, rx = Math.max(9 * s, w * 0.46), ry = (tier < 2 ? 4.5 : 3.6) * s;
+  return { s, cv, w, h, foot, rx, ry, lw: tier < 2 ? 1.8 : 1.3, labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };
+}
+
+// A site's sprite (look from siteLook) on its zone plate; alpha 0.55 when something stands on it.
+function drawSite(d, px, py, zone, alpha) {
   ctx.globalAlpha = alpha;
   ctx.beginPath();
-  ctx.ellipse(px, foot, rx, ry, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, d.foot, d.rx, d.ry, 0, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fill();
   ctx.strokeStyle = zone.color;
-  ctx.lineWidth = tier < 2 ? 1.8 : 1.3;
+  ctx.lineWidth = d.lw;
   ctx.stroke();
   ctx.globalAlpha = 1;
-  drawMapSprite(ctx, cv, px, foot - h / 2 + 0.6 * s, w, { alpha });
-  return { labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };
+  sprite(d.cv, px, d.foot - d.h / 2 + 0.6 * d.s, d.w, { alpha });
 }
 
 // Tiles with something drawn over a site (a team or group party, a horde): the site sprite fades there. Markers
@@ -636,7 +1038,7 @@ function drawLabels(labels, avoid = []) {
       const x0 = cx - w / 2, y0 = cy - sw / 2;
       if (hits(boxes, x0, y0, w, sw) || hits(avoid, x0, y0, w, sw)) return false;
       boxes.push([x0, y0, w, sw]);
-      for (let i = 0; i < l.skulls; i++) drawMapSprite(ctx, l.red ? redSkullCanvas() : skullCanvas(), x0 + sw / 2 + i * (sw + gap), cy, sw, { alpha: 0.95 });
+      for (let i = 0; i < l.skulls; i++) sprite(l.red ? redSkullCanvas() : skullCanvas(), x0 + sw / 2 + i * (sw + gap), cy, sw, { alpha: 0.95 });
       return true;
     };
     if (row(l.x, top + SKULL_W / 2, SKULL_W) || !l.side) continue;
@@ -701,7 +1103,7 @@ function groundRing(x, y, color, dashed, raid = false) {
 // Status icon at a sprite's top right: "alert" (waiting for orders), "work", "radio", "unknown" ("?" in color).
 function badge(x, y, kind, color) {
   const s = zoomBoost();
-  drawMapSprite(ctx, iconCanvas(kind, color), x + 12 * s, y - 12 * s, ICON_W * s);
+  sprite(iconCanvas(kind, color), x + 12 * s, y - 12 * s, ICON_W * s);
 }
 
 // Number badge (horde sizes): a pill with white text centered on (x, y).
@@ -766,8 +1168,8 @@ function drawPlayerParty(state, p) {
         py = fy + (ty - fy) * f;
         const kind = cross.mode === "raft" ? "raft" : "boat";
         const s = zoomBoost();
-        drawMapSprite(ctx, wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
-        drawMapSprite(ctx, partySpriteCanvas(kind, look.color), px, py, spriteW(kind), { facing });
+        sprite(wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
+        sprite(partySpriteCanvas(kind, look.color), px, py, spriteW(kind), { facing });
         return;
       }
     }
@@ -776,11 +1178,11 @@ function drawPlayerParty(state, p) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp";
     if (camping) { // tent and campfire behind the team
       const s = zoomBoost();
-      drawMapSprite(ctx, campSpriteCanvas(CAMP_TENT), px + 14 * s, py - 8 * s, 26 * s);
+      sprite(campSpriteCanvas(CAMP_TENT), px + 14 * s, py - 8 * s, 26 * s);
     }
     groundRing(px, py, ring, false);
     const cvp = partySpriteCanvas(look.kind, look.color, look.count), wp = spriteW(look.kind) * k2;
-    drawMapSprite(ctx, cvp, px, py - 3, wp, { facing });
+    sprite(cvp, px, py - 3, wp, { facing });
     noteSprite(px, py - 3, wp, spriteH(cvp, wp));
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
@@ -814,7 +1216,7 @@ function drawPlayerParty(state, p) {
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
   const cve = partySpriteCanvas(look.kind, look.color, look.count), we = spriteW(look.kind) * ke;
-  drawMapSprite(ctx, cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
+  sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));
   badge(ex, ey, "unknown", color);
 }

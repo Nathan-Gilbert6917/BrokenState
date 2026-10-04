@@ -2,6 +2,7 @@
 import { TERRAIN } from "./data.js";
 import { newId, log, day, atBase, skill } from "./world.js";
 import { count } from "./buildings.js";
+import { hasPerk, gainXp, USE } from "./skills.js";
 
 export const VEHICLE_TYPES = {
   truck: { name: "Pickup truck", tank: 30, capacity: 120 },
@@ -71,8 +72,9 @@ export function refuel(state, base, v) {
 }
 
 export function canRepair(state, base) {
-  if (count(base, "garage")) return { ok: true, per: 25 };
-  if (atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4)) return { ok: true, per: 12 };
+  const grease = atBase(state, base.id).some((s) => hasPerk(s, "greasemonkey")); // Grease Monkey (skills.js)
+  if (count(base, "garage")) return { ok: true, per: grease ? 35 : 25 };
+  if (atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4)) return { ok: true, per: grease ? 25 : 12 };
   return { ok: false, per: 0 };
 }
 
@@ -83,6 +85,8 @@ export function repair(state, base, v) {
   if (v.condition >= 100) return "Already in top shape.";
   base.stock.parts -= 1;
   v.condition = Math.min(100, v.condition + r.per);
+  const mech = atBase(state, base.id).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0];
+  if (mech) gainXp(state, mech, "mechanics", USE.repair); // skills.js
   return `Repaired the ${v.name} to ${Math.round(v.condition)}%.`;
 }
 

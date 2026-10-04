@@ -28,6 +28,8 @@ import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { travelFactor, travelEffects, travelHazard } from "./weather.js";
+import { hasPerk, checkBonus, gainXpAll, USE } from "./skills.js";
+import { tripDone } from "./relations.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -75,7 +77,7 @@ export function fuelForPath(state, path) {
 export function carryCapacity(state, members, vehicle) {
   const vCap = typeof vehicle === "object" && vehicle ? vehicleCapacity(vehicle) : vehicle ? 120 : 0;
   // A worn pack (improvised backpack, assault pack) adds to what a person can take (inventory.js carryBonus).
-  return members.reduce((s, m) => s + (m.traits.includes("badback") ? 8 : 15) + carryBonus(m), 0) + vCap;
+  return members.reduce((s, m) => s + (m.traits.includes("badback") ? 8 : 15) + carryBonus(m) + (hasPerk(m, "packrat") ? 8 : 0), 0) + vCap; // Packrat (skills.js)
 }
 export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(state, p), partyVehicle(state, p));
 
@@ -103,7 +105,7 @@ export function partyMembers(state, p) {
 }
 
 export function bestSkill(state, p, key) {
-  return Math.max(0, ...partyMembers(state, p).map((s) => skill(s, key)));
+  return Math.max(0, ...partyMembers(state, p).map((s) => skill(s, key) + checkBonus(s, key))); // checkBonus: Shadow (skills.js)
 }
 
 export function sightRadius(state, p) {
@@ -111,6 +113,7 @@ export function sightRadius(state, p) {
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
+  if (m.some((s) => hasPerk(s, "lookout"))) r += 1; // Lookout (skills.js)
   return Math.max(1, r + travelEffects(state).sight); // fog and blizzards cut sight by a tile (weather.js)
 }
 
@@ -154,7 +157,8 @@ export function outpostName(state, tile) {
 
 // ---------- trip estimates for the planner ----------
 // Travel speed per hour for a player team (trade-route convoys keep a steady pace).
-export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : STANCES[p.stance]?.speed || 1);
+// p.perkSpeed: Pathfinder's +10% on foot (set each hour by skills.js skillsHour).
+export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1));
 
 // Whole hours to walk/drive a path, using the same hour-by-hour stepping as the real movement
 // (stepAlong): a tile is entered only once enough progress has built up, leftover progress carries
@@ -789,6 +793,7 @@ export function survey(state, p, bonus, debit = true) {
   const around = state.grid.within(tile, sightRadius(state, p) + 1);
   for (const id of around) p.seen.set(id, snapshot(state, id));
   const found = perceive(state, p, members, around, bonus);
+  gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);
   return found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby.";
@@ -1196,6 +1201,7 @@ function returnHome(state, p) {
   if (v) v.loc = { kind: "base", baseId: home.id };
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
+  if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
   mergeKnowledge(state, p.seen, p.spotted);

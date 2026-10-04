@@ -14,6 +14,7 @@
 import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { allItems } from "./inventory.js";
+import { onLeave, noteMood } from "./relations.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -51,6 +52,26 @@ export function crowdInfo(state, base, people = residents(state, base.id).length
   const net = (penalty > 0 ? -penalty : CROWD.roomy) + lift;
   const ratio = people / Math.max(1, beds);
   return { people, beds, over, ratio, penalty: r1(penalty), rawLift: r1(rawLift), lift: r1(lift), net: r1(net), leader, level: crowdLevel(ratio) };
+}
+
+// Mood and work (suggestions #4): how much of a normal day's work someone does at this mood, before illness
+// (health.js workFactor multiplies the two). Points between are straight lines: 0 → 70%, 20 → 80%, 45 → 100%,
+// 80 → 100%, 100 → 110%. Grieving costs up to 20% more (relations.js: 20% × bond), and on a break (relations.js)
+// they do nothing that day. Builders, crafters, farmers, station operators, medics and base scavengers all use it.
+export const MOOD_WORK = [[0, 0.7], [20, 0.8], [45, 1], [80, 1], [100, 1.1]];
+export function moodCurve(mood) {
+  const m = clamp(Number.isFinite(mood) ? mood : 60, 0, 100);
+  for (let i = 1; i < MOOD_WORK.length; i++) {
+    const [x1, y1] = MOOD_WORK[i], [x0, y0] = MOOD_WORK[i - 1];
+    if (m <= x1) return y0 + ((y1 - y0) * (m - x0)) / (x1 - x0);
+  }
+  return MOOD_WORK[MOOD_WORK.length - 1][1];
+}
+export function moodWork(s) {
+  if (!s || s.mood == null) return 1;
+  if (s.onBreak) return 0;
+  const grief = s.grief ? 1 - 0.2 * Math.min(1, s.grief.bond || 0) : 1;
+  return Math.round(moodCurve(s.mood) * grief * 1000) / 1000;
 }
 
 // What the People tab shows next to someone's mood.
@@ -153,6 +174,7 @@ export function desert(state, base, s) {
   const parts = [...items, ...Object.entries(took).map(([k, q]) => `${q} ${k}`)];
   log(state, `${s.name} lost hope and walked away from ${base.name} in the night${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: base.id, day: day(state), took });
+  onLeave(state, s, base); // relations.js: friends and a partner take it hard
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].moraleFor === s.id) state.cards.splice(i, 1);
   checkGameOver(state);
   return { items, took };
@@ -191,6 +213,7 @@ function warningCard(state, base, s) {
           if (!tt.who) return `Nobody is left at ${base.name} to talk to ${name}.`;
           const ok = st.rng.chance(tt.chance);
           s.mood = clamp(s.mood + (ok ? TALK_OK : TALK_FAIL), 0, 100);
+          noteMood(st, s, ok ? TALK_OK : TALK_FAIL, `Talked to by ${firstName(tt.who)}`);
           reset();
           return ok ? `${firstName(tt.who)} sits up half the night with ${name}. They agree to stay (mood ${Math.round(s.mood)}).` : `${firstName(tt.who)} tries, but ${name} only shrugs (mood ${Math.round(s.mood)}).`;
         },
@@ -206,6 +229,7 @@ function warningCard(state, base, s) {
           s.station = null;
           s.restUntil = day(st) + REST_DAYS;
           s.mood = clamp(s.mood + REST_NOW, 0, 100);
+          noteMood(st, s, REST_NOW, "Given time off");
           reset();
           return `${name} takes ${REST_DAYS} days off.`;
         },
@@ -220,6 +244,7 @@ function warningCard(state, base, s) {
           if (!has(st)) return `${base.name} no longer has that to give.`;
           for (const [k, q] of Object.entries(GIFT)) base.stock[k] -= q;
           s.mood = clamp(s.mood + (greedy ? GIFT_MOOD_GREEDY : GIFT_MOOD), 0, 100);
+          noteMood(st, s, greedy ? GIFT_MOOD_GREEDY : GIFT_MOOD, "A gift from the stores");
           reset();
           return `${name} takes the gift (mood ${Math.round(s.mood)}).`;
         },

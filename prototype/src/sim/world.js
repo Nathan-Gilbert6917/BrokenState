@@ -25,9 +25,14 @@ import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { autopilotHour } from "./autopilot.js";
+import { productionHour } from "./production.js";
+import { stewardHour } from "./steward.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
 import { coverNodes, radioDaily } from "./radio.js";
+import { diaryRecord } from "./diary.js";
+import { onDeath } from "./relations.js";
+import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -199,8 +204,10 @@ export const hourOfDay = (state) => state.hour % 24;
 export const isNight = (state) => hourOfDay(state) < 6 || hourOfDay(state) >= 20;
 
 export function log(state, text, kind = "info") {
-  state.log.unshift({ hour: state.hour, text, kind });
+  const line = { hour: state.hour, text, kind };
+  state.log.unshift(line);
   if (state.log.length > 200) state.log.pop();
+  diaryRecord(state, line); // every line of the run, day by day (diary.js)
 }
 
 export function addCard(state, card) {
@@ -248,6 +255,7 @@ export function combatPower(s) {
   let p = 1 + skill(s, "shooting") * 0.25 + (w && eff.usable ? w.power * eff.mult * (s.gear.weapon.quality || 1) : 0);
   p += armorPower(s) * 0.5; // every worn piece (body, head, arms, legs)
   if (s.traits.includes("brave")) p += 1;
+  if (hasPerk(s, "gunslinger")) p += 1.5; // skills.js perk
   if (s.traits.includes("coward")) p -= 1;
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
@@ -274,6 +282,7 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.station = null;
   s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
+  onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
   // Died on the tile of one of your bases (hunger, an infected wound, a scavenging accident, a raid or horde at
   // the walls, a convoy starving while it holds there): their things go to that base's armory. No death site
   // inside the walls: no team could be sent to recover it, and passers-by cannot loot it. The one exception is
@@ -497,11 +506,13 @@ export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
+  skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   movePartiesHour(state);
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   constructionHour(state);
   craftingHour(state);
+  productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   if (state.hour % 24 === 0) {
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
@@ -515,6 +526,7 @@ export function tickHour(state) {
     deathSitesDaily(state);
     captivesDaily(state);
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
+    skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     recomputeOwnership(state);
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
@@ -524,5 +536,6 @@ export function tickHour(state) {
   checkGameOver(state);
   updateVision(state);
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
+  else stewardHour(state); // steward.js: bases handed to a steward
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
 }

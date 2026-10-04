@@ -17,6 +17,7 @@ import { log, atBase, skill, day, residents } from "./world.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
+import { hasPerk, seedCost } from "./skills.js";
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
@@ -303,8 +304,10 @@ export function careToday(state, base) {
   const planted = Math.max(1, f.plots.filter((p) => p.stage === "growing").length);
   const labour = list.reduce((a, s) => a + workFactor(s), 0);
   const tenders = list.slice(0, Math.max(1, planted));
-  const avg = tenders.length ? tenders.reduce((a, s) => a + skill(s, "farming"), 0) / tenders.length : 0;
-  return { care: tendMult(labour / planted) * skillMult(avg), tend: tendMult(labour / planted), skill: skillMult(avg), labour, planted, perPlot: labour / planted, avgSkill: avg };
+  // Perks (skills.js): Early Riser counts Farming +3 when tending; Green Thumb +15% while one of the tenders.
+  const avg = tenders.length ? tenders.reduce((a, s) => a + skill(s, "farming") + (hasPerk(s, "earlyriser") ? 3 : 0), 0) / tenders.length : 0;
+  const thumb = tenders.some((s) => hasPerk(s, "greenthumb")) ? 1.15 : 1;
+  return { care: tendMult(labour / planted) * skillMult(avg) * thumb, tend: tendMult(labour / planted), skill: skillMult(avg), labour, planted, perPlot: labour / planted, avgSkill: avg };
 }
 
 // What a crop on this plot should give when harvested (care so far, or today's if just sown).
@@ -391,10 +394,10 @@ export function plantPlot(state, base, plotId, crop) {
   if (!hasFarmer(state, base)) return "Nobody is on the Farm role here to plant it.";
   const chk = plantCheck(state, base, p, crop);
   if (!chk.ok) return chk.reason;
-  paySeed(base, CROPS[crop].seed);
+  paySeed(base, seedCost(state, base, CROPS[crop].seed)); // seedCost: Seed Saver halves it (skills.js)
   sow(p, crop);
   p.want = crop;
-  return `${CROPS[crop].name} sown on plot ${p.id} at ${base.name} (${CROPS[crop].seed} food as seed). Ripe in about ${daysToRipe(p)} days.`;
+  return `${CROPS[crop].name} sown on plot ${p.id} at ${base.name} (${seedCost(state, base, CROPS[crop].seed)} food as seed). Ripe in about ${daysToRipe(p)} days.`;
 }
 
 export function harvestPlot(state, base, plotId) {
@@ -507,6 +510,7 @@ export function farmingDaily(state, base, watered = 1) {
   // Harvest: the farmers bring in the oldest ripe plots first.
   let harvestCap = Math.floor(care.labour * HARVEST_PER_FARMER + 1e-9);
   if (care.labour > 0) harvestCap = Math.max(1, harvestCap);
+  harvestCap += 2 * farmers(state, base).filter((s) => hasPerk(s, "harvester")).length; // Harvester (skills.js)
   for (const p of f.plots.filter((x) => x.stage === "ripe").sort((a, b) => b.ripeDays - a.ripeDays)) {
     if (harvestCap <= 0) break;
     out.harvested += takeHarvest(base, p);
@@ -525,8 +529,8 @@ export function farmingDaily(state, base, watered = 1) {
     const pick = p.want && plantCheck(state, base, { ...p, stage: "empty" }, p.want).ok ? p.want : f.auto ? bestCrop(state, base, p, { waterShort: short }) : null;
     // Seed never comes out of the last two days of food.
     if (!pick || edibleFood(base) - CROPS[pick].seed < 2 * residents(state, base.id).length) continue;
-    paySeed(base, CROPS[pick].seed);
-    econStats(state).seed += CROPS[pick].seed;
+    paySeed(base, seedCost(state, base, CROPS[pick].seed)); // Seed Saver (skills.js)
+    econStats(state).seed += seedCost(state, base, CROPS[pick].seed);
     sow(p, pick);
     out.sown++;
     plantCap--;

@@ -128,7 +128,7 @@ export function stripAll(s) {
 export function stow(s, item, prefix = `s:${s.id}`) {
   ensureInv(s);
   const slot = GEAR[item.key].slot;
-  if (!s.gear[slot]) { s.gear[slot] = item; return `${prefix}:${slot}`; }
+  if (EQUIP_SLOTS.includes(slot) && !s.gear[slot]) { s.gear[slot] = item; return `${prefix}:${slot}`; } // books (slot "pack") are never worn
   if (isSmall(item.key)) {
     const i = s.pockets.indexOf(null);
     if (i >= 0) { s.pockets[i] = item; return `${prefix}:pocket:${i}`; }
@@ -321,12 +321,13 @@ export function quickMove(state, fromStr, sid) {
   if (from.o === "s" && from.id === sid || !s) return toStorage(state, fromStr);
   ensureInv(s);
   const slot = GEAR[item.key].slot;
-  const tries = [`s:${sid}:${slot}`];
+  const tries = EQUIP_SLOTS.includes(slot) ? [`s:${sid}:${slot}`] : []; // books (slot "pack") go in the pack
   if (isSmall(item.key)) s.pockets.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pocket:${i}`); });
   const pk = packOf(s);
   if (pk && !packSize(item)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
   // An empty spot first; else swap into the item's own slot.
   const empty = tries.find((t) => !itemAt(state, t));
+  if (!tries.length) return `No pack slot for the ${item.name}: ${s.name.split(" ")[0]} needs a pack with room.`;
   return moveItem(state, fromStr, empty || tries[0]);
 }
 

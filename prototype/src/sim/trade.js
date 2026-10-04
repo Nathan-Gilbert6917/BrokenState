@@ -24,6 +24,7 @@ import { itemLoad, newItem } from "./inventory.js";
 import { itemDur } from "./crafting.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
+import { tradeSpeech, bookWares, gainXp, USE } from "./skills.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -118,6 +119,7 @@ export function ensureWares(state, f, refresh = false) {
     if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.4, 1)));
     keep.push(it);
   }
+  keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   f.wares = keep.slice(-WARES_MAX);
   f.waresDay = day(state);
   return f.wares;
@@ -255,7 +257,7 @@ export function tradeContext(state) {
     const c = state.parties.find((q) => q.id === t.caravanId);
     const base = baseById(state, t.baseId);
     if (!c || !base || c.phase !== "trading") return null;
-    const speech = Math.max(0, ...atBase(state, base.id).map((s) => skill(s, "speech")));
+    const speech = tradeSpeech(atBase(state, base.id)); // best Speech here, Haggler +5 (skills.js)
     for (const k of SUPPLY_KEYS) {
       have[k] = Math.max(0, Math.floor(base.stock[k] || 0));
       theirHave[k] = Math.max(0, Math.floor(c.goods.supplies[k] || 0));
@@ -264,7 +266,7 @@ export function tradeContext(state) {
   }
   const p = state.parties.find((q) => q.id === t.partyId);
   if (!p) return null;
-  const speech = bestSkill(state, p, "speech");
+  const speech = tradeSpeech(partyMembers(state, p)); // best Speech on the team, Haggler +5 (skills.js)
   // You trade from what the team carries: supplies plus anything found.
   for (const k of SUPPLY_KEYS) {
     have[k] = Math.max(0, Math.floor((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)));
@@ -461,6 +463,9 @@ export function executeTrade(state) {
   t.intel = { area: "", sightings: false, sell: false };
   t.deal = null;
   const msg = `Traded with ${f.name}: ${gave.join(", ") || "nothing"} for ${got.join(", ") || "nothing"}.`;
+  // skills.js: Speech XP for whoever did the talking (the best Speech on the team, or at the base).
+  const talkers = ctx.kind === "visit" ? partyMembers(state, ctx.p) : atBase(state, ctx.base.id);
+  gainXp(state, [...talkers].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0], "speech", USE.trade);
   log(state, msg, "good");
   return msg;
 }

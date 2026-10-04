@@ -22,7 +22,8 @@ import { activeHospital, careCtx, pickTreater, noTimeReason, nextDayText, spendM
 import * as Weather from "./weather.js";
 import { GEAR } from "./data.js";
 import { count, baseBeds } from "./buildings.js";
-import { crowding } from "./morale.js";
+import { crowding, moodWork } from "./morale.js";
+import { hasPerk, gainXp, USE } from "./skills.js";
 
 // sev = starting severity [min, max]; drift = change per day untreated (before rest and care);
 // hp = health lost per day at severity 100; work = how much they can work at severity 100 (1 = fully);
@@ -51,12 +52,20 @@ export const isSick = (s) => !!s && s.alive && conditionsOf(s).length > 0;
 export const isContagious = (s) => conditionsOf(s).some((c) => CONDITIONS[c.key] && CONDITIONS[c.key].spread > 0);
 export const hasCondition = (s, key) => conditionsOf(s).some((c) => c.key === key);
 
-// How much someone can work (0..1): the worst of their conditions, by severity; nothing while quarantined.
+// How much someone can work: the worst of their conditions, by severity; nothing while quarantined; times their
+// mood (morale.js moodWork: 70% at rock bottom, 100% from 45 to 80, 110% at 100; grief and breaks too).
 export function workFactor(s) {
   if (!s) return 1;
+  const mw = moodWork(s);
+  const list = conditionsOf(s);
+  if (!list.length) return mw;
+  if (s.quarantined && isContagious(s)) return 0;
+  return Math.max(0, Math.round(healthWork(s) * mw * 100) / 100);
+}
+// The illness part alone (0..1).
+export function healthWork(s) {
   const list = conditionsOf(s);
   if (!list.length) return 1;
-  if (s.quarantined && isContagious(s)) return 0;
   let f = 1;
   for (const c of list) {
     const d = CONDITIONS[c.key];
@@ -120,7 +129,7 @@ export function conditionInfoCtx(state, base, s, key, ctx) {
   else if (ctx.auto && ctx.meds - d.meds < ctx.reserve) reason = `Would take the meds below the reserve of ${ctx.reserve}.`;
   const hosp = base ? activeHospital(state, base) : null;
   const medSkill = shown ? skill(shown.s, "medicine") : 0;
-  const amount = d ? Math.round(d.treat * (hosp ? hosp.eff : 1) * (1 + medSkill * 0.02)) : 0;
+  const amount = d ? Math.round(d.treat * (hosp ? hosp.eff : 1) * (1 + medSkill * 0.02) * (shown && hasPerk(shown.s, "plaguedoctor") ? 1.5 : 1)) : 0; // Plague Doctor (skills.js)
   return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev : false, treater: t, medic: t ? t.s : null, load: 1, treatedToday };
 }
 
@@ -134,6 +143,7 @@ export function applyCondition(state, base, s, key, info) {
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   state.medsUsed = (state.medsUsed || 0) + info.cost;
   spendMedicTime(state, base, info.treater, info.load);
+  gainXp(state, info.medic, "medicine", USE.illness); // skills.js
   c.sev -= info.amount;
   c.treatedDay = day(state);
   const name = CONDITIONS[key].name.toLowerCase();
@@ -302,7 +312,7 @@ function baseOnsets(state, base) {
       for (const c of conditionsOf(src)) {
         const d = CONDITIONS[c.key];
         if (!d.spread) continue;
-        let q = d.spread * (0.5 + c.sev / 100) * (crowd > 0 ? 1.6 : 1) * (quarantine ? 0.4 : 1) * (s.role === "medic" ? 1.5 : 1);
+        let q = d.spread * (0.5 + c.sev / 100) * (crowd > 0 ? 1.6 : 1) * (quarantine ? 0.4 : 1) * (s.role === "medic" && !hasPerk(s, "plaguedoctor") ? 1.5 : 1); // Plague Doctor (skills.js)
         if (q > p) { p = q; from = { src, key: c.key }; }
       }
     }

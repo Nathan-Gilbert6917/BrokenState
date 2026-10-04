@@ -7,6 +7,7 @@
 import { newId, atBase, day } from "./world.js";
 import { findPath } from "./hex.js";
 import { mannedStations } from "./buildings.js";
+import { generatorHeat } from "./power.js";
 import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedFactor } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
@@ -68,7 +69,7 @@ export function splitHorde(state, h, n) {
 export function baseHeat(state, base) {
   const people = atBase(state, base.id);
   const workshop = mannedStations(state, base); // stations with an operator at work; idle "Operate" people make no noise
-  return people.length + workshop * 3 + (base.radio ? 2 : 0) + (base.type === "hub" ? 3 : 0);
+  return people.length + workshop * 3 + (base.radio ? 2 : 0) + (base.type === "hub" ? 3 : 0) + generatorHeat(base); // a running generator is loud (power.js)
 }
 
 // Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or

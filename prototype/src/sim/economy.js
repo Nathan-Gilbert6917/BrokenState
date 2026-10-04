@@ -18,6 +18,8 @@ import { foodStore, storageDaily, eatFromStore, edibleFood, rackPlan } from "./s
 import { baseMoraleDaily } from "./morale.js";
 import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
+import { hasPerk, eatMult } from "./skills.js";
+import { relationsDaily, noteMeals } from "./relations.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -28,6 +30,8 @@ export const ROLES = {
   rest:     { name: "Rest",     desc: "Recovers mood, and the sick get better faster. Injured people heal either way." },
   medic:    { name: "Medic",    desc: "Staffs the infirmary or hospital (each tier needs 1–3 medics to run; unstaffed it works like no hospital). The best medic's Medicine speeds up healing for patients in beds; with no medic only slow natural healing and weak meds. Medics are never admitted as patients, and catch contagious illness more easily." },
   craft:    { name: "Craft",    desc: "Makes makeshift gear and supplies by hand from the craft queue (base Crafting tab). No station needed; Mechanics (or Medicine for kits) sets what they can make and how fast." },
+  teach:    { name: "Teach",    desc: "Teaches one skill to up to 2 people at this base whose skill is at least 4 below theirs (pick the skill and learners on their survivor screen, or leave it to them). Learners gain 4 + 0.4 × the teacher's skill + 0.15 × the teacher's Leadership and Speech XP a day and keep their own jobs; the teacher does no other work." },
+  read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
 // Farming and scavenging bonuses from where the base sits.
@@ -58,7 +62,7 @@ export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
 export function scavChance(state, base, s) {
   const b = siteBonus(state, base);
-  const p = BASE_SCAV_CHANCE * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.04) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s);
+  const p = BASE_SCAV_CHANCE * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.04) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s) * (hasPerk(s, "scrounger") ? 1.3 : 1); // Scrounger (skills.js)
   return Math.min(0.5, p);
 }
 // What a find is drawn from: the site's own table, with scrap always likely; fuel and parts are rare.
@@ -165,7 +169,7 @@ function thirst(state, base, mouths, short) {
 export const spoilRate = (state, base) => foodStore(state, base).rate;
 export const foodSpoilage = (state, base) => foodStore(state, base).spoil;
 export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
-export const eatPerDay = (state, base) => residents(state, base.id).length * (Weather.foodNeedFactor ? Weather.foodNeedFactor(state) : 1);
+export const eatPerDay = (state, base) => residents(state, base.id).length * (Weather.foodNeedFactor ? Weather.foodNeedFactor(state) : 1) * eatMult(state, base); // eatMult: Quartermaster (skills.js)
 
 // Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten, spoiled and
 // used per day (workshops; the preserving kitchen and drying racks turn fresh food into preserved, so only what
@@ -176,7 +180,7 @@ export function foodOutlook(state, base) {
   let used = 0;
   for (const st of stations(base)) {
     const ss = stationStatus(state, base, st);
-    if (ss.running) used += (RECIPES[ss.recipe].in.food || 0) - (ss.out.preserved || 0);
+    if (ss.running) used += ((ss.in || RECIPES[ss.recipe].in).food || 0) - (ss.out.preserved || 0); // the still (power.js) turns food into fuel
   }
   const rack = rackPlan(state, base);
   used += rack.take - rack.out;
@@ -215,6 +219,7 @@ export function basesDaily(state) {
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
+  relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
 }
 
 function baseDaily(state, base) {
@@ -262,6 +267,7 @@ function baseDaily(state, base) {
   const eaten = full * (rationing ? RATION : 1);
   const missing = eatFromStore(base, eaten);
   if (missing > 0) st.food = (st.food || 0) - missing; // below zero: the hub starves, an outpost asks the hub
+  if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing but preserved food are grim
   econStats(state).eaten += eaten - missing;
   if (st.food < 0 && base.type === "hub") {
     st.food = 0;

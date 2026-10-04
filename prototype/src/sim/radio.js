@@ -30,10 +30,12 @@
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
 import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { count } from "./buildings.js";
+import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
 import { planPath, spawnAiParty } from "./parties.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
+import { tradeSpeech, gainXp, USE } from "./skills.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -47,7 +49,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function radioNodes(state) {
   const nodes = [];
   for (const b of state.bases) {
-    if (b.radio) nodes.push({ base: b, tile: b.tile, range: RADIO_RANGE, kind: "station", linked: true, offline: false });
+    if (b.radio) nodes.push({ base: b, tile: b.tile, range: RADIO_RANGE + radioBoost(b), kind: "station", linked: true, offline: false }); // +2 on generator power (power.js)
     else if (count(b, "relay")) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: !!b.relayOffline });
   }
   const g = state.grid;
@@ -106,7 +108,7 @@ export const canRadioGroup = (state, f) => !!f && f.alive && f.bases.some((b) =>
 // Speech on the radio: the best talker at a base with a transmitter that reaches them (else at the hub).
 export function radioSpeech(state) {
   const h = hub(state);
-  return Math.max(0, ...(h ? atBase(state, h.id) : []).map((s) => skill(s, "speech")));
+  return tradeSpeech(h ? atBase(state, h.id) : []); // Haggler +5 (skills.js)
 }
 const since = (state, f, key) => day(state) - (f.radio?.[key] ?? -999);
 const mark = (state, f, key) => { (f.radio = f.radio || {})[key] = day(state); };
@@ -235,6 +237,8 @@ export function radioDeal(state, f, d) {
   const c = sendCaravan(state, f, base, { goods: { supplies: { [d.wantKey]: wantQty }, gear: [] }, deal: { offer: { [d.payKey]: payQty }, ask: { [d.wantKey]: wantQty } } });
   if (!c) return { ok: false, text: note(state, f, `${f.name} cannot get a caravan to ${base.name}.`) };
   mark(state, f, "caravan");
+  const h = hub(state);
+  if (h) gainXp(state, atBase(state, h.id).sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0], "speech", USE.radio); // skills.js
   return { ok: true, caravan: c, text: note(state, f, `Deal: ${wantQty} ${d.wantKey} for ${payQty} ${d.payKey}. Their caravan sets out for ${base.name} (about ${c.eta}h).`) };
 }
 

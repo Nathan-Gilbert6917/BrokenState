@@ -28,7 +28,7 @@ function icon(key) {
   const d = GEAR[key];
   if (key === "crossbow") return "🏹";
   if (GUNS.has(key)) return "🔫";
-  return TOOL_ICON[key] || SLOT_ICON[d.slot] || "▪";
+  return TOOL_ICON[key] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
 }
 
 // Hover text for an item, with the skill-gap rule for the person who would use it.
@@ -38,6 +38,7 @@ export function itemTip(item, s = null) {
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} carry space for the team`);
+  else if (d.book) bits.push(d.book.skill ? `book: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js
   else bits.push(`power ${d.power}${d.req && d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req}` : ""}`);
   if (s && d.skill && d.req) {
     const e = gearEffect(s, item);

@@ -7,12 +7,13 @@
 // Events: a fire in a building, a quarrel between two survivors, a peddler at the gate, a lost teenager (a recruit
 // card, recruits.js), a wandering preacher, food stolen from the stores, a stray dog, storm damage (a leaking roof
 // over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, and two
-// survivors who have grown close.
+// survivors who have grown close (partners, relations.js), and remembering the dead (a memorial service).
 import { BUILDINGS, count, assignStations } from "./buildings.js";
 import { SUPPLIES } from "./data.js";
 import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
 import { weather, weatherOnDay, season } from "./weather.js";
 import { crowdInfo, talker } from "./morale.js";
+import { quarrelBoost, quarrelPair, coupleBoost, couplePair, makePartners, relEvent, memorialWeight, memorialCard } from "./relations.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { foodOutlook } from "./economy.js";
 import { allItems } from "./inventory.js";
@@ -113,11 +114,10 @@ export const HUB_EVENTS = {
 
   quarrel: {
     name: "A quarrel",
-    weight: (st, c) => (adults(c).length >= 3 ? 1 * (1 + 1.5 * Math.min(1.5, c.over)) * (c.avgMood < 40 ? 1.8 : 1) : 0),
+    weight: (st, c) => (adults(c).length >= 3 ? 1 * (1 + 1.5 * Math.min(1.5, c.over)) * (c.avgMood < 40 ? 1.8 : 1) * quarrelBoost(st, adults(c)) : 0), // rivals quarrel more (relations.js)
     card: (st, c) => {
       const pool = adults(c);
-      const a = st.rng.pick(pool);
-      const b = st.rng.pick(pool.filter((s) => s !== a));
+      const [a, b] = quarrelPair(st, st.rng, pool); // a pair of rivals 70% of the time when there is one
       const topic = c.over > 0 ? "bunk space" : st.rng.pick(["who stands the night watch", "the last of the coffee", "a missing jacket", "how the food is shared", "an old grudge from before"]);
       const tk = talker(st, c.base, a);
       const mediator = tk.who && tk.who !== b ? tk : null;
@@ -127,17 +127,18 @@ export const HUB_EVENTS = {
         title: `A quarrel at ${c.base.name}`,
         text: `${a.name} and ${b.name} are at each other's throats over ${topic}.`,
         choices: [
-          { label: `Side with ${firstName(a)}`, hint: `${firstName(a)} mood +8, ${firstName(b)} mood -12`, ai: () => -2, resolve: () => { if (!both()) return gone; moodAll([a], 8); moodAll([b], -12); return `${firstName(a)} has your backing. ${firstName(b)} will not forget it.`; } },
-          { label: `Side with ${firstName(b)}`, hint: `${firstName(b)} mood +8, ${firstName(a)} mood -12`, ai: () => -2, resolve: () => { if (!both()) return gone; moodAll([b], 8); moodAll([a], -12); return `${firstName(b)} has your backing. ${firstName(a)} will not forget it.`; } },
+          { label: `Side with ${firstName(a)}`, hint: `${firstName(a)} mood +8, ${firstName(b)} mood -12; they think less of each other`, ai: () => -2, resolve: () => { if (!both()) return gone; moodAll([a], 8); moodAll([b], -12); relEvent(st, a, b, -10); return `${firstName(a)} has your backing. ${firstName(b)} will not forget it.`; } },
+          { label: `Side with ${firstName(b)}`, hint: `${firstName(b)} mood +8, ${firstName(a)} mood -12; they think less of each other`, ai: () => -2, resolve: () => { if (!both()) return gone; moodAll([b], 8); moodAll([a], -12); relEvent(st, a, b, -10); return `${firstName(b)} has your backing. ${firstName(a)} will not forget it.`; } },
           {
             label: mediator ? `Mediate (${firstName(mediator.who)}, ${mediator.who.leader ? "leader" : "Speech"} ${mediator.score})` : "Mediate",
-            hint: mediator ? `${pct(mediator.chance)}: both mood +6; otherwise both mood -6` : "Nobody else here can mediate",
+            hint: mediator ? `${pct(mediator.chance)}: both mood +6 and they patch it up; otherwise both mood -6 and it festers` : "Nobody else here can mediate",
             disabled: () => !mediator,
             ai: () => (mediator ? mediator.chance * 12 - (1 - mediator.chance) * 6 : -9),
             resolve: (s2) => {
               if (!both()) return gone;
               const ok = s2.rng.chance(mediator.chance);
               moodAll([a, b], ok ? 6 : -6);
+              relEvent(s2, a, b, ok ? 14 : -8);
               return ok ? `${firstName(mediator.who)} gets them to shake on it.` : `${firstName(mediator.who)} only makes it worse.`;
             },
           },
@@ -146,6 +147,7 @@ export const HUB_EVENTS = {
             resolve: (s2) => {
               if (!both()) return gone;
               moodAll([a, b], -5);
+              relEvent(s2, a, b, -8);
               if (s2.rng.chance(0.3)) {
                 const v = s2.rng.pick([a, b]);
                 hurt(s2, v, s2.rng.int(4, 12), c.base.tile, `in a fistfight at ${c.base.name}`);
@@ -401,22 +403,29 @@ export const HUB_EVENTS = {
 
   couple: {
     name: "Two survivors grow close",
-    weight: (st, c) => (adults(c).length >= 3 ? 0.35 : 0),
+    weight: (st, c) => (adults(c).length >= 3 ? 0.35 * coupleBoost(st, adults(c)) : 0), // close friends become partners (relations.js)
     card: (st, c) => {
       const pool = adults(c);
-      const a = st.rng.pick(pool);
-      const b = st.rng.pick(pool.filter((s) => s !== a));
+      const [a, b] = couplePair(st, st.rng, pool); // the closest friends without a partner, when there are any
       const both = () => here(a, c.base) && here(b, c.base);
+      const pair = (s2) => makePartners(s2, a, b); // partners: +1.5 mood a day together, grief if one dies
       return {
         title: `${firstName(a)} and ${firstName(b)} have grown close`,
         text: `${a.name} and ${b.name} have grown close. Everyone at ${c.base.name} has noticed.`,
         choices: [
-          { label: "Clear them a corner of their own (3 scrap)", hint: "Both mood +15", disabled: () => (c.base.stock.scrap || 0) < 3, ai: () => ((c.base.stock.scrap || 0) >= 20 ? 6 : 1), resolve: () => { if (!both()) return "Too late."; c.base.stock.scrap -= 3; moodAll([a, b], 15); return "A blanket on a line and a door that shuts. They are delighted."; } },
-          { label: "A small party for them (4 food)", hint: "Both mood +10, everyone else here +3", disabled: () => (c.base.stock.food || 0) < 4, ai: () => ((c.base.stock.food || 0) >= 40 ? 5 : 1), resolve: (s2) => { if (!both()) return "Too late."; c.base.stock.food -= 4; moodAll([a, b], 10); moodAll(atBase(s2, c.base.id).filter((s) => s !== a && s !== b), 3); return "Toasts in tin cups."; } },
-          { label: "Leave them to it", hint: "Both mood +5", ai: () => 3, resolve: () => { if (!both()) return "Too late."; moodAll([a, b], 5); return "Life goes on."; } },
+          { label: "Clear them a corner of their own (3 scrap)", hint: "Both mood +15; they are partners now", disabled: () => (c.base.stock.scrap || 0) < 3, ai: () => ((c.base.stock.scrap || 0) >= 20 ? 6 : 1), resolve: () => { if (!both()) return "Too late."; c.base.stock.scrap -= 3; moodAll([a, b], 15); pair(st); return "A blanket on a line and a door that shuts. They are delighted."; } },
+          { label: "A small party for them (4 food)", hint: "Both mood +10, everyone else here +3; they are partners now", disabled: () => (c.base.stock.food || 0) < 4, ai: () => ((c.base.stock.food || 0) >= 40 ? 5 : 1), resolve: (s2) => { if (!both()) return "Too late."; c.base.stock.food -= 4; moodAll([a, b], 10); moodAll(atBase(s2, c.base.id).filter((s) => s !== a && s !== b), 3); pair(s2); return "Toasts in tin cups."; } },
+          { label: "Leave them to it", hint: "Both mood +5; they are partners now", ai: () => 3, resolve: () => { if (!both()) return "Too late."; moodAll([a, b], 5); pair(st); return "Life goes on."; } },
         ],
       };
     },
+  },
+
+  // Remembering the dead (relations.js): likelier after deaths nobody has marked yet, never in the week after a service.
+  memorial: {
+    name: "Remembering the dead",
+    weight: (st, c) => (c.n >= 2 ? memorialWeight(st, c.base) : 0),
+    card: (st, c) => memorialCard(st, c.base),
   },
 };
 export const HUB_EVENT_IDS = Object.keys(HUB_EVENTS);

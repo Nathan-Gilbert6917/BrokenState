@@ -10,6 +10,8 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
 import { searchHazards } from "./health.js";
+import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
+import { noteSearch } from "./relations.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -142,35 +144,40 @@ export function searchHour(state) {
 
   // Loot.
   const scav = bestSkill(state, p, "scavenging");
+  const perk = (id) => anyPerk(members, id); // skills.js: perks of anyone on the team
+  const lootPerk = (k) => (perk("treasure") ? 1.2 : 1) * ((k === "parts" || k === "fuel") && perk("tinkerseye") ? 1.5 : 1); // Treasure Hunter, Tinker's Eye
   const table = t.loc ? LOCATIONS[t.loc.type].loot : { scrap: 2, food: 1 };
   const finds = [];
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
+    const qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (qty > 0) {
       e.found.supplies[key] = (e.found.supplies[key] || 0) + qty;
       finds.push(`${qty} ${key}`);
     }
   }
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
-  if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot)) {
+  if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
     e.found.gear.push({ key: g, name: GEAR[g].name, quality: 1 });
     finds.push(GEAR[g].name);
   }
-  t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot);
+  // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
+  const book = rollBook(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`);
+  if (book) { e.found.gear.push(book); finds.push(book.name); }
+  t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
 
   // Heat.
   let heat = ap.heat * (0.6 + 0.6 * t.infection);
   if (e.approach === "sneak") heat -= bestSkill(state, p, "stealth") * 0.3;
   if (isNight(state)) heat -= 2;
-  e.heat = Math.min(100, e.heat + Math.max(2, heat));
+  e.heat = Math.min(100, e.heat + (perk("quiethands") ? Math.max(1, heat * 0.5) : Math.max(2, heat))); // Quiet Hands: half the Heat
   const stage = heatStage(e.heat);
 
   // Encounters.
   let line = finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.";
-  if (rng.chance(stage.fight + (e.guarded ? 0.15 : 0))) {
+  if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0);
     const ammoUse = e.approach === "loud" ? members.length * 6 : members.length * 2;
     p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - ammoUse);
@@ -197,6 +204,8 @@ export function searchHour(state) {
     }
   }
   e.log.push(`Hour ${e.hours} [${stage.name}]: ${line}`);
+  gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour); // skills.js
+  if (e.approach === "sneak") gainXpAll(state, partyMembers(state, p), "stealth", USE.sneakSearch);
   searchHazards(state, partyMembers(state, p), tileLabel(state, e.tile)); // cuts and fevers while searching (health.js)
   if (!partyMembers(state, p).length) {
     // Everyone died; what they found stays with them.
@@ -232,7 +241,7 @@ export function extract(state) {
   if (stage.name === "Overrun" || stage.name === "Swarming") {
     const dc = stage.name === "Overrun" ? 12 : 8;
     const s = bestSkill(state, p, "stealth") + rng.int(1, 10);
-    if (s < dc) {
+    if (s < dc && !anyPerk(members, "phantom")) { // Phantom (skills.js): hard extractions never hurt the team
       const v = rng.pick(members);
       hurt(state, v, rng.int(20, 60), e.tile, `extracting from ${tileLabel(state, e.tile)}`);
       e.log.push(v.alive ? `Extraction was rough. ${v.name.split(" ")[0]} was hurt.` : `${v.name} did not make it out.`);
@@ -263,6 +272,7 @@ export function extract(state) {
   }
   if (left.length) log(state, `No room to carry ${left.join(", ")}. It was left behind.`, "info");
   log(state, `Scavenging team extracted from ${tileLabel(state, e.tile)} after ${e.hours} hours.`, "info");
+  noteSearch(state, alive); // relations.js: sites searched (service record)
   state.engagement = null;
   awaitOrders(state, p, `Searched ${tileLabel(state, e.tile)} for ${e.hours} hours.`);
 }

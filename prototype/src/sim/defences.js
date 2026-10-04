@@ -15,6 +15,7 @@
 // nobody left alive ends the game.
 import { log, addCard, atBase, hurt, combatPower, removeBase, isNight } from "./world.js";
 import { count, baseWalls } from "./buildings.js";
+import { poweredType } from "./power.js";
 import {
   createBattle, startCombat, autoPlayerTurn, runEnemyPhase, closeCombat, combatants, registerCombatHandler, registerBattleLayout, endBattleNow,
 } from "./combat.js";
@@ -46,7 +47,7 @@ export function guardHold(state, base) {
 }
 
 export function defenceMult(state, base) {
-  const flood = count(base, "floodlights") && (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL;
+  const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
   return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * count(base, "trench") + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0);
 }
 
@@ -93,10 +94,10 @@ export function hordeAttackBase(state, h, base) {
     notes.push(`The spike pits took about ${k}.`);
     if (reduceHorde(state, h, k)) { log(state, `A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return; }
   }
-  const floodlit = count(base, "floodlights") && (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL;
+  const floodlit = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
   const bosses = Math.min(2, h.bosses || 0);
   const limit = holdLimit(state, base, bosses);
-  if (floodlit) base.stock.fuel -= DEFENCE.FLOOD_FUEL;
+  if (floodlit && !poweredType(base, "floodlights")) base.stock.fuel -= DEFENCE.FLOOD_FUEL;
   const smashed = bosses ? smash(state, base, bosses) : [];
   if (smashed.length) notes.push(`${bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
   base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);

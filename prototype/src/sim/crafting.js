@@ -10,6 +10,7 @@ import { count } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, ensurePack } from "./inventory.js";
 import { workFactor } from "./health.js";
+import { hasPerk } from "./skills.js";
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -84,7 +85,7 @@ const qualified = (state, base, r) => crafters(state, base).filter((s) => skill(
 // Work-hours per hour on a recipe: each skilled crafter gives 1 + 3% per point of the recipe's skill.
 export function craftRate(state, base, key) {
   const r = CRAFTS[key];
-  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s), 0); // the sick work less (health.js)
+  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s) * (hasPerk(s, "machinist") ? 1.3 : 1), 0); // the sick work less (health.js); Machinist (skills.js)
 }
 
 // Item condition from the best crafter's skill: 75% at 0, 100% at 20. Workshop recipes +10%.
@@ -130,6 +131,11 @@ export function craftJobStatus(state, base, job) {
   if (!crafters(state, base).length) return "No crafters. Set someone's role to Craft.";
   if (!meetsNeeds(base, r)) return `Needs ${needsText(r)} here`;
   if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;
+  // A craft order's minimum quality (production.js): only a crafter who reaches it works the job.
+  if (job.minQ && r.gear) {
+    const q = craftQuality(Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill))), r);
+    if (q + 1e-9 < job.minQ) return `No crafter good enough for ${Math.round(job.minQ * 100)}% (best ${Math.round(q * 100)}%)`;
+  }
   return "";
 }
 
@@ -149,6 +155,7 @@ export function craftingHour(state) {
     } else {
       const best = Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill)));
       const item = makeItem(r.gear, craftQuality(best, r));
+      if (item.dur && crafters(state, base).some((s) => hasPerk(s, "tinkerer"))) item.dur = Math.round(item.dur * 1.5); // Tinkerer (skills.js): lasts 50% longer
       base.armory.push(item);
       log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
     }

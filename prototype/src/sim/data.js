@@ -69,6 +69,22 @@ export const GEAR = {
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging." },
   waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 water a day at the base it is kept at (equipped or in the armory)." },
   backpack:   { name: "Improvised backpack",      slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 carry space for the team." },
+  // Books (skills.js): read on the Read role at a base from a copy in its armory. book.skill = what it teaches (4 XP an
+  // hour, only while the skill is below book.max), book.hours = time to finish it; mood books give book.mood an hour.
+  // Not worn: carried in a pack slot or the team's cargo, kept in the armory. Found at fitting sites, sold by traders.
+  medbook:     { name: "Field Medicine Handbook",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "medicine", max: 8, hours: 30 }, desc: "A paramedic's handbook: dressings, splints, fevers. Teaches Medicine up to 8." },
+  surgerybook: { name: "Emergency Surgery",          slot: "pack", skill: null, power: 0, req: 0, value: 60, noise: 0, book: { skill: "medicine", max: 14, hours: 50 }, desc: "A trauma surgery textbook. Teaches Medicine up to 14." },
+  enginebook:  { name: "Small Engine Repair",        slot: "pack", skill: null, power: 0, req: 0, value: 30, noise: 0, book: { skill: "mechanics", max: 10, hours: 40 }, desc: "Pumps, generators, outboard motors. Teaches Mechanics up to 10." },
+  gardenbook:  { name: "Gardening Through the Seasons", slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, book: { skill: "farming", max: 8, hours: 30 }, desc: "Sowing calendars, soil and saving seed. Teaches Farming up to 8." },
+  gunbook:     { name: "Marksmanship Manual",        slot: "pack", skill: null, power: 0, req: 0, value: 30, noise: 0, book: { skill: "shooting", max: 9, hours: 30 }, desc: "Breathing, trigger control, zeroing a sight. Teaches Shooting up to 9." },
+  armymanual:  { name: "Army Field Manual",          slot: "pack", skill: null, power: 0, req: 0, value: 55, noise: 0, book: { skill: "shooting", max: 13, hours: 45 }, desc: "Rifle marksmanship and fire and movement. Teaches Shooting up to 13." },
+  survivalbook:{ name: "Wilderness Survival",        slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, book: { skill: "scouting", max: 8, hours: 30 }, desc: "Maps, tracks, reading the land. Teaches Scouting up to 8." },
+  talkbook:    { name: "Negotiation 101",            slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, book: { skill: "speech", max: 8, hours: 30 }, desc: "Getting to yes, with people who have guns. Teaches Speech up to 8." },
+  lockbook:    { name: "Lockpicking for Locksmiths", slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "stealth", max: 8, hours: 30 }, desc: "Pins, tension and patience: moving quietly through locked places. Teaches Stealth up to 8." },
+  leadbook:    { name: "Leading Small Teams",        slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "leadership", max: 8, hours: 30 }, desc: "An NCO's guide to keeping people together. Teaches Leadership up to 8." },
+  scavbook:    { name: "Salvage Yard Secrets",       slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, book: { skill: "scavenging", max: 8, hours: 30 }, desc: "Where the good stuff hides in a wreck. Teaches Scavenging up to 8." },
+  comic:       { name: "Stack of comic books",       slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, book: { mood: 3, hours: 4 }, desc: "Capes and explosions. +3 mood an hour read (a third of that read again). Teaches nothing." },
+  novel:       { name: "Paperback novel",            slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 8 }, desc: "A dog-eared thriller. +2 mood an hour read (a third of that read again). Teaches nothing." },
 };
 
 // Location types placed on the map, with what they tend to hold. cat = where the type usually stands (the placed

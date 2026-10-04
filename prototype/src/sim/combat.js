@@ -33,6 +33,8 @@ import { partyMembers, partyTile, partyCapacity, cargoLoad, unitsThatFit, wipePa
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS } from "./inventory.js";
+import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
+import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -90,11 +92,13 @@ function dropSetup(state, setup) {
 }
 
 export function finishCombat(state, setup, result) {
+  const battle = state.combat && state.combat.setup === setup ? state.combat : null; // played on a map
   state.combat = null;
   // Makeshift gear loses durability with every fight (a raid only if someone was killed). A battle played on the
   // map has already worn what its units took the field with (wearFielded, when the battle ended); one resolved by
   // the numbers wears everyone who was counted in it.
   if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearAfterFight(state, combatants(state, setup));
+  battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
   const fn = handlers && handlers.get(setup.handler);
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
   state.resolving = (state.resolving || 0) + 1;
@@ -131,7 +135,7 @@ export function autoResolveCombat(state, setup) {
     if (t > 0) o.ammo -= t;
     owed -= t;
   }
-  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6);
+  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
   let theirs = setup.enemy.count * setup.enemy.power;
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
@@ -147,6 +151,7 @@ export function autoResolveCombat(state, setup) {
     (s.alive ? hurtIds : deadIds).push(s.id);
   }
   const killed = win ? setup.enemy.count : Math.floor(setup.enemy.count * rng.range(0.1, 0.5));
+  fightXp(state, people, win); // skills.js: Shooting XP for everyone who fought
   return {
     outcome: win ? "victory" : "defeat",
     enemiesKilled: killed, enemiesLeft: setup.enemy.count - killed,
@@ -504,17 +509,17 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const w = WEAPONS[a.weapon];
   const d = dist(ax, ay, t.x, t.y);
   let aim = a.aim + (w.aim || 0);
-  if (d > w.opt) aim -= (d - w.opt) * w.fall;
+  if (d > w.opt && !a.noFall) aim -= (d - w.opt) * w.fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && w.close) aim += w.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : coverAgainst(b, t.x, t.y, ax, ay);
   aim -= COVER_DEF[cov.level];
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
   if (flat) aim += 15;
-  if (opts.reaction) aim -= 15;
+  if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
   if (opts.volley) aim += 15; // caught before they could take cover
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
-  const crit = opts.reaction ? 0 : cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5;
+  const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d };
 }
 
@@ -560,7 +565,7 @@ function playerUnit(b, s) {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
-    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery,
+    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0), // friends alongside, rivals, revenge (relations.js)
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
@@ -593,6 +598,7 @@ const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2)
 
 // ---------- setup ----------
 export function createBattle(state, setup) {
+  setup.relAim = friendAim(state, combatants(state, setup), setup); // relations.js: aim per survivor id
   if (setup.mode === "raid") return createRaid(state, setup);
   W = MAP_W; H = MAP_H;
   const rng = state.rng;
@@ -642,6 +648,7 @@ export function createBattle(state, setup) {
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
   });
+  battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
 
   // Enemy side.
   const e = setup.enemy;
@@ -711,12 +718,14 @@ function damage(b, t, raw, by) {
   if (t.hp > 0) return eff;
   if (t.side === "player") {
     t.down = true;
+    (b.downedIds || (b.downedIds = [])).push(t.sid); // service record (relations.js)
     t.bleed = BLEED_TURNS;
     t.ow = t.hunker = false;
     say(b, `${t.name} is down and bleeding. Use meds on them within ${BLEED_TURNS} turns${b.raid ? "; once stabilized they are carried out when a teammate extracts" : ""}.`, "death");
   } else {
     t.dead = true;
     t.killedBy = by ? by.side : null;
+    if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
     if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body` });
     say(b, `${t.name} is dead.`, "good");
   }
@@ -751,7 +760,9 @@ function detect(b, mover) {
   const range = Math.max(3, 8 - Math.floor(mover.stealth / 4));
   for (const e of b.units) {
     if (e.side !== "enemy" || e.aware || !active(e)) continue;
-    const r = e.kind === "zombie" ? Math.min(range, 5) : range;
+    let r = e.kind === "zombie" ? Math.min(range, 5) : range;
+    if (mover.sneak) r = Math.max(1, r - mover.sneak); // Light Step (skills.js)
+    if (mover.ghost) r = Math.min(r, 2); // Ghost: noticed only from 2 tiles or closer
     if (dist(e.x, e.y, mover.x, mover.y) <= r && los(b, e.x, e.y, mover.x, mover.y)) {
       alertPod(b, e.pod, `${e.name} spotted ${mover.name}!`);
     }
@@ -800,6 +811,7 @@ function fire(b, a, t, opts = {}) {
     }
   }
   b.noise += w.noise || 0;
+  if (a.xpT) a.xpT.shots++;
   const o = shotOdds(b, a, t, a.x, a.y, opts);
   const hit = rng.chance(o.chance / 100);
   let text;
@@ -807,6 +819,7 @@ function fire(b, a, t, opts = {}) {
     const crit = rng.chance(o.crit / 100);
     const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1);
     const eff = Math.round(damage(b, t, raw, a));
+    if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
     text = `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
     fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
   } else {
@@ -824,10 +837,12 @@ function fire(b, a, t, opts = {}) {
 function strike(b, a, t) {
   const o = meleeOdds(b, a, t);
   const rng = b.rng;
-  const hit = rng.chance(o.chance / 100);
+  const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
+  const hit = rng.chance(o.chance / 100) || sure;
   if (hit) {
-    const crit = rng.chance(o.crit / 100);
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1), a));
+    const crit = rng.chance(o.crit / 100) || sure;
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1), a)); // meleeMult: Brawler
+    if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
   } else {
@@ -841,11 +856,17 @@ function strike(b, a, t) {
 function heal(b, u, t) {
   take(b, "meds", 1);
   b.medsUsed++;
+  if (u.xpT) u.xpT.heals++; // skills.js: Medicine XP when the battle ends
+  if (u !== t && u.sid != null && t.sid != null) { // service record (relations.js): rescues and people treated
+    if (t.down) ((b.rescuesBy || (b.rescuesBy = {}))[u.sid] || (b.rescuesBy[u.sid] = [])).push(t.sid);
+    else (b.healsBy || (b.healsBy = {}))[u.sid] = (b.healsBy[u.sid] || 0) + 1;
+  }
   if (t.down) {
     t.stab = true;
+    if (u.miracle) t.stabSure = true; // Miracle Worker: always pulls through
     say(b, `${u.name} stabilizes ${t.name}. ${b.raid ? "They will be carried out if a teammate extracts" : "They will live if you hold the field"}.`, "good");
   } else {
-    const amt = Math.round(15 + u.medicine * 1.5);
+    const amt = Math.round((15 + u.medicine * 1.5) * (u.healMult || 1)); // healMult: Steady Hands
     t.hp = Math.min(t.maxHp, t.hp + amt);
     say(b, `${u.name} patches up ${t === u ? "their own wounds" : t.name} (+${amt}).`, "good");
   }
@@ -883,6 +904,8 @@ export function combatAct(state, act) {
       u.ap -= c <= u.mob ? 1 : 2;
       u.hunker = false;
       moveAlong(b, u, pathTo(r, act.x, act.y));
+      // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
+      if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
       break;
     }
     case "shoot": {
@@ -1217,6 +1240,7 @@ function endBattle(state, b, outcome) {
       if (outcome === "victory") live = u.stab ? 1 : 0.5 + medic * 0.02;
       else if (outcome === "retreat") live = 0;
       else live = (setup.downedLive ?? (zombies ? 0.1 : 0.35)) + (u.stab ? 0.3 : 0); // setup.downedLive: at your own base the downed can be dragged inside (defences.js)
+      if (u.stabSure && outcome !== "retreat") live = 1; // stabilized by a Miracle Worker (skills.js)
       dies = !rng.chance(live);
       if (outcome === "retreat") lines.push(`${u.name} was left behind.`);
     }
@@ -1269,6 +1293,7 @@ function endBattle(state, b, outcome) {
 // units that took the field and only the item objects they took it with (weapon in hand, every worn armor
 // piece). A bandage kit loses one use per treatment its carrier gave. A broken item is gone.
 function wearFielded(state, b, fought) {
+  battleXp(state, b); // skills.js: XP for what each unit did in this battle (once, as it ends)
   for (const u of b.units) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
@@ -1554,6 +1579,7 @@ export function createRaid(state, setup) {
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
   }
+  battlePerks(state, b); // skills.js: perks on the player's units
 
   // Enemies: guards around buildings, the dead scattered about. Nobody has seen you yet.
   const center = [entry.x0 + 1, entry.y0 + 1];
@@ -1685,8 +1711,9 @@ function searchBox(state, b, u, box) {
   const rng = state.rng;
   const R = b.raid;
   const s = survivorById(state, u.sid);
-  const scav = s ? skill(s, "scavenging") : 0;
+  const scav = (s ? skill(s, "scavenging") : 0) + (u.scavBonus || 0); // scavBonus: Treasure Hunter (skills.js)
   const party = state.parties.find((x) => x.id === b.setup.partyId);
+  if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness;
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
@@ -1707,7 +1734,10 @@ function searchBox(state, b, u, box) {
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
       }
       for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push({ key, name: GEAR[key].name, quality: 1 });
-      if (def.alarm && box.kind === "car" && rng.chance(def.alarm)) {
+      // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
+      const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);
+      if (book) gear.push(book);
+      if (def.alarm && box.kind === "car" && rng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
