@@ -51,6 +51,7 @@ import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allian
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, broodForce } from "./hives.js";
 import { autopilotPrisoners } from "./prisoners.js";
+import { isManaged } from "./work.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -1037,7 +1038,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const give = (s, role, station = null) => { want.set(s.id, { role, station }); free.delete(s); };
   // 0. Pinned people (s.pinned, the survivor screen and the base's people list) keep what they do, and so does
   // anyone in a role whose area this base's steward was not handed.
-  for (const s of people) if (s.pinned || !areas[ROLE_AREA[s.role]]) give(s, s.role, s.role === "operate" ? s.station : null);
+  // People on work priorities (work.js) run themselves: a steward leaves them alone (the dev autopilot only with
+  // its test switch governor.priorityRoles; otherwise it sets every role, as before).
+  const byPriority = (s) => (!state.autopilot || g.priorityRoles) && isManaged(state, s);
+  for (const s of people) if (s.pinned || !areas[ROLE_AREA[s.role]] || byPriority(s)) give(s, s.role, s.role === "operate" ? s.station : null);
   const ranked = (role, score, filter = () => true) => [...free].filter(filter)
     .sort((a, b) => score(b) + (b.role === role ? STICKY : 0) - (score(a) + (a.role === role ? STICKY : 0)));
   const st = base.stock;
@@ -1066,7 +1070,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 2. Farming (farming.js): crops take days to ripen, and more and better farmers per plot give a bigger
   // harvest. Enough farmers for the plots in use (the "ideal" crew when food is short).
-  let farmers = 0;
+  let farmers = people.filter((s) => byPriority(s) && s.role === "farm").length; // farmers by priorities count too (farmShort)
   const farmTo = (target) => {
     if (!areas.food) return;
     for (const s of ranked("farm", (x) => skill(x, "farming"), (x) => !x.inBed)) {
@@ -2192,3 +2196,30 @@ function planSupplyRuns(state) {
     } else deleteSupplyRun(state, res.job);
   }
 }
+
+// ---------- crew roles (crews.js, work.js) ----------
+// The governor's judgement for one field team in a crew role's style, without its log lines (stewardCtx): what the
+// hub needs, how good a site is, which answer a card gets, how to search and when to leave, a trade at the gates,
+// an outpost running dry. The autopilot itself does not change.
+function withStyle(style, fn) {
+  const prev = stewardCtx;
+  stewardCtx = { style: PERSONALITIES[style] ? style : "balanced" };
+  try { return fn(); } finally { stewardCtx = prev; }
+}
+export const crewAI = {
+  needs: (state, style) => withStyle(style, () => needs(state)),
+  siteScore: (state, id, need, style) => withStyle(style, () => siteScore(state, id, need, persona(state))),
+  needText,
+  tradeGoods: (state, need, style) => withStyle(style, () => tradeGoods(state, need)),
+  // The answer the governor would give (null: none it can pick; uiAction choices and disabled ones left out).
+  answer: (state, card, style) => withStyle(style, () => {
+    const p = card.partyId != null ? state.parties.find((x) => x.id === card.partyId) : null;
+    const opts = (card.choices || []).filter((c) => !c.uiAction && !isDisabled(state, c));
+    return opts.length ? pickChoice(state, card, opts, p) : null;
+  }),
+  approach: (state, p, e, style) => withStyle(style, () => chooseApproach(state, p, e)),
+  extractNow: (state, p, e, style) => withStyle(style, () => shouldExtract(state, p, e)),
+  trade: (state, style) => withStyle(style, () => handleTrade(state)),
+  outpostThirsty: (state, o) => outpostThirsty(state, o),
+  isDisabled,
+};

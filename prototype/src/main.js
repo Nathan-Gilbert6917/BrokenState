@@ -49,6 +49,8 @@ import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
+import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
+import { toManual } from "./sim/work.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -719,6 +721,8 @@ for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...RO
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
+// The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
+for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 document.addEventListener("dragstart", (ev) => {
@@ -742,16 +746,17 @@ document.addEventListener("drop", (ev) => {
 
 const changeActions = {
   uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(resize, 50); options.uiScale = ui.scale; saveOptions(options); },
+  // A work role ("w:…", priorities) or a fixed job (Manual) (ui/work.js).
   role: (el) => {
     const s = survivorById(state, Number(el.dataset.id));
     if (!s) return;
-    s.role = el.value;
-    if (s.role !== "operate") s.station = null;
-    if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
+    const msg = applyRoleChoice(state, s, el.value);
+    if (msg && ui.baseView) ui.baseMsg = msg;
   },
   medicop: (el) => {
     if (!el.value) return;
     const s = survivorById(state, Number(el.value));
+    toManual(state, s); // a job picked by hand: off work priorities
     s.role = "medic";
     s.station = null;
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
@@ -760,6 +765,7 @@ const changeActions = {
   craftop: (el) => {
     if (!el.value) return;
     const s = survivorById(state, Number(el.value));
+    toManual(state, s);
     s.role = "craft";
     s.station = null;
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
@@ -778,6 +784,7 @@ const changeActions = {
     ui.baseMsg = "Station has no operator.";
     if (el.value) {
       const s = survivorById(state, Number(el.value));
+      toManual(state, s);
       s.role = "operate";
       s.station = stationId;
       ui.baseMsg = `${s.name} now runs this station.`;
@@ -839,6 +846,7 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -931,9 +939,25 @@ document.addEventListener("click", (ev) => {
   if (el.tagName === "INPUT" && el.type === "checkbox" && el.dataset.action !== "layer") ev.preventDefault();
   releaseHold();
   if (ui.nrMsg) ui.nrMsg = "";
-  act(() => fn(el.dataset));
+  act(() => fn(el.dataset, ev));
   dropFocus();
   refresh();
+});
+// Right-click on a Work tab cell counts down (ui/work.js); elsewhere the browser's menu is left alone.
+document.addEventListener("contextmenu", (ev) => {
+  const el = ev.target.closest && ev.target.closest("[data-rc]");
+  if (!el) return;
+  ev.preventDefault();
+  const fn = actions[el.dataset.action];
+  if (!fn) return;
+  releaseHold();
+  act(() => fn(el.dataset, { button: 2, shiftKey: ev.shiftKey }));
+  refresh();
+});
+// The Work tab cell under the mouse takes the number keys (workKey).
+document.addEventListener("mouseover", (ev) => {
+  const el = ev.target.closest && ev.target.closest(".wcell");
+  ui.workHover = el ? { ...el.dataset } : null;
 });
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
@@ -1209,6 +1233,8 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
+  if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.

@@ -57,6 +57,8 @@ import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js"
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
 import { outsidersSection } from "./visitors.js";
+import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -78,7 +80,8 @@ function inContact(state, s) {
   const p = state.parties.find((x) => x.id === s.location.partyId);
   return !!p && (p.kind === "convoy" || contactable(p));
 }
-const roleSelect = (s, extra = "") => `<select data-action="role" data-id="${s.id}"${tip(ROLES[s.role]?.desc)}${extra}>${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${s.role === k ? "selected" : ""} title="${esc(r.desc)}">${r.name}</option>`).join("")}</select>`;
+// The role drop-down: work roles (priorities) and fixed jobs (Manual), with what they do now (ui/work.js).
+const roleSelect = (state, s, extra = "") => `${workRoleSelect(state, s, extra)}${taskChip(state, s)}`;
 
 // ---------- top bar ----------
 // The top bar in pieces (the slots in index.html): the clock and the stock change with the hour, the buttons only
@@ -197,7 +200,7 @@ function personCard(state, s) {
   // Health and mood are only shown for people you are in touch with (the team panel follows the same rule).
   const known = inContact(state, s);
   return `<div class="card surv" data-action="survivor" data-id="${s.id}"${tip("Click for skills, traits and gear")}>
-    <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}</b>${atB ? roleSelect(s) : ""}</div>
+    <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}</b>${atB ? roleSelect(state, s) : ""}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
     ${known ? `<div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
@@ -830,6 +833,7 @@ function survivorModal(state, ui) {
     ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
     <div class="where">${s.leader ? "Leader · " : ""}${inContact(state, s) ? `Health ${n0(s.health)} · Mood ${n0(s.mood)}` : "Health and mood unknown (no contact)"} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${inContact(state, s) && s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
+    ${s.alive ? workLine(state, s, base) : ""}
     <div class="grid2">
       ${skillsBlock(state, s)}
       <div><h3>Traits</h3>${s.traits.map((t) => `<div class="small"><b>${TRAITS[t].name}</b> <span class="muted">${TRAITS[t].desc}</span></div>`).join("")}
@@ -848,6 +852,15 @@ function survivorModal(state, ui) {
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;
 }
 
+// Their role and what they do now (sim/work.js): a work role with the why, or their fixed job (Manual).
+function workLine(state, s, base) {
+  const role = roleOf(state, s);
+  const now = isManaged(state, s) ? taskLabel(state, s) : "";
+  const job = ROLES[s.role] ? ROLES[s.role].name : s.role;
+  return `<div class="card small worksurv"><div class="spread"><span><b>Work:</b> ${role ? `${esc(role.name)}${role.kind === "crew" ? " (crew)" : ""}${s.pinned ? " · pinned" : ""}` : `Manual (${esc(job)})`}${now ? ` · now <b>${esc(now)}</b>` : ""}</span>${base ? workRoleSelect(state, s) : ""}</div>
+    ${now ? `<div class="muted">${esc(taskWhy(state, s))}</div>` : role ? `<div class="muted">${s.location.kind === "base" ? "Planned at the start of the next hour." : "Away: back on the role's priorities when home."}</div>` : ""}</div>`;
+}
+
 function gearControls(state, base, s, slot) {
   const cur = s.gear[slot];
   const opts = base.armory.map((g, i) => [g, i]).filter(([g]) => GEAR[g.key].slot === slot);
@@ -858,6 +871,7 @@ function gearControls(state, base, s, slot) {
 // ---------- base management ----------
 const BASE_TABS = [
   ["overview", "Overview", "Stock, people and roles"],
+  ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
   ["farming", "Farming", "Crop plots: what grows, when it ripens, expected harvests, weather risks; the food and water outlook"],
   ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
@@ -875,7 +889,7 @@ function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
   const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { overview: baseOverview, work: workTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -939,7 +953,7 @@ function baseMedical(state, b) {
       </div>
       <h3>Medics</h3>
       <div class="card small">
-        ${h.staff.length ? h.staff.map((s) => `<div class="spread"><span>${esc(s.name)} <span class="muted">Medicine ${skill(s, "medicine")}</span></span>${roleSelect(s)}</div>`).join("") : `<span class="muted">Nobody on the Medic role.</span>`}
+        ${h.staff.length ? h.staff.map((s) => `<div class="spread"><span>${esc(s.name)} <span class="muted">Medicine ${skill(s, "medicine")}</span></span>${roleSelect(state, s)}</div>`).join("") : `<span class="muted">Nobody on the Medic role.</span>`}
         ${others.length ? `<div style="margin-top:0.3rem"><select data-action="medicop"${tip("Set someone's role to Medic")}><option value="">Add a medic…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
       </div>
       ${illnessCard(state, b)}
@@ -990,8 +1004,9 @@ function baseOverview(state, b) {
     </div>
     <div>
       <div class="spread"><h3>People and roles</h3>${memorialButton(state, b)}</div>
-      ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a></td><td>${roleSelect(s)}</td><td class="small">${n0(s.health)} HP</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
+      ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a></td><td>${roleSelect(state, s)}</td><td class="small">${n0(s.health)} HP</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
       <div class="small muted" style="margin-top:0.4rem">${Object.entries(ROLES).map(([k, r]) => `<b>${r.name}</b> ${people.filter((s) => s.role === k).length}`).join(" · ")}</div>
+      ${priorityCount(state, b) ? `<div class="small muted" style="margin-top:0.4rem">${priorityCount(state, b)} here work by priorities (Work tab); a steward only moves the people on Manual.</div>` : ""}
       ${stewardCard(state, b)}
     </div>
   </div>`;
@@ -1097,7 +1112,7 @@ function baseCrafting(state, b) {
     <div>
       <h3>Crafters</h3>
       <div class="card small">
-        ${crew.length || abed.length ? [...crew, ...abed].map((s) => `<div class="spread"><span>${esc(s.name)}${bedTag(s)} <span class="muted">Mechanics ${skill(s, "mechanics")} · Medicine ${skill(s, "medicine")}</span></span>${roleSelect(s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
+        ${crew.length || abed.length ? [...crew, ...abed].map((s) => `<div class="spread"><span>${esc(s.name)}${bedTag(s)} <span class="muted">Mechanics ${skill(s, "mechanics")} · Medicine ${skill(s, "medicine")}</span></span>${roleSelect(state, s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
         ${others.length ? `<div style="margin-top:0.3rem"><select data-action="craftop"${tip("Set someone's role to Craft")}><option value="">Add a crafter…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Mechanics ${skill(s, "mechanics")}, Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
       </div>
       <h3>Queue (${q.length}/${MAX_CRAFT_QUEUE})</h3>
