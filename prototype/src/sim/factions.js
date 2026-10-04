@@ -520,6 +520,9 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const target = factionById(state, party.target.factionId);
   const attacker = typeof party.owner === "number" ? factionById(state, party.owner) : null;
   if (!target || !target.alive) return;
+  // Trade prices remember it (valuation.js): raided lately, or a horde at their walls.
+  target.hitDay = day(state);
+  if (!attacker && !party.raidName) target.hordeHitDay = day(state);
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
@@ -545,6 +548,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
     if (target.bases.length > 1 && rng.chance(0.5)) {
       const lost = party.target.tile;
       target.bases = target.bases.filter((b) => b !== lost);
+      target.lostBaseDay = day(state); // valuation.js: they want weapons and defences, and sell off fine things
       if (attacker && attacker.bases.length < maxBases(attacker) && rng.chance(isAggressiveType(attacker) ? RAIDS.TAKE_BASE_AGG : 0.5)) attacker.bases.push(lost);
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }

@@ -20,7 +20,7 @@ import {
 } from "./parties.js";
 import { startOrder, resumeQueue } from "./orders.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
-import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll } from "./trade.js";
+import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
@@ -816,7 +816,7 @@ function handleTrade(state) {
   }
   const offer = {};
   let offerValue = 0;
-  for (const k of Object.keys(spare).sort((a, b) => need[a] - need[b])) {
+  for (const k of Object.keys(spare).sort((a, b) => need[a] / demand(state, f, a) - need[b] / demand(state, f, b))) { // what they want most first
     if (offerValue >= askValue) break;
     if (!(spare[k] > 0)) continue;
     let q = minSellable(state, f, k, speech, askValue - offerValue, spare[k]);
@@ -1677,7 +1677,9 @@ function planTrip(state) {
     const goods = tradeGoods(state, need);
     if (goods && Object.values(need).some((v) => v >= 1.5)) {
       const f = state.factions.filter((x) => x.alive && x.known && x.bases.length && (attitude(x) === "Friendly" || attitude(x) === "Allied" || (attitude(x) === "Neutral" && !isAggressiveType(x))))
-        .map((x) => ({ f: x, d: Math.min(...x.bases.map((b) => state.grid.distance(b, h.tile))) })).filter((x) => x.d <= P.range * (short.length ? 2 : 1)).sort((a, b) => a.d - b.d)[0];
+        .map((x) => ({ f: x, d: Math.min(...x.bases.map((b) => state.grid.distance(b, h.tile))) })).filter((x) => x.d <= P.range * (short.length ? 2 : 1))
+        // The buyer that pays best for the load (trade.js goodsWorth: their kind and state), for the walk.
+        .map((x) => ({ ...x, s: goodsWorth(state, x.f, goods) / (1 + x.d / 10) })).sort((a, b) => b.s - a.s || a.d - b.d)[0];
       if (f) cands.push({ mission: "trade", tile: f.f.bases.find((b) => state.grid.distance(b, h.tile) === f.d), score: 1.6, crew: 2, why: `trade with ${f.f.name}`, supplies: goods, reach: short.length ? P.shortReach : 1 });
     }
   }

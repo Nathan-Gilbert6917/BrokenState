@@ -396,6 +396,9 @@ export function radioTradeIfShort(state, needs) {
   if (!short.length || !plenty.length) return "";
   const speech = radioSpeech(state);
   for (const want of short) {
+    // Every group and every way to pay, cheapest first (what the payment is worth to the hub per unit got): the
+    // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
+    const deals = [];
     for (const f of state.factions) {
       if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
       for (const pay of plenty) {
@@ -407,11 +410,15 @@ export function radioTradeIfShort(state, needs) {
         const cost = qty * buyPrice(state, f, want, speech, qty);
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
         if (!Number.isFinite(payQty)) continue;
-        const res = radioDeal(state, f, { wantKey: want, wantQty: qty, payKey: pay, payQty });
-        if (res.ok) {
-          state.radioAutoDay = day(state);
-          return `radio deal with ${f.name}: ${qty} ${want} for ${payQty} ${pay}`;
-        }
+        deals.push({ f, pay, qty, payQty, per: (payQty * SUPPLIES[pay].value * (needs[pay] + 0.2)) / qty });
+      }
+    }
+    deals.sort((a, b) => a.per - b.per || a.f.id - b.f.id);
+    for (const d of deals) {
+      const res = radioDeal(state, d.f, { wantKey: want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
+      if (res.ok) {
+        state.radioAutoDay = day(state);
+        return `radio deal with ${d.f.name}: ${d.qty} ${want} for ${d.payQty} ${d.pay}`;
       }
     }
   }

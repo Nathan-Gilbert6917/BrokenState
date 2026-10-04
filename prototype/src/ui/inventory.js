@@ -7,6 +7,7 @@ import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
 import { partyMembers, partyCapacity, cargoLoad } from "../sim/parties.js";
 import { itemDur, durUnit } from "../sim/crafting.js";
+import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
@@ -44,7 +45,7 @@ export function itemTip(item, s = null) {
     const e = gearEffect(s, item);
     if (e.gap > 0) bits.push(e.usable ? `${s.name.split(" ")[0]} is ${e.gap} below the skill: weaker${e.damageChance ? ", may damage it" : ""}` : `${s.name.split(" ")[0]} cannot use it`);
   }
-  bits.push(`value ${d.value}`);
+  bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
   if (dur != null) bits.push(`makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
