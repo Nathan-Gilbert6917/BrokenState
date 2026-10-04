@@ -13,6 +13,7 @@
 // SITE_ZONES); settlement = center tile id of the city or town it belongs to.
 import { HexGrid, findPath } from "./hex.js";
 import { LOCATIONS, TOWN_NAMES } from "./data.js";
+import { HIVE } from "./hiveconst.js";
 
 export const MAP_W = 64;
 export const MAP_H = 42;
@@ -430,10 +431,10 @@ export function generateMap(rng) {
     if (t.terrain === "city") t.infection = Math.min(1, t.infection + 0.15);
     else if (t.terrain === "suburb") t.infection = Math.min(1, t.infection + 0.06);
   }
-  // Infestation hives (hives.js): four around the origin, two around each other hot spot.
+  // Infestation hives (hives.js): four around the origin, one around each other hot spot (HIVE.START_ORIGIN, START_SPOT).
   for (const [i, s] of seeds.entries()) {
     const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.hive));
-    for (const n of spots.slice(0, i ? 2 : 4)) n.hive = true;
+    for (const n of spots.slice(0, i ? HIVE.START_SPOT : HIVE.START_ORIGIN)) n.hive = true;
   }
 
   return {

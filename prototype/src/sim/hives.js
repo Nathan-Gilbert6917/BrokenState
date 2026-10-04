@@ -2,16 +2,20 @@
 //
 // Every hive gains resources each day, more when other hives stand within 5 tiles of it (a cluster):
 // alone 1 a day, two together 3 each, three 6 each, then +2 for every further hive up to 12 (hiveIncome).
-// Hives on the map at the start begin with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium
-// 50–80 for 8, large 100–200 for 15: hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker: a hive boss that
-// joins a horde and smashes defences when it attacks a base (defences.js). Inside every hive waits the
-// Broodmother, the boss a team fights when it storms the hive.
+// The map starts with 5–6 hives (four around the outbreak origin, one at each other hot spot: mapgen.js), each
+// with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15:
+// hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (from day 120, then at most one every 90 days per hive):
+// a hive boss that joins a horde and smashes defences when it attacks a base (defences.js). Inside every hive
+// waits the Broodmother, the boss a team fights when it storms the hive.
 //
-// Each hive keeps a guard horde at home. Every 30–60 days a site for a new hive is picked near the current ones;
+// Each hive keeps a guard horde at home. Every 50–80 days a site for a new hive is picked near the current ones;
 // hives within 10 tiles of it send hordes there, the rest defend: they send hordes out to roam and to attack
-// bases. Hordes reaching the site gather into one mass; once the hordes delivered add up to a score of 30 the
-// mass starts turning into a hive, and the hive stands when 1,000 of the dead have gone into it. Wandering hordes
-// that come within 6 tiles of a site that still needs the dead are drawn to it.
+// bases (medium hordes only before day 60; 20% of new roamers attack at first, 40% on day 30, 65% from about day
+// 70; your bases weigh 2.5× a group's and are attacked from up to 45 tiles). Hordes reaching the site gather into one mass; once the hordes delivered add up
+// to a score of 30 the mass starts turning into a hive, at most 40 of the dead a day, and the hive stands when
+// 1,000 have gone into it: about four weeks from the first gathering. Wandering hordes that come within 6 tiles
+// of a site that still needs the dead are drawn to it. The numbers are in hiveconst.js (tools/hordecensus.js
+// measures the pacing they make).
 //
 // A hive holds the land within 4 tiles (sites there show at least 3 danger skulls) and the ring 1 tile around it
 // is red-skull ground where every encounter with the dead is much tougher (zombieToughness). It radiates infection
@@ -151,18 +155,21 @@ function produce(state, hive, n, d) {
     // whole state holds more free dead than the hives can drive (FREE_BUDGET).
     const out = owned.filter((h) => h.role === "roam" || h.role === "attack");
     if (out.length < roamCap(n) && hive.res >= HORDE_SIZES.medium.cost && !(hive.res < BOSS_SAVE && hive.saving) && freeNear(state, hive.tile) < FREE_MAX && freeAll(state) < freeBudget(state)) {
-      const h = buy(state, hive, rng.chance(0.55) ? biggest(hive.res) : "medium", { tile: outside(state, hive), role: "roam" });
-      // Attacks grow more likely as the year goes on: 3% of new hordes at the start, 30% from about day 160.
-      if (h && (hive.bossReady || rng.chance(Math.min(0.3, 0.03 + d / 600)))) sendAttack(state, hive, h);
+      // Large ones only from LARGE_DAY: the first hordes at your gates are ones the starting walls can hold.
+      const h = buy(state, hive, rng.chance(0.55) && d >= HIVE.LARGE_DAY ? biggest(hive.res) : "medium", { tile: outside(state, hive), role: "roam" });
+      // Attacks grow more likely over the first two months: 20% of new hordes at the start, 65% from about day 70 (HIVE.ATTACK_*).
+      if (h && (hive.bossReady || rng.chance(Math.min(HIVE.ATTACK_MAX, HIVE.ATTACK_START + d / HIVE.ATTACK_RAMP)))) sendAttack(state, hive, h);
     }
   }
-  // 4. A Wallbreaker for 40, once there is something to break (and one at a time per hive).
+  // 4. A Wallbreaker for 40, once there is something to break (one at a time per hive, BOSS_GAP days apart).
   const bossOut = hive.bossHorde != null && state.hordes.some((h) => h.id === hive.bossHorde && h.bosses > 0);
   if (!bossOut) hive.bossHorde = null;
-  hive.saving = !hive.bossReady && !bossOut && d >= HIVE.BOSS_DAY - 10;
-  if (!hive.bossReady && !bossOut && d >= HIVE.BOSS_DAY && hive.res >= HIVE.BOSS_COST) {
+  const due = Math.max(HIVE.BOSS_DAY, (hive.bossDay ?? -Infinity) + HIVE.BOSS_GAP);
+  hive.saving = !hive.bossReady && !bossOut && d >= due - 10;
+  if (!hive.bossReady && !bossOut && d >= due && hive.res >= HIVE.BOSS_COST) {
     hive.res -= HIVE.BOSS_COST;
     hive.bossReady = true;
+    hive.bossDay = d;
     state.hiveInfo.stats.bosses++;
   }
   // A Wallbreaker waiting at home leads the next horde the hive sends out (roamers count against the cap, so a
@@ -180,9 +187,9 @@ function attackTarget(state, hive) {
   const cands = [];
   for (const b of state.bases) {
     const dist = g.distance(hive.tile, b.tile);
-    if (dist > 30) continue;
+    if (dist > HIVE.ATTACK_RANGE) continue;
     const people = state.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === b.id).length;
-    cands.push({ tile: b.tile, baseId: b.id, w: (people * 0.5 + 3 + (b.type === "hub" ? 3 : 0)) / (1 + dist / 6) });
+    cands.push({ tile: b.tile, baseId: b.id, w: (HIVE.PLAYER_PULL * (people * 0.5 + 3 + (b.type === "hub" ? 3 : 0))) / (1 + dist / 6) });
   }
   for (const f of state.factions) {
     if (!f.alive) continue;
@@ -283,9 +290,9 @@ function siteDaily(state, site) {
     if (state.live.has(site.tile)) log(state, `The gathered dead ${placeOf(state, site.tile)} have started to build a hive.`, "danger");
   }
   if (site.started != null && masses.length) {
-    // A quarter of the gathered mass (at least 25) a day goes into the growing hive.
+    // A quarter of the gathered mass (at least 25, at most SITE_INTAKE) a day goes into the growing hive.
     const total = masses.reduce((a, h) => a + h.size, 0);
-    let take = Math.min(total, Math.max(25, Math.round(total * 0.25)), HIVE.SITE_BIOMASS - site.biomass);
+    let take = Math.min(total, Math.max(25, Math.round(total * 0.25)), HIVE.SITE_INTAKE, HIVE.SITE_BIOMASS - site.biomass);
     for (const m of masses) {
       if (take <= 0) break;
       const t = m.size - Math.min(m.size, take) < 5 ? m.size : Math.min(m.size, take);

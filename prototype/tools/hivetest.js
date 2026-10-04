@@ -1,7 +1,8 @@
 // Hives and hordes (src/sim/hives.js, hordes.js, defences.js): resource income by cluster size, horde costs and
-// sizes, no hordes and 5 resources per hive at the start, hordes moving at most 2 tiles a day, merging and
-// splitting (parts of at least 10), a new build site every 30–60 days, the 30-score / 1,000-dead rule for a new
-// hive, the Wallbreaker for 40, hordes from the border, wall hold limits by tier, a break-in turning into a battle,
+// sizes, 5–6 hives with no hordes and 5 resources each at the start, hordes moving at most 2 tiles a day, merging
+// and splitting (parts of at least 10), a new build site every 50–80 days, the 30-score / 1,000-dead rule for a new
+// hive (at most 40 a day going in), the Wallbreaker for 40 and 90 days between a hive's Wallbreakers, hordes from
+// the border, wall hold limits by tier, a held horde falling back and leaving the base be, a break-in turning into a battle,
 // infection fading after a hive dies, the win condition, determinism, and 365-day runs without NaN. Then the two
 // battles calibrated: storming a hive (well-armed vs poorly armed team) and break-ins at the hub by horde size.
 // Usage: node tools/hivetest.js [trials=24]
@@ -11,8 +12,8 @@ import {
   ensureHives, hiveIncome, hivesDaily, hiveTracker, destroyHive, deliverToSite, hiveForce, assaultHive, zombieToughness, hiveDanger,
 } from "../src/sim/hives.js";
 import { HIVE } from "../src/sim/hiveconst.js";
-import { HORDE_SIZES, hordeScore, makeHorde, splitHorde, mergeHordes, hordesHour, SPLIT_MIN, HORDE_MAX_SIZE } from "../src/sim/hordes.js";
-import { holdLimit, holdCheck, hordeAttackBase, spikeKill, breakInForce } from "../src/sim/defences.js";
+import { HORDE_SIZES, hordeScore, makeHorde, splitHorde, mergeHordes, hordesHour, hordesDaily, SPLIT_MIN, HORDE_MAX_SIZE } from "../src/sim/hordes.js";
+import { holdLimit, holdCheck, hordeAttackBase, spikeKill, breakInForce, DEFENCE } from "../src/sim/defences.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 
@@ -25,11 +26,13 @@ const runDays = (st, days, fed = true) => { const end = st.hour + days * 24; whi
 const land = (st, id) => st.tiles[id].terrain !== "water" || st.tiles[id].bridge;
 const t0 = Date.now();
 
-// 1. Start: hives with 5 resources each, no hordes; income by cluster size.
+// 1. Start: 5–6 hives with 5 resources each, no hordes; income by cluster size.
 {
   console.log("Start and income");
   const st = world();
-  check(st.hives.length >= 6 && st.hives.every((h) => h.res === HIVE.START_RES), `${st.hives.length} hives at the start, each with ${HIVE.START_RES} resources`);
+  const counts = [42, 1, 2, 3, 4, 5, 6, 7].map((seed) => world(seed).hives.length);
+  check(st.hives.every((h) => h.res === HIVE.START_RES) && counts.every((n) => n >= HIVE.START_ORIGIN + HIVE.START_SPOT && n <= HIVE.START_ORIGIN + 2 * HIVE.START_SPOT),
+    `${st.hives.length} hives at the start, each with ${HIVE.START_RES} resources (8 seeds: ${counts.join(", ")}; ${HIVE.START_ORIGIN} at the origin, ${HIVE.START_SPOT} per other hot spot)`);
   check(st.hordes.length === 0, "no hordes exist when the game starts");
   check([1, 2, 3, 4, 5, 6, 9].map(hiveIncome).join(",") === "1,3,6,8,10,12,12", `income per hive by cluster size 1..6, 9: ${[1, 2, 3, 4, 5, 6, 9].map(hiveIncome).join(", ")}`);
   // A lone hive and a pair 3 tiles apart, everything else removed.
@@ -71,6 +74,18 @@ const t0 = Date.now();
   check(s3.hiveInfo.stats.bosses >= 1, `a hive with 40+ spare resources after day ${HIVE.BOSS_DAY} makes a Wallbreaker (${s3.hiveInfo.stats.bosses} made)`);
   const led = s3.hordes.find((h) => h.bosses > 0);
   check(!!led && led.role === "attack" && !!led.goal, `the Wallbreaker leads a horde out to attack (${led ? `${led.size} heading for tile ${led.goal.tile}` : "none"})`);
+  // The next one waits BOSS_GAP days, even with the first one gone and resources to spare.
+  if (led) s3.hordes.splice(s3.hordes.indexOf(led), 1);
+  const made = s3.hiveInfo.stats.bosses;
+  b.res = 80;
+  s3.hour += (HIVE.BOSS_GAP - 1) * 24;
+  hivesDaily(s3);
+  const early = s3.hiveInfo.stats.bosses - made;
+  for (const h of [...s3.hordes]) if (h.bosses) s3.hordes.splice(s3.hordes.indexOf(h), 1);
+  b.res = 80;
+  s3.hour += 2 * 24;
+  hivesDaily(s3);
+  check(early === 0 && s3.hiveInfo.stats.bosses - made >= 1, `a hive raises its next Wallbreaker only ${HIVE.BOSS_GAP} days after the last (day ${HIVE.BOSS_GAP - 1} after: ${early}, after ${HIVE.BOSS_GAP + 1}: ${s3.hiveInfo.stats.bosses - made - early})`);
 }
 
 // 3. Movement (at most 2 tiles a day), merging, splitting.
@@ -106,21 +121,24 @@ const t0 = Date.now();
   void big1; void big2;
 }
 
-// 4. Build sites: every 30–60 days, 30 score to start, 1,000 dead to finish.
+// 4. Build sites: every 50–80 days, 30 score to start, 1,000 dead to finish at most 40 a day.
 {
   console.log("New hives");
   const st = world(3);
   const picks = [];
   let seen = new Set();
-  const end = 220 * 24;
-  while (st.hour < end && !st.gameOver) {
-    tickHour(st);
-    if (st.hour % 24 === 0) feed(st);
+  const end = 260 * 24;
+  // Only the hives and hordes run (no colony to fall and stop the clock).
+  while (st.hour < end) {
+    st.hour++;
+    hordesHour(st);
+    if (st.hour % 24 === 0) hordesDaily(st);
     for (const s of st.hiveSites) if (!seen.has(s.id)) { seen.add(s.id); picks.push(day(st)); }
   }
   const gaps = picks.slice(1).map((d, i) => d - picks[i]);
-  check(picks.length >= 3 && picks[0] >= 30 && picks[0] <= 61 && gaps.every((x) => x >= 30 && x <= 61), `build sites picked on days ${picks.join(", ")} (gaps ${gaps.join(", ")})`);
-  check(st.hiveInfo.stats.built >= 1, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day 220, ${st.hives.length} standing)`);
+  const [lo, hi] = HIVE.SITE_DAYS;
+  check(picks.length >= 3 && picks[0] >= lo && picks[0] <= hi + 1 && gaps.every((x) => x >= lo && x <= hi + 1), `build sites picked on days ${picks.join(", ")} (gaps ${gaps.join(", ")}; ${lo}–${hi} apart)`);
+  check(st.hiveInfo.stats.built >= 1, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day 260, ${st.hives.length} standing)`);
   // The rule by hand.
   const s2 = world(4);
   const hv = s2.hives[0];
@@ -137,8 +155,11 @@ const t0 = Date.now();
   mergeHordes(s2);
   hivesDaily(s2);
   check(site.started != null && site.biomass > 0, `a second one takes the score to ${site.score} (30+): building starts (${site.biomass} dead in after a day)`);
+  check(site.biomass <= HIVE.SITE_INTAKE, `at most ${HIVE.SITE_INTAKE} of the dead go in a day (${site.biomass} with ~300 gathered)`);
   const before = s2.hives.length;
-  for (let i = 0; i < 40 && s2.hiveSites.includes(site); i++) { if (!s2.hordes.some((h) => h.role === "mass" && h.site === site.id)) deliver(120); mergeHordes(s2); hivesDaily(s2); }
+  let grew = 1;
+  for (let i = 0; i < 60 && s2.hiveSites.includes(site); i++) { if (!s2.hordes.some((h) => h.role === "mass" && h.site === site.id)) deliver(120); mergeHordes(s2); hivesDaily(s2); grew++; }
+  check(grew >= Math.ceil(HIVE.SITE_BIOMASS / HIVE.SITE_INTAKE), `the hive takes ${grew} days to grow once building starts (at least ${Math.ceil(HIVE.SITE_BIOMASS / HIVE.SITE_INTAKE)}): time to strike`);
   check(!s2.hiveSites.includes(site) && s2.hives.length === before + 1 && s2.tiles[tile].hive, `the hive stands once 1,000 of the dead have gone into it (${s2.hives.length} hives)`);
   check(site.biomass >= HIVE.SITE_BIOMASS, `biomass at completion: ${site.biomass}`);
 }
@@ -178,6 +199,8 @@ const t0 = Date.now();
   const small = makeHorde(st, { tile: h.tile, size: 60, role: "attack" });
   hordeAttackBase(st, small, h);
   check(stats.held === 1 && stats.breakIns === 0, "a horde of 60 against walls that stop ~300 is beaten off at the walls");
+  check(st.hordes.includes(small) && small.role === "roam" && st.grid.distance(small.target, h.tile) === DEFENCE.RETREAT_TILES && small.shun && small.shun.tile === h.tile,
+    `it falls back ${DEFENCE.RETREAT_TILES} tiles and leaves the base be for ${DEFENCE.SHUN_DAYS} days (heading for a tile ${st.grid.distance(small.target, h.tile)} out)`);
   const people = alive(st).length;
   const big = makeHorde(st, { tile: h.tile, size: 600, role: "attack", bosses: 1 });
   hordeAttackBase(st, big, h);

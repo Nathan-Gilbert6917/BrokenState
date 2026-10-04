@@ -220,7 +220,7 @@ export function hordesDaily(state) {
     let best = null;
     for (const b of state.bases) {
       const dist = g.distance(h.tile, b.tile);
-      if (dist > 8) continue;
+      if (dist > 8 || (h.shun && h.shun.tile === b.tile && state.hour < h.shun.until)) continue; // beaten off there lately (defences.js retreat)
       const score = baseHeat(state, b) / (1 + dist * 0.35);
       if (!best || score > best.score) best = { tile: b.tile, score };
     }

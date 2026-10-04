@@ -29,6 +29,7 @@ export const DEFENCE = {
   BARRICADE: 0.12, TRENCH: 0.25, GATE: 0.2, FLOOD: 0.1, FLOOD_FUEL: 2,
   SPIKE_FRAC: 0.07, SPIKE_FLAT: 4, BOSS: [1, 0.6, 0.35], HELD_BACK: 0.5,
   BREAK_BASE: 1.5, BREAK_DIV: 5, // the dead that break in: power 1.5 + (how many) / (5 × units on the map), at most 6
+  RETREAT_TILES: 4, RETREAT_HOURS: 48, SHUN_DAYS: 10, // a horde beaten off falls back this far, this long, and leaves the base alone this many days
 };
 
 // ---------- the hold limit ----------
@@ -133,14 +134,19 @@ export function breakInForce(state, base, through, bosses = 0) {
   return { count: n, power: Math.round(power * 10) / 10, bosses };
 }
 
-// The horde backs off after a fight and stays away from that base for two days.
+// The horde backs off after a fight: it falls back RETREAT_TILES from the base (on its own side) for
+// RETREAT_HOURS, and is not drawn back to that base for SHUN_DAYS (hordes.js hordesDaily).
 function retreat(state, h, base) {
   h.busy = false;
   if (h.role === "attack") { h.role = "roam"; h.goal = null; }
-  h.lureUntil = state.hour + 48;
+  h.lureUntil = state.hour + DEFENCE.RETREAT_HOURS;
+  if (DEFENCE.SHUN_DAYS) h.shun = { tile: base.tile, until: state.hour + DEFENCE.SHUN_DAYS * 24 };
   h.warned = false; // if it turns back for a base later, the lookouts warn again (as after a decoy fire)
   const g = state.grid;
-  h.target = g.neighbors(h.tile).sort((a, b) => g.distance(b, base.tile) - g.distance(a, base.tile))[0] ?? null;
+  const land = (id) => state.tiles[id].terrain !== "water" || state.tiles[id].bridge;
+  const ring = DEFENCE.RETREAT_TILES > 1 ? g.within(base.tile, DEFENCE.RETREAT_TILES).filter((id) => g.distance(id, base.tile) === DEFENCE.RETREAT_TILES && land(id)) : [];
+  h.target = ring.length ? ring.reduce((a, b) => (g.distance(b, h.tile) < g.distance(a, h.tile) ? b : a))
+    : g.neighbors(h.tile).sort((a, b) => g.distance(b, base.tile) - g.distance(a, base.tile))[0] ?? null;
 }
 
 // A Wallbreaker's work: one defence per boss.
