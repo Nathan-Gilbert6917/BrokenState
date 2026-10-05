@@ -37,7 +37,8 @@ import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
-import { allianceVictory } from "./alliance.js";
+import { allianceVictory, controlledLand } from "./alliance.js";
+import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour } from "./discovery.js";
@@ -388,28 +389,33 @@ export function ensureLeader(state) {
 
 // The run ends when nobody is left alive: deaths, desertion and a captive changing sides all count (captives
 // still count as alive). Called after every way of losing someone, and once at the end of each hour.
-// The survivors win when every hive is destroyed and no new one is being built (hives.js hivesSecured); after
-// "Keep playing" on the victory screen (state.victoryKept) the run goes on until the last survivor is gone.
+// Two ways to win, each once: the hive victory (every hive destroyed and no new one being built: hives.js
+// hivesSecured) and the coalition's victory (alliance.js allianceVictory: over half the land, every group still
+// standing in the coalition). The first one ends the run with its screen; after "Keep playing" (state.victoryKept)
+// the other can still come, with its own screen. Both at once: the coalition's is named.
 export function checkGameOver(state) {
   if (state.gameOver) return true;
-  if (!state.victoryKept && alive(state).length && hivesSecured(state)) {
-    state.gameOver = true;
-    state.victory = true;
-    // alliance.js: with the coalition holding over half the land and every group left in it, the hives' end is
-    // also the coalition's victory (the screen and the timelapse say so).
-    if (allianceVictory(state)) return coalitionWins(state);
-    state.victoryReason = "hives";
-    // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
-    log(state, `Every hive is destroyed. The State of Calder is not safe, but it is yours to win back. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
-    return true;
+  if (alive(state).length) {
+    // Older saves: a hive victory kept playing before the flags existed; the old coalition victory included the hives.
+    const hivesDone = state.hivesWon || (state.victoryKept && state.hivesWon === undefined && (state.victoryReason === "hives" || state.allianceWon));
+    if (!state.allianceWon && allianceVictory(state)) {
+      state.gameOver = true;
+      state.victory = true;
+      state.hivesWon = !!(hivesDone || hivesSecured(state)); // both at once: one screen, the coalition's
+      return coalitionWins(state);
+    }
+    if (!hivesDone && hivesSecured(state)) {
+      state.gameOver = true;
+      state.victory = true;
+      state.hivesWon = true;
+      state.victoryReason = "hives";
+      // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
+      log(state, `Every hive is destroyed. The State of Calder is not safe, but it is yours to win back. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+      return true;
+    }
+    return false;
   }
-  // After "Keep playing" on the hive victory, the coalition can still win the state (once).
-  if (state.victoryKept && !state.allianceWon && alive(state).length && allianceVictory(state)) {
-    state.gameOver = true;
-    state.victory = true;
-    return coalitionWins(state);
-  }
-  if (!state.survivors.length || alive(state).length) return false;
+  if (!state.survivors.length) return false;
   state.gameOver = true;
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
   const allDead = state.survivors.every((s) => !s.left);
@@ -420,8 +426,10 @@ export function checkGameOver(state) {
 function coalitionWins(state) {
   state.victoryReason = "alliance";
   state.allianceWon = true;
+  const members = state.alliance ? state.alliance.members.length : 0;
+  const pct = Math.round(controlledLand(state).pct * 100);
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
-  log(state, `The Calder Coalition holds the State of Calder: more than half the land, every group left standing in the alliance, and no hive left. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+  log(state, `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members ? `every group left standing is in the alliance (${members})` : "no group is left standing against you"}. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
   return true;
 }
 
@@ -575,6 +583,7 @@ export function tickHour(state) {
     deathSitesDaily(state);
     captivesDaily(state);
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
+    conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects

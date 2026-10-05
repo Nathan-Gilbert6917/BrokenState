@@ -34,7 +34,7 @@
 // RUMOUR.days days; a survey whose centre lies in it gets ×3 odds for that place. Found, it is struck off; nothing
 // here uses the world's random numbers (hash01), so rumours shift no other result.
 import { TERRAIN, LOCATIONS } from "./data.js";
-import { log, snapshot, hub, day, skill } from "./world.js";
+import { log, snapshot, hub, day, skill, atBase } from "./world.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, moveCost, leaveVehicle, fuelMultOf, sightRadius,
   awaitOrders, launchExpedition, orderMove,
@@ -65,6 +65,7 @@ export const SURVEY = {
   weather: { fog: 0.5, blizzard: 0.4, storm: 0.55, rain: 0.85, snow: 0.8 },
   rumour: 3,
   hive: 0.03, hiveRing: 0.08,
+  auto: { spare: 3, home: 7, every: 8, everyRumour: 4 }, // the autopilot's surveys (surveyCandidate)
   finds: 0.1, // + the look-around bonus for tile.hidden finds (markers.js perceive)
 };
 export const RUMOUR = { days: 20, radius: 3, max: 3, reach: 30, radio: 0.05, visitors: 0.15, news: 0.5, groupNews: 0.35 };
@@ -502,10 +503,10 @@ export function surveyTarget(state, base, { range = 10, minUnknown = 8, radius =
 export function surveyCandidate(state, spareHands) {
   if (state.surveyOff) return null; // test switch (tools/surveytest.js: the autopilot without surveys)
   const h = hub(state);
-  if (!h || spareHands < 2) return null;
-  const info = state.surveyInfo || (state.surveyInfo = { lastAuto: -99 });
+  // Two scouts go and at least one spare pair of hands stays (the hub's building and farming come first).
+  if (!h || spareHands < SURVEY.auto.spare || atBase(state, h.id).length < SURVEY.auto.home) return null;  const info = state.surveyInfo || (state.surveyInfo = { lastAuto: -99 });
   const rumour = rumoursOf(state).length > 0;
-  if (day(state) - info.lastAuto < (rumour ? 3 : 6)) return null;
+  if (day(state) - info.lastAuto < (rumour ? SURVEY.auto.everyRumour : SURVEY.auto.every)) return null;
   if (state.parties.some((p) => p.owner === "player" && (p.teamMission || p.mission) === "sweep")) return null; // one survey team at a time
   const t = surveyTarget(state, h, { range: 10 });
   if (!t) return null;

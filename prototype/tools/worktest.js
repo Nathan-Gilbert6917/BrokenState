@@ -12,7 +12,13 @@
 // come-home rule, the search, the trip log, the map tag); the Work tab's HTML and actions; then N days with the
 // Balanced autopilot where everyone works by priorities next to the same seeds with the governor's own roles
 // (food harvested, buildings and crafts finished), no NaN, and determinism (two worlds in one process).
-// Usage: node tools/worktest.js [days] [seeds...]
+// One 120-day run per seed is a coin toss: nudging the world's dice by a single draw moves the governor's
+// ten-seed total by ±30 buildings. So each seed is played with DICE variants of the dice (the world's random
+// numbers advanced 0, 1, 2 … draws before day 1), both ways, in parallel child processes, and the totals compared.
+// Usage: node tools/worktest.js [days] [seeds...] [--dice N]   (seeds 1–10, 4 dice variants by default)
+import { spawn } from "node:child_process";
+import { cpus } from "node:os";
+import { fileURLToPath } from "node:url";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, day, alive } from "../src/sim/world.js";
 import { addBuilding, stations, RECIPES } from "../src/sim/buildings.js";
 import { hospitalDef } from "../src/sim/medical.js";
@@ -32,12 +38,24 @@ import { workTab, WORK_ACTIONS, WORK_CHANGE, workKey, roleSelect, applyRoleChoic
 import { rosterModal, setRole } from "../src/ui/roster.js";
 import { readFileSync } from "node:fs";
 
-const longDays = Number(process.argv[2] || 120);
-const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+// --pair seed dice days priorities(0/1): one comparison run, printed as JSON (the parent's children).
+const PAIR = process.argv[2] === "--pair";
+const args = process.argv.slice(2);
+const diceAt = args.indexOf("--dice");
+const DICE = diceAt >= 0 ? Math.max(1, Number(args[diceAt + 1]) || 1) : 4;
+const plainArgs = diceAt >= 0 ? args.filter((_, i) => i !== diceAt && i !== diceAt + 1) : args;
+const longDays = PAIR ? Number(args[3]) : Number(plainArgs[0] || 120);
+const seeds = !PAIR && plainArgs.length > 1 ? plainArgs.slice(1).map(Number) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
 const { planBase, workState, assignRole, setCell, setRoleCell, cellOf, prio, taskLabel, taskWhy, WORK_KEYS } = Work;
+if (PAIR) {
+  const r = run(Number(args[1]), args[4] === "1", Number(args[2]));
+  delete r.st;
+  console.log(JSON.stringify(r));
+  process.exit(0);
+}
 
 // A quiet hub of n plain, healthy, content people with plenty of everything; roles cleared.
 function quiet(seed = 42, n = 6) {
@@ -514,10 +532,14 @@ function nanFree(st) {
   for (const s of alive(st)) if (!Number.isFinite(s.health) || !Number.isFinite(s.mood)) return `${s.name}`;
   return "";
 }
-function run(seed, priorities) {
+function run(seed, priorities, dice = 0) {
   const st = createWorld({ seed, factionCount: 8 });
   st.started = true;
+  for (let i = 0; i < dice; i++) st.rng.next(); // another roll of the same world
   setAutopilot(st, true, "balanced");
+  // The governor's survey trips (survey.js) are off for this comparison: they are extra trips taken with spare hands
+  // and only add noise to a measure of who works at home (with them priorities finish ~1.5% fewer buildings).
+  st.surveyOff = true;
   if (priorities) {
     st.governor.priorityRoles = true;
     workState(st);
@@ -533,16 +555,39 @@ function run(seed, priorities) {
   const managed = priorities ? alive(st).filter((s) => Work.isManaged(st, s)).length : 0;
   return { food: Math.round(econStats(st).harvested), builds: w.out.builds, crafts: w.out.crafts, pop: alive(st).length, day: day(st), bad, managed, st };
 }
+// Every (seed, dice, way) in a child process of its own, as many at once as there are cores.
+const self = fileURLToPath(import.meta.url);
+const runChild = (seed, dice, pri) => new Promise((resolve) => {
+  const ch = spawn(process.execPath, [self, "--pair", String(seed), String(dice), String(longDays), pri ? "1" : "0"], { stdio: ["ignore", "pipe", "pipe"] });
+  let out = "", err = "";
+  ch.stdout.on("data", (d) => { out += d; });
+  ch.stderr.on("data", (d) => { err += d; });
+  ch.on("close", (code) => {
+    try { resolve(JSON.parse(out.trim().split(/\r?\n/).pop())); } catch { resolve({ bad: `crashed (exit ${code}): ${err.slice(0, 300)}`, food: 0, builds: 0, crafts: 0, pop: 0, day: 0, managed: 0 }); }
+  });
+});
+const jobs = [];
+for (const seed of seeds) for (let dice = 0; dice < DICE; dice++) for (const pri of [false, true]) jobs.push({ seed, dice, pri });
+const results = new Map();
+let next = 0;
+await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, cpus().length - 1)) }, async () => {
+  while (next < jobs.length) {
+    const j = jobs[next++];
+    results.set(`${j.seed}|${j.dice}|${j.pri}`, await runChild(j.seed, j.dice, j.pri));
+  }
+}));
 const sum = { gov: { food: 0, builds: 0, crafts: 0 }, pri: { food: 0, builds: 0, crafts: 0 } };
 for (const seed of seeds) {
-  const a = run(seed, false);
-  const b = run(seed, true);
-  for (const k of ["food", "builds", "crafts"]) { sum.gov[k] += a[k]; sum.pri[k] += b[k]; }
-  console.log(`  seed ${seed}: governor food ${a.food}, builds ${a.builds}, crafts ${a.crafts}, people ${a.pop} (day ${a.day}) | priorities food ${b.food}, builds ${b.builds}, crafts ${b.crafts}, people ${b.pop} (day ${b.day}, ${b.managed} on priorities)`);
-  check(!a.bad && !b.bad, `seed ${seed}: no NaN or negative stock (${a.bad || b.bad})`);
-  check(b.managed > 0 || b.pop === 0, `seed ${seed}: people stayed on priorities`);
+  const g = { food: 0, builds: 0, crafts: 0 }, p = { food: 0, builds: 0, crafts: 0 };
+  for (let dice = 0; dice < DICE; dice++) {
+    const a = results.get(`${seed}|${dice}|false`), b = results.get(`${seed}|${dice}|true`);
+    for (const k of ["food", "builds", "crafts"]) { g[k] += a[k]; p[k] += b[k]; sum.gov[k] += a[k]; sum.pri[k] += b[k]; }
+    check(!a.bad && !b.bad, `seed ${seed} dice ${dice}: no NaN, negative stock or crash (${a.bad || b.bad})`);
+    check(b.managed > 0 || b.pop === 0, `seed ${seed} dice ${dice}: people stayed on priorities`);
+  }
+  console.log(`  seed ${seed} (${DICE} rolls): governor food ${g.food}, builds ${g.builds}, crafts ${g.crafts} | priorities food ${p.food}, builds ${p.builds}, crafts ${p.crafts}`);
 }
-console.log(`  total: governor food ${sum.gov.food}, builds ${sum.gov.builds}, crafts ${sum.gov.crafts} | priorities food ${sum.pri.food}, builds ${sum.pri.builds}, crafts ${sum.pri.crafts}`);
+console.log(`  total over ${seeds.length} seeds × ${DICE} rolls: governor food ${sum.gov.food}, builds ${sum.gov.builds}, crafts ${sum.gov.crafts} | priorities food ${sum.pri.food}, builds ${sum.pri.builds}, crafts ${sum.pri.crafts}`);
 check(sum.pri.food >= sum.gov.food, `priorities harvest at least as much food (${sum.pri.food} vs ${sum.gov.food})`);
 check(sum.pri.builds >= sum.gov.builds, `priorities finish at least as many buildings (${sum.pri.builds} vs ${sum.gov.builds})`);
 check(sum.pri.crafts >= sum.gov.crafts, `priorities finish at least as many crafts (${sum.pri.crafts} vs ${sum.gov.crafts})`);

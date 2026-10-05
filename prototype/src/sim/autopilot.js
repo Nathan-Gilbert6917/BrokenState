@@ -16,7 +16,7 @@ import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, skill, combatPower, gearEffect, factionById, snapshot } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
-  hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards,
+  hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
   STANCES, paceOpts, modeSpeed, partyPace,
 } from "./parties.js";
 import { startOrder, resumeQueue } from "./orders.js";
@@ -47,11 +47,16 @@ import { planBlueprintStudy } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
-import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance } from "./alliance.js";
+import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius } from "./alliance.js";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, broodForce } from "./hives.js";
+import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
 import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
+import {
+  HUNT, CABIN, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkCap,
+  cabinProblem, gameLand, hasFishingGear,
+} from "./hunting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent } from "./survey.js";
@@ -62,6 +67,10 @@ import { autoTreats } from "./comforts.js";
 // lossFear / fightBias / raidBias weigh fights on conflict cards, chain = extra sites a team may hit on one trip.
 // hiveFrom = first day it storms hives, hiveOdds = squad power over the brood's strength it wants (hiveCandidate),
 // hiveFires = fires it may set around a mound first, hiveRest = days between hive missions.
+// conquer = which groups' bases it storms (conquestCandidate: "ready" any hostile group, "provoked" hostile groups
+// that raided it lately or when only hostile groups keep the coalition from winning, "last" only then), from day
+// conquerFrom, with at least conquerOdds to win; retreatBelow = the defence ratio under which it abandons an outpost
+// to a raid rather than be overrun (raidWarningChoice).
 // reserves = keeps every supply at a target (reserveStatus) and acts as soon as one drops below it: shortCooldown
 // days between trips, shortReach = how much farther a trip may go for it, homeHorde = people kept home while
 // hordes are near.
@@ -74,6 +83,7 @@ export const PERSONALITIES = {
     holdRatio: 1.5, raid: false, rescue: false, tradeEvery: 14,
     reserves: true, shortCooldown: 2, shortReach: 2, homeHorde: 5,
     hiveFrom: 150, hiveOdds: 1.35, hiveFires: 3, hiveRest: 10,
+    conquer: "last", conquerFrom: 240, conquerOdds: 0.8, retreatBelow: 0.9,
   },
   balanced: {
     name: "Balanced", crowdSlack: 2, desc: "Up to two teams out, scavenges what the hub needs, fights only good odds, grows with an outpost or two.",
@@ -82,6 +92,7 @@ export const PERSONALITIES = {
     curious: 1, baseGuards: 1, guardMargin: 1.25, restMood: 28, chain: 1, outposts: 2, outpostPop: 9, strangerDays: 4,
     holdRatio: 1.25, raid: false, rescue: true, tradeEvery: 12,
     hiveFrom: 90, hiveOdds: 1.2, hiveFires: 3, hiveRest: 6,
+    conquer: "provoked", conquerFrom: 150, conquerOdds: 0.75, retreatBelow: 0.8,
   },
   aggressive: {
     name: "Aggressive", crowdSlack: 8, desc: "Many long trips, loud searches, raids hostile land, ambushes camps and robbers, expands fast.",
@@ -90,6 +101,7 @@ export const PERSONALITIES = {
     curious: 1.4, baseGuards: 1, guardMargin: 1.1, restMood: 22, chain: 2, outposts: 3, outpostPop: 8, strangerDays: 3,
     holdRatio: 1.2, raid: true, rescue: true, tradeEvery: 0,
     hiveFrom: 30, hiveOdds: 1.05, hiveFires: 3, hiveRest: 4,
+    conquer: "ready", conquerFrom: 60, conquerOdds: 0.65, retreatBelow: 0.6,
   },
 };
 
@@ -127,7 +139,7 @@ export function setAutopilot(state, on, personality) {
   if (on) {
     g.savedAutoCombat = !!state.autoCombat;
     state.autoCombat = true; // battles resolve by the numbers; scavenging uses the hour-by-hour search
-    say(state, `Autopilot on (${persona(state).name}). The governor runs ${hub(state).name} until you take over.`);
+    say(state, `Autopilot on (${persona(state).name}). The governor runs ${hub(state) ? hub(state).name : "the survivors"} until you take over.`);
     autopilotResolve(state);
   } else {
     state.autoCombat = !!g.savedAutoCombat;
@@ -156,9 +168,14 @@ export const autopilotStats = (state) => ({ ...gov(state).stats });
 // ---------- entry points ----------
 // Hourly, from world.js tickHour (after everything else in the hour).
 export function autopilotHour(state) {
-  if (!state.autopilot || state.gameOver || !state.bases.length) return;
+  if (!state.autopilot || state.gameOver) return;
   const g = gov(state);
   if (g.busy) return; // a tick inside the governor's own work (a raid's hours, for example)
+  if (!state.bases.length) { // no base left (conquest.js exiles): the team on the road founds or retakes one
+    g.busy = true;
+    try { state.autoCombat = true; resolvePending(state); idleTeams(state); resolvePending(state); } catch (e) { fail(state, e); } finally { g.busy = false; }
+    return;
+  }
   g.busy = true;
   try {
     g.stats.hours++;
@@ -360,6 +377,8 @@ function pickChoice(state, card, opts, p) {
   if (card.kind === "conflict") return bestByUtility(state, card, opts, P);
   // Newcomers (recruits.js) by the bed / food / water rule; hub events and morale warnings (hubevents.js, morale.js)
   // by the score each choice carries.
+  // Fighters who gave up a base you took (conquest.js): to the hub, not the base they lost.
+  if (card.recruit && card.recruit.source === "conquest") { const h = hub(state); const n = card.recruit.candidates.filter((s) => s.pending).length || 1; return (h && roomFor(state, n) ? opts.find((c) => c.kind === "send" && c.sendTo === h.id) : null) || opts.find((c) => c.kind === "away") || null; }
   if (card.recruit) return autoRecruitPick(state, card, opts, (k) => roomFor(state, k));
   // A group asks you to storm a hive (jobs.js): yes when the war on the hives would take it on.
   if (card.jobId != null) {
@@ -415,6 +434,8 @@ function pickChoice(state, card, opts, p) {
   if (/^A hive/.test(t)) return find(/^Mark it/) || opts[opts.length - 1];
   // Storming a hive: only with the squad it was sent with (most of it still standing and healthy), by the odds.
   if (/^The hive: /.test(t)) return hiveChoice(state, card, opts, p, find);
+  // Assaulting a group's base (conquest.js): storm when the odds the card shows are good enough for the style.
+  if (card.assault) return assaultChoice(state, card, opts, p, find);
   // A horde coming for a base (defences.js): a decoy fire when the defences would not hold and no Wallbreaker
   // leads it, else man the defences.
   if (/^Horde heading for /.test(t)) {
@@ -439,6 +460,7 @@ function pickChoice(state, card, opts, p) {
 
 // Beds for k more people: built, queued, or one more bunkhouse a base can still get (plus the style's slack).
 function roomFor(state, k) {
+  if (!hub(state)) return false; // no base left (conquest.js exiles): no room for anyone
   const people = alive(state).filter((s) => s.location.kind !== "captive").length;
   let beds = 0;
   for (const b of state.bases) {
@@ -577,6 +599,7 @@ function utility(ch, P) {
 // stolen stock, wrecked buildings, wounds): Cautious pays when the tribute is under 1.4× that, Balanced under 1×,
 // Aggressive under 0.6× (and it fights in person first when the odds are poor).
 const TRIBUTE_LEAN = { Cautious: 1.4, Balanced: 1, Aggressive: 0.6 };
+const RAID_BREAK = 0.8; // factions.js RAIDS.BREAK: below it a raid overruns the base
 function raidWarningChoice(state, card, opts, P) {
   const find = (re) => opts.find((c) => re.test(c.label));
   const base = state.bases.find((b) => card.title === `Raiders heading for ${b.name}`);
@@ -586,6 +609,12 @@ function raidWarningChoice(state, card, opts, P) {
   const stakes = raidStakes(state, base, raid);
   if (stakes.ratio >= P.holdRatio) return find(/^Prepare/);
   const pay = stakes.tribute < stakes.fight * (TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
+  // Retreat (conquest.js) when the base would be overrun anyway and the tribute cannot be paid: an outpost below the
+  // style's retreatBelow, the hub only when it is hopeless (a quarter of what it takes) and another base can take
+  // everyone in; never the last base.
+  const away = opts.find((c) => c.retreat);
+  const other = nearestOtherBase(state, base);
+  if (away && other && !pay && (base.type === "outpost" ? stakes.ratio < P.retreatBelow : stakes.ratio < 0.25)) return away;
   if (P.raid) return (stakes.ratio >= 0.9 ? find(/^Prepare/) : null) || find(/^Defend in person/) || pay || find(/^Prepare/);
   return pay || find(/^Prepare/);
 }
@@ -598,6 +627,7 @@ function teamAct(state, p) {
   if (!state.parties.includes(p) || p.phase !== "waiting") return;
   const P = persona(state);
   const home = state.bases.find((b) => b.id === p.homeBaseId) || hub(state);
+  if (!home) return exileAct(state, p);
   if (p.apCutOff && !planPath(state, partyTile(p), home.tile, false)) return; // across water: waits for you
   // Waiting at a site another team was searching (only one search runs at a time).
   if (p.apResume === "scavenge") {
@@ -779,7 +809,8 @@ function shouldExtract(state, p, e) {
 // ---------- trade visits ----------
 function handleTrade(state) {
   const ctx = tradeContext(state);
-  if (!ctx) {
+  if (!ctx || !hub(state)) { // no base left (conquest.js exiles): nothing to trade for
+    if (ctx && ctx.p && state.trade) { try { endTrade(state); } catch (e) { /* closed below */ } }
     state.trade = null;
     return;
   }
@@ -1032,7 +1063,7 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
-const ROLE_AREA = { farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { hunt: "food", fish: "food", farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1086,6 +1117,14 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   };
   if (foodDays < 4) farmTo(fw.ideal);
+  // 2b. Food from the land (hunting.js): a hunting cabin's hunters (two at 8+ people) and a fisher by the water while
+  // food is not plentiful. A hunter at a cabin in good game country brings in several farmers' worth (if it has a
+  // weapon), so they go before the comfortable farm crew and the stations.
+  if (areas.food && !gov(state).noHunting && foodDays < Math.max(40, foodTarget(state, base) * 1.5)) {
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, people.length >= 8 ? CABIN.hunters : 1)) give(s, "hunt");
+    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(people.length >= 8 ? 2 : 1, fishWorkCap(state, base)))) give(s, "fish");
+  }
+
   // The winter stores fall short (winterShort): the plots get their tenders before builders, medics and stations.
   if (winterShort(state, base) > 0) farmTo(fw.need);
 
@@ -1286,7 +1325,7 @@ function roleSummaries(state) {
 const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
-  farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
+  huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
 };
 function planBuilds(state, base, areas = ALL_AREAS) {
@@ -1342,6 +1381,9 @@ function buildWishes(state, base) {
   if ((st.water || 0) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && count(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max) add("cistern", "room to store more water");
   if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : 3)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
+  // A hunting cabin (hunting.js) where the land around is good game country, before the winter or while food is short.
+  if (BUILDINGS.huntcabin && !g.noHunting && !count(base, "huntcabin") && !queued("huntcabin") && here.length >= (isHub ? 6 : 2) && !cabinProblem(state, base) && gameLand(state, base) >= 5 &&
+      (st.scrap || 0) >= 30 && (winterShort(state, base) > 0 || (winterActive(state, base) && edibleFood(base) / Math.max(1, here.length) < foodTarget(state, base))) && here.some((s) => bestHuntWeapon(s))) add("huntcabin", "hunt the game land around it for the winter");
   if (isHub && count(base, "greenhouse") + queued("greenhouse") < (pop >= 12 ? 2 : 1) && pop >= 6 && (st.parts || 0) >= 4) add("greenhouse", "something to grow through the winter", wxSeason(state).key === "autumn" || winterShort(state, base) > 0);
   if (!isHub && count(base, "farm_plot") + queued("farm_plot") < 1) add("farm_plot", "an outpost should feed itself", true);
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
@@ -1659,9 +1701,9 @@ function planTrip(state) {
 
   // Founding an outpost now and then. In the endgame (landPush: the coalition short of land with few hives left)
   // up to LAND_OUTPOSTS more, where they add the most land to the coalition.
-  const outposts = state.bases.filter((b) => b.type === "outpost").length;
+  const outposts = state.bases.filter((b) => b.type === "outpost" && !b.captured).length; // bases taken from groups (conquest.js) are not founded ones
   const push = landPush(state);
-  if (outposts < P.outposts + (push ? LAND_OUTPOSTS : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
+  if (outposts < P.outposts + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
       (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
     const site = land ? land.id : outpostSite(state);
@@ -1711,9 +1753,13 @@ function planTrip(state) {
   // The war on the hives (every style once past its hiveFrom day): a squad of six against a known hive it can beat,
   // with fires first when that is what it takes (hiveCandidate). A hive mission may take more of the hub than the
   // style's homeFrac (the squad is back in days), but never leaves fewer than HIVE_KEEP at home.
-  if (!out.some((p) => p.mission === "hive")) {
+  if (!out.some((p) => p.mission === "hive" || p.mission === "assault")) {
     const hc = hiveCandidate(state, home, pool);
     if (hc) cands.push(hc);
+    // Conquest (conquest.js): take back a base of yours they hold, or a hostile group's base, with a squad that
+    // has the style's odds (conquestCandidate).
+    const cc = conquestCandidate(state, home, pool);
+    if (cc) cands.push(cc);
   }
   // Scavenging: the best known sites for what the hub needs.
   // Cautious, short of something: sites that have it may be farther out (shortReach), the most dangerous (risk
@@ -1749,11 +1795,12 @@ function planTrip(state) {
     if (target && cands.includes(target)) cands.splice(cands.indexOf(target), 1); // a look first instead of going straight in
     if (target) cands.push({ ...target, mission: "recon", why: `look for ${short.filter((k) => gives(state.tiles[target.tile]) && (LOCATIONS[state.tiles[target.tile].loc.type].loot[k] || 0) >= 1).join(" and ")} (none known nearby)` });
   }
+  cands.push(...foodTripCands(state, h, pool, need, P)); // hunting and fishing trips when food runs short (hunting.js)
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
   cands.sort((a, b) => b.score - a.score);
 
   for (const c of cands.slice(0, P.reserves ? 20 : 8)) {
-    const res = launchTrip(state, c, pool, c.mission === "hive" ? HIVE_SQUAD : spareHands); // hiveCandidate checked who stays home
+    const res = launchTrip(state, c, pool, c.mission === "hive" || c.mission === "assault" ? HIVE_SQUAD : spareHands); // hiveCandidate / conquestCandidate checked who stays home
     if (!res) continue;
     if (c.outer) g.stats.farTrips = (g.stats.farTrips || 0) + 1;
     g.lastLaunch = today;
@@ -1762,7 +1809,8 @@ function planTrip(state) {
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
     if (c.envoy) { (g.lastEnvoy = g.lastEnvoy || {})[c.envoy] = today; res.apEnvoy = c.envoy; }
     if (c.mission === "hive") g.lastHive = today;
-    break;
+    if (c.mission === "assault") { g.lastAssault = today; const fx = state.factions.find((x) => x.alive && x.bases.includes(c.tile)); if (fx) g.conquestFocus = fx.id; }
+    break; // then a survey with the hands still spare (below)
   }
   // A survey (survey.js) with the hands still spare: unexplored ground near home or a rumour's circle, on top of the
   // day's trip (it does not count toward the style's teams out).
@@ -1956,6 +2004,138 @@ function hiveJobOk(state, job) {
   return squadPower(squad) / (count * (base.power / 5.2)) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
 }
 
+// ---------- conquest (conquest.js) ----------
+// The coalition wins when every group still standing is in it: the groups that will never join (hostile ones) have
+// to be broken. A squad of five or six of the best fighters (health 75+) storms a base when its combat power against
+// the defenders behind their walls gives the style's conquerOdds (the odds the assault card shows):
+// - every style takes back a base of yours a group holds (a little lower odds accepted: its walls are still broken
+//   and every day it waits they are patched up);
+// - Aggressive ("ready") goes for any hostile group from day 60; Balanced ("provoked") for hostile groups that
+//   raided it in the last 120 days, and for any hostile group once every other group still standing is in the
+//   coalition; Cautious ("last") only then, from day 240.
+// The weakest base of a group first (fewest defenders, then nearest); a group's last base is worth more (it ends
+// the group). At most one assault or hive squad out at a time, ASSAULT_REST days between assaults.
+const ASSAULT_MIN = 5, ASSAULT_HEALTH = 75, ASSAULT_AMMO = 10;
+const ASSAULT_REST = 12;
+const controlledLandPct = (state) => goalsProgress(state).alliance.land.pct;
+function conquestCandidate(state, home, pool) {
+  const P = persona(state);
+  const g = gov(state);
+  const h = hub(state);
+  const today = day(state);
+  const urgent = hubRetake(state, home, pool);
+  if (urgent) return urgent;
+  if (today - (g.lastAssault ?? -99) < ASSAULT_REST) return null;
+  if (home.length - HIVE_SQUAD < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac * 0.6))) return null;
+  const squad = [...pool].filter((s) => s.health >= ASSAULT_HEALTH && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, HIVE_SQUAD);
+  if (squad.length < ASSAULT_MIN || (h.stock.ammo || 0) < squad.length * ASSAULT_AMMO + 30) return null;
+  const power = squadValue(squad);
+  const outsiders = state.factions.filter((f) => f.alive && !isMember(state, f));
+  const onlyFoes = outsiders.length > 0 && outsiders.every((f) => attitude(f) === "Hostile");
+  const want = (f) => {
+    if (attitude(f) !== "Hostile") return false;
+    if (P.conquer === "ready") return today >= P.conquerFrom;
+    if (today < P.conquerFrom) return false;
+    if (onlyFoes) return true;
+    // Balanced: the coalition within reach (35%+ of the land): the hostile groups in its way are next.
+    if (P.conquer === "provoked" && controlledLandPct(state) >= 0.35) return true;
+    return P.conquer === "provoked" && f.raidedYou != null && today - f.raidedYou <= 120;
+  };
+  const lost = new Set(lostBases(state).map((o) => o.tile));
+  let best = null;
+  for (const [tile, f] of knownGroupBases(state)) {
+    if (!f.alive || !f.bases.includes(tile)) continue;
+    const retake = lost.has(tile);
+    if (!retake && !want(f)) continue;
+    const d = state.grid.distance(tile, h.tile);
+    if (d > Math.max(20, P.range * 2.5)) continue;
+    const force = assaultForce(state, f, tile);
+    const odds = assaultOdds(power, force);
+    if (odds < P.conquerOdds - (retake ? 0.1 : 0)) continue;
+    // One group at a time until it breaks: its main base (the leaders fall with it), the group it went for last, the
+    // group with the fewest bases.
+    const score = odds * 4 + (retake ? 3 : 0) + (f.bases.length === 1 ? 1.5 : 0) + (f.bases[0] === tile ? 1.2 : 0) + (g.conquestFocus === f.id ? 1.5 : 0) + 2 / f.bases.length - d / 10;
+    if (!best || score > best.score) best = { tile, f, odds, score, retake, force };
+  }
+  for (const o of lostBases(state)) if (!knownGroupBases(state).has(o.tile)) {
+    // A base of yours they hold is always known to you.
+    const f = factionById(state, o.factionId);
+    const force = assaultForce(state, f, o.tile);
+    const odds = assaultOdds(power, force);
+    const d = state.grid.distance(o.tile, h.tile);
+    if (odds < P.conquerOdds - 0.1 || d > Math.max(20, P.range * 2.5)) continue;
+    const score = odds * 4 + 3 - d / 10;
+    if (!best || score > best.score) best = { tile: o.tile, f, odds, score, retake: true, force };
+  }
+  if (!best) return null;
+  return { mission: "assault", tile: best.tile, score: best.retake ? 6.5 : 5.5, crew: HIVE_SQUAD, assault: true,
+    why: `${best.retake ? "take back" : `take ${best.f.name}'s base at`} ${tileLabel(state, best.tile)} (${Math.round(best.odds * 100)}% against ${best.force.count} defenders${best.f.bases.length === 1 && !best.retake ? ", their last base" : ""})`,
+    supplies: { ammo: 60, meds: 4 } };
+}
+// The old hub in their hands (every style, at once): whoever is fit enough (health 50+, at least 3, two stay home)
+// goes to take it back at 35%+ odds: its walls are at their weakest now, and the stores and the fields are there.
+function hubRetake(state, home, pool) {
+  const occ = lostBases(state).find((o) => o.wasHub);
+  if (!occ || state.parties.some((p) => p.owner === "player" && p.mission === "assault" && p.dest === occ.tile)) return null;
+  const f = factionById(state, occ.factionId);
+  const squad = [...pool].filter((s) => s.health >= 50 && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, Math.min(HIVE_SQUAD, Math.max(0, home.length - 2)));
+  if (!f || squad.length < 3) return null;
+  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile));
+  if (odds < 0.35) return null;
+  return { mission: "assault", tile: occ.tile, score: 9, crew: squad.length, assault: true, squadMin: 3, minHealth: 50,
+    why: `take back ${occ.name}, the old hub (${Math.round(odds * 100)}% against ${assaultForce(state, f, occ.tile).count} defenders)`, supplies: { ammo: 40, meds: 2 } };
+}
+// The assault card: storm with the squad it has, if the odds still hold; else back off.
+function assaultChoice(state, card, opts, p, find) {
+  const P = persona(state);
+  const f = card.assault ? factionById(state, card.assault.factionId) : null;
+  if (!p || !f || !f.alive || !f.bases.includes(card.assault.tile)) return find(/^Back off/);
+  const fit = partyMembers(state, p).filter((s) => s.health >= 50);
+  const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
+  const odds = teamAssaultOdds(state, p, assaultForce(state, f, card.assault.tile));
+  const retake = !!occupiedAt(state, card.assault.tile);
+  const exile = !hub(state);
+  const oldHub = retake && occupiedAt(state, card.assault.tile).wasHub;
+  const need = exile ? 0.4 : oldHub ? 0.33 : P.conquerOdds - (retake ? 0.15 : 0.08);
+  if (fit.length >= (exile || oldHub ? 1 : ASSAULT_MIN - 1) && ammo >= fit.length * 4 && odds >= need) return find(/^Storm the base/);
+  return find(/^Back off/);
+}
+// No base left (conquest.js exiles): found one on the spot if the team can, else take back the nearest base of
+// yours they hold if the odds are fair, else find a free place nearby to build on.
+function exileAct(state, p) {
+  const opts = orderOptions(state, p);
+  if (opts.some((o) => o.mission === "outpost" && !o.disabled)) { say(state, `${teamName(state, p)}: no base left, so it builds one here.`); giveOrder(state, p, "outpost"); return; }
+  const g = state.grid;
+  const here = partyTile(p);
+  const scrap = (p.supplies.scrap || 0) + ((p.cargo && p.cargo.supplies.scrap) || 0);
+  const lost = lostBases(state).map((o) => ({ o, f: factionById(state, o.factionId) })).filter((x) => x.f && x.f.alive)
+    .map((x) => ({ ...x, odds: teamAssaultOdds(state, p, assaultForce(state, x.f, x.o.tile)), d: g.distance(here, x.o.tile) })).sort((a, b) => b.odds - a.odds || a.d - b.d)[0];
+  if (lost && (lost.odds >= 0.45 || scrap < 15) && lost.odds >= 0.2 && planPath(state, here, lost.o.tile, p.vehicle)) {
+    if (here === lost.o.tile) { giveOrder(state, p, "assault"); return; }
+    orderMove(state, p, lost.o.tile);
+    p.orders = [{ type: "mission", mission: "assault" }];
+    say(state, `${teamName(state, p)}: no base left, so it goes to take ${lost.o.name} back (${Math.round(lost.odds * 100)}%).`);
+    return;
+  }
+  if (scrap >= 15) {
+    let best = null;
+    for (const id of g.within(here, 6)) {
+      const t = state.tiles[id];
+      if (t.terrain === "water" || t.terrain === "mountain" || (t.owner != null && t.owner !== "player") || state.factions.some((f) => f.bases.includes(id))) continue;
+      const sc = -g.distance(here, id) + (t.loc && t.loc.type === "farm" ? 2 : 0) - (t.infection || 0) * 4;
+      if ((!best || sc > best.sc) && planPath(state, here, id, p.vehicle)) best = { id, sc };
+    }
+    if (best) {
+      if (best.id === here) { giveOrder(state, p, "outpost"); return; }
+      orderMove(state, p, best.id);
+      p.orders = [{ type: "mission", mission: "outpost" }];
+      say(state, `${teamName(state, p)}: no base left, so it goes to build one at ${tileLabel(state, best.id)}.`);
+      return;
+    }
+  }
+  p.apExileWait = (p.apExileWait || 0) + 1; // nothing it can do yet: it holds (supplies drain)
+}
+
 const captivesAt = (state, factionId) => allCaptives(state).filter((s) => s.location.factionId === factionId).length;
 
 function needText(need, t) {
@@ -1984,20 +2164,24 @@ function tradeGoods(state, need) {
 }
 
 // The alliance victory (alliance.js) needs over half the land held by you and the members. Once the coalition
-// has a member, few hives are left (LAND_HIVES or fewer known to stand: the Goals panel's count) and the land is
-// short, the governor founds outposts where they add the most uncovered land (CONTROL_RANGE around each), away
-// from hives and other groups' bases.
-const LAND_OUTPOSTS = 3, LAND_HIVES = 3, LAND_MIN_GAIN = 40, LAND_REACH = 16;
+// is settled (every group left in it, or only hostile ones outside) or the land at 35%+, from day 150, with 12+ people and the land short, the governor founds
+// up to LAND_OUTPOSTS more outposts (LAND_OUTPOSTS_ALL_IN once every group left is in) where they add the most
+// uncovered land (alliance.js controlRadius around each), away from hives and other groups' bases.
+const LAND_OUTPOSTS = 3, LAND_OUTPOSTS_ALL_IN = 6, LAND_MIN_GAIN = 40, LAND_REACH = 16; // LAND_OUTPOSTS_ALL_IN: once every group left is a member, only land is missing
 function landPush(state) {
   const gp = goalsProgress(state);
-  return gp.alliance.members > 0 && !gp.alliance.landOk && gp.hives.left <= LAND_HIVES && alive(state).length >= 14;
+  // The coalition is its own way to win: once it has a member or a conquered base and the land is short.
+  // Outposts out in the wild draw hordes: only once the groups are settled (every group left is in the coalition, or
+  // the only ones outside are hostile and being broken) or the land is close (35%+).
+  const settled = gp.alliance.allIn || (gp.alliance.members > 0 && gp.alliance.outsiders.every((o) => o.hostile)) || gp.alliance.land.pct >= 0.35;
+  return settled && !gp.alliance.landOk && day(state) >= 150 && alive(state).length >= 12;
 }
 function landOutpostSite(state) {
   const h = hub(state);
   const g = state.grid;
-  const R = ALLIANCE.CONTROL_RANGE;
+  const R = controlRadius(state, "outpost");
   const held = new Uint8Array(state.tiles.length);
-  for (const c of [...state.bases.map((b) => b.tile), ...allianceMembers(state).flatMap((f) => f.bases)]) for (const id of g.within(c, R)) held[id] = 1;
+  for (const c of landCentres(state)) for (const id of g.within(c.tile, c.r)) held[id] = 1;
   const theirs = [...knownGroupBases(state).keys()];
   const hives = (state.hives || []).filter((hv) => knownHive(state, hv.tile)).map((hv) => hv.tile);
   let best = null;
@@ -2041,10 +2225,10 @@ function launchTrip(state, c, pool, spareHands) {
   const h = hub(state);
   const g = gov(state);
   const size = Math.min(c.crew, spareHands);
-  if (size < (c.mission === "rescue" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : 1)) return null;
-  const fit = c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
+  if (size < (c.mission === "rescue" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : 1)) return null;
+  const fit = c.fit ? c.fit : c.mission === "assault" ? (s) => (s.health >= (c.minHealth || ASSAULT_HEALTH) && !s.woundInfected ? combatPower(s) : -99) : c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
-    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
+    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 - (s.role === "build" || (s.task && (s.task.t === "build" || s.task.t === "craft")) ? 4 : 0) : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
   const crew = friendlyCrew(state, [...pool].sort((a, b) => fit(b) - fit(a)), size, fit); // near-equal picks: friends together, rivals apart (relations.js)
   const ids = crew.map((s) => s.id);
   const dist = state.grid.distance(h.tile, c.tile);
@@ -2078,7 +2262,7 @@ function launchTrip(state, c, pool, spareHands) {
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
-  if (!est || est.hoursOut > (c.mission === "hive" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
+  if (!est || est.hoursOut > (c.mission === "hive" || c.mission === "assault" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.
@@ -2086,7 +2270,7 @@ function launchTrip(state, c, pool, spareHands) {
   const stock = (k) => Math.floor(h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
   // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
-  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission);
+  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission) || !!c.haul;
   const worstBand = (e) => (e && e.load ? Math.max(-1, ...e.load.people.map((x) => x.band)) : -1);
   if (looting && !isCar(v) && est.hours > 24) {
     for (const s of [...crew].sort((a, b) => wornLoad(b) - wornLoad(a))) {
@@ -2143,7 +2327,8 @@ function launchTrip(state, c, pool, spareHands) {
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
   const kit = packTripKit(state, h, crew, c.mission); // kit.js: camp kit against Heat, a comfort, throwables
-  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep });
+  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep,
+    plan: c.steps ? { preset: c.preset || "custom", steps: c.steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
   if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);
   if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
@@ -2152,10 +2337,61 @@ function launchTrip(state, c, pool, spareHands) {
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
   if (c.mission === "hive") g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1;
+  if (c.mission === "assault") g.stats.assaultTrips = (g.stats.assaultTrips || 0) + 1;
+  if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
-  say(state, `Sent ${names(crew)} (${c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
+  say(state, `Sent ${names(crew)} (${c.food === "huntTrips" ? "hunt" : c.food === "fishTrips" ? "fish" : c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
+}
+
+// ---------- food from the land (hunting.js) ----------
+// Hunting and fishing trips when the winter stores fall short (winterShort), food is below the season's target
+// (need 1.4+), or in autumn to stock up while game is fat (below 1.3 × the target): the best game land within range
+// for the hub's best hunters (8 hours; snares set, or checked when it is our line, with wire or 2 scrap), and the
+// best water when the hub has a rod or a net. Scored like a site: food need × the expected haul / 12 (up to 3), by
+// distance, × 1.4 when the winter is short (× 1.15 in autumn). The haul is kept to a load band on foot (haulCap) and a
+// car goes for 3+ tiles, as for scavenging: fresh game is heavy and spoils.
+const huntFit = (s) => hunterMult(s) * (bestHuntWeapon(s) ? 3 : 0.3) + combatPower(s) * 0.1;
+const fishFit = (s) => fisherMult(s) + combatPower(s) * 0.05;
+// gov.noHunting: the test switch (hunttest.js) that leaves hunting and fishing out of the governor's plans.
+function foodTripCands(state, h, pool, need, P) {
+  if (gov(state).noHunting) return [];
+  const n = Math.max(1, atBase(state, h.id).length);
+  const foodDays = edibleFood(h) / n;
+  const season = wxSeason(state).key;
+  const short = winterShort(state, h) > 0;
+  if (!(short || need.food >= 1.4 || (season === "autumn" && foodDays < foodTarget(state, h) * 1.3))) return [];
+  const boost = short ? 1.4 : season === "autumn" ? 1.15 : 1;
+  const size = Math.min(3, Math.max(2, P.crew));
+  const ammo = Math.max(0, (h.stock.ammo || 0) - 20);
+  const out = [];
+  const hunters = [...pool].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, size);
+  if (hunters.some((s) => bestHuntWeapon(s, ammo))) {
+    const wire = (h.armory || []).some((it) => it && it.key === "snarewire");
+    const snareKit = wire || (h.stock.scrap || 0) >= 25;
+    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, hours: HUNT.defHours, limit: 3 })) {
+      if (x.est.rations < 8) continue;
+      const line = snareLine(state, x.tile);
+      const snare = line ? state.hour - (line.check ?? line.set) >= 48 : snareKit;
+      out.push({ mission: "move", tile: x.tile, crew: size, fit: huntFit, haul: true, food: "huntTrips", onSite: HUNT.defHours + (snare ? 2 : 0),
+        steps: [...(snare ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],
+        supplies: snare && !line && !wire ? { scrap: 2 } : undefined,
+        score: (need.food * Math.min(3, x.est.rations / 12) * boost) / (1 + x.dist / 6),
+        why: `hunt for food${short ? " (the winter stores fall short)" : season === "autumn" ? " (stocking up in autumn)" : ""}: ~${Math.round(x.est.rations)} expected` });
+    }
+  }
+  const fishers = [...pool].sort((a, b) => fishFit(b) - fishFit(a) || a.id - b.id).slice(0, 2);
+  if (hasFishingGear(h.armory) || fishKit(fishers).power) {
+    for (const x of fishTargets(state, h.tile, P.range, fishers, h.armory || [], { hours: HUNT.defHours, limit: 2 })) {
+      if (x.est.rations < 5) continue;
+      out.push({ mission: "move", tile: x.tile, crew: 2, fit: fishFit, haul: true, food: "fishTrips", onSite: HUNT.defHours,
+        steps: [{ kind: "fish", hours: HUNT.defHours }, { kind: "home" }],
+        score: (need.food * Math.min(2.5, x.est.rations / 10) * boost) / (1 + x.dist / 6),
+        why: `fish for food${short ? " (the winter stores fall short)" : ""}: ~${Math.round(x.est.rations)} expected` });
+    }
+  }
+  return out;
 }
 
 // Food and water for a first estimate: n people for `days` with a quarter more, and some ammo (load.js weighs it).
@@ -2186,7 +2422,7 @@ function planSupplyRuns(state) {
     const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a));
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
-    if (staff < 2 && home.length >= 7 && crewPool.length) {
+    if (staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
       form = { crew: [s.id], deliver: [{ key: "food", qty: 6 }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }], atDest: "disband" };
       why = `${first(s)} joins the outpost (only ${staff} there)`;

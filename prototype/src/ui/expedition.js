@@ -4,7 +4,7 @@
 // (sim/orders.js); buttons use data-action handlers in main.js.
 import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
 import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -18,6 +18,7 @@ import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { heatInfo } from "../sim/fieldheat.js";
+import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -100,7 +101,7 @@ export function renderExpedition(state, ui, p) {
   const live = contactable(p) || cmd;
   const s = statusLine(state, ui, p);
   const tile = partyTile(p);
-  const home = baseById(state, p.homeBaseId) || hub(state);
+  const home = baseById(state, p.homeBaseId) || hub(state) || { name: "no base (on the road)" }; // conquest.js exiles: no base left
   const moving = p.phase === "out" || p.phase === "back";
   // Waiting or working on the spot: actions run now (switching jobs) unless queue mode is on. Moving: queued.
   const queueing = moving || p.phase === "engaged" || !!ui.xpQueue;
@@ -139,7 +140,7 @@ export function renderExpedition(state, ui, p) {
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
         ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
-        ${ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
+        ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Break camp", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
       </div>
@@ -151,6 +152,7 @@ export function renderExpedition(state, ui, p) {
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
         ${opts.filter((o) => o.mission !== "scavenge").map((o) => ord("mission", ` data-mission="${o.mission}"`, esc(o.label), o.disabled || o.desc, !!o.disabled && !queueing)).join("")}
       </div>
+      ${landBlock(state, p, queueing ? queueEndTile(state, p) : tile, queueing)}
       ${craftBlock(state, p, queueing)}
       ${boatBlock(state, p, queueing ? queueEndTile(state, p) : tile, queueing)}
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
@@ -169,6 +171,32 @@ function weatherLine(state, p, v) {
   const pace = road > 1.005 || off > 1.005 ? `${v ? "driving" : "on foot"}: roads ${pct(road)}, off-road ${pct(off)}` : "normal pace";
   const extra = [fx.sight ? "sight −1 tile" : "", fx.injury ? "injury risk" : ""].filter(Boolean).join(", ");
   return `<div class="${w.severe ? "warn" : "muted"}"${tip(fx.lines.join(" · "))}>${w.icon} ${esc(w.name)} ${Math.round(w.temp)}°C · ${pace}${extra ? ` · ${extra}` : ""}</div>`;
+}
+
+// Food from the land (sim/hunting.js): hunt, fish and snares on the tile the team stands on (or where its queue ends).
+function landBlock(state, p, at, queueing) {
+  const t = state.tiles[at];
+  if (!t || t.terrain === "water") return "";
+  const members = partyMembers(state, p);
+  const info = huntInfo(state, at, { members, ammo: carried(p, "ammo"), hours: HUNT.defHours, room: cargoRoom(state, p) });
+  const hp = queueing ? "" : huntProblem(state, p, at);
+  const fs = fishSpot(state, at);
+  const fp = fs && !queueing ? fishProblem(state, p, at) : "";
+  const kit = fishKit(members, p.cargo.gear);
+  const fe = fs && kit.power ? expectFish(state, kit, at, HUNT.defHours, state.hour, cargoRoom(state, p)).rations : 0;
+  const line = snareLine(state, at);
+  const sp = queueing ? "" : snareProblem(state, p, at, line ? "check" : "set");
+  const se = line ? expectSnare(state, at, line.check ?? line.set, state.hour) : null;
+  const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
+  const meat = meatIn(p.cargo);
+  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} food expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent). Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
+  const fishBtns = fs ? [4, 8].map((h) => ord("fish", ` data-hours="${h}"`, `Fish ${h}h`, fp ? `Fish: ${fp}` : `Fish ${h} hours in ${fs.name}${fe && h === HUNT.defHours ? `: about ${Math.round(fe)} food expected` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.`, !!fp)).join("") : "";
+  const snareBtns = line
+    ? ord("snare", ` data-mode="check"`, "Check snares (1h)", sp ? `Snares: ${sp}` : `Collect the catch (about ${Math.round(se.animals)} small game by now, if nothing got to it) and leave the line set.`, !!sp) +
+      ord("snare", ` data-mode="lift"`, "Lift snares (1h)", sp ? `Snares: ${sp}` : "Collect the catch and take the line up (the snare wire comes back).", !!sp)
+    : ord("snare", ` data-mode="set"`, `Set snares (${SNARE.setHours}h)`, sp ? `Snares: ${sp}` : `Lay a line of ${SNARE.count} snares here with snare wire (or ${SNARE.scrap} scrap of fence wire). Come back within 2–3 days to collect: about a rabbit a day in good country.`, !!sp);
+  return `<div style="margin-top:0.5rem"><b${tip("Food from the land: hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore) or set snares. The land runs out of game when hunted hard and grows back over weeks.")}>Land</b> <span class="muted">game ${info.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}</span></div>
+    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${hunts}${fishBtns}${snareBtns}</div>`;
 }
 
 // Field crafting (sim/crafting.js): a timed order per recipe, made from what the team carries.

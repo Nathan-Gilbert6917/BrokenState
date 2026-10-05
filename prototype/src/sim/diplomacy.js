@@ -22,10 +22,10 @@
 // - Each side raids the other (6% a day, aggressive types 9%, while none of its war raids is out; the ordinary
 //   raids between those two stop): a party of strength × 0.3–0.45 marches, lays siege (the usual 18 hours: you can
 //   answer a call for help) and wins with the odds att / (att + 4 + strength × 0.5 + helpers). A win kills 5–10%
-//   of the defenders (never below 8), loots 10% of their food, ammo, meds and scrap, may take a secondary base
-//   (35%) and a captive (25%). A loss costs the attackers 1–2 people (never below 8).
+//   of the defenders (never below 3), loots 10% of their food, ammo, meds and scrap, may take a secondary base
+//   (35%) and a captive (25%). A loss costs the attackers 1–2 people (never below 3).
 // - Exhaustion: 0.4 a day (0.8 below 70% of the starting people), +4 a failed raid, +5 a raid suffered, +8 a base
-//   lost. Peace comes after 10 days when a side is worn out (55: 25% a day), at once when a side is down to 12
+//   lost. Peace comes after 10 days when a side is worn out (55: 25% a day), at once when a side is down to 6
 //   people, 10% a day after 75 days, and 1% a day otherwise. Terms by the war score (2 a won raid, +2 for a base,
 //   1 a raid held): a lead of 5+ and a loser with 2+ bases cedes the base nearest the winner (land); a lead of 2+
 //   pays 25% of its food, ammo, meds and scrap (tribute); otherwise a white peace. Captives go home.
@@ -46,7 +46,7 @@
 import { Rng } from "./rng.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
-import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
@@ -57,7 +57,7 @@ import { allianceDaily, isMember } from "./alliance.js";
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
-  WAR_STRENGTH: 0.6, PEACE_COOLDOWN: 90, MAX_WARS: 3, RAID_CHANCE: 0.06, RAID_CHANCE_AGG: 0.09, MIN_POP: 8, SUE_POP: 12,
+  WAR_STRENGTH: 0.6, PEACE_COOLDOWN: 90, MAX_WARS: 3, RAID_CHANCE: 0.06, RAID_CHANCE_AGG: 0.09, MIN_POP: 3, SUE_POP: 6, // war raids grind a group down to 3 (factions.js GROUP_BREAK); peace at once at 6
   EXHAUSTED: 55, LONG_WAR: 75, LAND_LEAD: 5, TRIBUTE_LEAD: 2, TRIBUTE: 0.25, BROKER_DAYS: 7, RESERVE_DAYS: 60,
 };
 const TEMPER = { raider: 1.5, expansionist: 1.4, zealot: 1.2, military: 0.5, fortress: 0.3, traders: 0.1, commune: 0.1 };
@@ -363,7 +363,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     }
     let took = false;
     const tile = party.target.tile;
-    if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35)) {
+    if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35 * Math.min(1, keepChance(state, attacker, tile) / 0.6))) { // factions.js keepChance: the same wish to keep a base as an ordinary raid
       target.bases = target.bases.filter((x) => x !== tile);
       target.lostBaseDay = day(state); // valuation.js
       attacker.bases.push(tile);
@@ -483,7 +483,7 @@ function askPlayerToJoin(state, w) {
     if (!(f.goodwill >= 40 || f.pact || isMember(state, f))) continue;
     if (!canRadioGroup(state, f)) continue;
     w.asked = true;
-    addCard(state, warCard(state, w, f, foe));
+    if (hub(state)) addCard(state, warCard(state, w, f, foe)); // no base left (conquest.js exiles): nobody to ask
     return;
   }
 }
