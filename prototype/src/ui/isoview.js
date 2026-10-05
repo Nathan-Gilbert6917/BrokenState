@@ -20,6 +20,7 @@
 // Camera: pan (drag, the arrow keys, the screen edge), zoom (wheel, + / −: 9 steps), turn in 90° steps (, and .),
 // center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
+import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
@@ -665,7 +666,7 @@ function fogFor(b, vis) {
 const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
-  palisade: new Set(["palisade", "gate", "breach"]), gate: new Set(["palisade", "gate", "breach"]),
+  palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
 };
@@ -674,7 +675,7 @@ const JOINS = {
 // mouse, enemies you see), so the rest of a big building keeps its walls standing.
 const CUT_R = 6;
 function lookOf(b, scene, x, y, cut, focus = null) {
-  const i = y * b.w + x, c = b.cells[i], k = c.k;
+  const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
   if (k === "open" || k === "water") return null;
   const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null };
   const js = JOINS[k];
@@ -1057,8 +1058,42 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = fill;
     ctx.beginPath(); ctx.ellipse(X, Y, (c.r + 0.5) * HW * Math.SQRT2 * S, (c.r + 0.5) * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.fill();
   };
-  for (const c of b.flares || []) groundDisc(c, "rgba(255,90,70,0.12)");
-  for (const c of b.fires || []) groundDisc(c, `rgba(255,${120 + Math.round(60 * Math.sin(ph * Math.PI * 2))},40,0.3)`);
+  const OV = battleOverlays(b);
+  for (const c of OV.flares) groundDisc(c, "rgba(255,90,70,0.12)");
+  // Burning cells: a glowing, scorched diamond each (the flames rise in the painter's pass).
+  for (const c of OV.fires) {
+    ctx.fillStyle = `rgba(255,${110 + Math.round(60 * Math.sin((ph + c.x * 0.13 + c.y * 0.07) * Math.PI * 2))},40,0.42)`;
+    ctx.beginPath(); diamond(ctx, c.x, c.y, tileTop(b, c.x, c.y)); ctx.fill();
+  }
+  // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
+  for (const a of OV.auras) {
+    if (!vis[a.y * b.w + a.x]) continue;
+    const [X, Y] = project(a.x + 0.5, a.y + 0.5, 0);
+    ctx.fillStyle = "rgba(200,190,255,0.08)";
+    ctx.beginPath(); ctx.ellipse(X, Y, a.r * HW * Math.SQRT2 * S, a.r * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(232,226,255,0.75)"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -ph * 22;
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+  // Decoys: rings out to how far they pull, by what they give off (noise yellow, heat red, light white).
+  for (const l of OV.decoys) {
+    if (!l.decoy) continue;
+    const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0);
+    const col = SENSE_COL[l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise"];
+    ctx.strokeStyle = col.replace("A", "0.32"); ctx.lineWidth = 1; ctx.setLineDash([3, 6]);
+    ctx.beginPath(); ctx.ellipse(X, Y, l.radius * HW * Math.SQRT2 * S, l.radius * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // Ladders and rams in the painter's pass, by the diagonal they stand on (drawSiegeIso).
+  const siegeAt = new Map();
+  const atD = (x, y, f) => { const [uu, vv] = toView(x, y, r, b.w, b.h); const d = uu + vv; const a = siegeAt.get(d); if (a) a.push(f); else siegeAt.set(d, [f]); };
+  for (const l of OV.ladders) if (vis[l.fy * b.w + l.fx] || vis[l.wy * b.w + l.wx]) {
+    const [fu, fv] = toView(l.fx, l.fy, r, b.w, b.h), [wu, wv] = toView(l.wx, l.wy, r, b.w, b.h);
+    const [x, y] = fu + fv >= wu + wv ? [l.fx, l.fy] : [l.wx, l.wy];
+    atD(x, y, () => drawLadderIso(ctx, b, l, S));
+  }
+  // The ram is held at waist height in front of its crew: drawn after the units of its diagonal.
+  const siegeOver = new Map();
+  for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = uu + vv + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
+  for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
 
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
@@ -1125,7 +1160,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
+    for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
+    for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {
       const spr = sprOf(L, fog, true);
       if (!spr) continue;
@@ -1149,6 +1186,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
   }
 
+  // A ladder carried on someone's back (sim/siege.js).
+  for (const c of OV.carried) {
+    const sh = shown.find((q) => q.t.id === c.unit);
+    if (!sh) continue;
+    const [X, Y] = feet(sh);
+    ctx.strokeStyle = "#a07a4a"; ctx.lineWidth = Math.max(1.5, 0.7 * S);
+    ctx.beginPath(); ctx.moveTo(X - 7 * S, Y - 4 * S); ctx.lineTo(X + 5 * S, Y - 30 * S); ctx.moveTo(X - 3 * S, Y - 2 * S); ctx.lineTo(X + 9 * S, Y - 28 * S); ctx.stroke();
+    for (let k = 1; k < 5; k++) { const t = k / 5; ctx.beginPath(); ctx.moveTo(X - 7 * S + 12 * S * t, Y - 4 * S - 26 * S * t); ctx.lineTo(X - 3 * S + 12 * S * t, Y - 2 * S - 26 * S * t); ctx.stroke(); }
+  }
   // Your people hidden behind something: a faint silhouette on top.
   ctx.globalAlpha = 0.3;
   for (const s of shown) if (s.t.side === "player" && active(s.t)) drawBody(ctx, state, b, s, H, true);
@@ -1173,21 +1219,27 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (b.lit && b.floodAim) fillCells(ctx, b, (i) => b.lit[i], "rgba(255,236,150,0.07)");
     ctx.globalCompositeOperation = "source-over";
   }
-  for (const c of b.smoke || []) {
+  for (const c of OV.smoke) {
+    if (c.thick) {
+      // A fire's smoke: a dark column rising and drifting (it blocks sight through it).
+      for (let k = 0; k < 4; k++) {
+        const rise = ((ph + k / 4) % 1), [X, Y] = project(c.x + 0.5 + rise * 0.4, c.y + 0.5 - rise * 0.2, 14 + rise * 46);
+        ctx.fillStyle = `rgba(40,38,40,${0.42 * (1 - rise)})`;
+        ctx.beginPath(); ctx.ellipse(X, Y, (5 + rise * 9) * S, (3 + rise * 5) * S, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      continue;
+    }
     const [X, Y] = project(c.x + 0.5, c.y + 0.5, 10);
     for (let k = 0; k < 5; k++) { const a = k * 1.3 + ph; ctx.fillStyle = "rgba(200,205,210,0.22)"; ctx.beginPath(); ctx.ellipse(X + Math.cos(a) * c.r * 12 * S, Y + Math.sin(a) * c.r * 5 * S - k * 3 * S, (c.r + 0.6) * 12 * S, (c.r + 0.6) * 7 * S, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  for (const c of b.fires || []) for (let k = 0; k < 6; k++) {
-    const a = k * 1.05 + ph * 6, [X, Y] = project(c.x + 0.5 + Math.cos(a) * 0.7, c.y + 0.5 + Math.sin(a) * 0.7, 3 + ((k * 7 + Math.floor(ph * 10)) % 5));
-    ctx.fillStyle = k % 2 ? "rgba(255,200,80,0.85)" : "rgba(255,110,40,0.8)";
-    ctx.beginPath(); ctx.ellipse(X, Y, 2.2 * S, 4 * S, 0, 0, Math.PI * 2); ctx.fill();
-  }
   // Thrown things where they landed: a ring while the noise lasts (sim/stealth.js).
-  for (const l of b.lures || []) {
+  for (const l of OV.decoys) {
     const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0), q = ((now || 0) % 1200) / 1200;
-    ctx.strokeStyle = `rgba(255,209,102,${0.6 * (1 - q)})`; ctx.lineWidth = 2;
+    const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
+    ctx.strokeStyle = SENSE_COL[kind].replace("A", String(0.65 * (1 - q))); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(X, Y, (0.4 + q * 1.4) * HW * Math.SQRT2 * S, (0.4 + q * 1.4) * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = "#e0b048"; ctx.beginPath(); ctx.arc(X, Y - 2 * S, 2 * S, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = kind === "heat" ? "#ff7a4a" : kind === "light" ? "#fff2c0" : "#e0b048"; ctx.beginPath(); ctx.arc(X, Y - 2 * S, 2.2 * S, 0, Math.PI * 2); ctx.fill();
+    if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
   }
   for (const c of b.flares || []) { const [X, Y] = project(c.x + 0.5, c.y + 0.5, 2); ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(X, Y, 2.5 * S, 0, Math.PI * 2); ctx.fill(); }
 
@@ -1312,6 +1364,58 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (t0) iso.frameMs = performance.now() - t0;
 }
 
+// ---------- siege objects (sim/siege.js battleOverlays) ----------
+const SENSE_COL = { noise: "rgba(255,209,102,A)", heat: "rgba(255,122,74,A)", light: "rgba(255,242,192,A)" };
+// A siege ladder: up, leaning from its foot onto the top of the wall section's face; down, lying at its foot.
+function drawLadderIso(ctx, b, l, S) {
+  const [dx, dy] = l.dir, px = -dy, py = dx; // across the ladder
+  const rail = (o) => {
+    if (l.up) return [project(l.fx + 0.5 + px * o - dx * 0.15, l.fy + 0.5 + py * o - dy * 0.15, 0), project(l.wx + 0.5 + px * o - dx * 0.42, l.wy + 0.5 + py * o - dy * 0.42, PALISADE + 5)];
+    return [project(l.fx + 0.5 + px * o - dx * 0.4 - px * 0.0 + (px ? 0 : 0), l.fy + 0.5 + py * o - dy * 0.4, 1), project(l.fx + 0.5 + px * o + dx * 0.4, l.fy + 0.5 + py * o + dy * 0.4, 1)];
+  };
+  // Lying down it runs along the wall: swap the axes.
+  const R = l.up ? [rail(-0.2), rail(0.2)] : [[project(l.fx + 0.5 - px * 0.6, l.fy + 0.5 - py * 0.6, 1), project(l.fx + 0.5 + px * 0.6, l.fy + 0.5 + py * 0.6, 1)], [project(l.fx + 0.5 - px * 0.6 - dx * 0.3, l.fy + 0.5 - py * 0.6 - dy * 0.3, 1), project(l.fx + 0.5 + px * 0.6 - dx * 0.3, l.fy + 0.5 + py * 0.6 - dy * 0.3, 1)]];
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = Math.max(2.5, 1.5 * S);
+  for (const [[x0, y0], [x1, y1]] of R) { ctx.beginPath(); ctx.moveTo(x0, y0 + S); ctx.lineTo(x1, y1 + S); ctx.stroke(); }
+  ctx.strokeStyle = l.side === "enemy" ? "#b08452" : "#c39a62"; ctx.lineWidth = Math.max(1.8, 1.1 * S);
+  for (const [[x0, y0], [x1, y1]] of R) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+  ctx.lineWidth = Math.max(1.2, 0.7 * S);
+  for (let k = 1; k <= 6; k++) {
+    const t = k / 7, a = R[0], c = R[1];
+    ctx.beginPath(); ctx.moveTo(a[0][0] + (a[1][0] - a[0][0]) * t, a[0][1] + (a[1][1] - a[0][1]) * t); ctx.lineTo(c[0][0] + (c[1][0] - c[0][0]) * t, c[0][1] + (c[1][1] - c[0][1]) * t); ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+}
+// The battering ram: a steel-capped log carried at waist height at its lead, pointing the way the lead faces.
+function drawRamIso(ctx, b, m, S) {
+  const f = m.target ? [Math.sign(m.target[0] - m.x), Math.sign(m.target[1] - m.y)] : m.face && (m.face[0] || m.face[1]) ? m.face : [1, 0];
+  const z = m.dropped ? 3 : 13;
+  const [x0, y0] = project(m.x + 0.5 - f[0] * 0.75, m.y + 0.5 - f[1] * 0.75, z), [x1, y1] = project(m.x + 0.5 + f[0] * 0.55, m.y + 0.5 + f[1] * 0.55, z);
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 7 * S;
+  ctx.beginPath(); ctx.moveTo(x0, y0 + (m.dropped ? 1 : 10) * S); ctx.lineTo(x1, y1 + (m.dropped ? 1 : 10) * S); ctx.stroke();
+  ctx.strokeStyle = "#5b3d22"; ctx.lineWidth = 6.5 * S;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.strokeStyle = "#7d5a34"; ctx.lineWidth = 2 * S;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 1.5 * S); ctx.lineTo(x1, y1 - 1.5 * S); ctx.stroke();
+  ctx.fillStyle = "#8a8f96"; ctx.beginPath(); ctx.arc(x1, y1, 3.4 * S, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#c8ccd2"; ctx.beginPath(); ctx.arc(x1 - 0.8 * S, y1 - 1 * S, 1.3 * S, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#c9b48a"; ctx.lineWidth = Math.max(1, 0.6 * S);
+  for (const t of [0.25, 0.6]) { const x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t; ctx.beginPath(); ctx.moveTo(x, y - 2.6 * S); ctx.lineTo(x, y + 2.6 * S); ctx.stroke(); }
+  ctx.lineCap = "butt";
+}
+// Flames on a burning cell: tongues of fire flickering up from the ground.
+function drawFlamesIso(ctx, b, c, S, ph) {
+  const z0 = tileTop(b, c.x, c.y);
+  for (let k = 0; k < 5; k++) {
+    const a = k * 1.25 + c.x * 0.7 + c.y * 1.3, fl = (ph * 3 + k * 0.37 + c.x * 0.11) % 1;
+    const [X, Y] = project(c.x + 0.5 + Math.cos(a) * 0.28, c.y + 0.5 + Math.sin(a) * 0.28, z0);
+    const hgt = (7 + 6 * Math.sin(fl * Math.PI)) * S * (c.turns > 1 ? 1 : 0.7), w = 2.4 * S;
+    ctx.fillStyle = k % 2 ? "rgba(255,196,70,0.9)" : "rgba(255,104,36,0.88)";
+    ctx.beginPath(); ctx.moveTo(X - w, Y); ctx.quadraticCurveTo(X - w * 0.6, Y - hgt * 0.6, X + Math.sin(fl * 6) * w * 0.5, Y - hgt); ctx.quadraticCurveTo(X + w * 0.6, Y - hgt * 0.6, X + w, Y); ctx.closePath(); ctx.fill();
+  }
+}
 function arrow(ctx, x0, y0, x1, y1, col, w) {
   const a = Math.atan2(y1 - y0, x1 - x0), L = Math.hypot(x1 - x0, y1 - y0);
   ctx.save(); ctx.translate(x0, y0); ctx.rotate(a);
@@ -1357,7 +1461,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff" };
 const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
@@ -1367,7 +1471,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (!cv) return;
   let facing = unitFacing(b, t);
   if (FR.r === 1 || FR.r === 2) facing = -facing;
-  const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : t.ztype === "crawler" ? 0.8 : 1;
+  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" ? 1.15 : t.ztype === "crawler" ? 0.8 : 1;
   const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;

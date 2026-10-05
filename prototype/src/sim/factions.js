@@ -60,6 +60,7 @@ import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from 
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
 import { raidTier } from "./defences.js";
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
+import { raidSiegeKit, kitText } from "./siege.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -445,7 +446,11 @@ function launchRaid(state, f) {
   if (tgt.kind === "player") {
     const base = baseById(state, tgt.baseId);
     const p = spawnAiParty(state, f, "raid", tgt.from, tgt.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: tgt.baseId, tile: tgt.tile } });
-    if (p) { p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); } // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
+    if (p) {
+      p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
+      // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
+      p.siege = raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" });
+    }
     return;
   }
   const raidStrength = Math.max(RAIDS.MIN, strength(f) * rng.range(0.25, 0.4));
@@ -548,7 +553,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
   // yard or the buildings, or overrun.
-  const rt = beaten ? null : raidTier(state, base, def, att, RAIDS.HOLD, RAIDS.BREAK);
+  const rt = beaten ? null : raidTier(state, base, def, att, RAIDS.HOLD, RAIDS.BREAK, party.siege || null); // siege.js: their ladders, ram and grenades
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const hours = beaten ? RAIDS.SIEGE_HOURS : Math.max(1, party.siegeHours || RAIDS.SIEGE_HOURS);
   const before = { ...base.stock };
@@ -847,7 +852,7 @@ export function raidWarning(state, party) {
   const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
+    text: `${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). ${party.siege ? `${kitText(party.siege)} ` : ""}Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {

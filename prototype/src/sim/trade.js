@@ -254,9 +254,9 @@ export const WARES = {
     "revolver", "leverrifle", "compbow", "slingbag", "hikingpack", "camonet", "stove", "flare", "cards", "guitar", "chocolate", "instcoffee", "smokes", "vodka", "binoculars", "monocular"],
   commune: ["machete", "huntrifle", "pipespear", "waterfilter", "bandagekit", "backpack", "padding", "bat", "compbow", "slingbag", "stove", "ghillie", "harmonica", "cards",
     "beartrap", "barbedwire", "tripwire", "chocolate"],
-  military: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "pistol", "carbine", "rucksack", "camonet", "smokegren", "flare", "sandbags", "barbedwire", "instcoffee", "binoculars", "thermal"],
+  military: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "pistol", "carbine", "rucksack", "camonet", "smokegren", "flare", "frag", "heatpack", "sandbags", "barbedwire", "instcoffee", "binoculars", "thermal"],
   fortress: ["shotgun", "huntrifle", "vest", "riothelmet", "kneeguards", "crowbar", "sledge", "prybar", "fireaxe", "sandbags", "barbedwire", "beartrap", "tripwire", "riotarms"],
-  raider: ["pistol", "shotgun", "machete", "spikedbat", "tirevest", "bikehelmet", "pipegun", "revolver", "bat", "nailbat", "molotov", "pipebomb", "vodka", "smokes"],
+  raider: ["pistol", "shotgun", "machete", "spikedbat", "tirevest", "bikehelmet", "pipegun", "revolver", "bat", "nailbat", "molotov", "pipebomb", "ladder", "vodka", "smokes"],
   expansionist: ["pistol", "shotgun", "huntrifle", "vest", "riothelmet", "scrapvest", "carbine", "leverrifle", "revolver", "hikingpack", "riotarms", "smokegren", "flare", "binoculars"],
   zealot: ["machete", "knife", "shotgun", "pipespear", "bandagekit", "fireaxe", "bat", "molotov", "compbow"],
 };

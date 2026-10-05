@@ -21,8 +21,8 @@ import { newItem } from "./inventory.js";
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
-export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren"];
-export const HIKER_STUFF = ["stove", "flare", "chocolate", "instcoffee", "harmonica", "cards", "ragboots", "novel", "bandagekit", "flashlight", "lighters", "photos", "waterfilter"];
+export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
+export const HIKER_STUFF = ["stove", "flare", "handwarmer", "pocketradio", "chocolate", "instcoffee", "harmonica", "cards", "ragboots", "novel", "bandagekit", "flashlight", "lighters", "photos", "waterfilter"];
 
 // ---------- helpers ----------
 function check(state, p, key, dc) {
