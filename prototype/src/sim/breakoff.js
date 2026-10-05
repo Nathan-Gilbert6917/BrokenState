@@ -64,6 +64,12 @@ export const BREAKOFF = {
   CAPTURE: 0.5,            // a downed member left to a group's people is taken prisoner (else killed)
   KILLS_LOST: [0.1, 0.5],  // the share of the enemy down when a fight is lost (all of it when won)
   KILLS_WON: [0.35, 0.75], // the share down per round fought, when a fight that would be won is broken off
+  // The blood a fight costs, calibrated on the battle map (tools/calibrate.js: the same fights played out by the AI on
+  // both sides, no retreat): each member of a team that loses a fight fought out goes down LOST_DOWN of the time
+  // (LOST_DOWN_DEAD against the dead: they do not stop); in a fight that is won WON_DOWN + WON_CLOSE × the chance it
+  // had of going the other way (+ WON_DEAD against the dead). Of those still standing, WOUND (× more when it was
+  // close or lost) take a wound of WOUND_RAW.
+  LOST_DOWN: 0.8, LOST_DOWN_DEAD: 0.92, WON_DOWN: 0.05, WON_CLOSE: 0.42, WON_DEAD: 0, WOUND: 0.45, WOUND_RAW: [10, 40], WOUND_RAW_LOST: [20, 55],
 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -251,18 +257,31 @@ export function rollFight(rng, model, policy = "never") {
   const n = ms.length;
   const w = clamp(model.win, 0.05, 0.95);
   const win = rng.chance(w);
-  const H = win ? rng.int(0, Math.ceil(n / 2)) : rng.int(1, n);
-  // A won fight takes its knocks early; a lost one keeps taking them, the last ones in the last round.
-  const roundOf = (i) => (win ? Math.floor((i * R) / H) : Math.min(R - 1, Math.floor(((i + 1) * R) / (H + 1))));
+  // The fight's blows, drawn up front (BREAKOFF.LOST_DOWN ...: calibrated on the battle map): who goes down, who is
+  // wounded, in a shuffled order. A won fight takes its knocks early; a lost one keeps taking them, the last ones in
+  // the last round (so a team that breaks off early is spared most of them).
+  const B = BREAKOFF, dead = model.enemy.kind === "zombies";
+  const pDown = win ? B.WON_DOWN + B.WON_CLOSE * (1 - w) + (dead ? B.WON_DEAD : 0) : dead ? B.LOST_DOWN_DEAD : B.LOST_DOWN;
+  const pWound = Math.min(0.95, B.WOUND * (win ? 0.6 + (1 - w) : 1.5));
+  const plan = [];
+  for (const m of ms) {
+    if (rng.chance(pDown)) plan.push({ m, raw: Math.ceil(m.hp / Math.max(0.05, m.mult)) + rng.int(0, 20) });
+    else if (rng.chance(pWound)) { const [lo, hi] = win ? B.WOUND_RAW : B.WOUND_RAW_LOST; plan.push({ m, raw: rng.int(lo, hi) }); }
+  }
+  rng.shuffle(plan);
+  // A won fight: its wounds come early and whoever falls, falls in the last round as it is decided (nobody breaks off
+  // a fight they are winning because of it, as on the map). A lost one: spread over the rounds to the last.
+  if (win) plan.sort((a, b) => (a.raw >= a.m.hp / a.m.mult ? 1 : 0) - (b.raw >= b.m.hp / b.m.mult ? 1 : 0));
+  const H = plan.length;
+  const wounds = win ? plan.filter((x) => x.raw < x.m.hp / x.m.mult).length : 0;
+  const roundOf = (i) => (win ? (i >= wounds ? R - 1 : Math.floor((i * (R - 1)) / Math.max(1, wounds))) : Math.min(R - 1, Math.floor((i * R) / Math.max(1, H))));
   const hits = [];
   let i = 0, round = null;
   for (let r = 0; r < R; r++) {
     const look = rng.next(); // how the fight looks after this round
     for (; i < H && roundOf(i) === r; i++) {
-      const up = ms.filter((m) => !m.down);
-      if (!up.length) break;
-      const m = rng.pick(up);
-      const raw = rng.int(win ? 10 : 25, win ? 40 : 75);
+      const { m, raw } = plan[i];
+      if (m.down) continue;
       m.hp -= raw * m.mult;
       m.hit = true;
       if (m.hp <= 0) m.down = true;

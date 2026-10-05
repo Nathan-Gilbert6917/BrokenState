@@ -59,7 +59,7 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeO
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
-import { startCombat, registerCombatHandler, registerBattleLayout } from "./combat.js";
+import { startCombat, registerCombatHandler, registerBattleLayout, winOdds } from "./combat.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { takePrisonersAt, prisonersOf } from "./prisoners.js";
@@ -133,15 +133,15 @@ export function assaultForce(state, f, tile) {
   };
 }
 // The odds the card shows (the same sum the statistical resolver uses: combat.js autoResolveCombat).
-export function assaultOdds(power, force, ammoOk = true) {
+export function assaultOdds(power, force, ammoOk = true, people = 0) {
   const mine = power * (ammoOk ? 1 : 0.6);
   const theirs = force.count * force.power * force.fortified;
-  return clamp(0.5 + (mine / Math.max(0.1, theirs) - 1) * 0.6, 0.05, 0.95);
+  return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedAmmo = (p) => Math.max(0, Math.floor(p.supplies.ammo || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies.ammo) || 0));
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
-  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0), force, carriedAmmo(p) >= m.length * 3);
+  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0), force, carriedAmmo(p) >= m.length * 3, m.length);
 }
 
 // Why attacking this group is a bad idea (the planner and the card): "" for a hostile group.

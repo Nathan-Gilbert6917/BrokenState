@@ -160,6 +160,37 @@ export function battlePending(state, partyId) {
   return !!(state.combat && state.combat.setup.partyId === partyId) || (state.combatQueue || []).some((s) => s.partyId === partyId);
 }
 
+// The odds of a fight by the numbers: { mine, theirs, ratio, win }. mine: the people's combat power (× 0.6 short of
+// ammo, × their team spirit, × 1.4 when they struck first), theirs: the enemy's count × power (× walls, × special dead,
+// × 1.4 when they struck first). win: winOdds(ratio, enemy) (the chance to win it fought out).
+export function byNumbersOdds(state, setup, people = combatants(state, setup), ammoOk = true) {
+  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoOk ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
+  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
+  if (setup.ambush === "player") mine *= 1.4;
+  if (setup.ambush === "enemy") theirs *= 1.4;
+  const ratio = mine / Math.max(0.1, theirs);
+  return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
+}
+// The chance to win a fight by the numbers, calibrated on the tactical map (tools/calibrate.js: the AI playing both
+// sides, fought out): a logistic of the power ratio (squad over enemy, the 1.4 for striking first included), with
+// how many fight on each side for people (numbers tell more than power in a gunfight: 3 against 5 weak raiders is
+// a coin flip), the dead weaker per point of power than people (they come at you in the open), a mixed crowd in
+// between, and a little for the brood in a hive (it comes through the gaps of the mound). enemy: { kind, count,
+// people (how many fight for you), ambush ("player" / "enemy"), hive }. Clamped to 3–97%.
+export const ODDS = { RATIO: 3.77, NUMBERS: 1.85, ZOMBIES: 2.52, MIXED: 1.74, HIVE: 0.25, THEY_AMBUSH: 0.33, YOU_AMBUSH: -0.23, MIN: 0.03, MAX: 0.97 };
+export function winOdds(ratio, enemy = null) {
+  const e = enemy || {};
+  const dead = e.kind === "zombies";
+  let z = ODDS.RATIO * Math.log(Math.max(0.01, ratio));
+  if (!dead && e.people > 0 && e.count > 0) z += ODDS.NUMBERS * Math.log(e.people / e.count);
+  if (dead) z += ODDS.ZOMBIES;
+  else if (e.kind === "mixed") z += ODDS.MIXED;
+  if (e.hive) z += ODDS.HIVE;
+  if (e.ambush === "enemy") z += ODDS.THEY_AMBUSH;
+  if (e.ambush === "player") z += ODDS.YOU_AMBUSH;
+  return Math.max(ODDS.MIN, Math.min(ODDS.MAX, 1 / (1 + Math.exp(-z))));
+}
+
 // Quick statistical resolution, used headless and as a fallback.
 export function autoResolveCombat(state, setup) {
   const people = combatants(state, setup);
@@ -179,11 +210,8 @@ export function autoResolveCombat(state, setup) {
     if (t > 0) o.ammo -= t;
     owed -= t;
   }
-  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
-  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
-  if (setup.ambush === "player") mine *= 1.4;
-  if (setup.ambush === "enemy") theirs *= 1.4;
-  const ratio = mine / Math.max(0.1, theirs);
+  const odds = byNumbersOdds(state, setup, people, ammoUsed >= people.length * 3);
+  const ratio = odds.ratio;
   const tile = party ? partyTile(party) : tileIdOf(setup);
   // Defending a base (interior.js baseTiers): the walls, the yard and the buildings each multiply what the defenders
   // are worth; the battle is won at the tier where they first match the attackers, or lost (overrun). Base defences
@@ -192,10 +220,10 @@ export function autoResolveCombat(state, setup) {
   if (!tiers) {
     // breakoff.js: the fight plays out in rounds, and a team in the field breaks it off by its retreat policy.
     const refund = (n) => { if (pools[0]) pools[0].ammo = (pools[0].ammo || 0) + n; };
-    return fightByNumbers(state, setup, people, { win: Math.max(0.05, Math.min(0.95, 0.5 + (ratio - 1) * 0.6)), ammoUsed, refund, tile });
+    return fightByNumbers(state, setup, people, { win: odds.win, ammoUsed, refund, tile });
   }
   const rng = state.rng;
-  const win = rng.chance(Math.max(0.05, Math.min(0.95, 0.5 + ((tiers ? tiers.last : ratio) - 1) * 0.6)));
+  const win = rng.chance(winOdds(tiers ? tiers.last : ratio, { ...setup.enemy, people: people.length }));
   const tier = tiers ? (win ? tiers.tier : "overrun") : null;
   const hurtIds = [], deadIds = [];
   // A base held at the wall costs less blood than one held in the yard, and a last stand in the buildings costs most.

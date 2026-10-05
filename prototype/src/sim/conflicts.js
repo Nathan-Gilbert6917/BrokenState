@@ -28,7 +28,7 @@ import { partyFuel, useFuel, partyVehicle } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance } from "./markers.js";
-import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
+import { registerCombatHandler, startCombat, battlePending, winOdds } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
@@ -123,7 +123,7 @@ export function fightOdds(state, p, enemy, ambush) {
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4;
-  return clamp(0.5 + (mine / Math.max(0.1, theirs) - 1) * 0.6, 0.05, 0.95);
+  return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
 }
 
 function enemyGroup(state, p, f, scale = 1) {

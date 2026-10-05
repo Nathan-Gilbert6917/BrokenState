@@ -34,6 +34,7 @@ import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { tacticalStyleFor } from "./breakoff.js";
 import { HIVE, BOSS_NAMES, GROWTHS } from "./hiveconst.js";
+import { broodGrowth, hiveCap, hordePaceOpen, noteHorde } from "./eras.js";
 import { worldScale } from "./worldsize.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
 import {
@@ -209,7 +210,9 @@ function attackTarget(state, hive) {
   const g = state.grid;
   const cands = [];
   const range = attackRange(state, hive); // farther with a screamer spire (hivetech.js)
-  for (const b of state.bases) {
+  // eras.js: your bases only while the pace of horde attacks on you allows a new one (the hives' hordes go for the
+  // groups or roam in between).
+  if (hordePaceOpen(state)) for (const b of state.bases) {
     const dist = g.distance(hive.tile, b.tile);
     if (dist > range) continue;
     const people = state.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === b.id).length;
@@ -232,6 +235,7 @@ function sendAttack(state, hive, h) {
   h.role = "attack";
   h.goal = { tile: c.tile, baseId: c.baseId ?? null, factionId: c.factionId ?? null };
   h.target = c.tile;
+  if (c.baseId != null) noteHorde(state); // eras.js: the pace of horde attacks on you
   if (hive.bossReady) {
     hive.bossReady = false;
     h.bosses = (h.bosses || 0) + 1;
@@ -257,6 +261,7 @@ function supportSite(state, hive) {
 function pickSite(state) {
   const g = state.grid, rng = state.rng;
   if (!state.hives.length || state.hiveSites.length >= siteMax(state)) return null;
+  if (state.hives.length + state.hiveSites.length >= hiveCap(state)) return null; // eras.js: the late game's cap on new hives
   const people = [...state.bases.map((b) => b.tile), ...state.factions.filter((f) => f.alive).flatMap((f) => f.bases)];
   const cands = [];
   for (const t of state.tiles) {
@@ -464,15 +469,17 @@ export const hiveGuard = guardOf;
 // growths, hivetech.js) and the Broodmother.
 export function hiveForce(state, hive) {
   const guard = guardOf(state, hive);
-  const f = broodForce(guard ? guard.size : 0);
+  const f = broodForce(guard ? guard.size : 0, state);
   if (guard && guard.mix) { f.mix = guard.mix; f.types = battleTypes(guard.mix, f.count); f.elite = !!guard.elite; }
   return f;
 }
 // The brood a hive with a guard of this size fields (also the autopilot's estimate from a guard it has seen).
-// It fights on red-skull ground: power 1 + 3 (zombieToughness), plus a little for a big guard.
-export function broodForce(guardSize) {
+// It fights on red-skull ground: power 1 + 3 (zombieToughness), plus a little for a big guard. state (optional):
+// the eras' growth of the brood (eras.js broodGrowth: tougher every year from year 4).
+export function broodForce(guardSize, state = null) {
   const s = guardSize ? hordeScore(guardSize) : 0;
-  return { count: Math.max(10, Math.min(18, Math.round(8 + s * 0.6))), power: Math.round((5 + s / 30) * 10) / 10, guard: guardSize || 0 };
+  const grow = state ? broodGrowth(state) : 1;
+  return { count: Math.max(10, Math.min(18, Math.round(8 + s * 0.6))), power: Math.round((5 + s / 30) * grow * 10) / 10, guard: guardSize || 0 };
 }
 
 export function hiveArrive(state, p) {

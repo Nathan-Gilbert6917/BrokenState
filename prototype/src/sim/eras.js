@@ -18,6 +18,13 @@
 //   multiplying (hives.js: a new site every 120–180 days) is the main growth of all: about 6 hives in year 1,
 //   9 in year 7, 12–15 by years 12–15 when nobody destroys them.
 //
+// Fewer, better prepared threats (RAIDS, HORDES): raids on your bases and the hordes a hive sends at them come at a
+// pace that rises over the years (about 3 raids a year early, 7 around year 5, up to 14 late at most; a hive horde
+// every ~19 days early, every ~4 days late), and a raid comes only when its group can take on the base with
+// everyone at a post (a bar that rises every few years) and is sized to it. The brood inside a hive fights harder
+// every year from year 4 (BROOD), and from year 8 no new hive site is picked past HIVE_CAP. Calibrated fights by the
+// numbers (combat.js winOdds, breakoff.js) make every one of these as deadly as on the battle map.
+//
 // Winning (world.js checkGameOver)
 // - Neither victory comes before year WIN_FROM_YEAR (8, the start of the late game, day 771): the state is not won in
 //   the long war. Until then the outbreak still burns beyond the borders and nobody would sign anything. The Goals
@@ -49,7 +56,7 @@ export const ERAS = {
   GROW_FROM: 3, // the first year the threats grow (year 3: one step, year 4: two ...)
   // Growth per year from GROW_FROM, and its cap.
   GROW: {
-    horde: 0.01, hordeMax: 0.1,          // roaming, attacking and border hordes: +1% a year, at most +10% (year 12)
+    horde: 0.03, hordeMax: 0.3,          // roaming, attacking and border hordes: +3% a year, at most +30% (year 12)
     gangArms: 0.02, gangArmsMax: 0.2,    // aggressive groups' strength (raids, wars, the base they defend): +2% a year
     recruit: 2, recruitMax: 20,          // aggressive groups recruit up to RAIDS.RECRUIT_UNTIL (45) + 2 a year
     gangPop: 1, gangPopMax: 10,          // new gangs from beyond the border: 12–18 people + 1 a year
@@ -58,10 +65,34 @@ export const ERAS = {
   },
   LATE_MIN_AGG: 2,        // from the late game at least this many hostile aggressive groups (factions.js newGangs; RAIDS.MIN_AGG = 2 before)
   LATE_RAIDER_BANDS: 0,   // more outsider raider bands on the map at a time from the late game (visitors.js caps)
+  BANDWAGON: 0.25, BANDWAGON_CAP: 60, // a coalition holding over half the land: peaceful groups outside +0.25 goodwill a day, up to 60 (factions.js)
   ALLY_LATE: 1,           // from the late game every coalition member sends one more fighter to your hive and base assaults (alliance.js)
   WIN_FROM_YEAR: 8,
+  // The hives late in the game (hives.js): the brood inside a hive (and its Broodmother's dead) fights BROOD more
+  // a year from BROOD_FROM (at most BROOD_MAX: a hive stormed in year 12 is 30% tougher than in year 3), and no new
+  // build site is picked while HIVE_CAP ([from year, hives standing + sites]) are already there (the state does not
+  // fill up with hives in the late game; the outbreak beyond the border still keeps its floor, outbreak.js).
+  BROOD: 0.035, BROOD_FROM: 4, BROOD_MAX: 0.3,
+  HIVE_CAP: [[1, 99], [8, 11]],
   ACCORD: { DAYS: 112, DECAY: 2, SEASONS: 12, GRACE: 56 },
   CONTAIN: { DAYS: 28 },
+  // Raids on your bases (a group's raid, a war raid, a grudge raid, an outsider band coming for a base): fewer, better
+  // prepared ones as the years go on. PER_YEAR ([from year, raids]): the pace aimed at, about that many a game year
+  // (not a cap: the next raid may come once 112 / PER_YEAR × 0.75–1.25 days have passed since the last one began, and
+  // only if somebody is ready then). PREP: a group raids a base only if its whole strength reaches PREP × the base's
+  // defence with everyone at a post (an outsider band, its own strength: OUT_PREP); SIZE: the raid is then sized to
+  // SIZE × that defence (× their escalation, at most the whole group).
+  // Horde attacks a hive sends at your bases: HORDES ([from year, attacks a game year]) is the pace aimed at, as for
+  // the raids (a hive's horde may be sent at you once 112 / HORDES × 0.75–1.25 days have passed since the last one;
+  // in between they go for the groups or roam). Wandering and border hordes that stumble on a base are not paced.
+  // Fewer, bigger: each horde comes GROW.horde a year bigger.
+  HORDES: [[1, 6], [3, 10], [5, 14], [8, 18], [10, 22], [13, 26]],
+  RAIDS: {
+    PER_YEAR: [[1, 3], [3, 5], [5, 7], [8, 10], [10, 14]],
+    PREP: [[1, 0.8], [3, 0.95], [5, 1.05], [8, 1.15], [10, 1.25]],
+    OUT_PREP: [[1, 0.6], [3, 0.75], [5, 0.85], [8, 0.95], [10, 1.05]],
+    SIZE: [[1, [0.6, 1.0]], [3, [0.7, 1.0]], [5, [0.75, 1.05]], [8, [0.8, 1.1]], [10, [0.85, 1.15]]],
+  },
   // The outbreak beyond the border (outbreak.js): while it burns, a new hive is seeded near the border DELAY days
   // after fewer than the year's FLOOR of hives stand or are being built ([from year, floor]); MASS of the dead
   // arrive with it; at least KEEP_CLEAR tiles from any base, within EDGE tiles of the map's edge. It burns out in a
@@ -80,7 +111,39 @@ export const gangPopBonus = (state) => Math.round(grown(state, ERAS.GROW.gangPop
 export const raiderSizeBonus = (state) => Math.round(grown(state, ERAS.GROW.raiderSize, ERAS.GROW.raiderSizeMax));
 export const raiderPowerBonus = (state) => grown(state, ERAS.GROW.raiderPower, ERAS.GROW.raiderPowerMax);
 export const isLate = (state) => eraOf(state).key === "late";
+export const broodGrowth = (state) => 1 + Math.min(ERAS.BROOD_MAX, ERAS.BROOD * Math.max(0, yearOf(state) - ERAS.BROOD_FROM + 1));
+export const hiveCap = (state) => { const y = yearOf(state); let v = 99; for (const [from, n] of ERAS.HIVE_CAP) if (y >= from) v = n; return v; };
 export const winOpen = (state) => yearOf(state) >= ERAS.WIN_FROM_YEAR;
+
+// ---------- raids on your bases (factions.js, diplomacy.js, radio.js, visitors.js) ----------
+// A [from year, value] table's value this year.
+export const byYear = (table, state) => { const y = yearOf(state); let v = table[0][1]; for (const [from, x] of table) if (y >= from) v = x; return v; };
+export const raidPrep = (state) => byYear(ERAS.RAIDS.PREP, state);
+export const outsiderPrep = (state) => byYear(ERAS.RAIDS.OUT_PREP, state);
+export const raidSizeRange = (state) => byYear(ERAS.RAIDS.SIZE, state);
+// The pace: may a new raid on your bases begin today? (state.raidPaceOff: a test switch.)
+export const raidPaceOpen = (state) => !!state.raidPaceOff || dayOf(state) >= (ensureEraState(state).nextRaid || 0);
+// A raid on one of your bases has begun: the next may begin 112 / PER_YEAR × 0.75–1.25 days later (no dice drawn:
+// the jitter comes from the day and the seed, so every world plays out the same).
+export function noteRaid(state) {
+  const E = ensureEraState(state);
+  const d = dayOf(state);
+  const gap = YEAR_DAYS / byYear(ERAS.RAIDS.PER_YEAR, state);
+  const j = 0.75 + 0.5 * (hash((state.seed || 1) * 7919 + d) / 4294967296);
+  E.nextRaid = d + Math.round(gap * j);
+  E.raids = (E.raids || 0) + 1;
+}
+
+// The pace of horde attacks a hive sends at you (hives.js attackTarget / sendAttack).
+export const hordePaceOpen = (state) => !!state.raidPaceOff || dayOf(state) >= (ensureEraState(state).nextHorde || 0);
+export function noteHorde(state) {
+  const E = ensureEraState(state);
+  const d = dayOf(state);
+  const gap = YEAR_DAYS / byYear(ERAS.HORDES, state);
+  const j = 0.75 + 0.5 * (hash((state.seed || 1) * 104729 + d) / 4294967296);
+  E.nextHorde = d + Math.round(gap * j);
+  E.hordes = (E.hordes || 0) + 1;
+}
 
 // ---------- the outbreak beyond the border (outbreak.js) ----------
 const hash = (n) => { let x = (n >>> 0) ^ 0x85ebca6b; x = Math.imul(x ^ (x >>> 15), 0x2c1b3c6d); x = Math.imul(x ^ (x >>> 12), 0x297a2d39); return (x ^ (x >>> 15)) >>> 0; };

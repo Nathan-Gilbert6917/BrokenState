@@ -471,7 +471,7 @@ const numbersSetup = (p, enemy, extra = {}) => ({ tile: partyTile(p), partyId: p
     const members = [{ id: 1, name: "A a", hp: 1, mult: 1, load: 0, scouting: 0, medicine: 0 }, { id: 2, name: "B b", hp: 100, mult: 1, load: 0, scouting: 10, medicine: 10 }];
     const model = { members, win: 0.2, enemy: { kind: "raiders", count: 2 }, ambush: "player", night: true, vehicle: true, stealthy: true, capture: 0 };
     const r = rollFight(rng, model, "losing");
-    if (r.round == null || !r.run.carried.length) continue;
+    if (r.round == null || !r.run.carried.length || r.run.carried[0].id !== 1) continue; // the medic carried out (downed too) is not the case measured
     tries++; if (r.run.carried[0].lives) live++;
   }
   check(tries > 100 && Math.abs(live / tries - 0.7) < 0.06, `carried out by a medic with Medicine 10: ${Math.round((live / Math.max(1, tries)) * 100)}% pull through (70% expected, ${tries} carried)`);
@@ -729,7 +729,7 @@ function measure(style) {
   const share = (c, a, b) => (c[b] ? c[a] / c[b] : null);
   const f2 = (x) => (x == null ? "-" : `${Math.round(x * 100)}%`);
   console.log(`in a retreat: runners who got out ${f2(share(cmp.tac, "out", "runners"))} on the map vs ${f2(share(cmp.num, "out", "runners"))} by the numbers; the team home alive ${f2(share(cmp.tac, "home", "team"))} vs ${f2(share(cmp.num, "home", "team"))} (${cmp.tac.n} vs ${cmp.num.n} retreats)`);
-  console.log(`deaths a battle fought out: ${(tot.off.dead / tot.n).toFixed(2)} on the map vs ${(T.off.dead / tot.n).toFixed(2)} by the numbers (by the numbers is the gentler resolution, before any retreat)`);
+  console.log(`deaths a battle fought out: ${(tot.off.dead / tot.n).toFixed(2)} on the map vs ${(T.off.dead / tot.n).toFixed(2)} by the numbers (calibrated on the map: tools/calibrate.js)`);
   return tot;
 }
 
@@ -749,16 +749,24 @@ if (N > 0) {
   // By the numbers: the policy saves lives like the map's retreat, and both modes agree on the escape itself.
   for (const s of styles) {
     const T = res[s].num, c = res[s].cmp;
+    const md = res[s].off.dead;
+    check(Math.abs(T.off.dead - md) <= 0.5 * md + 5, `${s}: fought out, a fight by the numbers is about as deadly as on the map (${md} vs ${T.off.dead} dead, within 50%; tools/calibrate.js checks it closer)`);
     check(T.on.dead <= T.off.dead && T.on.wipes <= T.off.wipes, `${s}, by the numbers (${T.policy}): no extra lives or wipes (deaths ${T.off.dead} → ${T.on.dead}, wipes ${T.off.wipes} → ${T.on.wipes})`);
     check(T.on.retreats === 0 || T.on.winnable / T.on.retreats <= 0.25, `${s}, by the numbers: at most a quarter of its retreats are from fights it would have won (${T.on.winnable}/${T.on.retreats})`);
     // Allowed gap: 15 points, or 2.5 standard errors of the difference when the samples are small (10 runners by the
     // numbers at 85% come out 100% about one time in seven by chance alone).
     if (c.tac.runners >= 10 && c.num.runners >= 10) {
       const a = c.tac.out / c.tac.runners, b = c.num.out / c.num.runners, pp = (c.tac.out + c.num.out) / (c.tac.runners + c.num.runners);
-      const tol = Math.max(0.15, 2.5 * Math.sqrt(Math.max(0.0025, pp * (1 - pp)) * (1 / c.tac.runners + 1 / c.num.runners)));
+      // 17 points: by the numbers a runner caught who tears free counts as out, and with the calibrated blood
+      // (breakoff.js LOST_DOWN, tools/calibrate.js) "When most are down" breaks off with fewer standing to catch.
+      const tol = Math.max(0.17, 2.5 * Math.sqrt(Math.max(0.0025, pp * (1 - pp)) * (1 / c.tac.runners + 1 / c.num.runners)));
       check(Math.abs(a - b) <= tol, `${s}: runners who get out, on the map ${Math.round(a * 100)}% (${c.tac.runners}) vs by the numbers ${Math.round(b * 100)}% (${c.num.runners}) (within ${Math.round(tol * 100)} points)`);
     }
-    if (c.tac.n >= 5 && c.num.n >= 5) check(c.num.home / c.num.team >= c.tac.home / c.tac.team - 0.1, `${s}: a retreat by the numbers brings home at least as many as the map's (−10 points): ${Math.round((c.tac.home / c.tac.team) * 100)}% vs ${Math.round((c.num.home / c.num.team) * 100)}%`);
+    // A lost fight by the numbers is now as deadly as on the map (breakoff.js, calibrated by tools/calibrate.js): "When
+    // most are down" (Aggressive) waits until more than half are down or badly hurt, later than the map's Aggressive
+    // AI, which sees the fight turn: 20 points for it, 10 for the others.
+    const slack = T.policy === "most" ? 0.2 : 0.1;
+    if (c.tac.n >= 5 && c.num.n >= 5) check(c.num.home / c.num.team >= c.tac.home / c.tac.team - slack, `${s}: a retreat by the numbers brings home at least as many as the map's (−${Math.round(slack * 100)} points): ${Math.round((c.tac.home / c.tac.team) * 100)}% vs ${Math.round((c.num.home / c.num.team) * 100)}%`);
   }
   // A runner's escape odds per enemy kind where both pull out at about the same moment: the Cautious AI on the map
   // sounds the retreat early, as If losing breaks off early (the later styles meet more of the dead around them).

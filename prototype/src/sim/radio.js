@@ -40,6 +40,7 @@ import { marketOf } from "./trade.js";
 import { diplomacyDaily } from "./diplomacy.js";
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
+import { raidPaceOpen, noteRaid } from "./eras.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -311,13 +312,14 @@ export function radioDaily(state) {
 function grudgeRaid(state, f) {
   if (!f.grudgeUntil || day(state) > f.grudgeUntil || attitude(f) !== "Hostile" || f.pop < 6) return;
   if (state.parties.some((q) => q.owner === f.id && q.kind === "raid")) return;
+  if (!raidPaceOpen(state)) return; // eras.js: the pace of raids on you
   if (!state.rng.chance(0.12)) return;
   const g = state.grid;
   const targets = state.bases.filter((b) => f.bases.some((fb) => g.distance(fb, b.tile) <= 24));
   if (!targets.length) return;
   const b = state.rng.pick(targets);
   const p = spawnAiParty(state, f, "raid", f.bases[0], b.tile, { strength: Math.max(4, strength(f) * state.rng.range(0.25, 0.4)), target: { kind: "player", baseId: b.id, tile: b.tile } });
-  if (p) p.grudge = true;
+  if (p) { p.grudge = true; noteRaid(state); }
 }
 
 // What the hub can spare of a good (keeps a few days of food and water, some meds and ammo).

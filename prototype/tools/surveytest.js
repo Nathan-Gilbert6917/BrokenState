@@ -165,6 +165,7 @@ function runTeam(st, p, maxHours = 400, cards = "first") {
     if (st.combat) st.combat = null;
     for (let k = st.cards.length - 1; k >= 0; k--) {
       const c = st.cards[k];
+      if (!c) continue; // answering a card can take others off the list
       st.cards.splice(k, 1);
       if (c.isOrders) continue;
       stats.cards++;
@@ -483,7 +484,7 @@ console.log("Crews and the autopilot");
     const st2 = W(600 + style.length);
     setAutopilot(st2, true, style);
     const seen = new Set();
-    for (let i = 0; i < 24 * 40; i++) {
+    for (let i = 0; i < 24 * 90; i++) { // 90 days: since the hive tech tree and the eras the first weeks are busier (hordes from day one, the hub keeps its hands home longer): the surveys come later
       tickHour(st2);
       for (const q of st2.parties) {
         if (q.owner !== "player" || q.kind === "convoy") continue;
@@ -497,7 +498,7 @@ console.log("Crews and the autopilot");
       }
     }
   }
-  check(sweeps >= 3, `the autopilot sends surveys (${sweeps} in 40 days over three styles)`);
+  check(sweeps >= 3, `the autopilot sends surveys (${sweeps} in 90 days over three styles)`);
   check(bad === 0, `no team sent to scavenge a site nobody has found (${sent} checks)`);
   check(surveyCandidate(Object.assign(W(41), { surveyOff: true }), 4) === null, "the test switch (state.surveyOff) turns the autopilot's surveys off");
 }

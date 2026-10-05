@@ -353,6 +353,13 @@ export function controlRadius(state, kind, walled = false) {
 }
 export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" || b.captured ? "stronghold" : "outpost", count(b, "walls") > 0);
 // Every centre of coalition land with its radius: your bases and the members' bases.
+// The land the coalition holds, as a mask over the tiles (1 = held). Gangs from beyond the border and raider bands
+// do not dig in there (factions.js newGangs, visitors.js settleBands): the coalition's patrols see them off.
+export function coalitionMask(state) {
+  const mark = new Uint8Array(state.tiles.length);
+  for (const c of landCentres(state)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
+  return mark;
+}
 export function landCentres(state) {
   return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...allianceMembers(state).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
 }

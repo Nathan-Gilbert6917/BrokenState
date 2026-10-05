@@ -52,6 +52,8 @@ import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius } from "./alliance.js";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, broodForce, hiveById, zombieToughness } from "./hives.js";
+import { isLate } from "./eras.js";
+import { BREAKOFF } from "./breakoff.js";
 import { growthAt, ensureGrowths, growthForce } from "./hivetech.js";
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
@@ -74,7 +76,8 @@ import { autoTreats } from "./comforts.js";
 // hiveFires = fires it may set around a mound first, hiveRest = days between hive missions.
 // conquer = which groups' bases it storms (conquestCandidate: "ready" any hostile group, "provoked" hostile groups
 // that raided it lately or when only hostile groups keep the coalition from winning, "last" only then), from day
-// conquerFrom, with at least conquerOdds to win; retreatBelow = the defence ratio under which it abandons an outpost
+// conquerFrom, with at least conquerOdds to win (lateConquer: from the late game, eras.js year 8, it goes for any
+// hostile group, at these odds: the push to win); retreatBelow = the defence ratio under which it abandons an outpost
 // to a raid rather than be overrun (raidWarningChoice).
 // reserves = keeps every supply at a target (reserveStatus) and acts as soon as one drops below it: shortCooldown
 // days between trips, shortReach = how much farther a trip may go for it, homeHorde = people kept home while
@@ -97,7 +100,7 @@ export const PERSONALITIES = {
     curious: 1, baseGuards: 1, guardMargin: 1.25, restMood: 28, chain: 1, outposts: 2, outpostPop: 9, strangerDays: 4,
     holdRatio: 1.25, raid: false, rescue: true, tradeEvery: 12,
     hiveFrom: 90, hiveOdds: 1.2, hiveFires: 3, hiveRest: 6,
-    conquer: "provoked", conquerFrom: 150, conquerOdds: 0.75, retreatBelow: 0.8,
+    conquer: "provoked", conquerFrom: 150, conquerOdds: 0.75, retreatBelow: 0.8, lateConquer: 0.7,
   },
   aggressive: {
     name: "Aggressive", crowdSlack: 8, desc: "Many long trips, loud searches, raids hostile land, ambushes camps and robbers, expands fast.",
@@ -631,7 +634,8 @@ function utility(ch, P) {
   let c = pctIn(H);
   if (c == null && /let you pass/.test(H)) c = 0.95;
   const k = c == null ? 0.5 : c;
-  const fight = (win) => win * k - P.lossFear * (1 - k) - 2 + P.fightBias;
+  // A fight costs blood even when it is won (breakoff.js, calibrated on the battle map): the closer, the more.
+  const fight = (win) => win * k - P.lossFear * (1 - k) - P.lossFear * (BREAKOFF.WON_DOWN + BREAKOFF.WON_CLOSE * (1 - k)) - 2 + P.fightBias;
   if (/^Invoke your/.test(L)) return 6 * k - (1 - k);
   if (/toll|palms|Offer them supplies/.test(L)) return 5 * k - 7 * (1 - k) - 1.5;
   if (/^Talk|^Negotiate|^Ask them to let/.test(L)) return 5.5 * k - (1 - k);
@@ -1984,7 +1988,7 @@ function knownGuard(state, id) {
 const HIVE_GUARD_MIN = 40;
 // Squad power over the brood's strength after `fires` fires, with the allies' fighters off.
 function stormRatio(state, hive, power, guard, fires) {
-  const f = broodForce(Math.round(guard * FIRE_CUT ** fires));
+  const f = broodForce(Math.round(guard * FIRE_CUT ** fires), state);
   const count = broodAfterAllies(f.count, hiveAllies(state, hive).fighters);
   return power / (count * (f.power / 5.2));
 }
@@ -2079,7 +2083,7 @@ function hiveJobOk(state, job) {
   if (squad.length < HIVE_SQUAD) return false;
   const f = factionById(state, job.fid);
   const extra = f ? Math.max(1, Math.min(3, Math.round(f.pop / 10))) : 0; // their fighters once the job is taken
-  const base = broodForce(Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))));
+  const base = broodForce(Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))), state);
   const count = broodAfterAllies(base.count, hiveAllies(state, hive).fighters + extra);
   return squadPower(squad) / (count * (base.power / 5.2)) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
 }
@@ -2191,9 +2195,12 @@ function conquestCandidate(state, home, pool) {
   const power = squadValue(squad);
   const outsiders = state.factions.filter((f) => f.alive && !isMember(state, f));
   const onlyFoes = outsiders.length > 0 && outsiders.every((f) => attitude(f) === "Hostile");
+  const late = P.lateConquer != null && isLate(state); // eras.js: the late game, the push to win
   const want = (f) => {
+    // The late push: a group that will not join (goodwill below zero, not a member) is in the coalition's way too.
+    if (late && f.goodwill < 0 && !isMember(state, f)) return today >= P.conquerFrom;
     if (attitude(f) !== "Hostile") return false;
-    if (P.conquer === "ready") return today >= P.conquerFrom;
+    if (P.conquer === "ready" || late) return today >= P.conquerFrom;
     if (today < P.conquerFrom) return false;
     if (onlyFoes) return true;
     // Balanced: the coalition within reach (35%+ of the land): the hostile groups in its way are next.
@@ -2209,8 +2216,8 @@ function conquestCandidate(state, home, pool) {
     const d = state.grid.distance(tile, h.tile);
     if (d > Math.max(20, P.range * 2.5)) continue;
     const force = assaultForce(state, f, tile);
-    const odds = assaultOdds(power, force);
-    if (odds < P.conquerOdds - (retake ? 0.1 : 0)) continue;
+    const odds = assaultOdds(power, force, true, squad.length);
+    if (odds < (late ? Math.min(P.conquerOdds, P.lateConquer) : P.conquerOdds) - (retake ? 0.1 : 0)) continue;
     // One group at a time until it breaks: its main base (the leaders fall with it), the group it went for last, the
     // group with the fewest bases.
     const score = odds * 4 + (retake ? 3 : 0) + (f.bases.length === 1 ? 1.5 : 0) + (f.bases[0] === tile ? 1.2 : 0) + (g.conquestFocus === f.id ? 1.5 : 0) + 2 / f.bases.length - d / 10;
@@ -2220,7 +2227,7 @@ function conquestCandidate(state, home, pool) {
     // A base of yours they hold is always known to you.
     const f = factionById(state, o.factionId);
     const force = assaultForce(state, f, o.tile);
-    const odds = assaultOdds(power, force);
+    const odds = assaultOdds(power, force, true, squad.length);
     const d = state.grid.distance(o.tile, h.tile);
     if (odds < P.conquerOdds - 0.1 || d > Math.max(20, P.range * 2.5)) continue;
     const score = odds * 4 + 3 - d / 10;
@@ -2239,7 +2246,7 @@ function hubRetake(state, home, pool) {
   const f = factionById(state, occ.factionId);
   const squad = [...pool].filter((s) => s.health >= 50 && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, Math.min(HIVE_SQUAD, Math.max(0, home.length - 2)));
   if (!f || squad.length < 3) return null;
-  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile));
+  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile), true, squad.length);
   if (odds < 0.35) return null;
   return { mission: "assault", tile: occ.tile, score: 9, crew: squad.length, assault: true, squadMin: 3, minHealth: 50,
     why: `take back ${occ.name}, the old hub (${Math.round(odds * 100)}% against ${assaultForce(state, f, occ.tile).count} defenders)`, supplies: { ammo: 40, meds: 2 } };

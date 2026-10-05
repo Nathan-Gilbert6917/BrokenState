@@ -55,8 +55,8 @@ import { outsiderRaidOn } from "./visitors.js";
 import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
-import { controlledLand, ALLIANCE } from "./alliance.js";
-import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS } from "./eras.js";
+import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
+import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
 import { raidTier } from "./defences.js";
 
 export const RAIDS = {
@@ -242,6 +242,7 @@ export function razeGroupBase(state, target, tile, attacker) {
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);
+  const governs = state.factions.some((f) => f.alive && !isAggressiveType(f)) && controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
   for (const f of state.factions) {
     if (!f.alive) continue;
     const def = FACTION_TYPES[f.type];
@@ -305,6 +306,9 @@ export function factionsDaily(state) {
       changeGoodwill(state, f, RAIDS.COOL_OFF, "time has passed");
     }
     if (state.routes.some((r) => r.active && r.factionId === f.id)) changeGoodwill(state, f, 0.3);
+    // Eras (eras.js BANDWAGON): a coalition that governs the state (over half the land) wins the peaceful groups over
+    // with time: they warm to it every day, up to BANDWAGON_CAP (the aggressive ones never do: break them).
+    if (governs && !isAggressiveType(f) && f.goodwill < ERAS.BANDWAGON_CAP && !isMemberOf(state, f)) changeGoodwill(state, f, ERAS.BANDWAGON);
 
     // Tribute buys an aggressive group off only for a while; grudges fade slowly.
     if (f.boughtGw > 0) {
@@ -343,13 +347,16 @@ export function factionsDaily(state) {
 function newGangs(state) {
   if (day(state) < RAIDS.NEW_GANG_FROM || state.noNewGangs) return; // noNewGangs: test switch
   const minAgg = isLate(state) ? Math.max(RAIDS.MIN_AGG, ERAS.LATE_MIN_AGG) : RAIDS.MIN_AGG; // eras.js: one more in the late game
+  // A state the coalition governs (over half the land held) is closed to new gangs: its patrols turn them back.
+  if (controlledLand(state).pct > ALLIANCE.LAND_NEEDED) return;
   if (state.factions.filter((f) => f.alive && isAggressiveType(f) && attitude(f) === "Hostile").length >= minAgg) return;
   const rng = state.rng;
   if (!rng.chance(RAIDS.NEW_GANG)) return;
   const g = state.grid;
   const h = hub(state);
   if (!h) return;
-  const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.owner == null &&
+  const held = coalitionMask(state); // alliance.js: not on the coalition's land
+  const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.owner == null && !held[t.id] &&
     g.distance(t.id, h.tile) >= 12 && g.distance(t.id, h.tile) <= 30 && !t.hive &&
     state.bases.every((b) => g.distance(b.tile, t.id) >= 6) &&
     state.factions.every((f) => !f.alive || f.bases.every((b) => g.distance(b, t.id) >= 8)));
@@ -408,11 +415,14 @@ function launchRaid(state, f) {
   const origin = f.bases[0];
   const targets = [];
   // Only a hostile group raids you: the same line as the "Hostile" label (and a hostile group has no pact left).
-  if (attitude(f) === "Hostile") {
+  // Eras (eras.js): only when the pace of raids on you allows a new one, and only a base it can take on: its whole
+  // strength at least PREP × the base's defence with everyone at a post (rising over the years: fewer, bigger raids).
+  if (attitude(f) === "Hostile" && raidPaceOpen(state)) {
     for (const b of state.bases) {
       const from = nearestOwnBase(state, f, b.tile);
       const d = g.distance(from, b.tile);
       if (d > RAIDS.REACH) continue; // the same reach on every map size: on a bigger one the far groups must expand toward you first
+      if (strength(f) * RAIDS.CAP < raidPrep(state) * preparedDefense(state, b)) continue;
       targets.push({ kind: "player", baseId: b.id, tile: b.tile, from, w: playerRaidWeight(state, f, b, d) });
     }
   }
@@ -431,7 +441,7 @@ function launchRaid(state, f) {
   if (tgt.kind === "player") {
     const base = baseById(state, tgt.baseId);
     const p = spawnAiParty(state, f, "raid", tgt.from, tgt.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: tgt.baseId, tile: tgt.tile } });
-    if (p) { p.esc = f.raidEsc || 1; f.raidedYou = day(state); } // the autopilot's grudge (autopilot.js conquest)
+    if (p) { p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); } // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
     return;
   }
   const raidStrength = Math.max(RAIDS.MIN, strength(f) * rng.range(0.25, 0.4));
@@ -447,13 +457,20 @@ export function playerRaidWeight(state, f, b, d) {
   return RAIDS.PLAYER_W * greed * land * grudge * size / (1 + d / RAIDS.DIST);
 }
 
-// The raid's strength: sized to the base's prepared defence (0.6–1.0 ×, × escalation), at most the whole group.
-export function raidSize(state, f, base) {
+// The base's defence with everyone at a post ("Prepare defenses"): what a group's scouts size a raid to.
+export function preparedDefense(state, base) {
   const was = base.alert;
   base.alert = true;
   const prepared = baseDefense(state, base);
   base.alert = was;
-  const want = prepared * state.rng.range(RAIDS.SIZE[0], RAIDS.SIZE[1]) * (f.raidEsc || 1);
+  return prepared;
+}
+// The raid's strength: sized to the base's prepared defence (0.6–1.0 × in the early game, more in later years:
+// eras.js RAIDS.SIZE; × escalation), at most the whole group.
+export function raidSize(state, f, base) {
+  const prepared = preparedDefense(state, base);
+  const [lo, hi] = raidSizeRange(state);
+  const want = prepared * state.rng.range(lo, hi) * (f.raidEsc || 1);
   return Math.max(RAIDS.MIN, Math.min(strength(f) * RAIDS.CAP, want));
 }
 

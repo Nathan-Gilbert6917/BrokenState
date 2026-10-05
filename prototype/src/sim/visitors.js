@@ -100,7 +100,8 @@ import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
 import { knownLoc } from "./discovery.js";
 import { rumourFromNews } from "./survey.js";
-import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS } from "./eras.js";
+import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS, raidPaceOpen, noteRaid, outsiderPrep } from "./eras.js";
+import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -407,7 +408,9 @@ function settleBands(state) {
   for (const v of [...visitorsOf(state)]) {
     if (v.kind !== "raiders" || v.paid || v.phase === "battle" || v.phase === "siege" || v.size < SETTLE.people) continue;
     if (supplyValue(v.stock) < SETTLE.goods || !info.rng.chance(SETTLE.chance)) continue;
-    const sites = g.within(v.tile, SETTLE.reach).map((id) => state.tiles[id]).filter((t) => (t.loc || t.ruin) && t.terrain !== "water" && !t.hive &&
+    if (controlledLand(state).pct > ALLIANCE.LAND_NEEDED) return; // a state the coalition governs: no band digs in
+    const held = coalitionMask(state); // alliance.js: not on the coalition's land
+    const sites = g.within(v.tile, SETTLE.reach).map((id) => state.tiles[id]).filter((t) => (t.loc || t.ruin) && t.terrain !== "water" && !t.hive && !held[t.id] &&
       (t.owner == null || t.owner === undefined) && !(t.loc && (t.loc.type === "city" || t.loc.zone === "urban")) &&
       state.bases.every((b) => g.distance(b.tile, t.id) >= 6) && state.factions.every((f) => !f.alive || f.bases.every((b) => g.distance(b, t.id) >= 8)));
     if (!sites.length) continue;
@@ -624,10 +627,14 @@ export const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k
 export function raidTargets(state, v) {
   const g = state.grid, S = vStrength(v), R = O.raiders, out = [];
   const near = (tile, max) => g.distance(v.tile, tile) <= max;
+  // Eras (eras.js): your bases only while the pace of raids on you allows a new one (a band already on its way to
+  // one keeps it), and only one it can take on: its strength at least OUT_PREP × the base's defence (rising over the years).
+  const paceOpen = raidPaceOpen(state);
   for (const b of state.bases) {
     if ((v.spared || []).includes(b.id) || !near(b.tile, 32)) continue;
+    if (!paceOpen && !(v.goal && v.goal.kind === "base" && v.goal.baseId === b.id)) continue;
     const def = baseDefense(state, b);
-    if (S < def * R.baseShare) continue;
+    if (S < def * Math.max(R.baseShare, outsiderPrep(state))) continue;
     const val = Math.min(800, supplyValue(b.stock)) + 60;
     out.push({ w: (val / 100) * Math.min(2, S / (def + 4)) / (1 + g.distance(v.tile, b.tile) / 12), goal: { kind: "base", baseId: b.id, tile: b.tile }, act: `heading for ${b.name}` });
   }
@@ -675,7 +682,8 @@ function retargetRaiders(state, v, first = false) {
   const opts = raidTargets(state, v);
   while (opts.length) {
     const pick = rng.weighted(opts, (x) => x.w);
-    if (setGoal(state, v, pick.goal, pick.act)) return true;
+    const fresh = pick.goal.kind === "base" && !(v.goal && v.goal.kind === "base" && v.goal.baseId === pick.goal.baseId);
+    if (setGoal(state, v, pick.goal, pick.act)) { if (fresh) noteRaid(state); return true; } // eras.js: the pace of raids on you
     opts.splice(opts.indexOf(pick), 1);
   }
   if (first) return headOut(state, v);

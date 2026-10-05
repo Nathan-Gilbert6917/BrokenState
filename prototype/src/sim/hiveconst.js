@@ -35,14 +35,15 @@ export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother" };
 // A hive grows structures ("growths") on land within TECH.RANGE tiles of itself, bought with its resources and
 // taking days to grow. Which ones it may grow is set by its tier: tier t is open once the game is past
 // TIER_DAY[t] (stretched by up to JITTER per hive, so the hives do not all evolve on the same day) and the hive
-// itself is TIER_AGE[t] days old (a young hive starts at the bottom). With the defaults: pits and a brood chamber
-// from the start, runners and feeding grounds from about month 4–5, brutes and spitters from year 1.2–1.7,
-// screamers, crawlers and the Wallbreaker den from year 3–4, the mutation vat (elite dead) from year 6–8. The
-// long-game balance tunes these days (a 10–15 year game); every number the tree uses is here.
+// itself is TIER_AGE[t] days old (a young hive starts at the bottom). The years are the game's 112-day years
+// (eras.js). With the defaults: pits and a brood chamber from the start, runners and feeding grounds from year 2
+// (the early game), brutes and spitters from year 5–6 (the mid game), screamers, crawlers and the Wallbreaker den
+// from year 10–13 (the late game: no Wallbreakers before), the mutation vat (elite dead) from year 14. Every number
+// the tree uses is here.
 export const TECH = {
   RANGE: 2,             // growths stand within this many tiles of their hive
   MAX: 10,              // growths a hive keeps at most (withered ones not counted; also limited by the free tiles)
-  TIER_DAY: [0, 120, 450, 1100, 2200], // game day each tier opens (tiers 0–4)
+  TIER_DAY: [0, 120, 450, 1100, 1500], // game day each tier opens (tiers 0–4): game years 2, 5, 10, 14 (eras.js: 112-day years)
   TIER_AGE: [0, 20, 90, 200, 400],     // ... and the age in days a hive needs for it
   JITTER: 0.35,         // per hive: a tier opens up to 35% later than its day
   GAP: 12,              // days between a hive starting one growth and the next
@@ -52,7 +53,7 @@ export const TECH = {
   REGROW: 5,
   DECAY_DAYS: 40,       // the growths of a destroyed hive wither and are gone after this many days
   RUMOUR: 0.4,          // chance a growth finished out of sight, at a hive you know of, reaches you as a rumour
-  BORDER_DAY: 900,      // border hordes carry the special dead of the era (at BORDER_SHARE of a hive's mix) from this day
+  BORDER_DAY: 900,      // border hordes carry the special dead of the era (at BORDER_SHARE of a hive's mix) from this day (game year 9)
   BORDER_SHARE: 0.5,
   MIX_MAX: 0.45,        // at most this share of a horde is special dead; the rest are ordinary
   // Burning a growth (the Burn the growth mission): its guard, the fires and the Molotovs.
