@@ -24,7 +24,9 @@ import {
 } from "./combat.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { ensureHives, zombieToughness } from "./hives.js";
-import { BOSS_NAMES, ZTYPES } from "./hiveconst.js";
+import { BOSS_NAMES, ZTYPES, SHEPHERD } from "./hiveconst.js";
+import { siegeWallCut } from "./siege.js";
+import { DECOY_KEYS, THROWABLES } from "./stealth.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
@@ -162,8 +164,10 @@ export function tierLimits(state, base, bosses = 0, night = false) {
 // Held at the wall at hold × or better with the wall tier counted; else they break in and are pushed out of the yard
 // (brk × with the yard counted) or held off from the buildings (with the buildings too); else overrun. ratio: what
 // the old single thresholds read (held ≥ hold > broken ≥ brk > overrun).
-export function raidTier(state, base, def, att, hold, brk) {
-  const m = tierMults(state, base, isNight(state));
+// kit: the raiders' siege kit (siege.js raidSiegeKit): ladders, a ram and grenades make the walls count less.
+export function raidTier(state, base, def, att, hold, brk, kit = null) {
+  const m = { ...tierMults(state, base, isNight(state)) };
+  if (kit && m.walled) m.wall = Math.max(1, m.wall - siegeWallCut(kit));
   const wall = (def * m.wall) / Math.max(1, att), yard = wall * m.yard, last = yard * m.buildings;
   const tier = wall >= hold ? "wall" : yard >= brk ? "yard" : last >= brk ? "buildings" : "overrun";
   const ratio = tier === "wall" ? wall : tier === "overrun" ? last : Math.max(brk, Math.min(yard, hold - 0.001));
@@ -405,10 +409,30 @@ export function hordeWarnings(state) {
   }
 }
 
-export const DECOY_FUEL = 6;
-export function decoyChance(h) {
-  if (h.bosses) return 0.15;
-  return Math.max(0.25, Math.min(0.8, 0.85 - hordeScore(h.size) / 60));
+// Luring a coming horde off (the warning card): a decoy fire (DECOY_FUEL fuel) or decoys from the armory (alarm
+// clocks, radios, noise makers, firecrackers, hand warmers, heat packs: stealth.js DECOY_KEYS; up to DECOY_ITEMS of
+// them). The chance falls with the horde's size, a Wallbreaker rarely turns, and a horde led by a Shepherd turns only
+// SHEPHERD.DECOY_CUT as often. Decoys from the armory: × (DECOY_BASE + DECOY_PER a decoy) of the fire's chance; heat
+// decoys count only for the crawlers in it, so a horde without them takes the noise ones.
+export const DECOY_FUEL = 6, DECOY_ITEMS = 3, DECOY_BASE = 0.55, DECOY_PER = 0.2;
+export const ledByShepherd = (h) => !!(h && h.mix && h.mix.shepherd > 0);
+export function decoyChance(h, items = 0) {
+  let c = h.bosses ? 0.15 : Math.max(0.25, Math.min(0.8, 0.85 - hordeScore(h.size) / 60));
+  if (items) c = Math.min(0.85, c * (DECOY_BASE + DECOY_PER * Math.min(DECOY_ITEMS, items)));
+  if (ledByShepherd(h)) c *= SHEPHERD.DECOY_CUT;
+  return c;
+}
+// The decoys in a base's armory that would work on this horde: noise ones always (the ordinary dead hear them), heat
+// ones only with crawlers among it. The items themselves (to take).
+export function armoryDecoys(base, h) {
+  const heat = !!(h && h.mix && h.mix.crawler > 0);
+  return (base.armory || []).filter((it) => it && DECOY_KEYS.includes(it.key) && ((THROWABLES[it.key].sense || []).includes("noise") || heat)).slice(0, DECOY_ITEMS);
+}
+// The horde turns toward the lure: it falls back and leaves the base be for a few days (as when it is beaten off).
+function lureOff(st, h, base, hours = 96) {
+  retreat(st, h, base);
+  h.lureUntil = st.hour + hours;
+  h.warned = false;
 }
 
 function warningCard(state, h, base) {
@@ -425,7 +449,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}`,
     choices: [
       {
         label: "Man the defences",
@@ -440,11 +464,23 @@ function warningCard(state, h, base) {
           if (!still(st)) return "The horde is gone.";
           if ((base.stock.fuel || 0) < DECOY_FUEL) return `${base.name} no longer has ${DECOY_FUEL} fuel.`;
           base.stock.fuel -= DECOY_FUEL;
-          if (!st.rng.chance(decoyChance(h))) return "The fire burns, but the horde keeps coming.";
-          retreat(st, h, base);
-          h.lureUntil = st.hour + 96;
-          h.warned = false;
+          if (!st.rng.chance(decoyChance(h))) return ledByShepherd(h) ? "The fire burns, but the horde keeps together and keeps coming: something leads it." : "The fire burns, but the horde keeps coming.";
+          lureOff(st, h, base);
           return "The horde turns toward the fire and away from the walls.";
+        },
+      },
+      {
+        label: `Set out decoys (${armoryDecoys(base, h).length || "none"} from the armory)`,
+        hint: `Alarm clocks, radios and noise makers (heat packs for crawlers) set ringing out on the approach, up to ${DECOY_ITEMS}: ${Math.round(decoyChance(h, Math.max(1, armoryDecoys(base, h).length)) * 100)}% to draw it off for a few days. They are used up${ledByShepherd(h) ? ". A Shepherd leads it: it is hardly fooled" : ""}`,
+        get disabled() { return !armoryDecoys(base, h).length; },
+        resolve: (st) => {
+          if (!still(st)) return "The horde is gone.";
+          const items = armoryDecoys(base, h);
+          if (!items.length) return "There are no decoys in the armory.";
+          for (const it of items) base.armory.splice(base.armory.indexOf(it), 1);
+          if (!st.rng.chance(decoyChance(h, items.length))) return `${items.length} decoy${items.length > 1 ? "s" : ""} ring out on the approach, but the horde keeps coming${ledByShepherd(h) ? ": something keeps it together" : ""}.`;
+          lureOff(st, h, base);
+          return `The horde turns toward the ringing and away from the walls (${items.length} decoy${items.length > 1 ? "s" : ""} used).`;
         },
       },
       { label: "Hold as you are", resolve: () => "You wait." },

@@ -221,6 +221,15 @@ function paintGrowth(kind) {
       p.rect(2, 9, 2, 11, BONE); p.rect(14, 9, 14, 11, BONE);
       break;
     }
+    case "fold": {
+      // The Shepherd's fold: a ring of the dead standing still around a taller one with pale eyes.
+      base();
+      p.disc(8, 10, 6.5, 3, FLESH);
+      for (const [x, y] of [[3, 9], [6, 11], [10, 11], [13, 9], [5, 7], [11, 7]]) { p.rect(x, y - 3, x, y, "#7a8a6a"); p.set(x, y - 4, "#9aa88a"); }
+      p.rect(8, 2, 8, 9, "#c9c4d8"); p.rect(7, 4, 9, 7, "#8a84a0"); p.set(8, 1, "#c9c4d8");
+      p.set(7, 3, "#e8e2ff"); p.set(9, 3, "#e8e2ff");
+      break;
+    }
     default: base(); p.disc(8, 9, 5, 3, FLESH);
   }
   return p;
@@ -278,4 +287,20 @@ function paintCrawler() {
   for (const x of [4, 7, 11, 15, 19]) p.set(x, 23, "#5f8a3a");
   return p;
 }
-export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (kind === "spitter" ? paintSpitter() : kind === "screamer" ? paintScreamer() : paintCrawler()));
+// The Shepherd: tall and still, wrapped in a grey shroud, a long bone crook in one hand, pale watching eyes.
+function paintShepherd() {
+  const p = painter(22, 26);
+  const SKIN = "#b9b4c8", DARK = "#7a748e", SHROUD = "#5d5a66", EYE = "#e8e2ff";
+  p.rect(8, 19, 9, 25, SHROUD); p.rect(12, 19, 13, 25, shade(SHROUD, -0.25));          // legs under the shroud
+  p.rect(7, 9, 14, 20, SHROUD); p.rect(12, 9, 14, 20, shade(SHROUD, -0.22));          // the shroud, upright
+  p.rect(7, 18, 14, 18, shade(SHROUD, -0.35));
+  p.rect(8, 2, 13, 9, SKIN); p.rect(8, 2, 13, 3, DARK); p.rect(7, 1, 14, 2, SHROUD);    // head, hooded
+  p.set(9, 5, EYE); p.set(12, 5, EYE); p.set(9, 6, "#9a94ff"); p.set(12, 6, "#9a94ff"); // eyes that watch
+  p.rect(10, 7, 11, 7, "#3a1412");
+  p.rect(15, 10, 16, 13, SKIN);                                                        // arm out to the crook
+  p.rect(17, 3, 17, 25, BONE); p.rect(17, 3, 19, 3, BONE); p.set(19, 4, BONE); p.set(19, 5, shade(BONE, -0.2)); // the crook
+  p.rect(5, 11, 6, 16, SKIN); p.set(5, 17, DARK);                                       // other arm, raised a little
+  for (const [x, y] of [[1, 2], [0, 8], [21, 9], [2, 14]]) p.set(x, y, EYE);           // its pull on the pack
+  return p;
+}
+export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (kind === "spitter" ? paintSpitter() : kind === "screamer" ? paintScreamer() : kind === "shepherd" ? paintShepherd() : paintCrawler()));

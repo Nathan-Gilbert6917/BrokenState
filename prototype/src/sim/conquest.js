@@ -53,6 +53,7 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { teamKit, assaultCut, kitText, spendGrenades } from "./siege.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts, groupBroken, GROUP_BREAK } from "./factions.js";
@@ -72,7 +73,7 @@ import { thirstAhead } from "./weather.js";
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
-  WALLS: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], WALL_FACTOR: 0.05,
+  WALLS: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], WALL_FACTOR: 0.05, GATE_HP: [60, 10], WALL_HP: [40, 8],
   STOCK_SHARE: 0.5, FLEE: 0.4, JOIN: 0.25, JOIN_MAX: 3, PRISON: 0.2, PRISON_MAX: 3, ATTACK_GW: -30, MEMBER_GW: -5,
   FALLOUT: { pact: -8, pactDefeat: -15, friend: -4, friendDefeat: -8, enemy: 2, enemyDefeat: 4, friendRel: 28, enemyRel: -42 },
   INFAMY: { hostile: 2, other: 15, defeatHostile: 0, defeatOther: 10, fade: 0.1, max: 100, wary: 20, drift: 1 / 200, inviteDiv: 2, inviteMax: 90 },
@@ -109,7 +110,8 @@ export function nativeWalls(f, tile) {
 }
 // What an assault on this base faces: { kind, count, power, fortified, walls, people, occupied }.
 const ALLY_SHARE = 0.4; // coalition fighters keep at most 40% of the defenders off your squad (at least MIN_DEF left)
-export function assaultForce(state, f, tile) {
+// p: the team going in: its siege kit (ladders, the ram, grenades: siege.js assaultCut) takes part of the walls away.
+export function assaultForce(state, f, tile, p = null) {
   const def = FACTION_TYPES[f.type];
   const occ = occupiedAt(state, tile);
   let count, people, walls;
@@ -124,11 +126,13 @@ export function assaultForce(state, f, tile) {
   }
   // The coalition's fighters (alliance.js assaultAllies): members near the base each keep some defenders busy.
   const allies = assaultAllies(state, f, tile);
+  const kit = p && state.parties.includes(p) ? teamKit(state, partyMembers(state, p), (p.cargo && p.cargo.gear) || []) : null;
   const held = Math.min(allies.fighters, Math.floor(count * ALLY_SHARE), Math.max(0, count - CONQUEST.MIN_DEF));
   count -= held;
   return {
     kind: KIND_OF[f.type], count, power: Math.round((2.6 + def.arms * 1.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`,
-    fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
+    fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
+    siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
     allies: held ? { held, names: allies.names } : null,
   };
 }
@@ -139,6 +143,14 @@ export function assaultOdds(power, force, ammoOk = true, people = 0) {
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedAmmo = (p) => Math.max(0, Math.floor(p.supplies.ammo || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies.ammo) || 0));
+// "2 ladders, a battering ram and 3 grenades" (the assault card).
+function kitWords(k) {
+  const parts = [];
+  if (k.ladders) parts.push(k.ladders > 1 ? `${k.ladders} ladders` : "a ladder");
+  if (k.ram) parts.push("a battering ram");
+  if (k.grenades) parts.push(k.grenades > 1 ? `${k.grenades} grenades` : "a grenade");
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "";
+}
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
   return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0), force, carriedAmmo(p) >= m.length * 3, m.length);
@@ -169,7 +181,7 @@ export function assaultArrive(state, p) {
 
 function assaultCard(state, p, f) {
   const tile = partyTile(p);
-  const force = assaultForce(state, f, tile);
+  const force = assaultForce(state, f, tile, p);
   const odds = teamAssaultOdds(state, p, force);
   const occ = occupiedAt(state, tile);
   const warn = assaultWarning(state, f);
@@ -178,7 +190,7 @@ function assaultCard(state, p, f) {
   return {
     title: `Assault: ${tileLabel(state, tile)}`, partyId: p.id, where: tileLabel(state, tile), assault: { factionId: f.id, tile },
     text: `${occ ? `${f.name} hold ${occ.name}, the base they took from you on day ${occ.day}` : `${f.name} (${attitude(f).toLowerCase()}) hold this base`}: about ${force.people} people, ${force.count} of them on ${wallText} (defence ×${force.fortified}). ` +
-      `${force.allies ? `Coalition fighters (${force.allies.names.join(", ")}) keep ${force.allies.held} of the defenders busy. ` : ""}${last ? `It is their last base: take it and ${f.name} is finished.` : `They hold ${f.bases.length} bases.`}${occ ? ` ${occupiedText(state, occ)}` : ""}${warn ? ` ${warn}` : ""}`,
+      `${force.siegeKit && force.walls >= 1 ? `Your team brings ${kitWords(force.siegeKit)}: their walls count ${Math.round(assaultCut(force.siegeKit) * 100)}% less. ` : ""}${force.allies ? `Coalition fighters (${force.allies.names.join(", ")}) keep ${force.allies.held} of the defenders busy. ` : ""}${last ? `It is their last base: take it and ${f.name} is finished.` : `They hold ${f.bases.length} bases.`}${occ ? ` ${occupiedText(state, occ)}` : ""}${warn ? ` ${warn}` : ""}`,
     choices: [
       { label: "Storm the base (tactical battle)", fight: { odds, enemy: force, ambush: null }, hint: `About ${Math.round(odds * 100)}% to win against ${force.count} defenders behind ${wallText}. Win and the base is yours: an outpost with its land and part of its stores. You can fall back from the left edge`,
         resolve: (st) => startAssault(st, p, f) },
@@ -193,7 +205,7 @@ export function startAssault(state, p, f) {
   if (!f.alive || !f.bases.includes(tile)) { awaitOrders(state, p, `Nobody holds ${tileLabel(state, tile)} any more.`, { failed: true }); return ""; }
   const C = ensureConquest(state);
   C.stats.assaults++;
-  const force = assaultForce(state, f, tile);
+  const force = assaultForce(state, f, tile, p);
   // Attacking them is an act of war: goodwill, the pact, the coalition.
   if (isMember(state, f)) {
     const A = ensureAlliance(state);
@@ -216,6 +228,8 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
   const c = setup.context;
   const C = ensureConquest(state);
   const p = state.parties.find((x) => x.id === c.partyId);
+  // Fought by the numbers: the grenades the team brought were thrown (on the map each one goes when it is thrown).
+  if (p && !result.tactical && setup.enemy.siegeKit && setup.enemy.siegeKit.grenades) spendGrenades(state, partyMembers(state, p), p.cargo);
   const f = factionById(state, c.factionId);
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
     wipeIfEmpty(state, p);
@@ -257,8 +271,14 @@ registerBattleLayout("baseAssault", (b, ctx) => {
       for (let y = 0; y < ctx.H; y++) {
         const k = y === mid - 1 || y === mid ? "gate" : breaches.includes(y) ? "breach" : "palisade";
         ctx.put(X, y, k);
+        // Their gate is barred and their wall sections have hit points (CONQUEST.GATE_HP / WALL_HP + per wall point):
+        // a ram, grenades and ladders (siege.js) or the breaches.
+        const cell = ctx.cellAt(X, y);
+        if (k === "gate") { cell.bar = true; cell.hp = cell.mhp = CONQUEST.GATE_HP[0] + CONQUEST.GATE_HP[1] * walls; }
+        if (k === "palisade") cell.hp = cell.mhp = CONQUEST.WALL_HP[0] + CONQUEST.WALL_HP[1] * walls;
         if (k !== "palisade") { ctx.put(X - 1, y, "open"); ctx.put(X + 1, y, "open"); }
       }
+      b.holders = "enemy"; // their walls: your people batter them, theirs walk through their own gate
     }
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
