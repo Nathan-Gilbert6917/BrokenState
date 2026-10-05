@@ -27,5 +27,89 @@ export const HIVE = {
   ATTACK_RANGE: 45,   // your bases are attacked from at most this far (the groups' from 22)
   PLAYER_PULL: 2.5,   // your bases weigh this much more than the groups' when a hive picks what to attack
   BOSS_GAP: 90,       // days after a hive raises a Wallbreaker before it can raise the next
+  BOSS_DEN: true,     // Wallbreakers come only from a hive with a Wallbreaker den (GROWTHS.den); false: the calendar alone (BOSS_DAY)
 };
 export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother" };
+
+// ---------- the hive tech tree (hivetech.js) ----------
+// A hive grows structures ("growths") on land within TECH.RANGE tiles of itself, bought with its resources and
+// taking days to grow. Which ones it may grow is set by its tier: tier t is open once the game is past
+// TIER_DAY[t] (stretched by up to JITTER per hive, so the hives do not all evolve on the same day) and the hive
+// itself is TIER_AGE[t] days old (a young hive starts at the bottom). With the defaults: pits and a brood chamber
+// from the start, runners and feeding grounds from about month 4–5, brutes and spitters from year 1.2–1.7,
+// screamers, crawlers and the Wallbreaker den from year 3–4, the mutation vat (elite dead) from year 6–8. The
+// long-game balance tunes these days (a 10–15 year game); every number the tree uses is here.
+export const TECH = {
+  RANGE: 2,             // growths stand within this many tiles of their hive
+  MAX: 10,              // growths a hive keeps at most (withered ones not counted; also limited by the free tiles)
+  TIER_DAY: [0, 120, 450, 1100, 2200], // game day each tier opens (tiers 0–4)
+  TIER_AGE: [0, 20, 90, 200, 400],     // ... and the age in days a hive needs for it
+  JITTER: 0.35,         // per hive: a tier opens up to 35% later than its day
+  GAP: 12,              // days between a hive starting one growth and the next
+  SAVE_DAYS: 20,        // a growth a hive cannot afford yet: it sends out no new roaming hordes for up to this many days to save for it
+  THREAT_DAYS: 60,      // a hive attacked within this many days builds for defence (brood chamber first)
+  HP: 100,              // a growth's flesh: fires burn it down; it regrows REGROW a day
+  REGROW: 5,
+  DECAY_DAYS: 40,       // the growths of a destroyed hive wither and are gone after this many days
+  RUMOUR: 0.4,          // chance a growth finished out of sight, at a hive you know of, reaches you as a rumour
+  BORDER_DAY: 900,      // border hordes carry the special dead of the era (at BORDER_SHARE of a hive's mix) from this day
+  BORDER_SHARE: 0.5,
+  MIX_MAX: 0.45,        // at most this share of a horde is special dead; the rest are ordinary
+  // Burning a growth (the Burn the growth mission): its guard, the fires and the Molotovs.
+  GUARD_BASE: 6, GUARD_PER: 40, GUARD_MAX: 12, // 6 of the dead + 1 per 40 in the hive's guard, at most 12
+  FIRE_FUEL: 4, FIRE_DMG: 60, BOMBS: 2, BOMB_DMG: 100,
+  SPIRE_RANGE: 10,      // a screamer spire: its hive attacks bases this much farther away
+  SPIRE_CALL: 6,        // ... and calls wandering dead within this many tiles into its guard (SPIRE_ODDS a day each)
+  SPIRE_ODDS: 0.3,
+  ELITE_HP: 1.3, ELITE_DMG: 1.2, ELITE_WEIGHT: 1.25, // a mutation vat's special dead
+};
+
+// The growths. tier: the tier it needs; cost / days: resources and days to grow; max: per hive; unlocks: the kind of
+// dead it lets the hive breed (ZTYPES); income: + resources a day; incomeMult: × the hive's income; guard / out:
+// + its guard's minimum and + hordes out at once; boss: Wallbreakers need one (HIVE.BOSS_DEN); elite: the special
+// dead are elite; spire: the screamer spire. danger: how much the autopilot wants it gone (hivetech.js).
+export const GROWTHS = {
+  pit:      { name: "Biomass pit",     tier: 0, cost: 12, days: 10, max: 2, income: 1, danger: 1,
+              desc: "A pit of rotting flesh the hive feeds on: +1 resource a day." },
+  brood:    { name: "Brood chamber",   tier: 0, cost: 20, days: 15, max: 1, guard: 40, out: 1, outTier: 2, danger: 2,
+              desc: "Swollen sacs where the dead are kept: the hive's guard is 40 bigger, and once the hive has evolved to tier 2 one more of its hordes can be out." },
+  feeding:  { name: "Feeding grounds", tier: 1, cost: 25, days: 20, max: 1, incomeMult: 1.5, danger: 1.5,
+              desc: "A field of bones and offal: the hive's income is half again as much." },
+  warren:   { name: "Runner warren",   tier: 1, cost: 25, days: 20, max: 1, unlocks: "runner", danger: 2.5,
+              desc: "Tunnels the fast dead nest in: the hive's hordes bring runners." },
+  brutepit: { name: "Brute pit",       tier: 2, cost: 35, days: 30, max: 1, unlocks: "brute", danger: 3.5,
+              desc: "A pit where the dead are fed until they swell: the hive's hordes bring brutes that batter walls." },
+  sac:      { name: "Spitter sac",     tier: 2, cost: 35, days: 30, max: 1, unlocks: "spitter", danger: 3,
+              desc: "Bloated bladders of acid: the hive's hordes bring spitters that hit you behind cover." },
+  spire:    { name: "Screamer spire",  tier: 3, cost: 40, days: 40, max: 1, unlocks: "screamer", spire: true, danger: 3.5,
+              desc: "A shrieking tower of fused bodies: the hive's hordes bring screamers, it attacks bases from farther away and calls wandering dead in." },
+  burrow:   { name: "Crawler burrow",  tier: 3, cost: 40, days: 40, max: 1, unlocks: "crawler", danger: 4,
+              desc: "Holes the legless dead crawl out of: the hive's hordes bring crawlers that slip past walls." },
+  den:      { name: "Wallbreaker den", tier: 3, cost: 50, days: 45, max: 1, boss: true, danger: 5,
+              desc: "A cave of bone where Wallbreakers are grown: the hive can raise Wallbreakers." },
+  vat:      { name: "Mutation vat",    tier: 4, cost: 60, days: 60, max: 1, elite: true, danger: 4.5,
+              desc: "A boiling vat of flesh: the hive's special dead are elite (tougher and harder hitting)." },
+};
+
+// The special dead (zombietypes.js on the battle map; hives.js, hordes.js, defences.js on the State Map).
+// Battle: hp and dmg × an ordinary zombie's of the same power, aim + its melee aim, mob tiles per action, armor ×
+// the damage it takes. Map: share = its part of a horde from a hive that breeds it; wall = how hard each one presses
+// the walls (× against the hold limit); weight = its worth in a fight resolved by the numbers and in a horde's
+// strength. special / counter: shown in the game (tile panel, Help).
+export const ZTYPES = {
+  runner:   { name: "Runner",   short: "R", hp: 0.85, dmg: 1.0, aim: 5, mob: 6, armor: 1, share: 0.15, wall: 0.9, weight: 1.15, speed: 1.25,
+              special: "Very fast: crosses the battle map in a turn; hordes with many of them move a quarter faster.",
+              counter: "Walls and overwatch: behind walls they are just more of the dead." },
+  brute:    { name: "Brute",    short: "B", hp: 2.4, dmg: 1.5, aim: 5, mob: 2.5, armor: 0.75, share: 0.08, wall: 2.5, weight: 2.2, smash: 0.6, smashEvery: 12,
+              special: "Huge and slow, shrugs off a quarter of every hit and smashes barricades and walls in its way; every dozen in a horde smashes a defence like a Wallbreaker.",
+              counter: "Armor against its blows, heavy guns at range, spike pits and trenches." },
+  spitter:  { name: "Spitter",  short: "S", hp: 0.9, dmg: 1.0, aim: 0, mob: 3, armor: 1, share: 0.08, wall: 1.4, weight: 1.5, spitAim: 50, priority: 1.6, keep: 4, cooldown: 2, pierce: 1,
+              special: "Spits acid up to 6 tiles away every other turn; cover counts one step less against it.",
+              counter: "Smoke, shooting it first from range, rushing it." },
+  screamer: { name: "Screamer", short: "Sc", hp: 0.8, dmg: 0.6, aim: 0, mob: 3, armor: 1, share: 0.03, wall: 1.2, weight: 2.0, priority: 2.5, keep: 5, every: 2, calls: [1, 2], callMax: 6, pull: 3, pullOdds: 0.3,
+              special: "Hangs back and shrieks every other turn, calling more of the dead in from the edge (up to 6 a battle); on the map its horde pulls wandering dead in.",
+              counter: "Kill it first: the calling stops when it dies." },
+  crawler:  { name: "Crawler",  short: "C", hp: 0.8, dmg: 1.2, aim: 10, mob: 3, armor: 1, share: 0.06, wall: 0.5, weight: 1.3, reveal: 2.5, ambush: 1.6, slip: 0.6,
+              special: "Low in the grass: unseen until it is within 2 tiles, in light or has struck, and its first bite hits hard. At the walls some slip past and attack inside.",
+              counter: "Watchtowers and floodlights (they see them coming), flares, keeping your people together." },
+};

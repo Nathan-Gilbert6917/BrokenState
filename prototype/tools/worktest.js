@@ -590,7 +590,8 @@ for (const seed of seeds) {
 console.log(`  total over ${seeds.length} seeds × ${DICE} rolls: governor food ${sum.gov.food}, builds ${sum.gov.builds}, crafts ${sum.gov.crafts} | priorities food ${sum.pri.food}, builds ${sum.pri.builds}, crafts ${sum.pri.crafts}`);
 check(sum.pri.food >= sum.gov.food, `priorities harvest at least as much food (${sum.pri.food} vs ${sum.gov.food})`);
 // Buildings: the two modes tie within the run-to-run spread (per seed ±40, so about ±90 over 40 runs; 8 runs a seed
-// put priorities 1.3% behind, 4 runs 5.3%): a strict "at least as many" would fail on noise, so allow the spread, 7%.
+// put priorities 1.3% behind, 4 runs 5.3%; with the governor's water filters held while the tanks are full, work.js
+// holdFilters, 8 runs 0.4% and 4 runs 6.6%): a strict "at least as many" would fail on noise, so allow the spread, 7%.
 check(sum.pri.builds >= sum.gov.builds * 0.93, `priorities finish about as many buildings, within the 7% run-to-run spread (${sum.pri.builds} vs ${sum.gov.builds})`);
 check(sum.pri.crafts >= sum.gov.crafts, `priorities finish at least as many crafts (${sum.pri.crafts} vs ${sum.gov.crafts})`);
 

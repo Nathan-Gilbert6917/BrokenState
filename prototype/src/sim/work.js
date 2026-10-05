@@ -43,11 +43,11 @@ import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
 import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
-import { CRAFTS, craftQueue, craftQuality, meetsNeeds } from "./crafting.js";
+import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
-import { scavLeft, SCAV_FLOOR, waterOutlook } from "./economy.js";
+import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
 import { prisonersAt } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
@@ -149,21 +149,21 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A water filter the governor or a steward queued waits while the tanks are three-quarters full (it clogs up day by day, needed or not); the jobs behind it go first.",
     open(ctx) {
-      const jobs = craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] && meetsNeeds(ctx.base, CRAFTS[j.recipe]));
-      if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? "the queued crafts need a workshop" : "nothing in the craft queue" };
+      const jobs = openCrafts(ctx);
+      if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough" : "the queued crafts need a workshop") : "nothing in the craft queue" };
       const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
       return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
     can(ctx, s) {
-      const ok = craftQueue(ctx.base).some((j) => {
+      const ok = openCrafts(ctx).some((j) => {
         const r = CRAFTS[j.recipe];
         return r && meetsNeeds(ctx.base, r) && skill(s, r.skill) >= r.min && (!j.minQ || !r.gear || craftQuality(skill(s, r.skill), r) + 1e-9 >= j.minQ);
       });
       return ok ? "" : "not skilled enough for anything queued";
     },
-    rank: (s, ctx) => { const j = craftQueue(ctx.base)[0]; return j && CRAFTS[j.recipe] ? skill(s, CRAFTS[j.recipe].skill) : skill(s, "mechanics"); },
+    rank: (s, ctx) => { const j = openCrafts(ctx)[0]; return j && CRAFTS[j.recipe] ? skill(s, CRAFTS[j.recipe].skill) : skill(s, "mechanics"); },
   },
   build: {
     name: "Build", ing: "Building", short: "Build", role: "build", skill: "mechanics",
@@ -278,6 +278,29 @@ export const WORK_TYPES = {
   },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
+
+// The craft jobs that can be worked here now: a workshop if they need one, not held back (holdFilters).
+const openCrafts = (ctx) => craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] && meetsNeeds(ctx.base, CRAFTS[j.recipe]) && !craftHeld(ctx.state, j));
+// A water filter the governor or a steward queued (planCrafts: for the summer and dry spells, or wells that cannot keep
+// up) waits while the tanks are at least FILTER_HOLD full and the water is not running short; the crafter works the
+// jobs behind it meanwhile (crafting.js craftJobStatus skips it). Crafted into full tanks, its 3 a day mostly spill
+// over while it clogs up day by day (and is queued again from scrap the build queue wanted), and its water hides
+// the dry-day shortfall the governor builds rain catchers for (5 scrap, for good). The governor's own roles leave such
+// a filter queued until spare hands or a shortage come along (planRoles); crafted the moment someone with Craft set is
+// free, priorities finished 286 crafts to the governor's 152 and 7% fewer buildings over worktest's 40 runs. A filter
+// already started, or one in the player's own queue, is left alone.
+const FILTER_HOLD = 0.75;
+function holdFilters(state, base) {
+  const q = craftQueue(base);
+  if (!q.some((j) => j.recipe === "waterfilter")) return;
+  const auto = !!state.autopilot || !!(base.steward && base.steward.on && base.steward.areas && base.steward.areas.production !== false);
+  const hold = auto && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base);
+  for (const j of q) {
+    if (j.recipe !== "waterfilter") continue;
+    if (hold && !(j.progress > 0)) j.held = state.hour;
+    else delete j.held;
+  }
+}
 
 function stationKindById(ctx, id) {
   if (id == null) return null;
@@ -606,6 +629,7 @@ export function planBase(state, base) {
   const managed = people.filter((s) => isManaged(state, s));
   if (!managed.length) return 0;
   const h = hourOfDay(state);
+  holdFilters(state, base);
   const ctx = makeCtx(state, base, people);
   const out = new Map();
   const put = (s, a) => out.set(s.id, a);

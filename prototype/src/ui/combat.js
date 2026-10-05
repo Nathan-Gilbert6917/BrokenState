@@ -13,6 +13,9 @@ import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
+import { ZTYPES } from "../sim/hiveconst.js";
+// Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -777,7 +780,9 @@ function previewHtml(b) {
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
     const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    // A hive's special dead (sim/zombietypes.js): what it does and what beats it.
+    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
+    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
@@ -1547,7 +1552,7 @@ function drawObject(k, px, py, cs, n, cell = null) {
 function drawUnit(state, b, t, cx, cy, cs, selected) {
   const r = cs * 0.34;
   const zombie = t.kind === "zombie";
-  let ring = t.side === "player" ? "#8fc1ff" : zombie ? "#b5d36a" : "#ff8f85";
+  let ring = t.side === "player" ? "#8fc1ff" : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
   const cv = unitCanvas(state, b, t, cui.salt);
   const facing = unitFacing(b, t);
   if (t.dead) {
@@ -1574,7 +1579,19 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
   }
-  drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy - (t.boss ? cs * 0.12 : 0), t.boss ? cs * 1.3 : cs, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 }); // bosses stand taller
+  const big = t.boss ? 1.3 : t.ztype === "brute" ? 1.15 : 1; // bosses and brutes stand taller
+  drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy - (big - 1) * cs * 0.4, cs * big, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 });
+  if (t.ztype && !t.down) {
+    // The kind's letter in its ring color (an elite one gets a star).
+    ctx.font = `800 ${Math.round(cs * 0.2)}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    const label = `${t.short}${t.elite ? "★" : ""}`;
+    ctx.strokeText(label, cx - cs * 0.3, cy - cs * 0.3);
+    ctx.fillStyle = ring;
+    ctx.fillText(label, cx - cs * 0.3, cy - cs * 0.3);
+  }
   if (t.down && t.tied) {
     // Tied up: rope around the wrists and ankles of the lying prisoner.
     ctx.strokeStyle = "#c9a74a";
@@ -1654,7 +1671,7 @@ function drawFx(b, now, cs) {
     const tx = ox + (f.to[0] + 0.5) * cs, ty = oy + (f.to[1] + 0.5) * cs;
     if (f.type === "shot" && el < 600) {
       const a = 1 - el / 600;
-      ctx.strokeStyle = f.hit ? `rgba(255,180,80,${a})` : `rgba(200,200,200,${a * 0.7})`;
+      ctx.strokeStyle = f.acid ? `rgba(154,214,58,${a})` : f.hit ? `rgba(255,180,80,${a})` : `rgba(200,200,200,${a * 0.7})`; // acid: a spitter (sim/zombietypes.js)
       ctx.lineWidth = f.hit ? 3 : 1.5;
       ctx.beginPath();
       ctx.moveTo(ox + (f.from[0] + 0.5) * cs, oy + (f.from[1] + 0.5) * cs);

@@ -3,8 +3,15 @@
 // and splitting (parts of at least 10), a new build site every 120–180 days, the 30-score / 1,000-dead rule for a new
 // hive (at most 40 a day going in), the Wallbreaker for 40 and 90 days between a hive's Wallbreakers, hordes from
 // the border, wall hold limits by tier, a held horde falling back and leaving the base be, a break-in turning into a battle,
-// infection fading after a hive dies, the win condition, determinism, and 365-day runs without NaN. Then the two
-// battles calibrated: storming a hive (well-armed vs poorly armed team) and break-ins at the hub by horde size.
+// infection fading after a hive dies, the win condition, determinism, and 365-day runs without NaN. The hive tech
+// tree (hivetech.js): growths placed within 2 tiles, their costs, build times, income, the special dead they unlock
+// and the den Wallbreakers need, tiers by day and age, the hive's choices (young: income; attacked: a brood chamber;
+// later: its spawners; its guard first, saving for what it cannot afford), burning a growth (fires, Molotovs, a
+// fight with its guard), decay at a destroyed hive, the horde mix (merging, splitting, battle counts, the walls'
+// weight, crawlers slipping past, border hordes), determinism and save/load; the special dead in battle (stats, a
+// hidden crawler, acid through cover, a brute smashing a barricade, a screamer calling the dead, the same battle
+// twice). Then the two battles calibrated: storming a hive (well-armed vs poorly armed team) and break-ins at the
+// hub by horde size.
 // Usage: node tools/hivetest.js [trials=24]
 import { createWorld, tickHour, day, makeSurvivor, hub, alive } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -16,6 +23,16 @@ import { HORDE_SIZES, hordeScore, makeHorde, splitHorde, mergeHordes, hordesHour
 import { holdLimit, holdCheck, hordeAttackBase, spikeKill, breakInForce, DEFENCE } from "../src/sim/defences.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
+import {
+  growthTiles, startGrowth, isGrowing, hiveMods, growthsDaily, growthIncome, hiveMix, hiveTier, growthWish, growthStep, markThreat, growthAt,
+  growthArrive, canRaiseBoss, borderMix, growthCounts, ensureGrowths, growthForce, guardMin,
+} from "../src/sim/hivetech.js";
+import { TECH, GROWTHS, ZTYPES } from "../src/sim/hiveconst.js";
+import { battleTypes, mixWeight, typeStrength, zombieTurn, mixText, typeList } from "../src/sim/zombietypes.js";
+import { createBattle, canSee, shotOdds, CELL, registerCombatHandler, autoPlayerTurn, runEnemyPhase, closeCombat, active } from "../src/sim/combat.js";
+import { crawlerSlip } from "../src/sim/defences.js";
+import { serializeState, deserializeState } from "../src/sim/save.js";
+import { clusterSize } from "../src/sim/hives.js";
 
 const TRIALS = Number(process.argv[2] || 24);
 let pass = 0, fail = 0;
@@ -64,14 +81,22 @@ const t0 = Date.now();
   check(HORDE_SIZES.small.cost === 3 && HORDE_SIZES.medium.cost === 8 && HORDE_SIZES.large.cost === 15, "costs: small 3, medium 8, large 15");
   check(Math.min(...sizes.small) >= 10 && Math.max(...sizes.small) <= 25 && Math.min(...sizes.large) >= 100 && Math.max(...sizes.large) <= 200, "sizes: small 10–25, medium 50–80, large 100–200");
   check(hordeScore(17) >= 2.5 && hordeScore(17) <= 3.5 && hordeScore(65) >= 7 && hordeScore(65) <= 9 && hordeScore(150) >= 14 && hordeScore(150) <= 18, `score: small ${hordeScore(17)}, medium ${hordeScore(65)}, large ${hordeScore(150)}`);
-  // Wallbreaker: not before day 90; at 40 resources after.
+  // Wallbreaker: not before BOSS_DAY; at 40 resources after, and only from a hive that has grown a Wallbreaker den
+  // (hivetech.js). No growths start in these checks (growDay far ahead), so the resources go where they are tested.
   const s3 = world(12);
   s3.hour = (HIVE.BOSS_DAY + 5) * 24;
-  for (const h of s3.hives) h.res = 0;
-  const b = s3.hives[0];
+  for (const h of s3.hives) { h.res = 0; h.growDay = 1e9; }
+  const b = s3.hives[0], nb = s3.hives[1];
+  nb.res = 40 + 30;
+  hivesDaily(s3);
+  check(!s3.hordes.some((h) => h.bosses) && s3.hiveInfo.stats.bosses === 0, `a hive without a Wallbreaker den raises none, resources or not (${s3.hiveInfo.stats.bosses} made)`);
+  for (const h of [...s3.hordes]) s3.hordes.splice(s3.hordes.indexOf(h), 1);
+  nb.res = 0;
+  const den = startGrowth(s3, b, "den");
+  den.ready = s3.hour;
   b.res = 40 + 30;
   hivesDaily(s3);
-  check(s3.hiveInfo.stats.bosses >= 1, `a hive with 40+ spare resources after day ${HIVE.BOSS_DAY} makes a Wallbreaker (${s3.hiveInfo.stats.bosses} made)`);
+  check(s3.hiveInfo.stats.bosses >= 1, `a hive with a grown den and 40+ spare resources after day ${HIVE.BOSS_DAY} makes a Wallbreaker (${s3.hiveInfo.stats.bosses} made)`);
   const led = s3.hordes.find((h) => h.bosses > 0);
   check(!!led && led.role === "attack" && !!led.goal, `the Wallbreaker leads a horde out to attack (${led ? `${led.size} heading for tile ${led.goal.tile}` : "none"})`);
   // The next one waits BOSS_GAP days, even with the first one gone and resources to spare.
@@ -242,7 +267,7 @@ const t0 = Date.now();
 // 8. Determinism and long runs.
 {
   console.log("Determinism and a year");
-  const sig = (st) => `${st.hour}|${st.hives.map((h) => `${h.tile}:${h.res}`).join(",")}|${st.hordes.map((h) => `${h.tile}:${h.size}:${h.bosses}`).join(",")}|${alive(st).length}`;
+  const sig = (st) => `${st.hour}|${st.hives.map((h) => `${h.tile}:${h.res}`).join(",")}|${st.hordes.map((h) => `${h.tile}:${h.size}:${h.bosses}:${JSON.stringify(h.mix)}`).join(",")}|${alive(st).length}|${(st.hiveGrowths || []).map((g) => `${g.tile}:${g.kind}:${g.ready}`).join(",")}`;
   const a = world(21), b = world(21);
   runDays(a, 120); runDays(b, 120);
   check(sig(a) === sig(b), "the same seed plays out the same for 120 days");
@@ -254,6 +279,274 @@ const t0 = Date.now();
     const tr = hiveTracker(st);
     check(!bad, `seed ${seed}: ${st.gameOver ? (st.victory ? "won" : "fell") : "alive"} on day ${Math.min(365, day(st))}, ${tr.hives} hives, ${st.hordes.length} hordes, no NaN anywhere`);
   }
+}
+
+// 10. The hive tech tree (hivetech.js): growths placed within reach of the hive, their costs, build times and what
+// they give, the special dead they unlock, the hive's choices by age and threat, burning them, decay, the horde mix,
+// determinism and save/load.
+const teamAt = (st, tile, people, extra = {}) => {
+  const p = { id: 88000 + st.parties.length, owner: "player", kind: "expedition", mission: "growth", members: people.map((s) => s.id), supplies: { ammo: 240, meds: 6, food: 10, water: 10, ...(extra.supplies || {}) },
+    cargo: { supplies: {}, gear: extra.gear || [] }, path: [tile], idx: 0, dest: tile, phase: "engaged", seen: new Map(), spotted: new Map(), homeBaseId: hub(st).id, orders: [], stance: "normal" };
+  for (const s of people) s.location = { kind: "party", partyId: p.id };
+  st.parties.push(p);
+  return p;
+};
+const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices.find((x) => re.test(x.label)); return ch ? ch.resolve(st) : `no choice ${re}`; };
+{
+  console.log("The hive tech tree: growths");
+  const st = world(31);
+  const g = st.grid;
+  const hv = st.hives[0];
+  hv.growDay = 1e9; // nothing started by the hive itself in these checks
+  const tiles = growthTiles(st, hv);
+  const bad = tiles.filter((id) => { const t = st.tiles[id]; return g.distance(id, hv.tile) > TECH.RANGE || id === hv.tile || t.terrain === "water" || t.loc || t.hive || st.bases.some((b) => b.tile === id) || st.factions.some((f) => f.bases.includes(id)); });
+  check(tiles.length > 0 && !bad.length, `growths go on free land within ${TECH.RANGE} tiles of their hive, never on water, a site, a base or the hive (${tiles.length} spots, ${bad.length} bad)`);
+  hv.res = 60;
+  const pit = startGrowth(st, hv, "pit");
+  check(!!pit && hv.res === 60 - GROWTHS.pit.cost && g.distance(pit.tile, hv.tile) <= TECH.RANGE, `a biomass pit costs ${GROWTHS.pit.cost} (60 → ${hv.res}) and stands ${pit ? g.distance(pit.tile, hv.tile) : "?"} tiles from the hive`);
+  check(!growthTiles(st, hv).includes(pit.tile) && startGrowth(st, hv, "brood", pit.tile) === null, "a tile with a growth takes no other");
+  const base = hiveIncome(clusterSize(st, hv));
+  st.hour += GROWTHS.pit.days * 24 - 1;
+  const still = isGrowing(st, pit) && growthIncome(st, hv, base) === base;
+  st.hour += 1;
+  growthsDaily(st);
+  check(still && !isGrowing(st, pit) && pit.done, `it grows for ${GROWTHS.pit.days} days and gives nothing until then`);
+  check(growthIncome(st, hv, base) === base + GROWTHS.pit.income, `grown, a pit adds ${GROWTHS.pit.income} a day (${base} → ${growthIncome(st, hv, base)})`);
+  hv.res = 80;
+  const fg = startGrowth(st, hv, "feeding"); fg.ready = st.hour;
+  check(growthIncome(st, hv, base) === Math.round((base + 1) * GROWTHS.feeding.incomeMult * 10) / 10, `feeding grounds: income ×${GROWTHS.feeding.incomeMult} (${growthIncome(st, hv, base)})`);
+  const g0 = guardMin(st, hv);
+  const br = startGrowth(st, hv, "brood"); br.ready = st.hour;
+  check(guardMin(st, hv) === g0 + GROWTHS.brood.guard, `a brood chamber: the guard kept up to ${guardMin(st, hv)} (was ${g0})`);
+  // Unlocks.
+  check(hiveMix(st, hv).mix === null, "with no warren, pit, sac, spire or burrow its hordes are all ordinary dead");
+  hv.res = 80;
+  const wr = startGrowth(st, hv, "warren");
+  check(hiveMix(st, hv).mix === null, "a runner warren still growing breeds nothing yet");
+  wr.ready = st.hour;
+  const m = hiveMix(st, hv).mix;
+  check(!!m && m.runner > 0 && m.runner <= TECH.MIX_MAX, `a grown runner warren: its hordes carry runners (${m ? Math.round(m.runner * 100) : 0}%)`);
+  for (const h of [...st.hordes]) if (h.hive === hv.id) st.hordes.splice(st.hordes.indexOf(h), 1);
+  for (const h of st.hives) if (h !== hv) h.res = -999;
+  hv.res = 30;
+  hivesDaily(st);
+  const gd = st.hordes.find((h) => h.hive === hv.id && h.role === "guard");
+  check(!!gd && !!gd.mix && gd.mix.runner > 0, `the guard it buys carries them (${gd ? mixText(gd.mix, gd.size) : "none"})`);
+  check(!canRaiseBoss(st, hv), "no den: no Wallbreakers");
+  hv.res = 80;
+  const dn = startGrowth(st, hv, "den"); dn.ready = st.hour;
+  check(canRaiseBoss(st, hv), "a grown Wallbreaker den: Wallbreakers");
+  for (let i = 0; i < 30; i++) { const k = ["pit", "brutepit", "sac", "spire", "burrow", "vat"][i % 6]; const x = startGrowth(st, hv, k); if (x) x.ready = st.hour; hv.res = 80; }
+  const mine = ensureGrowths(st).filter((x) => x.hive === hv.id);
+  check(mine.every((x) => g.distance(x.tile, hv.tile) <= TECH.RANGE) && new Set(mine.map((x) => x.tile)).size === mine.length && !growthTiles(st, hv).length,
+    `started over and over, growths fill the free tiles around the hive and no more (${mine.length})`);
+  // Decay: the hive is destroyed; its growths wither and rot away.
+  const before = ensureGrowths(st).filter((x) => x.hive === hv.id).length;
+  destroyHive(st, hv);
+  const withered = ensureGrowths(st).filter((x) => x.hive === hv.id && x.withered != null).length;
+  check(before > 0 && withered === before && hiveMods(st, hv).unlocks.length === 0, `destroying the hive withers its ${before} growths (no effect left)`);
+  st.hour += (TECH.DECAY_DAYS * 24) - 24; growthsDaily(st);
+  const left1 = ensureGrowths(st).filter((x) => x.hive === hv.id).length;
+  st.hour += 24; growthsDaily(st);
+  check(left1 === before && !ensureGrowths(st).some((x) => x.hive === hv.id), `withered growths rot away after ${TECH.DECAY_DAYS} days`);
+}
+{
+  console.log("The hive tech tree: tiers and the hive's choices");
+  const st = world(32);
+  const hv = st.hives[0];
+  hv.growDay = null;
+  const tierAt = (d) => { st.hour = d * 24; return hiveTier(st, hv); };
+  const late = TECH.TIER_DAY.map((d, i) => tierAt(Math.ceil(d * (1 + TECH.JITTER)) + 1));
+  const early = TECH.TIER_DAY.slice(1).map((d, i) => tierAt(d - 1));
+  check(late.every((t, i) => t >= i) && early.every((t, i) => t <= i), `an old hive opens tier t between day TIER_DAY[t] and +${Math.round(TECH.JITTER * 100)}% (tiers by then: ${late.join(", ")}; just before: ${early.join(", ")})`);
+  st.hour = 3200 * 24;
+  hv.born = st.hour;
+  const young = hiveTier(st, hv);
+  st.hour += (TECH.TIER_AGE[1] + 1) * 24;
+  check(young === 0 && hiveTier(st, hv) >= 1, `a newly risen hive starts at tier 0 even late (${young}), and climbs as it ages (${hiveTier(st, hv)} at ${TECH.TIER_AGE[1] + 1} days)`);
+  // Choices: a young hive grows income; attacked, a brood chamber; later tiers its spawners; tier 3 the den or the screamer / crawler growths.
+  const s2 = world(33);
+  const h2 = s2.hives[0];
+  s2.hour = 5 * 24;
+  check(growthWish(s2, h2, false) === "pit", `a young hive on day 5 wants a biomass pit first (${growthWish(s2, h2, false)})`);
+  markThreat(s2, h2);
+  check(growthWish(s2, h2, false) === "brood", `attacked lately, it wants a brood chamber (${growthWish(s2, h2, false)})`);
+  // Later: with income covered, an old hive picks the special dead its tier allows.
+  h2.threatDay = null;
+  const fill = (kinds) => { for (const k of kinds) { h2.res = 80; const x = startGrowth(s2, h2, k); if (x) x.ready = s2.hour; } h2.growDay = null; };
+  fill(["pit", "pit", "brood"]);
+  s2.hour = 700 * 24; h2.born = 0;
+  const w2 = growthWish(s2, h2, false);
+  check(["warren", "brutepit", "sac", "feeding"].includes(w2) && GROWTHS[w2].tier <= hiveTier(s2, h2), `on day 700 (tier ${hiveTier(s2, h2)}) it grows toward the special dead (${w2})`);
+  fill(["warren", "brutepit", "sac", "feeding"]);
+  check(growthWish(s2, h2, false) === null || GROWTHS[growthWish(s2, h2, false)].tier <= hiveTier(s2, h2), `nothing above its tier (${growthWish(s2, h2, false)})`);
+  s2.hour = 1600 * 24;
+  const w3 = growthWish(s2, h2, false);
+  check(["spire", "burrow", "den"].includes(w3), `on day 1600 (tier ${hiveTier(s2, h2)}) screamers, crawlers or the Wallbreaker den (${w3})`);
+  // Its guard first, then the growth (saved for when it is short).
+  for (const h of [...s2.hordes]) if (h.hive === h2.id) s2.hordes.splice(s2.hordes.indexOf(h), 1);
+  h2.res = 100; h2.growDay = null;
+  check(growthStep(s2, h2) === null, "with no guard at home, no growth is started");
+  makeHorde(s2, { tile: h2.tile, size: 200, role: "guard", hive: h2.id, target: h2.tile });
+  h2.res = 5;
+  growthStep(s2, h2);
+  const saving = h2.growSave && h2.growSave.kind;
+  check(["spire", "burrow", "den"].includes(saving), `short of resources it saves for the ${h2.growSave ? GROWTHS[h2.growSave.kind].name.toLowerCase() : "?"} (no new roaming hordes meanwhile)`);
+  h2.res = 80;
+  const started = growthStep(s2, h2);
+  check(!!started && started.kind === saving && !h2.growSave, `then grows it once it has the ${GROWTHS[saving].cost}`);
+  // Left alone a few years, hives evolve: tier 1 growths in year one, spawners of tier 2 by year two.
+  const s3 = world(34);
+  runDays(s3, 300);
+  const c1 = growthCounts(s3);
+  check(c1.total > s3.hives.length && (c1.kinds.pit || 0) > 0, `300 days: the hives have grown ${c1.total} growths (${JSON.stringify(c1.kinds)})`);
+}
+{
+  console.log("The hive tech tree: burning a growth, the horde mix");
+  // Two fires burn a fresh growth down; Molotovs in one go; its guard can be fought.
+  const st = world(35);
+  const hv = st.hives[0];
+  hv.growDay = 1e9; hv.res = 80;
+  const wr = startGrowth(st, hv, "warren"); wr.ready = st.hour;
+  makeHorde(st, { tile: hv.tile, size: 80, role: "guard", hive: hv.id, target: hv.tile, mix: { runner: 0.2 } });
+  const people = crew(st, 4, "shotgun", "vest", 8);
+  const p = teamAt(st, wr.tile, people, { supplies: { fuel: 8 } });
+  growthArrive(st, p);
+  const r1 = answer(st, /^Burn it/);
+  check(growthAt(st, wr.tile) === wr && wr.hp === TECH.HP - TECH.FIRE_DMG, `one fire (${TECH.FIRE_FUEL} fuel) burns ${TECH.FIRE_DMG} of its flesh: ${wr.hp} left ("${r1.slice(0, 60)}...")`);
+  growthsDaily(st);
+  check(wr.hp === TECH.HP - TECH.FIRE_DMG + TECH.REGROW, `it grows back ${TECH.REGROW} a day (${wr.hp})`);
+  growthArrive(st, p);
+  answer(st, /^Burn it/);
+  check(!growthAt(st, wr.tile) && hiveMix(st, hv).mix === null && hv.threatDay != null, "a second fire destroys it: the hive breeds no more runners, and it knows it was attacked");
+  hv.res = 80;
+  const sc = startGrowth(st, hv, "sac"); sc.ready = st.hour;
+  const p2 = teamAt(st, sc.tile, crew(st, 3, "pistol", null, 5), { gear: [{ key: "molotov", name: "Molotov" }, { key: "molotov", name: "Molotov" }] });
+  growthArrive(st, p2);
+  answer(st, /^Firebomb/);
+  check(!growthAt(st, sc.tile) && p2.cargo.gear.length === 0, `${TECH.BOMBS} Molotovs burn a growth down at once`);
+  hv.res = 80;
+  const bp = startGrowth(st, hv, "brutepit"); bp.ready = st.hour;
+  const f = growthForce(st, bp);
+  check(f.count >= TECH.GUARD_BASE && f.count <= TECH.GUARD_MAX && f.types && f.types.brute >= 1, `its guard: ${f.count} of the dead at power ${f.power}, with ${mixText(f.types ? Object.fromEntries(Object.entries(f.types).map(([k, n]) => [k, n / f.count])) : null, f.count)}`);
+  let won = 0;
+  for (let i = 0; i < 4; i++) {
+    const s = world(40 + i); const h = s.hives[0]; h.growDay = 1e9; h.res = 80;
+    const x = startGrowth(s, h, "brutepit"); x.ready = s.hour;
+    makeHorde(s, { tile: h.tile, size: 80, role: "guard", hive: h.id, target: h.tile });
+    const q = teamAt(s, x.tile, crew(s, 5, "ar", "plate", 9));
+    growthArrive(s, q);
+    answer(s, /^Fight its guard/);
+    if (!growthAt(s, x.tile)) won++;
+  }
+  check(won >= 3, `a well-armed team that beats its guard tears the growth down (${won} of 4)`);
+  // The horde mix: merged by numbers, kept through a split, into a battle's unit counts and the walls' weight.
+  const s4 = world(36);
+  const a = makeHorde(s4, { tile: 500, size: 100, role: "roam", mix: { runner: 0.2 } });
+  const b = makeHorde(s4, { tile: 500, size: 100, role: "roam", mix: { brute: 0.1 } });
+  mergeHordes(s4);
+  check(s4.hordes.includes(a) && !s4.hordes.includes(b) && Math.abs(a.mix.runner - 0.1) < 0.001 && Math.abs(a.mix.brute - 0.05) < 0.001, `merging 100 (20% runners) and 100 (10% brutes): ${JSON.stringify(a.mix)}`);
+  const part = splitHorde(s4, a, 50);
+  check(part && part.mix && part.mix.runner === a.mix.runner, "a split keeps the mix");
+  const bt = battleTypes({ runner: 0.15, brute: 0.08, spitter: 0.08 }, 20);
+  check(bt.runner === 3 && bt.brute === 2 && bt.spitter === 2 && typeList(bt, 20).filter(Boolean).length === 7, `a battle with 20 of them: ${JSON.stringify(bt)}`);
+  check(mixWeight({ brute: 0.1 }, "wall") > 1.1 && mixWeight({ runner: 0.2 }, "wall") < 1 && typeStrength({ count: 10, types: { brute: 2 } }) > 1.2, `brutes press the walls harder (${mixWeight({ brute: 0.1 }, "wall").toFixed(2)}), runners less (${mixWeight({ runner: 0.2 }, "wall").toFixed(2)}); 2 brutes in 10 fight like ${typeStrength({ count: 10, types: { brute: 2 } }).toFixed(2)}×`);
+  const hb = hub(s4);
+  addBuilding(hb, "walls"); addBuilding(hb, "walls");
+  const lim = holdLimit(s4, hb);
+  const plain = holdCheck(s4, hb, Math.round(lim * 0.9)).holds, brutish = holdCheck(s4, hb, Math.round(lim * 0.9), 0, { brute: 0.15 }).holds;
+  check(plain && !brutish, `a horde of ${Math.round(lim * 0.9)} is held by walls that stop ${lim}, with 15% brutes it breaks in`);
+  const ch = makeHorde(s4, { tile: hb.tile, size: 200, role: "attack", mix: { crawler: 0.2 } });
+  const open = crawlerSlip(s4, hb, ch, false);
+  addBuilding(hb, "watchtower");
+  const towered = crawlerSlip(s4, hb, ch, false), lit = crawlerSlip(s4, hb, ch, true);
+  check(open > towered && towered > lit && lit === 0, `crawlers slipping past held walls: ${open}, with a watchtower ${towered}, and lit floodlights too ${lit}`);
+  // Border hordes bring the era's special dead late in the game.
+  s4.hour = (TECH.BORDER_DAY - 2) * 24;
+  const early = borderMix(s4);
+  s4.hour = (TECH.TIER_DAY[3] + 10) * 24;
+  const lateMix = borderMix(s4);
+  check(early === null && lateMix && lateMix.runner > 0 && lateMix.crawler > 0, `border hordes: none before day ${TECH.BORDER_DAY}, the era's kinds after (${mixText(lateMix)})`);
+}
+{
+  console.log("The hive tech tree: determinism and save/load");
+  const a = world(37), b = world(37);
+  runDays(a, 200); runDays(b, 200);
+  const sg = (st) => JSON.stringify([st.hiveGrowths, st.hordes.map((h) => [h.tile, h.size, h.mix, h.elite]), st.hives.map((h) => [h.res, h.growSave, h.threatDay])]);
+  check(sg(a) === sg(b) && (a.hiveGrowths || []).length > 0, `the same seed grows the same growths in 200 days (${(a.hiveGrowths || []).length})`);
+  a.cards.length = 0; // nobody answers cards in this run; a save cannot hold them, so both worlds go on without them
+  const saved = JSON.parse(JSON.stringify(serializeState(a)));
+  const c = deserializeState(saved);
+  check(sg(c) === sg(a), "save and load keep the growths, the hordes' special dead and the hives' plans");
+  runDays(a, 60); runDays(c, 60);
+  check(sg(c) === sg(a), "and the loaded world plays on the same for 60 days");
+}
+{
+  console.log("The special dead in battle");
+  let last = null;
+  registerCombatHandler("ztest", (st, r) => { last = r; });
+  const setupFor = (st, people, types, extra = {}) => ({ tile: st.tiles.find((t) => t.terrain === "plains" && !t.loc).id, baseId: hub(st).id, fighterIds: people.map((s) => s.id),
+    enemy: { kind: "zombies", count: 12, power: 2, types, ...extra }, ambush: null, canRetreat: false, handler: "ztest", context: {} });
+  const st = world(50);
+  const people = crew(st, 3, "pistol", null, 8);
+  for (const s of people) s.location = { kind: "base", baseId: hub(st).id };
+  const b = createBattle(st, setupFor(st, people, { runner: 2, brute: 1, spitter: 1, screamer: 1, crawler: 1 }, { elite: true }));
+  st.combat = b;
+  const z = (k) => b.units.find((u) => u.ztype === k);
+  const plain = b.units.find((u) => u.kind === "zombie" && !u.ztype);
+  check(["runner", "brute", "spitter", "screamer", "crawler"].every((k) => z(k)) && b.units.filter((u) => u.ztype).length === 6 && z("brute").elite, "the battle has the kinds asked for (2 runners, a brute, a spitter, a screamer, a crawler; elite)");
+  check(z("runner").mob > plain.mob && z("brute").maxHp > plain.maxHp * 2 && z("brute").armor < 1 && z("spitter").weapon === "acid" && z("crawler").low, `stats: runner ${z("runner").mob} tiles an action (plain ${plain.mob}), brute ${z("brute").maxHp} hp (plain ${plain.maxHp}) and takes ×${z("brute").armor}, spitter spits acid, crawler low`);
+  // On open ground: the crawler hidden at 6 tiles, seen at 2; the spitter's acid against someone in full cover.
+  for (const c of b.cells) c.k = "open";
+  b.losCache.fill(0);
+  const me = b.units.find((u) => u.side === "player");
+  for (const u of b.units) if (u !== me) { u.x = 17; u.y = u.id % b.h; }
+  me.x = 3; me.y = 6;
+  const cr = z("crawler");
+  cr.x = 9; cr.y = 6;
+  const hidden = !canSee(b, me, cr);
+  cr.x = 5;
+  check(hidden && canSee(b, me, cr), "a crawler is unseen 6 tiles off, seen at 2");
+  const sp = z("spitter");
+  sp.x = 7; sp.y = 6;
+  b.cells[6 * b.w + 4].k = "wall"; b.losCache.fill(0); // full cover between them, east of your man
+  b.cells[5 * b.w + 5].k = "open";
+  const acid = shotOdds(b, sp, me, sp.x, sp.y), gun = shotOdds(b, { ...sp, weapon: "pistol" }, me, sp.x, sp.y);
+  check(acid.cover === 2 && acid.chance > gun.chance, `a spitter's acid against full cover: ${acid.chance}% (a gun from the same spot ${gun.chance}%): cover counts a step less`);
+  closeCombat(st, { take: false });
+  st.combat = null;
+  // Brutes smash the barricade line that keeps them from your people.
+  const st2 = world(51);
+  const pp = crew(st2, 2, "pistol", null, 6);
+  for (const s of pp) s.location = { kind: "base", baseId: hub(st2).id };
+  const b2 = createBattle(st2, setupFor(st2, pp, { brute: 1 }));
+  st2.combat = b2;
+  for (let y = 0; y < b2.h; y++) for (let x = 0; x < b2.w; x++) b2.cells[y * b2.w + x].k = x === 9 ? "barricade" : "open";
+  const brute = b2.units.find((u) => u.ztype === "brute");
+  for (const u of b2.units) if (u.side === "enemy" && u !== brute) u.dead = true;
+  for (const u of b2.units) if (u.side === "player") { u.x = 2; u.y = u.id % b2.h; }
+  brute.x = 10; brute.y = 6; brute.aware = true;
+  let smashed = false;
+  for (let i = 0; i < 12 && !smashed; i++) { brute.ap = 2; zombieTurn(b2, brute); smashed = [5, 6, 7].some((y) => b2.cells[y * b2.w + 9].k === "open"); }
+  check(smashed, "a brute walled off from your people smashes through the barricade");
+  st2.combat = null;
+  // Screamers call more of the dead in; whole battles stay deterministic.
+  const run = (seed, types) => {
+    const s = world(seed);
+    const pl = crew(s, 3, "pistol", null, 8);
+    for (const x of pl) x.location = { kind: "base", baseId: hub(s).id };
+    hub(s).stock.ammo = 200;
+    s.combat = createBattle(s, setupFor(s, pl, types));
+    const bb = s.combat;
+    for (let i = 0; i < 60 && !bb.over; i++) { autoPlayerTurn(s); runEnemyPhase(s); }
+    const out = { over: bb.over, turns: bb.turn, called: bb.screamed || 0, units: bb.units.length, log: bb.log.map((l) => l.text).join("|") };
+    if (bb.over) closeCombat(s); else s.combat = null;
+    return out;
+  };
+  const r1 = run(52, { screamer: 1, spitter: 2, crawler: 2 }), r2 = run(52, { screamer: 1, spitter: 2, crawler: 2 });
+  check(r1.called > 0 && r1.units > 15, `a screamer called ${r1.called} more of the dead into the battle (${r1.units} units)`);
+  check(r1.over && r1.log === r2.log, `the same battle plays out the same (${r1.turns} turns)`);
+  check(/spits acid/.test(r1.log), "spitters spit acid in it");
 }
 
 // 9. Calibration: storming a hive, and break-ins at the hub.

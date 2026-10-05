@@ -19,7 +19,7 @@ import { visitorTipLines } from "../sim/visitors.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
-import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
+import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
@@ -849,7 +849,7 @@ const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: nu
 let forceDraw = true;
 // A cheap fingerprint of what moves on the map between ticks (orders given while paused, a base built, a horde).
 function moverHash(state) {
-  let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0);
+  let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0) + (state.hiveGrowths ? state.hiveGrowths.length * 613 : 0);
   for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
@@ -1042,6 +1042,17 @@ export function render(state) {
       ctx.fill();
     }
     sprite(hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
+  }
+  // A hive's growths (sim/hivetech.js) you know about: small organic structures beside it, smaller and faint while
+  // still growing, grey husks once their hive is gone. Live ones as they are, the rest as last reported.
+  if (on("hordes")) {
+    const drawGrowth = (id, gi, isLive) => {
+      if (!gi || !inView(id)) return;
+      const s = zoomBoost(), w = (gi.growing ? 14 : 19) * s;
+      sprite(growthCanvas(gi.kind, gi.withered), G.x[id], G.y[id] + 1 * s, w, { alpha: (gi.growing ? 0.65 : 1) * (isLive ? 1 : 0.75) });
+    };
+    for (const gr of state.hiveGrowths || []) if (live.has(gr.tile)) drawGrowth(gr.tile, { kind: gr.kind, growing: gr.withered == null && state.hour < gr.ready, withered: gr.withered != null }, true);
+    if (k) for (let id = 0; id < G.n; id++) if (!live.has(id) && k[id] && k[id].growth) drawGrowth(id, k[id].growth, false);
   }
   // Hive build sites you know about: a raw mound of the dead with bones sticking up (glowing once the building has
   // started) and how much of the 1,000 dead it needs has gone into it.

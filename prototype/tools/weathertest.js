@@ -258,7 +258,7 @@ console.log("Two-year run");
     if (state.combat) state.combat = null;
     for (const p of state.parties) if (p.owner === "player" && p.phase === "waiting") startReturn(state, p);
     const h = hub(state);
-    if (state.hour % 24 === 1) {
+    if (h && state.hour % 24 === 1) { // a hub lost to raiders (conquest.js) ends the feeding and the trips, not the run
       // Keep the holdout fed so the run lasts; send a team out every 5 days to put travel through the seasons.
       h.stock.food = Math.max(h.stock.food, 60); h.stock.water = Math.max(h.stock.water, 60);
       const w = W.weather(state), se = W.season(state);

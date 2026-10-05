@@ -87,6 +87,13 @@ const matchups = [
   { name: "3 vs 12 zombies (power 2), you ambush", players: 3, enemy: { kind: "zombies", count: 12 }, power: 2, ambush: "player" },
   { name: "4 vs 6 mixed (power 4)", players: 4, enemy: { kind: "mixed", count: 6 }, power: 4 },
   { name: "3 vs 4 raiders (power 5), infected ground", players: 3, enemy: { kind: "raiders", count: 4 }, power: 5, infection: 0.8 },
+  // A hive's special dead (zombietypes.js, hiveconst.js ZTYPES): the same 12 of the dead with some of each kind.
+  { name: "3 vs 12 zombies (power 2), 4 runners", players: 3, enemy: { kind: "zombies", count: 12, types: { runner: 4 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 2 brutes", players: 3, enemy: { kind: "zombies", count: 12, types: { brute: 2 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 3 spitters", players: 3, enemy: { kind: "zombies", count: 12, types: { spitter: 3 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 1 screamer", players: 3, enemy: { kind: "zombies", count: 12, types: { screamer: 1 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 3 crawlers", players: 3, enemy: { kind: "zombies", count: 12, types: { crawler: 3 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 1 of each, elite", players: 3, enemy: { kind: "zombies", count: 12, types: { runner: 1, brute: 1, spitter: 1, screamer: 1, crawler: 1 }, elite: true }, power: 2 },
 ];
 
 if (process.argv[4] === "weapons") {
