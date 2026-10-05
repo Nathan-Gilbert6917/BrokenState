@@ -52,6 +52,7 @@ import { prisonersAt } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
 
 export const PRIO_MAX = 5;
+export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
 const STICKY = 1.5;                           // staying on the same job this hour
@@ -136,7 +137,7 @@ export const WORK_TYPES = {
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
-    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap building needs is left alone (ammo under 30, meds 15, parts 45).",
+    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap the next building needs is left alone (ammo under 50, meds 40, parts 60).",
     open: (ctx) => stationOpen(ctx, (k) => k !== "preserve", "no workshop station"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k !== "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && st != null && stationKindById(ctx, st) !== "preserve",
@@ -144,12 +145,12 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter, two with 3+ jobs queued. Needs the recipe's skill.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill.",
     open(ctx) {
       const jobs = craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] && meetsNeeds(ctx.base, CRAFTS[j.recipe]));
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? "the queued crafts need a workshop" : "nothing in the craft queue" };
       const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
-      return { cap: jobs.length >= 3 ? 2 : 1, urg: 3 + (water ? 4 : 0) };
+      return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
     can(ctx, s) {
       const ok = craftQueue(ctx.base).some((j) => {
@@ -261,10 +262,13 @@ export function stationWork(state, base, st, opsNow = new Set()) {
   } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; }
   else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; }
   else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; }
+  // Priorities staff a station as soon as it has work (the governor only with hands left over), so the floor is
+  // higher than the governor's: enough scrap stays for the next building to be queued (walls 25, a bunkhouse 20,
+  // plus the 10 the governor keeps back).
   if (!own) {
-    if (k === "ammo" && (s.scrap || 0) < 30) return "scrap kept for building (under 30)";
-    if (k === "meds" && ((s.scrap || 0) < 15 || (s.food || 0) < n * 6)) return "short of scrap or food";
-    if (k === "parts" && ((s.scrap || 0) < 45 || !atBase(state, base.id).some((p) => skill(p, "mechanics") >= 4))) return "scrap kept (under 45), or nobody with Mechanics 4";
+    if (k === "ammo" && (s.scrap || 0) < SCRAP_KEEP.ammo) return `scrap kept for building (under ${SCRAP_KEEP.ammo})`;
+    if (k === "meds" && ((s.scrap || 0) < SCRAP_KEEP.meds || (s.food || 0) < n * 6)) return `scrap kept for building (under ${SCRAP_KEEP.meds}) or food short`;
+    if (k === "parts" && ((s.scrap || 0) < SCRAP_KEEP.parts || !atBase(state, base.id).some((p) => skill(p, "mechanics") >= 4))) return `scrap kept for building (under ${SCRAP_KEEP.parts}), or nobody with Mechanics 4`;
   }
   if (!hasOrder(base, st) && k === "preserve") {
     const store = foodStore(state, base);
@@ -332,7 +336,7 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 3, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
   { name: "Farmer", pri: P({ farm: 1, cook: 2, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
