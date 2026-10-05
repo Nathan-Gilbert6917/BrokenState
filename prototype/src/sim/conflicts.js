@@ -92,7 +92,7 @@ function check(state, p, key, dc, bonus = 0) {
   return state.rng.chance(chance);
 }
 
-function addCargo(state, p, key, qty) {
+export function addCargo(state, p, key, qty) {
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), Math.max(0, Math.floor(qty)));
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
@@ -182,7 +182,7 @@ function payFrom(p, plan, f) {
 const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * SUPPLIES[k].value, 0);
 
 // Robbery: a share of everything carried goes to the faction (or is lost).
-function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
+export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
   const taken = {};
   for (const pool of cargoOnly ? [p.cargo.supplies] : [p.supplies, p.cargo.supplies]) {
     for (const k of Object.keys(pool)) {
@@ -200,7 +200,7 @@ function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
   return parts.length ? parts.join(", ") : "nothing much";
 }
 
-function injure(state, p, min, max, cause) {
+export function injure(state, p, min, max, cause) {
   const m = partyMembers(state, p);
   if (!m.length) return "";
   const v = state.rng.pick(m);
@@ -416,14 +416,14 @@ function makeConflict(state, p, type, f, enemy, extra = {}) {
   };
 }
 
-function halt(p) {
+export function halt(p) {
   if (p.phase !== "engaged") {
     // A team found while standing still (fieldheat.js) goes back to its camp or work, or to waiting.
     p.conflictResume = p.phase === "back" ? "back" : p.phase === "task" && p.task ? "task" : p.phase === "waiting" ? "waiting" : "out";
     p.phase = "engaged";
   }
 }
-function resume(state, p) {
+export function resume(state, p) {
   if (!state.parties.includes(p)) return;
   const was = p.conflictResume;
   delete p.conflictResume;
@@ -557,7 +557,7 @@ function forcedChoices(state, p, c) {
 function runDc(c) {
   return { ambush: 12, roadblock: 9, zealotpatrol: 11, checkpoint: 11, challenge: 9, contest: 9, surge: 10 }[c.type] ?? 11;
 }
-function runBonus(state, p) {
+export function runBonus(state, p) {
   let b = 0;
   if (p.vehicle && partyFuel(state, p) >= 2) b += state.tiles[partyTile(p)].road ? 4 : 3;
   if (isNight(state)) b += 1;
@@ -623,13 +623,13 @@ function talkDc(f, c) {
   return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + (f.type === "zealot" ? 2 : 0) + (c.type === "ambush" ? 1 : 0);
 }
 // Perks (skills.js): Peacemaker's Leadership counts in full; Smooth Talker +2.
-function talkSkill(state, p) {
+export function talkSkill(state, p) {
   const team = partyMembers(state, p);
   const v = Math.max(bestSkill(state, p, "speech"), bestSkill(state, p, "leadership") - 2, ...team.filter((s) => hasPerk(s, "peacemaker")).map((s) => skill(s, "leadership")));
   return v + (anyPerk(team, "smooth") ? 2 : 0);
 }
 // Who does the talking (Speech XP): the best talker on the team.
-const talker = (state, p) => [...partyMembers(state, p)].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0];
+export const talker = (state, p) => [...partyMembers(state, p)].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0];
 
 function talkChoice(state, p, c, f) {
   const team = partyMembers(state, p);
@@ -1016,7 +1016,7 @@ function joinRobberyChoice(state, p, c, f) {
 }
 
 // ---------- combat aftermath ----------
-function afterFight(state, p, c, text) {
+export function afterFight(state, p, c, text) {
   if (!state.parties.includes(p)) return;
   if (c.resumePhase === "back") {
     p.phase = "engaged";
@@ -1456,7 +1456,7 @@ export function defendInPerson(state, raid) {
   const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders` },
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null }, // siege.js: their ladders, ram and grenades
     ambush: base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id }, // the way out: away from the attack (deploy.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first
   });
@@ -1517,6 +1517,7 @@ export function engagedWith(state, p) {
   if (battlePending(state, p.id)) return "battle";
   if (state.engagement && state.engagement.partyId === p.id) return "search";
   if (tradePending(state, p.id)) return "trade";
+  if (p.crawl) return "crawl"; // a city crawl (citycrawl.js): its block card holds the team
   return null;
 }
 

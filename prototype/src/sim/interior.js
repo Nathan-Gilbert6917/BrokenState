@@ -43,6 +43,7 @@ import { attackSide, fromTileOf, sideTf, sideUntf, setLit, DEPLOY, gateHp, wallH
 import { armoryDefence, tierMults, TIERS } from "./defences.js";
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
+import { siegeWallCut } from "./siege.js";
 
 // W × H: the map's size; a base whose buildings do not all fit in H rows gets a taller one (H_STEPS, up to the last:
 // interiorSize), and its wall map is as much longer (deploy.js, 3 rows fewer than this map's).
@@ -535,6 +536,8 @@ export function toInterior(state, b, opts = {}) {
   for (const u of standing) if (u.x < 0) { const p = nearestFree(b, W0, H0, 4, Math.floor(H0 / 2), (x, y) => okCell(x, y) && zoneE(x, y)) || nearestFree(b, W0, H0, 4, Math.floor(H0 / 2), okCell); if (p) { u.x = p[0]; u.y = p[1]; } }
   // Whatever burned, smoked or rang on the wall map stays there.
   b.fires = []; b.smoke = []; b.flares = []; b.lures = [];
+  b.ladders = []; // the ladders stay against the old wall (siege.js); a ram goes on with its crew, its old target gone
+  b.rams = (b.rams || []).filter((r) => !r.dropped); for (const r of b.rams) r.target = null;
   b.ghosts = {};
   const floodlit = !!(b.deploy && b.deploy.floodlit);
   finishInterior(b, side, lay, { walled: true, zoneE, floodlit, night: b.night, base, deploy: !!b.setup.deploy });
@@ -633,7 +636,10 @@ export function tierAI(b, u) {
 export function baseTiers(state, base, setup, ratio) {
   const ctx = (setup && setup.context) || {};
   const night = ctx.night != null ? ctx.night : isNight(state);
-  const m = tierMults(state, base, night);
+  const m = { ...tierMults(state, base, night) };
+  // Raiders with siege kit (siege.js): ladders, a ram and grenades make the walls count less.
+  const kit = setup && setup.enemy && setup.enemy.siege;
+  if (kit && m.walled) m.wall = Math.max(1, m.wall - siegeWallCut(kit));
   const wall = ratio * m.wall, yard = wall * m.yard, last = yard * m.buildings;
   const tier = m.walled && wall >= TIERS.HELD_AT_WALL ? "wall" : yard >= 1 ? "yard" : "buildings";
   return { wall, yard, last, tier, mults: m };

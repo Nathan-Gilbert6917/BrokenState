@@ -22,6 +22,7 @@ import {
 import { startOrder, resumeQueue, besideWater } from "./orders.js";
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
+import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
@@ -463,7 +464,7 @@ function pickChoice(state, card, opts, p) {
   // A horde coming for a base (defences.js): a decoy fire when the defences would not hold and no Wallbreaker
   // leads it, else man the defences.
   if (/^Horde heading for /.test(t)) {
-    const decoy = find(/decoy/);
+    const decoy = /isn't fooled/.test(card.text) ? null : opts.find((c) => /decoy/i.test(c.label) && !isDisabled(state, c)) || find(/decoy/); // not on a horde a Shepherd leads
     return (/cannot hold/.test(card.text) && !/Wallbreaker at its head/.test(card.text) && decoy && !isDisabled(state, decoy) ? decoy : null) || find(/^Man the defences/);
   }
   if (/^Stranded traders/.test(t)) return find(/^Help them/);
@@ -816,6 +817,7 @@ function idleTeams(state) {
   for (const p of [...state.parties]) {
     if (p.owner !== "player" || p.kind === "convoy" || !state.parties.includes(p)) continue;
     const hasCard = state.cards.some((c) => c.partyId === p.id);
+    if (p.crawl) { if (!hasCard && !state.combat) crawlAutoStep(state, p); continue; } // a city crawl left open when the autopilot came on (citycrawl.js)
     if (p.phase === "waiting" && !hasCard) teamAct(state, p);
     const halted = p.phase === "engaged" && !hasCard && !(state.engagement && state.engagement.partyId === p.id) &&
       !(state.trade && state.trade.partyId === p.id) && !state.combat;
@@ -2276,7 +2278,7 @@ function assaultChoice(state, card, opts, p, find) {
   if (!p || !f || !f.alive || !f.bases.includes(card.assault.tile)) return find(/^Back off/);
   const fit = partyMembers(state, p).filter((s) => s.health >= 50);
   const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
-  const odds = teamAssaultOdds(state, p, assaultForce(state, f, card.assault.tile));
+  const odds = teamAssaultOdds(state, p, assaultForce(state, f, card.assault.tile, p));
   const retake = !!occupiedAt(state, card.assault.tile);
   const exile = !hub(state);
   const oldHub = retake && occupiedAt(state, card.assault.tile).wasHub;
@@ -2293,7 +2295,7 @@ function exileAct(state, p) {
   const here = partyTile(p);
   const scrap = (p.supplies.scrap || 0) + ((p.cargo && p.cargo.supplies.scrap) || 0);
   const lost = lostBases(state).map((o) => ({ o, f: factionById(state, o.factionId) })).filter((x) => x.f && x.f.alive)
-    .map((x) => ({ ...x, odds: teamAssaultOdds(state, p, assaultForce(state, x.f, x.o.tile)), d: g.distance(here, x.o.tile) })).sort((a, b) => b.odds - a.odds || a.d - b.d)[0];
+    .map((x) => ({ ...x, odds: teamAssaultOdds(state, p, assaultForce(state, x.f, x.o.tile, p)), d: g.distance(here, x.o.tile) })).sort((a, b) => b.odds - a.odds || a.d - b.d)[0];
   if (lost && (lost.odds >= 0.45 || scrap < 15) && lost.odds >= 0.2 && planPath(state, here, lost.o.tile, p.vehicle)) {
     if (here === lost.o.tile) { giveOrder(state, p, "assault"); return; }
     orderMove(state, p, lost.o.tile);

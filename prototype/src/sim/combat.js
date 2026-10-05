@@ -35,7 +35,9 @@ import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
-import { smokeAt, flareLit, fireStep, burnRound, SMOKE, FLARE } from "./throwables.js";
+import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE } from "./throwables.js";
+import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM } from "./siege.js"; // ladders, the ram, rocks from the walls
+import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
@@ -47,7 +49,11 @@ import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lo
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
-import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP } from "./buildingmaps.js";
+// The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
+// below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
+import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
+import { isHardcore } from "./hardcore.js";
+import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -162,7 +168,7 @@ export function finishCombat(state, setup, result) {
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
   state.resolving = (state.resolving || 0) + 1;
   try {
-    if (fn) fn(state, result, setup);
+    if (fn) fn(state, result, setup, battle); // battle: the map it was played on, or null (citycrawl.js keeps a building as it was left)
   } finally {
     state.resolving -= 1;
   }
@@ -179,11 +185,24 @@ export function battlePending(state, partyId) {
 // × 1.4 when they struck first). win: winOdds(ratio, enemy) (the chance to win it fought out).
 export function byNumbersOdds(state, setup, people = combatants(state, setup), ammoOk = true) {
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoOk ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
+  mine *= 1 + lureEdge(setup.enemy, carriedKeys(state, setup, people)); // decoys.js: decoys and Molotovs against the dead (not a Shepherd's pack)
   let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
+  if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
+}
+// The keys of everything a fight's people carry, and their team's cargo (decoys.js lureEdge).
+function carriedKeys(state, setup, people) {
+  const out = [];
+  for (const s of people) {
+    for (const it of Object.values(s.gear || {})) if (it) { out.push(it.key); for (const c of it.contents || []) if (c) out.push(c.key); }
+    for (const it of s.pockets || []) if (it) out.push(it.key);
+  }
+  const p = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
+  for (const it of (p && p.cargo && p.cargo.gear) || []) if (it) out.push(it.key);
+  return out;
 }
 // The chance to win a fight by the numbers, calibrated on the tactical map (tools/calibrate.js: the AI playing both
 // sides, fought out): a logistic of the power ratio (squad over enemy, the 1.4 for striking first included), with
@@ -352,12 +371,17 @@ export const CELL = {
   // Building interiors (buildingmaps.js): a closed door blocks sight until someone walks through it (moveAlong opens
   // it: odoor; a roller door is loud to haul up), tall shelving blocks sight (sneak down the aisles), tables, beds and
   // cell bars are half cover you see over or through.
-  idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door" },
+  // A closed door is barred to the dead (they batter it: its hit points) and to people while someone braces it;
+  // people otherwise open it (doorOpens), which ends their move.
+  idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door", bar: true },
   odoor:     { walk: true,  cover: 0, los: false, name: "Open door" },
   rack:      { walk: false, cover: 2, los: true,  name: "Shelving" },
   table:     { walk: false, cover: 1, los: false, name: "Table" },
   bed:       { walk: false, cover: 1, los: false, name: "Bed" },
   bars:      { walk: false, cover: 1, los: false, name: "Cell bars" },
+  // A siege ladder set against a wall section (siege.js): the wall cell becomes a climb up to height 1, onto the
+  // walkway behind it; whoever is on it stands exposed. Its wall stays a wall for sight from the ground (c.t).
+  siegeladder: { walk: true, cover: 0, los: false, name: "Siege ladder", h: 1, climb: true },
 };
 
 // Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
@@ -416,8 +440,8 @@ export const BODY_FINDS = 0.2; // a person's body: the chance of one small thing
 export const KITS = {
   raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete", "revolver"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards", "revolver", "nailbat", "slingbag", "molotov", "pipebomb"], pack: ["backpack", 0.15],
               finds: ["cigarettes", "cigarettes", "smokes", "smokes", "vodka", "whiskey", "goldchain", "goldring", "watch", "lighters", "molotov", "tobacco"] },
-  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "rucksack", "camonet", "binoculars", "thermal"], pack: ["assaultpack", 0.3],
-              finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "batteries", "cards", "photos"] },
+  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "frag", "rucksack", "camonet", "binoculars", "thermal"], pack: ["assaultpack", 0.3],
+              finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "frag", "heatpack", "batteries", "cards", "photos"] },
   zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "fireaxe", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife", "fireaxe", "molotov", "compbow"], fearless: true,
               finds: ["candles", "candles", "molotov", "photos", "tea", "honey"] },
   // People of the other group types (conflicts.js KIND_OF). All human: "mixed" is only for humans plus the dead.
@@ -427,6 +451,9 @@ export const KITS = {
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
               finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey"] },
+  // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
+  survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
+              finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries"] },
 };
 
 const idx = (x, y) => y * W + x;
@@ -440,6 +467,14 @@ const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off;
 export const heightAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? CELL[c.k].h ?? 0; };
 const hAt = (b, x, y) => { const c = b.cells[idx(x, y)]; return c.h ?? CELL[c.k].h ?? 0; };
 export const barredCell = (c) => !!(c.bar || CELL[c.k].bar) && !(c.hp <= 0);
+// A building's closed door (buildingmaps.js): people open it unless someone braces it from the other side; the dead
+// never do (they batter it down). Is someone bracing this door cell?
+export function doorHeld(b, c) {
+  if (c.held == null) return false;
+  const h = b.units.find((o) => o.id === c.held);
+  return !!(h && active(h) && h.brace && b.cells[h.brace[1] * b.w + h.brace[0]] === c);
+}
+const doorOpens = (b, u, c) => c.k === "idoor" && !!u && u.kind === "human" && !doorHeld(b, c);
 const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && u.x === x && u.y === y);
@@ -447,7 +482,7 @@ export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
 export const inEvac = (b, x, y) => b.evacCols > 0 && (b.evacMask ? y != null && !!b.evacMask[y * b.w + x] : x < b.evacCols);
-const bump = (b) => { b.rev++; trackGhosts(b); };
+const bump = (b) => { b.rev++; if (b.rams && b.rams.length) checkRams(b); trackGhosts(b); };
 
 export function say(b, text, k = "info") {
   b.log.push({ turn: b.turn, text, k });
@@ -646,7 +681,7 @@ export function canSeeAt(b, a, x, y) {
     const lit = (b.flares && b.flares.length && flareLit(b, x, y)) || (b.night && b.floodAim && b.lit && b.lit[idx(x, y)]);
     if (!lit || d > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0)) return false;
   }
-  return los(b, a.x, a.y, x, y);
+  return los(b, a.x, a.y, x, y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, x, y)); // a fire's thick smoke (throwables.js)
 }
 // A crawler low in the grass is hidden from your people until it is close, lit or has struck (zombietypes.js).
 export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && canSeeAt(b, a, t.x, t.y);
@@ -663,6 +698,8 @@ function sideCover(b, x, y, nx, ny) {
 
 export function coverAgainst(b, x, y, ax, ay) {
   bindDims(b);
+  // On a siege ladder or carrying a ram (siege.js): no cover at all.
+  if (inside(x, y) && (b.cells[idx(x, y)].k === "siegeladder" || (b.rams && b.rams.length && b.units.some((o) => o.x === x && o.y === y && active(o) && isCrew(b, o))))) return { level: 0, any: false, flanked: false };
   let level = 0, any = false;
   const d = dist(x, y, ax, ay) || 1;
   for (const [dx, dy] of DIRS4) {
@@ -698,12 +735,15 @@ function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
 
 // Dijkstra over 8 directions (diagonals 1.5, no corner cutting). Units block cells. Heights only change on a ladder
 // or stairs (climbCost); the attackers cannot walk through a barred door or a closed gate (they batter it: siegeTarget and bash).
-export function reachable(b, u, maxCost) {
+// opts.manual: a move ordered by hand (it may walk through fire); otherwise people and the Shepherd keep out of the
+// flames (throwables.js): burning cells are closed to them (they can still step out of one).
+export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
+  const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
-  const foe = u.side === "enemy", per = siegeRule(u).climb;
+  const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
   const start = idx(u.x, u.y);
   d[start] = 0;
   const open = [start];
@@ -721,7 +761,8 @@ export function reachable(b, u, maxCost) {
       if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
-      if (foe && barredCell(b.cells[j])) continue;
+      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j])) continue;
+      if (avoid && avoid.has(j)) continue;
       const climb = climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
       const nd = d[cur] + (diag ? 1.5 : 1) + climb;
@@ -755,9 +796,10 @@ export function pathTo(r, x, y) {
 export function distField(b, sources, walker = null) {
   bindDims(b);
   const d = new Float32Array(W * H).fill(Infinity);
-  const siege = !!walker && walker.side === "enemy";
+  const siege = !!walker && walker.side !== (b.holders || "player");
   const per = siegeRule(walker).climb;
-  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return CELL[c.k].walk || (siege && breakable(c)); };
+  const burning = walker && b.fires && b.fires.length && (walker.kind === "human" || walker.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
+  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c))) && !(burning && burning.has(idx(x, y))); };
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
   const open = [];
@@ -777,7 +819,7 @@ export function distField(b, sources, walker = null) {
       const climb = climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
-      const bash = siege && (breakable(c) && (!CELL[c.k].walk || barredCell(c))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+      const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
       const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash;
       if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; }
     }
@@ -808,6 +850,9 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
+  // Clinging to a siege ladder, or hauling a ram (siege.js): easy to hit.
+  if (inside(t.x, t.y) && b.cells[idx(t.x, t.y)].k === "siegeladder") aim += CLIMB_AIM;
+  else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
@@ -826,12 +871,12 @@ export function meleeOdds(b, a, t) {
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
 // Can this unit fire its gun right now (ranged weapon and, for the player, ammo)?
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo);
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo); // a ram's crew has its hands full (siege.js)
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
   if (t.off) return false;
-  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t)));
+  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t))) || (!!b.peeks && peekSees(b, t.x, t.y));
 }
 
 // ---------- fog of war ----------
@@ -844,6 +889,7 @@ export function playerVision(b) {
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     for (const e of eyes) if ((e.x === x && e.y === y) || canSeeAt(b, e, x, y)) { vis[y * W + x] = 1; break; }
+    if (!vis[y * W + x] && b.peeks && peekSees(b, x, y)) vis[y * W + x] = 2; // a peek through a door this turn (buildingmaps.js)
   }
   return vis;
 }
@@ -1024,8 +1070,10 @@ export function createBattle(state, setup) {
     if (e.factionId != null && u.kind === "human") u.factionId = e.factionId; // prisoners.js: whose people they are
     b.units.push(u);
   });
+  if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
+  siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
 
   const foeName = e.name || e.kind;
@@ -1046,10 +1094,13 @@ export function createBattle(state, setup) {
 }
 
 // Who a unit fights. Zombies drawn in by noise attack anyone alive, and raiders shoot back.
+// thirdside.js: the third side fights its own foes; enemy people go after it by enemyTargetsThird; the dead go for
+// anyone; your people never go after it on their own (only an order to shoot one does: damage turns it hostile).
 function foesOf(b, u) {
+  if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
-  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild));
-  return b.units.filter((o) => o.side !== u.side && active(o));
+  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
+  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && o.side === "third"));
 }
 
 // ---------- actions ----------
@@ -1057,6 +1108,7 @@ function foesOf(b, u) {
 // hit: { how: "shot" | "melee" | "bash" | "fire" | "blast", crit, sneak } for the armoured dead (deadsoldiers.js
 // armorVs: their armour by the weapon that struck); everyone else takes raw × their armor.
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
+  if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
   const eff = raw * (t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) return eff;
@@ -1075,7 +1127,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway).
     else if (b.raid && t.kind === "zombie" && !t.boss) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
-    say(b, `${t.name} is dead.`, "good");
+    say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
   }
   return eff;
 }
@@ -1118,6 +1170,7 @@ function detect(b, mover) {
 export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
+  if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;
@@ -1127,7 +1180,8 @@ export function moveAlong(b, u, path) {
     u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
-    if (b.cells[idx(x, y)].k === "idoor") openDoor(b, x, y, u); // a building's closed door swings open (buildingmaps.js)
+    // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
+    const stopAtDoor = b.cells[idx(x, y)].k === "idoor" && openDoor(b, x, y, u) && u.side !== "player";
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
@@ -1143,16 +1197,17 @@ export function moveAlong(b, u, path) {
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
-      if (!o.ow || o.side === u.side || !active(o) || !active(u)) continue;
+      if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
       if (!canSee(b, o, u) || !canFire(b, o)) continue;
       o.ow = false;
       say(b, `${o.name} reacts on overwatch.`, "info");
       fire(b, o, u, { reaction: true });
     }
     if (u.side === "player" && active(u)) detect(b, u);
-    if (!active(u)) break;
+    if (!active(u) || stopAtDoor) break;
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
+  if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
 }
 
 function fire(b, a, t, opts = {}) {
@@ -1274,7 +1329,7 @@ export function combatAct(state, act) {
   switch (act.type) {
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
-      const r = reachable(b, u, u.mob * u.ap);
+      const r = reachable(b, u, u.mob * u.ap, { manual: true });
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
       u.ap -= c <= u.mob ? 1 : 2;
@@ -1348,6 +1403,12 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "close": case "brace": case "peek": { // buildingmaps.js: a building's doors (close one, brace one, peek through one)
+      if (!b.raid) return "No doors here.";
+      const err = doorAct(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      break;
+    }
     case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); the glass breaks
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
@@ -1377,6 +1438,12 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    // siege.js: set a ladder up, push one off, swing the ram, set it down or take it up, drop rocks from the walls.
+    case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "drop": {
+      const err = siegeAct(state, b, u, t, act);
+      if (err) return err;
+      break;
+    }
     default:
       return "Unknown action.";
   }
@@ -1395,8 +1462,9 @@ export function endPlayerTurn(state) {
   if (!b || b.over || b.phase !== "player") return;
   for (const u of b.units) if (u.side === "player") u.ap = 0;
   b.phase = "enemy";
-  for (const u of b.units) if (u.side === "enemy" && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; }
+  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
+  shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
   else reinforcements(b);
   if (b.tier) tierEnemyTurn(state, b); // interior.js: the attackers still outside come in through the breaches
@@ -1404,6 +1472,7 @@ export function endPlayerTurn(state) {
   // Sleepers look around at the start of their turn.
   for (const u of b.units) if (u.side === "player" && active(u)) detect(b, u);
   b.queue = b.units.filter((u) => u.side === "enemy" && active(u)).sort((a, c) => (a.kind === "zombie") - (c.kind === "zombie")).map((u) => u.id);
+  for (const u of b.units) if (u.side === "third" && active(u)) b.queue.push(u.id); // thirdside.js: after the enemy
   bump(b);
 }
 
@@ -1476,6 +1545,15 @@ function reinforcements(b) {
 }
 
 // ---------- AI (works for either side) ----------
+// Who the AI shoots first (× the worth of a shot): a Shepherd, a screamer, a spitter (zombietypes.js ZTYPES priority),
+// the ram's crew (siege.js) and anyone coming over the wall on a ladder.
+export const SHOT_PRIORITY = { crew: 1.8, climber: 1.5 };
+export function shotPriority(b, t) {
+  let v = t.ztype && ZTYPES[t.ztype] && ZTYPES[t.ztype].priority ? ZTYPES[t.ztype].priority : 1;
+  if (t.ram != null && b.rams && isCrew(b, t)) v *= SHOT_PRIORITY.crew;
+  else if (b.cells[t.y * b.w + t.x].k === "siegeladder") v *= SHOT_PRIORITY.climber;
+  return v;
+}
 function bestShot(b, u, foes, opts = {}) {
   if (!canFire(b, u)) return null;
   let best = null;
@@ -1485,7 +1563,7 @@ function bestShot(b, u, foes, opts = {}) {
     const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * (t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor); // a dead soldier's plates by this gun
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
-    if (t.ztype && ZTYPES[t.ztype].priority) v *= ZTYPES[t.ztype].priority; // screamers and spitters first (zombietypes.js)
+    v *= shotPriority(b, t);
     if (!best || v > best.v) best = { t, o, v };
   }
   return best;
@@ -1538,15 +1616,21 @@ function bestMove(b, u, foes) {
 
 function aiUnit(b, u) {
   if (!active(u)) return;
+  if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
+    const plan = thirdPlan(b, u);
+    if (plan === "hold") { u.ap = 0; return; }
+    if (plan === "flee") return flee(b, u);
+  }
   const rng = b.rng;
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
     patrol(b, u);
     return;
   }
+  if (u.kind === "zombie" && u.side === "enemy" && lureTurn(b, u)) return; // decoys.js: a decoy or a fire it senses
   if (!u.aware) {
-    // Sleeping zombies shuffle about; sleeping humans hold position.
-    if (u.kind === "zombie" && rng.chance(0.4)) {
+    // Sleeping zombies shuffle about (not a Shepherd's pack: it keeps together); sleeping humans hold position.
+    if (u.kind === "zombie" && !herded(b, u) && rng.chance(0.4)) {
       const r = reachable(b, u, 1.5);
       const opts = [];
       for (let i = 0; i < W * H; i++) if (r.dist[i] > 0 && isFinite(r.dist[i])) opts.push(i);
@@ -1556,6 +1640,7 @@ function aiUnit(b, u) {
     return;
   }
   if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
+  if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
@@ -1621,7 +1706,7 @@ function aiMelee(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     // Someone holding a barred gate (or door) is behind it: an attacker has to batter it down first.
-    const adj = foes.filter((f) => adjacent(u, f) && !(u.side === "enemy" && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp);
+    const adj = foes.filter((f) => adjacent(u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp);
     if (adj.length) { strike(b, u, adj[0]); u.ap = 0; return; }
     const r = reachable(b, u, u.mob * u.ap);
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
@@ -1629,7 +1714,7 @@ function aiMelee(b, u) {
     for (let i = 0; i < W * H; i++) {
       if (!isFinite(r.dist[i]) || (r.dist[i] > 0 && outsideBase(b, u, i))) continue;
       const x = i % W, y = (i / W) | 0;
-      const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !(u.side === "enemy" && barredCell(b.cells[idx(f.x, f.y)])));
+      const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)])));
       const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05;
       if (!best || sc < best.sc) best = { x, y, sc, cost: r.dist[i], nextTo };
     }
@@ -1659,8 +1744,9 @@ function aiMelee(b, u) {
 // ---------- battering through (base battles) ----------
 // An attacker with nowhere closer to go batters a barred door, the gate, a wall section or a window next to it that
 // lies on its siege field's way to the defenders (distField with a walker). Returns [x, y] or null.
-function siegeTarget(b, u, field) {
-  if (u.side !== "enemy") return null;
+export function siegeTarget(b, u, field) {
+  // The holders never batter their own doors; nor does the third side (thirdside.js: it opens doors, it doesn't break in).
+  if (u.side === (b.holders || "player") || u.side === "third") return null;
   field = field || distField(b, foesOf(b, u).map((f) => [f.x, f.y]), u);
   const here = field[idx(u.x, u.y)];
   let best = null;
@@ -1684,8 +1770,11 @@ export function bash(b, u, x, y) {
   if (!breakable(c)) return 0;
   const w = WEAPONS[u.weapon];
   const base = (w && w.dmg) || BASH;
-  const dmg = Math.max(1, Math.round(b.rng.int(base[0], base[1]) * (u.dmgMult || 1) * siegeRule(u).bash));
+  // A building's door someone braces from the other side gives way at half the rate (buildingmaps.js).
+  const held = (c.k === "idoor" || c.k === "door") && doorHeld(b, c) ? BMAP.BRACE : 1;
+  const dmg = Math.max(1, Math.round(b.rng.int(base[0], base[1]) * (u.dmgMult || 1) * siegeRule(u).bash * held));
   const was = c.hp;
+  if (b.raid && (c.k === "idoor" || c.k === "door")) doorNoise(b, x, y); // the battering carries: Heat, the dead nearby come too
   c.hp = Math.max(0, c.hp - dmg);
   u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
   const name = structureName(c).toLowerCase();
@@ -1708,7 +1797,7 @@ export function openDoor(b, x, y, u = null) {
       if (inside(nx, ny) && b.cells[idx(nx, ny)].k === "idoor" && b.cells[idx(nx, ny)].roll && !list.some(([px, py]) => px === nx && py === ny)) list.push([nx, ny]);
     }
   }
-  for (const [px, py] of list) { const d = b.cells[idx(px, py)]; d.k = "odoor"; delete d.t; }
+  for (const [px, py] of list) { const d = b.cells[idx(px, py)]; d.k = "odoor"; if (d.t) d.tOpen = d.t; delete d.t; }
   b.losCache.fill(0);
   if (c.roll && b.raid) {
     b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
@@ -1720,7 +1809,7 @@ export function openDoor(b, x, y, u = null) {
 }
 
 export function structureName(c) {
-  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" ? "Door" : c.k === "window" ? "Window" : CELL[c.k].name;
+  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
 }
 
 // A structure gives way: a wall section becomes a breach (and the walkway behind it comes down), the gate hangs open,
@@ -1739,6 +1828,7 @@ export function breakCell(b, x, y, by = null) {
     }
   } else if (c.k === "gate") c.bar = false;
   else if (c.k === "bdoor") c.k = "doorway";
+  else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
   else if (c.k === "window") c.k = "smashed";
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
@@ -2026,7 +2116,9 @@ export function autoPlayerTurn(state, opts = {}) {
   }
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
-    if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a pipe bomb or Molotov on a crowd
+    if (active(u) && u.ap > 0) botSiege(state, b, u); // siege.js: push a ladder, rocks on the ram, lead the ram, set a ladder
+    if (active(u) && u.ap > 0) botDecoy(state, b, u); // decoys.js: a decoy to pull the dead off your people
+    if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a grenade, a pipe bomb or a Molotov on a crowd
     if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
@@ -2135,6 +2227,7 @@ function endBattle(state, b, outcome) {
     tactical: true, worn: true, bodies: b.bodies.length,
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js: taken home by finishCombat
     carriedIds, // the downed taken out in a retreat
+    third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     // A base battle (interior.js): where it was decided: held at the wall, in the yard, in the buildings; or lost.
     ...(b.tier ? { tier: outcome === "victory" ? b.tier.stage : outcome === "retreat" ? "abandoned" : "overrun", fellBack: b.tier.map === "interior" } : {}),
     // The retreat was sounded (soundRetreat): who got out, who was caught, who was carried or had to be dropped.
@@ -2427,7 +2520,8 @@ export function createRaid(state, setup) {
     map.areas = map.rooms;
   } else {
     W = RAID_W; H = RAID_H;
-    const types = rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
+    // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
     map = genRaidMap(rng, tile, types, withVehicle);
   }
   const b = {
@@ -2441,7 +2535,9 @@ export function createRaid(state, setup) {
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
       vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: 12,
-      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
+      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
@@ -2473,7 +2569,8 @@ export function createRaid(state, setup) {
   const groups = setup.enemy.groups || [{ kind: setup.enemy.kind, count: setup.enemy.count, power: setup.enemy.power }];
   let pod = 0, zn = 0, hn = 0;
   const buildings = map.areas.filter((a) => !a.outdoor);
-  if (pick) placeInterior(state, b, map, groups.map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
+  // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
+  if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0)));
     if (!count) continue;
@@ -2500,6 +2597,7 @@ export function createRaid(state, setup) {
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];
         if (g.factionId != null) u.factionId = g.factionId; // prisoners.js: whose people they are
+        if (g.side === "neutral" || g.side === "military") thirdSideUnit(b, u, g, i); // thirdside.js: survivors hiding here, a squad clearing it
         b.units.push(u);
       }
       pod++;
@@ -2635,6 +2733,7 @@ function searchBox(state, b, u, box) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness;
+  const reward = box.kind === "body" ? 1 : R.reward ?? 1; // buildingmaps.js rewardMult: city sites pay more, the countryside less
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
@@ -2661,9 +2760,9 @@ function searchBox(state, b, u, box) {
       const def = AREAS[R.areas[box.area].type];
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
-        sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
+        sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(newItem(key, 1));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
@@ -2762,6 +2861,7 @@ function endRaid(state, b) {
     loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
+    third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle: R.vehicleZone >= 0, heat: Math.round(R.heat),
       searched: R.containers.filter((c) => c.searched && c.kind !== "body").length, total: R.containers.filter((c) => c.kind !== "body").length,
@@ -2788,6 +2888,9 @@ function autoRaidTurn(state) {
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
+      // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
+      const esc = leave && R.interior ? botEscape(state, b, u, R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
+      if (esc && !combatAct(state, esc)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       const adj = foes.find((f) => adjacent(u, f));

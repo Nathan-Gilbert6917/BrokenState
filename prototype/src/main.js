@@ -51,6 +51,8 @@ import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
+import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
+import { activeCrawl } from "./sim/citycrawl.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
@@ -142,7 +144,7 @@ let lastRefresh = 0;
 const paused = () => ui.started && ui.speed === 0;
 function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
-  const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade);
+  const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
     !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
 }
@@ -814,6 +816,8 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
+// The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
+for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
@@ -1343,7 +1347,7 @@ function closeTopLayer() {
   }
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
-  if (!state.autopilot && (state.cards.length || state.engagement || state.trade)) return false; // these need an answer
+  if (!state.autopilot && (state.cards.length || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }
   if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)

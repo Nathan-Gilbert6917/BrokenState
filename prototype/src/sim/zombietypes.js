@@ -116,6 +116,7 @@ export function applyZType(u, kind, elite = false, power = 2) {
   if (kind === "spitter") { u.weapon = "acid"; u.weaponName = "Acid spit"; u.aim = z.spitAim + power * 3; u.cd = 0; }
   if (kind === "crawler") u.low = true;
   if (kind === "screamer") u.screamCd = 0;
+  if (kind === "shepherd") u.sight = Math.max(u.sight || 0, 11); // it watches
   return u;
 }
 
@@ -153,7 +154,16 @@ export function zombieTurn(b, u) {
   if (u.ztype === "screamer") return screamerTurn(b, u);
   if (u.ztype === "brute") return bruteTurn(b, u);
   if (u.ztype === "spitter") return spitterTurn(b, u);
+  if (u.ztype === "shepherd") return shepherdTurn(b, u);
   return false;
+}
+
+// A Shepherd keeps behind its pack: about `keep` tiles from your people, never in the flames (combat.js reachable
+// keeps it out of them); cornered, it claws like the rest. Its aura is decoys.js herded.
+function shepherdTurn(b, u) {
+  const foes = playerFoes(b);
+  if (!foes.length || foes.some((f) => adjacent(u, f))) return false;
+  return hangBack(b, u, foes, ZTYPES.shepherd.keep);
 }
 
 // The edge the dead come in from: the enemy's side of the map (east, or the side a base was attacked from).

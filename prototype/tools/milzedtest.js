@@ -147,6 +147,10 @@ const st = createWorld({ seed: SEED, factionCount: 6 });
   // The horde of the fallen (hardcore-groups.js): makeHorde with mix { soldier: 0.6 } into a base defence.
   const hf = makeHorde(st, { tile: hub(st).tile, size: 40, role: "attack", mix: { soldier: 0.6 } });
   const types = battleTypes(hf.mix, 12);
+  // The hardcore military arc's strike (hardcore-groups.js): soldiers lost merge into a hive's guard by mergeMix.
+  const { mergeMix } = await import("../src/sim/zombietypes.js");
+  const gm = mergeMix({ runner: 0.1 }, 90, { soldier: 1 }, 10);
+  check(gm && gm.soldier === 0.1 && gm.runner === 0.09, `mergeMix keeps the soldiers merged into a guard (${JSON.stringify(gm)})`);
   check(types && types.soldier === 7 && typeStrength({ count: 12, types }) > 1.4 && mixWeight(hf.mix) > 1.4, `makeHorde({ mix: { soldier: 0.6 } }): 12 of them in a battle are ${types.soldier} dead soldiers; worth ×${r2(mixWeight(hf.mix))} by the numbers`);
   st.hordes.splice(st.hordes.indexOf(hf), 1);
 }
@@ -330,7 +334,7 @@ section("Sprites (ui/sprites.js paintArmoredDead, ui/downsprites.js): headless p
   check(sold.px.slice(0, 22 * 4).some((c) => c && ["#4f5a36", "#55603b", "#5b5a40"].includes(c)) && riot.px.some((c) => c === "#9fb4c4"), "the soldier wears an olive helmet; the riot cop a visor");
   const downs = {
     walker: D.paintDownedZombie("walker", 3, look), runner: D.paintDownedZombie("runner", 3, look), bloated: D.paintDownedZombie("bloated", 3, look), brute: D.paintDownedZombie("brute", 3, look),
-    spitter: D.paintDownedZType("spitter", 0, look), screamer: D.paintDownedZType("screamer", 0, look), crawler: D.paintDownedZType("crawler", 0, look),
+    spitter: D.paintDownedZType("spitter", 0, look), screamer: D.paintDownedZType("screamer", 0, look), crawler: D.paintDownedZType("crawler", 0, look), shepherd: D.paintDownedZType("shepherd", 0, look),
     soldier: D.paintDownedZType("soldier", 3, look), riot: D.paintDownedZType("riot", 3, look),
     wallbreaker: D.paintDownedBoss("wallbreaker"), broodmother: D.paintDownedBoss("broodmother"),
   };

@@ -1,0 +1,625 @@
+<section id="groups">
+  <h2>AI survivor groups</h2>
+  <p class="lede">The State of Calder is shared with other survivor groups that live without you: they eat, grow, scavenge, expand onto new sites, raid each other and you, go to war, sign pacts and fall apart. There are seven group types, each with its own starting attitude, strength, appetite for land and taste in trade goods. Everything you do with other people (trade, diplomacy, the coalition, conquest) is aimed at these groups.</p>
+
+  <h3>How many, and where <span class="status built">Built</span></h3>
+  <p>The number of groups is a new-run setting, limited by the world size. Every run has at least one raider gang, one military remnant <i>or</i> fortress hub, and one trading group <i>or</i> farming commune; the rest are random types, shuffled.</p>
+  <table class="data">
+    <thead><tr><th>World size</th><th>Map (hexes)</th><th>Groups (range)</th><th>Default</th><th>Start within raid reach of your hub</th></tr></thead>
+    <tbody>
+      <tr><td>Small</td><td>48 × 32</td><td>3–6</td><td>4</td><td>all of them</td></tr>
+      <tr><td>Normal</td><td>64 × 42</td><td>5–10</td><td>7</td><td>all of them</td></tr>
+      <tr><td>Large</td><td>80 × 52</td><td>7–14</td><td>10</td><td>at most 5; the rest settle beyond 32 tiles and come into reach as they expand</td></tr>
+      <tr><td>Huge</td><td>100 × 66</td><td>10–18</td><td>15</td><td>at most 4; the rest settle farther out</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>A group starts on a named site outside the cities (never an urban zone), at least 8 tiles from your hub and 8 tiles from every other group, and within 30 tiles of the hub on a Normal map (scaled by the square root of the area elsewhere). It prefers sites that suit its type (table below).</li>
+    <li>Each group starts with 14–28 people, goodwill toward you of its type's value ± 8, and stores of food (6 a head), ammo (10 a head × its arms factor), fuel (1 a head), meds (1 a head), 2 parts, scrap (3 a head) and preserved food (half a head).</li>
+    <li>Every group has its own map color. 18 colors exist (10 for Normal, 8 more for Large and Huge); none is blue, because blue is yours.</li>
+    <li>Groups start <b>unknown</b>: the map and the log do not name them until you meet them (your team sees them, they call you, you scan the airwaves, they raid you, or they ask for help).</li>
+  </ul>
+
+  <h3>The seven group types</h3>
+  <p>"Arms" multiplies every person's fighting strength (a group's strength = people × arms). "Food" scales what their fields produce. Expansion and raid chances are per day (see the rules below the cards).</p>
+  <div class="cards">
+    <article class="card" data-sprite="factionbase/raider">
+      <h4>Raider gang <span class="status built">Built</span></h4>
+      <p>Lives off others: raids you and its neighbours, ambushes convoys and scavenging parties near its base, burns what it cannot hold. Sells what it took (and drink).</p>
+      <dl><dt>Starts</dt><dd>Aggressive, goodwill −55 (always hostile)</dd><dt>Arms / food</dt><dd>1.3 / 0.8</dd><dt>Expands</dt><dd>3% a day × people/18, up to 2 + people/10 bases (max 6)</dd><dt>Raids</dt><dd>10.5% a day after cooldown</dd><dt>Prefers</dt><dd>quarry, factory, prison, gas station, truck stop, motel, auto shop, town</dd><dt>Names</dt><dd>Red Hand, Highway Kings, Rust Dogs, Black Creek Crew</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/expansionist">
+      <h4>Expansionist hub <span class="status built">Built</span></h4>
+      <p>Claims land fast and pushes toward you and toward rich sites. Prizes fuel and vehicle parts.</p>
+      <dl><dt>Starts</dt><dd>Aggressive, goodwill −45 (−53 to −37: it can start just above the hostile line)</dd><dt>Arms / food</dt><dd>1.1 / 1.1</dd><dt>Expands</dt><dd>7% a day × people/18, up to 6 bases</dd><dt>Raids</dt><dd>6% a day</dd><dt>Prefers</dt><dd>town, airport, factory, police station</dd><dt>Names</dt><dd>New Dominion, Iron Compact, Calder Front, The Ascendancy</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/zealot">
+      <h4>Zealots <span class="status built">Built</span></h4>
+      <p>Hostile to almost everyone, friendly only with other zealots. Will not touch liquor, drugs or cigarettes in trade.</p>
+      <dl><dt>Starts</dt><dd>Aggressive, goodwill −70</dd><dt>Arms / food</dt><dd>1.0 / 1.0</dd><dt>Expands</dt><dd>4% a day × people/18, up to 6 bases</dd><dt>Raids</dt><dd>7.5% a day</dd><dt>Prefers</dt><dd>church, school, university, hospital, town</dd><dt>Names</dt><dd>Children of the Ash, The Purified, Last Covenant</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/military">
+      <h4>Military remnant <span class="status built">Built</span></h4>
+      <p>The best armed group (arms 1.6) behind strong walls. Slow to expand, never raids unless you provoke it into hostility. Pays well for automatic weapons, optics and electronics.</p>
+      <dl><dt>Starts</dt><dd>Neutral, goodwill 0</dd><dt>Arms / food</dt><dd>1.6 / 0.9</dd><dt>Expands</dt><dd>1.5% a day × people/18, up to 4 bases</dd><dt>Raids</dt><dd>only if hostile: 4.5% a day, only on you</dd><dt>Prefers</dt><dd>National Guard base, airport, police station, ranger station</dd><dt>Names</dt><dd>3rd Guard Battalion, Fort Calder Command, Task Force Vanguard</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/fortress">
+      <h4>Fortress hub <span class="status built">Built</span></h4>
+      <p>Isolationist: barely expands, sits behind strong walls, wants scrap, parts and defences. Sends trade convoys to peaceful neighbours.</p>
+      <dl><dt>Starts</dt><dd>Neutral, goodwill −5</dd><dt>Arms / food</dt><dd>1.2 / 1.1</dd><dt>Expands</dt><dd>0.5% a day × people/18, up to 4 bases</dd><dt>Raids</dt><dd>only if hostile: 3% a day, only on you</dd><dt>Prefers</dt><dd>prison, dam, ranch, town</dd><dt>Names</dt><dd>Stonegate, The Granary Walls, Ridgeline Hold</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/traders">
+      <h4>Traders <span class="status built">Built</span></h4>
+      <p>Mobile merchants: the most trade calls, the most caravans, the biggest stock of gear for sale (4–6 new items a week). They charge a 10% margin.</p>
+      <dl><dt>Starts</dt><dd>Friendly, goodwill 35</dd><dt>Arms / food</dt><dd>0.9 / 1.0</dd><dt>Expands</dt><dd>1% a day × people/18, up to 4 bases</dd><dt>Raids</dt><dd>only if hostile: 1.5% a day, only on you</dd><dt>Prefers</dt><dd>town, gas station, truck stop, grocery, mall</dd><dt>Names</dt><dd>Crossroads Exchange, Long Haul Co., River Market</dd></dl>
+    </article>
+    <article class="card" data-sprite="factionbase/commune">
+      <h4>Farming commune <span class="status built">Built</span></h4>
+      <p>Food-rich (food 1.6) and poorly armed (arms 0.6): a favourite target for raiders. Wants farm tools, books, medicine and jars.</p>
+      <dl><dt>Starts</dt><dd>Friendly, goodwill 30</dd><dt>Arms / food</dt><dd>0.6 / 1.6</dd><dt>Expands</dt><dd>1% a day × people/18, up to 4 bases</dd><dt>Raids</dt><dd>only if hostile: 1.5% a day, only on you</dd><dt>Prefers</dt><dd>farmstead, ranch, feed store, town</dd><dt>Names</dt><dd>Greenhollow, Harvest Fellowship, Millbrook Co-op</dd></dl>
+    </article>
+  </div>
+
+  <h3>Their parties on the map</h3>
+  <p>Every group type has its own look for its people on the move, tinted in the group's color: raids (weapons up, standing on a red ring; a siege pitches a camp next to the target with crossed swords over it), people walking (convoys on foot), scavengers with sacks, and a vehicle for convoys and caravans (raiders: a spiked pickup; military: a humvee; expansionists: an armored truck; traders: a covered wagon with a mule; commune: a tractor and hay wagon; zealots: a procession cart under a sun banner with torches; fortress: a box truck with a shield crest and sandbags).</p>
+  <div class="gallery" data-sprites="party/raider-raid party/raider-scav party/raider-walk party/raider-convoy party/expansionist-raid party/expansionist-scav party/expansionist-walk party/expansionist-convoy party/zealot-raid party/zealot-scav party/zealot-walk party/zealot-convoy party/military-raid party/military-scav party/military-walk party/military-convoy party/fortress-raid party/fortress-scav party/fortress-walk party/fortress-convoy party/traders-raid party/traders-scav party/traders-walk party/traders-convoy party/commune-raid party/commune-scav party/commune-walk party/commune-convoy icon/siege"></div>
+
+  <h3>What a group does every day <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Behaviour</th><th>Rule (from the code)</th></tr></thead>
+    <tbody>
+      <tr><td>Eating and farming</td><td>Food changes by people × (0.86 + 0.25 × food factor − 1) a day: about +0.06 a head for raiders up to +0.26 for a commune. The rest of what they need comes from scavenging.</td></tr>
+      <tr><td>Growing</td><td>With more than 4 days of food a head and under 50 people: 25% a day for one more person. If that misses, an aggressive group with 2+ days of food a head and under 45 people recruits a drifter: 12% + 2% per base it holds.</td></tr>
+      <tr><td>Starving</td><td>Food at zero: 35% a day to lose a person.</td></tr>
+      <tr><td>Workshops</td><td>Ammo +0.12 × arms a head a day (cap 30 a head), scrap +0.08 a head (cap 10 a head), fuel and meds +0.016 a head each (cap 3 a head). This is 40% of the older "made from nothing" economy; the rest comes from sites.</td></tr>
+      <tr><td>Water</td><td>Wells refill toward 6 a head, by half a head a day (slower in summer heat).</td></tr>
+      <tr><td>Expanding</td><td>Daily chance = (type's expand rate, +2% if aggressive) × people / 18 while under its base cap. Aggressive groups look 7 tiles out from their bases (others 6), never within 3 tiles of your bases, and weight sites by loot and by closeness to you; peaceful groups pick at random. Never a city, a base, a tile someone owns, or land reserved for you after a war.</td></tr>
+      <tr><td>Land</td><td>Every tile within 2 of a group's base is its land (map overlay, patrol cards, scavenging rules).</td></tr>
+      <tr><td>Trade convoys</td><td>Traders, communes and fortresses: 15% a day send a convoy (strength 10% of their people, at least 2) to a random peaceful group; on arrival the receiver gets +10 food and +10 scrap.</td></tr>
+      <tr><td>Raiding</td><td>See <a href="#relations">Relations</a> and the raid rules in base defence: aggressive groups roll 1.5 × their raid rate a day once an 8–16 day cooldown is over (and they have 8+ people). Peaceful groups only raid you, and only if you made them hostile.</td></tr>
+      <tr><td>Scavenging</td><td>See below.</td></tr>
+      <tr><td>Breaking</td><td>A group down to 3 people (GROUP_BREAK) collapses (see <a href="#world-history">The living world</a>).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Groups scavenge too: the shared, shrinking map <span class="status built">Built</span></h3>
+  <p>Site loot never grows back. Your teams lower it, and so do the groups. This is why a site that looked rich on day 10 may be picked clean by day 60.</p>
+  <ul>
+    <li><b>Parties:</b> a group with 6+ people sends one scavenging party at a time, every 6–10 days, when its biggest need (1 − stock / want; wants per head: 10 food, 20 × arms ammo, 6 scrap, 2 fuel, 2 meds, 1 preserved, parts 3 + 0.2 a head) is 25% or more. The party (strength 12% of the group, at least 2, on foot) walks to the best site within 10 tiles: the site's loot table weighted by need × loot left ÷ (1 + distance / 5). Never a base, hive, crash site, a tile with a horde, land held by you or another group, a site below 0.12 loot, or one another party is working.</li>
+    <li><b>Search:</b> 8 hours, taking 3% of the loot an hour (× strength / 3, between 0.5 and 1.5) down to a floor of 0.03, at 80% of what your own team would find. Then home, and the haul goes into their stores.</li>
+    <li><b>Their own land:</b> every site inside a group's land loses 0.3% of its loot a day into their stock (at half efficiency).</li>
+    <li><b>Losses:</b> walking into a horde costs a quarter of the party's strength and a quarter of its haul; a raider gang ambushes a party carrying a haul within 2 tiles of its base (12% a tile) and takes it; a party below strength 1 is gone.</li>
+    <li><b>Contested sites:</b> if their scavengers reach a site your team is on, you get a "contested site" conflict card (unless the group is friendly, allied or has a pact with you: then they keep to their side). Win and they leave, dropping their haul into your cargo.</li>
+    <li><b>What you learn:</b> only what you see. A site stripped since your last look still shows its old loot. When a party takes 0.12+ loot (or drops the site a band) within 15 tiles of one of your bases, the log says so if you can see it, or "On the radio: …" if you have a radio station (once a day at most, a site at most every 10 days); the radio line updates the loot you know there.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 gave factions an ideology (Militarist, Isolationist, Mercantile, Zealot, Lawless) beside their type. The build has the seven types only; each type's numbers (arms, food, expansion, raids, trade tastes, war temper) carry its personality. The 5–10 group count is now the Normal range; the other world sizes have their own.</aside>
+</section>
+
+<section id="relations">
+  <h2>Relations and attitude</h2>
+  <p class="lede">Every group has one goodwill number toward you, from −100 to +100, and the groups have relations with each other on the same scale. Goodwill decides whether a group trades, talks, helps, joins your coalition or raids you; it drifts with what you do and with how close and strong you are.</p>
+  <aside class="note"><b>Note on files:</b> <code>relations.js</code> is about relationships between your own survivors (friends, rivals, partners, grief); it is covered with the people systems. Group attitude lives in <code>factions.js</code>, group-to-group relations in <code>diplomacy.js</code>.</aside>
+
+  <h3>The attitude scale <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Goodwill</th><th>Attitude</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td>−100 to −40</td><td>Hostile</td><td>Raids you (aggressive types often, provoked peaceful types rarely); will not trade, talk or sign; any pact is torn up at once (and trade routes pause).</td></tr>
+      <tr><td>−39 to 19</td><td>Neutral</td><td>Talks and trades (aggressive types need goodwill 0+ to deal, peaceful ones −15+). Their scavengers contest your sites.</td></tr>
+      <tr><td>20 to 69</td><td>Friendly</td><td>Trade pact possible (20+), calls for help over the radio, scavengers keep to their side; 40+ (or a pact) asks you into its wars; 50+ (and a pact) can join your coalition.</td></tr>
+      <tr><td>70 to 100</td><td>Allied</td><td>As Friendly; their news reports reach 4 tiles around their bases.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Drift: what moves goodwill on its own <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Pressure from your expansion:</b> a peaceful group (military, fortress, traders, commune) that is not yet hostile loses goodwill every day when a base of yours is within 5 tiles of one of theirs, your strength is more than 0.6 × theirs, and you have not done any diplomacy with them for 10 days: −1.5 a day for the neutral types (military, fortress), −0.7 for the friendly types (traders, commune). Greeting them on the radio, trading, gifts, pacts, jobs and the like all reset the 10-day clock.</li>
+    <li><b>Cooling off:</b> a peaceful group you provoked into hostility recovers +0.1 a day once no base of yours is within 5 tiles and nothing new has been done against it for 30 days.</li>
+    <li><b>Trade routes:</b> an active trade route with a group adds +0.3 a day, plus +1.5 each time a convoy is delivered.</li>
+    <li><b>Bought peace fades:</b> tribute paid to an aggressive group (+6) drains away again at 0.5 a day.</li>
+    <li><b>Infamy:</b> once your conquest infamy is above 20, every known peaceful group that is not a coalition member loses (infamy − 20) / 200 a day.</li>
+  </ul>
+
+  <h3>Everything that raises or lowers goodwill</h3>
+  <table class="data">
+    <thead><tr><th>Action or event</th><th>Goodwill</th></tr></thead>
+    <tbody>
+      <tr><td>Greet them on the radio (every 3 days)</td><td>+2 (+1 if hostile)</td></tr>
+      <tr><td>A fair trade</td><td>+ min(2, deal size / 80) + min(4, what you overpaid / 15); at most +4 a day per group</td></tr>
+      <tr><td>A gift (trade window)</td><td>+ value / 6; at most +15 a day per group</td></tr>
+      <tr><td>Signing a pact</td><td>none directly, but goodwill is lifted to at least −5 (peaceful) or −10 (aggressive) by a non-aggression pact</td></tr>
+      <tr><td>Paying tribute to a raid</td><td>+6 (fades 0.5 a day from aggressive groups)</td></tr>
+      <tr><td>Answering a call for help: squad arrives and they hold / they fall anyway / squad too late</td><td>+20 (and 6 meds or 60 ammo as thanks) / +8 / +3</td></tr>
+      <tr><td>Answering a call for help with 40 ammo</td><td>+6 (and the raid is 20% weaker)</td></tr>
+      <tr><td>Ignoring a call for help</td><td>−14 (friendly or allied) / −8 (neutral)</td></tr>
+      <tr><td>Your call for help over the radio</td><td>−4</td></tr>
+      <tr><td>A job done / declined / left to expire / failed</td><td>+6 + 4 × size / −1 / −1 / −4 (−2 for a small job)</td></tr>
+      <tr><td>Joining their war / victory together / sending 40 ammo for it / staying out / leaving it</td><td>+10 / +10 / +5 / −2 / −8</td></tr>
+      <tr><td>Joining a war against them</td><td>set to −60 at most, pact torn up</td></tr>
+      <tr><td>Arming their war enemy (20+ ammo or a weapon in a deal; 40 ammo sent)</td><td>−1 a deal (at most −3 a day) / −2</td></tr>
+      <tr><td>A ceasefire you brokered / a failed attempt</td><td>+8 / −3 (both sides)</td></tr>
+      <tr><td>Peace after a war you fought in</td><td>the enemy is set back to −35 if it was lower (wary, not hostile)</td></tr>
+      <tr><td>Joining your coalition / expelled / council: you send supplies / refuse / refuse a council job / your ruling for / against / a compromise that works / fails</td><td>+5 / −15 / +6 (others +3) / −4 all / −3 all / +6 / −8 / +3 both / −3 both</td></tr>
+      <tr><td>Taking one of their people prisoner</td><td>−5 (−2 if already hostile)</td></tr>
+      <tr><td>Releasing a prisoner / ransom paid and person returned / handing prisoners back / letting them go after a fight</td><td>+8 (+4 if hostile) / +3 / +3 / +2</td></tr>
+      <tr><td>Executing a prisoner</td><td>−20, and −4 with every other group</td></tr>
+      <tr><td>Refusing their ransom offer / a prisoner who changes sides / beating off their rescue / breaking out their prisoners</td><td>−3 / −2 / −5 / −5</td></tr>
+      <tr><td>Attacking their caravan at your gates</td><td>set to −70; every known peaceful group −5; they raid you for 60 days whatever their type</td></tr>
+      <tr><td>Assaulting their base</td><td>−30 at once; pact ended; a coalition member leaves (every member −5)</td></tr>
+      <tr><td>Taking a base from a group: its pact partners / friends (relations 28+) / enemies (−42 or worse)</td><td>−8 (−15 if you finish it) / −4 (−8) / +2 (+4)</td></tr>
+      <tr><td>A rescue raid on their base (conflict card: assault / sneak)</td><td>−30 / −20; storming a holder's base for a job −15, talking captives away −2</td></tr>
+      <tr><td>Raiding a site on their land / raiding their base while scavenging</td><td>−10 / −6</td></tr>
+      <tr><td>Road meetings with their people: a friendly meeting / a bad conversation / a failed negotiation / you tried to rob them / you attacked them</td><td>+3 / −3 / −3 / −8 / −(the card's goodwill hit)</td></tr>
+      <tr><td>Saving their people on the road / fighting beside them / helping their people on the road (parting gifts)</td><td>+10 to +15 / +15 / +2</td></tr>
+      <tr><td>Robbing merchants from outside</td><td>known traders −15, known communes and fortresses −8</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Memory: what groups remember <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Grudge:</b> every raid of theirs you beat off (or fight they lose against you) adds a grudge point; each point makes your bases 50% more attractive to their raids (counted up to 4) and their raids razing more likely. Grudges fade 1% a day.</li>
+    <li><b>Escalation:</b> every raid you drive off makes their next raid 25% bigger, up to 2×; a raid that gets in resets it.</li>
+    <li><b>Betrayal:</b> attacking their caravan starts a 60-day vendetta: 12% a day for a raid on a base of yours within 24 tiles while they are hostile and have 6+ people, whatever their type.</li>
+    <li><b>Last offence:</b> any goodwill loss with a reason restarts the 30-day clock before a provoked group starts to cool off.</li>
+    <li><b>Tribute:</b> how much bought goodwill is still fading; prisoners you hold; when they were last raided or lost a base (both raise their prices for weapons and defences).</li>
+    <li><b>Your survivors remember too:</b> friends of someone a group killed want revenge: +5 aim against that group for 60 days, and +6 mood when they win a fight against it (see People).</li>
+  </ul>
+
+  <h3>Relations between groups <span class="status built">Built</span></h3>
+  <p>Each pair of groups has a relation (−100 to 100) that rests at a value set by their types, minus neighbour friction (1 point for every tile their nearest bases are closer than 12), ± 8 at the start. Each day it drifts 2% of the way back to that resting value.</p>
+  <table class="data">
+    <thead><tr><th>Pair</th><th>Resting relation</th></tr></thead>
+    <tbody>
+      <tr><td>A raider gang and anyone / two raider gangs</td><td>−44 / −20</td></tr>
+      <tr><td>Zealots and anyone else / two zealot groups</td><td>−34 / +20</td></tr>
+      <tr><td>Two other aggressive groups (expansionists)</td><td>−28</td></tr>
+      <tr><td>An aggressive and a peaceful group</td><td>−24</td></tr>
+      <tr><td>Traders or a commune with another peaceful group</td><td>+30</td></tr>
+      <tr><td>Other peaceful pairs (military, fortress)</td><td>+18</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>Events push it off the resting value: an ordinary raid between them −12, a war declared −30, after a peace it is raised to at least −15, a shared war enemy +0.4 a day, two coalition members +0.3 a day, joining the coalition +10 with every member, your council ruling between two members −10 (a compromise that works +5).</li>
+    <li>The Affairs tab shows the matrix for the groups you know, with words: enemies (−45 or worse), rivals (to −15), wary, friendly (15+), close (35+).</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> the drift rules match Draft 1 (pressure turns neutral groups hostile, friendly ones drift more slowly, diplomacy holds them steady). "Weakness invites aggression" is built through raid targeting: groups weigh your bases by their stock against their defence and size each raid to beat your prepared defence.</aside>
+</section>
+
+<section id="diplomacy">
+  <h2>Diplomacy</h2>
+  <p class="lede">Diplomacy is done over the radio (the radio panel for one group, the Diplomacy window with its Jobs, Market board, World affairs and Coalition tabs), at their gates with a team, and through cards when something happens. Every action below exists in the build, with its real requirements and effects.</p>
+
+  <h3>Every diplomatic action <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Action</th><th>Where</th><th>Requirements</th><th>Cost</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Scan the airwaves</td><td>Groups tab, radio header</td><td>A radio station on the air; once a day</td><td>—</td><td>Every group in reach you have not met becomes known ("heard on the radio"), its main base marked on the map.</td></tr>
+      <tr><td>Greet them / keep in touch</td><td>Radio panel</td><td>In radio reach; every 3 days</td><td>—</td><td>+2 goodwill (+1 if hostile); counts as diplomacy (stops expansion pressure for 10 days).</td></tr>
+      <tr><td>Ask for news</td><td>Radio panel</td><td>Not hostile; every 5 days</td><td>—</td><td>Every tile within 2 (neutral), 3 (friendly) or 4 (allied) of their bases and every horde within 10 tiles of them goes on your map as it is now; sometimes a rumour of a hidden place.</td></tr>
+      <tr><td>Ask for a trade caravan</td><td>Radio panel</td><td>Goodwill −15+ (aggressive types 0+); a land route to one of your bases; no caravan of theirs out; every 4 days</td><td>—</td><td>Chance 45% + goodwill% (+25% traders, +15% commune), 10–95%: a caravan of about 160 worth of their surplus comes and stays a day.</td></tr>
+      <tr><td>Propose a deal ("we want 20 meds, paying 60 ammo")</td><td>Radio panel</td><td>As a caravan; the deal must be fair at their prices (Speech of your best talker at the hub counts) and they must have the goods</td><td>The agreed goods, when their caravan arrives</td><td>Their caravan brings what you asked for; the trade window opens with the deal filled in and honoured as agreed. Not completing it before the caravan leaves: −3 goodwill.</td></tr>
+      <tr><td>Call for help</td><td>Radio panel</td><td>Friendly, allied or a pact; every 10 days</td><td>−4 goodwill</td><td>A raid on its way to any base of yours is harried to 70% of its strength; with no raid and less than 3 days of food at the hub, they send 20–30 food as aid. Otherwise they refuse ("call us when you are in real trouble").</td></tr>
+      <tr><td>Non-aggression pact</td><td>Radio panel or trade window</td><td>Not hostile; goodwill −10+ (aggressive types −15+)</td><td>—</td><td>Pact signed; goodwill lifted to at least −5 (−10). A pact enables calls for help, counts toward the coalition, keeps their scavengers off your sites. Torn up the moment they turn hostile.</td></tr>
+      <tr><td>Trade pact</td><td>Radio panel or trade window</td><td>Not hostile; goodwill 20+</td><td>—</td><td>As a non-aggression pact, and you can set up trade routes with them.</td></tr>
+      <tr><td>Trade</td><td>Trade window (team at their gates, your trade caravan there, or their caravan at your base)</td><td>Not hostile</td><td>What you give</td><td>Barter at their prices; goodwill for fair and generous deals (up to +4 a day). See <a href="#trade">Trade</a>.</td></tr>
+      <tr><td>Give your side as a gift</td><td>Trade window</td><td>Something offered</td><td>What you give</td><td>+ value / 6 goodwill, up to +15 a day per group.</td></tr>
+      <tr><td>Buy intel / sell your maps</td><td>Trade window</td><td>See Trade</td><td>Trade value</td><td>Map reports of an area, horde and hive sightings, or selling what you know.</td></tr>
+      <tr><td>Answer a call for help</td><td>Card</td><td>A peaceful, non-hostile group besieged within 7 tiles of a base of yours</td><td>A squad, or 40 ammo</td><td>See "Calls for help" below.</td></tr>
+      <tr><td>Pay tribute to a raid</td><td>Raid warning card</td><td>30 ammo at the base</td><td>30% of the base's food and 30 ammo</td><td>The raid turns back; +6 goodwill (fades again from aggressive groups).</td></tr>
+      <tr><td>Accept / decline a job</td><td>Card, Jobs list</td><td>Group in radio reach or your team at their gates</td><td>The job's work</td><td>Done: +6 + 4 × size goodwill and rewards; decline or ignore −1; fail −4 (−2 small).</td></tr>
+      <tr><td>Join a war (on one side)</td><td>War card, World affairs</td><td>Your side is not hostile and has goodwill 0+; the enemy is not in your coalition; you are not already in it</td><td>The enemy's goodwill → −60 at most, its pact torn up</td><td>Your side +10; its war raids 25% stronger; your patrols add 0.3 a day to its war score while your strength is at least 0.4 × the enemy's; a share of the spoils if it wins (below).</td></tr>
+      <tr><td>Send 40 ammo for their war</td><td>War card</td><td>40 ammo at the hub</td><td>40 ammo</td><td>+5 with them, −2 with their enemy.</td></tr>
+      <tr><td>Stay out of a war</td><td>War card</td><td>—</td><td>−2 with the side that asked</td><td>Nothing else.</td></tr>
+      <tr><td>Leave a war</td><td>World affairs</td><td>You are in it</td><td>−8 with your side</td><td>The enemy stays as it is.</td></tr>
+      <tr><td>Broker a ceasefire</td><td>World affairs</td><td>A radio station; both sides known, in radio reach and not hostile; you are not fighting in it; once a week per war</td><td>—</td><td>Chance 20% + 3.5% per point of your best Speech at the hub + (goodwill A + goodwill B) / 400 + their average war weariness / 200, between 5% and 90%. Success: a white peace, +8 with both and a thank-you from each (about 40 worth of their surplus at the hub). Failure: −3 with both.</td></tr>
+      <tr><td>Invite into the coalition / welcome a request / expel</td><td>Coalition tab, group card, radio panel</td><td>See <a href="#coalition">Coalition</a></td><td>Expel: −15</td><td>Membership.</td></tr>
+      <tr><td>Ransom, release, hand back or execute prisoners</td><td>Prisoner screens, trade visit</td><td>You hold their people</td><td>—</td><td>Ransom: they pay in goods from their stock (less if hostile, more at war) and take their person home, +3 goodwill (prisoner rules: see Prisoners). Release: +8 (+4 hostile). Execute: −20, others −4.</td></tr>
+      <tr><td>Assault their base</td><td>Map, planner</td><td>A team at their base</td><td>−30 goodwill, pact, membership</td><td>See <a href="#conquest">Conquest</a>.</td></tr>
+      <tr><td>Attack their caravan</td><td>Trade window, Bases tab</td><td>Their caravan at your base, people there to fight</td><td>Goodwill → −70, others −5</td><td>See <a href="#caravans">Caravans</a>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Calls for help <span class="status built">Built</span></h3>
+  <ul>
+    <li>When a peaceful group that is not hostile to you is besieged (by another group, a horde or outside raiders) and one of your bases is within 7 tiles of the base under attack, a call comes: at once over the radio if a radio base reaches within 4 tiles of them, otherwise by a runner after max(4, 2 × distance from your hub) hours. A siege on a group lasts 18 hours, so a runner can arrive too late ("A call for help, too late").</li>
+    <li>The call makes the group known and offers: <b>Send a squad</b> (the best 3 fighters at the hub march there; a big goodwill gain if they arrive in time: +20 if the defenders hold, +8 if they fall, +3 if the fight was over; one helper may be hurt, 50%; helpers add 1.4 × their combat power to the defence), <b>Send 40 ammo</b> (the attackers lose 20% of their strength, +6 goodwill), or <b>Ignore it</b> (−14 for friendly or allied groups, −8 otherwise).</li>
+  </ul>
+
+  <h3>Jobs for other groups <span class="status built">Built</span></h3>
+  <p>Known, non-hostile groups in radio reach post work: 6% a day (traders and communes 8%), at most one open offer and two jobs under way per group, six in all, no new offer from the same group within 4 days. A team at their gates hears of work 60% of the time on arrival (once every 3 days per group). Offers stay open 4 days.</p>
+  <table class="data">
+    <thead><tr><th>Job</th><th>Days</th><th>Done when</th></tr></thead>
+    <tbody>
+      <tr><td>🧟 Clear a horde</td><td>12</td><td>A horde within 6 tiles of their bases is gone or down to 40%, and a team of yours came within 1 tile of it.</td></tr>
+      <tr><td>🛡 Escort a caravan</td><td>10</td><td>Their caravan to another group arrives with your team within 2 tiles for at least half its road hours (raiders leave it alone while you escort).</td></tr>
+      <tr><td>📦 Deliver supplies</td><td>10</td><td>N of a good they are short of handed over by a team at their base, or fetched by their caravan from your trade base.</td></tr>
+      <tr><td>⛓ Rescue their people</td><td>14</td><td>Their people held by a group at war with them (or raiders): storm it (60% of the guards), talk them out (Speech, not with a hostile holder) or pay 40 a head.</td></tr>
+      <tr><td>🔥 Storm a hive</td><td>20</td><td>A hive within 8 tiles of them falls with your team within 1 tile; their fighters join the assault.</td></tr>
+      <tr><td>🔭 Scout a region</td><td>12</td><td>70% of a radius-2 region 5–10 tiles from their main base reported on your map since the job began.</td></tr>
+      <tr><td>🎒 Retrieve a package</td><td>14</td><td>An item at a site (a crash site if there is one) carried to their base, or brought home and fetched by their caravan.</td></tr>
+    </tbody>
+  </table>
+  <p>Rewards: goodwill 6 + 4 × size, plus one or two of supplies from their surplus (about 40 × size in value), gear you cannot craft, a manual or blueprint you lack (40 ammo if none), 1–2 recruits, intel on their region, or (a big job from a group with two or more bases) one of their outposts handed over with two of their people as staff. A job made impossible through nobody's fault is called off at no cost.</p>
+
+  <h3>Treaties, demands and war between groups <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Pacts between groups:</b> two groups at peace with relations 28+ sign a pact (5% a day); it breaks below 10 or in a war. Pact partners never raid each other, and each may join the other's war (40% when it starts).</li>
+    <li><b>Wars between groups:</b> declared when relations are −42 or worse, no pact, nearest bases within 18 tiles, the attacker at least 0.6 × as strong and both big enough (attacker 10+ people, defender 8+): 1% a day × the attacker's temper (raiders 1.5, expansionists 1.4, zealots 1.2, military 0.5, fortress 0.3, traders and communes 0.1). At most one war per group (two for aggressive types), three in all, none for 90 days after a peace between the same two, and never between two coalition members. The reason is land (bases within 9 tiles), resources (the attacker short of food or ammo) or a hive between them.</li>
+    <li><b>War raids:</b> each side raids 6% a day (aggressive 9%) while none of its war raids is out, with strength × 0.3–0.45 (× 1.25 if you fight on its side). The defenders win with odds defence / (attack + defence), defence = 4 + strength × 0.5 + helpers. A win kills 5–10% of the defenders (never below 3), takes 10% of their food, ammo, meds and scrap, may take a secondary base (35% × the wish to keep it) and a captive (25%). A failed raid costs 1–2 people. If you are in the war, the enemy's war raids may target your bases within 20 tiles.</li>
+    <li><b>Weariness and peace:</b> 0.4 a day (0.8 below 70% of starting people), +4 a failed raid, +5 a raid suffered, +8 a base lost. Peace: at once when a side is down to 6 people; after 10 days 25% a day once a side's weariness is 55+; after 75 days 10% a day; otherwise 1% a day. Terms by war score (2 a won raid, +2 for a base, 1 a raid held): a lead of 5+ against a loser with 2+ bases cedes the base nearest the winner (land); a lead of 2+ pays 25% of food, ammo, meds and scrap (tribute); otherwise a white peace. Captives go home.</li>
+    <li><b>Your share:</b> if your side wins, half the tribute reaches your hub and ceded land is left free for your outpost (no group may expand onto it for 60 days). The beaten enemy settles at −35 goodwill.</li>
+    <li><b>Demands on you:</b> raids ask for tribute on the warning card (30% of the food and 30 ammo); outside raiders ask a toll on the road or a pay-off at your gates (<a href="#visitors">Visitors</a>); the coalition council asks for supplies.</li>
+    <li><b>Shortages:</b> 1% a day per group, a store is lost (food 45% to blight or rot, meds 60% to sickness, fuel 60% to a fire, ammo 40%); news on the radio and their wants list is redone at once.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 listed trade agreements, non-aggression pacts, alliances, tribute, survivor exchanges, shared intel, joint operations, declarations of war, sabotage and proxy wars. Built: trade and non-aggression pacts, the coalition (alliances), tribute, intel trade and news, joint operations (calls for help, jobs, hive assaults with allies), joining other groups' wars and brokering peace, prisoner ransom. <span class="status planned">Planned</span>: sabotage, proxy wars through raider gangs, survivor exchanges as a deal, and a formal declaration of war by you (you can attack anyone, but there is no war state between you and a group outside the wars you join).</aside>
+</section>
+
+<section id="coalition">
+  <h2>Alliances and the Calder Coalition</h2>
+  <p class="lede">The Calder Coalition is your alliance: groups you invite keep their own identity but share sightings, defend your bases, join your hive assaults and sit in a seasonal council. It is also one of the two ways to win the game.</p>
+
+  <h3>Joining <span class="status built">Built</span></h3>
+  <ul>
+    <li>A group can be invited when it is alive and known; reachable (in radio reach, your team at its gates, a base of yours within 8 tiles of one of its bases, or a coalition member's base within 12 tiles of it); not hostile; its goodwill is 50+ (for peaceful groups 50 + infamy / 2, at most 90); it has a pact with you; it is not at war with a member; and you have done at least one job for it <i>or</i> the council votes it in (each member votes yes when its relation with the candidate is 10+; a majority carries it).</li>
+    <li>A group that qualifies may ask to join on its own: 3% a day, no more than once every 20 days ("Welcome them" / "Not now").</li>
+    <li>On joining: +5 goodwill with you and +10 relation with every member.</li>
+    <li>A member leaves when its goodwill falls below 20, its pact with you is gone, it starts a war against another member, you attack it (every other member −5), or you expel it (−15).</li>
+  </ul>
+
+  <h3>What members do for you <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Benefit</th><th>Numbers</th></tr></thead>
+    <tbody>
+      <tr><td>Shared sightings</td><td>Every day: every horde within 12 tiles of a member's base, every hive and hive build site within 15, and the land within 3 tiles of its bases go on your map (marked as an ally's report).</td></tr>
+      <tr><td>Help against raids</td><td>A raid on your base faces extra defenders from every member with a base within 20 tiles: 15% of each one's strength, in all at most half your own defence.</td></tr>
+      <tr><td>Help against hordes</td><td>A horde within 6 tiles of a base it is attacking is harried once by members within 20 tiles: −15% each, at most −30%.</td></tr>
+      <tr><td>Hive assaults</td><td>Members with a base within 15 tiles of the hive (and a group whose hive job you took) send 1 fighter per 10 people (1–3 each); each keeps one of the brood off your squad, at most 40% of the brood, at least 6 left.</td></tr>
+      <tr><td>Peace</td><td>No member raids you or another member; members never go to war with each other; members' relations rise +0.3 a day.</td></tr>
+      <tr><td>Radio relay</td><td>A member's base carries invitations 12 tiles further.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The council <span class="status built">Built</span></h3>
+  <p>Once you have a member, the council meets at the start of every season: day 15, then every 28 days (43, 71, …). It asks one thing:</p>
+  <ul>
+    <li><b>Supplies</b> for a member that is short (need 1.3+) of food, meds, ammo or fuel: send 30 food / 8 meds / 60 ammo / 10 fuel (+6 with it, +3 with the others) or refuse (−4 with all).</li>
+    <li><b>A job</b> for a member (an ordinary job card; declining costs −1 with it and −3 with every member).</li>
+    <li><b>A ruling</b> (two or more members) over farmland, a well, salvage rights or stolen livestock: side with one (+6 with it, −8 with the other, −10 between them) or propose a compromise (Speech check 25% + 4% a point + (goodwill A + goodwill B) / 400, 5–90%: works +3 with both and +5 between them, fails −3 with both).</li>
+  </ul>
+
+  <h3>The coalition victory <span class="status built">Built</span></h3>
+  <p>Verified in code (<code>alliance.js allianceVictory</code>, <code>world.js checkGameOver</code>): you win when <b>every group still alive is a coalition member</b> and <b>the coalition controls more than 50% of the state's land</b>. Hives do not matter for it. Groups that collapsed or that you broke no longer count; with none left, you alone are the coalition.</p>
+  <table class="data">
+    <thead><tr><th>Land centre</th><th>Normal</th><th>Small</th><th>Large</th><th>Huge</th></tr></thead>
+    <tbody>
+      <tr><td>Your hub, and every base you took from a group ("stronghold")</td><td>9 tiles</td><td>7</td><td>11</td><td>14</td></tr>
+      <tr><td>An outpost (no walls)</td><td>7</td><td>5</td><td>9</td><td>11</td></tr>
+      <tr><td>An outpost with walls standing</td><td>8</td><td>6</td><td>10</td><td>13</td></tr>
+      <tr><td>A member's base</td><td>7</td><td>5</td><td>9</td><td>11</td></tr>
+    </tbody>
+  </table>
+  <p>Only land tiles count (water does not). The Goals card (top of the Groups tab, in full on the Coalition tab) shows land held against 50%, members against groups standing, and for every group outside what to do: <b>invite them</b> (they qualify now), <b>win them over</b> (with the reason), <b>defeat them</b> (hostile: take their bases; it shows the fewest defenders at one of them) or <b>find them first</b> (not met yet). It also lists your bases other groups hold ("Retake") and your infamy.</p>
+  <aside class="tip"><b>Design intent:</b> on a Normal map your hub alone holds about 10% of the land; every group's bases plus the hub come to about 50–60%, so a coalition of everyone left plus two or three outposts or captured bases gets there. The first victory ends the run with its screen; after <i>Keep playing</i> the other victory can still come once.</aside>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had three end goals: Confederation (allies keep their identity), Dominion (every group under your rule) and Endurance. The build has two victories: destroy every hive, or the coalition. The coalition is the Confederation; Dominion is not a separate victory but a route to the coalition one (break every group that will not join, hold the land). <span class="status planned">Planned</span>: Endurance mode, and rival coalitions forming against a player who grows too dominant.</aside>
+</section>
+
+<section id="conquest">
+  <h2>Conquest</h2>
+  <p class="lede">You can storm any group's base with a team ("Assault their base"). A captured base becomes a strong outpost that holds land like your hub; take a group's last base and it is finished. Groups can do the same to you, and you can take your bases back.</p>
+
+  <h3>Assaulting a base <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Ordering it:</b> plan a trip with the mission "Assault their base" to any group's base. The planner and the arrival card warn hard if the group is not hostile, is a coalition member, has a pact with you or has pact partners.</li>
+    <li><b>The defenders:</b> the group's people are shared over its bases, the main base counting double. 60% of the people at that base fight (at least 3, at most 16), each with power 2.6 + 1.6 × arms (commune 3.56 … military 5.16). Walls multiply their strength by 1 + 0.05 per wall point: fortress and military bases 7 points (× 1.35), a group's main base 4 (× 1.2), any other base 1 (× 1.05).</li>
+    <li><b>The odds</b> the card shows: 0.5 + (your power ÷ their power − 1) × 0.6, between 5% and 95%; a team with less than 3 ammo a head fights at 60%.</li>
+    <li><b>The battle:</b> a tactical battle on the "baseAssault" map: their palisade with a gate and 1–3 breaches (more the weaker the walls), barricades and sandbags behind it, half the defenders at the wall. You can fall back from the left edge. By the numbers (autopilot, auto-resolve) the walls multiply their strength.</li>
+    <li><b>Costs at once:</b> −30 goodwill, any pact ends, a coalition member leaves (every other member −5).</li>
+  </ul>
+
+  <h3>When you win</h3>
+  <ul>
+    <li>The base is yours: a new outpost on the tile with their palisade (battered, wear 70: two sections if they had strong walls, else one) and their bunkhouse (6 beds, wear 30). It holds land like your hub (9 tiles on Normal), which makes captured bases the fastest way to the coalition's land share. If you had no hub left, it becomes your hub.</li>
+    <li>Their stores at that base (its share of the group's stock): half is yours, the rest is spoiled or carried off.</li>
+    <li>The weakest fighter stays as first staff if the team has 3+ people (the autopilot keeps its squad together; with no hub left, everyone moves in).</li>
+    <li>Their people there: 35% die; of the rest 40% flee to their other bases (none if it was the last); of those who give up, a quarter ask to join you (a recruit card, at most 3, quality 0.8) and a fifth become your prisoners at the new outpost (at most 3). Your people they held there walk free (all of them if it was their last base).</li>
+    <li>Their main base (not their last): the leaders fall with it and half of the group's remaining people scatter.</li>
+    <li>A group left with no base, or with 3 people or fewer, is <b>broken</b>: it collapses (its parties vanish, its land is nobody's, refugees may come to you).</li>
+  </ul>
+  <h3>When you lose</h3>
+  <p>The team falls back; the group loses 60% of the defenders you killed; a beaten team with more than one member has a 30% chance that someone is caught and held captive.</p>
+
+  <h3>Infamy and fallout</h3>
+  <ul>
+    <li>Every base you take raises infamy: +2 from a hostile aggressive group (nothing more for finishing it), +15 from anyone else (+10 more for finishing them). Infamy fades 0.1 a day, max 100.</li>
+    <li>Above 20, known peaceful non-members lose (infamy − 20) / 200 goodwill a day, and peaceful groups want goodwill 50 + infamy / 2 (at most 90) before they join the coalition.</li>
+    <li>Groups with a pact with the victim: −8 (−15 when you finish it); its friends (relation 28+): −4 (−8); its enemies (−42 or worse): +2 (+4).</li>
+  </ul>
+
+  <h3>Losing your own bases <span class="status built">Built</span></h3>
+  <ul>
+    <li>A raid that overruns a base of yours (or breaks into an outpost, at 35% of the usual chance) may keep it: the chance depends on the group type (raiders 0.8, expansionists 0.9, zealots 0.7, military 0.55, fortress 0.5, traders and communes 0.3), distance from their bases (full within 7 tiles, falling to 0.4 at 25), the base's wealth (0.8 + stock value / 2000, at most 1.4) and their base cap; your hub × 0.35. They carry off half its stock and leave a garrison of 60% of the raid (at least 2), which grows back 0.2 a day; each broken building has a 5% chance a day to be repaired, wear falls 1 a day, so a lost base is easiest to retake at once.</li>
+    <li>Your people there leave as a team for your nearest base with what they can carry (water and food for 4 days, 15 scrap, ammo, meds, more food, a vehicle if one is parked). <b>Retreat</b> on the raid warning card does the same before the raid arrives (the raiders walk in without a fight).</li>
+    <li>Aggressive groups may instead <b>raze</b> it (raiders 22%, zealots 12%, expansionists 5%, × 1.25 a grudge point up to 4, × 1–2 for a base far from theirs; your hub × 0.4; an empty base × 0.5): every building, its stores and parked vehicles burn, and the tile is a ruin.</li>
+    <li>If the hub falls, your nearest base becomes the hub. With no base left, your survivors become <b>exiles</b>: a team on the road that can found a new hub (Build outpost) or retake the old one. The run ends only when nobody is left.</li>
+    <li>If the group holding your base is broken and nobody else takes it, the base comes back to you, empty.</li>
+  </ul>
+
+  <h3>Is there a conquest victory?</h3>
+  <p>Verified in code: <b>no separate conquest victory exists</b>. <code>checkGameOver</code> knows only the hive victory and the coalition victory. Conquest counts toward the coalition victory: a broken group no longer has to join, and every base you capture holds 9 tiles of land, so "break everyone and hold more than half the land" wins as the coalition, with the line "no group is left standing against you".</p>
+  <aside class="note"><b>Changed from Draft 1:</b> of Draft 1's four ways to take over a faction (force, shadow, economy, diplomacy), <b>force</b> is built (assault, capture, absorb some survivors as recruits and prisoners). <span class="status planned">Planned</span>: shadow operations (infiltration, removing leaders, sabotage), economic takeover (starve them, buy them out) and merging a group by diplomacy (the coalition keeps groups separate instead). Absorbed groups do not hand over their routes or specialists.</aside>
+</section>
+
+<section id="trade">
+  <h2>Trade</h2>
+  <p class="lede">All trade is barter, and every group prices every good its own way: by what kind of group it is, the state it is in and how much of it it already holds. The player never sees a base value, only what this group pays or charges and why. One price model serves team visits, caravans at your gates, radio deals, trade routes and outsiders.</p>
+
+  <h3>Ways to trade <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>A team at their gates</b> (mission "trade", or a trade caravan of yours stopping there): trade from what the team carries; they sell from their stock and their gear shelf.</li>
+    <li><b>Their caravan at your base</b> (asked for over the radio, or a radio deal): trade from the base's stores and armory for what the caravan carries; it stays 24 hours.</li>
+    <li><b>Radio deals</b>: name what you want and what you pay; if fair, their caravan delivers.</li>
+    <li><b>Their radio offers</b>: each day a known group in reach that is not hostile may call with an offer or a request: 15% a day for traders, 10% for a commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out.</li>
+    <li><b>Trade routes</b>: a fixed load swapped on a schedule (below).</li>
+    <li><b>Outsiders</b>: merchants and travellers from beyond the border (<a href="#visitors">Visitors</a>) and the peddler hub event.</li>
+  </ul>
+
+  <h3>How prices work</h3>
+  <ul>
+    <li><b>Supplies:</b> base value × need × kind × state × spread. Need = 2 − (stock per head ÷ reference), between 0.5 and 2.2 (reference per head: food 6, water 5, fuel 2, meds 1, ammo 10, parts 0.5, scrap 3, preserved 2, jars 1). Starving or thirsty groups pay up to 60% more again for food or water. Every unit of a deal is priced halfway through the deal (stock + q/2 when they buy), so big sales pay less per unit and selling then buying back always loses.</li>
+    <li><b>Gear:</b> item worth (base value × (0.2 + 0.8 × condition) × uses left for makeshift gear; a pack adds its contents) × kind × state × how much like it they hold: 1.15 with none on their shelf, falling 0.5 per comfortable amount, down to 0.25. Books and manuals count by title.</li>
+    <li><b>Spread:</b> they pay you 0.75 + Speech bonus + goodwill bonus, and charge 1.3 − both. Speech bonus 0.008 per point of your best Speech (max 0.12; the Haggler perk adds 5 Speech); goodwill bonus goodwill / 1000 (−0.1 to +0.1). Traders and outside merchants add a 10% margin to what they charge.</li>
+    <li><b>Reserve:</b> a group never sells below a reserve per head (food 2, water 1.5, fuel 0.5, meds 0.3, ammo 3, preserved 0.5); at war, twice that of food, ammo, meds and fuel.</li>
+    <li><b>Fair deal:</b> what you give, at their buying price, is worth at least what you take at their selling price. "Balance with" ammo, scrap or food fills the gap automatically. Radio deals are honoured at the agreed amounts.</li>
+    <li><b>Carry limits:</b> a team must be able to carry what it gets; their caravan what it takes.</li>
+    <li><b>What the window shows:</b> no numbers about worth, but "why" lines (▲ wanted, ▼ little use, ✕ will not touch) and a mood line (their tastes and current state).</li>
+  </ul>
+
+  <h3>The state they are in</h3>
+  <table class="data">
+    <thead><tr><th>Condition</th><th>When</th><th>Price multipliers</th></tr></thead>
+    <tbody>
+      <tr><td>At war</td><td>In any war</td><td>weapons, armor, defences ×1.3; ammo, meds ×1.35; comforts and valuables ×0.85</td></tr>
+      <tr><td>Hordes at their walls</td><td>20+ dead within 5 tiles, or a horde attack in the last 14 days</td><td>weapons ×1.2, ammo ×1.25, armor ×1.15, defences ×1.4</td></tr>
+      <tr><td>Lost a base lately</td><td>20 days</td><td>weapons ×1.25, ammo ×1.15, armor ×1.2, defences ×1.4, fine goods ×0.75</td></tr>
+      <tr><td>Raided lately</td><td>10 days</td><td>weapons, armor ×1.15, defences ×1.3, fine goods ×0.85</td></tr>
+      <tr><td>Sickness in camp</td><td>8 days in some 30-day spells (15%, 30% in winter)</td><td>medical ×1.5</td></tr>
+      <tr><td>Winter / winter coming (last 10 days of autumn)</td><td>season</td><td>fuel, clothing ×1.4, food ×1.15, camp gear ×0.85 / fuel, clothing ×1.25, food ×1.1</td></tr>
+      <tr><td>Harvest (autumn) / summer / spring</td><td>season</td><td>containers ×1.25, food ×0.9 / water ×1.2, camp ×1.3, clothing ×0.8 / farming ×1.4</td></tr>
+      <tr><td>Starving / rich and at peace / poor</td><td>supplies per head (gear prices only)</td><td>fine goods ×0.6 (household ×0.85) / ×1.2 / ×0.8</td></tr>
+    </tbody>
+  </table>
+  <p>The product of all state multipliers is held between 0.35 and 2.6.</p>
+
+  <h3>What each kind of group prizes (TRADE_PREFS)</h3>
+  <p>Multipliers on both what they pay and what they charge. 1 = ordinary; 0 = they refuse to deal in it either way.</p>
+  <table class="data">
+    <thead><tr><th>Profile</th><th>Prized (above 1)</th><th>Little use (below 1)</th><th>Refused</th></tr></thead>
+    <tbody>
+      <tr><td>Raider gang</td><td>drugs 1.7, liquor 1.6, cigarettes 1.6, jewelry 1.5, automatic 1.4, fuel 1.4, pistols, shotguns, optics, explosives, vehicle parts 1.3, ammo 1.25, rifles, gun parts 1.2, melee, comforts 1.15, armor, treats, gadgets 1.1</td><td>books 0.45, farming 0.5, manuals, containers 0.6, collectibles 0.8, household 0.9</td><td>—</td></tr>
+      <tr><td>Military remnant</td><td>automatic, optics, electronics 1.5, rifles, armor 1.35, gun parts, ammo, household 1.3, explosives 1.25, pistols, packs, vehicle parts 1.2, shotguns, gadgets, medical, fuel, manuals 1.15, cigarettes 1.1</td><td>drugs 0.4, comforts, collectibles 0.6, melee, liquor, jewelry, farming, containers 0.7, bows 0.75, scrap 0.8</td><td>—</td></tr>
+      <tr><td>Fortress hub</td><td>defences 1.6, scrap 1.5, parts 1.4, armor 1.35, tools 1.3, manuals 1.25, containers 1.2, optics, household 1.15, shotguns, rifles, explosives 1.1</td><td>collectibles 0.7, comforts 0.75, liquor, jewelry, gadgets 0.8, camp 0.9</td><td>—</td></tr>
+      <tr><td>Traders</td><td>everything 1.1 by default; collectibles 1.4, jewelry, gadgets 1.3, cigarettes, treats 1.25, electronics, optics, comforts, liquor, household 1.2</td><td>scrap 0.9, drugs 1.0</td><td>— (margin 1.1)</td></tr>
+      <tr><td>Farming commune</td><td>farming 1.6, containers 1.4, books, treats 1.35, medical, manuals, household 1.3, food, tools 1.25, clothing 1.2, water, camp, comforts 1.1</td><td>automatic, drugs 0.5, jewelry, collectibles, explosives, gun parts 0.6, gadgets 0.7, pistols 0.75, cigarettes, ammo, armor 0.8, melee, shotguns 0.85, rifles, liquor 0.9</td><td>—</td></tr>
+      <tr><td>Zealots</td><td>medical 1.4, food 1.3, water, explosives 1.2, melee 1.15, bows 1.1</td><td>books 0.35, jewelry 0.4, comforts, collectibles, gadgets 0.5, electronics 0.6, optics, treats 0.8</td><td>liquor, drugs, cigarettes</td></tr>
+      <tr><td>Expansionist hub</td><td>vehicle parts 1.6, fuel 1.5, parts, automatic 1.35, optics, rifles 1.25, shotguns, ammo, packs 1.2, pistols, armor, camp 1.15, electronics, household, jewelry 1.1</td><td>farming, comforts, books, collectibles 0.8</td><td>—</td></tr>
+      <tr><td>Merchants from outside</td><td>everything 1.05; containers 1.5, scrap, collectibles 1.4, food 1.35, water, jewelry 1.3, gadgets 1.25, liquor, cigarettes, treats 1.2, household 1.15</td><td>fuel 0.85, medical, ammo 0.9</td><td>— (margin 1.1)</td></tr>
+      <tr><td>Travellers from outside</td><td>food, water, optics, camp 1.3, packs, clothing 1.25, medical, household 1.2, treats 1.1</td><td>gadgets 0.7, books, jewelry 0.8</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p>Outside raiders use the raider profile.</p>
+
+  <h3>Their gear for sale</h3>
+  <p>Each group keeps a shelf of up to 12 items that fits what it is, refreshed weekly (traders 4–6 new items, others 1–3; condition 50–100%; now and then a book):</p>
+  <ul>
+    <li><b>Traders:</b> pistol, shotgun, hunting rifle, vest, machete, bike helmet, knee guards, backpack, bandage kit, crowbar, water filter, assault pack, revolver, lever rifle, compound bow, sling bag, hiking pack, camo net, stove, flare, cards, guitar, chocolate, instant coffee, cigarettes, vodka, binoculars, monocular.</li>
+    <li><b>Commune:</b> machete, hunting rifle, pipe spear, water filter, bandage kit, backpack, padding, bat, compound bow, sling bag, stove, ghillie suit, harmonica, cards, bear trap, barbed wire, tripwire, chocolate.</li>
+    <li><b>Military:</b> AR, vest, plate, riot helmet, military radio, NVGs, assault pack, pistol, carbine, rucksack, camo net, smoke grenade, flare, sandbags, barbed wire, instant coffee, binoculars, thermal sight.</li>
+    <li><b>Fortress:</b> shotgun, hunting rifle, vest, riot helmet, knee guards, crowbar, sledge, pry bar, fire axe, sandbags, barbed wire, bear trap, tripwire, riot arm guards.</li>
+    <li><b>Raiders:</b> pistol, shotgun, machete, spiked bat, tire vest, bike helmet, pipe gun, revolver, bat, nail bat, molotov, pipe bomb, vodka, cigarettes.</li>
+    <li><b>Expansionists:</b> pistol, shotgun, hunting rifle, vest, riot helmet, scrap vest, carbine, lever rifle, revolver, hiking pack, riot arm guards, smoke grenade, flare, binoculars.</li>
+    <li><b>Zealots:</b> machete, knife, shotgun, pipe spear, bandage kit, fire axe, bat, molotov, compound bow.</li>
+  </ul>
+
+  <h3>Intel for trade</h3>
+  <ul>
+    <li><b>Area reports</b> around where you trade: nearby (radius 3), region (6), wide (10), at 0.4 trade value a tile (× their selling spread): every tile reported as it is now (owner, loot, infection, hordes, hives).</li>
+    <li><b>Horde and hive sightings:</b> every horde and hive within 12 tiles, worth 8 + 3 per sighting.</li>
+    <li><b>Sell your maps:</b> 0.15 a tile you know fresh (seen in the last 15 days) within 12 tiles of them, up to 40; you need 10+ such tiles; once every 10 days per group.</li>
+  </ul>
+
+  <h3>The market board <span class="status built">Built</span></h3>
+  <p>Every 7 days each group makes a wants list (goods with demand 1.25+, enough to bring them back to comfortable, at least half a lot) and a surplus list (demand 0.9 or less with 5+ to spare). Lot sizes: food and water 20, fuel 10, meds 6, ammo 50, parts 3, scrap 20, preserved 10, jars 10. With a radio station, the Market board ranks every known, non-hostile group in radio reach by who pays most or charges least for one good, with arrows against last week and a war marker.</p>
+
+  <h3>Trade routes <span class="status built">Built</span></h3>
+  <ul>
+    <li>Need a <b>trade pact</b> with the group. Set what to send and how much, what to receive and how much (checked against their prices that day: at most what the load is worth to them), how often (every 2+ days, default 5), the escort tier (light, standard, heavy; suggested 1, 3, 5 people) and the escorts.</li>
+    <li>On schedule a convoy leaves the hub: a car at the hub (condition above 20) if it can be fuelled for 2.2 × the one-way fuel, otherwise hand carts; food for the round trip, water, and 8 / 20 / 40 ammo by escort tier.</li>
+    <li>At the partner it hands over the load and gets the agreed amount at most, never more than the load is worth to them that day or than they hold (the log says when it is less). +1.5 goodwill per delivery, +0.3 a day while the route is active.</li>
+    <li>A route pauses when the pact is torn up (their goodwill falls to hostile), when no escort is left alive, or ends when the partner is gone. Convoys face the escort table (<a href="#caravans">Caravans</a>).</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> prices from real stock, barter only, and goods physically carried by convoys are all built as planned. Ammo, meds and fuel work as currencies through "Balance with" (ammo, scrap or food). The buy-low-sell-high trade network works but every sale moves the buyer's stock, so margins shrink.</aside>
+</section>
+
+<section id="caravans">
+  <h2>Caravans and supply runs</h2>
+  <p class="lede">Goods move physically across the map: groups' caravans walk to your gates, your trade caravans tour a list of destinations, trade-route convoys shuttle to a partner, and supply runs move stock between your own bases. All of them can be hit on the road.</p>
+
+  <h3>Their caravans at your gates <span class="status built">Built</span></h3>
+  <ul>
+    <li>Sent when you ask for one or agree a radio deal, or as aid. They walk (speed 0.9) with the group's convoy sprite from their main base along a land route to your hub (or your nearest reachable base); no land route, no caravan.</li>
+    <li>Guards: 2 + 1 per 12 people (2–5), each as strong as 2.2 + 1.6 × arms. Carry space 60 + 15 a guard. When you just ask, they bring about half of what they can spare from their surplus list (and other goods they have plenty of) up to about 160 in value, plus 4 items from their shelf (traders) or 2 (others).</li>
+    <li>At your base the trade window opens (or queues behind another); the caravan stays 24 hours, then goes home with what it has. A radio deal not done by then costs 3 goodwill. Aid caravans just unload and leave.</li>
+    <li><b>Attacking it</b> (trade window or Bases tab, with a confirmation): a battle at your base against its guards. Win and its goods go into the base's stores; either way the group is set to goodwill −70, its pact is torn up, every known peaceful group loses 5, and for 60 days the group raids you whatever its type. The group loses 70% of the guards you killed. The autopilot only ever does this in the Aggressive style, against a lightly guarded caravan of an aggressive group.</li>
+  </ul>
+
+  <h3>Your trade caravans <span class="status built">Built</span></h3>
+  <ul>
+    <li>Planned in "New trade caravan…": a crew from the hub, on foot or by car, a stance, goods to trade (carried as cargo), supplies to live on (auto-fill: food and water for the route plus 25%, and fuel), items from the armory, and an ordered list of stops (known groups' bases and your outposts). The planner shows hours per leg (6 hours at each stop) and what each group on the route would give for the load.</li>
+    <li>At each stop a card offers: trade with them (the trade window), unload the goods (your outposts), stay a day, go on to the next stop (with ETA), return home, the team panel, or other orders.</li>
+  </ul>
+
+  <h3>Supply runs between your bases <span class="status built">Built</span></h3>
+  <ul>
+    <li>A saved job: origin and destination base, crew, an optional vehicle parked at the origin, goods to deliver, goods to pick up, a stance, a schedule (once, or every X days) and what to do on arrival: <b>Come back</b> (unload, load the pick-up, come home), <b>Hold there</b> (wait as a parked convoy, eating 1 food and 1 water a person a day from the base or its own supplies; hunger costs 6 health, thirst 8), or <b>Disband</b> (the crew joins that base, the vehicle parks there).</li>
+    <li>On departure it takes food and water for the whole trip plus a day, 5 ammo a head, and fuel for the round trip + 15% (jerry cans for what the tank cannot hold); 4 hours at the far end. It is blocked (and the log says why, once per kind of problem) when the crew is missing, stock is short (unless "send what is there" is ticked), the load is too heavy, or there is no road or fuel (it then goes on foot with hand carts).</li>
+    <li>Outposts keep back the stock that runs will send or pick up from their daily surplus shipping to the hub. A run that vanishes ("never arrived") points you at a death site or abandoned vehicle on its road.</li>
+  </ul>
+  <div class="gallery" data-sprites="party/convoy party/supply party/cart party/supplycart"></div>
+
+  <h3>The escort table: convoys on the road <span class="status built">Built</span></h3>
+  <p>Trade-route convoys and supply runs roll this table on every tile they enter. A supply run's tier comes from its crew size (5+ heavy, 2+ standard, else light) and its stance scales how often things happen. "Power" = the escort's combat power + 2 if it carries more than 10 ammo.</p>
+  <table class="data">
+    <thead><tr><th>Event</th><th>Chance per tile</th><th>Outcome</th><th>Light</th><th>Standard</th><th>Heavy</th></tr></thead>
+    <tbody>
+      <tr><td>The dead</td><td>(2% + 5% × infection) × tier</td><td>Power above 6 + 8 × infection fights them off; otherwise someone is hurt 15–50. Uses 6 ammo either way.</td><td>×0.6</td><td>×1</td><td>×1.5</td></tr>
+      <tr><td>Small raiders</td><td>(2%, +3% with a hostile group within 4 tiles) × tier</td><td>Power 8+ scares them off; otherwise 30% of the cargo is taken.</td><td>×1.5</td><td>×1</td><td>×0.4</td></tr>
+      <tr><td>A war party</td><td>3% × tier, only within 5 tiles of a hostile aggressive group</td><td>The escort holds if its power beats 0.3 × that group's people; otherwise all cargo is lost and two people are hurt (30–80, 20–70).</td><td>×1</td><td>×1</td><td>×1.6</td></tr>
+    </tbody>
+  </table>
+  <p>The groups' own convoys and caravans (and those you escort for a job are spared) are ambushed by raider gangs: 12% for every tile they enter within 2 tiles of a raider base; the gang gains 15 food and 20 ammo and the convoy is gone. Hordes in their path cost them a quarter of their strength. Outside raiders rob convoys and caravans when the band is 10% stronger than the escort.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> the escort tradeoff (light is quiet but tempting, heavy deters small gangs but draws the dead and big raids) is built exactly as designed. <span class="status planned">Planned</span>: a radio call from an attacked convoy letting you defend it on a local map (convoy events resolve by the numbers), changing a route's escort level without setting it up again, and raiding rival convoys on the map as an order.</aside>
+</section>
+
+<section id="radio">
+  <h2>Radio</h2>
+  <p class="lede">The radio is how you reach other groups without walking there: it lets you meet groups, talk, trade, hear the market and world news, broker peace, invite allies and get live reports from your teams. Without a radio station, everything happens by runners and teams at the gates.</p>
+
+  <h3>The network <span class="status built">Built</span></h3>
+  <ul>
+    <li>A <b>radio station</b> reaches 8 tiles around its base (+2 on generator power).</li>
+    <li>A <b>radio relay</b> (outposts only) reaches 6 tiles. It needs no operator but uses 1 part every 10 days (from its outpost, else the hub); with no part it goes off the air until one arrives. A relay works only when linked: within range of a station or another linked relay, in a chain.</li>
+    <li>Groups whose base is within your coverage plus 4 tiles (they have radios too) can be called.</li>
+    <li>Your teams inside coverage report live and can be redirected; a team carrying a military radio stays in contact 4 tiles further out.</li>
+  </ul>
+  <div class="gallery" data-sprites="icon/radio"></div>
+
+  <h3>Calls you can make</h3>
+  <table class="data">
+    <thead><tr><th>Call</th><th>Cooldown</th><th>Needs</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Scan the airwaves</td><td>1 day</td><td>A station</td><td>Groups in reach you have not met become known.</td></tr>
+      <tr><td>Greet them</td><td>3 days</td><td>In reach</td><td>+2 goodwill (+1 hostile).</td></tr>
+      <tr><td>Ask for news</td><td>5 days</td><td>Not hostile</td><td>Their land and nearby hordes on your map.</td></tr>
+      <tr><td>Ask for a trade caravan</td><td>4 days</td><td>Trade goodwill</td><td>45% + goodwill% (+25% traders, +15% commune).</td></tr>
+      <tr><td>Propose a deal</td><td>uses the caravan cooldown</td><td>Fair for them</td><td>Their caravan delivers; trade window pre-filled. Gives the best talker at the hub Speech XP.</td></tr>
+      <tr><td>Call for help</td><td>10 days</td><td>Friendly or a pact</td><td>Raid harried to 70%, or 20–30 food aid; −4 goodwill.</td></tr>
+      <tr><td>Propose a pact</td><td>—</td><td>Not hostile; goodwill thresholds</td><td>Non-aggression or trade pact.</td></tr>
+      <tr><td>Broker a ceasefire</td><td>7 days per war</td><td>Both sides in reach</td><td>See Diplomacy.</td></tr>
+      <tr><td>Pay outside raiders to leave</td><td>—</td><td>Their band inside coverage</td><td>1.25 × the tribute, 2% less per point of Speech (at most 30% off).</td></tr>
+      <tr><td>Invite passing merchants</td><td>—</td><td>Their caravan inside coverage</td><td>They head for your base next and stay a day.</td></tr>
+    </tbody>
+  </table>
+  <p>A hostile group "curses at you and goes silent". For trade, peaceful groups need goodwill −15+, aggressive groups 0+.</p>
+
+  <h3>What you hear</h3>
+  <ul>
+    <li><b>Offers and requests</b> from groups (15% / 10% / 6% a day by type, at most one every 6 days per group): "We have 30 fuel to spare. We would take 12 meds for it, delivered to your hub."</li>
+    <li><b>World news</b> (📻 in the log, kept for the Affairs tab, last 60): wars declared and ended with their terms, pacts signed and broken, shortages, only when you have a radio on the air and know one of the groups involved.</li>
+    <li><b>Scavenging news:</b> "On the radio: Red Hand has been stripping the Calder Mall," which also updates the loot you know there.</li>
+    <li><b>War calls:</b> a group with goodwill 40+, a pact or coalition membership, in radio reach, asks you to join its war.</li>
+    <li><b>Calls for help</b> from besieged groups (instant over the radio, else by runner).</li>
+    <li><b>Crashes:</b> a radio at the hub can be the witness of a crash (search circle radius 5).</li>
+    <li><b>Outsiders:</b> merchants inside coverage call ahead ("we can stop at your hub in about 30 hours"); outside bands in coverage show as faded sprites.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> built as designed: the station at the hub, relays at satellites, live intel inside range and the no-radio rule outside it, calls for help instantly by radio or late by runner. <span class="status planned">Planned</span>: radio batteries as a travel supply, terrain and storms shrinking range, groups overhearing your transmissions, encryption modules and radio tiers.</aside>
+</section>
+
+<section id="visitors">
+  <h2>Visitors and hub events</h2>
+  <p class="lede">People from beyond the State of Calder cross the map (raiders, merchants and travellers), and life at the hub throws up its own decisions every few days. Both bring choices with real costs printed on the card.</p>
+
+  <h3>Outsiders: who comes and when <span class="status built">Built</span></h3>
+  <p>Outsiders enter on a border land tile (not within 6 tiles of your bases; merchants prefer a road), travel, and leave from the border. They are not one of the map's groups. Spawns are rolled once a day on their own dice.</p>
+  <table class="data">
+    <thead><tr><th>Kind</th><th>First arrival</th><th>Then every</th><th>At most on the map</th><th>Stay</th></tr></thead>
+    <tbody>
+      <tr><td>Raiders</td><td>day 20–26</td><td>clamp(30 − 0.06 × day, 10, 30) × 0.75–1.25 days (about 29 early, 23 at day 120, 16 at day 240, 10 from day 334)</td><td>1 (2 from day 120, 3 from day 240)</td><td>8–14 days</td></tr>
+      <tr><td>Merchants</td><td>day 8–14</td><td>10–16 days</td><td>1 (2 from day 150)</td><td>18 days</td></tr>
+      <tr><td>Travellers</td><td>day 5–10</td><td>6–12 days</td><td>2</td><td>14 days</td></tr>
+    </tbody>
+  </table>
+  <div class="cards">
+    <article class="card" data-sprite="outsider/raiders">
+      <h4>Raiders from outside <span class="status built">Built</span></h4>
+      <p>A band (named like "the Ash Riders") of clamp(3 + day/30 + 0–2, 3, 14) people, each with power 2.6 + min(3.4, day/80): clubs and old pistols early, assault rifles and plate in the second year. They pick targets by loot against defence and never attack anything stronger: your bases (only when they reach 0.6 of its defence), your teams in the field, convoys, other groups' bases, caravans, rich unclaimed sites (loot 0.45+). They leave when they carry 10 × their strength in loot, lost half the band, were paid off or their days are up.</p>
+      <dl><dt>At your base</dt><dd>Warning card at 4 tiles if seen or heard: prepare defences, pay them off (4 × their strength in goods), talk them down (Speech: 10% + 3.5% a point, max 75%, for half the price), defend in person, or hold. After 8 hours at the walls: held at 1.2× their strength, break-in from 0.8× (20% of the stock, 10% with a storehouse), else overrun (50%, 25%; an outpost is lost). They never keep a base.</dd><dt>On the road</dt><dd>They found you: fight, pay the toll (35% of what the team carries, at most 3 × their strength), talk, or run (Scouting, vehicle, stealthy pace). You saw them: slip away (Stealth), ambush, or lie low.</dd><dt>Other groups</dt><dd>A 12-hour siege, then the usual raid odds; they keep 60% of what the group lost. Sites lose 10–18% of their loot.</dd><dt>Settling</dt><dd>A band of 8+ carrying 250+ worth of loot may dig in (3% a day) at a site or ruin within 6 tiles: it becomes a hostile raider gang.</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/merchants">
+      <h4>Merchants from outside <span class="status built">Built</span></h4>
+      <p>"The Kessler caravan": 2 traders and 3–5 guards (+1 every 90 days, max 7; power 3.5 + min(2.5, day/120)) walking with a gold-canvas wagon and oxen. They carry what the state lacks: fuel 15–40, meds 8–22, preserved food 20–50, parts 3–9, ammo 60–160, a manual or blueprint (75%, a second 25%), 1–3 books, 2–4 pieces of good gear and 1–2 valuables; they want food, water, scrap and jars.</p>
+      <dl><dt>Route</dt><dd>Up to 3 groups' bases (never raiders or zealots), trading by demand; one of your bases if invited by radio, or unannounced 55% of the time.</dd><dt>At your base</dt><dd>24 hours; the trade window opens. A team that meets them can trade on the road, ask for news, rob them or move on.</dd><dt>Reputation</dt><dd>Robbing them: merchant reputation −45 (new merchants start at goodwill 15 + reputation, hostile at −40, skip your bases below −30; it recovers 0.25 a day), known traders −15, communes and fortresses −8.</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-scouts">
+      <h4>Travellers: scouts <span class="status built">Built</span></h4>
+      <p>40% of travellers. 2–3 armed scouts (power 3.2) with binoculars, carrying 20–40 ammo and 1–3 meds. They come to your hub 30% of the time.</p>
+      <dl><dt>Offer</dt><dd>News of other states and the hordes they passed; their maps for sale (2 tiles either side of their way); trade. Rarely one asks to join (10%).</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-refugees">
+      <h4>Travellers: refugees <span class="status built">Built</span></h4>
+      <p>35% of travellers. 2–5 people with a handcart of bundles; 75% come to your hub.</p>
+      <dl><dt>Offer</dt><dd>Their news (the tiles along their way, as they were), a little trade, and 1–3 of them ask to join (a recruit card).</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-wanderers">
+      <h4>Travellers: wanderers <span class="status built">Built</span></h4>
+      <p>25% of travellers. 1–2 walkers with staffs; 45% come to your hub. Half the time one asks to stay.</p>
+      <dl><dt>Offer</dt><dd>News, a little trade, perhaps a recruit.</dd></dl>
+    </article>
+  </div>
+  <ul>
+    <li>Travellers walk between 2–3 ruins away from the groups' grounds, searching each 4–8 hours (the site loses 3–6% of its loot). 8% are <b>robbers in disguise</b>: they ambush a team ("Robbers on the road") or rob the base that shelters them.</li>
+    <li><b>At your gate:</b> hear their news (free), buy the scouts' maps, trade, hear who wants to stay (recruit card), <b>shelter them for 3 days</b> (1 food and 1 water each a day; everyone at the base mood +3; afterwards a gift half the time, and 35% someone asks to stay for good), or send them on.</li>
+    <li><b>On the road:</b> swap news, trade, hear who wants to join, share supplies (team mood +2 and they share their map), or move on.</li>
+  </ul>
+
+  <h3>Hub events <span class="status built">Built</span></h3>
+  <p>From day 3, the hub rolls for an event each day: 4% + 2.6% per person there (between 8% and 40%), up to 30% more when overcrowded (at most 45%), never two days running and never while another hub event card is waiting. Which event comes is weighted by season, weather, crowding, mood and the size of the hub. Every choice changes something real and the card says what.</p>
+  <table class="data">
+    <thead><tr><th>Event</th><th>When (weight)</th><th>Choices and effects</th></tr></thead>
+    <tbody>
+      <tr><td>Fire in a building</td><td>0.8 when a bunkhouse, ammo bench, med station, machine shop, garage, watchtower or rain catcher stands; ×1.4 summer, ×2 heat or drought, ×0.4 rain or snow; more when crowded</td><td>Fight it with water (15 water): 45% + 4% a person to save it (max 95%), 30% someone burned 8–18. Sand and blankets: 20% + 2.5% a person (max 60%), 50% burn. Let it burn: building lost, nobody hurt.</td></tr>
+      <tr><td>A quarrel</td><td>1, needs 3+ adults; more when crowded, ×1.8 if mood below 40, up to ×2.2 with rival pairs (rivals are picked 70% of the time)</td><td>Side with one (+8 / −12 mood, they think less of each other). Mediate (leader or Speech check: both +6 and they patch it up, else both −6). Stay out (both −5, 30% it comes to blows, 4–12 damage).</td></tr>
+      <tr><td>A peddler at the gate</td><td>0.9; ×0.5 winter, ×0.2 in storms</td><td>Two of seven fixed swaps (20 ammo → 3 meds, 12 food → 1 part, 10 scrap → 4 fuel, 15 ammo → 12 food, 2 meds → 20 ammo, 8 scrap → 8 food, 10 food → 8 scrap) or send them on.</td></tr>
+      <tr><td>A lost teenager</td><td>0.5; ×0.6 winter</td><td>A recruit card: take them in (everyone +4 mood) or turn them away (everyone −4).</td></tr>
+      <tr><td>A wandering preacher</td><td>0.6, needs 3+; ×1.5 if mood below 45</td><td>Let them preach (2 food): everyone +5, but each person below 35 mood has a 25% chance to follow them away with their gear. Feed and send on (2 food): +1. Send away.</td></tr>
+      <tr><td>Theft from the stores</td><td>0.7, needs 25+ food and 4+ people; more when crowded or unhappy; ×0.2 when locked, ×1.5 after letting it go</td><td>6% of the food is gone (4–25). Find out who (Scouting or Speech: 30% + 4% a point, max 90%: half found, thief −10, others +2; else everyone −2). Lock up (4 scrap: far less likely for 30 days). Let it go (more likely for 20 days).</td></tr>
+      <tr><td>A stray dog</td><td>0.5 when the hub has no dog</td><td>Take it in (0.5 food a day, everyone +0.5 mood a day; it wanders off when food runs out). Scraps (1 food, +1 now). Chase it off.</td></tr>
+      <tr><td>Storm damage: a leaking roof</td><td>2 after a storm or blizzard, 0.4 after rain or snow</td><td>About 8% of the food (at least 3) will spoil. Patch it (4 scrap). Tarp (1 scrap, 60% holds). Leave it.</td></tr>
+      <tr><td>Storm damage: the well pump</td><td>Hub only, 1.5 after a storm, 0.3 after rain</td><td>The pump breaks (repairs card: fix properly, jury-rig, or leave it on the Repairs list; the well gives less water until fixed).</td></tr>
+      <tr><td>A request for a feast</td><td>0.6, needs 3+; ×1.5 autumn, ×0.2 if under 20 days of food, ×1.6 if mood below 50</td><td>A real feast (2 food each, +10 mood). Something small (1 food each, +5). Not now (−2).</td></tr>
+      <tr><td>A personal errand</td><td>0.6, needs 5+ people and an adult with 60+ health</td><td>Let them go (3 food, 3 water; 3–5 days away; back with +25 mood, 50% bringing scrap, food or meds; 8% never return). Ask them to stay (−12 mood).</td></tr>
+      <tr><td>Two survivors grow close</td><td>0.35 × the number of close friend pairs without partners</td><td>A corner of their own (3 scrap, both +15). A small party (4 food, both +10, others +3). Leave them to it (+5). They become partners.</td></tr>
+      <tr><td>Remembering the dead</td><td>0.8 × recent unmarked deaths (max 2), ×1.5 when someone grieves; not within 7 days of a service</td><td>A proper service (1 food a person, at least 2: everyone +3, +2 in a chapel, the grieving +8 more and 2 days less grief). A few words (+1, grieving +3). No time for it (−1, grieving −3).</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's "outsiders migrate in from neighbouring states" and "refugees" are built as the three outsider kinds; raider bands that settle become new gangs. A Storyteller with presets (Builder, Survivor, Holdout) is <span class="status planned">Planned</span>: event pacing is set by fixed rules per system.</aside>
+</section>
+
+<section id="world-history">
+  <h2>The living world</h2>
+  <p class="lede">The state changes whether or not you watch: groups expand, strip sites, go to war, burn each other's bases, collapse and are replaced by new gangs, while things fall out of the sky. The chronicle records all of it, without fog, for the timelapse at the end of a run.</p>
+
+  <h3>Groups rising and falling <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Raids between groups:</b> aggressive groups raid neighbours within 14 tiles (traders and communes weighted 1.2, others 0.6), with 25–40% of their strength, never pact partners or fellow coalition members (war enemies get war raids instead). Defence = 8 + 0.8 × strength + helpers. Clearly outmatched (1.6×) at a secondary base, the defenders may give it up without a fight (50%) and lose 10% of their stores. A raid at 1.1× the defence kills 20–35% of the defenders, takes 40% of their stores (half carried home), and with a secondary base 50% of the time decides the base's fate: keep it, raze it, or loot it and go. A winning aggressive group gains a fighter 50% of the time. A held raid costs the attacker 1–3 people. Each ordinary raid sours their relation by 12.</li>
+    <li><b>Collapse:</b> a group at 3 people or fewer collapses. Its parties vanish, its land becomes nobody's. The group that broke it takes over its bases (nearest first, up to its cap), 2–4 of its people and half its stores; if hordes or you broke it, the strongest aggressive group within 15 tiles does so 50% of the time. 60% of the time 1–3 refugees reach your hub and ask to join.</li>
+    <li><b>New gangs:</b> from day 60, whenever fewer than 2 aggressive groups are left hostile to you, a gang from beyond the border settles a free site 12–30 tiles from your hub (2% a day): 12–18 people, hostile (raiders 50%, zealots 25%, expansionists 25%). Raider bands from outside can also dig in (<a href="#visitors">Visitors</a>). The state is never empty of predators for long.</li>
+    <li><b>Wars, pacts and peace</b> between groups, shortages, and takeovers come over the radio as news.</li>
+  </ul>
+
+  <h3>Ruins <span class="status built">Built</span></h3>
+  <p>A base burned to the ground (one of yours or a group's) becomes a ruin: a scorched yard with charred wall stubs and a lone chimney; one of yours flies a torn blue rag. A ruin keeps a little loot (0.25) to scavenge, and an outpost built on it costs only 5 scrap instead of 15. Groups and settling raider bands prefer to build on ruins.</p>
+  <div class="gallery" data-sprites="ruin/group ruin/yours"></div>
+
+  <h3>Crash sites and supply drops <span class="status built">Built</span></h3>
+  <p>Every 10–20 days (the first between days 8 and 14) something comes down: an Army helicopter (33%), a supply plane (22%), a medevac (20%), a news chopper (13%) or a parachute supply drop (12%). A base (the hub counts 3×), a team in the field or the hub's radio witnesses it: a card and a search circle on the map (radius 4; 3 from a base with a watchtower; 5 heard on the radio) that holds the wreck, not at its centre.</p>
+  <ul>
+    <li><b>Finding it:</b> a team passing within 1 tile sees the smoke; a look around finds it within 2 tiles (3 with Scouting 8+); a look that finds nothing narrows the circle. The planner's "Search the area" step walks the circle (up to 8 looks) and then searches the wreck.</li>
+    <li><b>The site:</b> a temporary rich site (military gear, meds, blueprints in locked cargo cases) that burns out 7–10 days after the crash.</li>
+    <li><b>The race:</b> groups with a base within 22 tiles saw it too and most send a salvage party 12–36 hours later (raiders 75%, military 85%, expansionists 65%, zealots 50%, fortress 40%, traders 30%, commune 20%). One that reaches the wreck strips it to 30% of what is left; if your team is there, it challenges you. The noise draws up to two hordes within 8 tiles toward it for 3 days.</li>
+  </ul>
+  <div class="gallery" data-sprites="poi/crash_mil poi/crash_cargo poi/crash_med poi/crash_news poi/airdrop misc/smoke"></div>
+
+  <h3>The chronicle and the timelapse <span class="status built">Built</span></h3>
+  <p>The chronicle records the whole world without fog: one frame a day (every 6 hours for the first 3 days, plus a frame soon after a death or a base gained or lost), with tile owners and infection, your bases, the groups' bases, hordes, hives and build sites, parties, ruins, your population and hub stocks. It writes captions for notable events: bases founded and lost, groups collapsing, taking over or losing places, hives destroyed or rising, hordes massing (120+) or striking a group, sieges, outsiders crossing the border and bands settling, and the victory or the fall. The timelapse viewer (from the game-over screen or the dev panel) plays it back at 1, 2, 5 or 10 days a second with map layers, a population chart and the latest captions.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> "Factions trade, expand, fight and collapse; the state lives without you" is built. <span class="status planned">Planned</span>: splinter groups breaking off from collapsed factions (survivors go to the heir or to you as refugees instead), and military remnant campaigns to retake regions.</aside>
+</section>

@@ -49,6 +49,7 @@ import { surveyDaily } from "./survey.js";
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { wanderersDaily } from "./wanderers.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -611,6 +612,7 @@ export function tickHour(state) {
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
+    wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));

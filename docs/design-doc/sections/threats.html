@@ -1,0 +1,872 @@
+<section id="the-dead">
+  <h2>Enemy types: the dead</h2>
+  <p class="lede">The dead are the constant pressure of Broken State: they swarm out of the ground on the road, guard every hive, roam the State Map as hordes and batter your walls. Ordinary dead get tougher with the infection of the ground they stand on. From the end of the first year, the hives also breed <b>special dead</b> (runners, brutes, spitters, screamers, crawlers) that each need a different answer. Two <b>bosses</b> top the threat: the Wallbreaker that leads hordes against bases, and the Broodmother inside every hive.</p>
+
+  <h3>Ordinary dead <span class="status built">Built</span></h3>
+  <p>Every zombie on a battle map is one unit type. Its strength is a single number called <b>power</b> (p). Power is set by where you meet it:</p>
+  <ul>
+    <li><b>On the road</b> (a "surge of the dead" conflict card): power 1, +1 in a hive's land, +3 on the red-skull ring around a hive.</li>
+    <li><b>At a search site</b> (raid mode): power 2 + 3 × the tile's infection, +1/+3 for hive ground.</li>
+    <li><b>Noise reinforcements</b> and raid Heat waves: power 2 + 3 × infection.</li>
+    <li><b>A horde breaking into a base</b>: 1.5 + (dead that broke in) / (5 × units on the map) + 0.5 × hive toughness, between 1.5 and 6.</li>
+    <li><b>A hive's brood</b>: 5 + horde score / 30 (always on red-skull ground).</li>
+    <li><b>A growth's guard</b>: 2 + 0.6 × hive toughness (2.6 to 3.8).</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Power</th><th>Health (15 + 7p)</th><th>Melee aim (55 + 3p)</th><th>Damage multiplier (0.6 + 0.1p)</th><th>Bite damage (claws 12–20 × mult)</th><th>Move per action</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>22</td><td>58</td><td>0.7</td><td>8–14</td><td>3 tiles</td></tr>
+      <tr><td>2</td><td>29</td><td>61</td><td>0.8</td><td>10–16</td><td>3 tiles</td></tr>
+      <tr><td>3</td><td>36</td><td>64</td><td>0.9</td><td>11–18</td><td>3 tiles</td></tr>
+      <tr><td>4</td><td>43</td><td>67</td><td>1.0</td><td>12–20</td><td>3 tiles</td></tr>
+      <tr><td>5</td><td>50</td><td>70</td><td>1.1</td><td>13–22</td><td>4 tiles (fast)</td></tr>
+      <tr><td>6</td><td>57</td><td>73</td><td>1.2</td><td>14–24</td><td>4 tiles (fast)</td></tr>
+    </tbody>
+  </table>
+  <p>All dead have 2 actions a turn, sight 9 tiles (5 at night), no armor, and ignore cover: shots at the dead never count cover and get a 15% crit chance. They do not flee. Unaware dead shuffle about; once aware they walk to the nearest living person and bite. Stuck for three turns behind a downed person of yours, they tear into that person (killed outright).</p>
+
+  <h3>The four looks <span class="status built">Built</span></h3>
+  <p>Ordinary dead are drawn as one of four <b>looks</b>. The look is <i>cosmetic</i>: a "brute-looking" ordinary zombie has the stats above, not the hive brute's. With the default setting ("By strength") stronger dead show more runners, bloated ones and brutes; a unit that moves 4 tiles (power 5+) is drawn as a runner 60% of the time.</p>
+  <div class="cards">
+    <article class="card" data-sprite="zombie/walker">
+      <h4>Walker <span class="status built">Built</span></h4>
+      <p>The common shambler: slim to heavy build, torn clothes, tilted head, often long hair, arms reaching.</p>
+      <dl><dt>Odds by power</dt><dd>below 2.6: 88% · 2.6+: 70% · 3.5+: 35% · 4.25+: 20%</dd></dl>
+    </article>
+    <article class="card" data-sprite="zombie/runner">
+      <h4>Runner (look) <span class="status built">Built</span></h4>
+      <p>Slim, mid-stride, red eyes. Also the sprite of the hive's real Runner.</p>
+      <dl><dt>Odds by power</dt><dd>below 2.6: 0% · 2.6+: 15% · 3.5+: 35% · 4.25+: 30%</dd></dl>
+    </article>
+    <article class="card" data-sprite="zombie/bloated">
+      <h4>Bloated <span class="status built">Built</span></h4>
+      <p>A swollen belly with yellow blisters; arms hanging. Cosmetic only.</p>
+      <dl><dt>Odds by power</dt><dd>below 2.6: 12% · 2.6+: 15% · 3.5+: 20% · 4.25+: 15%</dd></dl>
+    </article>
+    <article class="card" data-sprite="zombie/brute">
+      <h4>Brute (look) <span class="status built">Built</span></h4>
+      <p>Bare-chested, huge arms, small head. Also the sprite of the hive's real Brute.</p>
+      <dl><dt>Odds by power</dt><dd>below 2.6: 0% · 2.6+: 0% · 3.5+: 10% · 4.25+: 35%</dd></dl>
+    </article>
+  </div>
+
+  <h3>The special dead (hive-bred) <span class="status built">Built</span></h3>
+  <p>A hive that has grown the right structure (see <i>Hives &amp; spread</i>) puts special dead into every horde it makes. Each special is an ordinary zombie of the same power with multipliers on top. In battle they get a coloured ground ring and a letter. In fights resolved by the numbers each counts by its <b>weight</b>; at your walls each presses by its <b>wall</b> weight. The numbers below are at power 2 (a typical break-in).</p>
+  <div class="cards">
+    <article class="card" data-sprite="zombie/runner">
+      <h4>Runner <span class="status built">Built</span></h4>
+      <p>Very fast: crosses the battle map in a turn. A horde with 10%+ runners moves a quarter faster on the State Map.</p>
+      <dl>
+        <dt>Health</dt><dd>×0.85 (25 at p2)</dd><dt>Damage</dt><dd>×1.0 (10–16)</dd><dt>Melee aim</dt><dd>+5</dd>
+        <dt>Speed</dt><dd>6 tiles an action</dd><dt>Armor</dt><dd>none</dd>
+        <dt>Share of a horde</dt><dd>15% (×0.6–1.4)</dd><dt>Wall weight / fight weight</dt><dd>0.9 / 1.15</dd>
+        <dt>Bred by</dt><dd>Runner warren (tier 1)</dd>
+        <dt>Counter</dt><dd>Walls and overwatch: behind walls they are just more of the dead.</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="zombie/brute">
+      <h4>Brute <span class="status built">Built</span></h4>
+      <p>Huge and slow, shrugs off a quarter of every hit. When it cannot reach anyone this turn it smashes (60% a turn) the barricade, wall section, fence, crates, sandbags or hay in its way. On the map, every 12 brutes in a horde smash a base defence like a Wallbreaker (at most 2).</p>
+      <dl>
+        <dt>Health</dt><dd>×2.4 (70 at p2)</dd><dt>Damage</dt><dd>×1.5 (14–24)</dd><dt>Melee aim</dt><dd>+5</dd>
+        <dt>Speed</dt><dd>2.5 tiles an action</dd><dt>Armor</dt><dd>takes 75% of every hit</dd>
+        <dt>Share</dt><dd>8%</dd><dt>Wall / fight weight</dt><dd>2.5 / 2.2</dd>
+        <dt>Bred by</dt><dd>Brute pit (tier 2)</dd>
+        <dt>Counter</dt><dd>Armor against its blows, heavy guns at range, spike pits and trenches.</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="special/spitter">
+      <h4>Spitter <span class="status built">Built</span></h4>
+      <p>Spits acid every other turn and keeps about 4 tiles away in between. Cover counts one step less against acid (full acts as half, half as none). The player's AI shoots it first (target priority ×1.6).</p>
+      <dl>
+        <dt>Health</dt><dd>×0.9 (26 at p2)</dd><dt>Acid spit</dt><dd>16–22 × its damage mult (13–18 at p2), best range 4, −8 aim a tile beyond, silent</dd>
+        <dt>Spit aim</dt><dd>50 + 3 × power</dd><dt>Speed</dt><dd>3 tiles</dd>
+        <dt>Share</dt><dd>8%</dd><dt>Wall / fight weight</dt><dd>1.4 / 1.5</dd>
+        <dt>Bred by</dt><dd>Spitter sac (tier 2)</dd>
+        <dt>Counter</dt><dd>Smoke, shooting it first from range, rushing it.</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="special/screamer">
+      <h4>Screamer <span class="status built">Built</span></h4>
+      <p>Hangs back about 5 tiles from your people and shrieks every other turn, calling 1–2 more of the dead in from the enemy's edge (6 a battle at most). Cornered, it claws like the rest. On the State Map a horde with screamers pulls wandering hordes within 3 tiles along (30% a day each). AI target priority ×2.5.</p>
+      <dl>
+        <dt>Health</dt><dd>×0.8 (23 at p2)</dd><dt>Damage</dt><dd>×0.6 (6–10)</dd><dt>Speed</dt><dd>3 tiles</dd>
+        <dt>Share</dt><dd>3%</dd><dt>Wall / fight weight</dt><dd>1.2 / 2.0</dd>
+        <dt>Bred by</dt><dd>Screamer spire (tier 3)</dd>
+        <dt>Counter</dt><dd>Kill it first: the calling stops when it dies.</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="special/crawler">
+      <h4>Crawler <span class="status built">Built</span></h4>
+      <p>Legless and low in the grass. Your people cannot see or shoot it until it is within 2.5 tiles of one of them, stands in floodlight or a flare's light, or has struck. Its first bite from hiding hits 1.6× as hard. At your walls 60% of a horde's crawlers slip past even when the horde is held (half fewer with a watchtower, half fewer with lit floodlights, a quarter fewer if the defences are manned); 4 or more inside start a small ambush battle.</p>
+      <dl>
+        <dt>Health</dt><dd>×0.8 (23 at p2)</dd><dt>Damage</dt><dd>×1.2 (12–19), first bite ×1.6</dd><dt>Melee aim</dt><dd>+10</dd>
+        <dt>Speed</dt><dd>3 tiles</dd><dt>Share</dt><dd>6%</dd><dt>Wall / fight weight</dt><dd>0.5 / 1.3</dd>
+        <dt>Bred by</dt><dd>Crawler burrow (tier 3)</dd>
+        <dt>Counter</dt><dd>Watchtowers and floodlights, flares, keeping your people together.</dd>
+      </dl>
+    </article>
+  </div>
+  <p><b>Elite special dead.</b> A hive with a Mutation vat (tier 4) makes its special dead elite: ×1.3 health, ×1.2 damage, ×1.25 fight weight. They are named "Elite Brute" and so on.</p>
+  <p><b>How many in a horde.</b> Each kind a hive breeds goes in at its share × 0.6–1.4, all kinds together at most 45% of the horde; the rest are ordinary. Border hordes from day 900 carry the kinds of the current era at half their share (× 0.5–1.5). In a battle the shares turn into whole units (largest remainder, a part of 0.35 or more rounds up) spread evenly through the line.</p>
+
+  <h3>Bosses <span class="status built">Built</span></h3>
+  <div class="cards">
+    <article class="card" data-sprite="boss/wallbreaker">
+      <h4>Wallbreaker <span class="status built">Built</span></h4>
+      <p>A hulking grey brute with a slab of concrete bound to one fist. A hive raises one for 40 resources and sends it at the head of a horde against a base. Before the battle it smashes a defence; in the battle it batters walls and gates three times as hard as anything else.</p>
+      <dl>
+        <dt>Health</dt><dd>190</dd><dt>Armor</dt><dd>takes 70% of every hit</dd>
+        <dt>Melee aim</dt><dd>78</dd><dt>Damage</dt><dd>×1.7 (20–34 a blow)</dd>
+        <dt>Speed</dt><dd>2 tiles an action, climbing costs 3</dd><dt>Sight</dt><dd>9</dd>
+        <dt>Battering</dt><dd>×3 against walls, gates, doors</dd>
+        <dt>On the map</dt><dd>cuts a base's hold limit to 60% (two: 35%); smashes a barricade, else the reinforced gate, else (40%) a wall section; +1 breach on the wall map; a decoy fire works only 15% of the time; ×1.6 against a group's walls</dd>
+        <dt>Raised</dt><dd>only by a hive with a Wallbreaker den, not before day 200, one at a time per hive, at least 90 days apart</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="boss/wallbreaker-map">
+      <h4>Wallbreaker (map) <span class="status built">Built</span></h4>
+      <p>On the State Map the Wallbreaker stands at the head of its horde, so you can see which horde carries one. Its horde card says so too.</p>
+    </article>
+    <article class="card" data-sprite="boss/broodmother">
+      <h4>Broodmother <span class="status built">Built</span></h4>
+      <p>The bloated queen inside every hive, with egg sacs on her back, three eyes and a crown of bone. You fight her when you storm a hive. Kill her and win the battle and the hive is destroyed.</p>
+      <dl>
+        <dt>Health</dt><dd>300</dd><dt>Armor</dt><dd>takes 65% of every hit</dd>
+        <dt>Melee aim</dt><dd>82</dd><dt>Damage</dt><dd>×1.9 (23–38 a blow)</dd>
+        <dt>Speed</dt><dd>2 tiles an action</dd><dt>Battering</dt><dd>×2</dd>
+        <dt>Escort</dt><dd>10–18 of the brood at power 5+</dd>
+      </dl>
+    </article>
+  </div>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned five variant tiers spreading out from the outbreak origin (shamblers and crawlers, then runners and screamers, then bloaters with a toxic burst and armored former soldiers, then stalkers that hunt by sound, then hive bosses). The build ties the special dead to each hive's tech tree instead: runners, brutes, spitters, screamers, crawlers and elite dead, plus the Wallbreaker and the Broodmother. <span class="status planned">Planned</span> and not built: bloaters with a toxic burst (the bloated look is cosmetic), armored dead, stalkers, and Draft 1's screamers raising Heat (the built screamer calls more dead into the battle instead).</aside>
+
+  <h3>Zombie look settings <span class="status built">Built</span></h3>
+  <p>The Settings screen has a Zombies panel (kept per browser). It changes only how the dead are drawn, never their stats:</p>
+  <table class="data">
+    <thead><tr><th>Option</th><th>Values (default first)</th></tr></thead>
+    <tbody>
+      <tr><td>Skin palette</td><td>Mixed, Rotten green, Ashen grey, Pale blue, Burnt</td></tr>
+      <tr><td>Gore</td><td>Some, None, Heavy</td></tr>
+      <tr><td>Variants</td><td>By strength, Random mix, Walkers only</td></tr>
+      <tr><td>Eyes</td><td>Glowing, Red, Dull</td></tr>
+      <tr><td>Clothes</td><td>Torn, Rags, Mostly intact</td></tr>
+    </tbody>
+  </table>
+  <p>Horde sprites on the State Map use the same palette and eyes.</p>
+</section>
+
+<section id="living-enemies">
+  <h2>Enemy types: the living</h2>
+  <p class="lede">People are the other threat. The map's AI groups (raider gangs, zealots, expansionists, the military remnant, fortresses, traders and communes) meet your teams on the road, guard their sites and bases, and raid your bases once they turn hostile. Raiders from outside the state cross the map looking for loot. They all fight with real kits on the tactical map: guns, armor, the loot they carry, and the will to run when a fight turns.</p>
+
+  <h3>Fighters by kit <span class="status built">Built</span></h3>
+  <p>Each group type fields one battle kit. A human enemy at power p has health 55 + 5p (+ kit), aim 39 + 4p (+ kit), melee aim 65 + 2p, a damage multiplier of 0.7 + 0.05p, 5 tiles of movement and 13 tiles of sight. At power 7+ half of them carry the kit's "strong" weapon. A Kevlar vest makes them take 88% of a hit, a plate carrier 76%. Only three outfits are drawn: soldiers (olive, helmet, armband in the group's color), zealots (robes, hood, sash) and everyone else in the raider outfit (leather, denim, a bandana or cap in the group's color).</p>
+  <div class="cards">
+    <article class="card" data-sprite="human/raiders">
+      <h4>Raider <span class="status built">Built</span></h4>
+      <p>Raider gangs, outsider raiders, rival scavengers, and the default kit.</p>
+      <dl><dt>Aim / health</dt><dd>+3 / +5</dd><dt>Weapons</dt><dd>pistol (×2), shotgun, hunting rifle, machete, revolver; strong: shotgun, assault rifle, hunting rifle</dd><dt>Armor</dt><dd>vest 1 in 3</dd><dt>Body loot</dt><dd>pistol, shotgun, machete, hunting rifle, vest, spiked bat, tire vest, bike helmet, knee guards, revolver, nail bat, sling bag, Molotov, pipe bomb; backpack 15%</dd><dt>Pockets</dt><dd>cigarettes, smokes, vodka, whiskey, gold chain, gold ring, watch, lighters, Molotov, tobacco</dd></dl>
+    </article>
+    <article class="card" data-sprite="human/soldiers">
+      <h4>Soldier <span class="status built">Built</span></h4>
+      <p>Military remnant and fortress hubs. Worse shots (−6) and less health (−10), but always armored and carrying rifles. Takedowns on them are 15 harder.</p>
+      <dl><dt>Aim / health</dt><dd>−6 / −10</dd><dt>Weapons</dt><dd>assault rifle (×2), hunting rifle, shotgun, police carbine; strong: assault rifle</dd><dt>Armor</dt><dd>vest or plate</dd><dt>Body loot</dt><dd>assault rifle, plate, vest, night vision, military radio, riot helmet, smoke grenade, rucksack, camo netting, binoculars, thermal; assault pack 30%</dd></dl>
+    </article>
+    <article class="card" data-sprite="human/zealots">
+      <h4>Zealot <span class="status built">Built</span></h4>
+      <p>Zealot cults. <b>Fearless</b>: they never flee a lost fight. Takedowns 5 harder.</p>
+      <dl><dt>Aim / health</dt><dd>0 / +5</dd><dt>Weapons</dt><dd>shotgun, pistol, machete, fire axe, hunting rifle</dd><dt>Armor</dt><dd>none</dd><dt>Body loot</dt><dd>machete, shotgun, pistol, knife, fire axe, Molotov, compound bow</dd></dl>
+    </article>
+    <article class="card" data-sprite="human/fighters">
+      <h4>Fighter <span class="status built">Built</span></h4>
+      <p>Expansionist hubs.</p>
+      <dl><dt>Aim / health</dt><dd>+3 / +5</dd><dt>Weapons</dt><dd>pistol, shotgun, hunting rifle (×2), machete, lever-action rifle</dd><dt>Armor</dt><dd>vest 1 in 3</dd></dl>
+    </article>
+    <article class="card" data-sprite="human/guards">
+      <h4>Guard <span class="status built">Built</span></h4>
+      <p>Traders (and the guards of a fortress on the road).</p>
+      <dl><dt>Aim / health</dt><dd>+2 / 0</dd><dt>Weapons</dt><dd>pistol (×2), shotgun, hunting rifle, revolver</dd><dt>Armor</dt><dd>vest 1 in 3</dd><dt>Body loot</dt><dd>includes baton, handcuffs, riot arm guards</dd></dl>
+    </article>
+    <article class="card" data-sprite="human/militia">
+      <h4>Militia <span class="status built">Built</span></h4>
+      <p>Farming communes.</p>
+      <dl><dt>Aim / health</dt><dd>0 / 0</dd><dt>Weapons</dt><dd>hunting rifle, shotgun, pistol, machete, pipe spear, lever-action rifle, bat</dd><dt>Armor</dt><dd>none</dd></dl>
+    </article>
+  </div>
+  <p><b>Breaking and running.</b> Human enemies (not zealots) flee once only a third of their starting number is still fighting and your standing people outnumber them two to one: they run for their own edge of the map. Freshly alerted humans dash for cover without spending their turn. Human AI picks the shot or the cell that is best for it (cover, odds, flanks), and holds overwatch or hunkers down when it has nothing better.</p>
+
+  <h3>The groups and what they want <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Group type</th><th>Starts</th><th>Arms</th><th>Raids you (a day, once hostile)</th><th>Road fighters' power (2.2 + 1.6 × arms)</th><th>Battle kit</th></tr></thead>
+    <tbody>
+      <tr><td>Raider gang</td><td>Aggressive, goodwill −55</td><td>1.3</td><td>10.5%</td><td>4.3</td><td>raiders</td></tr>
+      <tr><td>Expansionist hub</td><td>Aggressive, −45</td><td>1.1</td><td>6%</td><td>4.0</td><td>fighters</td></tr>
+      <tr><td>Zealots</td><td>Aggressive, −70</td><td>1.0</td><td>7.5%</td><td>3.8</td><td>zealots</td></tr>
+      <tr><td>Military remnant</td><td>Neutral, 0</td><td>1.6</td><td>4.5% only if provoked</td><td>4.8</td><td>soldiers</td></tr>
+      <tr><td>Fortress hub</td><td>Neutral, −5</td><td>1.2</td><td>3% only if provoked</td><td>4.1</td><td>soldiers</td></tr>
+      <tr><td>Traders</td><td>Friendly, 35</td><td>0.9</td><td>1.5% only if provoked</td><td>3.6</td><td>guards</td></tr>
+      <tr><td>Farming commune</td><td>Friendly, 30</td><td>0.6</td><td>1.5% only if provoked</td><td>3.2</td><td>militia</td></tr>
+    </tbody>
+  </table>
+  <p>Aggressive groups live off others: they raid you and their neighbours, recruit drifters, expand toward you (up to 2 + people / 10 bases, at most 6) and may burn what they cannot hold. When fewer than 2 hostile aggressive groups are left (from day 60), a new gang of 12–18 from beyond the border settles 12–30 tiles from your hub (2% a day). Their war parties walk the map:</p>
+  <div class="gallery" data-sprites="party/raider-raid party/zealot-raid party/expansionist-raid party/military-raid party/fortress-raid party/raider-scav party/raider-convoy party/zealot-convoy party/expansionist-convoy party/military-convoy"></div>
+  <p>A war party that walks into a horde loses a quarter of its strength (and the horde loses 0.6 × the party's strength).</p>
+
+  <h3>Outsiders <span class="status built">Built</span></h3>
+  <p>People from beyond the State of Calder enter on a border tile at least 6 tiles from your bases, cross the map and leave. Three kinds:</p>
+  <div class="cards">
+    <article class="card" data-sprite="outsider/raiders">
+      <h4>Raiders from outside <span class="status built">Built</span></h4>
+      <p>Dark red rags and hoods, a biker, weapons raised under a black-and-red banner. They want loot and pick targets by loot against defence, never one stronger than they are: your bases (only when they are at least 0.6 of its defence), your teams in the field, your convoys, other groups' bases and caravans, merchant caravans and rich sites. They leave once they carry loot worth 10 × their strength, have lost half the band, were paid off or their days run out. They never keep a base: an overrun is looted and wrecked. A big band carrying enough loot may settle and become a new raider gang.</p>
+      <dl><dt>First band</dt><dd>days 20–26</dd><dt>Then every</dt><dd>clamp(30 − 0.06 × day, 10, 30) × 0.75–1.25 days</dd><dt>At most</dt><dd>1 band (2 from day 120, 3 from day 240)</dd><dt>Band size</dt><dd>clamp(3 + day / 30 + 0–2, 3, 14)</dd><dt>Power each</dt><dd>2.6 + min(3.4, day / 80)</dd><dt>Stay</dt><dd>8–14 days</dd><dt>Siege</dt><dd>8 hours at your walls, 12 at a group's</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/merchants">
+      <h4>Merchants from outside <span class="status built">Built</span></h4>
+      <p>A covered wagon behind two oxen with 2 traders and 3–5 guards (+1 every 90 days, at most 7; power 3.5 + min(2.5, day / 120)). Not enemies unless you attack them: attacking costs −45 merchant reputation and goodwill with traders (−15) and communes and fortresses (−8).</p>
+      <dl><dt>First</dt><dd>days 8–14, then every 10–16 days</dd></dl>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-scouts">
+      <h4>Travellers: scouts <span class="status built">Built</span></h4>
+      <p>2–3 grey walkers with bedrolls and binoculars. 8% of all travellers are robbers in disguise who ambush a team or rob the base that shelters them.</p>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-refugees">
+      <h4>Travellers: refugees <span class="status built">Built</span></h4>
+      <p>2–5 people with a handcart of bundles; they come to your hub 75% of the time.</p>
+    </article>
+    <article class="card" data-sprite="outsider/explorers-wanderers">
+      <h4>Travellers: wanderers <span class="status built">Built</span></h4>
+      <p>1–2 people with walking staffs.</p>
+    </article>
+  </div>
+
+  <h3>How the living attack</h3>
+  <ul>
+    <li><b>On the road:</b> conflict cards (ambush, roadblock, zealot patrol, checkpoint, challenge, contested site). See <i>Conflicts on the road</i>.</li>
+    <li><b>At their sites:</b> a group's base you search has 3–7 guards (pop / 6) at power 4 + pop / 15; hostile land has a 40% chance of a 2–3-strong patrol at power 4; anywhere else a 15% chance of 2 rival scavengers at power 3.5.</li>
+    <li><b>At your bases:</b> raids and sieges (see <i>Raids &amp; sieges</i>), rescue raids for their people you hold (see <i>Captives &amp; prisoners</i>), war raids when you join a war.</li>
+  </ul>
+  <h3>Building damage and repairs</h3>
+  <p>When a raid on your base is settled, the raiders smash what they reach. The damage is a budget of wear points: raid strength × 3 × (siege hours / 8, between 0.15 and 1.5) × the outcome (driven off 1, beaten in a stand-up fight 0.5, break-in 2.5, overrun 4.5). It is spent in hits of 30–70 wear: on the outer line first (walls, gate, barricades, floodlights, watchtower: 85% of hits when driven off, 50% in a break-in, 35% in an overrun), the rest on buildings inside; after the first hit, 40% of hits fall on the building hit last. At 60 wear a building is damaged (a damaged wall section gives 2 wall strength, not 3) and may break any day; at 100 it is broken and does nothing until repaired. An overrun also tears down one broken building outright (60%; never the walls). Nobody repairs or builds while the base is on alert or under siege. See the repair table under <i>Base defence</i>.</p>
+</section>
+
+<section id="hives">
+  <h2>Hives &amp; spread</h2>
+  <p class="lede">Hives are where the hordes come from and what you must destroy to win. Each hive earns resources, spends them on hordes, Wallbreakers and <b>growths</b> (its tech tree), and slowly founds new hives. Destroy every hive with none under construction and the survivors win.</p>
+
+  <h3>The hives on the map <span class="status built">Built</span></h3>
+  <p>A Normal map starts with 5–6 hives: four around the outbreak origin and one at each other hot spot. Each starts with 5 resources. The hive sprite shows how infected its ground is (level 0 below 50% infection, level 1 at 50%+, level 2 at 80%+); a live hive pulses red.</p>
+  <div class="gallery" data-sprites="hive/0 hive/1 hive/2"></div>
+  <table class="data">
+    <thead><tr><th>Rule</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Income a day (n = hives within 5 tiles, itself included)</td><td>1, 3, 6, 8, 10, 12 for n = 1…6+ (n(n+1)/2 up to 3, then +2 a hive, at most 12); then growths</td></tr>
+      <tr><td>Resource cap</td><td>80</td></tr>
+      <tr><td>Horde prices</td><td>small 10–25 dead for 3, medium 50–80 for 8, large 100–200 for 15</td></tr>
+      <tr><td>Guard horde at home</td><td>rebuilt below 40 (+40 with a brood chamber)</td></tr>
+      <tr><td>Roaming / attacking hordes out at once</td><td>1 + half the cluster size (+1 with a brood chamber at tier 2+)</td></tr>
+      <tr><td>Large hordes sent out</td><td>not before day 60 (55% chance after)</td></tr>
+      <tr><td>Share of new roamers sent at a base</td><td>20% on day 1, +1/150 a day, at most 65% (about day 70); always when a Wallbreaker is ready</td></tr>
+      <tr><td>Attack range</td><td>45 tiles to your bases (55 with a screamer spire); 22 to a group's</td></tr>
+      <tr><td>Target weight</td><td>your base: 2.5 × (0.5 × people + 3, +3 for the hub) / (1 + tiles / 6); a group's: (0.3 × pop + 2) / (1 + tiles / 6)</td></tr>
+      <tr><td>Free-dead limits</td><td>no new roamers while over 600 free dead are within 10 tiles, or the state holds over 1,000 + 250 per hive</td></tr>
+      <tr><td>Wallbreaker</td><td>40 resources; needs a Wallbreaker den; not before day 200; 90 days between per hive; one at a time</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Land, infection and the red skull <span class="status built">Built</span></h3>
+  <p>A hive holds the land within 4 tiles: sites there show at least 3 danger skulls. The ring 1 tile around it is <b>red-skull ground</b>: the skulls are drawn in blood red, and every one of the dead met there is +3 power (+1 elsewhere in the hive's land). That covers road surges, search sites, horde cards, growth guards and the hive's own brood. The hive radiates infection: 1.0 on its tile, 0.1 less per tile out to 6 tiles; tiles move toward that by +0.02 a day (and fall 0.01 a day).</p>
+  <div class="gallery" data-sprites="misc/skull misc/redskull"></div>
+
+  <h3>Spread: build sites <span class="status built">Built</span></h3>
+  <p>Every <b>120–180 days</b> a site for a new hive is picked (one site at a time on a Normal map; on bigger maps the days are divided by the map's area and more sites are allowed). The site is open ground 4–9 tiles from the nearest hive, not within 3 tiles of anyone's base, not within 4 of another site, weighted toward tiles many hives can support and toward infected ground.</p>
+  <ul>
+    <li>Hives within 10 tiles become <b>supporters</b>: each sends up to 2 hordes there until the gathered and arriving dead cover 110% of what is missing. While they feed the site they send fewer roamers: a lull you can use.</li>
+    <li>Wandering hordes within 6 tiles of a site that still needs the dead are drawn to it (50% a day).</li>
+    <li>Hordes reaching the site merge into a <b>mass</b>. Once the delivered hordes add up to a <b>score of 30</b>, building starts and the site glows.</li>
+    <li>Each day a quarter of the mass (at least 25, at most 40) goes into the hive. The hive stands at <b>1,000 dead</b>: about four weeks from the first gathering. Up to 150 left over stay as its guard; the rest roam.</li>
+    <li>A site nobody supports with nothing gathered is given up after 90 days.</li>
+  </ul>
+  <div class="gallery" data-sprites="site/planned site/started"></div>
+  <p>Every <b>5–9 days</b> a border horde also comes in from off the map (50% small, 35% medium, 15% large, × 1 + day / 730 up to ×1.5), so a state without hives is safer but never safe.</p>
+
+  <h3>Growths: the hive tech tree <span class="status built">Built</span></h3>
+  <p>A hive grows structures on free land within 2 tiles of itself (not water, a bridge, a site, a ruin, a base, a hive or build site, or another growth). It grows one at a time, at least 12 days apart, at most 10 per hive. Each growth costs resources when started and takes days to finish. A growth has 100 flesh; fire burns it down and it regrows 5 a day. Growths you know of show on the map (small and faint while growing, grey husks once their hive is gone). One finished out of sight at a hive you know of reaches you as a rumour 40% of the time.</p>
+  <div class="cards">
+    <article class="card" data-sprite="growth/pit">
+      <h4>Biomass pit <span class="status built">Built</span></h4>
+      <p>A pit of rotting flesh the hive feeds on.</p>
+      <dl><dt>Tier</dt><dd>0</dd><dt>Cost / days</dt><dd>12 / 10</dd><dt>Max</dt><dd>2</dd><dt>Effect</dt><dd>+1 resource a day</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/brood">
+      <h4>Brood chamber <span class="status built">Built</span></h4>
+      <p>Swollen amber sacs where the dead are kept.</p>
+      <dl><dt>Tier</dt><dd>0</dd><dt>Cost / days</dt><dd>20 / 15</dd><dt>Effect</dt><dd>guard kept 40 bigger; from tier 2, one more horde out at once</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/feeding">
+      <h4>Feeding grounds <span class="status built">Built</span></h4>
+      <p>A field of bones and offal.</p>
+      <dl><dt>Tier</dt><dd>1</dd><dt>Cost / days</dt><dd>25 / 20</dd><dt>Effect</dt><dd>income ×1.5</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/warren">
+      <h4>Runner warren <span class="status built">Built</span></h4>
+      <p>Tunnels with red eyes in the holes.</p>
+      <dl><dt>Tier</dt><dd>1</dd><dt>Cost / days</dt><dd>25 / 20</dd><dt>Breeds</dt><dd>runners</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/brutepit">
+      <h4>Brute pit <span class="status built">Built</span></h4>
+      <p>A grey hulk in a deep hole.</p>
+      <dl><dt>Tier</dt><dd>2</dd><dt>Cost / days</dt><dd>35 / 30</dd><dt>Breeds</dt><dd>brutes</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/sac">
+      <h4>Spitter sac <span class="status built">Built</span></h4>
+      <p>Green bladders of acid.</p>
+      <dl><dt>Tier</dt><dd>2</dd><dt>Cost / days</dt><dd>35 / 30</dd><dt>Breeds</dt><dd>spitters</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/spire">
+      <h4>Screamer spire <span class="status built">Built</span></h4>
+      <p>A shrieking tower of fused bodies with an open mouth.</p>
+      <dl><dt>Tier</dt><dd>3</dd><dt>Cost / days</dt><dd>40 / 40</dd><dt>Breeds</dt><dd>screamers</dd><dt>Also</dt><dd>attacks bases 10 tiles farther; calls wandering and border hordes within 6 tiles into its guard (30% a day each) until the guard is 3 × its minimum</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/burrow">
+      <h4>Crawler burrow <span class="status built">Built</span></h4>
+      <p>A low mound of holes with hands reaching up.</p>
+      <dl><dt>Tier</dt><dd>3</dd><dt>Cost / days</dt><dd>40 / 40</dd><dt>Breeds</dt><dd>crawlers</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/den">
+      <h4>Wallbreaker den <span class="status built">Built</span></h4>
+      <p>An arch of ribs over a dark cave.</p>
+      <dl><dt>Tier</dt><dd>3</dd><dt>Cost / days</dt><dd>50 / 45</dd><dt>Effect</dt><dd>the hive can raise Wallbreakers (they come from nowhere else)</dd></dl>
+    </article>
+    <article class="card" data-sprite="growth/vat">
+      <h4>Mutation vat <span class="status built">Built</span></h4>
+      <p>A boiling magenta brew.</p>
+      <dl><dt>Tier</dt><dd>4</dd><dt>Cost / days</dt><dd>60 / 60</dd><dt>Effect</dt><dd>the hive's special dead are elite (×1.3 health, ×1.2 damage)</dd></dl>
+    </article>
+  </div>
+  <div class="gallery" data-sprites="growth/pit-withered growth/brood-withered growth/feeding-withered growth/warren-withered growth/brutepit-withered growth/sac-withered growth/spire-withered growth/burrow-withered growth/den-withered growth/vat-withered"></div>
+
+  <h3>Tiers: when each growth opens <span class="status built">Built</span></h3>
+  <p>A hive may grow up to its tier. Tier t opens once the game day passes TIER_DAY[t] × (1 to 1.35, fixed per hive) <i>and</i> the hive is TIER_AGE[t] days old, so a hive that rises late starts again at the bottom.</p>
+  <table class="data">
+    <thead><tr><th>Tier</th><th>Game day</th><th>Hive age</th><th>Opens</th><th>Roughly</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>0</td><td>0</td><td>Biomass pit, Brood chamber</td><td>from the start</td></tr>
+      <tr><td>1</td><td>120–162</td><td>20</td><td>Feeding grounds, Runner warren</td><td>month 4–5</td></tr>
+      <tr><td>2</td><td>450–608</td><td>90</td><td>Brute pit, Spitter sac</td><td>year 1.2–1.7</td></tr>
+      <tr><td>3</td><td>1,100–1,485</td><td>200</td><td>Screamer spire, Crawler burrow, Wallbreaker den</td><td>year 3–4</td></tr>
+      <tr><td>4</td><td>2,200–2,970</td><td>400</td><td>Mutation vat</td><td>year 6–8</td></tr>
+    </tbody>
+  </table>
+  <p><b>The hive's mind.</b> Each day after its income, a hive first rebuilds its guard, then picks what to grow (a little random): income while it is young (under 180 days) or poor (3 a day or less); the brood chamber strongly when it was attacked in the last 60 days (fires, a storm, a growth burned); feeding grounds more when its cluster is small; a kind of dead its cluster-mates do not breed yet over one they do; the den and the vat high once open. A growth it cannot afford yet it saves for, sending out no new roamers for up to 20 days. Border hordes carry the special dead of the era from day 900.</p>
+
+  <h3>Fighting growths <span class="status built">Built</span></h3>
+  <p>The <b>Burn the growth</b> mission (a team on a growth's tile) offers:</p>
+  <table class="data">
+    <thead><tr><th>Choice</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>Fight its guard (tactical battle)</td><td>6 of the dead + 1 per 40 in the hive's guard (at most 12), power 2 + 0.6 × hive toughness, with the hive's special dead and +25% more of the growth's own kind once grown (at most 60%). Win: the growth is torn down.</td></tr>
+      <tr><td>Burn it (4 fuel)</td><td>60 flesh burns. The guard does not notice with 40% + 5% per point of the team's best Stealth (at most 90%); otherwise someone takes 10–35 damage.</td></tr>
+      <tr><td>Firebomb it (2 Molotovs)</td><td>100 flesh burns (enough from full). Unnoticed 55% + 5% a Stealth point.</td></tr>
+      <tr><td>Back off</td><td>No fight.</td></tr>
+    </tbody>
+  </table>
+  <p>A destroyed growth takes its effect with it (a kind it no longer breeds, income). Any attack marks the hive as threatened, so it builds for defence.</p>
+
+  <h3>Destroying hives <span class="status built">Built</span></h3>
+  <p>The <b>Destroy hive</b> mission (also right-click on a hive) shows the hive card: its guard, what has grown around it and the special dead in its brood.</p>
+  <table class="data">
+    <thead><tr><th>Choice</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>Storm the hive (tactical battle)</td><td>The brood: clamp(8 + 0.6 × guard score, 10, 18) dead at power 5 + score / 30, with the guard's special dead, plus the Broodmother deep in the flesh mound. Coalition members within 15 tiles send fighters that each keep one of the brood off your squad (40% at most). You can fall back from the left edge or sound the retreat. Win: the hive is destroyed.</td></tr>
+      <tr><td>Set fires around it (6 fuel)</td><td>Burns 30% of its guard and 15 of its stores. Unnoticed 35% + 5% a Stealth point (at most 90%); else someone takes 15–40.</td></tr>
+      <tr><td>Firebomb it (3 Molotovs)</td><td>Burns 40% of its guard and 20 stores. Unnoticed 50% + 5% a Stealth point (at most 95%); else 10–30.</td></tr>
+      <tr><td>Back off</td><td>No fight.</td></tr>
+    </tbody>
+  </table>
+  <p>When a hive is destroyed its guard horde is gone, its other hordes wander on without a home, its growths wither into husks that rot away in 40 days, and the land within 7 tiles settles toward low infection (0.06 at the hive, +0.07 a tile) at 0.01 a day. Destroying the last hive with no build site under way wins the game.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's "nests" that spawn zombies and spread infection became hives with an economy, build sites and a tech tree; Draft 1's endgame "hive bosses that spawn and lead hordes" became the Wallbreaker (leads a horde) and the Broodmother (defends the hive).</aside>
+  <aside class="tip"><b>Design intent:</b> the hive war is meant to be winnable in a 10–15 year game. New sites are slow (120–180 days), a growing site is a four-week window to strike, and burning growths strips a hive's special dead before you storm it.</aside>
+</section>
+
+<section id="hordes">
+  <h2>Hordes</h2>
+  <p class="lede">Hordes are crowds of the dead that move on the State Map. Hives build them and give each one a job; border hordes wander in from off the map. A horde that reaches one of your bases attacks it, so reading, thinning and luring hordes is a constant strategic job.</p>
+
+  <h3>Size and strength <span class="status built">Built</span></h3>
+  <p>A horde's <b>score</b> = size<sup>0.8</sup> / 3.4: about 3 for a small horde, 8 for a medium one, 16 for a large one (20 at 200, 33 at 400). The score sets how tough it is in a fight and how much it adds to a new hive. On the map a horde is drawn with 2–7 figures by size (2 under 15, 3 under 25, 4 under 40, 5 under 60, 6 under 90, else 7), with its head count on a red tag, and a Wallbreaker at its head if it has one.</p>
+  <div class="gallery" data-sprites="horde/small horde/medium horde/large boss/wallbreaker-map"></div>
+  <table class="data">
+    <thead><tr><th>Band</th><th>Bought by a hive</th><th>Class shown (by size)</th></tr></thead>
+    <tbody>
+      <tr><td>Small</td><td>10–25 dead for 3 resources</td><td>under 40</td></tr>
+      <tr><td>Medium</td><td>50–80 for 8</td><td>40–94</td></tr>
+      <tr><td>Large</td><td>100–200 for 15</td><td>95–220</td></tr>
+      <tr><td>Huge</td><td>only by merging</td><td>over 220 (merging stops at 600)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Jobs (roles) <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Guard:</b> stays on its hive.</li>
+    <li><b>Build:</b> walks to a build site and becomes part of its <b>mass</b>.</li>
+    <li><b>Roam:</b> wanders near home (within 7 tiles of its hive).</li>
+    <li><b>Attack:</b> marches on a chosen base (yours or a group's). If the base is gone it becomes a roamer.</li>
+    <li><b>Border:</b> came in from off the map; drifts toward the middle of the map.</li>
+  </ul>
+
+  <h3>Movement and life <span class="status built">Built</span></h3>
+  <ul>
+    <li>12 hours a tile (2 tiles a day) over land, crossing rivers only at bridges. Weather slows them: ×0.5 in a blizzard or below −8 °C, ×0.7 below −2 °C, ×0.85 with snow cover; never below ×0.4. 10%+ runners: ×1.25.</li>
+    <li>Hordes on the same tile with the same errand merge (up to 600). A horde over 300 that wanders splits in half 10% of the time. Every part keeps at least 10; a horde under 5 is gone.</li>
+    <li>Wandering hordes (roam, border) rot away 1.2% a day (at least 1). Hordes with a job are kept up by their hive.</li>
+    <li>Each day a wanderer either drifts toward the loudest, closest people within 8 tiles or picks a spot up to 4 tiles away. The pull of people grows over the year: 15% of days at the start, 45% from about day 180. Your base's pull is its <b>base heat</b> / (1 + 0.35 × tiles): people there + 3 per manned station + 2 for a radio + 3 for the hub + a running generator (+4) + hunters' gunshots.</li>
+    <li>A horde entering a group's base fights its walls (size × 0.12 × 1.6 with a Wallbreaker × the special dead's wall weight): held, 45% of the horde is left; not held, 30%.</li>
+  </ul>
+
+  <h3>Horde control <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Tool</th><th>How it works</th></tr></thead>
+    <tbody>
+      <tr><td>Engage horde mission: <i>Set up a killzone and fire</i></td><td>Uses up to 15 ammo per person. Kills combat power × (3 if more than 8 ammo a person was used, else 1.5) × 0.7–1.3 ÷ toughness (1 + 0.35 × hive toughness, × the special dead's weight). Risk of one person hurt (15–45 × toughness): 25% + score / 40 + 20% with a Wallbreaker, at most 90%. Broken at 5 or fewer.</td></tr>
+      <tr><td>Engage horde: <i>Lure it away with a fire</i> (3 fuel)</td><td>Pushes the horde one step away from your hub and holds it there for 72 hours.</td></tr>
+      <tr><td>Horde warning: <i>Burn a decoy fire</i> (6 fuel, at the base)</td><td>max(25%, min(80%, 85% − score / 60)) to draw it off (15% with a Wallbreaker): it falls back 4 tiles and is held for 96 hours.</td></tr>
+      <tr><td>Horde warning: <i>Man the defences</i></td><td>Everyone at the base takes a post for 48 hours: non-guards count at 0.8 of their combat power on the walls.</td></tr>
+      <tr><td>A horde beaten off at the walls</td><td>Falls back 4 tiles for 48 hours and leaves that base alone for 10 days.</td></tr>
+      <tr><td>Vehicle crash sites</td><td>The noise draws up to two hordes within 8 tiles to the crash for 72 hours.</td></tr>
+      <tr><td>Coalition members</td><td>Harry a horde heading for your base once (15% each, 30% at most) and report every horde within 12 tiles of their bases.</td></tr>
+      <tr><td>Field Heat</td><td>A team camped near a horde (within 3 tiles) can draw it in as a bigger surge.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What hordes do to bases <span class="status built">Built</span></h3>
+  <p>When a visible horde heads for one of your bases and is within 6 tiles, the lookouts warn you once with a card: its size, score, special dead and Wallbreaker, and whether the base can hold it. On arrival the base's hold limit decides (see <i>Base defence</i>): held at the walls, a break-in battle, or overrun. Every horde attack spends 3 ammo per person at the base. Crawlers can slip past walls that held.</p>
+  <h3>What hordes do to parties</h3>
+  <p>A horde within 2 tiles adds to a team's chance of a road conflict; a team camped near one can be found by it (a surge scaled up to ×2.2 by the horde's size). AI war parties and convoys that walk into a horde lose a quarter of their strength.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Culling (killzones), diverting (fire lures, decoy fires, crash noise) and containment (walls, bridges as the only river crossings) are built. <span class="status planned">Planned</span>: Draft 1's radio towers and car alarms as player-placed lures, blowing bridges, and "cleared zones stay safe only while patrolled".</aside>
+</section>
+
+<section id="raids">
+  <h2>Raids &amp; sieges</h2>
+  <p class="lede">Hostile groups and raiders from outside come for your bases. A raid party marches across the map, is spotted 4 tiles out, sits 8 hours at your walls and then the numbers (or your own battle) decide. Your decision is on the warning card: prepare, pay, fight in person, or give the base up.</p>
+
+  <h3>Who raids and when <span class="status built">Built</span></h3>
+  <ul>
+    <li>Only a <b>hostile</b> group raids you. Aggressive types roll every day once their cooldown (8–16 days) is over and they have 8+ people: raiders 10.5%, zealots 7.5%, expansionists 6%. A peaceful group you provoked into hostility raids only you, rarely: military 4.5%, fortress 3%, traders and communes 1.5%.</li>
+    <li><b>Reach:</b> 30 tiles from the group's nearest base. They also raid other groups within 14 tiles.</li>
+    <li><b>Target weight</b> for your base: 2.5 × greed (stock value / 1,500, 0.4–3) × land (+20% per outpost) × grudge (+50% per raid you beat or fight they lost, at most 4, fading 1% a day) × size (strength / 35, 0.6–2) ÷ (1 + tiles / 12).</li>
+    <li><b>Raid size:</b> 0.6–1.0 × your base's defence as if everyone were at a post, × their escalation, at most the group's whole strength, at least 4. Every raid you drive off makes their next one 25% bigger (up to ×2); a raid that gets in resets it.</li>
+    <li><b>Outsider raiders:</b> see <i>Enemy types: the living</i>. They attack when their strength is at least 0.6 of your base's defence.</li>
+  </ul>
+
+  <h3>The siege <span class="status built">Built</span></h3>
+  <p>A raid party reaching your base pitches a <b>siege camp</b> beside it (tents and a banner in the attacker's color, a spiked barricade, a fire). It stays 8 hours; a strong defence drives it off sooner: each hour counts as defence / strength / 1.2 hours (1 to 4). Building and repairs stop at a base under siege. Sieges between groups last 18 hours; you can answer a group's call for help with a relief squad (it fights beside them: +20 goodwill and 6 meds or 60 ammo if they hold) or by sending 40 ammo (the raid ×0.8, +6 goodwill); ignoring the call costs 8 goodwill (14 with a friend).</p>
+  <div class="gallery" data-sprites="siege/camp icon/siege party/raider-raid outsider/raiders"></div>
+
+  <h3>The warning card: what you decide <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Choice</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Prepare defenses</td><td>Everyone takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay 1.5×). Building and repairs stop until the raid is over.</td></tr>
+      <tr><td>Pay tribute</td><td>30% of the food and 30 ammo: they turn back, +6 goodwill (an aggressive group's bought goodwill fades 0.5 a day: they come back).</td></tr>
+      <tr><td>Defend in person (tactical)</td><td>The best 8 at the base fight the raiders on the base's battle map (deploy step, three tiers). Win: the raid is broken. Lose: they break in.</td></tr>
+      <tr><td>Retreat to another base / Abandon and take to the road</td><td>Everyone leaves with what they can carry; the raiders take the base without a fight. You can assault it later.</td></tr>
+      <tr><td>Hold as you are</td><td>Wait for the siege.</td></tr>
+    </tbody>
+  </table>
+  <p>Outsider raiders' card is similar: prepare, pay them off (4 × their strength in goods), talk them down (Speech: 10% + 3.5% a point, at most 75%, for half the price), defend in person, or hold. Over the radio you can pay an outsider band to leave the state (1.25 × the tribute, 2% less per Speech point, at most 30% off).</p>
+
+  <h3>How it is settled <span class="status built">Built</span></h3>
+  <p>Defence = 2 × wall strength + each person's combat power × (1.5 on Guard, 1.3 prepared, else 0.8), ×0.7 if the base has less than 3 ammo a person. Coalition members within 20 tiles add fighters. The ratio runs through the three tiers (wall, yard, buildings multipliers; see <i>Base defence</i>):</p>
+  <table class="data">
+    <thead><tr><th>Ratio (defence / strength)</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td>1.2 or more at the wall</td><td><b>Driven off.</b> They lose 1–3 people; 40% chance one defender takes 10–30.</td></tr>
+      <tr><td>0.8 or more with the yard (or buildings) counted</td><td><b>Break-in.</b> 20% of the stock taken (10% with a storehouse); 2 defenders hurt 15–45 (3 if held in the buildings); an outpost may be kept by them (a third as likely as after an overrun).</td></tr>
+      <tr><td>less</td><td><b>Overrun.</b> 50% of the stock (25% with a storehouse); 3 hurt 30–70; an outpost is lost, or they keep it, or (aggressive types) raze it.</td></tr>
+    </tbody>
+  </table>
+  <p><b>Keeping and razing:</b> keep chance by type (raider 0.8, expansionist 0.9, zealot 0.7, military 0.55, fortress 0.5, traders and communes 0.3) × nearness to their bases × richness; your hub ×0.35. Raze chance (only raiders 0.22, zealots 0.12, expansionists 0.05) × (1 + 0.25 per grudge point) × 1–2 by distance, at most 0.8; your hub ×0.4, an empty base ×0.5. The card warns when the raze chance is 15%+. A won raid gives the group 1–2 recruits. Raid damage is then applied (see <i>Enemy types: the living</i>).</p>
+  <aside class="tip"><b>Design intent:</b> the census tool <code>tools/raidcensus.js</code> measures how often raids come and how they end on autopilot. An earlier census (review/balance-census.md) found group raids held 94% of the time and outsider raids the dangerous ones (31% overran a base); the escalation and grudge rules above exist to make beaten raiders come back harder.</aside>
+</section>
+
+<section id="battles">
+  <h2>Tactical battles</h2>
+  <p class="lede">Every fight with people or the dead can play out on a turn-based grid map in the style of XCOM: two actions per unit, cover, overwatch, line of sight and fog of war. The same battle can also be resolved instantly by the numbers (the Auto-resolve button before you act on turn 1, headless tools, the autopilot), and both paths give the same kind of result.</p>
+
+  <h3>How a battle starts <span class="status built">Built</span></h3>
+  <ul>
+    <li>Road conflict cards (fight back, open fire, ambush, take a side, a failed run, sneak or steal).</li>
+    <li>Engaging a horde, a hive (storm) or a growth's guard.</li>
+    <li>A rescue mission at a group's base, an assault on a group's base (conquest).</li>
+    <li>Defending a base in person against raiders, outsiders or a rescue raid; a horde breaking in; crawlers slipping inside.</li>
+    <li>Searching a site in the browser: raid mode (see <i>Stealth</i>).</li>
+  </ul>
+  <p>The State Map clock pauses while a battle is open. Only one battle runs at a time; others wait in a queue. A battle whose team is gone is dropped.</p>
+
+  <h3>The battle map <span class="status built">Built</span></h3>
+  <p>An 18 × 13 grid (raids 28 × 18) built from the State Map tile: towns get buildings with walls, doors and windows, cars and fences; farms get barns, fence lines and hay; military bases sandbag lines and trucks; forests 30 trees; hills rocks and boulders; cities buildings, cars and crates; roads a strip with wrecks; rivers a band with two fords. Your people deploy on the left (the best 8 by combat power), the enemy on the right (at most 20). Base battles have their own maps (see <i>Base defence</i>), hives a flesh mound, growths a knot of flesh.</p>
+  <table class="data">
+    <thead><tr><th>Cell</th><th>Cover</th><th>Blocks sight</th></tr></thead>
+    <tbody>
+      <tr><td>Tree, boulder, wall, burnt-out truck, lockers, your vehicle, barricade, hive flesh, locked door, base wall</td><td>full</td><td>yes (base walls and barricades: no)</td></tr>
+      <tr><td>Window, rock, car, fence, hay bales, crates, sandbags, fuel pump, shelves, cabinet, counter, well, rain barrels</td><td>half</td><td>no</td></tr>
+      <tr><td>Spike pit, trench, barbed wire, bear trap (traps for the dead)</td><td>none</td><td>no</td></tr>
+      <tr><td>Watchtower (height 2), walkway, roof, upper floor (height 1), ladder, stairs</td><td>tower: full from anyone not adjacent; higher ground: at least half</td><td>no</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Units and orders <span class="status built">Built</span></h3>
+  <p>Your survivor in battle: aim 40 + 2.5 × Shooting (− up to 30 for a weapon above their skill) ±5 Brave / Coward + relationships + a hangover; melee aim 75 ±5; damage × (0.6 + 0.4 × weapon effectiveness) × (0.75 + 0.25 × quality); armor from what they wear (Tough ×0.75); 5 tiles a move; sight 13; health is their real health.</p>
+  <table class="data">
+    <thead><tr><th>Order</th><th>Cost</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Move</td><td>1 action (up to 5 tiles), 2 for a dash (up to 10)</td><td>Diagonals cost 1.5; climbing needs a ladder or stairs (1 a level, the dead 2).</td></tr>
+      <tr><td>Shoot</td><td>ends the turn</td><td>Needs a gun, ammo and line of sight. A weapon above the user's skill may be damaged.</td></tr>
+      <tr><td>Melee</td><td>ends the turn</td><td>Adjacent only. Silent.</td></tr>
+      <tr><td>Overwatch</td><td>ends the turn</td><td>The first enemy that moves in sight draws a reaction shot (−15 to hit, no crit; Suppressor perk removes the −15).</td></tr>
+      <tr><td>Hunker down</td><td>ends the turn</td><td>−20 more to hit them while in cover; −10 in melee.</td></tr>
+      <tr><td>Meds</td><td>1 action</td><td>Self or adjacent: heals 15 + 1.5 × Medicine (bandage or surgical kit adds), or stabilizes someone who is down.</td></tr>
+      <tr><td>Retreat</td><td>ends the turn</td><td>From the green evac strip: that unit leaves the fight.</td></tr>
+      <tr><td>Sound the retreat</td><td>everyone</td><td>The whole team runs for it (escape checks below).</td></tr>
+      <tr><td>Subdue, Tie up, Throw, Drag</td><td>1 action</td><td>See <i>Stealth</i>.</td></tr>
+      <tr><td>Search, Extract, Open</td><td>1 action (2 in the dark)</td><td>Raid mode only.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Hitting, cover and crits</h3>
+  <ul>
+    <li>Chance = aim + weapon aim − distance falloff beyond its best range − cover (half 20, full 40) − hunker 20, clamped 5–95%. Shotguns and pipe shotguns +10 / +8 within 2.5 tiles; hunting rifle −10 and bows −5 close up.</li>
+    <li>+15 against a target that has not seen you; +15 for an ambush's opening volley; floodlit target +12 at night, +5 by day; a flare's light +10 at night; smoke −30; shooting down +5 a level (at most +10).</li>
+    <li>Crits ×1.5 damage: 40% against an exposed person, 15% against the dead, 5% against anyone in cover (+ Deadeye perk).</li>
+    <li>A flanked target (cover nearby but none facing the shooter) loses its cover.</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Weapon</th><th>Damage</th><th>Best range / falloff</th><th>Aim</th><th>Ammo a shot</th><th>Noise</th></tr></thead>
+    <tbody>
+      <tr><td>9mm pistol</td><td>16–24</td><td>6 / 4</td><td>0</td><td>1</td><td>2</td></tr>
+      <tr><td>Pump shotgun</td><td>24–36</td><td>4 / 7</td><td>+10 (+10 close)</td><td>1</td><td>3</td></tr>
+      <tr><td>Hunting rifle</td><td>24–34</td><td>12 / 2</td><td>+5 (−10 close)</td><td>1</td><td>3</td></tr>
+      <tr><td>Assault rifle</td><td>22–32</td><td>9 / 3</td><td>+8</td><td>2</td><td>3</td></tr>
+      <tr><td>.357 revolver</td><td>20–30</td><td>5 / 5</td><td>−2</td><td>1</td><td>3</td></tr>
+      <tr><td>Lever-action rifle</td><td>20–30</td><td>10 / 2.5</td><td>+4</td><td>1</td><td>3</td></tr>
+      <tr><td>Police carbine</td><td>20–29</td><td>9 / 3</td><td>+7</td><td>1</td><td>3</td></tr>
+      <tr><td>Scrap crossbow</td><td>18–26</td><td>7 / 4</td><td>−4</td><td>0</td><td>0</td></tr>
+      <tr><td>Pipe shotgun</td><td>20–32</td><td>3 / 8</td><td>−6 (+8 close)</td><td>1</td><td>3</td></tr>
+      <tr><td>Compound bow</td><td>17–26</td><td>7 / 5</td><td>−2</td><td>0</td><td>0</td></tr>
+      <tr><td>Hunting crossbow</td><td>20–29</td><td>6 / 5</td><td>0</td><td>0</td><td>0</td></tr>
+      <tr><td>Melee: fists 6–10, knife 14–22, baton 12–19, pipe spear 15–23, bat 15–24, crowbar 16–25, spiked bat 16–25, saw-blade machete 17–27, machete 20–30, nail bat 20–31, fire axe 21–32, sledgehammer 25–38 (−10 to hit)</td><td colspan="5">Melee chance = melee aim (10–95%), crit 10%. A gun used in melee bashes for 8–12.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Ambush and the turn <span class="status built">Built</span></h3>
+  <p>If you have the drop on them, enemies start unaware in 1–3 clusters; gunfire wakes them (they cannot react that turn), melee is silent, and an unaware enemy notices a mover within its detection range. If they ambush you, each of their shooters fires an opening volley (+15) and your people start with 1 action. Enemy order: people first, then the dead.</p>
+
+  <h3>Downed, bleeding and what happens after <span class="status built">Built</span></h3>
+  <ul>
+    <li>A survivor at 0 health is down and bleeds out in 3 turns unless someone uses meds to stabilize them.</li>
+    <li>After a win the downed live if stabilized, else 50% + 2% per point of the best standing medic's Medicine. After a loss: 35% against people, 10% against the dead, 40% at your own base (+30% if stabilized). A Miracle Worker's patient always lives. Survivors come back with their battle health.</li>
+    <li>After a retreat the downed carried out (or lying on the strip) live if stabilized, else 50% + 2% per Medicine point of the medic who got out; the rest are left behind and lost (or taken prisoner by people: 50% in a break-off by the numbers).</li>
+  </ul>
+
+  <h3>Morale in battle <span class="status built">Built</span></h3>
+  <ul>
+    <li>Friends alongside: +3 aim each (at most +6); rivals −2 each (at most −4); revenge on the group that killed a friend: +5. By the numbers: ±3% odds per friend or rival pair (−6% to +9%).</li>
+    <li>Brave +5 aim and melee aim, Coward −5.</li>
+    <li>Enemy people break and run when reduced to a third and outnumbered 2 to 1 (zealots never).</li>
+    <li>The player side's AI (auto turns, headless) sounds the retreat by style: Cautious below a strength ratio of 0.45 or with a third down and losing, Balanced 0.3 / half down, Aggressive 0.18 / two thirds down. Defending a base, every style holds on like Aggressive.</li>
+  </ul>
+  <p><span class="status planned">Planned</span>: panic, suppression and morale breaks for your own people are not built.</p>
+
+  <h3>Retreat and break-off <span class="status built">Built</span></h3>
+  <p><b>Sounding the retreat</b> gives every standing unit an escape check: 100 − 3 a tile to the strip (4.5 carrying) − 25 per enemy next to them − (6 a shooter in sight + 4 a chaser within two moves, at most 35) − up to 30 for wounds − 2 per armor point + 1 per Scouting point + 10 at night + 20 in or near smoke − 10 carrying; 5–95%, or certain when nobody threatens them. Each downed teammate next to someone is carried by the one with the best odds. Caught: one blow of 18–32 per enemy next to them (at least one); at 0 they are down and left, otherwise they tear free. The battle ends as a retreat (a defeat if nobody got out).</p>
+  <p><b>Breaking off by the numbers</b> (Auto-resolve, autopilot, crews): a fight is rolled once, then plays out in 3 rounds; after rounds 1 and 2 the team's <b>retreat policy</b> (set on the card) may pull it out:</p>
+  <table class="data">
+    <thead><tr><th>Policy</th><th>Pulls out when</th></tr></thead>
+    <tbody>
+      <tr><td>Never</td><td>never: fight to the end</td></tr>
+      <tr><td>When most are down</td><td>more than half the team is down or under 50 health</td></tr>
+      <tr><td>If losing</td><td>the fight turns against them (seen after round 1 in about half of lost fights, almost always by round 2; sometimes a false alarm), or anyone is down</td></tr>
+      <tr><td>At first blood</td><td>anyone is hurt</td></tr>
+    </tbody>
+  </table>
+  <p>The same escape check is used, with a car near the fight +10 (bikes +5) and a stealthy stance +10. The enemy loses 35–75% of its people per round fought if the fight would have been won; there is no loot. The autopilot uses "If losing" (Aggressive: "When most are down"). Base defences have no break-off: falling back is the tiers themselves.</p>
+
+  <h3>Throwables <span class="status built">Built</span></h3>
+  <p>Any unit can throw one (1 action) from its own pockets and pack or the team's cargo (at a base, its armory).</p>
+  <div class="cards">
+    <article class="card" data-sprite="item/molotov"><h4>Molotov cocktail</h4><p>Range 6. 12–18 to everyone within a tile; the ground burns 3 rounds: 8–14 to anyone who walks in or ends a round there. Raid Heat +4. Three of them firebomb a hive, two a growth.</p></article>
+    <article class="card" data-sprite="item/pipebomb"><h4>Pipe bomb</h4><p>Range 6. 22–34 to everyone within 1.5 tiles, either side. Wakes everything within 14 tiles and counts as gunfire noise (4). Raid Heat +10.</p></article>
+    <article class="card" data-sprite="item/smokegren"><h4>Smoke grenade</h4><p>Range 7. A cloud 2 tiles around for 3 rounds: shots into or out of it −30; anyone in it or within 2 tiles +20 to escape when the retreat is sounded.</p></article>
+    <article class="card" data-sprite="item/flare"><h4>Road flare</h4><p>Range 8. Burns 4 rounds: lures unaware dead and guards within 10 tiles; at night your people see anything within 5 tiles of it and aim +10 at it. Raid Heat +2.</p></article>
+    <article class="card" data-sprite="item/bottle"><h4>Empty bottle</h4><p>Range 7. Lures unaware guards and dead within 6 tiles to look for a turn.</p></article>
+    <article class="card" data-sprite="item/noisemaker"><h4>Noise maker</h4><p>Range 7. Rings 3 turns, lures everything unaware within 8 tiles.</p></article>
+    <article class="card" data-sprite="item/firecracker"><h4>String of firecrackers</h4><p>Range 8. Lures everything unaware within 13 tiles; raid Heat +6.</p></article>
+    <article class="card" data-sprite="item/gamecall"><h4>Deer call</h4><p>Blown where the unit stands, not used up: lures unaware guards and dead within 7 tiles to you (set up a takedown).</p></article>
+  </div>
+  <p>The player-side AI throws a pipe bomb or Molotov at 3+ bunched enemies with none of yours within the blast + 1, and smoke over the team before it sounds the retreat.</p>
+
+  <h3>Noise <span class="status built">Built</span></h3>
+  <p>Every shot adds its weapon's noise (a suppressor halves it). In an ordinary battle a loud shot wakes everyone; a muffled one only those within (9 + 2 × noise) × the muffled share. On infected ground (10%+), each enemy turn noise may draw more of the dead from the north, south or east edge: chance min(50%, infection × noise / 18), 1 + 0–round(infection) at a time, power 2 + 3 × infection, at most round(5 × infection) a battle. These reinforcements do not count toward "enemies killed" and attack anyone, raiders included.</p>
+
+  <h3>Field Heat (on the map) <span class="status built">Built</span></h3>
+  <p>A team that stays on one tile builds Heat (0–100) from noise, smoke and smell; Heat falls 8 an hour on the move and is 0 at your bases. Each hour on the spot there is a chance of trouble (a road conflict card: the dead, a horde, scavengers or raiders).</p>
+  <ul>
+    <li>Gain an hour = activity (survey 0.5, fishing 0.7, snares 0.8, waiting / holding / looking around / treating 1, hunting 1.2, gathering / crafting / repairs 1.5, building a boat 1.8, camp 2) × place (city 1.8, suburbs 1.4, × 1 + 0.6 × infection) × hive land 1.4 / ring 2 × team size (0.7 + 0.1 a person) × night (camp fire 1.3, else 0.8) × stealthy stance 0.8 × camp kit (camo netting 0.75, ghillie 0.85, rag boots 0.95, smokeless stove 0.6 camping, scent mask 0.6; together at least 0.35) × the Ranger perk.</li>
+    <li>Trouble an hour = 12% × (Heat / 100)<sup>1.5</sup> × danger, danger = 0.15 + 3 × the road's conflict chance + 0.3 city / 0.15 suburbs + 0.3 hive land / 0.8 hive ring + 0.2 a horde within 3 tiles (at most 2), × 0.8 with a tripwire alarm. After trouble the Heat halves and nothing more comes for 6 hours (20 after a conflict card).</li>
+    <li>A quiet countryside camp for a night (10 hours) reaches Heat ~25, about a 1–2% chance of trouble.</li>
+  </ul>
+
+  <h3>Results, loot and death sites <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Outcome:</b> victory, defeat or retreat; kills, hurt and dead, ammo and meds used, turns. Base battles also report the tier where it was decided (wall, yard, buildings) or "overrun" / "abandoned".</li>
+    <li><b>Bodies (after a win):</b> each dead person carries 3–10 ammo, 25% 1–3 food, 15% a med, 30% 1–2 scrap, their weapon and armor (worn, 40–85% quality), their kit's backpack chance, 12% a loot item and 20% a pocket find. The dead: 12% 2–6 ammo, 5% a med, 6% a find, 8% a sling bag or backpack with 1–3 small things. You pick through them on the loot screen or "Take all" (headless: automatic). Prisoners' gear is a body too.</li>
+    <li><b>What is left</b> stays where they fell as a <b>death site</b> on that tile. Your fallen's own things are at their death site already. Each day scavengers may take the most valuable thing: chance min(90%, traffic × (1 + age / 8) + 2%), traffic higher on roads, a group's land and towns. Gear taken goes to the nearest group. A Recover bodies mission fetches what is left.</li>
+    <li><b>Wear and XP:</b> makeshift gear loses durability per fight; bandage kits per use. Shooting, Medicine, Stealth and Scavenging XP are paid out at the end.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> the battle rules match Draft 1's plan (18 × 13 grid, 2 actions, overwatch, hunker, 3-turn bleed-out, ambush rules, noise reinforcements, death sites). Added since: verticality (walkways, towers, roofs, upper floors), fog-of-war ghosts, special dead and bosses, throwables, sounding the retreat with escape checks, break-off by the numbers with retreat policies, body looting, base battles on two maps, prisoners. <span class="status planned">Planned</span>: Draft 1's reanimating survivor bodies and named gear turning up on enemies.</aside>
+</section>
+
+<section id="stealth">
+  <h2>Stealth</h2>
+  <p class="lede">Stealth lets a team pick its fights: slip past guards, take them down silently, lure them with noise, and leave with prisoners and loot before the alarm goes up. It matters most in raids (searching a site on the battle map) and against unaware enemies in any battle.</p>
+
+  <h3>Detection <span class="status built">Built</span></h3>
+  <ul>
+    <li>An unaware enemy notices one of your people within max(3, 8 − Stealth / 4) tiles with line of sight (the dead: at most 5). Light Step and Ghost perks shrink it (Ghost: at most 2).</li>
+    <li>People look the way they face: from behind they only hear you, at half the range. The dead have no front.</li>
+    <li>Night (raids and base battles): enemy sight 7, the dead 5; detection range ×0.6 (at least 2), +3 if you carry a flashlight. Your people see 7, 9 with a flashlight in the off hand, normally with night vision goggles or a thermal monocular; binoculars and scopes add range.</li>
+    <li>A guard that sees a body or a tied-up comrade within 5 tiles (3 at night) raises the alarm for its group (raid Heat +6).</li>
+    <li>Any hit that leaves a sleeper alive wakes its group, however quiet the weapon.</li>
+  </ul>
+
+  <h3>Takedowns and silent kills <span class="status built">Built</span></h3>
+  <p><b>Subdue</b> on an adjacent person who is unaware (or staggering, at 30% health or less) is a takedown that knocks them out:</p>
+  <table class="data">
+    <thead><tr><th>Factor</th><th>Odds</th></tr></thead>
+    <tbody>
+      <tr><td>Base</td><td>30% + 2.5% per Stealth point</td></tr>
+      <tr><td>Weapon</td><td>bat, baton, spiked bat +20; nail bat, crowbar +15; knife, machete, saw-blade machete, fire axe, sledgehammer +10; fists, pipe spear, a gun butt +5</td></tr>
+      <tr><td>Position</td><td>from behind +15, from cover +10</td></tr>
+      <tr><td>Traits and perks</td><td>Brave +5, Tough +5, Coward −5, Assassin +20 (and a sure critical hit on the unaware)</td></tr>
+      <tr><td>Target</td><td>soldiers −15, zealots −5, an aware but staggering target −15</td></tr>
+    </tbody>
+  </table>
+  <p>Odds are 5–95%. A failed takedown is a blunt blow (60% damage, never lethal) and the target cries out. Against an aware, healthy enemy, Subdue is a non-lethal blow at melee odds −10: a blow that would kill knocks out instead. The knocked out wake after 4–6 turns unless tied up (Tie up: 1 action, free with handcuffs). <b>Drag</b> (1 action) moves a body, a knocked-out enemy or a downed teammate up to 3 tiles. Melee is always silent; the crossbows and bows make no noise.</p>
+  <p><b>Suppressor</b> (oil-filter, carried anywhere on the shooter): fits a pistol, hunting rifle, lever-action rifle, police carbine or assault rifle; shots make half the noise; it is shot out after 12 shots.</p>
+
+  <h3>Lures <span class="status built">Built</span></h3>
+  <p>A bottle, noise maker, firecrackers, road flare or deer call pulls every unaware guard and dead within its radius to the spot: they walk over and look around for 3 turns, then go back to their beat (see the throwables table under <i>Tactical battles</i>).</p>
+
+  <h3>Extraction raids (searching a site) <span class="status built">Built</span></h3>
+  <p>In the browser, sending a team to search a site opens a <b>raid</b>: a 28 × 18 map with 3–5 areas drawn from the site (a hospital has clinics, a pharmacy and offices; a military base an armory, barracks and a motor pool; the wilds cabins and campsites), containers to search, enemies that have not seen you yet, and three 3 × 3 extraction zones at the edges.</p>
+  <ul>
+    <li><b>Enemies:</b> the dead (1 + 5 × infection, +1 in a city, + the site's danger, +2 on hive land, ±1; at most 14) and, by who holds the land, a group's guards, a patrol or rival scavengers.</li>
+    <li><b>Heat</b> rises 1.2 a turn + 1 per noise point + 0.6 × infection. Every 25 is a stage (Quiet, Stirring, Swarming, Overrun) that brings a wave of stage + 2 × infection dead from the edges; from Swarming more trickle in (20–30% a turn); at most 12 arrive. A car alarm (15% when searching wrecked cars) adds 12 Heat.</li>
+    <li><b>Searching:</b> next to a container, 1 action (both in the dark without a light). Loot comes from the area's table, scaled by the site's richness and Scavenging; what does not fit stays inside. Some containers and rooms are locked (keys, lockpicks or force).</li>
+    <li><b>Extraction:</b> step into a zone and Extract. A vehicle waits in the entry zone: leave from there to keep it. Downed teammates are carried out if someone extracts (certain if stabilized, else 35% against people, 10% against the dead). Anyone left on the map is lost. Tied prisoners dragged into a zone leave with whoever extracts there. About 6 turns pass an hour on the map clock.</li>
+    <li><b>By the numbers</b> (headless, autopilot, crews): searched hour by hour with an approach: Sneak (loot ×0.7, Heat +7 an hour), Normal (×1.0, +13), Loud (×1.4, +22); the chance of a fight per stage is 5%, 15%, 35%, 60%.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> raids match Draft 1 (bigger map, areas, Heat stages, three extraction zones, the vehicle zone). Added since: takedowns, knock-outs and tying up, dragging, lures, suppressors, night vision and flashlights, body discovery, locks and keys.</aside>
+</section>
+
+<section id="base-defence">
+  <h2>Base defence</h2>
+  <p class="lede">Your bases are defended in three tiers: the <b>wall</b>, the <b>yard</b> and the <b>buildings</b>. Against a horde, the walls and defences first set a <b>hold limit</b>; a horde above it breaks in and is fought on the base's own battle map, built from what you have actually built. Raids by people use the same three tiers, by the numbers or in a battle you play.</p>
+
+  <h3>Defensive structures <span class="status built">Built</span></h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/walls">
+      <h4>Walls</h4>
+      <p>+3 wall strength a section (hub base 3, outpost 1; a damaged section +2, a broken one 0). Each point: +2 raid defence and 18 more of a horde held. In battle: the wall map's wall line, a walkway to shoot down from, each section 40 + 12 × wall strength hit points.</p>
+      <dl><dt>Cost</dt><dd>25 scrap, 36 hours</dd><dt>Max</dt><dd>3</dd><dt>Tier mult</dt><dd>+5% a section (wall tier)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/barricades">
+      <h4>Barricades</h4>
+      <p>Cars, timber and sandbags behind the walls: +12% hold each; full cover on the battle maps (3 cells each behind the wall and across the yard). One is wrecked in every break-in fight; a Wallbreaker smashes one per attack.</p>
+      <dl><dt>Cost</dt><dd>8 scrap, 10 hours</dd><dt>Max</dt><dd>3</dd><dt>Tier mult</dt><dd>+3% each (yard)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/spike_pits">
+      <h4>Spike pits</h4>
+      <p>One use: the next horde loses 7% + 4 of the dead per pit before the walls; on the battle map 5 spike cells per pit (each of the dead stepping in takes 18–28).</p>
+      <dl><dt>Cost</dt><dd>6 scrap, 8 hours</dd><dt>Max</dt><dd>2</dd><dt>Tier mult</dt><dd>+2% each (yard)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/trench">
+      <h4>Trench and stakes</h4>
+      <p>+25% hold; on the battle map the dead that reach the trench lose the rest of their turn.</p>
+      <dl><dt>Cost</dt><dd>12 scrap, 30 hours</dd><dt>Max</dt><dd>1</dd><dt>Tier mult</dt><dd>+3% (wall)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/gate">
+      <h4>Reinforced gate</h4>
+      <p>+20% hold; the gate has 180 hit points instead of 100 and 2 more barricade cells. Needs walls to matter; a Wallbreaker smashes it when no barricade is left.</p>
+      <dl><dt>Cost</dt><dd>14 scrap, 1 part, 20 hours</dd><dt>Max</dt><dd>1</dd><dt>Tier mult</dt><dd>+5% (wall)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/floodlights">
+      <h4>Floodlights</h4>
+      <p>Burn 2 fuel when a horde attacks (none on generator power): +10% hold; on the battle map they light a third of the approach (left, center or right): +12 aim at night, +5 by day, and at night your people see whatever stands in the light. Crawlers in light are revealed.</p>
+      <dl><dt>Cost</dt><dd>8 scrap, 2 parts, 12 hours</dd><dt>Max</dt><dd>1</dd><dt>Tier mult</dt><dd>+3% at night (wall)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/watchtower">
+      <h4>Watchtower</h4>
+      <p>+2 tiles of live vision and earlier warnings. On the battle maps two towers (height 2): full cover from anything not next to them, +10 aim at anything lower, +4 sight. Halves crawlers slipping past.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 18 hours</dd><dt>Max</dt><dd>1</dd><dt>Tier mult</dt><dd>+5% (wall)</dd></dl>
+    </article>
+  </div>
+  <h3>The armory's defence kit <span class="status built">Built</span></h3>
+  <div class="cards">
+    <article class="card" data-sprite="item/barbedwire"><h4>Roll of barbed wire</h4><p>+5% hold a roll (up to 3); 4 wire cells a roll on the battle map stop the dead for the turn. One roll is torn up per horde attack. Yard tier +1.5% a roll.</p></article>
+    <article class="card" data-sprite="item/sandbags"><h4>Sandbags</h4><p>+4% hold a bundle (up to 4); 3 half-cover cells a bundle on the battle map. Yard tier +1.5% a bundle.</p></article>
+    <article class="card" data-sprite="item/beartrap"><h4>Bear trap</h4><p>Each catches about 3 of the dead before the walls (up to 4 traps); on the map a trap does 14–22 and holds the first one in. A quarter break each attack.</p></article>
+    <article class="card" data-sprite="item/tripwire"><h4>Tripwire alarm</h4><p>One is enough: everyone at the base counts half their combat power on the walls even without a warning. Carried by a team, trouble while camped is a fifth less likely.</p></article>
+  </div>
+
+  <h3>Tier 1: the hold limit against hordes <span class="status built">Built</span></h3>
+  <p><b>Hold limit</b> = (15 + 18 × wall strength + 2 × guard power) × (1 + barricades 12% each + trench 25% + gate 20% + lit floodlights 10% + wire 5% a roll + sandbags 4% a bundle) × Wallbreakers (one 60%, two 35%).</p>
+  <ul>
+    <li>Wall strength: hub 3 + 3 a section (hold 69 / 123 / 177 / 231 for 0–3 sections); outpost 1 + 3 a section (33 / 87 / 141 / 195).</li>
+    <li>Guard power: the combat power of everyone on the <b>Guard</b> role (in bed: not counted); after "Man the defences" everyone else counts 0.8; with a tripwire alarm and no warning, 0.5.</li>
+    <li>Before the walls: spike pits (used up), then bear traps. Special dead press by their wall weight (the horde counts as size × the mix's weight). Brutes: every 12 smash a defence (at most 2, with the Wallbreakers).</li>
+    <li><b>Held</b> (horde at or under the limit): 8 + 0.8 × guard power + 12% of the horde are cut down; if it was over 70% of the limit, 40% that someone takes 10–30. The horde falls back. Crawlers may still slip in.</li>
+    <li><b>Break-in</b>: the walls still hold back half the limit; the rest (at least 30% of the horde) come inside. With nobody at an outpost it is wrecked (half the food, water and meds spoiled, buildings battered); with nobody at the hub it is overrun.</li>
+  </ul>
+
+  <h3>The break-in battle: wall map, then yard and buildings <span class="status built">Built</span></h3>
+  <p>The dead that broke in become 6–20 units (one per 7 inside), at power 1.5 + (inside) / (5 × units) + 0.5 × hive toughness (at most 6), with their special dead, their Wallbreakers and elite status. The map is turned so the attack comes from the side they came from on the State Map.</p>
+  <ul>
+    <li><b>Deploy step:</b> place your defenders by hand on the green cells (inside the walls, the walkway, the towers, the gate or a breach), aim the floodlights left, center or right, or take the default posts. Defaults: with 7+ defenders the toughest close fighter holds the gate (two with 9+), the best shots take the towers, the next best the walkway, close fighters wait ~3 tiles behind the openings, other shooters stand back ~8 tiles.</li>
+    <li><b>Tier 1, the wall map</b> (18 × 13, wall at column 12): wall sections with hit points (a hub with one section 112, three 184; an outpost with one 88), a 2-cell gate (100 / 180) barred until battered open, the walkway behind (height 1) up ladders, towers, barricades behind, spike pits and the trench in front, wire, traps and sandbags from the armory. Breaches already open: +1 at 120 inside, +1 at 250, +1 per Wallbreaker (at most 4); the wall is pre-battered by 0.2% per dead inside (up to 85%). Whoever stands in the gate or a breach holds it. The dead batter the weakest point (a wall section broken becomes a breach and the walkway behind it falls).</li>
+    <li><b>Tier 2, the yard</b> (26 × 16): when 3+ attackers (or a quarter of them) are inside the wall at the start of your turn, or any are and nobody holds the wall line, or you order "Fall back", the fight moves to the yard and buildings map. Everyone keeps health, ammo and roughly their position; a short <b>redeploy</b> follows (within 12 tiles of where they stood, at least 3 from an attacker). The attackers still outside come in at 3 + 2 per opening a turn. The yard has your real buildings, barricades, sandbags, wells, tanks and stacks as cover.</li>
+    <li><b>Tier 3, the buildings</b>: once attackers in the yard are 1.5× your people still outside the buildings (at least 3), the yard is lost: last stand indoors. Doors have 45 hit points (60 wide), windows 20; bigger buildings have an upper floor to shoot down from, flat roofs a ladder.</li>
+    <li><b>Way out:</b> on the wall map the back gate lets one person slip away; sounding the retreat there means falling back. On the yard map the evac strip abandons the base: against the dead your people hide outside while the dead tear through (half the food, water and meds spoiled, damage as a break-in) and come back after.</li>
+  </ul>
+  <p><b>Results:</b> held, the horde loses the dead that broke in, its Wallbreakers die, it falls back and one barricade is wrecked. Lost: <b>overrun</b>: each person at the base has a 40% chance of 20–60 damage, a third of the food, water and meds spoiled, an outpost lost; a hub with nobody left alive ends the game.</p>
+  <div class="gallery" data-sprites="shot/1-wall-map-towers-fog-night shot/2-gate-battered-open shot/3-yard-map-redeploy shot/4-yard-map-units-in-buildings"></div>
+
+  <h3>By the numbers: tier multipliers <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Tier</th><th>Multiplier on the defenders' strength</th></tr></thead>
+    <tbody>
+      <tr><td>Wall</td><td>1 + 5% a wall section (up to 3) + watchtower 5% + gate 5% + trench 3% + lit floodlights at night 3% (1 without walls)</td></tr>
+      <tr><td>Yard</td><td>1 + 3% a barricade + 1.5% a sandbag bundle + 1.5% a wire roll + 2% a spike pit</td></tr>
+      <tr><td>Buildings</td><td>1 + 2% a building that can be held (up to 5)</td></tr>
+    </tbody>
+  </table>
+  <p>Raids: held at the wall at 1.2× their strength or better with the wall tier, a break-in pushed back at 0.8× with the yard (or buildings) counted, else overrun. A horde break-in fought by the numbers is held at the wall at 1.15×. The defenders' strength is the best 8 at the base (60% with under 3 ammo each); a Wallbreaker counts 12.</p>
+
+  <h3>Garrisons <span class="status built">Built</span></h3>
+  <p>Anyone on the <b>Guard</b> role counts fully on the walls against hordes (2 hold per combat power) and 1.5× against raids; they also keep prisoners from escaping. Everyone else counts only when the base is warned (0.8× against hordes when manned, 1.3× against raids when prepared). Bases you took from groups and left empty are land you hold: raiders loot them and the dead wreck them, but they stay yours.</p>
+
+  <h3>Repairs <span class="status built">Built</span></h3>
+  <p>A broken defence shows on the base's Repairs tab with a card: <b>Repair properly</b> (the best free mechanic, the hours × (1.2 − 3% per Mechanics point, at least 40%), wear back to 8), <b>Jury-rig</b> (a third of the hours, cheap, wear left at 65 and it wears 60% faster) or <b>Leave it</b>. Damaged defences (wear 60+) are patched automatically while 20+ scrap is kept back.</p>
+  <table class="data">
+    <thead><tr><th>Defence</th><th>When broken</th><th>Repair</th><th>Jury-rig</th></tr></thead>
+    <tbody>
+      <tr><td>Walls</td><td>−3 wall strength</td><td>12 h, 10 scrap</td><td>4 h, 4 scrap</td></tr>
+      <tr><td>Reinforced gate</td><td>no horde bonus</td><td>8 h, 6 scrap + 1 part (Mechanics 1)</td><td>3 h, 3 scrap</td></tr>
+      <tr><td>Barricades</td><td>12% less held, no cover there</td><td>4 h, 4 scrap</td><td>2 h, 2 scrap</td></tr>
+      <tr><td>Floodlights</td><td>no floodlight bonus</td><td>5 h, 3 scrap + 1 part (Mechanics 1)</td><td>2 h, 2 scrap</td></tr>
+      <tr><td>Watchtower</td><td>2 tiles less vision, later warnings</td><td>6 h, 6 scrap</td><td>2 h, 3 scrap</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had walls and "containment" as general ideas and a Hub Heat that draws hordes. The build has the hold limit, the defence buildings and armory kit, the three tiers on two battle maps, horde warnings and base heat (people, stations, radio, generator, gunshots) pulling wandering hordes. <span class="status planned">Planned</span>: Draft 1's mufflers, sound walls, underground rooms and blackout curtains to lower Hub Heat.</aside>
+</section>
+
+<section id="prisoners">
+  <h2>Captives &amp; prisoners</h2>
+  <p class="lede">People knocked out in a won fight become prisoners: a source of intel, ransom, recruits, or trouble. Your own people can be taken by other groups too, and getting them back is its own mission.</p>
+
+  <h3>Taking prisoners <span class="status built">Built</span></h3>
+  <ul>
+    <li>Anyone knocked out (takedowns, Subdue, a non-lethal blow) is a prisoner after a won fight (in a raid: tied up and dragged into the zone you leave from). You can choose to leave them tied up behind (+2 goodwill with their group).</li>
+    <li>Fights by the numbers take none, except the Aggressive autopilot wanting intel. Defenders who surrender when you take a group's base become prisoners there (a fifth of those who give up, at most 3).</li>
+    <li>On the road they walk with the team: each slows a team on foot 10% (at least 60% of its pace; in a vehicle they ride), eats 1 food and 1 water a day, and slips away 5% a day (2% in a vehicle).</li>
+    <li>At a base they go to the <b>Holding cells</b> (3 per cell building, up to 2 buildings: 16 scrap, 1 part, 20 hours); the rest sit in a shed. A day costs 1 food and 1 water each (water × the day's thirst). Escapes a day: in a cell with someone on Guard 0.4%, unguarded 3%, in the shed 8%, +4% unfed; six unfed days in a row and they die.</li>
+  </ul>
+
+  <h3>What to do with them <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Action</th><th>Rules</th></tr></thead>
+    <tbody>
+      <tr><td>Question (every 3 days)</td><td>45% + 3% per Speech point of the best talker, zealots −25%, soldiers −15%, hungry +10%, one who likes you +15% (10–95%). First answer: their group's bases (the group goes on your map), its people and stock, its parties out and hives near it; later answers update parties and hives. Each questioning sours them (−6).</td></tr>
+      <tr><td>Hold for ransom</td><td>Their group is asked for goods worth 15 + 4 × their power. Answer in 2–4 days: pays 40% + goodwill / 200 (−15% aggressive, 10–90%; only what it can spare), goodwill −4, prisoner walks home; or refuses: goodwill −3 and a rescue raid twice as likely for 10 days.</td></tr>
+      <tr><td>Trade back</td><td>Free; goodwill +10 with their group.</td></tr>
+      <tr><td>Release</td><td>Goodwill +4; they go home.</td></tr>
+      <tr><td>Recruit (slow)</td><td>Opinion +1 a day × (1 + 4% per Speech point + 3% per leader's Leadership point) × mood (base average / 55, 0.6–1.3) × their kind (zealots 0.35, soldiers 0.6, a loner 1.2); hungry −2 a day. At 100 they ask to join: 2–4 months. Held otherwise, opinion drifts up 0.2 a day (to 25).</td></tr>
+      <tr><td>Execute</td><td>Everyone at the base −6 mood (Brave or Tough −2); goodwill −20 with their group and −4 with every other group you know.</td></tr>
+    </tbody>
+  </table>
+  <h3>Rescue raids on your base <span class="status built">Built</span></h3>
+  <p>A group may come for its people: 1.2% a day per prisoner it has in a base (×1.5 aggressive, ×2 after a refused ransom, ×0.3 friendly; it needs 6+ people and a base within 25 tiles). It arrives 10 hours after the warning: defend in person (the deploy battle), man the walls (by the numbers, your defence ×1.3), or hand them over (goodwill +3). Lost: every prisoner of theirs there is freed and they carry off a tenth of the stores.</p>
+
+  <h3>Your own people as captives <span class="status built">Built</span></h3>
+  <p>Your survivors can be taken by: surrendering on the road (raiders and expansionists keep one 15%, or 35% when goodwill is below −50; military and fortresses detain one 5%, 25% if hostile; zealots drag each of you off at 30%, 50% if hostile), losing a fight to people (35% one is taken), a failed rescue (30%), or being left downed in a break-off by the numbers against people (50%). They are stripped of everything they carry, and a team taken whole loses its vehicle.</p>
+  <ul>
+    <li>Each day a captive loses 2 mood. A friendly or allied captor releases them (35% a day); zealots may kill them after 2 days (5% a day); after 10 days they may join their captors (1.5% a day, zealots 1%; never the leader); they may escape (0.5% + 0.1% per Stealth point a day, home hurt 5–25). If the captor collapses: home 75%, otherwise lost.</li>
+    <li><b>Rescue mission</b> at the holders' base: sneak in (Stealth, DC 11 + guards / 3, −2 at night; goodwill −5), storm the base (3–12 guards at 2.6 + 1.6 × arms; goodwill −30, −20 if a sneak was spotted), negotiate (Speech, DC 16 / 11 / 7 / 4 by attitude, +3 for zealots; one try), or pay a ransom of n × 40 (+30 for zealots) × 1.5 hostile / 1 neutral / 0.7 friendly / 0.5 allied.</li>
+    <li>A trade visit to the holders offers the ransom at 90%, or asking them to let your people go (Speech).</li>
+    <li>"Prisoners on the move" road cards can show your people in a column: ambush it or buy them.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> captives of yours work as Draft 1 planned (rescue, ransom, goodwill release; escape, recruitment by captors, zealot killings). Prisoners you take (questioning, ransom, recruitment, execution, rescue raids) are new.</aside>
+</section>
+
+<section id="conflicts">
+  <h2>Conflicts on the road</h2>
+  <p class="lede">A team travelling the State Map can run into people or a surge of the dead. A perception roll decides who sees whom first: <b>forced</b> encounters (they found you) give limited, tense options; <b>observed</b> ones (you saw them first) let you watch, slip away, steal, ambush or take a side. Every option shows its odds on the card.</p>
+
+  <h3>When a conflict happens <span class="status built">Built</span></h3>
+  <ul>
+    <li>Rolled for each tile a team enters (never within 1 tile of your base; at most one per team every 20 hours). Chance = 0.1 × people nearby + 0.06 × the dead + 0.08 × traffic, ×1.25 at night, ×0.75 stealthy / ×1.2 rushed, at most 35%.</li>
+    <li>People nearby: each group with a base within 5 tiles (hostile 1, aggressive 0.5, military or fortress 0.3, others 0.12; ×0.5 with a pact; less with distance; ×1.4 on its land), +0.6 per AI party within a tile. The dead: 2 × (infection − 0.25) + 0.4 with a horde within 2 tiles.</li>
+    <li><b>Spotting first:</b> the team's perception + 10%, +25% stealthy, −10% rushed, −10% in a vehicle, − fog, +15% at night with a Night Owl or night vision, + optics; 5–90%.</li>
+    <li>Teams that stay put trigger the same cards through Field Heat.</li>
+  </ul>
+  <p>Skill checks use (best skill + 10 − DC + 1) / 10, clamped 5–95%: a skill of 5 against DC 10 is 60%.</p>
+
+  <h3>Forced encounters (they found you) <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Type</th><th>Who</th><th>Run DC</th></tr></thead>
+    <tbody>
+      <tr><td>Ambush</td><td>hostile raiders or expansionists (half the time off-road), any other hostile group</td><td>12</td></tr>
+      <tr><td>Roadblock</td><td>raiders or expansionists (not hostile, or hostile on a road)</td><td>9</td></tr>
+      <tr><td>Zealot patrol</td><td>zealots</td><td>11</td></tr>
+      <tr><td>Checkpoint</td><td>military or fortress (not allied)</td><td>11</td></tr>
+      <tr><td>Challenged</td><td>a neutral group</td><td>9</td></tr>
+      <tr><td>A contested site</td><td>their scavengers at the site you came to search</td><td>9</td></tr>
+      <tr><td>The dead surge</td><td>the dead (5 + 14 × infection, +3 at night, ×0.8–1.25, at least 4; power 1 + hive toughness)</td><td>10</td></tr>
+    </tbody>
+  </table>
+  <table class="data">
+    <thead><tr><th>Option</th><th>How it works</th></tr></thead>
+    <tbody>
+      <tr><td>Pay the toll / Offer supplies / Grease some palms</td><td>Goods worth (15 + 6 × their count) × 1.5 for zealots (× 1.5 after a failed talk; Negotiator perk ×0.75). They take it and let you pass: zealots 55%, raiders and expansionists 85%, others 95%; otherwise they take it and attack anyway. +2 goodwill.</td></tr>
+      <tr><td>Run for it / Floor it and run</td><td>Stealth vs the run DC, +3 in a vehicle (+4 on a road; uses 2 fuel), +1 at night, −1 with 4+ people. Failure: 40% someone hurt 10–35, 30% you drop 45% of the cargo, else they cut you off and fight with the drop on you.</td></tr>
+      <tr><td>Hide and let them pass (surge only)</td><td>4 hours; Stealth vs DC 9 + 4 × infection. Failure: a fight with no setup.</td></tr>
+      <tr><td>Talk them down / Talk your way through</td><td>Speech (or Leadership − 2; Peacemaker's full Leadership; Smooth Talker +2; Silver Tongue +15%) vs DC 14 hostile / 10 neutral / 7 friendly / 4 allied, +2 zealots, +1 ambush. Success: pass, +3 goodwill (+6 Charming); traders, military, fortresses and communes mark their bases on your map. Failure: −3 goodwill (none with Peacemaker) and an angrier card with a higher price (Diplomat: one more try).</td></tr>
+      <tr><td>Invoke your pact</td><td>97% (zealots 80%) they honour it; failure −5 goodwill.</td></tr>
+      <tr><td>Surrender / Submit to inspection</td><td>Zealots take 70% of what you carry and all spare gear and may take each of you; raiders and expansionists take half and all gear, may keep one; military and fortresses take a third and spare gear, may detain one; traders and communes take a fifth as a toll and leave gear alone.</td></tr>
+      <tr><td>Fight back / Open fire</td><td>A battle (fight back: they have the drop on you). Goodwill −2 after an ambush or surge, −10 otherwise. The card shows the odds and lets you set the team's retreat policy.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Observed encounters (you saw them first) <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Type</th><th>Scene</th><th>Extra options</th></tr></thead>
+    <tbody>
+      <tr><td>Camp by the road</td><td>a group cooking and cleaning rifles</td><td>Steal from their supplies (Stealth DC 12, +2 at night: 15–40 ammo and 4–10 food; caught: −8 goodwill and a fight on their terms), Ambush the camp, Approach openly</td></tr>
+      <tr><td>A robbery</td><td>an aggressive group stripping a trader wagon or travellers</td><td>Ambush the robbers (victims saved: +15 goodwill with their group and 2–4 meds, or strangers who may join; the haul: 6–14 food, 4–10 scrap), Join in and take a share (+6 goodwill with the robbers, 4–10 food, 3–8 scrap, team mood −6, the victims' group −15 half the time)</td></tr>
+      <tr><td>A firefight</td><td>two groups trading shots</td><td>Help either side: hit the other from the flank (60% of their people), +15 goodwill with the side you help (and a gift of 40 ammo or 4 meds), −15 with the other</td></tr>
+      <tr><td>Survivors in trouble</td><td>the dead clawing at a barricaded house</td><td>Draw the dead off (2 fuel, Stealth DC 10 +2; or 10 ammo): the survivors escape (+10 goodwill with their group, or one may join); Help them (fight 70% of the dead from behind: +12 goodwill, or the survivors join)</td></tr>
+      <tr><td>Prisoners on the move</td><td>a column marching prisoners, maybe yours</td><td>Ambush the column and free them (your people rejoin, strangers ask to join), Approach and buy them</td></tr>
+    </tbody>
+  </table>
+  <p>Every observed card also offers <b>Watch them / Follow them</b> (2 hours: exact numbers, who they are, their base on your map, who they hold; noticed at 18% − 1.2% per Scouting point, 4–20%), <b>Slip away unseen</b> (Stealth vs DC 8 + count / 3, +1 for a camp, +1 at night; failure turns it into a forced card) and, for a group that is not hostile, <b>Approach openly and talk</b> (+3 goodwill, their bases on your map; a hostile group turns it into a roadblock or challenge). Ambushes cost 20 goodwill with the group hit.</p>
+
+  <h3>After the fight <span class="status built">Built</span></h3>
+  <ul>
+    <li>Victory: the rewards above; against a camp, ambush, roadblock, checkpoint, patrol, challenge or contested site, what was on the bodies (by the numbers: 15–45 ammo, 2–8 food, 30% a pistol, shotgun, hunting rifle or vest). A broken AI war party or scavenger band scatters. The group loses people (60% of those killed).</li>
+    <li>Retreat: 25% of the cargo dropped.</li>
+    <li>Defeat against people: they take 40% of what you carry and gear, and 35% that one of the team is dragged off.</li>
+    <li>Then: continue the trip (or carry on with the camp or work), return home, or stop and wait for orders.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> built as Draft 1 described (forced and observed types, the approach panel with odds, surrender by group type). Added since: contested sites with AI scavengers, the team's retreat policy on the card, encounters while camped (Field Heat), Diplomat / Peacemaker / Silver Tongue / Negotiator perks.</aside>
+</section>

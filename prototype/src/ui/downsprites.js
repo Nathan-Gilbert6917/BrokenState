@@ -3,7 +3,8 @@
 // look as its standing sprite (the same seed's colours, clothes, hair and kit), so the body is the one that fell:
 //   - the dead (paintDownedZombie): sprawled on their back in a pool of blood: a walker in torn clothes, a runner
 //     still mid-stride, a bloated one burst open, a brute's slab of a body; the hive's spitter (its acid sac burst,
-//     an acid puddle), screamer (mouth still wide, arms flung over its head), crawler (no legs, arms reaching on);
+//     an acid puddle), screamer (mouth still wide, arms flung over its head), crawler (no legs, arms reaching on),
+//     shepherd (its shroud spread out, the bone crook beside it);
 //     the dead soldier (camo, plate carrier, helmet) and riot cop (black shell, visored helmet); the Wallbreaker (its
 //     concrete slab beside it) and the Broodmother (a collapsed mound, her egg sacs burst, the crown of bone).
 //   - people (paintDownedSurvivor, paintDownedEnemy: anyone drawn by sprites.js paintSurvivor or paintEnemyHuman,
@@ -311,6 +312,11 @@ export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched =
     layBody(p, { pose: "dead", skin: "#a7a69b", top: "#3d3d42", pants: "#3d3d42", build: "slim", eye: "#e2412f", mouth: "scream", arms: "up", pool: POOL, searched });
   } else if (kind === "crawler") {
     layBody(p, { pose: "dead", skin: "#9fb0b5", top: "#55603f", pants: "#55603f", build: "average", eye, mouth: "open", legs: "none", arms: "forward", pool: POOL, searched });
+  } else if (kind === "shepherd") {
+    // The Shepherd: its shroud spread out, the hood fallen back, the bone crook beside it.
+    const SHROUD = "#5d5a66";
+    layBody(p, { pose: "dead", skin: "#b9b4c8", top: SHROUD, robe: true, pants: SHROUD, build: "robe", eye: look.eyes === "dead" ? null : "#9a94ff", mouth: "open", gear: { kind: "hood", col: shade(SHROUD, -0.15) }, pool: POOL, searched });
+    p.rect(3, 12, 22, 12, BONE); p.rect(22, 10, 22, 12, BONE); p.set(21, 10, BONE); // the crook
   } else if (kind === "soldier") {
     const z = armoredLookOf("soldier", seed, look);
     const r2 = new Rng(seed * 31 + 3);

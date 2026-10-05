@@ -42,6 +42,32 @@ export function packTripKit(state, base, crew, mission) {
   return out;
 }
 
+// Siege kit for an Assault (parties.js launchExpedition; siege.js uses it on the battle map, conquest.js by the
+// numbers): from the base armory into the team's cargo, as much as the team can carry on top of what it packed
+// (load.js weighs it): the battering ram with 3+ people, a ladder per 3 people (at most 2), a grenade each (frag
+// grenades first, then pipe bombs; at most 4). room: kg the crew can still carry. Returns the names of what went.
+export const SIEGE_PACK = { RAM_CREW: 3, LADDER_PER: 3, LADDERS: 2, GRENADES: 4 };
+export function packSiegeKit(base, cargo, crew, room) {
+  if (!base || !base.armory || !cargo) return [];
+  const out = [];
+  const take = (key) => {
+    const i = base.armory.findIndex((it) => it && it.key === key);
+    if (i < 0) return false;
+    const w = GEAR[key].weight || 1;
+    if (w > room) return false;
+    room -= w;
+    const it = base.armory.splice(i, 1)[0];
+    cargo.gear.push(it);
+    out.push(it.name);
+    return true;
+  };
+  const n = crew.length;
+  if (n >= SIEGE_PACK.RAM_CREW && !cargo.gear.some((it) => it && it.key === "ram")) take("ram");
+  for (let i = cargo.gear.filter((it) => it && it.key === "ladder").length; i < Math.min(SIEGE_PACK.LADDERS, Math.floor(n / SIEGE_PACK.LADDER_PER)); i++) if (!take("ladder")) break;
+  for (let i = 0; i < Math.min(SIEGE_PACK.GRENADES, n); i++) if (!take("frag") && !take("pipebomb")) break;
+  return out;
+}
+
 function hasOn(s, key) {
   const g = s.gear || {};
   if (Object.values(g).some((it) => it && it.key === key)) return true;

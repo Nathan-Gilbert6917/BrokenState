@@ -25,9 +25,12 @@ import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
   CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
-  say, fx, moveAlong, alertPod, notice, distField, damage,
+  say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
-import { landEffect, blastSpot, BLAST, FIRE } from "./throwables.js";
+import { landEffect, blastSpot, throwBlind, throwLanding, BLAST, FRAG, FIRE } from "./throwables.js";
+import { sensesAny } from "./decoys.js";
+// Inside a building (buildingmaps.js): where a throw stops at a wall or a closed door, and how walls muffle a noise.
+import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps.js";
 import { battleOptic } from "./optics.js";
 
 export const STEALTH = {
@@ -40,16 +43,27 @@ const CLUB = { spikedbat: 20, pipespear: 5, knife: 10, machete: 10, sawmachete: 
 export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
+// sense: what the dead hear or feel of it (decoys.js: each kind of dead follows its own senses); decoy: it keeps
+// pulling the dead that sense it even after they have seen you (not only the unaware); people: the unaware guards
+// within radius go to look where it landed ("spot", the stealth lures) or where it was thrown from ("thrower": a
+// decoy does not fool people, it gives you away); none: people ignore it. scatter: + the chance it lands a tile off.
 export const THROWABLES = {
-  bottle:      { radius: 6,  turns: 1, heat: 0, range: 7, label: "a bottle" },
-  noisemaker:  { radius: 8,  turns: 3, heat: 0, range: 7, label: "a noise maker" },
-  firecracker: { radius: 13, turns: 1, heat: 6, range: 8, label: "a string of firecrackers" },
-  flare:       { radius: 10, turns: 4, heat: 2, range: 8, label: "a road flare", fx: "flare" },
-  pipebomb:    { radius: 0, turns: 0, heat: 10, range: 6, label: "a pipe bomb", fx: "blast" },
+  bottle:      { radius: 6,  turns: 1, heat: 0, range: 7, label: "a bottle", sense: ["noise"], people: "spot" },
+  noisemaker:  { radius: 8,  turns: 3, heat: 0, range: 7, label: "a noise maker", sense: ["noise"], decoy: true, people: "spot" },
+  firecracker: { radius: 13, turns: 2, heat: 6, range: 8, label: "a string of firecrackers", sense: ["noise"], decoy: true, people: "spot" },
+  flare:       { radius: 10, turns: 4, heat: 2, range: 8, label: "a road flare", fx: "flare", sense: ["light", "heat"], decoy: true, people: "spot" },
+  alarmclock:  { radius: 10, turns: 5, heat: 2, range: 7, label: "a wind-up alarm clock", sense: ["noise"], decoy: true, people: "thrower" },
+  pocketradio: { radius: 12, turns: 6, heat: 3, range: 6, label: "a pocket radio", sense: ["noise"], decoy: true, people: "thrower" },
+  handwarmer:  { radius: 5,  turns: 6, heat: 0, range: 7, label: "a pair of hand warmers", sense: ["heat"], decoy: true, people: "none" },
+  heatpack:    { radius: 7,  turns: 8, heat: 0, range: 7, label: "a chemical heat pack", sense: ["heat"], decoy: true, people: "none" },
+  frag:        { radius: 0, turns: 0, heat: 10, range: 8, label: "a frag grenade", fx: "frag" },
+  pipebomb:    { radius: 0, turns: 0, heat: 10, range: 6, label: "a pipe bomb", fx: "blast", scatter: 10 },
   molotov:     { radius: 0, turns: 0, heat: 4, range: 6, label: "a Molotov cocktail", fx: "fire" },
   smokegren:   { radius: 0, turns: 0, heat: 0, range: 7, label: "a smoke grenade", fx: "smoke" },
-  gamecall:    { radius: 7, turns: 1, heat: 0, range: 0, label: "the deer call", self: true, keep: true },
+  gamecall:    { radius: 7, turns: 1, heat: 0, range: 0, label: "the deer call", self: true, keep: true, sense: ["noise"], people: "spot" },
 };
+// The decoys (decoys.js, the AI and the State Map's horde warning): what pulls the dead off a fight.
+export const DECOY_KEYS = Object.keys(THROWABLES).filter((k) => THROWABLES[k].decoy && !THROWABLES[k].fx);
 // The lures the raid bot throws to pull guards away (botStealth), in order.
 const LURES = ["bottle", "noisemaker", "firecracker"];
 export const THROW_KEYS = Object.keys(THROWABLES);
@@ -278,25 +292,28 @@ export function stealthAct(state, b, u, t, act) {
       const key = act.item && have[act.item] ? act.item : THROW_KEYS.find((k) => have[k]);
       if (!key) return "Nothing to throw.";
       const T = THROWABLES[key];
-      const x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
+      let x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
       if (!(x >= 0 && y >= 0 && x < b.w && y < b.h)) return "Throw it where?";
+      // Inside a building (buildingmaps.js) a throw goes through open doorways but not through walls or closed doors:
+      // it drops where it hits.
+      let short = false;
+      if (!T.self && b.raid && b.raid.interior) {
+        const land = interiorLanding(b, u.x, u.y, x, y);
+        if (!land) return "No room to throw it that way: a wall or a closed door is right in front.";
+        short = land[0] !== x || land[1] !== y;
+        [x, y] = land;
+      }
       const d = dist(u.x, u.y, x, y);
       if (!T.self && d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
-      if (!T.self && d < 2) return "Throw it further away.";
+      if (!T.self && d < 2 && !short) return "Throw it further away.";
+      // Over a wall: something with fx needs no line of sight, only a cell someone on your side sees (throwables.js).
+      const blind = T.fx && !T.self ? throwBlind(b, u, x, y) : false;
+      if (blind === null) return "Nobody can see there: a throw over a wall lands only where you or a teammate has eyes (or where an enemy was last seen).";
       if (!T.keep && !takeThrowable(state, b, u, key)) return "Nothing to throw.";
       u.ap -= 1;
       u.hunker = false;
-      let n = 0;
-      if (T.radius) {
-        const lure = { x, y, key, turns: T.turns, radius: T.radius, id: b.nextId++ };
-        b.lures.push(lure);
-        n = pull(b, lure);
-      }
-      if (!T.self) fx(b, { type: "throw", from: [u.x, u.y], to: [x, y], item: key });
-      if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
-      const extra = T.fx ? landEffect(b, u, T, x, y) : "";
-      const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : " Nothing seems to notice.") : "";
-      say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, n || extra ? "good" : "info");
+      if (short) say(b, `${u.name}'s throw hits a wall and drops short.`, "info");
+      throwAt(b, u, key, x, y, blind);
       return "";
     }
     case "drag": {
@@ -321,6 +338,28 @@ export function stealthAct(state, b, u, t, act) {
       return "Unknown action.";
   }
 }
+// A throw that is allowed and paid for (the item taken, the action spent): where it lands (a tile off now and then
+// for anything with fx), the lure it leaves (b.lures, the ones that sense it go to look), what it does there.
+// Shared by your people and the enemy (siege.js enemyThrow). Returns [x, y] where it came down.
+export function throwAt(b, u, key, x, y, blind = false) {
+  const T = THROWABLES[key];
+  let lx = x, ly = y, off = false;
+  if (T.fx && !T.self) [lx, ly, off] = throwLanding(b, u, T, x, y, blind);
+  let n = 0;
+  if (T.radius) {
+    const lure = { x: lx, y: ly, key, turns: T.turns, radius: T.radius, id: b.nextId++, side: u.side, from: [u.x, u.y], sense: T.sense || ["noise"], decoy: !!T.decoy };
+    b.lures.push(lure);
+    n = pull(b, lure, true);
+  }
+  if (!T.self) fx(b, { type: "throw", from: [u.x, u.y], to: [lx, ly], item: key });
+  if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
+  const extra = T.fx ? landEffect(b, u, T, lx, ly) : "";
+  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : " Nothing seems to notice.") : "";
+  const where = off ? " It lands a tile off." : blind ? " Thrown blind over cover." : "";
+  say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${where}${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, u.side === "enemy" ? "danger" : n || extra ? "good" : "info");
+  return [lx, ly];
+}
+
 export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
@@ -348,17 +387,46 @@ export function stealthTurn(b) {
   }
 }
 
-// Unaware enemies within earshot of a lure go to look. Returns how many.
-function pull(b, lure) {
+// Unaware enemies within earshot of a lure go to look: people where it landed (a stealth lure) or where it was thrown
+// from (a decoy: they are not fooled), or not at all (silent heat); the dead only if they sense it (decoys.js: noise,
+// light, heat by their kind; nothing for a Shepherd's pack). Returns how many turned toward it; first: the throw
+// itself, which also counts the aware dead a decoy pulls off (decoys.js lureTurn moves them).
+// Inside a building (buildingmaps.js) walls and closed doors muffle the noise (each one between counts as
+// BMAP.WALL_DAMP tiles more), and the dead already after you turn to the noise too unless one of your people is close
+// and in their sight (BMAP.DIVERT_NEAR): break off, shut a door and throw something, and they go.
+function pull(b, lure, first = false) {
+  const T = THROWABLES[lure.key] || {};
   let n = 0;
+  const inside = !!(b.raid && b.raid.interior);
   for (const e of b.units) {
-    if (e.side !== "enemy" || e.aware || !active(e) || e.reinforcement) continue;
-    if (dist(e.x, e.y, lure.x, lure.y) > lure.radius) continue;
+    if (e.side === lure.side || e.side === "player" || !active(e)) continue;
+    if (e.reinforcement && !inside) continue;
+    const d = dist(e.x, e.y, lure.x, lure.y) + (inside ? noiseDamp(b, e.x, e.y, lure.x, lure.y) : 0);
+    if (d > lure.radius) continue;
+    if (e.kind === "human") {
+      if (e.aware || T.people === "none") continue;
+      const [tx, ty] = T.people === "thrower" && lure.from ? lure.from : [lure.x, lure.y];
+      e.investigate = { x: tx, y: ty, turns: STEALTH.INVESTIGATE_TURNS, key: lure.key };
+      n++;
+      continue;
+    }
+    if (!sensesAny(b, e, lure.sense || T.sense || ["noise"])) continue;
+    if (e.aware) {
+      // Indoors the dead chasing you break off for a noise (not for a door being battered: divert false).
+      if (inside && lure.divert !== false && divertable(b, e)) { e.aware = false; e.diverted = true; }
+      else { if (first && lure.decoy) n++; continue; }
+    }
     e.investigate = { x: lure.x, y: lure.y, turns: STEALTH.INVESTIGATE_TURNS, key: lure.key };
     n++;
   }
   return n;
 }
+// A sound somewhere (a door being battered, buildingmaps.js): the unaware within earshot come to look (the dead already
+// after someone keep at it).
+export function noiseAt(b, x, y, radius, key = "noise") {
+  return pull(b, { x, y, radius, key, turns: 1, divert: false });
+}
+const divertable = (b, e) => !b.units.some((p) => p.side === "player" && active(p) && dist(p.x, p.y, e.x, e.y) <= BMAP.DIVERT_NEAR && los(b, e.x, e.y, p.x, p.y));
 
 // The AI of an unaware enemy (combat.js aiUnit): bodies first, then an investigation. Returns true when the turn
 // was used up; false lets the usual behaviour run (it may have just become aware).
@@ -377,7 +445,9 @@ function investigate(b, u) {
     if (inv.turns <= 0) { delete u.investigate; u.wp = null; }
   } else {
     const r = reachable(b, u, u.kind === "zombie" ? 3 : u.mob);
-    const field = distField(b, [[inv.x, inv.y]]);
+    // Inside a building the dead find their way round the walls and batter the closed doors on it (buildingmaps.js).
+    const inside = !!(b.raid && b.raid.interior);
+    const field = distField(b, [[inv.x, inv.y]], inside && u.kind === "zombie" ? u : null);
     let best = -1;
     for (let i = 0; i < b.w * b.h; i++) {
       if (!isFinite(r.dist[i]) || !isFinite(field[i])) continue;
@@ -385,6 +455,7 @@ function investigate(b, u) {
     }
     if (best < 0 || !isFinite(field[best])) delete u.investigate;
     else if (r.dist[best] > 0) moveAlong(b, u, pathTo(r, best % b.w, (best / b.w) | 0));
+    else if (inside && u.kind === "zombie") { const door = siegeTarget(b, u, field); if (door) bash(b, u, door[0], door[1]); }
     u.face = [sign(inv.x - u.x), sign(inv.y - u.y)];
   }
   notice(b, u);
@@ -474,9 +545,9 @@ export function botStealth(state, b, u, combatAct) {
 export function botAttackThrow(state, b, u) {
   if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
   const have = throwablesOf(state, b, u);
-  for (const key of ["pipebomb", "molotov"]) {
+  for (const key of ["frag", "pipebomb", "molotov"]) {
     if (!have[key]) continue;
-    const spot = blastSpot(b, u, THROWABLES[key].range, key === "pipebomb" ? BLAST.r : FIRE.r);
+    const spot = blastSpot(b, u, THROWABLES[key].range, key === "frag" ? FRAG.r : key === "pipebomb" ? BLAST.r : FIRE.r, { fire: key === "molotov" });
     if (!spot) continue;
     b.botAttackTurn = b.turn;
     return !stealthAct(state, b, u, null, { type: "throw", item: key, x: spot.x, y: spot.y });

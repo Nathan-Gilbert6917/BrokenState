@@ -3,10 +3,10 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, WEAPONS,
+  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS,
 } from "../sim/combat.js";
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
-import { windowsNear, BMAP } from "../sim/buildingmaps.js";
+import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
@@ -17,9 +17,12 @@ import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./spri
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { thirdRing } from "../sim/thirdside.js";
+import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
+import { herded, sensesOf } from "../sim/decoys.js";
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", soldier: "#a8b878", riot: "#8aa0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -82,8 +85,8 @@ function view(b) {
   // enemies they see; ghosts where unseen ones were last seen.
   const vis = playerVision(b);
   const u = selUnit(b);
-  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap) : null;
-  const seen = new Set(b.units.filter((e) => e.side === "enemy" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id));
+  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap, { manual: true }) : null; // an order by hand may walk into fire
+  const seen = new Set(b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
   const ghosts = b.over ? [] : enemyGhosts(b);
   cui.cache = { key, vis, reach, seen, u, ghosts };
   return cui.cache;
@@ -150,7 +153,7 @@ function act(state, a) {
   cui.msg = err || "";
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -194,7 +197,16 @@ export function combatClick(state, px, py) {
   }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
+  // The third side (sim/thirdside.js): attacking them takes a second click, and turns them (or all the soldiers) on you.
+  if (who && who.side === "third" && active(who) && v.seen.has(who.id)) {
+    if (cui.thirdAsk === who.id) { cui.thirdAsk = null; return void attack(state, u, who); }
+    cui.thirdAsk = who.id;
+    cui.msg = who.team === "military" ? `${who.name} is a soldier, not your enemy. Click again to attack: every soldier here will fight back, and their group will not forget it.` : `${who.name} is not with the enemy. Click again to attack them: their group will fight back.`;
+    return;
+  }
   // Raids: click a container next to the selected unit to search it.
+  // A door picked for Peek, Close door or Brace (sim/buildingmaps.js).
+  if (u && active(u) && ["peek", "close", "brace"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   if (b.raid) {
     // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
     if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
@@ -388,7 +400,7 @@ export function combatKey(state, e) {
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb" };
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -501,6 +513,16 @@ export function combatAction(state, key, d) {
     else cui.msg = cui.mode === "drag" ? "Click the body (or someone down) next to you, then where to drag it." : "";
     return;
   }
+  if (v === "drop") return void act(state, { type: "drop", unit: u.id, target: Number(d.id) }); // rocks from the walls (sim/siege.js)
+  // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
+  if (v === "peek" || v === "close" || v === "brace") {
+    const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
+    if (list.length === 1) return void act(state, { type: v, unit: u.id, x: list[0].x, y: list[0].y });
+    if (!list.length) { cui.msg = v === "peek" ? "Stand right next to a door or doorway to peek through it." : v === "close" ? "Stand next to an open door with nobody in the doorway." : "Stand next to a closed door to brace it."; return; }
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = `Click the door to ${v === "peek" ? "peek through" : v}.`;
+    return;
+  }
   if (v === "meds") {
     const others = players(b).filter((o) => o !== u && !o.dead && !o.left && adjacent(u, o) && (o.down ? !o.stab : o.hp < o.maxHp));
     if (!others.length) return void act(state, { type: "meds", unit: u.id, target: u.id });
@@ -585,6 +607,7 @@ export function renderCombatPanel(state) {
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${stealthButtons(state, b, u, btn)}
+      ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
@@ -679,10 +702,16 @@ function raidButtons(b, u, btn) {
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
-  // A building's windows (sim/buildingmaps.js): climb through one next to you.
+  // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
+    const first = u.name.split(" ")[0];
+    const peeks = peekOptions(b, u), closes = closeOptions(b, u), braces = braceOptions(b, u);
+    const P = BMAP.PEEK;
+    html += btn("peek", "Peek", peeks.length ? (u.peekTurn === b.turn ? `${first} has already peeked this turn.` : `Free, once a turn: ${first} looks through the door or doorway next to them and sees the room beyond (out to ${P.range} tiles, until the end of the turn) without stepping in. An unaware guard facing the door may catch it (${Math.round(P.notice * 100)}% − ${Math.round(P.perStealth * 100)}% a Stealth point), the dead right behind it ${Math.round(P.deadNotice * 100)}%.`) : "Stand right next to a door or doorway (not diagonally) to peek through it.", peeks.length > 0 && u.peekTurn !== b.turn, "K");
+    html += btn("close", "Close door", closes.length ? `1 action: shut the open door next to ${first} (quiet; a roller door is loud: Heat +${BMAP.ROLLER.heat}). A shut door blocks sight; the dead must batter it down (${BMAP.DOOR.inner} hit points an inner door, a turn or more each blow), people stop to open it.` : "Stand next to an open door (not diagonally) with nobody in the doorway to shut it.", u.ap > 0 && closes.length > 0, "Q");
+    html += btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
     const wins = windowsNear(b, u);
-    html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${u.name.split(" ")[0]} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
+    html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
   }
   return html;
 }
@@ -711,10 +740,27 @@ function stealthButtons(state, b, u, btn) {
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
     const T = THROWABLES[k];
-    const what = T.fx ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
+    const what = T.fx || T.decoy ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
       : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
     html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`${what} ${T.keep ? "" : `${have[k]} left.`}`)}">${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
   }
+  return html;
+}
+
+// ---------- siege kit (sim/siege.js): ladders, the ram, rocks from the walls ----------
+function siegeButtons(b, u, btn) {
+  const ap = u.ap;
+  let html = "";
+  const lt = ladderTargets(b, u);
+  if (u.ladder > 0 || lt.length) html += btn("ladder", "Set ladder", `1 action: set ${u.ladder > 0 ? "the ladder you carry" : "the fallen ladder"} against the wall section next to you; then anyone can climb it onto the walkway (exposed while on it: +10 to be hit, no cover). Defenders can push it off.${lt.length ? "" : " Stand at the foot of a wall section first."}`, ap > 0 && lt.length > 0);
+  const pl = pushable(b, u);
+  if (pl.length) html += btn("push", `Push ladder (${pushChance(b, u, pl[0])}%)`, `1 action: shove the enemy's ladder off the wall (${LADDER.PUSH}% + a fifth of melee aim + Tough or Brave, −15 with someone on it). Whoever is on it falls (${LADDER.FALL[0]}–${LADDER.FALL[1]} damage).`, ap > 0);
+  const r = ramOf(b, u);
+  if (r && r.lead === u.id) html += btn("ram", "Swing ram", `Bring the ram's crew to bear on the barred gate or door right in front: ${RAM.DMG[0]}–${RAM.DMG[1]} damage per carrier next to the lead (${RAM.MIN}–${RAM.CREW}). Ends the crew's turn.`, ap > 0 && ramTargets(b, u).length > 0);
+  if (r) html += btn("dropRam", "Set ram down", "Let go of the ram: the crew can shoot and take cover again. Anyone can take it up again with someone next to them.", true);
+  else if ((b.rams || []).some((x) => x.dropped && x.side === u.side && Math.max(Math.abs(x.x - u.x), Math.abs(x.y - u.y)) <= 1)) html += btn("takeRam", "Take up ram", `Take the ram up with whoever of yours stands next to you (it needs ${RAM.MIN}). It moves at ${RAM.MOB} tiles an action.`, ap > 0);
+  const dt = dropTargets(b, u);
+  if (dt.length) html += `<button data-action="cb-act" data-v="drop" data-id="${dt[0].id}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`Drop a rock from the wall on ${dt[0].name} below (${DROP.CHANCE}%: ${DROP.DMG[0]}–${DROP.DMG[1]}; on a ram's crew one more of them is hit). Ends the turn.`)}">Drop rock on ${esc(dt[0].name)}</button>`;
   return html;
 }
 
@@ -898,6 +944,9 @@ function previewHtml(b) {
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
     const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
+    // What it follows (sim/decoys.js), a Shepherd's pack, the siege kit it carries (sim/siege.js).
+    const sense = t.kind === "zombie" ? (herded(b, t) ? ' · <span class="danger">herded by a Shepherd: decoys and fire do not work on it</span>' : ` · <span class="muted">follows ${sensesOf(b, t).join(" and ") || "nothing"}</span>`) : "";
+    const kit = t.ram != null && ramOf(b, t) ? ' · <span class="warn">carrying the ram (no cover)</span>' : t.ladder ? ' · <span class="warn">carrying a ladder</span>' : t.throwables && Object.values(t.throwables).some((n) => n > 0) ? ' · <span class="warn">has grenades</span>' : b.cells[t.y * W + t.x].k === "siegeladder" ? ' · <span class="warn">on a ladder (exposed)</span>' : "";
     // A hive's special dead (sim/zombietypes.js): what it does and what beats it.
     // The armoured dead (sim/deadsoldiers.js): how much of the selected unit's weapon gets through.
     const ar = t.ztype && MILDEAD.ARMOR[t.ztype] && u && active(u) ? (() => {
@@ -906,8 +955,10 @@ function previewHtml(b) {
       return ` <span class="${m >= 0.8 ? "good" : m >= 0.55 ? "warn" : "danger"}">Armour: ${Math.round(m * 100)}% of ${esc(u.weaponName)}'s damage gets through${stabsGap(u, t) ? ` (a blade from behind or unseen: all of it)` : ""}; critical hits always do.</span>`;
     })() : "";
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""}${ar} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
+  // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
+  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
   if (t && t.side === "player") {
@@ -948,7 +999,14 @@ function previewHtml(b) {
   // A building's map (sim/buildingmaps.js): windows to climb, doors, the room under the mouse.
   const room = b.raid && b.raid.interior ? b.raid.areas.find((a) => !a.outdoor && h.x > a.x0 && h.x < a.x0 + a.w - 1 && h.y > a.y0 && h.y < a.y0 + a.h - 1) : null;
   if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
-  if (b.raid && b.raid.interior && cobj.k === "idoor") return `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>: blocks sight. Walk through it to open it${cobj.roll ? ": hauling it up is loud (Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}.${room ? ` ${esc(room.name)}.` : ""}`;
+  if (b.raid && b.raid.interior && (cobj.k === "idoor" || cobj.k === "odoor")) {
+    const shut = cobj.k === "idoor";
+    const held = shut && doorHeld(b, cobj) ? unitById(b, cobj.held) : null;
+    const hp = cobj.mhp ? ` · <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "muted"}">${Math.round(cobj.hp)}/${cobj.mhp}</span>` : "";
+    return shut
+      ? `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">Blocks sight. Your people open it by walking through${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.</span>`
+      : `<b>${cobj.roll ? "Roller door (open)" : "Open door"}</b>${hp}<br><span class="muted">Close door (Q) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door stops sight and slows the dead.</span>`;
+  }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
   const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";
   if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}`;
@@ -1018,7 +1076,7 @@ export function drawCombat(state, now) {
     const n = hash(x, y);
     if (c.f === "grass" || c.f === "field") { ctx.fillStyle = `rgba(255,255,255,${0.02 + n * 0.03})`; ctx.fillRect(px + n * cs * 0.6, py + ((n * 7) % 1) * cs * 0.6, cs * 0.25, cs * 0.25); }
     if (c.f === "road" && y % 2 === 0 && x % 2 === 0) { ctx.fillStyle = "#6b6a4a"; ctx.fillRect(px + cs * 0.2, py + cs - 1, cs * 0.6, 2); }
-    drawObject(c.k, px, py, cs, n, c);
+    drawObject(c.k === "siegeladder" ? "palisade" : c.k, px, py, cs, n, c); // a siege ladder is drawn over its wall (drawSiegeTop)
     // Raised ground (verticality): lighter the higher it is.
     const hh = c.h ?? CELL[c.k].h ?? 0;
     if (hh && CELL[c.k].walk) { ctx.fillStyle = `rgba(255,236,190,${0.08 * hh})`; ctx.fillRect(px, py, cs, cs); }
@@ -1058,8 +1116,17 @@ export function drawCombat(state, now) {
   // Fog: tiles none of your people can see (darker on a night raid).
   ctx.fillStyle = b.night ? "rgba(3,5,14,0.7)" : "rgba(5,6,8,0.5)";
   for (let i = 0; i < W * H; i++) if (!v.vis[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+  // Seen only through a peek this turn (sim/buildingmaps.js): a warm tint and its outline.
+  if (v.vis.some((q) => q === 2)) {
+    ctx.fillStyle = "rgba(255,214,120,0.10)";
+    for (let i = 0; i < W * H; i++) if (v.vis[i] === 2) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+    const band = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) band[i] = v.vis[i] === 2 ? 1 : 0;
+    ctx.setLineDash([4, 4]); outline(band, (k) => k === 1, "rgba(255,214,120,0.7)"); ctx.setLineDash([]);
+  }
   if (b.night) drawLights(b, cs); // flashlight cones (sim/stealth.js)
-  drawLures(b, cs, now); // thrown bottles, noise makers, firecrackers
+  drawLures(b, cs, now); // thrown bottles, noise makers, firecrackers; fire, smoke, decoys
+  drawSiegeTop(b, cs, now, v.vis); // ladders, rams, a Shepherd's aura (sim/siege.js battleOverlays)
 
   // Movement range: blue = 1 action, yellow = dash.
   if (v.reach && cui.mode === "move" && u) {
@@ -1114,7 +1181,7 @@ export function drawCombat(state, now) {
   // Units (dead and down first).
   const order = b.units.filter((x) => !x.left && !x.fled && !x.off).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
-    if (t.side === "enemy" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
+    if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
     const pos = animPos(b, t, now);
     drawUnit(state, b, t, pos[0], pos[1], cs, t.id === cui.sel);
   }
@@ -1395,20 +1462,77 @@ function drawLures(b, cs, now) {
   // Flames, smoke and flare light (sim/throwables.js): soft discs over the ground, flickering.
   const ph2 = ((now || 0) % 900) / 900;
   const disc = (c, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs * (c.r + 0.5), 0, Math.PI * 2); ctx.fill(); };
-  for (const c of b.flares || []) disc(c, "rgba(255,90,70,0.10)");
-  for (const c of b.fires || []) {
-    disc(c, `rgba(255,${120 + Math.round(60 * Math.sin(ph2 * Math.PI * 2))},40,0.32)`);
-    for (let i = 0; i < 5; i++) { const a = i * 1.26 + ph2 * 6; ctx.fillStyle = "rgba(255,200,80,0.7)"; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5 + Math.cos(a) * 0.8) * cs, oy + (c.y + 0.5 + Math.sin(a) * 0.8) * cs, cs * 0.1, 0, Math.PI * 2); ctx.fill(); }
+  const OV = battleOverlays(b);
+  for (const c of OV.flares) disc(c, "rgba(255,90,70,0.10)");
+  // Burning cells (one each, sim/throwables.js): the cell glows, tongues of flame flicker in it.
+  for (const c of OV.fires) {
+    const px = ox + c.x * cs, py = oy + c.y * cs;
+    ctx.fillStyle = `rgba(255,${100 + Math.round(60 * Math.sin((ph2 + c.x * 0.13 + c.y * 0.07) * Math.PI * 2))},30,0.5)`;
+    ctx.fillRect(px, py, cs, cs);
+    for (let i = 0; i < 4; i++) {
+      const fl = (ph2 * 3 + i * 0.29 + c.x * 0.11) % 1, fx0 = px + cs * (0.2 + i * 0.2), h = cs * (0.3 + 0.25 * Math.sin(fl * Math.PI)) * (c.turns > 1 ? 1 : 0.7);
+      ctx.fillStyle = i % 2 ? "rgba(255,200,70,0.9)" : "rgba(255,110,40,0.85)";
+      ctx.beginPath(); ctx.moveTo(fx0 - cs * 0.09, py + cs * 0.85); ctx.quadraticCurveTo(fx0, py + cs * 0.85 - h * 1.2, fx0 + cs * 0.09, py + cs * 0.85); ctx.closePath(); ctx.fill();
+    }
   }
-  for (const c of b.smoke || []) disc(c, "rgba(200,205,210,0.45)");
-  for (const c of b.flares || []) drawThrowable("flare", ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs);
-  for (const l of b.lures || []) {
+  // Smoke: a smoke grenade's pale cloud; a fire's dark column (it blocks sight through it).
+  for (const c of OV.smoke) {
+    if (c.thick) { ctx.fillStyle = "rgba(30,28,30,0.38)"; ctx.beginPath(); ctx.arc(ox + (c.x + 0.6) * cs, oy + (c.y + 0.25) * cs, cs * 0.42, 0, Math.PI * 2); ctx.fill(); continue; }
+    disc(c, "rgba(200,205,210,0.45)");
+  }
+  for (const c of OV.flares) drawThrowable("flare", ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs);
+  for (const l of OV.decoys) {
     const cx = ox + (l.x + 0.5) * cs, cy = oy + (l.y + 0.5) * cs;
     const ph = ((now || 0) % 1200) / 1200;
-    ctx.strokeStyle = `rgba(255,209,102,${0.55 * (1 - ph)})`;
+    const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
+    const col = kind === "heat" ? [255, 122, 74] : kind === "light" ? [255, 242, 192] : [255, 209, 102];
+    ctx.strokeStyle = `rgba(${col.join(",")},${0.55 * (1 - ph)})`;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, cs * (0.4 + ph * 1.4), 0, Math.PI * 2); ctx.stroke();
+    if (l.decoy) { ctx.setLineDash([3, 6]); ctx.strokeStyle = `rgba(${col.join(",")},0.3)`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, cs * l.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     drawThrowable(l.key, cx, cy, cs);
+  }
+}
+
+// Siege objects (sim/siege.js battleOverlays): a ladder against the wall (or lying at its foot), a ram at its lead,
+// a ladder on a carrier's back, a Shepherd's aura.
+function drawSiegeTop(b, cs, now, vis) {
+  const { ox, oy } = geo;
+  const OV = battleOverlays(b);
+  const ph = ((now || 0) % 1600) / 1600;
+  for (const a of OV.auras) {
+    if (vis && !vis[a.y * W + a.x]) continue;
+    const cx = ox + (a.x + 0.5) * cs, cy = oy + (a.y + 0.5) * cs;
+    ctx.fillStyle = "rgba(200,190,255,0.07)"; ctx.beginPath(); ctx.arc(cx, cy, cs * (a.r + 0.5), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(232,226,255,0.7)"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -ph * 22;
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+  const ladder = (x0, y0, x1, y1, w, col) => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1, px = (-dy / len) * w, py = (dx / len) * w;
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, cs * 0.07); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x0 + px, y0 + py); ctx.lineTo(x1 + px, y1 + py); ctx.moveTo(x0 - px, y0 - py); ctx.lineTo(x1 - px, y1 - py); ctx.stroke();
+    ctx.lineWidth = Math.max(1.5, cs * 0.05);
+    for (let k = 1; k <= 4; k++) { const t = k / 5; ctx.beginPath(); ctx.moveTo(x0 + dx * t + px, y0 + dy * t + py); ctx.lineTo(x0 + dx * t - px, y0 + dy * t - py); ctx.stroke(); }
+    ctx.lineCap = "butt";
+  };
+  for (const l of OV.ladders) {
+    const [dx, dy] = l.dir;
+    if (l.up) ladder(ox + (l.fx + 0.5 - dx * 0.1) * cs, oy + (l.fy + 0.5 - dy * 0.1) * cs, ox + (l.wx + 0.5 + dx * 0.35) * cs, oy + (l.wy + 0.5 + dy * 0.35) * cs, cs * 0.17, l.side === "enemy" ? "#c08a50" : "#d4a86a");
+    else ladder(ox + (l.fx + 0.5 + dy * 0.45) * cs, oy + (l.fy + 0.5 - dx * 0.45) * cs, ox + (l.fx + 0.5 - dy * 0.45) * cs, oy + (l.fy + 0.5 + dx * 0.45) * cs, cs * 0.14, "rgba(160,120,80,0.8)");
+  }
+  for (const m of OV.rams) {
+    if (m.x < 0 || (vis && !vis[m.y * W + m.x])) continue;
+    const f = m.target ? [Math.sign(m.target[0] - m.x), Math.sign(m.target[1] - m.y)] : m.face && (m.face[0] || m.face[1]) ? m.face : [1, 0];
+    const x0 = ox + (m.x + 0.5 - f[0] * 0.8) * cs, y0 = oy + (m.y + 0.5 - f[1] * 0.8) * cs, x1 = ox + (m.x + 0.5 + f[0] * 0.6) * cs, y1 = oy + (m.y + 0.5 + f[1] * 0.6) * cs;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#5b3d22"; ctx.lineWidth = cs * 0.24; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = "#7d5a34"; ctx.lineWidth = cs * 0.08; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.fillStyle = "#9aa0a8"; ctx.beginPath(); ctx.arc(x1, y1, cs * 0.14, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const c of OV.carried) {
+    const x = ox + c.x * cs, y = oy + c.y * cs;
+    ladder(x + cs * 0.15, y + cs * 0.85, x + cs * 0.85, y + cs * 0.15, cs * 0.09, "rgba(192,138,80,0.9)");
   }
 }
 
@@ -1424,6 +1548,20 @@ function drawThrowable(key, cx, cy, cs) {
   } else if (key === "flare") {
     ctx.fillStyle = "#c8362e"; ctx.fillRect(cx - s * 0.2, cy - s * 0.8, s * 0.4, s * 1.4);
     ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(cx, cy - s * 0.9, s * 0.35, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "frag") {
+    ctx.fillStyle = "#4f5a3a"; ctx.beginPath(); ctx.ellipse(cx, cy, s * 0.55, s * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#8a8f96"; ctx.fillRect(cx - s * 0.2, cy - s * 0.95, s * 0.4, s * 0.3);
+  } else if (key === "alarmclock") {
+    ctx.fillStyle = "#c9a548"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f0ead8"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#c9a548"; ctx.beginPath(); ctx.arc(cx - s * 0.5, cy - s * 0.6, s * 0.22, 0, Math.PI * 2); ctx.arc(cx + s * 0.5, cy - s * 0.6, s * 0.22, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "pocketradio") {
+    ctx.fillStyle = "#3a3f48"; roundRect(cx - s * 0.7, cy - s * 0.45, s * 1.4, s * 0.9, s * 0.15); ctx.fill();
+    ctx.fillStyle = "#9aa0a8"; ctx.beginPath(); ctx.arc(cx - s * 0.25, cy, s * 0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#9aa0a8"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx + s * 0.5, cy - s * 0.45); ctx.lineTo(cx + s * 0.8, cy - s * 1.1); ctx.stroke();
+  } else if (key === "handwarmer" || key === "heatpack") {
+    ctx.fillStyle = key === "heatpack" ? "#e8e2d4" : "#d86a3a"; roundRect(cx - s * 0.6, cy - s * 0.45, s * 1.2, s * 0.9, s * 0.2); ctx.fill();
+    ctx.fillStyle = "#ff7a4a"; ctx.fillRect(cx - s * 0.1, cy - s * 0.3, s * 0.2, s * 0.6); ctx.fillRect(cx - s * 0.3, cy - s * 0.1, s * 0.6, s * 0.2);
   } else if (key === "pipebomb") {
     ctx.fillStyle = "#6a6a68"; ctx.fillRect(cx - s * 0.8, cy - s * 0.3, s * 1.6, s * 0.6);
     ctx.fillStyle = "#3a3a38"; ctx.fillRect(cx - s * 0.9, cy - s * 0.4, s * 0.2, s * 0.8); ctx.fillRect(cx + s * 0.7, cy - s * 0.4, s * 0.2, s * 0.8);
@@ -1756,7 +1894,7 @@ function drawObject(k, px, py, cs, n, cell = null) {
 function drawUnit(state, b, t, cx, cy, cs, selected) {
   const r = cs * 0.34;
   const zombie = t.kind === "zombie";
-  let ring = t.side === "player" ? "#8fc1ff" : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
+  let ring = t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
   const facing = unitFacing(b, t);
   if (t.dead) {
     // The body lying where it fell (ui/downsprites.js: its own picture per kind; pockets out once searched).

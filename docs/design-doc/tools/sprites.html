@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Broken State sprite catalogue</title>
+  <style>
+    body { background: #121417; color: #ddd; font: 13px Segoe UI, sans-serif; margin: 16px; }
+    .cat { margin: 18px 0 6px; font-weight: 700; color: #e0a84f; }
+    .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    figure { margin: 0; padding: 6px; background: #1c1f24; border-radius: 6px; text-align: center; width: 172px; }
+    figure img { image-rendering: pixelated; max-width: 160px; max-height: 160px; background: #2a2e35; }
+    figcaption { font-size: 11px; color: #aaa; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <!-- Built by catalogue.js: every procedurally painted sprite of the prototype. Serve the repo root over http
+       (export-sprites.cjs does) and open /docs/design-doc/tools/sprites.html to browse it; the exporter reads
+       window.__sprites. -->
+  <div id="out">Painting…</div>
+  <script type="module" src="./catalogue.js"></script>
+</body>
+</html>

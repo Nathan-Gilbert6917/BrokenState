@@ -1,0 +1,1047 @@
+<section id="survivors">
+  <h2>Survivors</h2>
+  <p class="lede">Survivors are the scarcest resource in Broken State. Every one is a named person with nine skills, one or two traits, health, mood, relationships and a paper-doll inventory. You play as the group, not as an avatar, and the run ends only when nobody is left.</p>
+
+  <h3>Appearance <span class="status built">Built</span></h3>
+  <p>Every survivor is a procedural pixel sprite drawn in code from an <i>appearance</i> record. Looks never use the world's random numbers: the same seed always gives the same faces, and the new-run screen can edit or re-roll each look without changing the world.</p>
+  <div class="gallery" data-sprites="survivor/1 survivor/2 survivor/3 survivor/4 survivor/5 survivor/6 survivor/7 survivor/8"></div>
+  <table class="data"><thead><tr><th>Part</th><th>Options</th></tr></thead><tbody>
+    <tr><td>Build</td><td>Slim, Average (twice as likely), Heavy</td></tr>
+    <tr><td>Skin</td><td>8 tones</td></tr>
+    <tr><td>Hair</td><td>Bald (8%), Buzz cut, Short, Long, Ponytail, Mohawk, Curly; 10 colours (grey, white and dyed blue are rare)</td></tr>
+    <tr><td>Face</td><td>Clean (55%), Stubble, Beard, Moustache</td></tr>
+    <tr><td>Top</td><td>T-shirt, Jacket, Hoodie, Flannel, Tank top; 12 colours</td></tr>
+    <tr><td>Pants</td><td>8 colours</td></tr>
+    <tr><td>Accessory</td><td>None (30%), Cap, Beanie, Bandana, Glasses, Headband, Backpack; 8 accent colours</td></tr>
+  </tbody></table>
+  <p>Weapons in the hands and body armour are drawn on the sprite too (see <a href="#items">Items &amp; equipment</a>).</p>
+
+  <h3>Making a survivor</h3>
+  <ul>
+    <li><b>Skills:</b> each of the nine skills rolls 0–9 times a quality factor, then one or two specialties get +3 to +7 (capped at 20). The first starting colonist (the leader) rolls at quality 1.3, the others at 1.0, newcomers at 0.85.</li>
+    <li><b>Traits:</b> one trait (60%) or two (40%); never Brave and Coward together.</li>
+    <li><b>Start values:</b> health 100, mood 60 (newcomers: health 60–100, mood 45–65).</li>
+    <li><b>Starting group:</b> six colonists at the hub. Starting weapons are a 9mm pistol, a machete, a hunting rifle, two kitchen knives and a second pistol; the leader also wears a Kevlar vest.</li>
+    <li><b>Starting jobs:</b> by skill, not list order: the two best farmers farm, the best scavenger scavenges, the best shot guards, the best mechanic builds, anyone left farms. Nobody starts on the ammo bench (the hub opens with plenty of ammo and little food).</li>
+    <li><b>New-run screen:</b> per colonist you can rename, randomise the name, move skill points within a fixed total, edit or randomise the look, change traits and pick the leader.</li>
+  </ul>
+
+  <h3>Traits <span class="status built">Built</span></h3>
+  <table class="data"><thead><tr><th>Trait</th><th>Key</th><th>Effect in the build</th></tr></thead><tbody>
+    <tr><td>Brave</td><td>brave</td><td>+1 fighting strength, +5% to hit in battle.</td></tr>
+    <tr><td>Coward</td><td>coward</td><td>−1 fighting strength, −5% to hit; may lose their nerve on a trip. A Coward deserter takes half the usual food and water.</td></tr>
+    <tr><td>Night Owl</td><td>nightowl</td><td>At night their team is 15% more likely to spot others first.</td></tr>
+    <tr><td>Former Medic</td><td>medic</td><td>+4 Medicine (added on top of the skill everywhere it is read).</td></tr>
+    <tr><td>Greedy</td><td>greedy</td><td>Finds 15% more when scavenging around a base. A gift from the stores lifts them +30 instead of +20; as a deserter takes twice as much and is likelier to take meds and ammo.</td></tr>
+    <tr><td>Tough</td><td>tough</td><td>Takes 25% less damage from wounds (not from hunger, thirst or infection).</td></tr>
+    <tr><td>Keen Eye</td><td>keeneye</td><td>+1 sight radius for their team, and the team notices hidden finds more often.</td></tr>
+    <tr><td>Loud</td><td>loud</td><td>−3 Stealth.</td></tr>
+    <tr><td>Lucky</td><td>lucky</td><td>+1 to every skill.</td></tr>
+    <tr><td>Bad Back</td><td>badback</td><td>Max load 28 kg instead of 40, and every load feels 20% heavier (a worse load band).</td></tr>
+  </tbody></table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned 1–3 traits including Claustrophobic. The build has 1–2 traits from a list of ten; Claustrophobic is <span class="status planned">Planned</span>, and hidden traits and spies among recruits are not built.</aside>
+
+  <h3>Needs <span class="status partial">Partial</span></h3>
+  <p>The build tracks four hard needs and a soft one:</p>
+  <ul>
+    <li><b>Food:</b> one ration a day each (×1.1 below 0 °C mean, ×1.2 below −8 °C). See <a href="#economy">Hub economy</a> for rationing and starvation.</li>
+    <li><b>Water:</b> one a day each, times the season's thirst (spring/autumn 1, summer 1.3, winter 0.9, at least 1.6 on a hot day); dysentery adds 1.</li>
+    <li><b>A bed:</b> beds come from the base (hub 4, outpost 2) and bunkhouses (+6 each). Overcrowding costs mood every day and spreads flu.</li>
+    <li><b>Health:</b> see <a href="#health">Health, injury &amp; medicine</a>.</li>
+    <li><b>Mood:</b> the sum of many daily factors (rest, company, comforts, weather, grief). See <a href="#morale">Morale &amp; comforts</a>.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 listed food, water, rest, safety, comfort and purpose as needs. Rest, comfort and company are mood factors in the build rather than separate meters; "safety" and "purpose" are not modelled.</aside>
+
+  <h3>Names</h3>
+  <p>Names come from 36 first names and 25 last names (<i>Maria Alvarez</i>, <i>Kenji Okafor</i> …). Messages use first names, so nobody gets a first name that is already in use while another is free, and a full name is never repeated in a world. The player can rename anyone; an empty name or the full name of someone else alive is refused.</p>
+
+  <h3>The leader <span class="status built">Built</span></h3>
+  <ul>
+    <li>One survivor leads (the first colonist by default, or the one picked on the new-run screen). The leader works, travels, fights and dies like anyone else.</li>
+    <li>At the base where they live the leader lifts everyone's mood by 0.15 × Leadership a day (capped at half the crowding penalty while that base is overcrowded).</li>
+    <li>The leader gains 3 Leadership XP a day at a base, is the first choice to talk round someone who wants to leave, pulls friendships toward them, and never deserts.</li>
+    <li>If the leader dies, a card asks you to pick a new one from the six best free (not captive) people by Leadership; everyone loses 15 mood. A daily safety net asks again if the group ever has no leader.</li>
+  </ul>
+
+  <h3>Recruiting <span class="status built">Built</span></h3>
+  <p>Newcomers always ask first: anyone who would join appears on a recruit card showing their skills, traits, health and gear, plus what the base can take (free beds, days of food and water now and with them).</p>
+  <table class="data"><thead><tr><th>Source</th><th>How it happens</th></tr></thead><tbody>
+    <tr><td>A stranger at the gate</td><td>6% a day at the hub: one survivor who has been living alone.</td></tr>
+    <tr><td>Survivors on the road</td><td>People saved or freed after a road fight, or a loner met on the road.</td></tr>
+    <tr><td>Refugees</td><td>1–3 people after one of the map's groups collapses.</td></tr>
+    <tr><td>A lost teenager</td><td>A hub event (+4 mood to all if taken in, −4 if turned away).</td></tr>
+    <tr><td>Outsiders</td><td>Travellers from beyond the map: refugees 1–3, wanderers 0–1; a sheltered guest asks to stay a third of the time.</td></tr>
+    <tr><td>Jobs for groups</td><td>A finished job may be rewarded with 1–2 of their people.</td></tr>
+    <tr><td>Conquest</td><td>Fighters of a beaten group may lay down their arms and ask to join.</td></tr>
+    <tr><td>Prisoners</td><td>A prisoner who is won over.</td></tr>
+    <tr><td>Deserters coming back</td><td>From 8 to 90 days after leaving, 0.6% a day.</td></tr>
+  </tbody></table>
+  <p><b>Choices at a base:</b> take them in (5 food each on arrival), take only one, send them on foot to an outpost (they arrive with a chance of 97% − 1.2% per tile, at least 60%, after ⌈distance ÷ 8⌉ days), give them supplies and part ways (3 food and 3 water each: +2 mood for everyone there, +2 goodwill with known groups within 12 tiles), or turn them away.</p>
+  <p><b>Choices on the road:</b> take them along (only if the team's food and water cover everyone on the way home), send them to the nearest base or the hub on foot, part ways with 2 food and 2 water each (+2 team mood, +2 goodwill nearby), or turn them away.</p>
+  <p>Newcomers sometimes bring gear: a weapon 40% of the time (kitchen knife, spiked bat, pipe spear, baseball bat, 9mm pistol, crowbar, machete, revolver or hunting rifle, at 50–90% condition), sometimes makeshift armour (tire vest, arm guards, shin guards, motorcycle helmet), a kit (bandage kit, school backpack, crowbar and lockpicks, sling bag, hiking pack, flashlight) or a keepsake (family photos, playing cards, harmonica, cigarettes, chocolate, a gold ring, a watch, a novel).</p>
+
+  <h3>Visitors joining</h3>
+  <p>Outsiders (explorers, refugees and wanderers from other states) pass through the map. At your gate you can hear their news, buy maps, trade, take them in (a recruit card) or shelter them for 3 days (1 food and 1 water each a day, +3 mood at the base; afterwards half the time a gift, a third of the time someone asks to stay). 8% of explorers are robbers in disguise who rob the base that shelters them. The rest of the outsider system is described with the map's other groups.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned a 25–50 person colony cap with squads, role presets, auto-assign and base foremen. The build has no hard cap (beds and food are the limit), named work roles and crews instead of squads (see <a href="#work">Work</a>), and stewards instead of survivor foremen.</aside>
+</section>
+
+<section id="skills">
+  <h2>Skills</h2>
+  <p class="lede">Nine skills from 0 to 20 decide what each survivor is good at. They grow with use, by teaching and by reading, and the milestones at 5, 10 and 15 each give a perk chosen from a pair. Skills also gate gear: using an item below its required skill makes it weaker or unusable.</p>
+
+  <h3>The nine skills</h3>
+  <table class="data"><thead><tr><th>Skill</th><th>What it governs</th><th>How it grows (use XP)</th></tr></thead><tbody>
+    <tr><td>Shooting</td><td>Every weapon, melee included (gear <i>req</i> uses Shooting); fighting strength (+0.25 per point) in fights by the numbers, search encounters and base defence; hit chance in tactical battles; hunting (half of the hunter's skill).</td><td>Guard role 3 a day; shots 1, hits 2, melee blows 1, kills 2 in battle; fights by the numbers.</td></tr>
+    <tr><td>Stealth</td><td>The team's Stealth checks (hiding from passers-by, Heat on sneaking searches, hard extractions); takedown odds in battle (+2.5% per point); night vision goggles (req 8); camp-kit crafting (ghillie, rag boots, scent mask); hunting and fishing (a share).</td><td>1 a day on the Scavenge role; 0.3 an hour travelling at a stealthy pace; sneaking in raids.</td></tr>
+    <tr><td>Scavenging</td><td>Chance of a find around a base (+4% per point); hour-by-hour searches and containers in raids.</td><td>Scavenge role 6 a day; 3 per search hour; 2 per container.</td></tr>
+    <tr><td>Scouting</td><td>Sight and perception on the map; field load (2.5% per point off the slow-down and extra rations of a heavy load, up to half at 20); military radio (req 6); fishing (the Fish work type is ordered by it); hunting (a share).</td><td>0.5 an hour on the move; 4 per survey.</td></tr>
+    <tr><td>Medicine</td><td>Every treatment (heal = the tier's treatment + half of Medicine and kit); treatments a medic can give a day (3 + Medicine ÷ 4); illness treatment (+2% per point); hospital healing; meds station (+1 meds at 8+); surgical kit (req 10); Clinic and Trauma hospital need a Medicine 6+ / 10+ survivor to build; medical crafts.</td><td>Medic role 4 a day; 3 per wound treatment (6 for surgery); 2 per illness treatment; 3 per heal in battle.</td></tr>
+    <tr><td>Mechanics</td><td>Construction (+3% per point), repairs (hours × (1.2 − 0.03 × Mechanics), at least 40%) and the repair minimums; most hand crafts; ammo bench output (+4% per point); machine shop (needs 4, else half its days fail); station wear (−2.5% per point); Machine shop, radio station need Mechanics 4+ to build, generator and relay 3+.</td><td>Build role 11 a day while something is queued (2 when idle); Craft and Operate 11; 5 per repair (10 for a proper one).</td></tr>
+    <tr><td>Farming</td><td>Crop care (skill multiplier 0.75 + 0.035 × the tending farmers' average); preserving kitchen (+1 jar of food at 8+); the still.</td><td>Farm role 11 a day; Operate on the kitchen or still 11.</td></tr>
+    <tr><td>Speech</td><td>Road talk checks; trade prices; talking raiders down (10% + 3.5% a point, at most 75%); talking a would-be deserter round (30% + 3.5% a point, up to 95%); radio pay-offs; teaching rate (a share).</td><td>5 per talk, +5 if won; 6 per trade; 4 per radio call; 2 a day teaching.</td></tr>
+    <tr><td>Leadership</td><td>The leader's mood lift (0.15 × Leadership); teaching rate (a share); the team's talk checks (at Leadership −2); the leader's pull on friendships; choosing a new leader.</td><td>Leader 3 a day at a base; team lead 4 a day on a trip of 2+; 4 a day teaching.</td></tr>
+  </tbody></table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had twelve skills (Shooting, Melee, Stealth, Scavenging, Medicine, Mechanics, Crafting, Construction, Farming, Cooking, Speech, Leadership). The build merges Melee into Shooting, Crafting and Construction into Mechanics, Cooking into Farming, and adds Scouting.</aside>
+
+  <h3>Levelling</h3>
+  <p>Going from level L to L+1 takes 40 + 0.32 × L³ XP. A full day of one job is worth 11 XP; use XP is capped at 15 a day per skill and study XP (teaching and books) at 25, so busywork never snowballs. A 3 becomes a 7 in about a season of daily use; 15 → 16 takes about a year (112 days).</p>
+  <table class="data"><thead><tr><th>From level</th><th>0–1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>12</th><th>15</th><th>19</th></tr></thead><tbody>
+    <tr><td>XP to next</td><td>40</td><td>43</td><td>49</td><td>60</td><td>80</td><td>109</td><td>150</td><td>204</td><td>273</td><td>360</td><td>593</td><td>1,120</td><td>2,235</td></tr>
+  </tbody></table>
+  <ul>
+    <li><b>Decay:</b> a skill above 10 unused for 14 days slips 2 XP a day, never below 10 nor below the level the survivor joined with.</li>
+    <li><b>Mentor bonus:</b> teammates on a trip with a Mentor gain 25% more use XP.</li>
+    <li><b>Teaching (Teach role):</b> a teacher teaches one skill to up to 2 learners at the same base whose skill is at least 4 below theirs. Each learner gains 4 + 0.4 × the teacher's skill + 0.15 × (the teacher's Leadership + Speech) study XP a day (×1.5 with Mentor). Learners keep their own jobs.</li>
+    <li><b>Books (Read role):</b> 6 hours a day from a copy in the base's armory (one reader per copy); a skill book gives 4 XP an hour while the skill is below the book's maximum. Manuals and blueprints are studied first (2 XP an hour in their skill). See <a href="#items">Items</a> for every book.</li>
+  </ul>
+
+  <h3>Gear and the skill gap</h3>
+  <table class="data"><thead><tr><th>Skill below the item's requirement</th><th>Effect</th></tr></thead><tbody>
+    <tr><td>0 (meets it)</td><td>Full effect</td></tr>
+    <tr><td>1–3</td><td>×0.85 effect</td></tr>
+    <tr><td>4–7</td><td>×0.65 effect and a 5% chance of damaging the item</td></tr>
+    <tr><td>8 or more</td><td>Unusable</td></tr>
+  </tbody></table>
+  <aside class="note"><b>Same as Draft 1:</b> the skill-gap table is built with Draft 1's starting values.</aside>
+
+  <h3>Perks <span class="status built">Built</span></h3>
+  <p>Reaching 5, 10 and 15 in a skill gives a perk point for that milestone; each milestone offers two perks and you keep one for good (a card, or later from the survivor's skill tree). New recruits get perk points for milestones already passed in their two best skills. The autopilot picks by its style and the person's job.</p>
+  <table class="data"><thead><tr><th>Skill</th><th>At</th><th>Perk A</th><th>Perk B</th></tr></thead><tbody>
+    <tr><td rowspan="3">Medicine</td><td>5</td><td><b>Steady Hands:</b> their wound treatments heal 25% more (base, field, battle).</td><td><b>Triage:</b> +1 treatment a day of medic time.</td></tr>
+    <tr><td>10</td><td><b>Field Surgeon:</b> field treatments heal like a base treatment (12 + Medicine × 0.5), 1.5× on a severe wound, clean an infection 90% of the time.</td><td><b>Plague Doctor:</b> illness treatments 50% stronger; on Medic duty they catch contagion no more easily than anyone.</td></tr>
+    <tr><td>15</td><td><b>Chief of Medicine:</b> on Medic duty, patients in beds heal +6 a day more.</td><td><b>Miracle Worker:</b> their surgery heals 2× instead of 1.5×; a downed teammate they stabilise always pulls through.</td></tr>
+    <tr><td rowspan="3">Shooting</td><td>5</td><td><b>Steady Aim:</b> +5% to hit with guns.</td><td><b>Brawler:</b> +10% to hit and +25% damage in melee.</td></tr>
+    <tr><td>10</td><td><b>Deadeye:</b> +15% critical chance on gun shots (not overwatch); a critical does 1.5×.</td><td><b>Suppressor:</b> overwatch shots at full aim (no −15%).</td></tr>
+    <tr><td>15</td><td><b>Gunslinger:</b> +1.5 fighting strength.</td><td><b>Sniper:</b> no aim loss beyond the weapon's best range.</td></tr>
+    <tr><td rowspan="3">Stealth</td><td>5</td><td><b>Light Step:</b> unaware enemies notice them 2 tiles later.</td><td><b>Shadow:</b> +3 Stealth in the team's Stealth checks.</td></tr>
+    <tr><td>10</td><td><b>Ghost:</b> unaware enemies only notice them from 2 tiles.</td><td><b>Quiet Hands:</b> searches build half the Heat; containers they search never set off an alarm.</td></tr>
+    <tr><td>15</td><td><b>Phantom:</b> hard extractions never cost the team health.</td><td><b>Assassin:</b> melee on unaware enemies always hits and is always critical.</td></tr>
+    <tr><td rowspan="3">Scavenging</td><td>5</td><td><b>Scrounger:</b> +30% chance of a find scavenging around a base.</td><td><b>Tinker's Eye:</b> searches with them find 50% more parts and fuel.</td></tr>
+    <tr><td>10</td><td><b>Packrat:</b> +8 kg max load.</td><td><b>Treasure Hunter:</b> searches find 20% more supplies, gear and books twice as often; raid containers count Scavenging +5.</td></tr>
+    <tr><td>15</td><td><b>Salvager:</b> searches pick a site over 40% slower.</td><td><b>Sixth Sense:</b> searches run into trouble 30% less often.</td></tr>
+    <tr><td rowspan="3">Scouting</td><td>5</td><td><b>Spotter:</b> +15% for the team to notice hidden finds and spot others first.</td><td><b>Forager:</b> +1 food a day for their team on a trip.</td></tr>
+    <tr><td>10</td><td><b>Pathfinder:</b> team travels 10% faster on foot.</td><td><b>Lookout:</b> +1 team sight radius.</td></tr>
+    <tr><td>15</td><td><b>Ranger:</b> field Heat rises 30% slower while the team stands still.</td><td><b>Hunter:</b> +3 food a day for their team on a trip (stacks with Forager).</td></tr>
+    <tr><td rowspan="3">Mechanics</td><td>5</td><td><b>Handy:</b> construction and repairs count 20% more; buildings at their base wear 15% slower.</td><td><b>Grease Monkey:</b> vehicle repairs restore 25% a part without a garage (35% with); buildings wear 20% slower.</td></tr>
+    <tr><td>10</td><td><b>Tinkerer:</b> makeshift gear crafted at their base lasts 50% longer.</td><td><b>Field Repair:</b> once a day every worn makeshift item on them and those with them gets 1 use back.</td></tr>
+    <tr><td>15</td><td><b>Master Builder:</b> construction counts 40% more.</td><td><b>Machinist:</b> crafting counts 30% more.</td></tr>
+    <tr><td rowspan="3">Farming</td><td>5</td><td><b>Early Riser:</b> counts as Farming +3 when tending.</td><td><b>Harvester:</b> +2 ripe plots harvested a day.</td></tr>
+    <tr><td>10</td><td><b>Green Thumb:</b> crops they tend give 15% more.</td><td><b>Root Cellar Lore:</b> food at their base spoils 25% slower.</td></tr>
+    <tr><td>15</td><td><b>Seed Saver:</b> sowing at their base costs half the seed.</td><td><b>Herbalist:</b> +1 meds every 3 days while farming.</td></tr>
+    <tr><td rowspan="3">Leadership</td><td>5</td><td><b>Inspiring:</b> everyone else at their base +0.5 mood a day (two: +1).</td><td><b>Mentor:</b> people they teach learn 50% faster; teammates gain 25% more use XP.</td></tr>
+    <tr><td>10</td><td><b>Rally:</b> every ally +5% to hit in battles they fight in.</td><td><b>Peacemaker:</b> team talk checks use their full Leadership; a failed talk costs no goodwill.</td></tr>
+    <tr><td>15</td><td><b>Commander:</b> every ally takes 10% less damage in their battles.</td><td><b>Quartermaster:</b> everyone at their base eats 10% less.</td></tr>
+    <tr><td rowspan="3">Speech</td><td>5</td><td><b>Smooth Talker:</b> +2 to the team's talk checks.</td><td><b>Charming:</b> a won road talk raises goodwill 6 instead of 3.</td></tr>
+    <tr><td>10</td><td><b>Haggler:</b> +5 Speech when trading (price edge tops out at 15).</td><td><b>Silver Tongue:</b> +15% on road talk checks (up to 95%).</td></tr>
+    <tr><td>15</td><td><b>Diplomat:</b> after a failed road talk the team may try once more.</td><td><b>Negotiator:</b> tolls, bribes and offered supplies cost 25% less.</td></tr>
+  </tbody></table>
+  <aside class="tip"><b>Design intent:</b> perks are Fallout: New Vegas-style either/or picks, so two survivors with the same skill level can play differently (a Field Surgeon for road teams, a Chief of Medicine for the hospital).</aside>
+</section>
+
+<section id="health">
+  <h2>Health, injury &amp; medicine</h2>
+  <p class="lede">Health runs from 0 to 100 and death is permanent. Wounds heal slowly by themselves and much faster in a staffed hospital; named illnesses and work injuries cost meds and medic time to treat. Medicine is a logistics problem: meds, beds, medics and time.</p>
+
+  <h3>Wounds and damage</h3>
+  <ul>
+    <li><b>Damage:</b> wounds are reduced by worn armour (all pieces add up to a cap of 5.5) and by the Tough trait (−25%). Hunger, thirst, illness and infection are "raw" damage that armour and Tough ignore.</li>
+    <li><b>Deep cuts from wounds:</b> a hit of 10+ health that does not kill has a 25% chance to leave a deep cut that needs dressing.</li>
+    <li><b>Severe wounds:</b> below 30 health. They heal at 40% speed without a bed, at the hospital tier's speed in one.</li>
+    <li><b>Passive healing at a base:</b> 4 health a day + 0.4 × the best Medicine there; in a hospital bed add the tier's heal + 0.5 × the best medic on duty (+6 with Chief of Medicine). Nobody heals while their base is out of food or water.</li>
+    <li><b>On the road:</b> no passive healing to speak of; the team uses its carried meds. Field treatment heals 8 + Medicine × 0.6 (Field Surgeon: 12 + Medicine × 0.5) and takes an hour; a team automatically doses any illness of severity 45+ or pneumonia from its meds.</li>
+  </ul>
+
+  <h3>Infection and bites</h3>
+  <ul>
+    <li><b>Infected wounds:</b> at a base, someone below 40 health has a 5% chance a day of infection (not in a Field hospital bed or better); on the road 8% a day. An infected wound halves healing and costs 2 health a day more at a base, and drains 3 health a day on the road.</li>
+    <li><b>Clearing:</b> on its own 10% a day once health is 50+; a treatment with 1 extra meds cleans it with a chance of 25% + 15% per hospital tier + 3% per point of the treater's Medicine and kit (max 90%), or always from the Clinic up.</li>
+    <li><b>Untreated cuts</b> become infected wounds 3% a day.</li>
+    <li><b>Bites:</b> there is no zombie-infection mechanic in battle. A travel event, <i>Bitten</i> (on badly infected tiles, teams of 2+), offers "Amputate and treat" (2 meds and a Medicine 10 check: survives at −50 health, else dies) or "End it quickly" (dies; everyone −8 mood).</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned injuries per body part, bleeding and scars. The build uses one health number plus named conditions; body parts, bleeding and scars are <span class="status planned">Planned</span>.</aside>
+
+  <h3>Illness and work injuries <span class="status built">Built</span></h3>
+  <p>A condition has a severity 0–100 that drifts each day (better with rest, a bed and Medicine; worse when hungry or thirsty), costs health, cuts how much the person can work, may spread, and may turn into something worse. A treatment costs meds and one of a medic's treatments, takes severity off and stops it worsening for a day.</p>
+  <table class="data"><thead><tr><th>Condition</th><th>Kind</th><th>Start severity</th><th>Drift/day untreated</th><th>Health/day at 100</th><th>Work at 100</th><th>Meds</th><th>Severity off per treatment</th><th>Spread/day</th><th>Notes</th></tr></thead><tbody>
+    <tr><td>Deep cut</td><td>injury</td><td>20–45</td><td>−4</td><td>0</td><td>75%</td><td>1</td><td>100</td><td>—</td><td>Untreated: infected 3% a day.</td></tr>
+    <tr><td>Sprain</td><td>injury</td><td>30–60</td><td>−5</td><td>0</td><td>35%</td><td>1</td><td>40</td><td>—</td><td>Barely able to work.</td></tr>
+    <tr><td>Fever</td><td>illness</td><td>25–50</td><td>+1 (+2 more the first 2 days)</td><td>6</td><td>30%</td><td>1</td><td>45</td><td>—</td><td>Above 60: 3% a day to become pneumonia.</td></tr>
+    <tr><td>Flu</td><td>illness</td><td>30–55</td><td>−3 (+4 the first 3 days)</td><td>4</td><td>30%</td><td>1</td><td>35</td><td>3.5%</td><td>Above 50 in the cold: 4% a day to pneumonia.</td></tr>
+    <tr><td>Dysentery</td><td>illness</td><td>30–60</td><td>+1</td><td>8</td><td>20%</td><td>2</td><td>50</td><td>1.5%</td><td>+1 water a day.</td></tr>
+    <tr><td>Pneumonia</td><td>illness</td><td>50–75</td><td>+4</td><td>12</td><td>0%</td><td>2</td><td>30</td><td>1%</td><td>Kills without meds.</td></tr>
+  </tbody></table>
+  <p><b>Where people get sick or hurt</b> (per person per day unless noted): work accidents (farming 0.6%, building 1.2%, crafting 0.8%, workshop 0.6%, base scavenging 2% plus 4–12 damage, guard 0.2%); site searches (0.8% a cut and 0.25% a fever per search hour); weather exposure (cold brings flu, flu turns to pneumonia; heat brings fever; teams on the road get it in full, outdoor workers at 60%); hunger or thirst at a base 6% (fever / dysentery), a team out of food or water 4%; dirty water 0.4% dysentery (0.1% with a water filter, ×3 while thirsty); crowding flu 0.2% + 1% × overcrowding (max 3%); contagion from each contagious case (×1.6 crowded, ×0.4 in quarantine, medics ×1.5).</p>
+  <p><b>Base drift modifiers:</b> −1.5 at any base, −2 more on the Rest role, −(4 + 2 × tier) in a hospital bed, −0.15 × the best Medicine there, +4 while the base is hungry or thirsty; a condition treated yesterday or today drifts at least −2.</p>
+  <p><b>Work factor:</b> the worst condition sets how much someone can work; below 35% they are too ill to work and take a hospital bed. Quarantined contagious people do not work.</p>
+  <p><b>Outbreaks:</b> 3+ contagious people at a base raise a card (at most every 10 days): quarantine the sick for 10 days (spread −60%, they do not work), treat everyone now, or carry on.</p>
+
+  <h3>The hospital <span class="status built">Built</span></h3>
+  <p>Hospitals are built in tiers; each upgrade replaces the one below. A hospital needs people on the Medic role: with too few for its tier it runs as the highest tier its medics can staff (a Clinic with one medic works as a Field hospital), with none as no hospital.</p>
+  <table class="data"><thead><tr><th>Tier</th><th>Building</th><th>Beds</th><th>Heal/day in bed</th><th>Meds effect</th><th>Treatment heal</th><th>Medics</th><th>Stops infection in bed</th><th>Cleans infection</th><th>Severe wound speed</th><th>Surgery</th><th>Med station bonus</th></tr></thead><tbody>
+    <tr><td>0</td><td>No hospital</td><td>0</td><td>+0</td><td>×1</td><td>12</td><td>0</td><td>no</td><td>no</td><td>40%</td><td>no</td><td>0</td></tr>
+    <tr><td>1</td><td>Makeshift infirmary</td><td>2</td><td>+6</td><td>×1.25</td><td>14</td><td>1</td><td>no</td><td>no</td><td>60%</td><td>no</td><td>0</td></tr>
+    <tr><td>2</td><td>Field hospital</td><td>4</td><td>+10</td><td>×1.5</td><td>16</td><td>1</td><td>yes</td><td>no</td><td>80%</td><td>no</td><td>0</td></tr>
+    <tr><td>3</td><td>Clinic</td><td>6</td><td>+16</td><td>×1.8</td><td>18</td><td>2</td><td>yes</td><td>yes</td><td>100%</td><td>yes</td><td>+1 meds/day</td></tr>
+    <tr><td>4</td><td>Trauma hospital</td><td>10</td><td>+24</td><td>×2.2</td><td>22</td><td>3</td><td>yes</td><td>yes</td><td>120%</td><td>yes</td><td>+1 meds/day</td></tr>
+  </tbody></table>
+  <ul>
+    <li><b>Beds:</b> each base has an admit line (default 70 health, settable 30–100). People below it, with a severe or infected wound, or too ill to work take beds, worst off first. Patients do not work, get +3 mood a day, and medics on duty are never patients.</li>
+    <li><b>Treatment:</b> 1 meds per wound treatment (+1 to clean an infection); heal = (the tier's treatment heal + 0.5 × the treater's Medicine and kit) × the meds effect, ×1.5 for surgery on a severe wound (Clinic and up), ×1.25 with Steady Hands. One wound treatment per patient per day.</li>
+    <li><b>Medic time:</b> each Medic-role survivor gives 3 + Medicine ÷ 4 treatments a day (× their work factor; Triage +1). With nobody on the role, the best treater there gives 2 a day. Surgery takes 3 treatments of one medic's day.</li>
+    <li><b>Automatic care:</b> each night, worst off first: wounds below 70 health or infected, and illnesses that matter (deep cuts, anything costing 6+ health a day, pneumonia, severity 30+). It keeps the base's meds reserve and never exceeds medic time. It can be switched off per base.</li>
+    <li><b>Kits:</b> a bandage and splint kit in the off hand adds +2 Medicine to every treatment (wears a use each time); a surgical kit +4 (full at Medicine 10, nothing below 3).</li>
+  </ul>
+
+  <h3>Death</h3>
+  <ul>
+    <li>At 0 health the survivor dies. Causes include battle wounds, hunger, thirst, illness, infected wounds, accidents and events.</li>
+    <li><b>At one of your bases:</b> their things go into that base's armory; no death site inside the walls.</li>
+    <li><b>Elsewhere:</b> a death site stays where they fell with the body and everything they carried; teammates know where. Death sites can be recovered by a team (or a crew).</li>
+    <li>Friends and partners grieve (see <a href="#morale">Morale</a>); a dead leader triggers the leader card.</li>
+    <li><b>Game over:</b> the run ends when nobody is left alive (deaths, desertion and a captive changing sides all count; captives still count as alive).</li>
+  </ul>
+</section>
+
+<section id="morale">
+  <h2>Morale &amp; comforts</h2>
+  <p class="lede">Mood (0–100) is how a survivor is holding up. It sets how much work they do, and if it falls too far they break down or walk out in the night with their gear. Beds, food, rest, friends, a good leader and small comforts keep it up; crowding, hunger, grief and long winters drag it down.</p>
+
+  <h3>Mood and work</h3>
+  <table class="data"><thead><tr><th>Mood</th><th>0</th><th>20</th><th>45</th><th>80</th><th>100</th></tr></thead><tbody>
+    <tr><td>Work done</td><td>70%</td><td>80%</td><td>100%</td><td>100%</td><td>110%</td></tr>
+  </tbody></table>
+  <p>Straight lines between the points. Grieving costs up to 20% more (20% × bond), a coffee buzz or a hangover multiplies it, and a survivor on a break does nothing that day. Builders, crafters, farmers, station operators, medics and base scavengers all use it.</p>
+
+  <h3>Daily mood factors</h3>
+  <table class="data"><thead><tr><th>Factor</th><th>Mood a day</th></tr></thead><tbody>
+    <tr><td>A bed for everyone</td><td>+1</td></tr>
+    <tr><td>Crowded (over = (people − beds) ÷ beds)</td><td>−(2 + 8 × over), at most −16 (11 in 10 beds −2.8; 15 in 10 −6; 20 in 10 −10)</td></tr>
+    <tr><td>Leader at the base</td><td>+0.15 × Leadership (while crowded at most half the crowding penalty)</td></tr>
+    <tr><td>Fed / out of food / short rations</td><td>+1 / −10 / −3</td></tr>
+    <tr><td>Out of water</td><td>−8</td></tr>
+    <tr><td>Rest role / in a hospital bed</td><td>+6 / +3</td></tr>
+    <tr><td>Nothing but preserved food for 7+ / 21+ days</td><td>−1 / −2</td></tr>
+    <tr><td>Hot meals from a preserving kitchen</td><td>+1</td></tr>
+    <tr><td>Common room (15 people a room, thinner above)</td><td>+1.5</td></tr>
+    <tr><td>Chapel</td><td>+1 (and grief weighs half)</td></tr>
+    <tr><td>Something to read (books on the shelf, shared 5 people a copy)</td><td>+0.5 each, up to +1</td></tr>
+    <tr><td>Music and games (cards, harmonica, guitar)</td><td>+0.4 / +0.4 / +1, together at most +1.5</td></tr>
+    <tr><td>Keepsakes (family photos)</td><td>+0.6 for whoever carries them</td></tr>
+    <tr><td>Inspiring perk</td><td>+0.5 per inspiring person here, up to +1</td></tr>
+    <tr><td>A stray dog at the base (hub event)</td><td>+0.5 (eats 0.5 food a day)</td></tr>
+    <tr><td>Cabin fever after 14 / 21 days of winter</td><td>−0.5 / −1</td></tr>
+    <tr><td>3+ grey days in a row</td><td>−0.5</td></tr>
+    <tr><td>Partner close by / away</td><td>+1.5 / −0.5</td></tr>
+    <tr><td>Friends close by</td><td>+0.4 each, up to +1.2</td></tr>
+    <tr><td>Rivals close by</td><td>−0.6 each, down to −1.8</td></tr>
+    <tr><td>Grieving</td><td>−(0.5 + bond) a day (half with a chapel)</td></tr>
+    <tr><td>After a rough trip (4 days)</td><td>+3 resting, else −1</td></tr>
+    <tr><td>High spirits fade</td><td>−10% of mood above 50</td></tr>
+  </tbody></table>
+
+  <h3>Warnings, breaks and desertion</h3>
+  <ul>
+    <li><b>Below 30:</b> "talks about leaving" (log line and a card for the worst case at each base each day). <b>Below 20:</b> "close to leaving" (second warning). Warnings re-arm once mood is back to 40.</li>
+    <li><b>The warning card:</b> <i>Talk to them</i> (the leader there or the best Speech: 30% + 3.5% per point, up to 95%; +25 mood, else +5), <i>Give them 3 days' rest</i> (+5 now, Rest role, then back to work), <i>A gift from the stores</i> (4 food, 1 meds: +20, Greedy +30), or <i>Let them be</i>.</li>
+    <li><b>Desertion:</b> below 15 mood, only after the second warning on an earlier night: 8% a night + 0.6% per point below 15. Leaders never desert. A deserter keeps everything they carry and takes 2–4 food, 2–3 water and maybe 1–2 meds and 5–12 ammo (never more than a quarter of a stock).</li>
+    <li><b>Breaks:</b> below 12 mood, 10% + 2% per point below 12 a day (5-day cooldown): sits out a day, binge eats, wanders off or picks a fight; +8 mood afterwards; a card for a fight or a second break within 10 days.</li>
+  </ul>
+
+  <h3>Relationships and grief</h3>
+  <p>Every pair who share a base, a team, a job or a battle has an opinion from −100 to 100 that drifts daily toward a target set by compatibility, shared history and the leader's pull. Friend at 40+, close friend at 70+, rival at −30 or below; partners come from the "two survivors grow close" hub event. In battle each friend fighting alongside gives +3 aim (up to +6) and each rival −2 (down to −4). A friend or partner who dies costs −(6 + 14 × bond) mood at once and leaves them grieving for 3 + 7 × bond days. Friends of someone killed by a group get +5 aim against that group for 60 days and +6 mood when avenged.</p>
+
+  <h3>Comforts and treats <span class="status built">Built</span></h3>
+  <p><b>Kept comforts</b> are never used up. <b>Treats</b> are used from the inventory (the autopilot gives them to its glummest people below 35 mood, gentlest first, vodka only to someone resting).</p>
+  <table class="data"><thead><tr><th>Item</th><th>Effect</th></tr></thead><tbody>
+    <tr><td>Deck of playing cards</td><td>+0.4 mood a day for everyone at the base or on the team (one is enough)</td></tr>
+    <tr><td>Harmonica</td><td>+0.4 a day, the same way</td></tr>
+    <tr><td>Acoustic guitar</td><td>+1 a day, the same way (bulky)</td></tr>
+    <tr><td>Family photos</td><td>+0.6 a day for whoever carries them</td></tr>
+    <tr><td>Chocolate bar</td><td>Eaten: +6 mood</td></tr>
+    <tr><td>Instant coffee</td><td>+4 mood and work ×1.1 for the day</td></tr>
+    <tr><td>Pack of cigarettes</td><td>+5 mood, −2 health (never below 1)</td></tr>
+    <tr><td>Bottle of cheap vodka</td><td>+10 mood, then a day Hungover: work ×0.85, aim −10, −2 mood</td></tr>
+    <tr><td>Comics, novels, magazines, crossword book</td><td>Read on the Read role: +2 or +3 mood an hour (a third when re-read)</td></tr>
+  </tbody></table>
+
+  <h3>Diary and chronicle <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Diary:</b> every log line of the run, kept day by day (up to 150 lines a day, the rest counted). Lines are sorted into nine categories (Deaths, Combat, Hordes &amp; hives, Trade &amp; groups, Teams, Base &amp; people, Medical, Food water &amp; farming, Weather &amp; world) and names of people and places in them are links. Each day keeps a summary: deaths, arrivals, battles, harvest food, builds, trades, desertions, and who led that day.</li>
+    <li><b>Chronicle and timelapse:</b> a compact recording of the whole world with no fog of war: one frame a day (every 6 hours for the first 3 days, plus a frame after a major event), with tile owners, infection, your bases, groups, hordes, hives, parties, population and hub stocks, and captions for notable events. The timelapse viewer plays it back.</li>
+    <li>Neither system uses the world's random numbers: recording never changes how a run plays.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned high mood giving work speed bonuses and low mood causing arguments, theft, desertion or breaks. All of these are built (theft as the "food missing" hub event, arguments as rival quarrels).</aside>
+</section>
+
+<section id="work">
+  <h2>Work, jobs &amp; crews</h2>
+  <p class="lede">Everyone at a base does one job at a time. You can set jobs by hand, let RimWorld-style work priorities pick them every hour, form crews that run trips by themselves, or hand a whole base to a steward. Nothing is automated without a person: every machine needs an operator.</p>
+
+  <h3>Roles (the job someone is doing)</h3>
+  <table class="data"><thead><tr><th>Role</th><th>What it does</th><th>Skill</th></tr></thead><tbody>
+    <tr><td>Farm</td><td>Tends, sows and harvests the crop plots.</td><td>Farming</td></tr>
+    <tr><td>Scavenge</td><td>Picks through the ruins right around the base: about a 7% chance a day of a small find, falling as the area is picked over.</td><td>Scavenging</td></tr>
+    <tr><td>Operate</td><td>Runs one workshop station (ammo bench, med station, machine shop, preserving kitchen, still, generator). Loud: +3 Heat per station at work.</td><td>The station's</td></tr>
+    <tr><td>Build</td><td>Works the construction queue; with nothing queued, does upkeep (1.5 wear off the most worn building a day).</td><td>Mechanics</td></tr>
+    <tr><td>Guard</td><td>Defends the base; guards count 1.5× in fights. Keeps prisoners from escaping.</td><td>Shooting</td></tr>
+    <tr><td>Rest</td><td>+6 mood a day; the sick recover faster.</td><td>—</td></tr>
+    <tr><td>Medic</td><td>Staffs the hospital and treats people (never admitted as a patient; catches contagion more easily).</td><td>Medicine</td></tr>
+    <tr><td>Craft</td><td>Works the hand-craft queue.</td><td>Mechanics (Medicine for kits, Stealth for camp kit)</td></tr>
+    <tr><td>Teach</td><td>Teaches one skill to up to 2 people; does no other work.</td><td>Any</td></tr>
+    <tr><td>Hunt</td><td>Hunts within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk.</td><td>Shooting (with Scouting and Stealth)</td></tr>
+    <tr><td>Fish</td><td>Fishes a river or lake by the base 3 hours a day with a rod or net.</td><td>Scouting (with Stealth)</td></tr>
+    <tr><td>Read</td><td>Studies a manual or blueprint, or reads a book, 6 hours a day.</td><td>The book's</td></tr>
+  </tbody></table>
+
+  <h3>Work priorities <span class="status built">Built</span></h3>
+  <p>The Work tab is RimWorld's work grid: put people in a named role with a 1–5 priority per work type (blank = never) and an optional minimum skill. Every hour the scheduler gives each person a single job: health first (bed, severe or infected wound, too ill, quarantine, days off → rest), then emergencies (raiders warned or at the walls: everyone with Guard set guards; a horde coming: enough guards to hold it with a quarter to spare, best shots first), then the schedule, then free time for anyone below 25 mood (until 40), then work by priority, most urgent type and best-skilled person first. Emergency boosts send the first hands to a patient in danger with no doctor or a broken well pump or wall.</p>
+  <table class="data"><thead><tr><th>Work type</th><th>Role</th><th>Ordered by</th><th>When there is work / how many</th></tr></thead><tbody>
+    <tr><td>Doctor</td><td>Medic</td><td>Medicine</td><td>While anyone is hurt or sick (all hurt with a hospital, only the badly hurt without); the hospital's medic count.</td></tr>
+    <tr><td>Guard</td><td>Guard</td><td>Fighting strength</td><td>One lookout at a base of 4+, two at 12+, +1 while a horde is in sight, +1 with prisoners.</td></tr>
+    <tr><td>Farm</td><td>Farm</td><td>Farming</td><td>About 1.2 farmers a plot in use, up to 1.9 while food is short of the season's target.</td></tr>
+    <tr><td>Preserve</td><td>Operate (kitchen)</td><td>Farming</td><td>By the kitchen's order, or while food spoils outside or piles up for winter.</td></tr>
+    <tr><td>Workshop</td><td>Operate</td><td>Mechanics</td><td>By the station's order, or while the base is short of its product; leaves scrap for the next building.</td></tr>
+    <tr><td>Craft</td><td>Craft</td><td>Mechanics</td><td>While the craft queue has a job; one crafter at a time.</td></tr>
+    <tr><td>Build</td><td>Build</td><td>Mechanics</td><td>One builder per 40 work-hours queued, up to 3 (4 while water buildings are queued).</td></tr>
+    <tr><td>Repair</td><td>Build</td><td>Mechanics</td><td>Broken or worn buildings, 08:00–20:00.</td></tr>
+    <tr><td>Teach</td><td>Teach</td><td>Leadership</td><td>One teacher (two at 12+ people) with someone to teach.</td></tr>
+    <tr><td>Study</td><td>Read</td><td>—</td><td>An unstudied manual pulls the best qualified person; else a skill book (comics only when glum).</td></tr>
+    <tr><td>Scavenge</td><td>Scavenge</td><td>Scavenging</td><td>Always (low yield).</td></tr>
+    <tr><td>Hunt</td><td>Hunt</td><td>Shooting</td><td>With a hunting cabin, up to 2, while food is short of the season's goal.</td></tr>
+    <tr><td>Fish</td><td>Fish</td><td>Scouting</td><td>By water with a rod or net each, while food is short.</td></tr>
+  </tbody></table>
+  <p><b>Schedules:</b> each role has 24 hourly letters: Work, Guard watch (counts 1.5× in a fight), Free time and Sleep (both give the Rest role's mood by the hour; sleepers wake for an emergency). Presets: Anytime, Day shift (sleep 22–06), Night watch (guard 20–04), On guard all day.</p>
+  <p><b>Default roles:</b> Generalist, Farmer, Builder, Guard, Medic (Doctor needs Medicine 2), Crafter, Night watch, Hunter, and two crews: Scavengers and Hunting party. Manual and pinned people are never moved.</p>
+
+  <h3>Crews <span class="status built">Built</span></h3>
+  <p>A role of kind "crew" forms a team that runs trips from the hub by itself. While home its members work the base by the role's priorities; at 07:00 a crew that is home, rested and fit picks the best field job by its field priorities, packs and leaves. On the road it answers its own small cards in the governor's style, searches sites hour by hour, may chain one more site nearby, and comes home by the plan's "if … then come home" rules (someone hurt below N, food below N days, cargo full). It stops for big decisions (fights with people, hives, recruits, raids, jobs) unless the role says "handle everything".</p>
+  <table class="data"><thead><tr><th>Field job</th><th>What it does</th></tr></thead><tbody>
+    <tr><td>Scavenge sites</td><td>The best known sites in range for what the hub needs.</td></tr>
+    <tr><td>Recover our dead</td><td>Death sites of your people with gear still there.</td></tr>
+    <tr><td>Vehicles and wrecks</td><td>Bring home a vehicle left out there, or restore or strip a wrecked car.</td></tr>
+    <tr><td>Trade visits</td><td>A friendly or neutral group in range, at most once a week (see <a href="#trade">Trade</a>).</td></tr>
+    <tr><td>Supply runs to outposts</td><td>Water to an outpost running dry, food to a hungry one, scrap to one with none.</td></tr>
+    <tr><td>Survey for hidden places</td><td>Sweep unexplored land in range for farms, cabins and camps off the roads.</td></tr>
+    <tr><td>Hunt</td><td>8-hour hunting trips to the best game land in range.</td></tr>
+    <tr><td>Fish</td><td>8-hour fishing trips to the best shore in range.</td></tr>
+  </tbody></table>
+
+  <h3>Stewards (the governor) <span class="status built">Built</span></h3>
+  <p>"Hand to a steward" gives one base, or parts of it, to the same governor logic the dev autopilot uses, in a style you pick (Cautious, Balanced, Aggressive). Areas can be handed over one by one: Roles, Building, Crafting &amp; production orders, Medical, Farming &amp; food, Defence. Pinned people are left alone, the player's own station orders stand, and switching it off undoes nothing. Each steward writes one log line a day at 20:00. With work priorities, the governor's queued water filters wait while the tanks are three-quarters full.</p>
+
+  <h3>Operators and standing orders</h3>
+  <p>Every workshop station needs one operator on the Operate role (someone in a hospital bed or below 35% work factor leaves it idle; a broken station has nobody). Each station takes a standing order: <b>Forever</b>, <b>Until stock reaches N</b> (restarts 10% below), <b>Keep at least N of an input</b>, or <b>Off</b>. When an order holds a station its operator idles there or switches to a fallback (another role or station) and comes back by themselves. <b>Craft orders</b> keep N of an item in the armory at a minimum quality (0, 70, 80, 90 or 100%), queueing one job at a time.</p>
+
+  <h3>Jobs for other groups</h3>
+  <p>Known non-hostile groups post work over the radio (6% a day, traders and communes 8%) or at their gates (60% when your team arrives). At most 2 jobs per group and 6 in all. A missed deadline costs 4 goodwill (2 for a small job); declining or ignoring costs 1.</p>
+  <table class="data"><thead><tr><th>Job</th><th>Done when</th><th>Days</th></tr></thead><tbody>
+    <tr><td>Clear a horde</td><td>A horde near their bases is gone or down to 40%, with your team within 1 tile.</td><td>12</td></tr>
+    <tr><td>Escort a caravan</td><td>Their caravan arrives with your team near it for half the trip.</td><td>10</td></tr>
+    <tr><td>Deliver supplies</td><td>N of a supply handed over (or fetched from your base by their caravan).</td><td>10</td></tr>
+    <tr><td>Rescue their people</td><td>Captives freed by storming, talking or paying 40 a head.</td><td>14</td></tr>
+    <tr><td>Storm a hive</td><td>A hive within 8 tiles falls with your team there; their fighters help.</td><td>20</td></tr>
+    <tr><td>Scout a region</td><td>70% of a region 5–10 tiles out is freshly mapped.</td><td>12</td></tr>
+    <tr><td>Retrieve a package</td><td>Something at a site brought to them.</td><td>14</td></tr>
+  </tbody></table>
+  <p>Rewards: goodwill 6 + 4 × size, plus supplies, gear you cannot craft, a manual or blueprint, 1–2 recruits, intel, or (big jobs) one of their outposts.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's work tab (haul, cook, farm, craft, operate, repair, guard, doctor), schedules and role presets are built. Hauling is not a job (stock is shared per base instantly); squads became crews; base foremen became stewards that need no survivor.</aside>
+</section>
+
+<section id="buildings">
+  <h2>Buildings &amp; base plan</h2>
+  <p class="lede">The hub and every outpost run on the same building list. Buildings are queued from a menu (not placed on a grid): materials are paid up front, builders burn down the work-hours, and the base's map sprite grows with what is built. Upper tiers need a studied manual or blueprint.</p>
+
+  <h3>How construction works</h3>
+  <ul>
+    <li><b>Cost</b> is paid when the job is queued. Cancelling an untouched job refunds everything; a started one gives half back (rounded up).</li>
+    <li><b>Build time</b> is in work-hours. Each person on the Build role adds 1 + 3% per Mechanics point an hour (× work factor, ×1.2 Handy, ×1.4 Master Builder). Builders work the first job in the queue; construction stops while the base is on alert or under siege.</li>
+    <li><b>Limits:</b> each building has a maximum per base; skill requirements need a survivor with that skill <i>at the base</i> when queued.</li>
+    <li><b>Breakdowns:</b> many buildings wear and break (see <a href="#production">Production</a>, breakdowns table). A broken building does nothing until repaired.</li>
+    <li><b>The hub starts with</b> 2 farm plots, an ammo bench, a bunkhouse and a wall section; its own well (12 water a day), cellar (200 food room), 4 beds, 6 crop plots and wall strength 3 come free.</li>
+  </ul>
+  <div class="gallery" data-sprites="base/hub base/hub-1 base/hub-2 base/hub-3 base/hub-big base/outpost base/outpost-1"></div>
+  <p>On the map, your base sprite shows its walls (0–3 sections), a watchtower, a radio mast, the hospital (a red-cross building from the Clinic up, lit windows for the Trauma hospital), farms and a workshop.</p>
+
+  <h3>Shelter &amp; morale</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/bunkhouse">
+      <h4>Bunkhouse <span class="status built">Built</span></h4>
+      <p>+6 beds. Overcrowding lowers mood every day and spreads flu.</p>
+      <dl><dt>Cost</dt><dd>20 scrap</dd><dt>Build</dt><dd>30 work-hours</dd><dt>Max</dt><dd>6</dd><dt>Workers</dt><dd>none</dd><dt>Raid damage</dt><dd>broken: 6 fewer beds</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/common_room">
+      <h4>Common room <span class="status built">Built</span></h4>
+      <p>Chairs, a stove and a card table: +1.5 mood a day for everyone living here, up to 15 people a room.</p>
+      <dl><dt>Cost</dt><dd>22 scrap</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/chapel">
+      <h4>Chapel <span class="status built">Built</span></h4>
+      <p>+1 mood a day for everyone here, grief weighs half as much, and a memorial service held here lifts everyone 2 more.</p>
+      <dl><dt>Cost</dt><dd>16 scrap</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>1</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+  </div>
+
+  <h3>Food &amp; water</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/farm_plot">
+      <h4>Farm plot <span class="status built">Built</span></h4>
+      <p>+2 crop plots (the hub has 6 to begin with, an outpost 2).</p>
+      <dl><dt>Cost</dt><dd>8 scrap</dd><dt>Build</dt><dd>12</dd><dt>Max</dt><dd>10</dd><dt>Workers</dt><dd>farmers (Farm role)</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/greenhouse">
+      <h4>Greenhouse <span class="status built">Built</span></h4>
+      <p>+2 sheltered plots that grow in every season, stand 10 °C more cold and are rarely harmed by weather.</p>
+      <dl><dt>Cost</dt><dd>20 scrap, 3 parts</dd><dt>Build</dt><dd>36</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>farmers</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/well">
+      <h4>Well <span class="status built">Built</span></h4>
+      <p>+6 water a day (less in a dry spell), filling the base up to its capacity. Wears with use and frost; storms damage the pump.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 1 part</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/rain_catcher">
+      <h4>Rain catcher <span class="status built">Built</span></h4>
+      <p>Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry).</p>
+      <dl><dt>Cost</dt><dd>5 scrap</dd><dt>Build</dt><dd>8</dd><dt>Max</dt><dd>4</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/cistern">
+      <h4>Cistern <span class="status built">Built</span></h4>
+      <p>+150 water capacity (the hub holds 80 without one, an outpost 40).</p>
+      <dl><dt>Cost</dt><dd>25 scrap</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>3</dd><dt>Unlock</dt><dd>Water Treatment Schematics</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/kitchen">
+      <h4>Preserving kitchen <span class="status built">Built</span></h4>
+      <p>Workshop station: one operator jars 9 food + 3 water + 1 scrap + 4 empty jars into 8 preserved food a day (9 with Farming 8+). Hot meals: +1 mood a day for everyone.</p>
+      <dl><dt>Cost</dt><dd>18 scrap, 1 part</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>1 operator</dd><dt>Power</dt><dd>draws 1: ×1.5 in and out</dd><dt>Unlock</dt><dd>second one: Commercial Canning Guide</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/smoker">
+      <h4>Drying rack <span class="status built">Built</span></h4>
+      <p>No operator: dries 4 surplus fresh food into 3 preserved a day (half on wet days), taking food stored outside first, else only food above 15 days of eating.</p>
+      <dl><dt>Cost</dt><dd>6 scrap</dd><dt>Build</dt><dd>8</dd><dt>Max</dt><dd>3</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/huntcabin">
+      <h4>Hunting cabin <span class="status built">Built</span></h4>
+      <p>Up to 2 people on the Hunt job hunt the land within 2 tiles at dawn and dusk; smokes up to 6 fresh game a day into 5 preserved food; fresh game here spoils slower. Needs game land within 2 tiles.</p>
+      <dl><dt>Cost</dt><dd>12 scrap</dd><dt>Build</dt><dd>16</dd><dt>Max</dt><dd>1</dd><dt>Workers</dt><dd>up to 2 hunters</dd></dl>
+    </article>
+  </div>
+
+  <h3>Storage</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/cellar">
+      <h4>Root cellar <span class="status built">Built</span></h4>
+      <p>+200 food storage room underground: 0.5% spoilage a day (0.3% in the cold).</p>
+      <dl><dt>Cost</dt><dd>15 scrap</dd><dt>Build</dt><dd>20</dd><dt>Max</dt><dd>2</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/coldstore">
+      <h4>Cold store <span class="status built">Built</span></h4>
+      <p>An ice house: +150 food room, the best in winter (0.1–0.2% a day), 0.5% in spring and autumn, 1.2% in summer; on generator power a freezer all year.</p>
+      <dl><dt>Cost</dt><dd>20 scrap</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>1</dd><dt>Power</dt><dd>draws 1</dd><dt>Unlock</dt><dd>Refrigeration Schematics</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/storehouse">
+      <h4>Storehouse <span class="status built">Built</span></h4>
+      <p>A locked dry-goods store: +150 food room (0.8% a day), and raiders steal half as much from this base. Storms wear the roof.</p>
+      <dl><dt>Cost</dt><dd>18 scrap</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>1</dd></dl>
+    </article>
+  </div>
+
+  <h3>Production</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/ammo_bench">
+      <h4>Ammo bench <span class="status built">Built</span></h4>
+      <p>Workshop station: 3 scrap → 8 ammo a day (+4% per Mechanics point). Counts as a workshop for hand crafts.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 1 part</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>3</dd><dt>Workers</dt><dd>1 operator</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/med_station">
+      <h4>Med station <span class="status built">Built</span></h4>
+      <p>Workshop station: 2 scrap + 1 food → 1 meds a day (+1 with Medicine 8+, +1 with a staffed Clinic or better).</p>
+      <dl><dt>Cost</dt><dd>12 scrap, 1 meds</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>1 operator</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/machine_shop">
+      <h4>Machine shop <span class="status built">Built</span></h4>
+      <p>Workshop station: 6 scrap → 1 part a day (operator below Mechanics 4 fails half the days). Powered: 9 scrap → 2 parts.</p>
+      <dl><dt>Cost</dt><dd>25 scrap, 3 parts</dd><dt>Build</dt><dd>48</dd><dt>Max</dt><dd>2</dd><dt>Needs</dt><dd>Mechanics 4+ here</dd><dt>Power</dt><dd>draws 2</dd><dt>Unlock</dt><dd>Machinist's Handbook</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/still">
+      <h4>Ethanol still <span class="status built">Built</span></h4>
+      <p>Workshop station: 8 food + 2 water → 3 fuel a day; up to 4 of the food can be yesterday's spoiled food. Give it a Keep-at-least order.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 2 parts</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>1</dd><dt>Workers</dt><dd>1 operator</dd></dl>
+    </article>
+  </div>
+
+  <h3>Power</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/generator">
+      <h4>Generator <span class="status built">Built</span></h4>
+      <p>Workshop station: with an operator burns 2 fuel a day for 6 power, only while something draws power. Loud: +4 Heat while running.</p>
+      <dl><dt>Cost</dt><dd>20 scrap, 4 parts</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>2</dd><dt>Needs</dt><dd>Mechanics 3+ here</dd><dt>Unlock</dt><dd>Generator Schematics</dd></dl>
+    </article>
+  </div>
+
+  <h3>Medical</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/infirmary">
+      <h4>Makeshift infirmary <span class="status built">Built</span></h4>
+      <p>Tier 1: 2 beds, +6 health a day, meds ×1.25, severe wounds at 60%.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 2 meds</dd><dt>Build</dt><dd>20</dd><dt>Max</dt><dd>1</dd><dt>Staff</dt><dd>1 Medic</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/field_hosp">
+      <h4>Field hospital <span class="status built">Built</span></h4>
+      <p>Tier 2 (upgrades the infirmary): 4 beds, +10 a day, meds ×1.5, no infections in bed, severe wounds at 80%.</p>
+      <dl><dt>Cost</dt><dd>30 scrap, 2 parts, 4 meds</dd><dt>Build</dt><dd>36</dd><dt>Max</dt><dd>1</dd><dt>Staff</dt><dd>1 Medic</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/clinic">
+      <h4>Clinic <span class="status built">Built</span></h4>
+      <p>Tier 3: 6 beds, +16 a day, meds ×1.8, cleans infections, surgery, med stations +1 meds a day.</p>
+      <dl><dt>Cost</dt><dd>45 scrap, 4 parts, 8 meds</dd><dt>Build</dt><dd>60</dd><dt>Max</dt><dd>1</dd><dt>Staff</dt><dd>2 Medics</dd><dt>Needs</dt><dd>Medicine 6+ here</dd><dt>Unlock</dt><dd>Field Surgery Manual</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/hospital">
+      <h4>Trauma hospital <span class="status built">Built</span></h4>
+      <p>Tier 4: 10 beds, +24 a day, meds ×2.2, full surgery (severe wounds 20% faster), med stations +1.</p>
+      <dl><dt>Cost</dt><dd>70 scrap, 8 parts, 12 meds</dd><dt>Build</dt><dd>96</dd><dt>Max</dt><dd>1</dd><dt>Staff</dt><dd>3 Medics</dd><dt>Needs</dt><dd>Medicine 10+ and Mechanics 4+ here</dd><dt>Unlock</dt><dd>Hospital Operations Manual</dd></dl>
+    </article>
+  </div>
+
+  <h3>Defence &amp; security</h3>
+  <p>Hold-limit maths and battles are covered with the threats; these are the building numbers.</p>
+  <div class="cards">
+    <article class="card" data-sprite="building/walls">
+      <h4>Walls <span class="status built">Built</span></h4>
+      <p>+3 wall strength (each point +2 defence against raids, holds back 18 more of a horde). In a base battle: the wall map with a walkway; each section 40 + 12 HP per wall point. Damaged (wear 60+): +2 instead of +3.</p>
+      <dl><dt>Cost</dt><dd>25 scrap</dd><dt>Build</dt><dd>36</dd><dt>Max</dt><dd>3</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/barricades">
+      <h4>Barricades <span class="status built">Built</span></h4>
+      <p>+12% of a horde held back each; full cover on the battle maps. One wrecked per break-in fight; a Wallbreaker smashes one per attack.</p>
+      <dl><dt>Cost</dt><dd>8 scrap</dd><dt>Build</dt><dd>10</dd><dt>Max</dt><dd>3</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/spike_pits">
+      <h4>Spike pits <span class="status built">Built</span></h4>
+      <p>One use: the next horde loses 7% + 4 of the dead per pit before the walls; on the battle map each one stepped in is hurt.</p>
+      <dl><dt>Cost</dt><dd>6 scrap</dd><dt>Build</dt><dd>8</dd><dt>Max</dt><dd>2</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/trench">
+      <h4>Trench and stakes <span class="status built">Built</span></h4>
+      <p>+25% of a horde held back; on the battle map the dead that reach it lose the rest of their turn.</p>
+      <dl><dt>Cost</dt><dd>12 scrap</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>1</dd><dt>Unlock</dt><dd>Army Engineering Manual</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/gate">
+      <h4>Reinforced gate <span class="status built">Built</span></h4>
+      <p>+20% of a horde held back; the gate has 180 HP instead of 100 on the battle map, plus two barricades. Needs walls.</p>
+      <dl><dt>Cost</dt><dd>14 scrap, 1 part</dd><dt>Build</dt><dd>20</dd><dt>Max</dt><dd>1</dd><dt>Unlock</dt><dd>Army Engineering Manual</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/floodlights">
+      <h4>Floodlights <span class="status built">Built</span></h4>
+      <p>Burns 2 fuel per horde attack: +10% held back, defenders aim +10 at night, +4 by day. Powered: no fuel needed.</p>
+      <dl><dt>Cost</dt><dd>8 scrap, 2 parts</dd><dt>Build</dt><dd>12</dd><dt>Max</dt><dd>1</dd><dt>Power</dt><dd>draws 1</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/watchtower">
+      <h4>Watchtower <span class="status built">Built</span></h4>
+      <p>+2 tiles of live vision; earlier raid warnings. On the battle maps: two towers (height 2), full cover, +10 aim at anything lower, +4 sight.</p>
+      <dl><dt>Cost</dt><dd>15 scrap</dd><dt>Build</dt><dd>18</dd><dt>Max</dt><dd>1</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/cells">
+      <h4>Holding cells <span class="status built">Built</span></h4>
+      <p>Room for 3 prisoners each; each prisoner eats 1 food and drinks 1 water a day. Escapes: 0.4% a day guarded, 3% unguarded, 8% in a shed when the cells are full.</p>
+      <dl><dt>Cost</dt><dd>16 scrap, 1 part</dd><dt>Build</dt><dd>20</dd><dt>Max</dt><dd>2</dd><dt>Workers</dt><dd>Guard role keeps them</dd></dl>
+    </article>
+  </div>
+
+  <h3>Communications &amp; vehicles</h3>
+  <div class="cards">
+    <article class="card" data-sprite="building/radio">
+      <h4>Radio station <span class="status built">Built</span></h4>
+      <p>Live intel from teams in range, instant calls for help, radio diplomacy (covers 8 tiles; +2 powered). Storms wear the mast.</p>
+      <dl><dt>Cost</dt><dd>30 scrap, 6 parts</dd><dt>Build</dt><dd>48</dd><dt>Max</dt><dd>1</dd><dt>Needs</dt><dd>Mechanics 4+ here</dd><dt>Power</dt><dd>draws 1</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/relay">
+      <h4>Radio relay <span class="status built">Built</span></h4>
+      <p>Outposts only: an unmanned mast extending coverage 6 tiles when linked to a station or another relay. Uses 1 part every 10 days or goes off the air.</p>
+      <dl><dt>Cost</dt><dd>15 scrap, 3 parts</dd><dt>Build</dt><dd>24</dd><dt>Max</dt><dd>1</dd><dt>Needs</dt><dd>Mechanics 3+ here</dd><dt>Unlock</dt><dd>Radio Engineering Handbook</dd></dl>
+    </article>
+    <article class="card" data-sprite="building/garage">
+      <h4>Garage <span class="status built">Built</span></h4>
+      <p>Vehicle repairs restore 25 condition per part (12 without, which needs Mechanics 4+). No mechanic needed.</p>
+      <dl><dt>Cost</dt><dd>20 scrap, 2 parts</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>1</dd></dl>
+    </article>
+  </div>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned walls, doors, rooms, beds and stockpiles placed on a grid. The build has a list of 34 building types queued from a menu with no placement; base battle maps lay them out automatically. Grid placement is <span class="status planned">Planned</span>.</aside>
+</section>
+
+<section id="production">
+  <h2>Production, crafting &amp; blueprints</h2>
+  <p class="lede">Production has two halves: workshop stations that turn supplies into supplies every day (each needs an operator), and a hand-craft queue that makes makeshift gear. Upper tiers are locked behind manuals and blueprints found in the world. Machines wear out and break, and someone has to fix them.</p>
+
+  <h3>Workshop stations (daily recipes)</h3>
+  <table class="data"><thead><tr><th>Output</th><th>Inputs</th><th>Station</th><th>Time</th><th>Skill</th><th>Notes</th></tr></thead><tbody>
+    <tr><td>8 ammo</td><td>3 scrap</td><td>Ammo bench</td><td>1 day</td><td>Mechanics</td><td>+4% output per Mechanics point.</td></tr>
+    <tr><td>1 meds</td><td>2 scrap, 1 food</td><td>Med station</td><td>1 day</td><td>Medicine</td><td>+1 with Medicine 8+; +1 with a staffed Clinic or Trauma hospital.</td></tr>
+    <tr><td>1 part</td><td>6 scrap</td><td>Machine shop</td><td>1 day</td><td>Mechanics 4</td><td>Below Mechanics 4 half the days fail (inputs lost). Powered: 9 scrap → 2 parts.</td></tr>
+    <tr><td>8 preserved food</td><td>9 food, 3 water, 1 scrap, 4 jars</td><td>Preserving kitchen</td><td>1 day</td><td>Farming</td><td>9 with Farming 8+. Powered: 14 food, 5 water, 2 scrap, 6 jars → 12 (14 at Farming 8+).</td></tr>
+    <tr><td>3 fuel</td><td>8 food, 2 water</td><td>Ethanol still</td><td>1 day</td><td>Farming</td><td>Up to 4 of the food from yesterday's spoiled food.</td></tr>
+    <tr><td>6 power</td><td>2 fuel</td><td>Generator</td><td>1 day</td><td>Mechanics</td><td>Runs only while something draws power.</td></tr>
+    <tr><td>3 preserved food</td><td>4 surplus food</td><td>Drying rack</td><td>1 day</td><td>—</td><td>No operator; half on wet days.</td></tr>
+    <tr><td>5 preserved food</td><td>6 fresh game</td><td>Hunting cabin</td><td>1 day</td><td>—</td><td>Smoking, no operator.</td></tr>
+  </tbody></table>
+
+  <h3>Hand crafting <span class="status built">Built</span></h3>
+  <p>People on the Craft role work the base's craft queue (up to 8 jobs); materials are paid when queued; each crafter gives 1 + 3% per point of the recipe's skill work-hours an hour (Machinist ×1.3). Items land in the armory with a condition of 75% + 1.25% per point of the best crafter's skill (+10% for workshop recipes, −5% made in the field; 60–100%). "Workshop" recipes need an ammo bench or machine shop at the base. Field recipes can also be made by a team on the road from what it carries.</p>
+  <table class="data"><thead><tr><th>Output</th><th>Inputs</th><th>Where</th><th>Work-hours</th><th>Skill (min)</th><th>Notes</th></tr></thead><tbody>
+    <tr><td>Pipe spear</td><td>3 scrap</td><td>Any base, field</td><td>4</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Spiked bat</td><td>4 scrap</td><td>Any base, field</td><td>6</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Saw-blade machete</td><td>6 scrap</td><td>Any base</td><td>10</td><td>Mechanics 3</td><td></td></tr>
+    <tr><td>Scrap crossbow</td><td>8 scrap, 1 part</td><td>Workshop</td><td>16</td><td>Mechanics 5</td><td>Needs Improvised Weapons Plans.</td></tr>
+    <tr><td>Pipe shotgun</td><td>6 scrap, 2 parts</td><td>Workshop</td><td>14</td><td>Mechanics 6</td><td>Needs Improvised Weapons Plans.</td></tr>
+    <tr><td>Nail bat</td><td>1 scrap + a baseball bat</td><td>Any base, field</td><td>2</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Magazine arm guards</td><td>2 scrap</td><td>Any base, field</td><td>3</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Duct-tape shin guards</td><td>2 scrap</td><td>Any base, field</td><td>3</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Tire-rubber vest</td><td>6 scrap</td><td>Any base</td><td>8</td><td>Mechanics 2</td><td></td></tr>
+    <tr><td>Scrap plate vest</td><td>10 scrap, 1 part</td><td>Workshop</td><td>18</td><td>Mechanics 4</td><td>Needs Armor Smithing Notes.</td></tr>
+    <tr><td>Bandage and splint kit</td><td>2 scrap, 1 meds</td><td>Any base, field</td><td>4</td><td>Medicine 2</td><td></td></tr>
+    <tr><td>Boiled-rag dressings (1 meds)</td><td>2 scrap, 2 water</td><td>Any base, field</td><td>6</td><td>Medicine 3</td><td>A supply, not gear.</td></tr>
+    <tr><td>Crowbar and lockpicks</td><td>4 scrap</td><td>Any base</td><td>5</td><td>Mechanics 1</td><td></td></tr>
+    <tr><td>Charcoal water filter</td><td>4 scrap</td><td>Any base</td><td>6</td><td>Mechanics 2</td><td></td></tr>
+    <tr><td>School backpack</td><td>3 scrap</td><td>Any base</td><td>5</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Sling bag</td><td>2 scrap</td><td>Any base</td><td>3</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Noise maker</td><td>2 scrap</td><td>Any base, field</td><td>3</td><td>Mechanics 1</td><td></td></tr>
+    <tr><td>String of firecrackers</td><td>1 scrap, 8 ammo</td><td>Any base, field</td><td>3</td><td>Mechanics 2</td><td></td></tr>
+    <tr><td>Flashlight</td><td>2 scrap, 1 part</td><td>Any base</td><td>6</td><td>Mechanics 3</td><td></td></tr>
+    <tr><td>Oil-filter suppressor</td><td>4 scrap, 1 part</td><td>Workshop</td><td>10</td><td>Mechanics 4</td><td></td></tr>
+    <tr><td>Bicycle</td><td>8 scrap, 2 parts</td><td>Workshop</td><td>14</td><td>Mechanics 3</td><td>Joins the base's bikes.</td></tr>
+    <tr><td>Molotov cocktail</td><td>1 fuel + an empty bottle</td><td>Any base, field</td><td>1</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Pipe bomb</td><td>2 scrap, 1 part, 15 ammo</td><td>Workshop</td><td>6</td><td>Mechanics 5</td><td></td></tr>
+    <tr><td>Tripwire alarm</td><td>1 scrap</td><td>Any base, field</td><td>2</td><td>Mechanics 0</td><td></td></tr>
+    <tr><td>Ghillie wrap</td><td>2 scrap</td><td>Any base, field</td><td>6</td><td>Stealth 2</td><td></td></tr>
+    <tr><td>Rag-wrapped boots</td><td>1 scrap</td><td>Any base, field</td><td>2</td><td>Stealth 0</td><td></td></tr>
+    <tr><td>Gore scent mask</td><td>1 scrap, 1 water</td><td>Any base, field</td><td>2</td><td>Stealth 1</td><td></td></tr>
+  </tbody></table>
+  <p><b>Durability:</b> makeshift gear has uses (fights for weapons and armour, treatments for kits, days for tools, shots for the suppressor) and breaks at 0. Tinkerer makes crafted gear last 50% longer; Field Repair gives back a use a day.</p>
+
+  <h3>Manuals and blueprints (tech tiers) <span class="status built">Built</span></h3>
+  <p>Early buildings are never locked. The upper tiers of a few buildings and three crafts need a manual or blueprint that has been (1) found on the shelves of fitting sites, in crash sites, from traders or as a job reward, carried home like a book, and (2) studied on the Read role at a base whose armory holds it, by someone with the skill minimum: 6 hours a day toward its hours, 2 XP an hour. Progress is shared, so anyone can carry on; once learned it is known for good and the copy can be sold.</p>
+  <table class="data"><thead><tr><th>Manual</th><th>Study</th><th>Unlocks</th><th>Found at</th><th>Value</th></tr></thead><tbody>
+    <tr><td>Field Surgery Manual</td><td>Medicine 4, 24 h</td><td>Clinic</td><td>hospital, university, clinic, National Guard base, fire station</td><td>60</td></tr>
+    <tr><td>Hospital Operations Manual</td><td>Medicine 8, 36 h</td><td>Trauma hospital</td><td>hospital, university</td><td>90</td></tr>
+    <tr><td>Machinist's Handbook</td><td>Mechanics 3, 24 h</td><td>Machine shop</td><td>factory, university, hardware store, dam, airport, auto shop</td><td>60</td></tr>
+    <tr><td>Generator Schematics</td><td>Mechanics 3, 24 h</td><td>Generator</td><td>dam, factory, National Guard base, airport, hospital, radio tower</td><td>60</td></tr>
+    <tr><td>Army Engineering Manual</td><td>Mechanics 2, 30 h</td><td>Reinforced gate, trench</td><td>National Guard base, prison, police station</td><td>70</td></tr>
+    <tr><td>Water Treatment Schematics</td><td>Mechanics 2, 20 h</td><td>Cistern</td><td>dam, university, factory, fire station</td><td>45</td></tr>
+    <tr><td>Refrigeration Schematics</td><td>Mechanics 3, 20 h</td><td>Cold store</td><td>supermarket, warehouse, factory, truck stop, university, grocery</td><td>45</td></tr>
+    <tr><td>Commercial Canning Guide</td><td>Farming 3, 16 h</td><td>A second preserving kitchen</td><td>farm, feed store, school, grocery, supermarket, church, ranch</td><td>40</td></tr>
+    <tr><td>Radio Engineering Handbook</td><td>Mechanics 3, 24 h</td><td>Radio relay</td><td>radio tower, airport, police, National Guard base, university</td><td>60</td></tr>
+    <tr><td>Improvised Weapons Plans</td><td>Mechanics 4, 20 h</td><td>Scrap crossbow, pipe shotgun</td><td>gun store, police, prison, National Guard base, hardware, lodge</td><td>55</td></tr>
+    <tr><td>Armor Smithing Notes</td><td>Mechanics 3, 16 h</td><td>Scrap plate vest</td><td>National Guard base, police, factory, prison, hardware</td><td>45</td></tr>
+  </tbody></table>
+  <p>Find chance per search hour or container at full loot: 1.8% urban, 1.2% town, 0.8% rural, 3% landmarks, 25% at crash sites (each crash type has its own list). Only blueprints you neither know nor hold turn up. Traders sell one 30% of weeks, the military 30%, communes 20%, fortresses 15%.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned six tech tiers (Scrounge to Restoration), workstation progression hand → workshop → powered (4–5×) → upgraded (6–8×), quality grades Poor to Masterwork, batches, tending, hauling and raid-only machine components. The build has one tier of stations, a single power step (generator boosts two stations), condition 60–100% instead of quality grades, and manuals as the gate. The six-tier tree, multi-step chains (Draft 1's scrap → brass → ammo press) and machine tending are <span class="status planned">Planned</span>.</aside>
+  <h3>Reverse engineering <span class="status planned">Planned</span></h3>
+  <p>Draft 1's reverse-engineering bench (destroy an item to learn its blueprint, success by skill, copies of pre-war gear at 70–90%) is not built. In the build, blueprints come only from finding and studying manuals.</p>
+
+  <h3>Breakdowns and repairs <span class="status built">Built</span></h3>
+  <p>Fixtures gather wear (0–100) every day: use × age (+1/240 a day since built) + weather + attacks, × the operator's Mechanics (−2.5% a point, from ×1.15, at least ×0.65), ×0.8 with a Grease Monkey or ×0.85 with a Handy survivor living there, ×1.6 while jury-rigged. From 60 wear a fixture may break each day ((wear − 60) ÷ 40)² × 30%; at 100 it breaks. Builders with nothing to build remove 1.5 wear a day each from the most worn fixture. Raids spend a damage budget on the outer line first, then the buildings inside, and an overrun base may lose one wrecked building for good.</p>
+  <p><b>Fixing:</b> <i>Repair properly</i> (the best free mechanic for the hours × (1.2 − 0.03 × Mechanics), at least 40%; wear back to 8), <i>Jury-rig</i> (a third of the hours, cheap, wear left at 65 and wears 60% faster), or <i>Leave it</i>. Repairs are worked 08:00–20:00 and never while the base is on alert. Short scrap can be paid with parts (1 part for 4 scrap).</p>
+  <table class="data"><thead><tr><th>Fixture</th><th>Wears from</th><th>Repair</th><th>Jury-rig</th><th>While broken</th></tr></thead><tbody>
+    <tr><td>Hub well pump</td><td>use 0.9, frost 2.5, storm 4</td><td>6 h, 3 scrap 1 part, Mech 1</td><td>2 h, 1 scrap</td><td>6 less water a day</td></tr>
+    <tr><td>Well</td><td>use 0.9, frost 2.5, storm 4</td><td>6 h, 3 scrap 1 part, Mech 1</td><td>2 h, 1 scrap</td><td>no water from it</td></tr>
+    <tr><td>Generator</td><td>use 1.6, idle 0.15</td><td>10 h, 4 scrap 2 parts, Mech 3</td><td>3 h, 2 scrap, Mech 1</td><td>no power</td></tr>
+    <tr><td>Ethanol still</td><td>use 1.2, idle 0.1</td><td>6 h, 3 scrap 1 part, Mech 2</td><td>2 h, 2 scrap</td><td>no fuel</td></tr>
+    <tr><td>Machine shop</td><td>use 1.2, idle 0.1</td><td>8 h, 3 scrap 1 part, Mech 3</td><td>3 h, 2 scrap, Mech 1</td><td>no parts</td></tr>
+    <tr><td>Ammo bench</td><td>use 0.8, idle 0.05</td><td>4 h, 2 scrap, Mech 1</td><td>1 h, 1 scrap</td><td>no ammo</td></tr>
+    <tr><td>Med station</td><td>use 0.6, idle 0.05</td><td>4 h, 2 scrap</td><td>1 h, 1 scrap</td><td>no meds</td></tr>
+    <tr><td>Preserving kitchen</td><td>use 0.8, idle 0.05</td><td>4 h, 2 scrap</td><td>1 h, 1 scrap</td><td>no preserving</td></tr>
+    <tr><td>Radio station</td><td>use 0.7, storm 6</td><td>10 h, 4 scrap 2 parts, Mech 4</td><td>3 h, 2 scrap, Mech 2</td><td>off the air</td></tr>
+    <tr><td>Walls</td><td>age 0.05, horde attack 18</td><td>12 h, 10 scrap</td><td>4 h, 4 scrap</td><td>−3 wall strength</td></tr>
+    <tr><td>Reinforced gate</td><td>age 0.05, horde attack 22</td><td>8 h, 6 scrap 1 part, Mech 1</td><td>3 h, 3 scrap</td><td>no horde bonus</td></tr>
+    <tr><td>Storehouse</td><td>age 0.1, storm 8, rain 1</td><td>6 h, 4 scrap</td><td>2 h, 2 scrap</td><td>no food room, no theft protection</td></tr>
+    <tr><td>Barricades</td><td>raids only</td><td>4 h, 4 scrap</td><td>2 h, 2 scrap</td><td>−12% hold, no cover</td></tr>
+    <tr><td>Floodlights</td><td>raids only</td><td>5 h, 3 scrap 1 part, Mech 1</td><td>2 h, 2 scrap</td><td>no floodlight bonus</td></tr>
+    <tr><td>Watchtower</td><td>raids only</td><td>6 h, 6 scrap</td><td>2 h, 3 scrap</td><td>−2 vision, later warnings</td></tr>
+    <tr><td>Bunkhouse</td><td>raids only</td><td>8 h, 8 scrap</td><td>3 h, 4 scrap</td><td>6 fewer beds</td></tr>
+    <tr><td>Cistern</td><td>raids only</td><td>8 h, 8 scrap</td><td>3 h, 4 scrap</td><td>150 less water room</td></tr>
+    <tr><td>Root cellar</td><td>raids only</td><td>6 h, 5 scrap</td><td>2 h, 2 scrap</td><td>200 less food room</td></tr>
+    <tr><td>Cold store</td><td>raids only</td><td>6 h, 6 scrap</td><td>2 h, 3 scrap</td><td>150 less food room</td></tr>
+    <tr><td>Garage</td><td>raids only</td><td>8 h, 6 scrap 1 part, Mech 1</td><td>3 h, 3 scrap</td><td>field repair rate</td></tr>
+    <tr><td>Holding cells</td><td>raids only</td><td>6 h, 5 scrap 1 part</td><td>2 h, 3 scrap</td><td>3 fewer prisoner places</td></tr>
+    <tr><td>Common room</td><td>raids only</td><td>6 h, 6 scrap</td><td>2 h, 3 scrap</td><td>no mood</td></tr>
+    <tr><td>Chapel</td><td>raids only</td><td>5 h, 5 scrap</td><td>2 h, 2 scrap</td><td>no mood</td></tr>
+    <tr><td>Hunting cabin</td><td>raids only</td><td>4 h, 3 scrap</td><td>1 h, 1 scrap</td><td>no hunting or smoking</td></tr>
+    <tr><td>Drying rack</td><td>raids only</td><td>2 h, 2 scrap</td><td>1 h, 1 scrap</td><td>no drying</td></tr>
+    <tr><td>Rain catcher</td><td>raids only</td><td>2 h, 2 scrap</td><td>1 h, 1 scrap</td><td>no rain water</td></tr>
+    <tr><td>Radio relay</td><td>raids only</td><td>6 h, 4 scrap 1 part, Mech 2</td><td>2 h, 2 scrap, Mech 1</td><td>off the air</td></tr>
+  </tbody></table>
+  <p>Parked vehicles also lose 1 condition on frost days (2 in a blizzard). The autopilot and stewards start repairs themselves, water fixtures first.</p>
+</section>
+
+<section id="farming">
+  <h2>Farming &amp; food/water</h2>
+  <p class="lede">Crops do not give food every day: each plot is sown, grows for weeks with the weather, and is harvested in one go. Water is the faster killer. Food must be stored, preserved and rationed through a 28-day winter, so farming is a year-long planning game.</p>
+
+  <h3>The year</h3>
+  <p>A year is 4 seasons of 28 days (112 days); a run starts on day 15 of spring. Spring is mild and wet, summer warm and dry (everyone drinks 30% more, 60% in a heat wave; wells give less), autumn cooling and wet, winter freezing (nothing grows outdoors; people drink 10% less but eat more in deep cold).</p>
+
+  <h3>Plots and yield</h3>
+  <ul>
+    <li><b>Plots:</b> hub 6, outpost 2, +2 per Farm plot building (up to 10), +2 sheltered plots per Greenhouse.</li>
+    <li><b>Yield</b> = base yield × care × ground. Ground: farmland or a farmstead 1.3, forest 0.9, hills 0.85, else 1.</li>
+    <li><b>Care</b> (averaged over the days the crop stood) = tending × skill. Tending by farmers per planted plot: 0 → ×0.55, 0.5 → ×1.0, 1 → ×1.23, 2 → ×1.4, 3 → ×1.44. Skill of the tending farmers: 0 → ×0.75, 7 → ×1.0, 10 → ×1.1, 20 → ×1.45. More and better farmers give more food, never a faster crop.</li>
+    <li><b>Work:</b> each full-time farmer harvests 3 ripe plots and sows 2 a day. Sowing costs seed food (never the last two days' food). Ripe crops left past their window rot.</li>
+    <li><b>Weather damage:</b> frost, hard freezes, blizzards, storms, heat and drought (on unwatered plots) can kill a standing crop; wet weather rots a ripe one.</li>
+    <li><b>Planning:</b> farmers choose crops by the usual climate for the time of year (12 simulated years of weather, never the real days ahead), so they stop sowing tender crops into the first frosts and plan for the hungry gap.</li>
+  </ul>
+  <table class="data"><thead><tr><th>Crop</th><th>Days</th><th>Food per plot</th><th>Seed</th><th>Water/dry day</th><th>Keeps ripe</th><th>Seasons</th><th>Notes</th></tr></thead><tbody>
+    <tr><td>Potatoes</td><td>28</td><td>65</td><td>4</td><td>0.2</td><td>10 days</td><td>spring–autumn</td><td>Safe staple, stands a light frost.</td></tr>
+    <tr><td>Beans</td><td>18</td><td>36</td><td>3</td><td>0.2</td><td>5</td><td>spring–summer</td><td>Quick; frost kills them.</td></tr>
+    <tr><td>Corn</td><td>32</td><td>80</td><td>3</td><td>0.35</td><td>7</td><td>spring–summer</td><td>Biggest summer harvest; thirsty, tender, flattened by storms.</td></tr>
+    <tr><td>Wheat</td><td>42</td><td>72</td><td>4</td><td>0.15</td><td>12</td><td>spring–autumn</td><td>Hardy; harvest goes to preserved stock.</td></tr>
+    <tr><td>Squash</td><td>24</td><td>52</td><td>3</td><td>0.3</td><td>14</td><td>summer–autumn</td><td>Keeps long in the field.</td></tr>
+    <tr><td>Greens</td><td>12</td><td>19</td><td>2</td><td>0.2</td><td>3</td><td>spring–autumn</td><td>Fastest food; wilts in heat.</td></tr>
+    <tr><td>Winter roots</td><td>30</td><td>40</td><td>3</td><td>0.15</td><td>14</td><td>spring, autumn, winter</td><td>Frost-proof.</td></tr>
+    <tr><td>Kale</td><td>16</td><td>22</td><td>2</td><td>0.15</td><td>24</td><td>spring, autumn, winter</td><td>Frost- and snow-proof; hardly grows in deep cold.</td></tr>
+    <tr><td>Winter wheat</td><td>40</td><td>88</td><td>6</td><td>0.1</td><td>14</td><td>sown in autumn only</td><td>Overwinters, ripens late spring; preserved stock.</td></tr>
+    <tr><td>Dry beans</td><td>32</td><td>40</td><td>4</td><td>0.25</td><td>12</td><td>spring–autumn</td><td>Tender; preserved stock.</td></tr>
+  </tbody></table>
+
+  <h3>Water</h3>
+  <table class="data"><thead><tr><th>Source</th><th>Water a day</th></tr></thead><tbody>
+    <tr><td>Hub's own well</td><td>12 (×0.6 in a dry spell, ×0.8 frozen, ×1.15 after wet weeks)</td></tr>
+    <tr><td>Outpost spring or hand pump</td><td>3 (same factors)</td></tr>
+    <tr><td>Base next to a river or lake</td><td>+3</td></tr>
+    <tr><td>Well building</td><td>+6 each (same factors)</td></tr>
+    <tr><td>Rain catcher</td><td>+2 per unit of rain</td></tr>
+    <tr><td>Charcoal water filter</td><td>+3 each (armory or worn; wears a use a day)</td></tr>
+  </tbody></table>
+  <p>Production only fills the base up to its capacity (hub 80, outpost 40, +150 per cistern); water brought home is kept, but in summer 5% a day of what is above capacity evaporates. People drink first, then crops are watered on dry days. A week before summer, every base whose water would not hold through an average summer and a 9-day heat wave gets a warning card with what to build.</p>
+
+  <h3>Cooking and preserving</h3>
+  <p>There is no separate cooking job: the Preserving kitchen (Farming) jars food, and its presence gives "hot meals" (+1 mood a day). Preserved food (jarred, dried, smoked, grain and dry beans) barely spoils (0.1% a day), needs no cellar room, weighs 0.35 kg a ration instead of 0.5, and sells well. Eating takes fresh food first. A jar holds 2 rations and 85% of jars come back when the food is eaten at a base. Weeks of nothing but preserved food cost mood.</p>
+
+  <h3>Storage and spoilage</h3>
+  <table class="data"><thead><tr><th>Store</th><th>Room</th><th>Spoilage a day (mild weather)</th></tr></thead><tbody>
+    <tr><td>Hub cellar (free)</td><td>200</td><td>0.5% (×0.6 cold, ×1.3 hot)</td></tr>
+    <tr><td>Outpost pantry (free)</td><td>40</td><td>0.8%</td></tr>
+    <tr><td>Root cellar</td><td>+200 each</td><td>0.5%</td></tr>
+    <tr><td>Storehouse</td><td>+150</td><td>0.8% (×1.15 wet)</td></tr>
+    <tr><td>Cold store</td><td>+150</td><td>0.1% frozen, 0.2% cold, 0.5% mild, 1.2% warm; 0.1–0.2% powered</td></tr>
+    <tr><td>Stored outside (above the room)</td><td>—</td><td>3% (×1.6 heat, ×1.4 rain, ×0.5 cold, ×0.3 frozen)</td></tr>
+    <tr><td>Preserved food</td><td>no room needed</td><td>0.1% (×1.5 hot)</td></tr>
+  </tbody></table>
+  <p>Food fills the best store of the day first. Fresh game spoils faster on top (5% a day, less in the cold, with a cold store or a hunting cabin).</p>
+
+  <h3>Hunting, snares and fishing <span class="status built">Built</span></h3>
+  <p>Food from the land: game abundance depends on terrain (forest 1 → city 0.03), water nearby, infection and hives, and drops as it is hunted (recovering with a 20-day half-life; fish 10). Teams hunt big game (deer 30 rations, wild hog 16) and small game (2 rations) with rifles, bows, shotguns or pistols; gunshots cost ammo and add Heat. Snare lines (8 snares) catch about a rabbit a day. Fishing gives about 0.6 rations an hour with a rod, 1.2 with a net worked by two. At a base, the Hunting cabin and the Hunt and Fish jobs do the same 3 hours a day. Fresh game weighs 1 kg a ration when carried.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had farms as buildings and Cooking as a skill. The build has a full crop-and-season model, food storage and preserving, and hunting and fishing; Cooking is folded into Farming.</aside>
+</section>
+
+<section id="power">
+  <h2>Power</h2>
+  <p class="lede">Power is a small mid-game step: generators burn fuel to run a handful of buildings better, and an ethanol still turns surplus or spoiled food into that fuel. Machines still need people, and a running generator is loud.</p>
+  <h3>Sources</h3>
+  <ul>
+    <li><b>Generator</b> (workshop station, up to 2): with an operator, 6 power for 2 fuel a day. It only starts when something draws power, and only as many generators run as the demand needs. The day's fuel is burned when it starts and lasts to the next midnight. +4 Heat at the base per running generator.</li>
+    <li><b>Ethanol still</b> (fuel, not power): 8 food + 2 water → 3 fuel a day, up to 4 of the food from yesterday's spoiled food.</li>
+  </ul>
+  <h3>Consumers</h3>
+  <p>Served in this order while the supply lasts; each can be switched off by hand. Workshop stations draw only while their operator is working them.</p>
+  <table class="data"><thead><tr><th>Building</th><th>Draws</th><th>Powered effect</th></tr></thead><tbody>
+    <tr><td>Cold store</td><td>1</td><td>A freezer: food keeps as in winter (0.2% a day) in every season.</td></tr>
+    <tr><td>Radio station</td><td>1</td><td>+2 tiles of radio coverage.</td></tr>
+    <tr><td>Floodlights</td><td>1</td><td>No fuel burned when a horde attacks.</td></tr>
+    <tr><td>Machine shop</td><td>2</td><td>Power tools: 2 parts a day from 9 scrap (1 from 6 without).</td></tr>
+    <tr><td>Preserving kitchen</td><td>1</td><td>An electric stove: inputs and output ×1.5 (14 food → 12 preserved).</td></tr>
+  </tbody></table>
+  <p>One generator (6 power) covers a cold store, the radio, floodlights, one machine shop and one kitchen; a base with two machine shops and two kitchens wants 9 and starts its second generator. The hub's Heat is its people + 3 per manned station + 2 with a radio + 3 for the hub + 4 per running generator + hunters' gunshots.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned hand cranks, biomass burners, solar, wind, water wheels, batteries, wiring with overloads, brownouts and fires, priority switches and a captured power plant. Only fuel generators with a fixed priority list and per-building switches are built; the rest is <span class="status planned">Planned</span>. Draft 1's Hub Heat from machines is built (generators and stations add Heat); mufflers and blackout curtains are not.</aside>
+</section>
+
+<section id="items">
+  <h2>Items &amp; equipment</h2>
+  <p class="lede">Anything can be found anywhere, from a kitchen knife to a military radio; what limits you is the skill to use it and the weight to carry it. There are 9 bulk supplies and 139 kinds of gear (128 items plus 11 manuals). Every item has a hidden base value, a weight in kilograms and a trade category.</p>
+
+  <h3>Supplies</h3>
+  <p>Supplies are pooled per base (stock) or per team (supplies and cargo), never per person. A unit of food or water is one person's ration for a day; ammo is per round. Values are hidden base barter values (the player only sees what a group pays).</p>
+  <div class="cards">
+    <article class="card"><h4>Food <span class="status built">Built</span></h4><p>Fresh food: eaten first, spoils in store.</p><dl><dt>Value</dt><dd>2</dd><dt>Weight</dt><dd>0.5 kg</dd><dt>Category</dt><dd>food</dd></dl></article>
+    <article class="card"><h4>Water <span class="status built">Built</span></h4><p>Drunk daily by people, prisoners and crops.</p><dl><dt>Value</dt><dd>1</dd><dt>Weight</dt><dd>1 kg</dd><dt>Category</dt><dd>water</dd></dl></article>
+    <article class="card"><h4>Fuel <span class="status built">Built</span></h4><p>Vehicles, generators, floodlights, Molotovs. Scarce: gas stations, truck stops, the airport, military bases, the still.</p><dl><dt>Value</dt><dd>3</dd><dt>Weight</dt><dd>1 kg</dd><dt>Category</dt><dd>fuel</dd></dl></article>
+    <article class="card"><h4>Meds <span class="status built">Built</span></h4><p>Every treatment and some buildings.</p><dl><dt>Value</dt><dd>6</dd><dt>Weight</dt><dd>0.1 kg</dd><dt>Category</dt><dd>medical</dd></dl></article>
+    <article class="card"><h4>Ammo <span class="status built">Built</span></h4><p>One per shot (two for the assault rifle); also firecrackers and pipe bombs.</p><dl><dt>Value</dt><dd>0.5</dd><dt>Weight</dt><dd>0.02 kg</dd><dt>Category</dt><dd>ammo</dd></dl></article>
+    <article class="card"><h4>Parts <span class="status built">Built</span></h4><p>Spare parts for buildings, repairs, vehicles and advanced crafts.</p><dl><dt>Value</dt><dd>8</dd><dt>Weight</dt><dd>2 kg</dd><dt>Category</dt><dd>parts</dd></dl></article>
+    <article class="card"><h4>Scrap <span class="status built">Built</span></h4><p>The universal building and crafting material.</p><dl><dt>Value</dt><dd>1</dd><dt>Weight</dt><dd>2 kg</dd><dt>Category</dt><dd>scrap</dd></dl></article>
+    <article class="card"><h4>Preserved food <span class="status built">Built</span></h4><p>Jarred, dried or smoked food, grain and dry beans: barely spoils, needs no cellar room.</p><dl><dt>Value</dt><dd>4</dd><dt>Weight</dt><dd>0.35 kg</dd><dt>Category</dt><dd>food</dd></dl></article>
+    <article class="card"><h4>Jars <span class="status built">Built</span></h4><p>What the preserving kitchen fills; most come back when the food is eaten.</p><dl><dt>Value</dt><dd>0.5</dd><dt>Weight</dt><dd>0.4 kg</dd><dt>Category</dt><dd>containers</dd></dl></article>
+  </div>
+
+  <h3>Reading the gear cards</h3>
+  <p><b>Power</b> is the item's strength in fights resolved by the numbers (a weapon's power × condition is added to the wielder's fighting strength; armour adds half its power). <b>Damage</b>, <b>best range</b> (tiles), <b>aim</b> and <b>ammo</b> are its tactical-battle numbers. <b>Req</b> is the Shooting (or other skill) it needs for full effect. <b>Uses</b> is durability for makeshift gear. Melee weapons use the Shooting skill.</p>
+
+  <h3>Melee weapons</h3>
+  <div class="cards">
+    <article class="card" data-sprite="gear/knife"><h4>Kitchen knife <span class="status built">Built</span></h4><p>Quiet, light, pocketable.</p><dl><dt>Power</dt><dd>1</dd><dt>Damage</dt><dd>14–22</dd><dt>Req</dt><dd>0</dd><dt>Weight</dt><dd>0.3 kg</dd><dt>Value</dt><dd>5</dd></dl></article>
+    <article class="card" data-sprite="gear/machete"><h4>Machete <span class="status built">Built</span></h4><p>Silent; cleaves the dead.</p><dl><dt>Power</dt><dd>2</dd><dt>Damage</dt><dd>20–30</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>12</dd></dl></article>
+    <article class="card" data-sprite="gear/bat"><h4>Baseball bat <span class="status built">Built</span></h4><p>A club: takedowns +20. Base for the nail bat.</p><dl><dt>Power</dt><dd>1.6</dd><dt>Damage</dt><dd>15–24</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+    <article class="card"><h4>Nail bat <span class="status built">Built</span></h4><p>Makeshift (bat + 1 scrap).</p><dl><dt>Power</dt><dd>2.1</dd><dt>Damage</dt><dd>20–31</dd><dt>Uses</dt><dd>16 fights</dd><dt>Weight</dt><dd>1.2 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card"><h4>Crowbar <span class="status built">Built</span></h4><p>Forces locks in a raid.</p><dl><dt>Power</dt><dd>1.8</dd><dt>Damage</dt><dd>16–25</dd><dt>Weight</dt><dd>2 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card"><h4>Fire axe <span class="status built">Built</span></h4><p>Splits skulls and doors (forces locks).</p><dl><dt>Power</dt><dd>2.4</dd><dt>Damage</dt><dd>21–32</dd><dt>Weight</dt><dd>2.7 kg</dd><dt>Value</dt><dd>16</dd></dl></article>
+    <article class="card"><h4>Sledgehammer <span class="status built">Built</span></h4><p>Crushing but slow (−10 to hit in melee); smashes locks.</p><dl><dt>Power</dt><dd>2.6</dd><dt>Damage</dt><dd>25–38</dd><dt>Req</dt><dd>2</dd><dt>Weight</dt><dd>5 kg</dd><dt>Value</dt><dd>14</dd></dl></article>
+    <article class="card"><h4>Police baton <span class="status built">Built</span></h4><p>Pocketable club: takedowns +20.</p><dl><dt>Power</dt><dd>1.3</dd><dt>Damage</dt><dd>12–19</dd><dt>Weight</dt><dd>0.6 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+    <article class="card" data-sprite="gear/spikedbat"><h4>Spiked bat <span class="status built">Built</span></h4><p>Makeshift: nails in a bat.</p><dl><dt>Power</dt><dd>1.5</dd><dt>Damage</dt><dd>16–25</dd><dt>Uses</dt><dd>10</dd><dt>Weight</dt><dd>1.2 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card" data-sprite="gear/pipespear"><h4>Pipe spear <span class="status built">Built</span></h4><p>Makeshift: a knife taped to a pipe.</p><dl><dt>Power</dt><dd>1.2</dd><dt>Damage</dt><dd>15–23</dd><dt>Uses</dt><dd>8</dd><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card" data-sprite="gear/sawmachete"><h4>Saw-blade machete <span class="status built">Built</span></h4><p>Makeshift cleaver.</p><dl><dt>Power</dt><dd>1.7</dd><dt>Damage</dt><dd>17–27</dd><dt>Uses</dt><dd>12</dd><dt>Weight</dt><dd>1.2 kg</dd><dt>Value</dt><dd>7</dd></dl></article>
+  </div>
+
+  <h3>Bows and crossbows (silent, no ammo)</h3>
+  <div class="cards">
+    <article class="card" data-sprite="gear/crossbow"><h4>Scrap crossbow <span class="status built">Built</span></h4><p>Makeshift, reusable bolts.</p><dl><dt>Power</dt><dd>2.5</dd><dt>Damage</dt><dd>18–26</dd><dt>Range</dt><dd>7</dd><dt>Aim</dt><dd>−4</dd><dt>Req</dt><dd>3</dd><dt>Uses</dt><dd>12</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>18</dd></dl></article>
+    <article class="card"><h4>Compound bow <span class="status built">Built</span></h4><p>Arrows picked up again.</p><dl><dt>Power</dt><dd>3.2</dd><dt>Damage</dt><dd>17–26</dd><dt>Range</dt><dd>7</dd><dt>Aim</dt><dd>−2</dd><dt>Req</dt><dd>4</dd><dt>Weight</dt><dd>2 kg</dd><dt>Value</dt><dd>40</dd></dl></article>
+    <article class="card"><h4>Hunting crossbow <span class="status built">Built</span></h4><p>Scoped, hits hard, heavy.</p><dl><dt>Power</dt><dd>3.8</dd><dt>Damage</dt><dd>20–29</dd><dt>Range</dt><dd>6</dd><dt>Aim</dt><dd>0</dd><dt>Req</dt><dd>3</dd><dt>Weight</dt><dd>3.5 kg</dd><dt>Value</dt><dd>50</dd></dl></article>
+  </div>
+
+  <h3>Firearms</h3>
+  <div class="cards">
+    <article class="card" data-sprite="gear/pistol"><h4>9mm pistol <span class="status built">Built</span></h4><p>Police issue; pocketable; takes a suppressor.</p><dl><dt>Power</dt><dd>3</dd><dt>Damage</dt><dd>16–24</dd><dt>Range</dt><dd>6</dd><dt>Ammo</dt><dd>1</dd><dt>Noise</dt><dd>2</dd><dt>Req</dt><dd>2</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>30</dd></dl></article>
+    <article class="card"><h4>.357 revolver <span class="status built">Built</span></h4><p>Harder than a 9mm, louder, no suppressor.</p><dl><dt>Power</dt><dd>3.5</dd><dt>Damage</dt><dd>20–30</dd><dt>Range</dt><dd>5</dd><dt>Aim</dt><dd>−2</dd><dt>Noise</dt><dd>3</dd><dt>Req</dt><dd>3</dd><dt>Weight</dt><dd>1.2 kg</dd><dt>Value</dt><dd>34</dd></dl></article>
+    <article class="card" data-sprite="gear/shotgun"><h4>Pump shotgun <span class="status built">Built</span></h4><p>Devastating up close (+10 close), poor at range.</p><dl><dt>Power</dt><dd>5</dd><dt>Damage</dt><dd>24–36</dd><dt>Range</dt><dd>4</dd><dt>Aim</dt><dd>+10</dd><dt>Noise</dt><dd>3</dd><dt>Req</dt><dd>6</dd><dt>Weight</dt><dd>3.5 kg</dd><dt>Value</dt><dd>50</dd></dl></article>
+    <article class="card" data-sprite="gear/pipegun"><h4>Pipe shotgun <span class="status built">Built</span></h4><p>Makeshift zip gun; short range.</p><dl><dt>Power</dt><dd>3.5</dd><dt>Damage</dt><dd>20–32</dd><dt>Range</dt><dd>3</dd><dt>Aim</dt><dd>−6</dd><dt>Noise</dt><dd>3</dd><dt>Req</dt><dd>3</dd><dt>Uses</dt><dd>8</dd><dt>Weight</dt><dd>2.5 kg</dd><dt>Value</dt><dd>20</dd></dl></article>
+    <article class="card" data-sprite="gear/huntrifle"><h4>Hunting rifle <span class="status built">Built</span></h4><p>Scoped bolt-action: the long-range gun (−10 close).</p><dl><dt>Power</dt><dd>5</dd><dt>Damage</dt><dd>24–34</dd><dt>Range</dt><dd>12</dd><dt>Aim</dt><dd>+5</dd><dt>Noise</dt><dd>3</dd><dt>Req</dt><dd>5</dd><dt>Weight</dt><dd>4 kg</dd><dt>Value</dt><dd>55</dd></dl></article>
+    <article class="card"><h4>Lever-action rifle <span class="status built">Built</span></h4><p>Handy ranch rifle.</p><dl><dt>Power</dt><dd>4.5</dd><dt>Damage</dt><dd>20–30</dd><dt>Range</dt><dd>10</dd><dt>Aim</dt><dd>+4</dd><dt>Req</dt><dd>4</dd><dt>Weight</dt><dd>3.4 kg</dd><dt>Value</dt><dd>45</dd></dl></article>
+    <article class="card"><h4>Police carbine <span class="status built">Built</span></h4><p>Semi-automatic patrol rifle.</p><dl><dt>Power</dt><dd>6.5</dd><dt>Damage</dt><dd>20–29</dd><dt>Range</dt><dd>9</dd><dt>Aim</dt><dd>+7</dd><dt>Req</dt><dd>8</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>95</dd></dl></article>
+    <article class="card" data-sprite="gear/ar"><h4>Assault rifle <span class="status built">Built</span></h4><p>Two rounds a shot: the best gun there is.</p><dl><dt>Power</dt><dd>8</dd><dt>Damage</dt><dd>22–32</dd><dt>Range</dt><dd>9</dd><dt>Aim</dt><dd>+8</dd><dt>Ammo</dt><dd>2</dd><dt>Req</dt><dd>10</dd><dt>Weight</dt><dd>4 kg</dd><dt>Value</dt><dd>120</dd></dl></article>
+    <article class="card"><h4>Oil-filter suppressor <span class="status built">Built</span></h4><p>Carried with a 9mm or a rifle (not revolver or shotgun): shots make half the noise and Heat.</p><dl><dt>Uses</dt><dd>12 shots</dd><dt>Weight</dt><dd>0.4 kg</dd><dt>Value</dt><dd>12</dd></dl></article>
+  </div>
+
+  <h3>Armour</h3>
+  <p>Armour power from every worn piece adds up (cap 5.5) and scales with condition. Makeshift pieces wear a use per fight.</p>
+  <div class="cards">
+    <article class="card" data-sprite="gear/vest"><h4>Kevlar vest <span class="status built">Built</span></h4><p>Body.</p><dl><dt>Armour</dt><dd>2</dd><dt>Weight</dt><dd>4 kg</dd><dt>Value</dt><dd>45</dd></dl></article>
+    <article class="card" data-sprite="gear/plate"><h4>Plate carrier <span class="status built">Built</span></h4><p>Body; the best and heaviest.</p><dl><dt>Armour</dt><dd>4</dd><dt>Weight</dt><dd>8 kg</dd><dt>Value</dt><dd>110</dd></dl></article>
+    <article class="card" data-sprite="gear/tirevest"><h4>Tire-rubber vest <span class="status built">Built</span></h4><p>Body, makeshift.</p><dl><dt>Armour</dt><dd>1</dd><dt>Uses</dt><dd>10</dd><dt>Weight</dt><dd>5 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card" data-sprite="gear/sportspads"><h4>Football pads <span class="status built">Built</span></h4><p>Body, found (school lockers).</p><dl><dt>Armour</dt><dd>0.8</dd><dt>Uses</dt><dd>12</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card" data-sprite="gear/scrapvest"><h4>Scrap plate vest <span class="status built">Built</span></h4><p>Body, makeshift; heavy but solid.</p><dl><dt>Armour</dt><dd>1.8</dd><dt>Uses</dt><dd>14</dd><dt>Weight</dt><dd>7 kg</dd><dt>Value</dt><dd>25</dd></dl></article>
+    <article class="card"><h4>Motorcycle helmet <span class="status built">Built</span></h4><p>Head.</p><dl><dt>Armour</dt><dd>0.7</dd><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>15</dd></dl></article>
+    <article class="card"><h4>Riot helmet <span class="status built">Built</span></h4><p>Head, with a visor.</p><dl><dt>Armour</dt><dd>1.2</dd><dt>Weight</dt><dd>1.8 kg</dd><dt>Value</dt><dd>35</dd></dl></article>
+    <article class="card"><h4>Football helmet <span class="status built">Built</span></h4><p>Head, found; cracks eventually.</p><dl><dt>Armour</dt><dd>0.4</dd><dt>Uses</dt><dd>10</dd><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card" data-sprite="gear/padding"><h4>Magazine arm guards <span class="status built">Built</span></h4><p>Arms, makeshift.</p><dl><dt>Armour</dt><dd>0.6</dd><dt>Uses</dt><dd>6</dd><dt>Weight</dt><dd>0.8 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card"><h4>Riot arm guards <span class="status built">Built</span></h4><p>Arms.</p><dl><dt>Armour</dt><dd>0.9</dd><dt>Weight</dt><dd>1.2 kg</dd><dt>Value</dt><dd>14</dd></dl></article>
+    <article class="card"><h4>Knee and shin guards <span class="status built">Built</span></h4><p>Legs.</p><dl><dt>Armour</dt><dd>0.5</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Duct-tape shin guards <span class="status built">Built</span></h4><p>Legs, makeshift.</p><dl><dt>Armour</dt><dd>0.4</dd><dt>Uses</dt><dd>6</dd><dt>Weight</dt><dd>0.6 kg</dd><dt>Value</dt><dd>2</dd></dl></article>
+    <article class="card"><h4>Riot leg guards <span class="status built">Built</span></h4><p>Legs.</p><dl><dt>Armour</dt><dd>0.8</dd><dt>Weight</dt><dd>1.4 kg</dd><dt>Value</dt><dd>12</dd></dl></article>
+  </div>
+
+  <h3>Packs</h3>
+  <div class="cards">
+    <article class="card"><h4>Sling bag <span class="status built">Built</span></h4><p>3 pack slots, +3 kg max load.</p><dl><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+    <article class="card"><h4>School backpack <span class="status built">Built</span></h4><p>Makeshift: 6 slots, +6 kg.</p><dl><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>5</dd></dl></article>
+    <article class="card"><h4>Assault pack <span class="status built">Built</span></h4><p>8 slots, +10 kg, load counts 12% lighter.</p><dl><dt>Weight</dt><dd>2 kg</dd><dt>Value</dt><dd>40</dd></dl></article>
+    <article class="card"><h4>Hiking pack <span class="status built">Built</span></h4><p>10 slots, +14 kg, 8% lighter; a searching team with one makes 5% more Heat.</p><dl><dt>Weight</dt><dd>2.5 kg</dd><dt>Value</dt><dd>30</dd></dl></article>
+    <article class="card"><h4>Frame rucksack <span class="status built">Built</span></h4><p>14 slots, +18 kg, 20% lighter.</p><dl><dt>Weight</dt><dd>3.5 kg</dd><dt>Value</dt><dd>55</dd></dl></article>
+  </div>
+
+  <h3>Tools, electronics and utility</h3>
+  <div class="cards">
+    <article class="card"><h4>Night vision goggles <span class="status built">Built</span></h4><p>Off hand: see in the dark on night raids, spot others first at night.</p><dl><dt>Req</dt><dd>Stealth 8</dd><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>140</dd></dl></article>
+    <article class="card"><h4>Military encrypted radio <span class="status built">Built</span></h4><p>Off hand: hears what others cannot.</p><dl><dt>Req</dt><dd>Scouting 6</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>160</dd></dl></article>
+    <article class="card"><h4>Flashlight <span class="status built">Built</span></h4><p>Off hand on a night raid: full search speed, see 9 tiles not 7, but guards notice the light 3 tiles further.</p><dl><dt>Weight</dt><dd>0.3 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card"><h4>Crowbar and lockpicks <span class="status built">Built</span></h4><p>Off hand: +2 Scavenging for base scavenging; picks locks.</p><dl><dt>Uses</dt><dd>30 days</dd><dt>Weight</dt><dd>2 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+    <article class="card"><h4>Charcoal water filter <span class="status built">Built</span></h4><p>+3 water a day at its base (armory or worn); cuts dysentery risk.</p><dl><dt>Uses</dt><dd>20 days</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Handcuffs <span class="status built">Built</span></h4><p>Tying up someone knocked out takes no action.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>5</dd></dl></article>
+    <article class="card"><h4>Bicycle <span class="status built">Built</span></h4><p>Bulky cargo; joins the base's bikes: faster on roads, no fuel, a 15 kg rack.</p><dl><dt>Weight</dt><dd>12 kg</dd><dt>Value</dt><dd>25</dd></dl></article>
+    <article class="card"><h4>Fishing rod <span class="status built">Built</span></h4><p>About 0.6 food an hour on a shore.</p><dl><dt>Weight</dt><dd>0.8 kg</dd><dt>Value</dt><dd>12</dd></dl></article>
+    <article class="card"><h4>Fishing net <span class="status built">Built</span></h4><p>Worked by two: about 1.2 food an hour.</p><dl><dt>Weight</dt><dd>2.5 kg</dd><dt>Value</dt><dd>18</dd></dl></article>
+    <article class="card"><h4>Snare wire <span class="status built">Built</span></h4><p>A line of 8 snares: about a rabbit a day; the wire comes back.</p><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+  </div>
+
+  <h3>Medical kits</h3>
+  <div class="cards">
+    <article class="card"><h4>Surgical kit <span class="status built">Built</span></h4><p>Off hand: +4 Medicine when treating (full at Medicine 10, none below 3).</p><dl><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>90</dd></dl></article>
+    <article class="card"><h4>Bandage and splint kit <span class="status built">Built</span></h4><p>Off hand: +2 Medicine when treating; makeshift.</p><dl><dt>Uses</dt><dd>5 treatments</dd><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+  </div>
+
+  <h3>Optics</h3>
+  <p>Carried by anyone on a team: the best one counts, a second adds a quarter of its bonus.</p>
+  <div class="cards">
+    <article class="card"><h4>Pocket monocular <span class="status built">Built</span></h4><p>Spotting hidden places ×1.1; others spotted a little sooner.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>12</dd></dl></article>
+    <article class="card"><h4>Binoculars <span class="status built">Built</span></h4><p>+1 team sight, spotting ×1.25, surveys look a tile further.</p><dl><dt>Weight</dt><dd>0.7 kg</dd><dt>Value</dt><dd>22</dd></dl></article>
+    <article class="card"><h4>Spotting scope <span class="status built">Built</span></h4><p>Only while staying put: spotting ×1.6, surveys 2 tiles further.</p><dl><dt>Weight</dt><dd>2.2 kg</dd><dt>Value</dt><dd>40</dd></dl></article>
+    <article class="card"><h4>Thermal monocular <span class="status built">Built</span></h4><p>Spotting ×1.2 and almost no night or fog penalty; in the off hand works like night vision in battle.</p><dl><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>150</dd></dl></article>
+    <article class="card"><h4>Telescope <span class="status built">Built</span></h4><p>Bulky; in a base's armory +1 tile of view (2 with a watchtower).</p><dl><dt>Weight</dt><dd>9 kg</dd><dt>Value</dt><dd>35</dd></dl></article>
+  </div>
+
+  <h3>Throwables (one use unless noted)</h3>
+  <div class="cards">
+    <article class="card"><h4>Empty bottle <span class="status built">Built</span></h4><p>Thrown up to 7 tiles: pulls unaware guards and the dead within 6 to look. Molotov base.</p><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Value</dt><dd>1</dd></dl></article>
+    <article class="card"><h4>Noise maker <span class="status built">Built</span></h4><p>Up to 7 tiles; rings 3 turns, pulls everything unaware within 8.</p><dl><dt>Weight</dt><dd>0.3 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card"><h4>String of firecrackers <span class="status built">Built</span></h4><p>Up to 8 tiles; pulls everything unaware within 13; raid Heat +6.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card"><h4>Pipe bomb <span class="status built">Built</span></h4><p>Up to 6 tiles; 22–34 damage within a tile (yours too); wakes everything within 14; Heat +10.</p><dl><dt>Weight</dt><dd>0.6 kg</dd><dt>Value</dt><dd>15</dd></dl></article>
+    <article class="card"><h4>Molotov cocktail <span class="status built">Built</span></h4><p>Up to 6 tiles; fire within a tile for 3 turns: 12–18, then 8–14 a turn. Three set a hive on fire.</p><dl><dt>Weight</dt><dd>0.9 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
+    <article class="card"><h4>Road flare <span class="status built">Built</span></h4><p>Up to 8 tiles; 4 turns: draws unaware dead within 10; at night lights 5 tiles, +10 aim.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card"><h4>Smoke grenade <span class="status built">Built</span></h4><p>Up to 7 tiles; cloud 2 tiles for 3 turns: shots through it −30; retreat +20.</p><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Value</dt><dd>18</dd></dl></article>
+    <article class="card"><h4>Deer call <span class="status built">Built</span></h4><p>Blown (1 action, not used up): pulls unaware guards and dead within 7 toward you.</p><dl><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>5</dd></dl></article>
+  </div>
+
+  <h3>Base defences (kept in the armory)</h3>
+  <div class="cards">
+    <article class="card"><h4>Roll of barbed wire <span class="status built">Built</span></h4><p>+5% of a horde held back a roll (up to 3); stops the dead on the battle map; one torn up per attack.</p><dl><dt>Weight</dt><dd>8 kg (bulky)</dd><dt>Value</dt><dd>12</dd></dl></article>
+    <article class="card"><h4>Bear trap <span class="status built">Built</span></h4><p>Catches about 3 of the dead each (up to 4); a quarter break each attack.</p><dl><dt>Weight</dt><dd>6 kg (bulky)</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Tripwire alarm <span class="status built">Built</span></h4><p>Everyone counts half on the walls even unwarned; on a team, trouble a fifth less likely.</p><dl><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card"><h4>Sandbags <span class="status built">Built</span></h4><p>+4% held back a bundle (up to 4); cover on the battle map.</p><dl><dt>Weight</dt><dd>15 kg (bulky)</dd><dt>Value</dt><dd>6</dd></dl></article>
+  </div>
+
+  <h3>Camp kit (against field Heat)</h3>
+  <div class="cards">
+    <article class="card"><h4>Camo netting <span class="status built">Built</span></h4><p>Heat ×0.75 while the team stays put.</p><dl><dt>Weight</dt><dd>4 kg</dd><dt>Value</dt><dd>18</dd></dl></article>
+    <article class="card"><h4>Ghillie wrap <span class="status built">Built</span></h4><p>Heat ×0.85 staying put, ×0.9 searching.</p><dl><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Gore scent mask <span class="status built">Built</span></h4><p>Used up: 24 hours of Heat ×0.6 on the spot, ×0.75 searching.</p><dl><dt>Weight</dt><dd>0.4 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card"><h4>Rag-wrapped boots <span class="status built">Built</span></h4><p>Heat ×0.85 searching, ×0.95 on the spot.</p><dl><dt>Weight</dt><dd>0.5 kg</dd><dt>Value</dt><dd>2</dd></dl></article>
+    <article class="card"><h4>Smokeless stove <span class="status built">Built</span></h4><p>Camping Heat from fire and cooking ×0.6.</p><dl><dt>Weight</dt><dd>1.5 kg</dd><dt>Value</dt><dd>14</dd></dl></article>
+  </div>
+
+  <h3>Comforts and treats</h3>
+  <div class="cards">
+    <article class="card"><h4>Deck of playing cards <span class="status built">Built</span></h4><p>+0.4 mood a day for the base or team.</p><dl><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>3</dd></dl></article>
+    <article class="card"><h4>Harmonica <span class="status built">Built</span></h4><p>+0.4 mood a day for the base or team.</p><dl><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+    <article class="card"><h4>Acoustic guitar <span class="status built">Built</span></h4><p>+1 mood a day for the base or team.</p><dl><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>15</dd></dl></article>
+    <article class="card"><h4>Family photos <span class="status built">Built</span></h4><p>+0.6 mood a day for the carrier.</p><dl><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>1</dd></dl></article>
+    <article class="card"><h4>Chocolate bar <span class="status built">Built</span></h4><p>Eaten: +6 mood.</p><dl><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card"><h4>Instant coffee <span class="status built">Built</span></h4><p>+4 mood, work ×1.1 for a day.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card"><h4>Pack of cigarettes <span class="status built">Built</span></h4><p>+5 mood, −2 health.</p><dl><dt>Weight</dt><dd>0.05 kg</dd><dt>Value</dt><dd>4</dd></dl></article>
+    <article class="card"><h4>Bottle of cheap vodka <span class="status built">Built</span></h4><p>+10 mood, then a day hungover (work −15%, aim −10, −2 mood).</p><dl><dt>Weight</dt><dd>0.8 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
+  </div>
+
+  <h3>Books</h3>
+  <table class="data"><thead><tr><th>Book</th><th>Teaches</th><th>Up to</th><th>Hours</th><th>Weight</th><th>Value</th></tr></thead><tbody>
+    <tr><td>Field Medicine Handbook</td><td>Medicine</td><td>8</td><td>30</td><td>0.6</td><td>25</td></tr>
+    <tr><td>Emergency Surgery</td><td>Medicine</td><td>14</td><td>50</td><td>1.5</td><td>60</td></tr>
+    <tr><td>Small Engine Repair</td><td>Mechanics</td><td>10</td><td>40</td><td>0.8</td><td>30</td></tr>
+    <tr><td>Gardening Through the Seasons</td><td>Farming</td><td>8</td><td>30</td><td>0.6</td><td>20</td></tr>
+    <tr><td>Marksmanship Manual</td><td>Shooting</td><td>9</td><td>30</td><td>0.5</td><td>30</td></tr>
+    <tr><td>Army Field Manual</td><td>Shooting</td><td>13</td><td>45</td><td>0.6</td><td>55</td></tr>
+    <tr><td>Wilderness Survival</td><td>Scouting</td><td>8</td><td>30</td><td>0.5</td><td>20</td></tr>
+    <tr><td>Negotiation 101</td><td>Speech</td><td>8</td><td>30</td><td>0.4</td><td>20</td></tr>
+    <tr><td>Lockpicking for Locksmiths</td><td>Stealth</td><td>8</td><td>30</td><td>0.4</td><td>25</td></tr>
+    <tr><td>Leading Small Teams</td><td>Leadership</td><td>8</td><td>30</td><td>0.4</td><td>25</td></tr>
+    <tr><td>Salvage Yard Secrets</td><td>Scavenging</td><td>8</td><td>30</td><td>0.5</td><td>20</td></tr>
+    <tr><td>Stack of comic books</td><td>+3 mood an hour</td><td>—</td><td>4</td><td>0.3</td><td>4</td></tr>
+    <tr><td>Paperback novel</td><td>+2 mood an hour</td><td>—</td><td>8</td><td>0.3</td><td>3</td></tr>
+    <tr><td>Stack of magazines</td><td>+2 mood an hour</td><td>—</td><td>3</td><td>0.4</td><td>2</td></tr>
+    <tr><td>Crossword book</td><td>+2 mood an hour</td><td>—</td><td>12</td><td>0.3</td><td>3</td></tr>
+  </tbody></table>
+  <p>Books turn up at fitting sites (schools, universities, police, the military, homes …; 3–18% per search hour at full loot) and are sold by traders (60% of weeks), communes, the military and fortresses. The 11 manuals and blueprints are listed under <a href="#production">Production</a> (each weighs 0.2 kg, values 40–90).</p>
+
+  <h3>Valuables (trade goods)</h3>
+  <p>Good for nothing but trade; light for their worth. Groups price each family differently (see <a href="#trade">Trade</a>).</p>
+  <table class="data"><thead><tr><th>Family</th><th>Items (value, weight kg)</th></tr></thead><tbody>
+    <tr><td>Jewelry and gold</td><td>Gold ring (30, 0.05), Gold chain (40, 0.05), Luxury wristwatch (45, 0.1), Diamond ring (70, 0.02), Pearl necklace (30, 0.06), Silver cutlery (22, 1.2)</td></tr>
+    <tr><td>Cigarettes</td><td>Carton of cigarettes (14, 0.2), Box of cigars (20, 0.4), Pouch of rolling tobacco (7, 0.1)</td></tr>
+    <tr><td>Liquor</td><td>Bottle of whiskey (16, 1), Bottle of red wine (10, 1), Single malt scotch (30, 1)</td></tr>
+    <tr><td>Coffee and sweets</td><td>Tin of coffee (12, 0.5), Box of tea (6, 0.2), Bag of hard candy (5, 0.3), Jar of honey (8, 0.5)</td></tr>
+    <tr><td>Gadgets</td><td>Smartphone (10, 0.2), Handheld game console (16, 0.4), Digital camera (20, 0.5), Laptop (30, 2)</td></tr>
+    <tr><td>Collectibles</td><td>Roll of silver coins (35, 0.3), Binder of trading cards (14, 0.8), Vinyl records (12, 1.5), Stamp album (12, 0.5)</td></tr>
+    <tr><td>Batteries and household</td><td>Pack of batteries (9, 0.2), Pack of lighters (5, 0.1), Toilet paper (4, 0.6), Bars of soap (4, 0.4), Razor blades (6, 0.1), Candles (4, 0.6)</td></tr>
+  </tbody></table>
+
+  <h3>Inventory and storage</h3>
+  <ul>
+    <li><b>Paper doll:</b> Hands (main weapon), Off hand (a tool in use), Head, Body, Arms, Legs, Backpack; 4 pockets for small items; pack slots from the pack. Items in pockets and packs do nothing until equipped (throwables and the suppressor work from a pocket or pack).</li>
+    <li><b>Weight is the limit:</b> max load 40 kg (Bad Back 28) + the pack's carry + 8 with Packrat. Load bands by felt load: Light ≤ 18 kg (full pace), Medium ≤ 28 (−10% pace, +15% rations), Heavy ≤ 38 (−25%, +35%), Overloaded (−45%, +60%). Scouting takes 2.5% a point off the penalties. A team shares its load so everyone is equally burdened; a car takes it all.</li>
+    <li><b>Storage:</b> a base keeps gear in its armory and supplies in its stock; a team keeps them in its cargo. Bulky items (bicycle, telescope, barbed wire, bear traps, sandbags) only go in storage. Items move only between people and storage at the same place.</li>
+    <li><b>Food storage</b> is described under <a href="#farming">Farming</a>.</li>
+  </ul>
+
+  <h3>Trip kit (loadouts)</h3>
+  <p>When the autopilot or a crew sends a team, it packs a small kit from the armory into free pockets and pack slots: optics for surveys and recon, camp kit against Heat (scent mask, rag boots, ghillie, tripwire, stove, camo net) on search trips, a harmonica or cards for morale, and a few throwables (Molotov, pipe bomb, smoke grenade, flare, firecrackers, bottle) except on trade trips. At most 1.5 kg a person (+2.5 kg of optics for scouting). What is not used comes home.</p>
+
+  <h3>Valuation basics</h3>
+  <p>Every item has a hidden base value; its worth is base value × condition (0.2 + 0.8 × quality) × uses left (0.3 + 0.7 × the share left), plus a pack's contents. Outside a trade the player sees only a worth tier: junk (under 4), cheap (under 12), decent (under 35), valuable (under 90), rare. What a group actually pays depends on its kind, state and holdings: see <a href="#trade">Trade</a>.</p>
+
+  <h3>Trade categories</h3>
+  <table class="data"><thead><tr><th>Family</th><th>Categories</th></tr></thead><tbody>
+    <tr><td>Weapons</td><td>melee weapons, pistols, shotguns, rifles, automatic weapons, bows and crossbows, throwables and explosives, suppressors and gun parts</td></tr>
+    <tr><td>Ammo</td><td>ammo</td></tr>
+    <tr><td>Armor</td><td>armor, defences and traps</td></tr>
+    <tr><td>Medical</td><td>meds and medical kits</td></tr>
+    <tr><td>Food</td><td>food, water</td></tr>
+    <tr><td>Survival</td><td>fuel, spare parts, scrap, jars and containers, tools, seeds and farm tools, warm clothes, camp gear, vehicle parts, packs and bags, radios and electronics, binoculars and scopes</td></tr>
+    <tr><td>Knowledge</td><td>books, manuals and blueprints (counted per title)</td></tr>
+    <tr><td>Comforts</td><td>comforts, drugs ("fine": poor groups pay little)</td></tr>
+    <tr><td>Valuables</td><td>jewelry and gold, cigarettes, liquor, coffee and sweets, phones/consoles/cameras, collectibles (all "fine"), batteries and household goods</td></tr>
+  </tbody></table>
+  <p>Seeds and farm tools, warm clothes and drugs are categories with no items yet.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's named, customisable gear and items needing integration (radio needs a station, rifle needs an ammo press, NVG needs battery charging) are partly built: gear has skill requirements and condition, but integration requirements and naming gear are <span class="status planned">Planned</span>.</aside>
+</section>
+
+<section id="economy">
+  <h2>Hub economy</h2>
+  <p class="lede">Every base runs the same daily economy: water in, scavenging, stations, drinking, crops, eating, spoilage, healing and morale. Food, water, meds, fuel, ammo and scrap are consumed constantly, which pushes you out onto the map to scavenge, trade and expand. Trade between groups is covered in <a href="#trade">Trade</a>.</p>
+
+  <h3>The daily tick (each base, at midnight)</h3>
+  <ol>
+    <li>Water comes in (well, spring, stream, wells, rain catchers), up to capacity; summer evaporation above it.</li>
+    <li>Base scavenging, hunting and fishing; Rest and in-bed mood.</li>
+    <li>Workshop stations run (generators burn fuel first).</li>
+    <li>People drink; then crops are watered and grow.</li>
+    <li>People eat (fresh food first, then preserved); rationing or starvation.</li>
+    <li>Drying racks, then spoilage.</li>
+    <li>Infections, morale, warnings and desertion.</li>
+  </ol>
+  <p>Then, for all bases: illness, outposts' supply lines, a possible stranger at the gate, recruits arriving, hub events, relationships.</p>
+
+  <h3>Consumption and upkeep</h3>
+  <table class="data"><thead><tr><th>What</th><th>Uses</th></tr></thead><tbody>
+    <tr><td>Each resident</td><td>1 food a day (×1.1 below 0 °C, ×1.2 below −8 °C; Quartermaster ×0.9), 1 water × the season's thirst</td></tr>
+    <tr><td>Each prisoner</td><td>1 food and 1 water a day</td></tr>
+    <tr><td>Crops</td><td>water per plot on dry days (0.1–0.35, more in summer)</td></tr>
+    <tr><td>Workshop stations</td><td>their recipe inputs</td></tr>
+    <tr><td>Generator</td><td>2 fuel a day while running</td></tr>
+    <tr><td>Floodlights (unpowered)</td><td>2 fuel per horde attack</td></tr>
+    <tr><td>Radio relay</td><td>1 part every 10 days</td></tr>
+    <tr><td>A stray dog</td><td>0.5 food a day</td></tr>
+    <tr><td>Repairs</td><td>scrap and parts as buildings break (see breakdowns)</td></tr>
+  </tbody></table>
+
+  <h3>Shortages</h3>
+  <ul>
+    <li><b>Short rations:</b> under 7 days of food everyone eats 60% and loses 3 mood a day (no health loss).</li>
+    <li><b>Starvation:</b> a hub out of food: everyone loses 6, 8, 10 … up to 20 health a day and 10 mood; nobody heals. About a week without food kills.</li>
+    <li><b>Thirst:</b> a base out of water: everyone loses 10, 14, 18 … up to 25 health a day (scaled by how short, at least 35%) and 8 mood; nobody heals. Thirst kills faster than hunger.</li>
+    <li><b>Illness:</b> hunger and thirst also bring fever and dysentery (6% a day).</li>
+    <li>Stocks never go below zero; armour and Tough do not help against hunger or thirst.</li>
+  </ul>
+
+  <h3>Base scavenging</h3>
+  <p>Rare by design: each scavenger has 7% a day of a small find at Scavenging 0 (+4% per point and crowbar point, ×1.15 Greedy, ×1.3 Scrounger, ×1.2 on a site or in a city, ×0.8 elsewhere, at most 50%). The surroundings get picked over (−0.4% per scavenger a day, down to 20%) and never come back. Finds come from the site's own loot table plus scrap: scrap 2–5, food 1–3, water 2–4, ammo 3–8, meds 1, fuel 1–2, parts 1, preserved 1–3, jars 2–6.</p>
+
+  <h3>Outposts and supply lines</h3>
+  <ul>
+    <li>Each outpost has a supply line to the hub whose strength (25–100%) falls with distance and ×0.7 each for hostile land or a horde on the way; no land route means it is cut off.</li>
+    <li>An outpost short of food is covered from the hub (losing the line's share on the way); otherwise it starves.</li>
+    <li>Every day an outpost ships its surplus to the hub, keeping a reserve: food 3 a head + 6, water 7 a head + 5, ammo 6 a head, scrap 30, parts 3 while building, fuel 10, meds 2, plus what its supply runs need.</li>
+    <li><b>Supply runs:</b> saved convoy jobs between your own bases (crew, optional vehicle, goods to deliver and pick up, a schedule once or every X days, and at the far end come back, hold or disband into that base). Convoys travel like any team: they eat, meet events, burn fuel and can die.</li>
+  </ul>
+
+  <h3>Starting stock</h3>
+  <table class="data"><thead><tr><th>Food</th><th>Water</th><th>Fuel</th><th>Meds</th><th>Ammo</th><th>Parts</th><th>Scrap</th><th>Preserved</th><th>Jars</th></tr></thead><tbody>
+    <tr><td>80</td><td>50</td><td>12</td><td>6</td><td>80</td><td>2</td><td>25</td><td>10</td><td>12</td></tr>
+  </tbody></table>
+  <p>Plus a pickup truck (20 fuel, 75% condition) and the starting buildings listed under <a href="#buildings">Buildings</a>.</p>
+  <aside class="tip"><b>Design intent:</b> the hub can almost feed itself but never supply itself. Scrap, parts, fuel, meds and ammo all run down faster than stations and base scavenging can replace them, so trips, trade and outposts are not optional.</aside>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's per-hub scarcity, barter and informal currencies are built in the trade system (see <a href="#trade">Trade</a>). Draft 1's colour-coded supply lines and reinforcement ETA are partly built (supply line strength and hours exist; map colouring is shown with expansion).</aside>
+</section>

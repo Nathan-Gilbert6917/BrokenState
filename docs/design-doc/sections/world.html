@@ -1,0 +1,1179 @@
+<section id="overview">
+  <h2>Overview and design pillars</h2>
+  <p class="lede">Broken State is a top-down zombie survival strategy game. You lead a holdout of survivors across the procedurally generated State of Calder. You run the hub like RimWorld, deal with other groups like a 4X game, and send teams on raids where every person and every bullet counts. This chapter describes the game as the browser prototype builds it today (October 2026), not as Draft 1 imagined it.</p>
+
+  <h3>At a glance</h3>
+  <table class="data">
+    <thead><tr><th>Topic</th><th>As built</th></tr></thead>
+    <tbody>
+      <tr><td>Working title</td><td>Broken State (earlier HOLDOUT, then State of Hell). Your base is named "&lt;town&gt; Holdout".</td></tr>
+      <tr><td>Genre</td><td>Colony sim, 4X strategy and tactical extraction survival</td></tr>
+      <tr><td>Mode</td><td>Single-player PvE. There is no player avatar: you play the group, and one survivor is its leader.</td></tr>
+      <tr><td>Perspective</td><td>2D top-down. The State Map is a hex map of the whole state that zooms from one tile out to the whole state. Battles and raids happen on separate square-grid maps.</td></tr>
+      <tr><td>Art</td><td>Pixel sprites drawn in code (no image files): survivors built from their looks and gear, the dead, enemy humans, map parties, bases, about 45 site types, markers and terrain decals.</td></tr>
+      <tr><td>Tech</td><td>A browser prototype in plain JavaScript with no dependencies (<code>node server.cjs</code>, then open localhost:5173). The same files also run in an Electron desktop window (<code>Play Broken State.cmd</code>, or a portable <code>Broken State.exe</code> of about 330 MB). The simulation (<code>src/sim</code>) is kept apart from the UI (<code>src/ui</code>), so more than 50 headless tools can play thousands of in-game days without a browser.</td></tr>
+      <tr><td>Audience</td><td>A personal project for family use. It is not published, so store, licensing and trademark questions do not apply.</td></tr>
+      <tr><td>Input</td><td>Mouse and keyboard, with hotkeys, resizable windows and a UI scale option</td></tr>
+      <tr><td>Run length</td><td>An open-ended campaign. A year is 112 in-game days, about 15 real hours at 1× speed. The hive tech tree is paced for a 10–15 year game.</td></tr>
+      <tr><td>Comparable games</td><td>RimWorld, Kenshi, State of Decay 2, XCOM, Escape from Tarkov, Fallout: New Vegas</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Scale</h3>
+  <ul>
+    <li><b>Your group:</b> six starting colonists. Population grows through recruits, refugees, captives won over and outsiders who stay. In the 100-run balance census the median peak population was 17 (Cautious autopilot), 23 (Balanced) and 29 (Aggressive). Draft 1 aimed for 25–50.</li>
+    <li><b>AI groups:</b> 3–18, chosen on the new-run screen. The range follows the world size (Small 3–6, Normal 5–10, Large 7–14, Huge 10–18), and there are 7 group types. Aggressive groups recruit drifters while they have fewer than 45 people, and expand to up to 2 + people/10 bases (at most 6; other types at most 4).</li>
+    <li><b>World:</b> four sizes, from 48 × 32 hexes (1,536 tiles) to 100 × 66 (6,600 tiles). Normal is 64 × 42 (2,688 tiles) with about 186 sites. See <a href="#new-game">Starting a game</a>.</li>
+    <li><b>Threats:</b> 5–6 infestation hives at the start on a Normal map. They grow to hundreds of the dead per horde and build new hives, while outsiders keep crossing the border.</li>
+  </ul>
+
+  <h3>Design pillars</h3>
+  <div class="cards">
+    <article class="card">
+      <h4>People are the resource <span class="status built">Built</span></h4>
+      <p>Every job draws on the same people: farming, operating stations, guarding, teaching, reading, travelling, raiding and defending. Work priorities and crews decide who does what each hour.</p>
+    </article>
+    <article class="card">
+      <h4>Every trip costs something <span class="status built">Built</span></h4>
+      <p>Food and water drain hour by hour (more in summer heat and under a heavy load). Cars burn fuel by the tile and wear down. The weather slows you, and each tile you enter can bring an event card or a conflict.</p>
+    </article>
+    <article class="card">
+      <h4>Greed has a timer <span class="status built">Built</span></h4>
+      <p>Raid Heat rises with every turn and every noise, and each stage brings more of the dead. Field Heat builds while a team stays on one tile. Extract in time, or lose everyone still on the map.</p>
+    </article>
+    <article class="card">
+      <h4>The state lives without you <span class="status built">Built</span></h4>
+      <p>Groups scavenge the same finite sites, trade, go to war, take and raze each other's bases, and collapse. Hives grow and spread, and raiders, merchants and travellers cross the border. You see this only through your bases, your teams and the radio.</p>
+    </article>
+    <article class="card">
+      <h4>Loss creates goals <span class="status built">Built</span></h4>
+      <p>The dead leave death sites with their gear, and passers-by strip them. Abandoned vehicles wait to be recovered. Lost bases can be retaken and captives rescued. Ruins can be rebuilt for 5 scrap.</p>
+    </article>
+    <article class="card">
+      <h4>A new state every run <span class="status built">Built</span></h4>
+      <p>Each seed builds a new map, outbreak origin, set of groups and year of weather. The same seed always plays out the same way, and a separate random stream keeps the weather, rumours and hive choices from shifting the rest of the world.</p>
+    </article>
+    <article class="card">
+      <h4>Information is old <span class="status built">Built</span></h4>
+      <p>Geography is known, current conditions are not. You see live only what your bases, watchtowers and teams in radio contact see. Everything else is a snapshot with its age, and some sites stay hidden until someone finds them.</p>
+    </article>
+  </div>
+
+  <h3>Prototype status by system</h3>
+  <table class="data">
+    <thead><tr><th>System</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>State Map, fog of war, layers, markers</td><td><span class="status built">Built</span></td><td>Four world sizes, hidden off-road sites, Survey mission, terrain decals</td></tr>
+      <tr><td>Seasons and weather</td><td><span class="status built">Built</span></td><td>One sky for the whole state; no regional weather</td></tr>
+      <tr><td>Bases, work, farming, water, production, power</td><td><span class="status built">Built</span></td><td>Power is per base; there is no grid between bases</td></tr>
+      <tr><td>Teams, trip plans, vehicles, crossings, field Heat</td><td><span class="status built">Built</span></td><td>Cars, bikes, boats and rafts; no horses</td></tr>
+      <tr><td>Tactical battles, raids, stealth, base defence</td><td><span class="status built">Built</span></td><td>XCOM-style turns (Draft 1 had already moved to turns)</td></tr>
+      <tr><td>Hives, hordes, hive tech tree, special dead</td><td><span class="status built">Built</span></td><td>Replaces Draft 1's "nests" and zombie tiers</td></tr>
+      <tr><td>AI groups, diplomacy, wars, coalition, conquest</td><td><span class="status built">Built</span></td><td>Two victory conditions</td></tr>
+      <tr><td>Saving and loading, timelapse, diary</td><td><span class="status built">Built</span></td><td>Saves live in browser storage and can be exported as <code>.bsave</code> files</td></tr>
+      <tr><td>Reverse engineering, power grid between bases</td><td><span class="status planned">Planned</span></td><td>Blueprints come from manuals you find, not from taking gear apart</td></tr>
+      <tr><td>Storyteller presets, difficulty sliders, run modifiers</td><td><span class="status planned">Planned</span></td><td>No difficulty setting exists yet</td></tr>
+      <tr><td>Legacy between campaigns, ending slideshow</td><td><span class="status planned">Planned</span></td><td>Victory shows an end screen and the timelapse</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned low-poly 3D on Steam, with Godot or Unity and a C# simulation. The 2026-10-02 decision moved the game to a 2D browser build for personal use, with Godot C# kept only as a fallback. The simulation is plain JavaScript (TypeScript was planned) and is still kept apart from the rendering, as Draft 1 asked. The "Full / Reduced / Abstract" detail levels exist in spirit: AI groups are numbers (population, stores, strength) until you fight or visit them.</aside>
+</section>
+
+<section id="setting">
+  <h2>Setting</h2>
+  <p class="lede">The game is set in the fictional State of Calder, six years after an outbreak collapsed the United States. Calder is a composite of American regions: familiar enough to read at a glance, and free of any need for accuracy. The tone is grounded and bleak with moments of warmth, closer to The Walking Dead and State of Decay than to camp horror.</p>
+
+  <h3>The land</h3>
+  <ul>
+    <li><b>North:</b> highlands. Elevation is biased northward, so the hills and mountains gather in the north, and every river rises there and runs south to the map's edge (3–4 rivers on a Normal map, more on wider ones).</li>
+    <li><b>Centre:</b> farmland, forest and river valleys, with small towns spread at least 8 tiles apart.</li>
+    <li><b>South:</b> <b>Calder City</b>, a cluster of about 50 city and suburb tiles. A smaller second city sits far from it (Granite City, Fairmont, Kingsbridge, Port Ashby or Easton). Large and Huge maps add a third and fourth city.</li>
+    <li><b>Landmarks:</b> at least one National Guard base (sometimes an Army depot too) off-road in the hills or woods, a state prison, a dam and power plant on a river, a regional airport near Calder City, and factories near towns.</li>
+    <li><b>Towns:</b> 13 on a Normal map, with names such as Harlow, Pine Ridge, Millbrook, Cedar Falls, Dunmore, Stillwater and Cold Spring. Each has a police station, an auto shop and a few shops.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> there is no coastline, lake shore, rail line or jammed interstate site, and no stadium or grain elevator hubs. The jammed highway survives as the "Blocked highway" road event. The hub always starts in a small town, as "&lt;Town&gt; Holdout".</aside>
+
+  <h3>The outbreak</h3>
+  <p>Each map picks an <b>outbreak origin</b> at random from its city centres, the university, the National Guard bases and the hospitals. Infection peaks at 100% there and fades over 30 tiles. The other city gets its own hot spot (80%, over 12 tiles), and Large and Huge maps add hot spots at far-off landmarks (75%, over 10 tiles). City tiles get +15% infection and suburbs +6%, and nowhere is below 5%. Four infestation hives stand around the origin from day 1 (3 on Small, 5 on Huge), plus one at each other hot spot (three at each extra hot spot on Large and Huge maps). The hub is placed far from all of it.</p>
+  <p>The dead are not one kind. Walkers come first. As the hives grow, they breed runners, brutes, spitters, screamers and crawlers, and finally the Wallbreaker, a boss that smashes walls. See the chapter on the dead.</p>
+
+  <h3>Who is out there</h3>
+  <p>Seven kinds of surviving group share the state, placed outside the cities at least 8 tiles apart. Their starting attitude comes from their type:</p>
+  <table class="data">
+    <thead><tr><th>Group type</th><th>Starting attitude</th><th>Example names</th></tr></thead>
+    <tbody>
+      <tr><td>Raider gang</td><td>Aggressive (goodwill −55)</td><td>Red Hand, Highway Kings, Rust Dogs</td></tr>
+      <tr><td>Expansionist hub</td><td>Aggressive (−45)</td><td>New Dominion, Iron Compact, Calder Front</td></tr>
+      <tr><td>Zealots</td><td>Aggressive (−70)</td><td>Children of the Ash, The Purified, Last Covenant</td></tr>
+      <tr><td>Military remnant</td><td>Neutral (0)</td><td>3rd Guard Battalion, Fort Calder Command</td></tr>
+      <tr><td>Fortress hub</td><td>Neutral (−5)</td><td>Stonegate, The Granary Walls, Ridgeline Hold</td></tr>
+      <tr><td>Traders</td><td>Friendly (+35)</td><td>Crossroads Exchange, Long Haul Co., River Market</td></tr>
+      <tr><td>Farming commune</td><td>Friendly (+30)</td><td>Greenhollow, Harvest Fellowship, Millbrook Co-op</td></tr>
+    </tbody>
+  </table>
+  <p>People also come from beyond the border: raider bands, merchant wagon trains, scouts, refugees and wanderers. Humans are often more dangerous than the dead. In the latest 20-game census, field fights and raids caused 56% of all deaths.</p>
+  <aside class="tip"><b>Design intent:</b> the player should feel like one small, fragile group among many. Nobody, including you, controls the state at the start.</aside>
+</section>
+
+<section id="core-loop">
+  <h2>Core loop and campaign arc</h2>
+  <p class="lede">The game runs on loops at several time scales, all sharing one clock and one small pool of people. A raid feeds the hub, the hub equips the next trip, trips find groups to trade with or fight, and the hives and outsiders make sure the pressure keeps growing.</p>
+
+  <h3>The loops</h3>
+  <table class="data">
+    <thead><tr><th>Time scale</th><th>Loop</th><th>What the player does</th></tr></thead>
+    <tbody>
+      <tr><td>Minutes (real time)</td><td>Engagement</td><td>Play a tactical battle or an interactive raid turn by turn: sneak, fight, search containers, pick locks and extract before the Heat brings the dead. The State Map clock waits.</td></tr>
+      <tr><td>Hours (in-game)</td><td>Road</td><td>Watch teams move, answer road event and conflict cards, change orders for teams in radio contact, and decide what to do when a team reports "Done".</td></tr>
+      <tr><td>Days</td><td>Hub</td><td>Set roles and work priorities, queue construction, crafting and production orders, treat the sick, plan trips and supply runs, and trade over the radio or with visitors.</td></tr>
+      <tr><td>Seasons</td><td>Survival</td><td>Plant in spring, store water before summer, harvest and hunt in autumn, and live off the stores through winter. The coalition council meets at the start of every season.</td></tr>
+      <tr><td>Years</td><td>Expansion and the hive war</td><td>Found outposts, win groups into the coalition or conquer them, burn hive growths and storm hives before the special dead and Wallbreakers arrive.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>A typical day</h3>
+  <ol>
+    <li>Morning: the alerts stack shows what needs you (a team waiting for orders, low water, idle stations, a horde near a base). The forecast says whether to travel today.</li>
+    <li>A team leaves with a plan: go to a site, search it, maybe search the best sites nearby, then come home. Packed supplies and weight decide its pace.</li>
+    <li>On the road, the team raises cards: a storm, the dead ahead, stranded traders, a camp by the road. A card stops the clock until you answer.</li>
+    <li>At the site you play the raid on its own map, or let it run as an hour-by-hour search.</li>
+    <li>Back at the hub, the haul goes into stock. People heal, eat, gain XP, quarrel and make friends. Crops grow and stations produce.</li>
+    <li>Now and then something comes to you: a raid warning, a horde heading for the walls, a merchant at the gate, a helicopter coming down.</li>
+  </ol>
+
+  <h3>Campaign arc as built</h3>
+  <p>The phases below come from the code's timers and from the autopilot censuses (see <a href="#goals">Goals</a> for the census notes). Day 1 is day 15 of spring.</p>
+  <table class="data">
+    <thead><tr><th>Phase</th><th>Days (about)</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>Settling in</td><td>1–60</td><td>Six survivors, two crop plots, a pickup truck and a few weeks of food. Short trips to town shops. The first explorers arrive on days 5–10, merchants on days 8–14, and the first crash site comes down on days 8–14. The first raid warning usually comes around day 18, and the first outsider raider band on days 20–26. AI raids are usually held without a fight. In the old census 89% of days in this phase had no threat at all.</td></tr>
+      <tr><td>The first hordes</td><td>60–120</td><td>Hives start sending hordes to roam and attack bases. Since the hive rework they are tuned to reach your gates from about day 25–35, then about every three weeks. The first winter runs from day 71 to 98, with snow, slow travel and the food stores put to the test.</td></tr>
+      <tr><td>Escalation</td><td>120–365</td><td>Hive tier 1 opens from day 120 (up to 35% later per hive), and runners appear in hordes. Two horde attacks a month by about day 150. The first summer thirst crunch comes around day 127–154. A new hive build site is picked every 120–180 days, then takes about four weeks to finish. Groups collapse, wars break out, and late raider gangs settle.</td></tr>
+      <tr><td>The long war</td><td>Year 2 and later</td><td>Horde attacks reach about weekly by day 330. Brutes and spitters arrive from about year 1.2–1.7 (tier 2 at day 450). Screamers, crawlers and the Wallbreaker den come in year 3–4 (tier 3 at day 1100). Elite special dead arrive in year 6–8 (tier 4 at day 2200).</td></tr>
+      <tr><td>Endgame</td><td>Any time</td><td>Destroy every hive while none is being built, or have the coalition hold more than half the land with every group still standing in it. After a victory you can keep playing.</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's arc (Survive 2–3 people → Grow 6–10 → Expand 15–30 → Trade → Conquer up to 50) is not gated. The prototype starts with 6 people, workshops and walls. Tech tiers do not exist as such: the upper buildings are locked behind manuals and blueprints you find and study instead.</aside>
+
+  <h3>How pacing works</h3>
+  <ul>
+    <li><b>Interruptions:</b> every card stops the clock in the browser. The pacing review (42 runs) counted about 2.4 cards a day overall (1.4 Cautious, 2.1 Balanced, 3.6 Aggressive). 57% of cards come from teams on the road, so the more teams you send out, the more cards you get. At today's 8 minutes a day at 1×, that is about one card every 3–4 real minutes.</li>
+    <li><b>Seasonal rhythm:</b> summers are busiest (about 3 cards a day), winters quietest (about 1.5). Teams stay home in storms and blizzards.</li>
+    <li><b>Escalation on the world's clock:</b> hive tiers open by calendar day and hive age, new hive sites come every 120–180 days, border hordes every 5–9 days, outsider raider bands more often as the year goes on, and late gangs settle when fewer than two aggressive groups are left. The pressure grows whatever you do. Turtling was the losing strategy in every census.</li>
+    <li><b>Lulls you can use:</b> while nearby hives feed a build site, they send fewer hordes. A horde beaten off at the walls stays away from that base for 10 days.</li>
+  </ul>
+  <aside class="tip"><b>Design intent:</b> a calm build-up, then a rising RimWorld-style rhythm of raids and hordes, with real decisions concentrated in people cards, conflicts, crash sites, radio and jobs (pacing review, "GREAT" cards).</aside>
+</section>
+
+<section id="time">
+  <h2>Time and the clock</h2>
+  <p class="lede">One shared clock runs the State Map, every base and every engagement. Time moves in whole in-game hours. Each hour moves teams and hordes, runs the bases, and then checks for victory or defeat. At 1× an hour takes 20 real seconds and a day 8 real minutes.</p>
+
+  <h3>Speeds</h3>
+  <table class="data">
+    <thead><tr><th>Button</th><th>Key</th><th>One hour</th><th>One day</th><th>One 112-day year</th></tr></thead>
+    <tbody>
+      <tr><td>⏸ Pause</td><td>Space</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>0.5×</td><td>1</td><td>40 s</td><td>16 min</td><td>about 30 h</td></tr>
+      <tr><td>1×</td><td>2</td><td>20 s</td><td>8 min</td><td>about 15 h</td></tr>
+      <tr><td>2×</td><td>3</td><td>10 s</td><td>4 min</td><td>about 7.5 h</td></tr>
+      <tr><td>3×</td><td>4</td><td>about 7 s</td><td>2 min 40 s</td><td>about 5 h</td></tr>
+      <tr><td>Dev fast forward</td><td>dev panel</td><td colspan="3">60×, 300× and 1200× (a day in about 0.4 s); Space never returns to these</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>A new game <b>starts paused</b>. Orders given while paused are "armed" and start when you unpause. A banner counts them, and the team panel shows "starts when unpaused".</li>
+    <li><b>The clock stops</b> while a card waits for an answer, a battle or raid is open, or a search or trade screen is open. It also stops while the planner, a base screen, the survivor or inventory screen, the roster, the diary, the timelapse or the menu is open. On autopilot the governor answers cards itself, so they do not stop the clock.</li>
+    <li>Option: <b>pause when the window loses focus</b> (off by default).</li>
+    <li>If a slow machine falls more than 12 hours behind, the backlog is dropped rather than run all at once.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1 and from the pacing review:</b> the pacing review measured with an hour of 3 s (72 s a day). On 2026-10-04 the user chose 8 minutes a day at 1× and kept the 0.5 / 1 / 2 / 3× buttons. The review's "a card every 30 s" figures are therefore stale: it is now one every 3–4 minutes at 1×.</aside>
+
+  <h3>The calendar</h3>
+  <ul>
+    <li>The campaign starts at <b>06:00 on day 1</b>, which is day 15 of spring.</li>
+    <li>A <b>season</b> is 28 days and a <b>year</b> is 4 seasons (112 days).</li>
+    <li><b>Night</b> runs from 20:00 to 06:00. It changes sight, spotting, hunting, conflicts and battles.</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Season</th><th>Year 1 (campaign days)</th><th>Year 2</th><th>Average high / low</th></tr></thead>
+    <tbody>
+      <tr><td>Spring 🌱</td><td>1–14 (days 15–28 of spring)</td><td>99–126</td><td>13 / 3 °C</td></tr>
+      <tr><td>Summer 🌻</td><td>15–42</td><td>127–154</td><td>26 / 15 °C</td></tr>
+      <tr><td>Autumn 🍂</td><td>43–70</td><td>155–182</td><td>13 / 4 °C</td></tr>
+      <tr><td>Winter ❄️</td><td>71–98</td><td>183–210</td><td>1 / −8 °C</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What ticks when</h3>
+  <table class="data">
+    <thead><tr><th>When</th><th>What runs (in order)</th></tr></thead>
+    <tbody>
+      <tr><td>Every hour</td><td>The weather, travel XP, teams moving (with events, conflicts, food and water), stranded teams released, hordes, outsiders, construction, crafting, production and power, medical care, jobs for groups, prisoners. Then the stock floor (nothing below zero), the game-over and victory check, vision and knowledge, discovery of hidden sites, work priorities, crews, the autopilot or stewards, and the timelapse recorder.</td></tr>
+      <tr><td>Midnight, daily</td><td>Work-day roles, the day's weather, base economy (food, water, farming, mood, healing), crafting, vehicles (bikes parked, abandoned cars stripped), AI groups, hives and hordes, trade routes, supply runs, death sites, captives, prisoners, conquest upkeep, radio, outsiders, skills, survey rumours, land ownership and the leader check. Every 5th day there is a population line in the log.</td></tr>
+      <tr><td>07:00, daily</td><td>The autopilot's daily planning (dev tool)</td></tr>
+      <tr><td>Weekly</td><td>Groups' wants and surplus lists (every 7 days)</td></tr>
+      <tr><td>Seasonal</td><td>The coalition council meets (days 15, 43, 71…), and the season change is logged.</td></tr>
+      <tr><td>Event timers</td><td>Crash sites first on days 8–14, then every 10–20 days. Border hordes every 5–9 days. A new hive site every 120–180 days. Merchants every 10–16 days, explorers every 6–12 days, raider bands every 10–30 days (shrinking as the year goes on). The autosave runs at dawn.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Engagements and the shared clock</h3>
+  <p>Tactical battles and interactive raids are turn-based, and the State Map waits while they are open. When a raid ends, the hours it took (about 6 turns an hour) are played on the map clock straight away, so the world catches up. The weather of every future day is fixed ahead from the seed, so the planner's ETAs, the queue and the estimated position of an out-of-contact team all use the hours the team will really live through.</p>
+
+  <h3 id="timelapse">Timelapse <span class="status built">Built</span></h3>
+  <p>The whole world is recorded from day 1: one frame a day (every 6 hours for the first 3 days, plus a frame a few hours after a death or a base gained or lost). A frame holds tile owners and infection, every base, horde, hive and party, your population and hub stocks, and captions, including what the fog hid from you (groups taking sites, sieges, hives rising). The cost is about 0.25 ms a frame and 300 KB a year. The viewer fits the whole map with the fog off and plays at 1, 2, 5 or 10 days a second, with a scrubber, event ticks, charts and infection and territory toggles. It opens from the victory and game-over screens and from the dev panel.</p>
+  <div class="gallery" data-sprites="shot/timelapse"></div>
+</section>
+
+<section id="new-game">
+  <h2>Starting a game</h2>
+  <p class="lede">The new-run screen builds the world from a seed and lets you shape the six people you start with. Everything else (where you are, who your neighbours are, where the outbreak began) comes from the seed.</p>
+
+  <h3>New-run options</h3>
+  <table class="data">
+    <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Seed</td><td>A whole positive number. The same seed always builds the same map. Edited colonists are kept when you change it.</td></tr>
+      <tr><td>World size</td><td>Small, Normal, Large or Huge (below). Changing it builds a new map on the same seed and picks that size's default group count.</td></tr>
+      <tr><td>AI groups</td><td>The number of other groups, within the size's range</td></tr>
+      <tr><td>New map and colonists</td><td>Rerolls the seed and the crew</td></tr>
+      <tr><td>Randomize all</td><td>New names, skills and looks for the whole crew (each person keeps their skill total)</td></tr>
+      <tr><td>Zombie look…</td><td>Palette, gore, variants, eyes and clothes of the dead. Looks only, saved in the browser.</td></tr>
+      <tr><td>Continue / Load game…</td><td>Shown when this browser has saves</td></tr>
+      <tr><td>Difficulty</td><td><span class="status planned">Planned</span> There is no difficulty setting, storyteller or run modifier yet. Draft 1 planned Builder / Survivor / Holdout presets, sliders, and modifiers such as harsh winter or scarce ammo.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>World sizes</h3>
+  <p>Everything that comes with land scales with the map's area: towns, countryside sites, landmarks, highway stops, rivers (by width), hives, the pace of border hordes and new hive sites, and how far from the hub the groups settle (by the square root). Bigger maps are meant for longer games. Raid reach is 30 tiles on every size, and the hub is placed farther from the outbreak on big maps, so the early game is no harsher than on a Normal map.</p>
+  <table class="data">
+    <thead><tr><th></th><th>Small</th><th>Normal</th><th>Large</th><th>Huge</th></tr></thead>
+    <tbody>
+      <tr><td>Hexes (tiles)</td><td>48 × 32 (1,536)</td><td>64 × 42 (2,688)</td><td>80 × 52 (4,160)</td><td>100 × 66 (6,600)</td></tr>
+      <tr><td>Cities</td><td>2</td><td>2</td><td>3</td><td>4</td></tr>
+      <tr><td>Towns</td><td>7</td><td>13</td><td>20</td><td>32</td></tr>
+      <tr><td>Sites (about)</td><td>128</td><td>186</td><td>282</td><td>419</td></tr>
+      <tr><td>Hidden sites</td><td>18</td><td>33</td><td>54</td><td>82</td></tr>
+      <tr><td>Guaranteed military bases (+50% chance of an Army depot)</td><td>1</td><td>1</td><td>1</td><td>2</td></tr>
+      <tr><td>Hives at the start</td><td>about 4 (3 at the origin)</td><td>5–6 (4 at the origin)</td><td>about 9 (plus a second outbreak of 3)</td><td>about 14 (5 at the origin, two more outbreaks of 3)</td></tr>
+      <tr><td>AI groups: range (default)</td><td>3–6 (4)</td><td>5–10 (7)</td><td>7–14 (10)</td><td>10–18 (15)</td></tr>
+      <tr><td>Groups start mostly within … of the hub</td><td>23 tiles</td><td>30 tiles</td><td>37 tiles (at most 5 within raid reach)</td><td>47 tiles (at most 4 within raid reach)</td></tr>
+      <tr><td>Hub's minimum distance from the outbreak</td><td>16</td><td>16</td><td>28</td><td>34</td></tr>
+      <tr><td>Coalition land radius (hub or captured base / outpost)</td><td>7 / 5</td><td>9 / 7</td><td>11 / 9</td><td>14 / 11</td></tr>
+      <tr><td>Hive build sites at a time</td><td>1</td><td>1</td><td>about 2</td><td>about 2 (a site every 49–73 days, a border horde every 2–4 days)</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Balance note (README):</b> over two years of autopilot play, about half the runs fell on Normal, Large and Huge alike (Huge was 63% before the hub was moved farther from the outbreak). A headless day takes 15–20 ms on any size, and a Huge map is generated in about 120 ms.</aside>
+
+  <h3>Starting colonists</h3>
+  <div class="gallery" data-sprites="survivor/1 survivor/2 survivor/3 survivor/4 survivor/5 survivor/6"></div>
+  <ul>
+    <li><b>Six colonists.</b> Each has nine skills from 0 to 20 (a random spread of 0–9 plus one or two specialties of +3–7) and one trait (60%) or two. The first is generated a bit stronger (×1.3) and leads by default.</li>
+    <li><b>Per colonist</b> you can rename them (or roll a random name), move skill points within a <b>fixed point total</b>, edit or randomize their look, randomize name, skills, look or all, and make them the leader. Next to a skill, the screen shows what it counts as in play when a trait changes it ("5 →3" for Stealth with Loud).</li>
+    <li>No two colonists share a first name while a free one is left, and renaming someone to a full name already in the group is refused.</li>
+    <li><b>Starting gear:</b> pistol, machete, hunting rifle, knife, knife, pistol (in crew order), and the first colonist wears a ballistic vest.</li>
+    <li><b>Starting jobs</b> are set by skill when the run begins: the two best farmers farm, the best scavenger scavenges, the best shot guards, the best mechanic builds and the sixth farms. The ammo bench starts with no operator.</li>
+  </ul>
+
+  <h3>Choosing a leader</h3>
+  <p>The leader is an ordinary survivor who works, travels and can die. Their Leadership lifts morale at their base and they earn Leadership XP each day. If the leader dies, a card offers the six best free survivors by Leadership, and everyone loses 15 mood. A daily check asks again if the group is ever left with no leader.</p>
+
+  <h3>Starting position and supplies</h3>
+  <ul>
+    <li>The hub is a small town at least 16 tiles from the outbreak origin (28 on Large, 34 on Huge), at least 12 from the cities and military bases, within 30 tiles of a city and at least 4 tiles from the map's edge.</li>
+    <li>The hub starts with 2 crop plots, an ammo bench, a bunkhouse and walls.</li>
+    <li>It has one <b>pickup truck</b> with 20 fuel at 75% condition.</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Food</th><th>Water</th><th>Fuel</th><th>Meds</th><th>Ammo</th><th>Parts</th><th>Scrap</th><th>Preserved food</th><th>Jars</th></tr></thead>
+    <tbody><tr><td>80</td><td>50</td><td>12</td><td>6</td><td>80</td><td>2</td><td>25</td><td>10</td><td>12</td></tr></tbody>
+  </table>
+  <p>That is two weeks of food for six, plus some canned and jarred food in the cellar, and water for the first dry days while the fields get going. The first log line reads: "Day 1. &lt;Town&gt; Holdout is all that is left. N other groups are out there somewhere."</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 asked for customizable background and starting gear per colonist. Background is not built, and gear is fixed (it can be swapped in the Armory once the game starts). Draft 1's early game of 2–3 survivors and a shelter became six survivors in a walled town.</aside>
+</section>
+
+<section id="goals">
+  <h2>Goals, victory and loss</h2>
+  <p class="lede">There are two ways to win: destroy every hive, or have the Calder Coalition hold the state. Each can be won once. After the first victory you can keep playing for the other. The run is lost only when every survivor is dead or gone. Between the start and either ending, the game sets goals through the Goals card, the seasons and the threats.</p>
+
+  <h3>Victory conditions</h3>
+  <div class="cards">
+    <article class="card" data-sprite="hive/2">
+      <h4>Hive victory <span class="status built">Built</span></h4>
+      <p>Every infestation hive is destroyed and no new hive is being built (a build site where the dead have started gathering counts as being built). This is checked every hour and the moment a hive dies. The win line reads "Every hive is destroyed. The State of Calder is not safe, but it is yours to win back."</p>
+      <dl>
+        <dt>Hives to destroy</dt><dd>All of them: 5–6 at the start on Normal, plus every hive built since</dd>
+        <dt>Also needed</dt><dd>No build site with construction started</dd>
+        <dt>How a hive dies</dt><dd>The <i>Destroy hive</i> mission: a tactical battle against 10–18 of its brood (power 5+, on red-skull ground) and the Broodmother (300 health) around the flesh mound</dd>
+        <dt>Help</dt><dd>Fires (6 fuel: −30% guard, −15 stores) or 3 Molotovs (−40% guard, −20 stores) soften it. Coalition members within 15 tiles send 1–3 fighters each, every one keeping one of the brood off your squad (up to 40% of the brood).</dd>
+        <dt>After it</dt><dd>The border keeps sending hordes every 5–9 days, so the state is safer but never safe</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="factionbase/commune">
+      <h4>Coalition victory <span class="status built">Built</span></h4>
+      <p>The coalition (you and its member groups) controls <b>more than 50%</b> of the state's land tiles, and <b>every group still standing</b> is a member. Hives standing or not does not matter. Broken groups do not count, and if none are left standing, you alone are the coalition.</p>
+      <dl>
+        <dt>Land counted</dt><dd>Land (non-water) tiles within reach of a base</dd>
+        <dt>Your hub and captured bases</dt><dd>9 tiles</dd>
+        <dt>Your outposts</dt><dd>7 tiles (8 with walls standing)</dd>
+        <dt>Members' bases</dt><dd>7 tiles</dd>
+        <dt>Other sizes</dt><dd>× √area: Small 7 / 5, Large 11 / 9, Huge 14 / 11</dd>
+        <dt>Starting share</dt><dd>Your hub alone holds about 10% on Normal. Every group's bases plus the hub come to about 50–60%.</dd>
+        <dt>To invite a group</dt><dd>It is known and in reach (radio coverage +4, a team at its gates, a base of yours within 8 tiles, or a member's base within 12), not hostile, goodwill 50+ (50 + infamy/2 after conquests, at most 90), has a pact with you, is not at war with a member, and you did a job for it or the council votes it in</dd>
+        <dt>A member leaves</dt><dd>When its goodwill drops below 20, it has no pact, or it attacks another member</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="factionbase/raider">
+      <h4>Conquest (the road to a coalition of one) <span class="status built">Built</span></h4>
+      <p>Conquest is not a third victory. It is a path to the coalition victory: a group you break no longer counts. <i>Assault their base</i> turns a group's base into your outpost with a 9-tile land radius. A group that loses its last base, or falls to 3 people, is broken.</p>
+      <dl>
+        <dt>Defenders</dt><dd>60% of the base's share of the group (main base counts double), 3–16 fighters, each 2.6 + arms × 1.6, × (1 + 0.05 per wall point: fortress or military 7, main base 4, other 1)</dd>
+        <dt>Cost</dt><dd>−30 goodwill with a group that is not hostile, and any pact ends. Pact partners −8 (−15 when you finish the group), friends −4 (−8), enemies +2 (+4).</dd>
+        <dt>Infamy</dt><dd>+2 a base taken from a hostile raider-type group, +15 from anyone else (+10 more for finishing it), fading 0.1 a day. Above 20 it costs peaceful groups goodwill daily and raises what they want before joining.</dd>
+        <dt>Win</dt><dd>Your outpost, half that base's share of their stores, up to 3 recruits and 3 prisoners, and your captives there freed</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <h4>Both victories <span class="status built">Built</span></h4>
+      <p>The first victory ends the run with its screen: <i>Watch the timelapse</i>, <i>Keep playing</i> or <i>New campaign</i>. After Keep playing, the other victory can still come once, with its own screen. If both happen in the same hour, the coalition's screen is shown and the hive victory is recorded too.</p>
+    </article>
+    <article class="card">
+      <h4>Endurance <span class="status partial">Partial</span></h4>
+      <p>Draft 1's open-ended mode. Every campaign is open-ended (there is no time limit), and Keep playing continues after any victory. There is no score yet for days survived, people saved or land held. The timelapse and diary are the record of a run.</p>
+    </article>
+    <article class="card">
+      <h4>Confederation and Dominion <span class="status planned">Planned</span></h4>
+      <p>Draft 1's restoration endings also required restoring infrastructure (power plant, dam, highways), followed by an ending slideshow. The built coalition victory covers "Confederation" and conquest covers "Dominion", but without the infrastructure projects or a slideshow.</p>
+    </article>
+  </div>
+  <aside class="note"><b>Changed during development:</b> the 2026-10-03 request said the alliance must hold over half the map with every group in it and all hives gone. On 2026-10-04 the user dropped the hive requirement, so the coalition became its own victory, and conquest of group bases was added so a hostile group can be removed from the count.</aside>
+
+  <h3>Loss</h3>
+  <div class="cards">
+    <article class="card" data-sprite="marker/death">
+      <h4>The holdout has fallen <span class="status built">Built</span></h4>
+      <p>The run ends when nobody is left alive. Deaths, desertion and a captive changing sides all count, while captives who are still alive keep the run going. The log line is "Every survivor is dead (or gone). The holdout has fallen." The game-over screen offers the timelapse.</p>
+    </article>
+    <article class="card" data-sprite="ruin/yours">
+      <h4>Losing the hub is not losing <span class="status built">Built</span></h4>
+      <p>If the hub falls (overrun, kept by raiders or razed), the nearest other base becomes the hub. With no base left, the survivors become exiles: one team on the road that can found a new hub (Build outpost) or retake a base. A base that raiders keep can be retaken with the same assault.</p>
+    </article>
+  </div>
+
+  <h3>Mid-term goals the game gives you</h3>
+  <ul>
+    <li><b>The Goals card</b> (top of the Groups tab, in full on the Coalition tab) shows hives destroyed, standing and being built, land held against 50%, and members against groups standing. It lists every group outside the coalition with advice: <i>invite</i> now, <i>court</i> them (with the reason they are not ready), <i>defeat</i> them (hostile: their bases and the fewest defenders at one) or <i>find</i> them. It also shows your infamy and the bases of yours that others hold.</li>
+    <li><b>Seasonal goals:</b> stock food for winter (the food forecast shows days left and the next harvest), store water before summer (everyone drinks 30% more, 60% in a heat wave), harvest and hunt in autumn.</li>
+    <li><b>Threat goals:</b> burn hive growths before they breed special dead, thin the mass at a hive build site during its four-week window, man the defences when a horde is spotted, retake lost bases soon after they fall (they are patched up 5% a day).</li>
+    <li><b>Opportunity goals:</b> crash sites with a search circle and a 7–10 day timer, racing rival salvage parties; jobs for groups (clear a horde, escort a caravan, deliver, rescue, storm a hive, scout, retrieve a package); rumours of hidden places; captives to rescue; death sites and abandoned vehicles to recover.</li>
+    <li><b>Growth goals:</b> find and study manuals to unlock the upper buildings, reach skill milestones 5, 10 and 15 for perks, found outposts, build a radio network, and sign pacts on the way to coalition invitations.</li>
+  </ul>
+
+  <h3>How reachable is each victory? (balance findings)</h3>
+  <aside class="note"><b>Latest census (docs/suggestions-3.md, 20 autopilot games, 2 years, dev as of 2026-10-05):</b> 2 of 20 fell (both Cautious), 1 coalition victory (Aggressive), 0 hive victories, 17 still going. Aggressive destroys about 3.7 hives in 2 years, but about 3.7 new ones are built in the same time. The open suggestions are to let hive clusters unravel once you start winning, and to raise late pressure, because the autopilot now survives two years 85% of the time.</aside>
+  <aside class="note"><b>Win-condition tool (wintest.js, 20 seeds × 3 years, after the slower hive spread of 2026-10-04):</b> before the change there were no hive victories. After it, 1 of 20 Balanced and 4 of 20 Aggressive runs won the hive war, with about half the runs still falling. The hive tech tree (2026-10-05) came later, and its effect on these numbers has not been re-measured.</aside>
+  <aside class="note"><b>Older 100-run balance census (review/balance-census.md, 2026-10-04 morning):</b> 98 of 100 fell (median day 307) with no victories of either kind. Hives grew from 6 to 24 in two years, 0.2 were destroyed per run, a coalition formed in only 16% of runs and coalition land stayed at 5–8% against the 50% needed. This was measured <i>before</i> the slower hive spread, the coalition-only victory, conquest and the hive tech tree, so it describes the problem those changes solved, not today's game. Its findings on thirst (then the #2 killer) led to the summer water work. Thirst is now 4% of deaths.</aside>
+  <aside class="note"><b>Wallbreakers today:</b> with <code>HIVE.BOSS_DEN</code> on, Wallbreakers come only from a hive that has grown a Wallbreaker den. Dens are tier 3, which opens on day 1100 or later (year 3–4). The census finding that Wallbreakers lead 89% of break-ins from day ~200 therefore no longer applies.</aside>
+  <aside class="tip"><b>Design intent:</b> the user wants every win condition reachable by steady play, and raids and hordes that force decisions that matter. A skilled human should do better than the autopilot, which never plays tactical battles by hand.</aside>
+</section>
+
+<section id="state-map">
+  <h2>The State Map</h2>
+  <p class="lede">The State Map is the strategy layer: a hex map of the whole State of Calder where teams, convoys, AI parties, outsiders and hordes move tile by tile on one clock. Each tile holds its terrain, roads, rivers, site, loot left, infection, owner and hidden find. What you see of it depends on where your people are and how old their news is.</p>
+
+  <h3>Generation <span class="status built">Built</span></h3>
+  <p>A new map is made per seed (<code>mapgen.js</code>), in this order:</p>
+  <ol>
+    <li><b>Terrain</b> from two layers of smooth noise for elevation (biased higher in the north) and one for moisture: mountains above 0.78, hills above 0.63, then forest where it is moist, farmland everywhere else.</li>
+    <li><b>Rivers</b> (3–4 on Normal, scaled by width) start in the northern hills and mountains, at least 12 tiles apart, and run downhill to the south edge. River tiles become water.</li>
+    <li><b>Cities:</b> Calder City in the south (radius 4: a city core with suburbs around it), then the second city (radius 3) at least 24 tiles away (18 or 12 if there is no room). Each city is filled with urban sites in a fixed order (police first, then auto shop, hospital, pharmacy…) and named by district ("Calder City North Precinct", "Calder City Riverside Pharmacy").</li>
+    <li><b>Towns</b> (13 on Normal): at least 8 tiles apart and 9 from a city. Each gets a police station and an auto shop next to its centre, 0–2 extra shops, and 1–2 satellites 2–3 tiles out.</li>
+    <li><b>Landmarks:</b> National Guard base(s) off-road in the woods, at least 12 from a city and 5 from a town (a 50% chance of an Army depot as well), a state prison, a dam beside a river, an airport 5–12 tiles from a city, and 2 factories 2–4 tiles from a town.</li>
+    <li><b>Countryside</b> sites, at least 3 tiles from other sites: 12 farms, 6 barns, 4 ranches, 3 country churches, 7 cabins, 3 lodges, 4 campgrounds, 3 ranger stations, 3 radio towers, 2 quarries and 2 old crash sites (counts for Normal, scaled by area).</li>
+    <li><b>Roads</b> (below), then 3 truck stops and 4 gas stations along the highways.</li>
+    <li><b>Minor loot</b> on open ground: city 0.4, suburb 0.3, farmland 0.12, forest and hills 0.08.</li>
+    <li><b>Hidden finds:</b> a wrecked car on 3.5% of road tiles, a cache (60%) or abandoned camp on 3% of forest and hills tiles, and a random find on 1.2% of the rest.</li>
+    <li><b>Infection and hives</b> around the outbreak origin and hot spots (see <a href="#setting">Setting</a>).</li>
+  </ol>
+  <p>A Normal map draws exactly the random numbers it always has, so old seeds and saves build the same world. Every tile's decals come from a separate per-tile seed, so drawing the map never changes the simulation.</p>
+  <div class="gallery" data-sprites="shot/final-normal-far shot/final-normal-mid shot/final-normal-close shot/final-huge-far"></div>
+
+  <h3>Terrain types</h3>
+  <p>Movement cost is in <b>hours per tile</b> at normal pace, before the stance, the load band and the weather. A road between two tiles overrides the terrain. Traffic feeds event, conflict and vehicle-stripping chances, and game is the hunting abundance.</p>
+  <div class="cards">
+    <article class="card" data-sprite="terrain/crops-summer">
+      <h4>Farmland <span class="status built">Built</span></h4>
+      <p>Open plains (key <code>plains</code>). Farms, barns, ranches, prisons and airports stand here. It is easy going and good for spotting hidden sites.</p>
+      <dl><dt>On foot</dt><dd>2 h</dd><dt>Car</dt><dd>1.4 h</dd><dt>Traffic</dt><dd>0.05</dd><dt>Game</dt><dd>0.55</dd><dt>Survey odds</dt><dd>×1.35</dd><dt>Decals</dt><dd>crop rows, hay and fences near farms; grass, bushes, the odd tree elsewhere</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/tree-summer">
+      <h4>Forest <span class="status built">Built</span></h4>
+      <p>Where the land is moist. Cabins, lodges, campgrounds and ranger stations stand here, and caches and camps are hidden in it. It has the best hunting.</p>
+      <dl><dt>On foot</dt><dd>3 h</dd><dt>Car</dt><dd>2.8 h</dd><dt>Traffic</dt><dd>0.02</dd><dt>Game</dt><dd>1.0</dd><dt>Survey odds</dt><dd>×0.6</dd><dt>Decals</dt><dd>dense broadleaf trees and pines; broadleaf trees turn gold in autumn and stand bare in winter</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/mound-summer">
+      <h4>Hills <span class="status built">Built</span></h4>
+      <p>Elevation 0.63–0.78. Rivers rise here. Radio towers, quarries, lodges and the National Guard base stand here. Only deer are hunted in the hills.</p>
+      <dl><dt>On foot</dt><dd>3 h</dd><dt>Car</dt><dd>2.6 h</dd><dt>Traffic</dt><dd>0.02</dd><dt>Game</dt><dd>0.8</dd><dt>Survey odds</dt><dd>×0.7</dd><dt>Decals</dt><dd>mounds and rocks</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/peak-summer">
+      <h4>Mountains <span class="status built">Built</span></h4>
+      <p>Elevation above 0.78, mostly in the north. Cars cannot enter. Bikes are pushed at walking pace. No sites are built here.</p>
+      <dl><dt>On foot</dt><dd>5 h</dd><dt>Car</dt><dd>impassable</dd><dt>Traffic</dt><dd>0.01</dd><dt>Game</dt><dd>0.5</dd><dt>Survey odds</dt><dd>×0.55</dd><dt>Decals</dt><dd>peaks (snow-capped in winter)</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/house-summer">
+      <h4>Suburbs <span class="status built">Built</span></h4>
+      <p>The rings around a city. Most urban shops stand here. Busier, so more events and conflicts.</p>
+      <dl><dt>On foot</dt><dd>2.5 h</dd><dt>Car</dt><dd>1.6 h</dd><dt>Traffic</dt><dd>0.12</dd><dt>Game</dt><dd>0.12</dd><dt>Infection</dt><dd>+6%</dd><dt>Decals</dt><dd>houses (some burnt), yards and cars</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/building-summer">
+      <h4>City <span class="status built">Built</span></h4>
+      <p>The city cores. They are the richest ground, but slow, busy and infected.</p>
+      <dl><dt>On foot</dt><dd>3.5 h</dd><dt>Car</dt><dd>3 h</dd><dt>Traffic</dt><dd>0.2</dd><dt>Game</dt><dd>0.03</dd><dt>Infection</dt><dd>+15%</dd><dt>Field Heat</dt><dd>×1.8</dd><dt>Decals</dt><dd>blocks, ruins and rubble</dd></dl>
+    </article>
+    <article class="card" data-sprite="terrain/reeds-summer">
+      <h4>Water <span class="status built">Built</span></h4>
+      <p>River tiles. Water blocks all movement except at a bridge, and routes never cross it. Teams cross by building a boat. Fish live here.</p>
+      <dl><dt>On foot / car</dt><dd>impassable</dd><dt>Crossing</dt><dd>bridge (road) or a one-use boat or raft</dd><dt>Look</dt><dd>a rippled water texture with reeds on the banks</dd></dl>
+    </article>
+    <article class="card" data-sprite="misc/bridge">
+      <h4>Road <span class="status built">Built</span></h4>
+      <p>A road is a link between two tiles, not a terrain. Moving along it costs the same everywhere. Mud, rain and snow slow roads far less than off-road ground, and cars burn 0.6 fuel a tile on a road against 1.5 off it.</p>
+      <dl><dt>On foot</dt><dd>1.2 h</dd><dt>Bicycle</dt><dd>0.75 h</dd><dt>Car</dt><dd>0.5 h</dd><dt>Traffic</dt><dd>+0.15</dd></dl>
+    </article>
+  </div>
+  <div class="gallery" data-sprites="terrain/tree-spring terrain/tree-summer terrain/tree-autumn terrain/tree-winter terrain/pine-summer terrain/pine-winter terrain/bush-summer terrain/rock-summer terrain/crops-summer terrain/hay-summer terrain/fence-summer terrain/peak-winter terrain/house-summer terrain/burnt-summer terrain/building-summer terrain/ruin-summer terrain/rubble-summer terrain/car-summer terrain/wreck-summer terrain/reeds-summer terrain/deadtree-winter"></div>
+
+  <h3>Roads, rivers, bridges and crossings</h3>
+  <ul>
+    <li><b>Highways</b> join every city, town and big landmark (but not the military bases) through a spanning tree routed by terrain cost (road 0.4, farmland, suburb and city 1, forest 2, hills 3, water 7, mountains 9, military tiles 14). Shortcuts are added where the roads between two neighbouring settlements make a detour longer than 1.8× the straight distance.</li>
+    <li><b>Streets:</b> every city and town site is joined to the nearest road within 4 tiles.</li>
+    <li><b>Dirt spurs:</b> a countryside site gets a road to the nearest road within 3 tiles only some of the time: farms and ranches 60%, country churches 70%, lodges 50%, campgrounds and ranger stations 60%, quarries 70%, and never cabins, barns, radio towers or crash sites. The rest stay off-road, and many of those are hidden from the map.</li>
+    <li><b>Bridges:</b> where a road crosses a river, the water tile becomes a bridge, drawn as a railed deck along the road. Hordes cross rivers only at bridges.</li>
+    <li><b>Boat crossings</b> <span class="status built">Built</span>: a team on a shore can build a one-use boat and cross one water tile to the land straight across. See <a href="#travel">Travel</a>.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> the state's outline and major roads are not fixed; everything is generated per seed. There are no rail lines, coast or lakes yet, and "Collapsed bridge" is not an event. Draft 1's 400 × 300 km of 3 km hexes became a hex count with no stated scale.</aside>
+
+  <h3>Towns, cities and sites on the map</h3>
+  <ul>
+    <li>Each site is a pixel sprite of its type on a plate in its zone's colour: city (salmon), small town (amber), countryside (green), landmark (violet).</li>
+    <li>The sprite fades in steps by the loot left <i>as you last saw it</i>: rich (60%+ of what it held untouched), some (30%+), little (10%+), picked clean.</li>
+    <li>Zoomed in, a row of skulls under the name shows the site's danger. On a hive's land every site shows at least 3 skulls, and the ring 1 tile around a hive shows a red skull on every tile.</li>
+    <li>Zoomed out, small sites become dots. Only cities, towns, landmarks, group bases and your own bases keep their names, and where names overlap the more important one wins. You can zoom out until the whole state fits.</li>
+    <li>The tile panel and tooltip show the site's zone, danger, likely loot, and the loot left as you know it ("now" when in view, otherwise its age, with a warning once it is 3 days old, because other groups strip sites too).</li>
+  </ul>
+  <div class="gallery" data-sprites="misc/skull misc/redskull poi/town poi/city"></div>
+
+  <h3>Fog of war and the known map</h3>
+  <ul>
+    <li><b>Geography is known, current conditions are not.</b> Terrain, roads and public sites are on the map from day 1. Hordes, loot, owners, hives and hidden sites are known only as snapshots.</li>
+    <li><b>Live view</b> covers 3 tiles around the hub and 2 around an outpost, +2 with a watchtower, and +1 with a telescope in the armory (+2 with a watchtower). It also covers what a team in radio contact sees right now.</li>
+    <li><b>A team's sight</b> is 1 tile, +1 with Scouting 10+, +1 with a Keen Eye, +1 with the Lookout perk, plus optics (binoculars +1 by day, a thermal +1 at night and in fog, a spotting scope only while the team stays put). Fog and blizzards cut it by 1, but never below 1.</li>
+    <li><b>Reports:</b> out of radio contact, everything a team sees is held until it gets home, and each tile is stamped with the hour it was seen, not the hour the team returned. Radio news, traders, explorers' maps, coalition members and prisoners questioned also put snapshots on your map.</li>
+    <li><b>Shading:</b> live tiles are full brightness, reported ones are dimmer (0.72) and tiles you have no news of are darkest (0.42). A horde last seen is a faded "N?" ghost.</li>
+    <li><b>Radio coverage:</b> a station covers 8 tiles, and a relay at an outpost 6, linked in a chain. Coverage circles are drawn on the map (red when not linked or off the air).</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> intel does not fade back toward fog as it ages. Instead each snapshot shows its age and warns once it is stale. Dead teams' notes are not recoverable from their death site.</aside>
+
+  <h3>Map layers</h3>
+  <p>The Layers box in the map corner toggles each layer. Each line has a colour chip and a short description, and its ? button opens Help → Map layers and Map legend.</p>
+  <table class="data">
+    <thead><tr><th>Layer</th><th>Shows</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>Locations</td><td>Towns and sites with names, zone plates, loot fade, danger skulls, and ruins of razed bases</td><td>on</td></tr>
+      <tr><td>Territory</td><td>Land held by you and by the groups you know, tinted in their colour</td><td>on</td></tr>
+      <tr><td>Teams and convoys</td><td>Your teams (! waiting, ? estimated position), and the raiders, convoys, caravans and scavengers you can see</td><td>on</td></tr>
+      <tr><td>Hordes and hives</td><td>Live hordes, last-seen "N?" ghosts, known hives with their dark-red land and red-skull ring, hive build sites and growths</td><td>on</td></tr>
+      <tr><td>Death sites</td><td>Graves where your people fell, with what is left</td><td>on</td></tr>
+      <tr><td>Vehicles</td><td>Abandoned vehicles (a red can when it needs fuel, smoke when damaged)</td><td>on</td></tr>
+      <tr><td>Spotted finds</td><td>Caches, wrecked cars and abandoned camps your teams noticed, with their age</td><td>on</td></tr>
+      <tr><td>Infection</td><td>A red wash, redder where infection is higher (also the I key)</td><td>off</td></tr>
+      <tr><td>Weather</td><td>Today's weather as a wash over the land</td><td>on</td></tr>
+      <tr><td>Known area</td><td>Teal hatching where your people searched for hidden places (brighter for the last 30 days)</td><td>off</td></tr>
+      <tr><td>Coalition land</td><td>The land the coalition victory counts, in each owner's colour with a gold outline, and the share held against 50%</td><td>off</td></tr>
+    </tbody>
+  </table>
+  <div class="gallery" data-sprites="shot/03-known-area shot/05-coalition shot/01-ruins shot/02-ruin-panel"></div>
+
+  <h3>Markers</h3>
+  <div class="cards">
+    <article class="card" data-sprite="marker/death">
+      <h4>Death site <span class="status built">Built</span></h4>
+      <p>A grave with a cross, and a pack and rifle while gear is still lying there. Passers-by strip the most valuable items first. The marker goes when nothing is left.</p>
+    </article>
+    <article class="card" data-sprite="marker/vehicle-truck">
+      <h4>Abandoned vehicle <span class="status built">Built</span></h4>
+      <p>Your truck, sedan or bikes, dusty, with a red jerry can when the tank needs fuel and smoke when the vehicle is badly damaged. Cargo left inside is noted on the label.</p>
+    </article>
+    <article class="card" data-sprite="marker/cache">
+      <h4>Supply cache <span class="status built">Built</span></h4>
+      <p>Crates under an olive tarp and a duffel bag. Investigating gives 6–14 food, 1–3 meds and 15–40 ammo. Once emptied, it shows an open crate.</p>
+    </article>
+    <article class="card" data-sprite="marker/car">
+      <h4>Wrecked car <span class="status built">Built</span></h4>
+      <p>A rusted wreck by the road. Restore it (2 parts, 6 fuel, Mechanics check) into an old sedan at 35% condition, or strip it for 1–2 parts and 2–5 fuel. Once stripped, it sits up on blocks.</p>
+    </article>
+    <article class="card" data-sprite="marker/camp">
+      <h4>Abandoned camp <span class="status built">Built</span></h4>
+      <p>A cold tent. Investigating gives 3–8 food, 4–10 scrap and 10–25 ammo, plus notes that mark a group's bases and any hive within 10 tiles. Once picked through, the tent is shown collapsed.</p>
+    </article>
+  </div>
+  <p>Teams roll perception for finds on every tile they see: 12% + 3% per Scouting point of the best scout, +15% with a Keen Eye, +15% with the Spotter perk, ×0.6 at night, at most 90%. Look around and Survey add to the roll. Markers show how long ago each find was seen.</p>
+  <div class="gallery" data-sprites="marker/death-empty marker/cache-emptied marker/car-emptied marker/camp-emptied icon/alert icon/unknown icon/work icon/radio icon/siege misc/searchsmoke"></div>
+
+  <h3>Map detail and terrain decals <span class="status built">Built</span></h3>
+  <p>The flat terrain colours are dressed with small pixel decals: trees, crop rows, fences, hay, rocks, peaks, houses (some burnt), city blocks, ruins, wrecked cars along roads and reeds on the banks. Rivers get a rippled water texture. This is style B with style A's water from <code>docs/tile-designs</code>, the user's pick. Decals depend on the terrain and its neighbours (crop rows only near farms). They keep off roads and out of the clear zone around a site's icon and name. Broadleaf trees follow the season, and every decal gets a snow cap in winter. Decals fade in between zoom 0.6 and 0.75, and each comes in three shades (live, reported, unknown). Everything is drawn once into an atlas and cached in map chunks, so a frame costs nothing extra (120 fps at 4K in the desktop app). The <i>Map detail</i> option turns it off for a flat map.</p>
+  <div class="gallery" data-sprites="shot/final-winter-city-close shot/final-huge-city-mid shot/final-normal-fade"></div>
+</section>
+
+<section id="weather">
+  <h2>Weather and seasons</h2>
+  <p class="lede">Every day has one weather for the whole state, drawn by season from the seed on its own random stream, with warm and cold spells that last a few days. The ground carries over from day to day: mud after rain, snow cover that builds and melts, and soil moisture. Weather slows travel, kills crops, fills rain barrels, dries wells and makes people thirsty. Because the year is fixed ahead, every ETA uses the weather the team will really meet.</p>
+
+  <h3>Seasons</h3>
+  <table class="data">
+    <thead><tr><th>Season</th><th>Average high / low</th><th>Character</th><th>Thirst</th></tr></thead>
+    <tbody>
+      <tr><td>Spring 🌱</td><td>13 / 3 °C</td><td>Mild and wet: rain and mud, late frosts early on. Planting time. Fishing is best (×1.15), hunting weakest (×0.8).</td><td>×1.0</td></tr>
+      <tr><td>Summer 🌻</td><td>26 / 15 °C</td><td>Warm and mostly dry: fast travel and growth, with heat waves, dry spells and thunderstorms. Wells give less on dry days.</td><td>×1.3 (×1.6 on a hot day)</td></tr>
+      <tr><td>Autumn 🍂</td><td>13 / 4 °C</td><td>Cooling and wet: rain, fog and mud, with the first frosts toward the end. Harvest time, and the best hunting (×1.25).</td><td>×1.0</td></tr>
+      <tr><td>Winter ❄️</td><td>1 / −8 °C</td><td>Freezing: snow piles up and slows everything, blizzards stop travel, and nothing grows outdoors. People eat more in the cold (×1.1 below 0 °C, ×1.2 below −8 °C).</td><td>×0.9</td></tr>
+    </tbody>
+  </table>
+  <p>The day's mean follows a curve from about 21 °C in midsummer to −3 °C in midwinter, plus the spell drift and the weather type. Rain on a cold day (mean below −0.5 °C) falls as snow and a storm becomes a blizzard. Above 3 °C, snow falls as rain. The first two days of every campaign are calm (clear or overcast).</p>
+
+  <h3>Weather types</h3>
+  <p>The weights are chances out of each season's total. Yesterday's weather tends to stay (the persistence column). Travel shows how much slower each kind of move is on top of the ground conditions, as foot on road / foot off-road / vehicle on road / vehicle off-road.</p>
+  <div class="cards">
+    <article class="card">
+      <h4>☀️ Clear <span class="status built">Built</span></h4>
+      <p>Dry and bright. Wet ground dries out (mud ×0.6 a day). Crops grow best (×1.1).</p>
+      <dl><dt>Weights</dt><dd>spring 30, summer 46, autumn 24, winter 16</dd><dt>Stays</dt><dd>40%</dd><dt>Travel</dt><dd>no extra</dd></dl>
+    </article>
+    <article class="card">
+      <h4>☁️ Overcast <span class="status built">Built</span></h4>
+      <p>Grey skies, with no effect on travel. Crops grow ×0.95.</p>
+      <dl><dt>Weights</dt><dd>22 / 16 / 26 / 22</dd><dt>Stays</dt><dd>35%</dd><dt>Travel</dt><dd>no extra</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🌧️ Rain <span class="status built">Built</span></h4>
+      <p>The ground turns to mud: off-road travel slows, vehicles most of all. Fills rain barrels (about 2–3.5 water per collector). Ripe crops may rot (8%). Cold rain at 3 °C or below gives a 2% daily exposure risk outdoors.</p>
+      <dl><dt>Weights</dt><dd>24 / 14 / 24 / 4</dd><dt>Stays</dt><dd>40%</dd><dt>Travel</dt><dd>+0 / +8% / +5% / +8%, plus mud</dd></dl>
+    </article>
+    <article class="card">
+      <h4>⛈️ Storm (severe) <span class="status built">Built</span></h4>
+      <p>Heavy rain and wind: slow going everywhere. Each hour on the move on foot there is a 1.5% chance of a fall (half in a vehicle, 4–10 damage). Road events are 15% more likely, it is a little easier to be ambushed (−3%), and boat mishaps are 2.5× as likely. Crops can be flattened (2% + 7% × crop height). Rain barrels gather 4.5–6. Radio masts and storehouse roofs wear fast, and hunting is halved.</p>
+      <dl><dt>Weights</dt><dd>6 / 8 / 8 / 0</dd><dt>Stays</dt><dd>15%</dd><dt>Travel</dt><dd>+30% / +35% / +30% / +35%</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🌫️ Fog <span class="status built">Built</span></h4>
+      <p>Teams see one tile less and are easier to ambush (−8% to spot the other side first). Driving is slower. Survey odds are halved. A thermal monocular ignores most of it.</p>
+      <dl><dt>Weights</dt><dd>10 / 2 / 12 / 6</dd><dt>Stays</dt><dd>25%</dd><dt>Travel</dt><dd>+4% / +6% / +12% / +8%</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🥵 Heat wave <span class="status built">Built</span></h4>
+      <p>Walking is slower and the soil dries fast. Everyone drinks 60% more water. Heat sickness risk is 4% a day for people working outside, and crops can die (1% + 3% × thirst). Only possible when the day's mean is 17 °C or more.</p>
+      <dl><dt>Weights</dt><dd>summer 9</dd><dt>Stays</dt><dd>50%</dd><dt>Travel</dt><dd>+12% / +15% on foot</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🏜️ Dry spell <span class="status built">Built</span></h4>
+      <p>No rain and the soil drying out: crops wither without water and wells give 60%. It becomes more likely the longer it has been dry, and only happens when the soil is below 0.5.</p>
+      <dl><dt>Weights</dt><dd>summer 6 (rising with dry days)</dd><dt>Stays</dt><dd>55%</dd><dt>Travel</dt><dd>no extra</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🌨️ Snow <span class="status built">Built</span></h4>
+      <p>Snow cover builds up (+half the snowfall a day) and slows everything, off-road most of all. Tender crops die, and lying snow rots ripe crops (20%). Snow on the ground makes tracks: hunting ×1.2.</p>
+      <dl><dt>Weights</dt><dd>winter 28</dd><dt>Stays</dt><dd>40%</dd><dt>Travel</dt><dd>+8% for every kind of move, plus snow cover</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🌬️ Blizzard (severe) <span class="status built">Built</span></h4>
+      <p>A whiteout: travel is very slow and dangerous. Each hour on the move on foot there is a 2.5% chance of frostbite or a fall (half in a vehicle). Sight is cut by a tile, events are 15% more likely, and ambushes are a little easier. Exposure risk is 10% a day outdoors. The dead move at half speed and crops die. Survey odds ×0.4.</p>
+      <dl><dt>Weights</dt><dd>winter 8</dd><dt>Stays</dt><dd>20%</dd><dt>Travel</dt><dd>+50% / +60% / +60% / +70%</dd></dl>
+    </article>
+    <article class="card">
+      <h4>🧊 Hard frost <span class="status built">Built</span></h4>
+      <p>Clear and freezing: frozen ground carries no mud and is firm to travel on, but frost kills tender crops (35% × tenderness; a hard freeze at −4 °C or below 65%). Only possible on nights near freezing. (On any day with a mean below −2 °C the ground and rivers count as frozen: no mud, and fishing needs the ice cut and catches half.)</p>
+      <dl><dt>Weights</dt><dd>spring 8, autumn 12, winter 16</dd><dt>Stays</dt><dd>45%</dd><dt>Travel</dt><dd>no extra (and no mud)</dd></dl>
+    </article>
+  </div>
+
+  <h3>Ground conditions</h3>
+  <table class="data">
+    <thead><tr><th>Condition</th><th>How it changes</th><th>Effect on travel time</th></tr></thead>
+    <tbody>
+      <tr><td>Mud (0–1)</td><td>Builds from rain (×0.6) and melting snow. Dries ×0.45 a day in heat or a dry spell, ×0.6 when clear or frosty, ×0.75 otherwise. None while the ground is frozen (mean below −2 °C).</td><td>+5% foot road, +45% foot off-road, +8% vehicle road, +90% vehicle off-road at full mud</td></tr>
+      <tr><td>Snow cover (0–1)</td><td>+half the snowfall each day. Melts when the high is above 1 °C (3.5% per degree, +10% with rain).</td><td>+25% / +60% / +40% / +100% at full cover. Above 50% cover the dead move ×0.85.</td></tr>
+      <tr><td>Soil moisture (0–1)</td><td>Rain +45% of rainfall, melt +30%. Dries 14% a day in a dry spell, 12% in heat, 5% when clear, 3% otherwise (less in the cold).</td><td>None. It drives crop growth, droughts and wells (×0.6 when dry, ×1.15 after wet weeks).</td></tr>
+    </tbody>
+  </table>
+  <p>Travel multipliers are capped at ×3. The planner's ETA says how many hours the weather adds.</p>
+
+  <h3>Forecast</h3>
+  <p>Hover the season and weather next to the clock for today's effects and the forecast: 3 days ahead by reading the sky, 4 with a watchtower, 5 with a radio station. Tomorrow is nearly always right. Each day further out has about 10% more chance of naming the wrong kind of weather (less with a watchtower or radio), and temperatures are off by up to the number of days ahead in degrees. The same question on the same day always gets the same answer.</p>
+
+  <h3>Summer water <span class="status built">Built</span></h3>
+  <ul>
+    <li>Water a person drinks a day = 1 × the season's thirst (summer 1.3, winter 0.9), and at least 1.6 on a hot day (a heat wave, or a high of 30 °C or more).</li>
+    <li>The same factor applies at every base, to teams in the field (hour by hour, with the load bands on top), to prisoners and guests, and to every estimate. The planner packs more for a trip into a heat wave.</li>
+    <li>Rain catchers, wells and cisterns at bases read the weather. Wells give 60% in a dry spell.</li>
+    <li>The autopilot plans water from three weeks before summer. In the old census, thirst peaked in summer (803 thirsty run-days against 214 in spring) and was the #2 killer. In the latest census it is 4% of deaths.</li>
+  </ul>
+
+  <h3>Other weather hooks</h3>
+  <ul>
+    <li><b>Exposure</b> (per person per day outdoors; a quarter when sheltered): blizzard 10%, nights below −8 °C 6%, below −2 °C 3%, cold rain 2%, heat wave or a high of 33 °C+ 4%, highs of 30 °C+ 1.5%.</li>
+    <li><b>Hordes</b> move ×0.5 in a blizzard or below −8 °C, ×0.7 below −2 °C, and ×0.85 more in deep snow.</li>
+    <li><b>Farming:</b> a daily growth factor (0–1.3) per crop from season, temperature, soil and sky, and death and rot chances for each crop (frost, hard freeze, blizzard, drought, heat, storm, wet, snow). Eleven crops have their own climate (potato, corn, wheat, beans, tomato, squash, pumpkin, carrot, cabbage, turnip, kale). A greenhouse shelters crops from sky and storm.</li>
+    <li><b>Breakdowns:</b> well pumps wear +2.5 on a frost day and +4 in a storm, radio masts +6 in a storm, storehouse roofs +8 in a storm and +1 in rain.</li>
+    <li><b>The map:</b> the Weather layer washes the land white with snow, dark with rain, grey with fog and warm in heat. Season changes and severe weather are logged.</li>
+    <li><b>The autopilot</b> launches no trip on a storm or blizzard day, and no trip longer than a day with one forecast in the next two.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> weather is one statewide sky. Regional weather, rivers freezing over as crossings, and weather that shrinks radio range are not built. AI groups move at the weather-adjusted pace but do not plan around it, and convoys are slowed but not hurt by storms.</aside>
+</section>
+
+<section id="locations">
+  <h2>Locations and scavenging</h2>
+  <p class="lede">About 186 sites on a Normal map hold the state's loot: towns and city blocks, countryside places, landmarks, and wrecks that fall from the sky. Every site's loot is one finite stock shared by everyone, and nothing grows back. Where you search, how loudly, and whether someone else got there first decide what you bring home.</p>
+
+  <h3>Zones and danger</h3>
+  <table class="data">
+    <thead><tr><th>Zone</th><th>Plate colour</th><th>Where</th><th>Loot</th><th>Danger</th></tr></thead>
+    <tbody>
+      <tr><td>City</td><td>salmon</td><td>City and suburb tiles of Calder City and the other cities</td><td>×1.15 a site's richness</td><td>The type's own (2 for most city blocks, 3 for the hospital)</td></tr>
+      <tr><td>Small town</td><td>amber</td><td>Town centres, their shops and satellites</td><td>×0.85 (a town centre keeps its own)</td><td>Capped at 1 (a town pharmacy is quieter than a city one)</td></tr>
+      <tr><td>Countryside</td><td>green</td><td>Farms, cabins, lodges, highway stops, crash sites</td><td>×1</td><td>Capped at 1 (mostly 0)</td></tr>
+      <tr><td>Landmark</td><td>violet</td><td>National Guard bases, prison, dam, airport, factories, and the temporary wrecks</td><td>×1</td><td>The type's own (up to 3)</td></tr>
+    </tbody>
+  </table>
+  <p>Danger is shown as skulls under the name (0 Low, 1 Moderate, 2 High, 3 Very high). It adds to the dead at the site: a raid fields 1 + infection × 5 (+1 on a city tile) + danger (+2 on hive land), give or take 1, at most 14. Each one has power 2 + infection × 3, plus the hive land's toughness. A site at a group's base adds 3–7 of its guards. On hostile land there is a 40% chance of a patrol of 2–3, and otherwise a 15% chance of 2 rival scavengers.</p>
+
+  <h3>Every location type</h3>
+  <p>The <b>loot</b> line lists the supplies an hour of searching draws from, with their weights. <b>Richness</b> is how much loot the site starts with (× zone × a random 0.7–1.2). <b>Areas</b> are the buildings its raid map gets. <b>Known</b>: <i>public</i> sites are on the map from day 1, <i>road</i> sites only when they stand within 1 tile of a road, and <i>secret</i> sites never until found.</p>
+
+  <h4>Settlements</h4>
+  <div class="cards">
+    <article class="card" data-sprite="poi/city">
+      <h4>City center <span class="status built">Built</span></h4>
+      <p>The heart of Calder City or another city: a skyline on the map, rich, and full of the dead.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>scrap 4, meds 2, ammo 2, parts 1, food 1</dd><dt>Richness</dt><dd>1.0</dd><dt>Gear</dt><dd>9mm pistol, Kevlar vest, pump shotgun, baseball bat, crowbar, .357 revolver, sling bag</dd><dt>Areas</dt><dd>store, pharmacy, office, house, warehouse, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/town">
+      <h4>Town <span class="status built">Built</span></h4>
+      <p>A small town's centre, drawn with its water tower. One of these is your hub.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 1</dd><dt>Loot</dt><dd>food 3, scrap 3, meds 1, ammo 1, fuel 0.3, jars 0.5</dd><dt>Richness</dt><dd>0.6</dd><dt>Gear</dt><dd>kitchen knife, pistol, shotgun, football pads, motorcycle helmet, bicycle, bat, revolver, sling bag, binoculars</dd><dt>Areas</dt><dd>house ×2, store, garage, pharmacy, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+  </div>
+
+  <h4>City blocks and town shops</h4>
+  <div class="cards">
+    <article class="card" data-sprite="poi/police">
+      <h4>Police station <span class="status built">Built</span></h4>
+      <p>Its light bar marks it on the map. It holds ammo and police kit, and its rooms are often locked (60%). Every town has one, and Calder City has three.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>ammo 4, meds 1, scrap 1</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>pistol, shotgun, Kevlar vest, riot helmet, bicycle, police baton, police carbine, riot arm and leg guards, revolver, binoculars</dd><dt>Areas</dt><dd>armory, office, garage, cellblock</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/autoshop">
+      <h4>Auto shop <span class="status built">Built</span></h4>
+      <p>Parts and fuel. Every town has one next to its centre.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>parts 4, scrap 3, fuel 1</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>crowbar and lockpicks, spiked bat, knee guards, bicycle, crowbar, sledgehammer, flashlight</dd><dt>Areas</dt><dd>garage ×2, workshop, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/hospital">
+      <h4>Hospital <span class="status built">Built</span></h4>
+      <p>The best meds in the state, and very dangerous. One per city ("Calder City General Hospital"), and a possible outbreak origin.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 3</dd><dt>Loot</dt><dd>meds 5, scrap 1, parts 1</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>surgical kit, bandage and splint kit, fire axe</dd><dt>Areas</dt><dd>clinic ×2, pharmacy, office, kitchen</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/pharmacy">
+      <h4>Pharmacy <span class="status built">Built</span></h4>
+      <p>A green cross on the map. It holds the most meds per hour of searching, and drug cabinets are often locked.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>meds 6, water 1, food 1</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>bandage and splint kit</dd><dt>Areas</dt><dd>pharmacy ×2, store, office</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/supermarket">
+      <h4>Supermarket <span class="status built">Built</span></h4>
+      <p>Food, water, canned goods and jars. City suburbs only.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>food 6, water 4, preserved 1.5, meds 1, scrap 1, jars 0.5</dd><dt>Richness</dt><dd>0.95</dd><dt>Gear</dt><dd>kitchen knife, sling bag</dd><dt>Areas</dt><dd>store ×2, kitchen, warehouse, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/gunstore">
+      <h4>Gun store <span class="status built">Built</span></h4>
+      <p>A rifle sign on the map. It is the best ammo source, with gun cages and hunting and stealth gear.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>ammo 6, scrap 1</dd><dt>Richness</dt><dd>0.85</dd><dt>Gear</dt><dd>pistol, shotgun, hunting rifle, vest, knee guards, revolver, lever-action rifle, compound bow, hunting crossbow, ghillie wrap, camo netting, binoculars, spotting scope, pocket monocular</dd><dt>Areas</dt><dd>gunshop, store, office, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/hardware">
+      <h4>Hardware store <span class="status built">Built</span></h4>
+      <p>Scrap, parts, tools and base defences.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>scrap 5, parts 2, fuel 0.3</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>machete, crowbar and lockpicks, knee guards, flashlight, bicycle, crowbar, sledgehammer, fire axe, barbed wire, bear trap, sandbags, binoculars</dd><dt>Areas</dt><dd>workshop, store, garage, warehouse</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/apartments">
+      <h4>Apartment block <span class="status built">Built</span></h4>
+      <p>Many homes: a little of everything.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>food 3, water 2, scrap 2, meds 1, ammo 1, jars 0.5</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>knife, pistol, motorcycle helmet, school backpack, bicycle, bat, revolver, sling bag</dd><dt>Areas</dt><dd>house ×3, kitchen, garage</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/office">
+      <h4>Office tower <span class="status built">Built</span></h4>
+      <p>Scrap, water coolers and safes.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>scrap 3, water 2, parts 1, meds 1</dd><dt>Richness</dt><dd>0.6</dd><dt>Gear</dt><dd>sling bag, fire axe</dd><dt>Areas</dt><dd>office ×3, kitchen</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/school">
+      <h4>School <span class="status built">Built</span></h4>
+      <p>Lockers, a canteen, a nurse's office, books and sports kit.</p>
+      <dl><dt>Zone / danger</dt><dd>City 2, town 1</dd><dt>Loot</dt><dd>food 3, water 2, scrap 2, meds 1, jars 0.25</dd><dt>Richness</dt><dd>0.6</dd><dt>Gear</dt><dd>football pads, football helmet, school backpack, bicycle, bat, sling bag, fire axe</dd><dt>Areas</dt><dd>lockers ×2, office, kitchen, clinic</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/firestation">
+      <h4>Fire station <span class="status built">Built</span></h4>
+      <p>Meds, parts and rescue tools.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>meds 3, parts 2, scrap 1, fuel 0.8</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>motorcycle helmet, crowbar and lockpicks, bandage kit, bicycle, fire axe, crowbar, sandbags</dd><dt>Areas</dt><dd>garage, clinic, kitchen, motor pool</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/warehouse">
+      <h4>Warehouse district <span class="status built">Built</span></h4>
+      <p>On the outer suburbs: bulk scrap, food and parts, with sealed crates.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>scrap 4, food 3, parts 2, fuel 0.4, jars 0.5</dd><dt>Richness</dt><dd>0.9</dd><dt>Gear</dt><dd>crowbar and lockpicks, crowbar, sledgehammer, sandbags, sling bag</dd><dt>Areas</dt><dd>warehouse ×3, office, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/mall">
+      <h4>Mall <span class="status built">Built</span></h4>
+      <p>One per city ("Calder City Mall"): a big, rich mixed haul.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>food 3, scrap 3, meds 1, parts 1, jars 0.25</dd><dt>Richness</dt><dd>0.9</dd><dt>Gear</dt><dd>knife, machete, school backpack, bat, compound bow, sling bag, hiking pack, smokeless stove, binoculars</dd><dt>Areas</dt><dd>store ×2, pharmacy, kitchen, warehouse</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/univ">
+      <h4>University <span class="status built">Built</span></h4>
+      <p>Labs and lecture halls: parts, meds, books and the only telescope. Calder City only, and a possible outbreak origin.</p>
+      <dl><dt>Zone / danger</dt><dd>City / 2</dd><dt>Loot</dt><dd>parts 3, meds 2, scrap 2</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>surgical kit, bandage kit, bat, fire axe, sling bag, telescope</dd><dt>Areas</dt><dd>lab ×2, office, kitchen</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/grocery">
+      <h4>Grocery store <span class="status built">Built</span></h4>
+      <p>A town's food shop.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 1</dd><dt>Loot</dt><dd>food 5, water 2, preserved 1, meds 1, scrap 1, jars 0.75</dd><dt>Richness</dt><dd>0.6</dd><dt>Gear</dt><dd>kitchen knife</dd><dt>Areas</dt><dd>store ×2, kitchen, garage</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/diner">
+      <h4>Diner <span class="status built">Built</span></h4>
+      <p>A roadside kitchen: food and water.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 1</dd><dt>Loot</dt><dd>food 5, water 3, scrap 1, jars 0.75</dd><dt>Richness</dt><dd>0.5</dd><dt>Gear</dt><dd>kitchen knife</dd><dt>Areas</dt><dd>kitchen ×2, store, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/motel">
+      <h4>Motel <span class="status built">Built</span></h4>
+      <p>Rooms left by travellers.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 1</dd><dt>Loot</dt><dd>food 2, water 2, scrap 2, meds 1, ammo 1, jars 0.25</dd><dt>Richness</dt><dd>0.5</dd><dt>Gear</dt><dd>pistol, knife, school backpack, bicycle, revolver, sling bag</dd><dt>Areas</dt><dd>house ×3, office, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/church">
+      <h4>Church <span class="status built">Built</span></h4>
+      <p>In towns, in cities and out in the country. Supplies people left for the needy.</p>
+      <dl><dt>Zone / danger</dt><dd>City 1, town 1, countryside 1</dd><dt>Loot</dt><dd>food 3, water 3, meds 1, scrap 1, jars 0.75</dd><dt>Richness</dt><dd>0.45</dd><dt>Gear</dt><dd>bandage kit</dd><dt>Areas</dt><dd>chapel, kitchen, house, campsite</dd><dt>Known</dt><dd>public (country churches too)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/clinic">
+      <h4>Clinic <span class="status built">Built</span></h4>
+      <p>A small-town doctor's office. A smaller hospital haul at lower risk.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 1 (one also in Calder City)</dd><dt>Loot</dt><dd>meds 4, water 1, scrap 1</dd><dt>Richness</dt><dd>0.55</dd><dt>Gear</dt><dd>surgical kit, bandage kit</dd><dt>Areas</dt><dd>clinic ×2, pharmacy, office</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/feedstore">
+      <h4>Feed store <span class="status built">Built</span></h4>
+      <p>Farm supply: food, seed, fuel and traps.</p>
+      <dl><dt>Zone / danger</dt><dd>Small town / 0</dd><dt>Loot</dt><dd>food 4, scrap 2, parts 1, fuel 0.8, jars 1</dd><dt>Richness</dt><dd>0.5</dd><dt>Gear</dt><dd>machete, hunting rifle, lever-action rifle, barbed wire, bear trap, sledgehammer</dd><dt>Areas</dt><dd>barn, store, warehouse, garage</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/gas">
+      <h4>Gas station <span class="status built">Built</span></h4>
+      <p>The best fuel source: in towns, in city suburbs, and four along the highways.</p>
+      <dl><dt>Zone / danger</dt><dd>Town 1, city 1, countryside 1</dd><dt>Loot</dt><dd>fuel 4, food 2, scrap 1</dd><dt>Richness</dt><dd>0.4</dd><dt>Gear</dt><dd>pistol, revolver, crowbar, flashlight</dd><dt>Areas</dt><dd>store, garage, pumps, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+  </div>
+
+  <h4>Countryside</h4>
+  <div class="cards">
+    <article class="card" data-sprite="poi/farm">
+      <h4>Farmstead <span class="status built">Built</span></h4>
+      <p>Twelve on Normal, plus town satellites. Food, hunting rifles and traps. Off-road farms are hidden.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>food 5, scrap 1, jars 1, fuel 0.4</dd><dt>Richness</dt><dd>0.5</dd><dt>Gear</dt><dd>hunting rifle, machete, lever-action rifle, shotgun, sledgehammer, crowbar, barbed wire, bear trap, binoculars</dd><dt>Areas</dt><dd>farmhouse, barn ×2, campsite</dd><dt>Known</dt><dd>road (spur 60%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/barn">
+      <h4>Barn <span class="status built">Built</span></h4>
+      <p>A red barn on the map: hay, fuel and tools. It never gets a road.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>food 3, scrap 2, fuel 0.6, jars 0.5</dd><dt>Richness</dt><dd>0.35</dd><dt>Gear</dt><dd>machete, sledgehammer, crowbar, barbed wire, bear trap</dd><dt>Areas</dt><dd>barn ×2, campsite</dd><dt>Known</dt><dd>road</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/ranch">
+      <h4>Ranch <span class="status built">Built</span></h4>
+      <p>On farmland or hills: food, water and hunting guns.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>food 5, water 2, ammo 1, jars 0.75, preserved 0.5, fuel 0.3</dd><dt>Richness</dt><dd>0.55</dd><dt>Gear</dt><dd>hunting rifle, shotgun, machete, lever-action rifle, revolver, barbed wire, bear trap, binoculars</dd><dt>Areas</dt><dd>farmhouse, barn ×2, garage</dd><dt>Known</dt><dd>road (spur 60%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/cabin">
+      <h4>Cabin <span class="status built">Built</span></h4>
+      <p>Seven in the woods and hills, never on a road, so usually hidden. Ammo, a water filter and quiet gear.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>food 2, ammo 2, water 1, meds 1, preserved 0.5, jars 0.25</dd><dt>Richness</dt><dd>0.35</dd><dt>Gear</dt><dd>hunting rifle, machete, charcoal water filter, lever-action rifle, fire axe, bear trap, smokeless stove, ghillie wrap, monocular, binoculars</dd><dt>Areas</dt><dd>cabin, campsite</dd><dt>Known</dt><dd>road</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/lodge">
+      <h4>Hunting lodge <span class="status built">Built</span></h4>
+      <p>Ammo and the best hunting and optics kit outside a gun store.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>ammo 4, food 3, meds 1, preserved 0.5</dd><dt>Richness</dt><dd>0.55</dd><dt>Gear</dt><dd>hunting rifle, shotgun, machete, compound bow, hunting crossbow, lever-action rifle, ghillie wrap, camo netting, bear trap, stove, binoculars, spotting scope, monocular</dd><dt>Areas</dt><dd>cabin ×2, kitchen, campsite</dd><dt>Known</dt><dd>road (spur 50%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/campground">
+      <h4>Campground <span class="status built">Built</span></h4>
+      <p>Forest campsites: water, packs and camp kit.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 1</dd><dt>Loot</dt><dd>water 3, food 2, scrap 1, fuel 0.3</dd><dt>Richness</dt><dd>0.4</dd><dt>Gear</dt><dd>knife, pipe spear, water filter, school backpack, bicycle, hiking pack, stove</dd><dt>Areas</dt><dd>campsite ×3, wreck</dd><dt>Known</dt><dd>road (spur 60%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/ranger">
+      <h4>Ranger station <span class="status built">Built</span></h4>
+      <p>Meds, ammo and optics in the woods.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>meds 2, ammo 2, food 2, fuel 0.3</dd><dt>Richness</dt><dd>0.5</dd><dt>Gear</dt><dd>hunting rifle, bandage kit, bicycle, fire axe, hiking pack, stove, binoculars, spotting scope, monocular</dd><dt>Areas</dt><dd>cabin, office, garage</dd><dt>Known</dt><dd>road (spur 60%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/radiotower">
+      <h4>Radio tower <span class="status built">Built</span></h4>
+      <p>A mast on a hill: parts, and generator schematics.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>parts 3, scrap 2, fuel 0.3</dd><dt>Richness</dt><dd>0.4</dd><dt>Gear</dt><dd>flashlight, crowbar, binoculars</dd><dt>Areas</dt><dd>control, workshop</dd><dt>Known</dt><dd>road (no spur)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/quarry">
+      <h4>Quarry <span class="status built">Built</span></h4>
+      <p>Hills only: scrap and heavy tools.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 0</dd><dt>Loot</dt><dd>scrap 3, fuel 0.4</dd><dt>Richness</dt><dd>0.4</dd><dt>Gear</dt><dd>sledgehammer, crowbar, crowbar and lockpicks</dd><dt>Areas</dt><dd>workshop, garage, campsite</dd><dt>Known</dt><dd>road (spur 70%)</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/truckstop">
+      <h4>Truck stop <span class="status built">Built</span></h4>
+      <p>Three along the highways ("Mile 140 Truck stop"): fuel and food.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 1</dd><dt>Loot</dt><dd>fuel 5, food 3, scrap 2, parts 1, preserved 0.5</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>pistol, shotgun, revolver, crowbar, sling bag, hiking pack</dd><dt>Areas</dt><dd>store, kitchen, garage, pumps, wreck</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/crashsite">
+      <h4>Crash site <span class="status built">Built</span></h4>
+      <p>An old wreck from the fall ("Flight 412 crash site", "Medevac crash site"). Two per Normal map, always hidden until found, and smoking on the map once found.</p>
+      <dl><dt>Zone / danger</dt><dd>Countryside / 1</dd><dt>Loot</dt><dd>scrap 4, parts 2, meds 1, fuel 0.8</dd><dt>Richness</dt><dd>0.6</dd><dt>Gear</dt><dd>pistol, sling bag, school backpack, crowbar</dd><dt>Areas</dt><dd>wreck ×2, campsite</dd><dt>Known</dt><dd>secret</dd></dl>
+    </article>
+  </div>
+
+  <h4>Landmarks</h4>
+  <div class="cards">
+    <article class="card" data-sprite="poi/military">
+      <h4>National Guard base <span class="status built">Built</span></h4>
+      <p>At least one per map, off-road in the hills or woods and away from everyone. It is the only source of assault rifles, plate carriers, night vision and military radios outside crashes and traders. Everyone knew where it was, so it is always on the map. A possible outbreak origin.</p>
+      <dl><dt>Zone / danger</dt><dd>Landmark / 3</dd><dt>Loot</dt><dd>ammo 5, parts 2, fuel 2, meds 1</dd><dt>Richness</dt><dd>1.1</dd><dt>Gear</dt><dd>assault rifle, plate carrier, vest, riot helmet, night vision, military radio, assault pack, frame rucksack, carbine, camo netting, sandbags, barbed wire, stove, binoculars, spotting scope, thermal monocular</dd><dt>Areas</dt><dd>armory, barracks, motor pool, warehouse</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/military-depot">
+      <h4>Army depot <span class="status built">Built</span></h4>
+      <p>A 50% chance of a second military site (guaranteed on Huge maps), at least 22 tiles from the first. It is the same site type with the depot look.</p>
+      <dl><dt>Stats</dt><dd>as the National Guard base</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/prison">
+      <h4>State prison <span class="status built">Built</span></h4>
+      <p>On open farmland far from the cities: guards' kit, and locked rooms half the time.</p>
+      <dl><dt>Zone / danger</dt><dd>Landmark / 3</dd><dt>Loot</dt><dd>food 2, scrap 2, ammo 1</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>shotgun, vest, riot helmet, baton, riot arm and leg guards, carbine</dd><dt>Areas</dt><dd>cellblock ×2, kitchen, armory, clinic</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/dam">
+      <h4>Dam and power plant <span class="status built">Built</span></h4>
+      <p>On a wooded river: the richest parts site. Draft 1's "restore the dam" goal is not built.</p>
+      <dl><dt>Zone / danger</dt><dd>Landmark / 1</dd><dt>Loot</dt><dd>parts 4, scrap 3, fuel 0.3</dd><dt>Richness</dt><dd>0.7</dd><dt>Gear</dt><dd>sandbags, crowbar, sledgehammer, flashlight</dd><dt>Areas</dt><dd>control, workshop, warehouse</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/airport">
+      <h4>Regional airport <span class="status built">Built</span></h4>
+      <p>5–12 tiles from Calder City: fuel and parts.</p>
+      <dl><dt>Zone / danger</dt><dd>Landmark / 2</dd><dt>Loot</dt><dd>fuel 4, parts 2, scrap 2</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>pistol, sling bag, hiking pack, school backpack</dd><dt>Areas</dt><dd>hangar, warehouse, store, office</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/factory">
+      <h4>Factory <span class="status built">Built</span></h4>
+      <p>Two near towns ("Dunmore Mill"), plus Calder City's Steel Works. The scrap capital.</p>
+      <dl><dt>Zone / danger</dt><dd>Landmark / 1</dd><dt>Loot</dt><dd>scrap 5, parts 2, fuel 0.4</dd><dt>Richness</dt><dd>0.8</dd><dt>Gear</dt><dd>crowbar and lockpicks, crowbar, sledgehammer, barbed wire</dd><dt>Areas</dt><dd>workshop, warehouse, office, garage</dd><dt>Known</dt><dd>public</dd></dl>
+    </article>
+  </div>
+
+  <h4>Crash events: temporary sites</h4>
+  <p>The first comes down between days 8 and 14, then one every 10–20 days, 5–13 tiles from whoever saw it (the hub's radio hears one up to 20 tiles out). A card announces it, and a dashed orange search circle of radius 4 appears with a smoke column and a timer (radius 3 when seen from a base with a watchtower, 5 when only heard on the radio). The wreck is somewhere inside, never on the map until found. It burns out 7–10 days after coming down. Groups within 22 tiles race you for it: raiders 75%, military 85%, expansionists 65%, zealots 50%, fortresses 40%, traders 30%, communes 20%. A rival party that arrives strips it to 30%, and challenges your team if it is there. The noise draws up to two hordes within 8 tiles for 3 days.</p>
+  <div class="cards">
+    <article class="card" data-sprite="poi/crash_mil">
+      <h4>Army helicopter wreck (33%) <span class="status built">Built</span></h4>
+      <p>Ammo and military gear in locked cargo cases.</p>
+      <dl><dt>Danger</dt><dd>2</dd><dt>Loot</dt><dd>ammo 5, meds 2, parts 2, scrap 2, fuel 0.5</dd><dt>Richness</dt><dd>1.2</dd><dt>Gear</dt><dd>assault rifle, vest, plate carrier, riot helmet, military radio, night vision, assault pack, rucksack, carbine, camo netting, thermal, binoculars</dd><dt>Areas</dt><dd>military wreck ×2, cargo drop, campsite</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/crash_cargo">
+      <h4>Supply plane wreck (22%) <span class="status built">Built</span></h4>
+      <p>Food, preserved food and meds.</p>
+      <dl><dt>Danger</dt><dd>2</dd><dt>Loot</dt><dd>food 5, water 3, meds 2, preserved 2, scrap 2, parts 1, fuel 0.6</dd><dt>Richness</dt><dd>1.2</dd><dt>Gear</dt><dd>assault pack, vest, bandage kit, surgical kit, rucksack, stove</dd><dt>Areas</dt><dd>fuselage, cargo drop ×2, wreck</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/crash_med">
+      <h4>Medevac wreck (20%) <span class="status built">Built</span></h4>
+      <p>The richest meds find in the game.</p>
+      <dl><dt>Danger</dt><dd>2</dd><dt>Loot</dt><dd>meds 7, water 2, scrap 1, parts 1</dd><dt>Richness</dt><dd>1.1</dd><dt>Gear</dt><dd>surgical kit, bandage kit, vest</dd><dt>Areas</dt><dd>medevac wreck ×2, cargo drop, wreck</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/crash_news">
+      <h4>News helicopter wreck (13%) <span class="status built">Built</span></h4>
+      <p>Parts and electronics.</p>
+      <dl><dt>Danger</dt><dd>2</dd><dt>Loot</dt><dd>parts 3, scrap 3, water 1, food 1, fuel 0.4</dd><dt>Richness</dt><dd>0.9</dd><dt>Gear</dt><dd>hiking pack, sling bag</dd><dt>Areas</dt><dd>news wreck, wreck, campsite</dd></dl>
+    </article>
+    <article class="card" data-sprite="poi/airdrop">
+      <h4>Supply drop (12%) <span class="status built">Built</span></h4>
+      <p>A parachute pallet: a bit of everything.</p>
+      <dl><dt>Danger</dt><dd>1</dd><dt>Loot</dt><dd>food 6, water 4, meds 3, ammo 3, preserved 2</dd><dt>Richness</dt><dd>1.2</dd><dt>Gear</dt><dd>assault pack, vest, bandage kit, rucksack, stove</dd><dt>Areas</dt><dd>cargo drop ×3, campsite</dd></dl>
+    </article>
+  </div>
+  <p>Finding the wreck: a team passing within 1 tile sees it. A Look around (or a recon's survey) finds it within 2 tiles (3 with Scouting 8+), and a look that misses narrows the circle by a tile. The crash card's <i>Send a search team</i> sends up to 3 of the fittest free people on foot (3 stay home) with a plan: recon the centre, <b>Search the area</b> (up to 8 looks at the spots that clear the most unsearched ground), raid the wreck and come home.</p>
+
+  <h3>Scavenging</h3>
+  <p>Arriving at a site with the <i>Scavenge / raid</i> mission opens one of two ways to search it.</p>
+  <h4>The interactive raid <span class="status built">Built</span></h4>
+  <p>A turn-based raid on a 28 × 18 map built from the site's areas. Search containers next to you (S) for loot from that area's table, scaled by how picked over the site is and by Scavenging. What does not fit stays inside. Guards patrol and the dead wander, unaware until they spot you (Stealth) or hear gunfire. Heat rises each turn and with noise, and each stage brings more of the dead. Leave from a green extraction zone (X). A vehicle you brought waits in its own zone, and extracting anywhere else leaves it at the site, marked. With nobody out, everyone left on the map is lost. Each container searched lowers the site's loot by 0.07, and the raid's hours then pass on the map clock. See the battles chapter for the raid rules.</p>
+  <h4>The hour-by-hour search <span class="status built">Built</span></h4>
+  <p>The abstract search used by crews, the autopilot and headless tools. You pick an approach, and each hour rolls finds, Heat and trouble:</p>
+  <table class="data">
+    <thead><tr><th>Approach</th><th>Loot</th><th>Heat per hour</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Sneak</td><td>×0.7</td><td>7</td><td>Each point of Stealth takes 0.3 off the Heat</td></tr>
+      <tr><td>Normal</td><td>×1.0</td><td>13</td><td>Balanced</td></tr>
+      <tr><td>Loud</td><td>×1.4 (two loot rolls)</td><td>22</td><td>Kick doors and use guns; uses more ammo in fights</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Supplies:</b> each roll picks a supply by the site's weights. The amount is 4–9 × loot left × approach × (1 + Scavenging/15), × 6 for ammo, × 2.5 for scrap, × 2 for jars and × 0.7 for fuel (fuel is scarce on purpose).</li>
+    <li><b>Gear:</b> 7% × loot × (1 + Scavenging/15) × approach per hour, from the site's gear list. Books, small finds (valuables, comforts, smokes, throwables), hunting finds (snare wire, rods, nets), keys, locks and blueprints each roll on their own dice.</li>
+    <li><b>Heat</b> is the approach's rate × (0.6 + 0.6 × infection), −2 at night, with camp kit and the Quiet Hands perk (half) reducing it. The stages are Quiet (0), Stirring (25), Swarming (50) and Overrun (75), with a 5 / 15 / 35 / 60% chance of a fight each hour (+15% at a guarded base, −30% with Sixth Sense).</li>
+    <li><b>Depletion:</b> each hour lowers the site's loot by 0.05 × approach (×0.6 with the Salvager perk), down to a floor of 0.03.</li>
+  </ul>
+  <h4>Loot that fits the place (the loot overhaul) <span class="status built">Built</span></h4>
+  <p>Every site type, raid area and item carries theme tags (home, shop, police, military, medical, hunt, crime and so on). A test checks that nothing turns up where it does not belong: no military radios in a university lab, no sledgehammers in a pharmacy. Locked containers hold more (supplies ×1.5) and blueprints are 4× as likely in them. Keys are named for a site and hang on the hub's key ring.</p>
+
+  <h3>Depletion: sites run dry <span class="status built">Built</span></h3>
+  <ul>
+    <li>Site loot is one finite stock for everyone, and nothing grows back after the map is made. The only new loot comes from crash sites and drops, which burn out. A shore's driftwood washes up again at 1 scrap every 72 hours.</li>
+    <li><b>Other groups scavenge too:</b> each group with 6+ people sends one party at a time, every 6–10 days when it is short of something. The party goes to the best site within 10 tiles of its bases, searches for 8 hours (0.03 loot an hour × strength ÷ 3) and walks home. Sites inside a group's own land lose 0.3% of their loot a day into its stock.</li>
+    <li>Your team at a site a group party is working gets a <i>Contested site</i> card. Win the fight and they leave, dropping their haul.</li>
+    <li>You learn a site was stripped only when you see it, or hear on the radio: "Red Hand has been stripping the Calder Mall" (needs a radio station and the site within 15 tiles of your bases).</li>
+    <li>Measured over a year: about 68% of site loot is left on day 120, 54% on day 240 and 48% on day 365 (93% without scavenging groups).</li>
+  </ul>
+  <div class="gallery" data-sprites="party/raider-scav party/commune-scav"></div>
+
+  <h3>Hidden off-road sites and discovery <span class="status built">Built</span></h3>
+  <p>Only what a normal person knew before the fall is on the map from day 1: towns and cities with every shop and service in them, truck stops, landmarks and the National Guard bases. Farms, barns, ranches, cabins, lodges, campgrounds, ranger stations, radio towers and quarries are public only within 1 tile of a road. Old crash sites and the wrecks of crash events are always secret. A hidden site is not drawn and shows as bare ground. You cannot scavenge it or plan for it, and crews and the autopilot never pick it. That lasts until your people have intel on its tile: seen from a base or watchtower, seen by a team, or reported (radio news, an explorer's map, bought intel, a job reward, a prisoner questioned, the coalition). Once found, a site stays on the map for good. About 14–19% of sites are hidden: 18 of 128 on Small, 33 of 186 on Normal, 54 of 282 on Large and 82 of 419 on Huge, with about 5 within 12 tiles of the hub. Each find gets a log line, for example "🧭 Move here team (Cole, June) found a hunting lodge deep in the woods: Pine Hollow Hunting lodge."</p>
+
+  <h3>Survey missions and optics <span class="status built">Built</span></h3>
+  <p>The <b>Survey</b> mission sweeps the land around a tile (radius 2–4, 6–48 hours) for hidden places and finds. Its route is worked out when it starts: each next spot clears the most ground not yet looked at, the route always ends back at the centre, and the estimates are exact. A step takes 2 hours on foot (×1.4 in hills, forest and city, ×2 in mountains, ×0.7 on a road), 1.5 hours on bikes and 1 by car, ×1.35 stealthy and ×0.8 rushed.</p>
+  <p>Each hour it rolls for every unknown hidden site within reach: 12% × Scouting (0.5 + 0.05 a point; +0.15 with Keen Eye or Spotter) × team size (+8% a person, at most ×1.3) × ground (farmland ×1.35, suburbs ×1, city ×0.85, hills ×0.7, forest ×0.6, mountains ×0.55) × distance beyond the optics' reach (0–1 tiles ×1.6, 2 ×1, 3 ×0.45, 4 ×0.18, 5 ×0.06) × night ×0.35 × weather (fog ×0.5, blizzard ×0.4, storm ×0.55, rain ×0.85, snow ×0.8) × car ×0.6 or bikes ×0.8 × stealthy ×1.2 or rushed ×0.75 × optics × a rumour ×3, at most 80% an hour. Heat builds at half the rate of standing still. An hour on hive land has a 3% chance (8% on the red-skull ring) that the dead find the team.</p>
+  <p><b>Rumours:</b> radio chatter (5% a day with a station), travellers and merchants at the gate (+15% a day each) and other groups' news speak of an unfound hidden place within 30 tiles. It shows as a dashed amber circle of 3 tiles with a vague place ("a hunting lodge somewhere north of Dunmore") for 20 days, at most three at once. A survey centred in it has ×3 odds for that place.</p>
+  <table class="data">
+    <thead><tr><th>Optics</th><th>Carried</th><th>Effect</th><th>Found at</th></tr></thead>
+    <tbody>
+      <tr><td>Pocket monocular</td><td>pocket, 0.2 kg</td><td>look ×1.1, sees others first +4%</td><td>gun stores, cabins, lodges, ranger stations</td></tr>
+      <tr><td>Binoculars</td><td>pocket, 0.7 kg</td><td>×1.25, a tile more reach, +1 sight by day, +8% seeing others first</td><td>farms, ranches, towns, police, malls, hardware stores, the Guard…</td></tr>
+      <tr><td>Spotting scope</td><td>pack, 2.2 kg</td><td>×1.6 and two tiles more reach, only while the team stays put</td><td>gun stores, lodges, ranger stations, the Guard</td></tr>
+      <tr><td>Thermal monocular</td><td>off hand or pocket, 0.5 kg</td><td>×1.2, a tile of reach, night and fog cost it almost nothing, +12% seeing others first at night; night vision in battle</td><td>military bases, helicopter wrecks</td></tr>
+      <tr><td>Telescope</td><td>bulky, 9 kg</td><td>in a base's armory: +1 tile of the base's view (+2 with a watchtower)</td><td>the university</td></tr>
+    </tbody>
+  </table>
+  <p>Only the best optics on a team counts in full, a second adds a quarter, and the total look is capped at ×1.75. Crews have a <i>Survey for hidden places</i> job. The autopilot sends two scouts to survey when hands are spare (at most one survey every 6 days, or every 3 with a rumour).</p>
+  <div class="gallery" data-sprites="gear/binoculars gear/spotscope gear/thermal gear/monocular gear/telescope"></div>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had no hidden sites. Its "skilled scout sees farther and notices more" lives on in sight radius, perception and survey odds, but scouts never bring back <i>wrong</i> information (for example an underestimated horde).</aside>
+</section>
+
+<section id="travel">
+  <h2>Travel and expeditions</h2>
+  <p class="lede">Everything that leaves a base is a party on the State Map: your teams, trade-route convoys, supply runs, trade caravans, and the AI groups' raids, convoys and scavengers. Travel is stepped hour by hour through the terrain, the roads, the weather and the team's load. Each tile entered can bring an event or a conflict, and every hour costs food and water.</p>
+
+  <h3>Parties and missions</h3>
+  <p>A team is a group of survivors, optionally with a vehicle or bikes, packed supplies and found cargo. It keeps the name it left with ("Scavenge team (Cole, June)"). Missions:</p>
+  <table class="data">
+    <thead><tr><th>Mission</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Recon</td><td>Travel there and look around carefully for finds, then wait for orders</td></tr>
+      <tr><td>Move here</td><td>Travel there and wait for orders</td></tr>
+      <tr><td>Scavenge / raid</td><td>Raid the site on its own map, or search it hour by hour</td></tr>
+      <tr><td>Survey</td><td>Sweep the area for hidden places (see <a href="#locations">Locations</a>)</td></tr>
+      <tr><td>Trade visit</td><td>Barter, give gifts and sign pacts at a group's base</td></tr>
+      <tr><td>Build outpost</td><td>Found a satellite base (15 scrap carried; 5 on a ruin). The team stays as its first staff.</td></tr>
+      <tr><td>Recover bodies</td><td>Take what is left at a death site</td></tr>
+      <tr><td>Recover vehicle</td><td>Bring fuel (and a part if it is badly damaged) to an abandoned vehicle</td></tr>
+      <tr><td>Investigate find</td><td>Open a cache, camp or wrecked car a team spotted</td></tr>
+      <tr><td>Cull horde</td><td>Thin out or lure away a horde on or next to the tile</td></tr>
+      <tr><td>Destroy hive / Burn the growth</td><td>Storm a hive, or burn a hive growth</td></tr>
+      <tr><td>Rescue captives</td><td>Sneak out, storm, negotiate or ransom your people</td></tr>
+      <tr><td>Assault their base</td><td>Conquer (or retake) a base</td></tr>
+      <tr><td>Hunting / fishing trip</td><td>See <a href="#hunting">Hunting</a></td></tr>
+    </tbody>
+  </table>
+
+  <h3>The trip planner <span class="status built">Built</span></h3>
+  <ul>
+    <li>Choose the crew, a vehicle (truck, sedan, bikes or on foot), the stance, and supplies (auto-filled with a round-trip estimate). The planner shows each person's load, band, pace and rations, the car's load % and fuel multiplier, and warns about anyone Heavy or Overloaded. A launch over the carry limit is refused.</li>
+    <li><b>Plan section:</b> the order queue the team runs by itself. It starts with the trip and its mission, followed by steps: look around, scavenge here, scavenge the best N sites within R tiles (picked when the step starts), camp N hours, gather, fetch water (2 h by a river: every free container filled), wait, move to a known site, survey the area, hunt, fish, set or check snares, and return home.</li>
+    <li><b>Presets:</b> Recon and return, Scavenge and return, Survey trip, Explore (recon, then the best 2 sites within 3 tiles, then home), Camp N days then return, Hunting trip, Fishing trip, Custom.</li>
+    <li><b>Estimates</b> step every leg hour by hour like the real trip (searches count 6 hours, Look around 2), including the weather ahead and the load. The planner packs food, water and fuel for the plan and shows a Heat look-ahead for camp and wait steps.</li>
+    <li><b>"If … then come home" rules:</b> anyone hurt below N health, food below N days, or cargo full. These are checked every hour, and a "Coming home" card says why the team turned back.</li>
+    <li><b>Plan cards</b> (once each per trip): a horde of 15+ in sight, a rich site in sight that is not on the plan, food short of the way home.</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Stance</th><th>Speed</th><th>Events</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td>Stealthy</td><td>×0.75</td><td>×0.6 (conflicts ×0.75, +25% to see others first)</td><td>Scouting dangerous ground</td></tr>
+      <tr><td>Normal</td><td>×1.0</td><td>×1.0</td><td>Standard pace and risk</td></tr>
+      <tr><td>Rushed</td><td>×1.3</td><td>×1.4 (conflicts ×1.2, −10% to see others first)</td><td>When time matters more than safety</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Supplies and weight on the road</h3>
+  <ul>
+    <li><b>Food:</b> one ration per person per day, eaten hour by hour (fresh game first, then packed food, preserved food, then found food). Out of food: −0.6 health an hour per person (raw damage: armour and Tough do not help).</li>
+    <li><b>Water:</b> one per person per day × the day's thirst (summer 1.3, hot day 1.6, winter 0.9). Out of water: −1 health an hour.</li>
+    <li><b>Load bands</b> by felt load: Light ≤ 18 kg (full pace), Medium ≤ 28 (−10% pace, +15% food and water), Heavy ≤ 38 (−25%, +35%), Overloaded above that (−45%, +60%). Max load is 40 kg (28 with a Bad Back), plus the pack's carry, plus 8 with Packrat. The team shares its load out evenly and moves at its slowest member's pace. Extra rations count only on the move.</li>
+    <li><b>Weights:</b> food 0.5 kg, water 1, fuel 1, meds 0.1, ammo 0.02, scrap and parts 2, preserved food 0.35, jars 0.4. Fresh game weighs 1 kg a ration.</li>
+    <li><b>A team that loses people</b> drops what the rest cannot carry on the spot (marked as "Cargo left behind"). A team whose last member dies leaves a death site with everything it carried, and its vehicle stands abandoned there.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> there is no medical, ammo or parts drain table by distance. Meds are used for treatment and events, ammo in fights, and parts for repairs and breakdown cards. Draft 1's horses, foraging along the way and supply caches on common routes are not built. Fishing, hunting and the fetch-water step are the built ways to live off the land.</aside>
+
+  <h3>Vehicles</h3>
+  <div class="cards">
+    <article class="card" data-sprite="party/player-truck">
+      <h4>Pickup truck <span class="status built">Built</span></h4>
+      <p>The hub starts with one (20 fuel, 75% condition). Riders feel none of their load: everything goes in the truck.</p>
+      <dl><dt>Tank</dt><dd>30 fuel</dd><dt>Payload</dt><dd>650 kg (riders 80 kg each plus what they wear), up to 125% overloaded</dd><dt>Speed</dt><dd>road 0.5 h a tile, off-road 1.4–3 h; no mountains</dd><dt>Fuel</dt><dd>0.6 a tile on roads, 1.5 off-road, ×1 up to 60% full rising to ×1.3 at 100% and ×1.6 at 125%</dd><dt>Raft across water</dt><dd>+14 scrap, +2 parts, +4 h</dd></dl>
+    </article>
+    <article class="card" data-sprite="party/player-sedan">
+      <h4>Old sedan <span class="status built">Built</span></h4>
+      <p>Smaller and thirstier per kilo. You get one by restoring a wrecked car found on the road (2 parts, 6 fuel, a Mechanics check of (Mechanics + 5)/10, 10–95%). It comes back to life at 35% condition with 6 fuel.</p>
+      <dl><dt>Tank</dt><dd>18 fuel</dd><dt>Payload</dt><dd>400 kg</dd><dt>Speed and fuel</dt><dd>as the truck</dd><dt>Raft across water</dt><dd>+9 scrap, +1 part</dd></dl>
+    </article>
+    <article class="card" data-sprite="marker/vehicle-bike">
+      <h4>Bicycles <span class="status built">Built</span></h4>
+      <p>A stack of bikes per base, one per rider. No fuel. Faster than walking on roads and at walking pace everywhere else (pushed over mountains). Each rack takes 15 kg of the team's load, and riding removes 55% of the load's slow-down and extra rations. They break down rarely (a flat, a chain) and are patched with scrap. Found as cargo (12 kg, bulky) in towns, apartments, motels, schools, campgrounds, police and fire stations, auto shops, hardware stores and ranger stations, or built in a workshop (8 scrap, 2 parts). A boat takes them for 1 scrap. Trade routes, supply runs and caravans use cars only.</p>
+      <dl><dt>Road</dt><dd>0.75 h a tile</dd><dt>Breakdown per tile</dt><dd>0.3% + 2% × wear</dd></dl>
+    </article>
+    <article class="card" data-sprite="party/player-raft">
+      <h4>Boats and rafts <span class="status built">Built</span></h4>
+      <p>Water blocks travel, but a team on a shore can build a one-use boat and cross one water tile to the land straight across (team panel, orders card, or right-click the far tile). Cars cross on a raft, or are left on the shore, marked.</p>
+      <dl><dt>Scrap</dt><dd>4 + 2 a person + 1 per 40 kg of supplies and cargo</dd><dt>Build</dt><dd>2 h + 0.5 a person + 1 per 80 kg, −5% per Mechanics point (at most −50%)</dd><dt>Crossing</dt><dd>1 h on the water (2 h on a raft), with a small mishap risk (a crate lost, someone bruised, the raft vehicle damaged), 1.5–2.5× in wind and storms</dd><dt>Gather materials</dt><dd>3 h for scrap on a shore with a crossing (a shore holds about 10, +1 every 3 days)</dd></dl>
+    </article>
+  </div>
+  <div class="gallery" data-sprites="party/player-truck party/player-sedan party/player-boat party/player-raft misc/wake party/player-walkers party/player-scouts party/player-raid party/player-relief party/player-convoy party/player-supply party/player-cart party/player-supplycart party/truck party/sedan party/boat party/raft party/walkers party/scouts party/raid party/relief party/convoy party/supply party/cart party/supplycart marker/vehicle-truck-fuel marker/vehicle-truck-damaged marker/vehicle-sedan marker/vehicle-bike"></div>
+  <ul>
+    <li><b>Condition and breakdowns:</b> each tile driven brings a breakdown chance of 1% + 8% × (100 − condition)/100 (×1.5 overloaded). Wear is 0.25 a tile on roads and 0.9 off-road (×1.5 overloaded). The Breakdown card offers a roadside repair (Mechanics check against 9: 2 h on success, 8 h and −10 condition on failure), a spare part (1 part: +10 condition, 1 h) or abandoning the vehicle.</li>
+    <li><b>Repairs at a base:</b> 1 part for +25 condition with a garage (+35 with a Grease Monkey), or +12 (+25) with a Mechanics 4+ survivor. The team panel's roadside repair costs 1 part and 3 h.</li>
+    <li><b>Abandoned vehicles</b> (out of fuel, broken down, no road home, left on a shore or at a raid site) are marked on the map, with any cargo still inside. They can be driven again once their tank plus the fuel the team carries reaches 2. Passers-by siphon them and then strip them, with a daily chance of traffic × (1 + days/10) (up to 70%) costing 10–25 condition, until nothing is left.</li>
+  </ul>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1's horse and route choice (fast and dangerous or slow and safe) are not built. Routes are the cheapest path for the vehicle. There is no dedicated bike sprite on the map yet (suggestions-3 #22).</aside>
+
+  <h3>Road events <span class="status built">Built</span></h3>
+  <p>Each tile a team enters (away from your bases) rolls, in order:</p>
+  <ol>
+    <li>A horde on the tile always forces a <b>Horde of N</b> card.</li>
+    <li>A worn vehicle may break down.</li>
+    <li>A <b>conflict</b> with people or a surge of the dead (below).</li>
+    <li>A <b>travel event</b> with a chance of 5% + infection × 10% + traffic × 40% (+12% on hostile land, +6% on other owned land), × stance × 1.2 at night × 1.15 in storms and blizzards.</li>
+  </ol>
+  <p>There is one card per team per hour. A card is dropped if its team is gone or the person it is about has died or left. Costs are checked against what the team carries when you choose. Skill checks succeed with (best skill + 11 − difficulty)/10, between 5% and 95%.</p>
+  <div class="cards">
+    <article class="card">
+      <h4>Hazards</h4>
+      <p><b>Blocked highway</b> (cars on roads): clear a path (4 h, noisy, 30% chance the dead come), detour off-road (3 fuel), or squeeze through (Mechanics 8). <b>Storm:</b> shelter 6 h, or push through (40% chance of a fall, 5–20 damage). <b>Bad footing</b> (on foot in hills, forest or mountains): treat it (1 meds, 1 h) or keep moving (8–18 damage). <b>Breakdown</b> (by condition).</p>
+    </article>
+    <article class="card">
+      <h4>The dead</h4>
+      <p><b>The dead ahead</b> (infection 20%+; 4 + infection × 14 of them, +4 at night): sneak around (Stealth check), fight (2 ammo each) or go the long way (3 h). <b>Bitten</b> (infection 40%+): amputate (2 meds, Medicine 10), end it, or hope (75% they turn). <b>A hive</b> (within 2 tiles of one): set fires at its edge (5 fuel, Stealth 10) or mark it. <b>Horde of N:</b> hide 6 h (Stealth against the horde's score), outrun it (safe by car with 4 fuel; a coin flip on foot), or fight (40 ammo, 1–4 rounds of wounds; the team may break off by its retreat policy).</p>
+    </article>
+    <article class="card">
+      <h4>People</h4>
+      <p><b>Stranded traders:</b> help (2 h, 2 meds, +5 goodwill with traders), trade 10 food for 3 parts, rob them (−12 goodwill, −4 mood) or leave. <b>A survivor alone:</b> a recruit card. <b>&lt;Group&gt; patrol</b> (on a non-hostile group's land): share news (+2 goodwill, they mark their bases) or gift 5 food (+6).</p>
+    </article>
+    <article class="card">
+      <h4>Discoveries</h4>
+      <p><b>Abandoned supply truck</b> (roads): search it (2 h; 12 food, 5 fuel, 15 scrap, 3 meds or 30 ammo; 20% something waits inside). <b>Radio signal:</b> a group's bases are noted. <b>Crashed military vehicle</b> (infection 30%+): search it (Stealth 11) for military gear and 30 ammo. <b>A dead hiker</b> (open ground): a hiking pack or rucksack with 1–3 items inside. <b>Prepper cache</b> (forest or hills): 8 food, 2 meds, 20 ammo.</p>
+    </article>
+    <article class="card">
+      <h4>Crew</h4>
+      <p><b>Tempers flare</b> (more often between rivals): step in (Leadership 7) or let them sort it out. <b>Stories by the fire</b> (friends on the team): a night of old stories. <b>Cold feet</b> (a Coward): convince them (Leadership 8) or send them home alone (70% make it).</p>
+    </article>
+    <article class="card">
+      <h4>Conflicts (conflicts.js)</h4>
+      <p>Near groups' bases (within 5 tiles), passing AI parties, infected ground and hordes. Chance = 10% × people pressure + 6% × the dead + 8% × traffic, ×1.25 at night, ×stance, at most 35%, at most one per 20 hours. A perception roll decides who sees whom first. <b>Forced</b> (they found you): ambush, roadblock, zealot patrol, checkpoint, challenge, a surge of the dead. <b>Observed</b> (you found them): a camp by the road, a robbery, prisoners on the move, two groups fighting, the dead swarming survivors. Covered in the conflicts chapter.</p>
+    </article>
+  </div>
+  <p>Trade-route and supply convoys do not get cards: their road trouble is resolved by the escort table (Light: dead ×0.6, small raids ×1.5; Heavy: dead ×1.5, small raids ×0.4, large raids ×1.6).</p>
+  <aside class="note"><b>Changed from Draft 1:</b> event families match Draft 1's five (hazards, zombies, humans, discoveries, crew). Its "small playable local map for major events" became conflicts that open tactical battles. Known routes do not get fewer events, and there is no fast travel inside your territory.</aside>
+
+  <h3>Orders, contact and ETA</h3>
+  <ul>
+    <li><b>Team orders:</b> when a job is done, the team waits with a "Done" card: act on that tile, move anywhere, return home or hold. The team panel queue covers move, return, scavenge, look around (2 h), camp, roadside repair, treat, field crafting, boat crossings, hunting and fishing. A waiting team starts an order at once, while a moving team adds it to its queue.</li>
+    <li><b>Radio rule:</b> a team inside coverage (a station's 8 tiles or a linked relay's 6) takes new orders at any time and reports live. Out of contact it follows its plan, and you can only steer it through the cards it raises. A holding team checks in every 12 hours (an open-ended camp once a day). Your own base tiles count as contact.</li>
+    <li><b>Estimated position:</b> an out-of-contact team on the map is a faded sprite with a "?" badge along its planned road.</li>
+    <li><b>ETA:</b> arrival estimates in the planner, panels and queue step through the same hour-by-hour movement as the simulation, including the weather ahead, the load and the stance. A team stopped by a road fight resumes its queued trip.</li>
+  </ul>
+  <div class="gallery" data-sprites="icon/alert icon/unknown icon/radio icon/work"></div>
+
+  <h3>Camps and field Heat <span class="status built">Built</span></h3>
+  <p>A team can <b>camp</b> for 8 h, 24 h or until broken off. The hurt heal slowly, infected wounds still need meds, and a camp with no food or water heals nobody. A camp is drawn as a tent in the team's colour with a campfire.</p>
+  <div class="gallery" data-sprites="camp/lit camp/abandoned marker/camp"></div>
+  <p>A team that stays on one tile (waiting, holding, camping, gathering, building a boat, looking around, crafting, repairing, treating) builds <b>Heat</b> from noise, smoke and smell. Per hour: activity (waiting, looking around, treating 1; gathering, crafting, repairs 1.5; boat building 1.8; camp 2; hunting 1.2; a survey sweep 0.5) × place (countryside 1, suburbs 1.4, city 1.8, × 1 + 0.6 × infection) × hive land 1.4 (2 on the ring) × team size (0.7 + 0.1 a person) × night (a camp fire 1.3, otherwise 0.8) × stealthy 0.8, capped at 100. Camp kit lowers it: camo netting ×0.75 while staying put, a ghillie wrap ×0.85. Heat falls 8 an hour on the move and is 0 within a tile of your bases.</p>
+  <p>Each hour on the spot, the chance of trouble is 12% × (Heat/100)<sup>1.5</sup> × danger. Danger is 0.15 + 3 × the road's conflict chance there, +0.3 city or +0.15 suburbs, +0.3 hive land or +0.8 next to a hive, +0.2 with a horde within 3 tiles, capped at 2. Trouble is a conflict card (a horde within 3 tiles is drawn in as a bigger surge) and halves the Heat. A quiet countryside camp for a night reaches about Heat 25 with about 1% risk. A night in an infected city is about a coin flip.</p>
+  <aside class="tip"><b>Design intent:</b> Draft 1's "greed has a timer" extended from raids to the whole map. Lingering anywhere dangerous should feel like a clock running.</aside>
+</section>
+
+<section id="hunting">
+  <h2>Hunting and fishing</h2>
+  <p class="lede">Food from the land itself: hunts, snare lines and fishing by teams in the field, and hunting cabins and fishers at bases. Fresh game is heavy and spoils fast, every gunshot is noise, and the land runs out of game if you overhunt it. The tile panel says what a tile holds: "Game: plenty / some / scarce", with the expected haul of an 8-hour hunt.</p>
+
+  <h3>Game and fish</h3>
+  <div class="cards">
+    <article class="card">
+      <h4>Deer <span class="status built">Built</span></h4>
+      <p>Big game. Hills and mountains hold only deer; elsewhere 70% of big game is deer.</p>
+      <dl><dt>Food</dt><dd>30 rations</dd><dt>Land cost</dt><dd>−0.3 game level</dd><dt>Base chance</dt><dd>6.5% an hour × land × level × season × time × weather × team (at most 60%)</dd></dl>
+    </article>
+    <article class="card">
+      <h4>Wild hog <span class="status built">Built</span></h4>
+      <p>Big game on farmland, forest and the lowlands (30% of big game there).</p>
+      <dl><dt>Food</dt><dd>16 rations</dd><dt>Land cost</dt><dd>−0.16</dd></dl>
+    </article>
+    <article class="card">
+      <h4>Small game <span class="status built">Built</span></h4>
+      <p>Rabbits and birds, rolled every hour alongside big game. There is a second catch at a third of the first chance. Snares catch only small game.</p>
+      <dl><dt>Food</dt><dd>2 rations each</dd><dt>Base chance</dt><dd>32% an hour × the same × team (at most 90%)</dd><dt>Land cost</dt><dd>−0.033</dd></dl>
+    </article>
+    <article class="card">
+      <h4>Fish <span class="status built">Built</span></h4>
+      <p>From a river bank with a rod or net carried.</p>
+      <dl><dt>Rod</dt><dd>0.6 rations an hour</dd><dt>Net</dt><dd>1.2 worked by two, 0.7 by one</dd><dt>Land cost</dt><dd>1/50 a ration; recovers with a half-life of 10 days</dd></dl>
+    </article>
+  </div>
+
+  <h3>Hunting <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>The order:</b> <i>Hunt</i> on any land tile for 2–24 hours (team panel: 4/8/12 h; right-click <i>Hunting trip</i>; the planner's Hunting trip preset: go, hunt 8 hours, come home).</li>
+    <li><b>Land:</b> forest 1, hills 0.8, farmland 0.55, mountains 0.5, suburbs 0.12, city 0.03. Then ×1.1 by water, ×0.8 on a site, × (1 − 0.6 × infection), hive land ×0.15 (red-skull ring ×0.05), your base tile ×0.3 and next to a base ×0.6.</li>
+    <li><b>Season:</b> spring 0.8, summer 0.9, autumn 1.25, winter 0.95 (×1.2 with snow on the ground for tracks).</li>
+    <li><b>Time of day:</b> dawn and dusk (05–07, 17–19) ×1.3, day ×1, night ×0.35. A storm or blizzard halves it.</li>
+    <li><b>The team:</b> its three best hunters count 1, ½ and ¼. Each is weapon × skill gap × (0.55 + 0.09 × (0.5 Shooting + 0.35 Scouting + 0.15 Stealth)) × 1.25 with the Hunter perk. Each hand without a weapon adds 0.08 to big-game odds by driving game (up to two). A team with no hunting weapon cannot hunt and sets snares instead.</li>
+    <li><b>Noise:</b> each kill with a firearm is 1 shot, with a second shot (a miss first) 40% of the time for big game and 20% for small. Each shot uses 1 ammo and adds 6 Heat (scaled by the gun's noise), and each wandering horde within 3 tiles turns toward the shots 25% of the time. Bows and crossbows are silent and use no ammo. A rifle hunt in good country fires 5–8 shots in 8 hours (Heat about 40–50 from the shots alone).</li>
+    <li><b>Expect:</b> two decent hunters with a rifle and a pistol bag about 23 food in 8 hours of autumn forest, about 13 on farmland and 15 in spring.</li>
+  </ul>
+  <table class="data">
+    <thead><tr><th>Weapon kind</th><th>Examples</th><th>Big game</th><th>Small game</th></tr></thead>
+    <tbody>
+      <tr><td>Rifle</td><td>hunting rifle, lever-action rifle, police carbine</td><td>1.0</td><td>0.8</td></tr>
+      <tr><td>Bow or crossbow (silent, no ammo)</td><td>scrap crossbow, compound bow, hunting crossbow</td><td>0.6 + 0.08 × power (0.8 / 0.86 / 0.9)</td><td>0.9</td></tr>
+      <tr><td>Shotgun</td><td>pump shotgun, pipe shotgun</td><td>0.45</td><td>1.2</td></tr>
+      <tr><td>Automatic</td><td>assault rifle</td><td>0.7</td><td>0.6</td></tr>
+      <tr><td>Pistol</td><td>9mm pistol, .357 revolver</td><td>0.3</td><td>0.6</td></tr>
+      <tr><td>Melee</td><td>—</td><td>none</td><td>none (set snares)</td></tr>
+    </tbody>
+  </table>
+  <div class="gallery" data-sprites="gear/huntrifle gear/leverrifle gear/compbow gear/xbow gear/crossbow gear/shotgun"></div>
+
+  <h3>Overhunting, carcasses and spoilage</h3>
+  <ul>
+    <li><b>Game level:</b> every tile starts at 1. Each kill lowers it (big game per 100 rations, small game per 60), and it grows back toward 1 with a half-life of 20 days: weeks, not days.</li>
+    <li><b>Carcasses</b> weigh 1 kg a ration (packed food weighs 0.5). A deer on foot moves a pair of hunters into a heavier load band. A car carries it at no cost to the riders, and bike racks take part of it. What does not fit is left where it fell, and the estimates count only what is really kept.</li>
+    <li><b>Fresh game spoils</b> in the field: 35% a day above 24 °C, 22% above 12 °C, 12% above 4 °C, 6% around freezing and 2% in a freeze. A team eats its fresh game first. At a base it is eaten first and the drying racks take it first. On top of the stores' own rate it loses 5% a day (10% in the heat, 2% in the cold, almost nothing frozen), ×0.4 with a cold store and ×0.6 with a hunting cabin.</li>
+  </ul>
+
+  <h3>Snares <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Set a line</b> (2 h): 8 snares, using a coil of snare wire (it stays with the line and comes back when the line is lifted) or 2 scrap of fence wire. It is quiet: Heat ×0.8 while setting or checking.</li>
+    <li>A line catches about 1 small game a day × land × level × season. <b>Check</b> it (1 h) to collect the catch, or <b>lift</b> it (1 h) to take it up.</li>
+    <li>Caught game keeps 3 days (2 in the heat, 6 in the cold). From the third day without a check, each day has an 8% chance that the catch is robbed or sprung (more near towns, on hive land or with a horde near), and 30% of the time the line goes with it. Lines left 30 days are gone.</li>
+  </ul>
+
+  <h3>Fishing <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>The order:</b> <i>Fish</i> for 4 or 8 hours on a river bank with a fishing rod or net carried. The planner's Fishing trip takes the hub's gear along.</li>
+    <li><b>The water:</b> a deep river bend (6+ water tiles within 2) ×1, a river ×0.85. The code also knows a lake shore (×1) and a pond (×0.6), but the map generator makes only rivers.</li>
+    <li><b>Modifiers:</b> season (spring 1.15, summer 1, autumn 0.9, winter 0.75), dawn and dusk ×1.4, night ×0.5, skill (0.6 + 0.08 × (0.6 Scouting + 0.4 Stealth)), and the spot's level. It is quiet: Heat ×0.7.</li>
+    <li><b>Ice:</b> on frozen days you need a crowbar, machete, hatchet or axe to cut the ice, and the catch is halved. A fished-out spot comes back in about 10 days.</li>
+  </ul>
+  <div class="gallery" data-sprites="gear/fishrod gear/fishnet gear/snarewire"></div>
+  <p><b>Items:</b> fishing rod, fishing net and snare wire, found at cabins, lodges, campgrounds, ranger stations, hardware and feed stores and farms. (The deer call found at lodges is a stealth lure for battles, not a hunting tool.)</p>
+
+  <h3>At a base</h3>
+  <ul>
+    <li><b>Hunting cabin</b> (12 scrap, at any base with game land within 2 tiles, abundance adding up to 3): up to 2 people on the <i>Hunt</i> work type or role hunt the land within 2 tiles for 3 hours a day at dawn and dusk, with their own weapons and the base's ammo (never the last 3 a head + 10, which are kept for the walls). They use the same rolls and depletion as a team, and a hunter without a weapon tends snares. Two hunters in autumn forest bring in about 11 food a day. The cabin smokes up to 6 fresh game a day into 5 preserved food.</li>
+    <li><b>Fish</b> work or role: a base on a river with a rod or net in its armory, one fisher each, 3 hours a day.</li>
+    <li>The default <i>Hunter</i> role, the <i>Hunting party</i> crew, and crews' Hunt and Fish trips run it all without you.</li>
+    <li>The autopilot hunts (and fishes, and sets or checks snares on the way) when the winter outlook falls short, food is under its target, or in autumn to stock up. It builds a hunting cabin where the land is good.</li>
+  </ul>
+  <aside class="note"><b>Not built yet (suggestions-3 #25):</b> animal threats (wolves, bears) on hunts, hides that give scrap, and fresh meat lifting mood. Draft 1 did not plan hunting; it came with the 2026-10-05 balance pass.</aside>
+</section>

@@ -47,6 +47,7 @@ export const MILDEAD = {
   // road (the abandoned checkpoints); FALLEN: a fallen military base (hardcore) and the tiles around it.
   SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },
   NEAR: 0.15, ROAD: 0.08, FALLEN: [0.6, 0.3],
+  CHECKPOINT: 0.5, // a city crawl's barricaded checkpoint (citycrawl.js): the soldiers who held it
   RARE: 0.03, // a lone soldier among the dead anywhere else (per site and week)
   // Hordes: crossing a military site, its soldiers join up to this share (no more once it has as many).
   HORDE_ADD: 0.06, HORDE_MAX: 0.15,
