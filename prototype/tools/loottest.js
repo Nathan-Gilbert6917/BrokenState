@@ -3,6 +3,7 @@
 // has a category, a weight, a value and a description; valuables are light for their worth and good for nothing
 // else; weapons have battle numbers and throwables their throw; the small-finds rolls stay within their tables;
 // then a table of sources per item (with its worth tier and weight).
+// Also: frag grenades and the decoys have sources, ladders and rams are crafted siege kit, every lure has its senses.
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
@@ -105,6 +106,14 @@ check(["prybar", "fireaxe", "sledge"].every((k) => GEAR[k].pry), "crowbar, fire 
 const throwers = Object.entries(GEAR).filter(([, d]) => d.throw);
 check(throwers.every(([k, d]) => d.throw === k && THROWABLES[k]), "every throwable is in the throw table under its own key");
 check(Object.keys(THROWABLES).every((k) => GEAR[k] && GEAR[k].throw === k), "the throw table names only throwable items");
+// Siege kit and decoys (siege.js, decoys.js): grenades and decoys are found, ladders and rams are made.
+const srcOf = (k) => [...(src.get(k) || [])];
+check(srcOf("frag").some((l) => /^(find|raid|body):/.test(l)) && srcOf("frag").some((l) => /military|soldiers|armory|barracks/.test(l)), `frag grenades come from soldiers and military places (${srcOf("frag").slice(0, 6).join(", ")})`);
+check(["alarmclock", "pocketradio", "handwarmer", "heatpack"].every((k) => srcOf(k).some((l) => /^(find|raid):/.test(l))), "the decoys (alarm clock, pocket radio, hand warmers, heat pack) turn up in searches");
+check(["ladder", "ram"].every((k) => srcOf(k).some((l) => /^craft:/.test(l)) && GEAR[k].bulky && GEAR[k].siege === k), "siege ladders and battering rams are crafted, bulky (cargo only) and siege kit");
+check(srcOf("molotov").some((l) => /^craft:/.test(l)) && srcOf("molotov").some((l) => /^(body|find|raid|sold):/.test(l)), "Molotovs are still crafted and found");
+check(Object.entries(THROWABLES).every(([, T]) => !T.radius || (Array.isArray(T.sense) && T.sense.length)), "every lure says what the dead sense of it (noise, heat, light)");
+check(Object.entries(THROWABLES).every(([, T]) => !T.decoy || ["spot", "thrower", "none"].includes(T.people)), "every decoy says what people make of it");
 const packs = Object.entries(GEAR).filter(([, d]) => d.slot === "backpack");
 check(packs.every(([, d]) => d.slots > 0 && d.carry > 0), "every pack has slots and carry");
 check(GEAR.slingbag.slots === 3 && GEAR.backpack.slots === 6 && GEAR.hikingpack.slots === 10 && GEAR.assaultpack.slots === 8 && GEAR.rucksack.slots === 14, "packs: sling bag 3, school backpack 6, assault pack 8, hiking pack 10, frame rucksack 14 slots");

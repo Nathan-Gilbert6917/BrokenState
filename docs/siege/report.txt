@@ -1,0 +1,7 @@
+siege-ram-ladders: {"started":true,"rams":[{"at":[13,5],"target":[12,5],"crew":3}],"ladders":[[12,7,true]],"gate":113,"map":"wall"}
+siege-ram-ladders-topdown: {"ok":true}
+fire-dead-drawn-in: {"fires":9,"inFire":3,"burned":0}
+decoy-pulls-horde: {"lure":[["alarmclock",12,15,4]],"near":3}
+shepherd-aura: {"shepherd":[17,9],"herded":6,"stray":[16,15]}
+console errors: none
+frame errors: {}

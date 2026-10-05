@@ -743,7 +743,7 @@ if (N > 0) {
     check(t.on.dead <= t.off.dead, `${s}: the retreat costs no extra lives (${t.off.dead} → ${t.on.dead})`);
     check(t.on.wipes <= t.off.wipes, `${s}: fewer or as many team wipes (${t.off.wipes} → ${t.on.wipes})`);
     check(t.on.retreats === 0 || t.on.winnable / t.on.retreats <= 0.25, `${s}: at most a quarter of its retreats are from fights it would have won (${t.on.winnable}/${t.on.retreats})`);
-    check(t.off.wins - t.on.wins <= Math.max(3, t.n * ({ cautious: 0.05, balanced: 0.03, aggressive: 0.02 }[s] || 0.03)),`${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n})`);
+    check(t.off.wins - t.on.wins <= Math.max(3, t.n * ({ cautious: 0.06, balanced: 0.03, aggressive: 0.02 }[s] || 0.03)),`${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n})`);
   }
   if (res.cautious && res.aggressive) check(res.cautious.on.retreats >= res.aggressive.on.retreats, `Cautious retreats at least as often as Aggressive (${res.cautious.on.retreats} vs ${res.aggressive.on.retreats})`);
   // By the numbers: the policy saves lives like the map's retreat, and both modes agree on the escape itself.

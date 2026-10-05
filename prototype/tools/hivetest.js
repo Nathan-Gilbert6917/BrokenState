@@ -382,7 +382,7 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
   check(growthWish(s2, h2, false) === null || GROWTHS[growthWish(s2, h2, false)].tier <= hiveTier(s2, h2), `nothing above its tier (${growthWish(s2, h2, false)})`);
   s2.hour = 1600 * 24;
   const w3 = growthWish(s2, h2, false);
-  check(["spire", "burrow", "den"].includes(w3), `on day 1600 (tier ${hiveTier(s2, h2)}) screamers, crawlers or the Wallbreaker den (${w3})`);
+  check(["spire", "burrow", "den", "fold"].includes(w3), `on day 1600 (tier ${hiveTier(s2, h2)}) screamers, crawlers, the Wallbreaker den or the Shepherd's fold (${w3})`);
   // Its guard first, then the growth (saved for when it is short).
   for (const h of [...s2.hordes]) if (h.hive === h2.id) s2.hordes.splice(s2.hordes.indexOf(h), 1);
   h2.res = 100; h2.growDay = null;
@@ -391,7 +391,7 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
   h2.res = 5;
   growthStep(s2, h2);
   const saving = h2.growSave && h2.growSave.kind;
-  check(["spire", "burrow", "den"].includes(saving), `short of resources it saves for the ${h2.growSave ? GROWTHS[h2.growSave.kind].name.toLowerCase() : "?"} (no new roaming hordes meanwhile)`);
+  check(["spire", "burrow", "den", "fold"].includes(saving), `short of resources it saves for the ${h2.growSave ? GROWTHS[h2.growSave.kind].name.toLowerCase() : "?"} (no new roaming hordes meanwhile)`);
   h2.res = 80;
   const started = growthStep(s2, h2);
   check(!!started && started.kind === saving && !h2.growSave, `then grows it once it has the ${GROWTHS[saving].cost}`);

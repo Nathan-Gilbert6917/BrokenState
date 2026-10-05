@@ -85,6 +85,7 @@ import {
 import * as Parties from "./parties.js";
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
+import { raidSiegeKit, kitText } from "./siege.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -751,7 +752,7 @@ function raidWarning(state, v) {
   const p0 = price();
   addCard(state, {
     title: `Outsider raiders heading for ${base.name}`, visitorId: v.id,
-    text: `${cap1(v.name)}, about ${v.size} raiders from ${v.home} with ${gearText(v.power)}, are ${dist ? `${dist} tile${dist === 1 ? "" : "s"} out` : "at the walls"} (strength about ${Math.round(S)}). They are not one of the groups you know: they want what is in your stores, and then they will be gone. Current defense: ${Math.round(def)}.`,
+    text: `${cap1(v.name)}, about ${v.size} raiders from ${v.home} with ${gearText(v.power)}, are ${dist ? `${dist} tile${dist === 1 ? "" : "s"} out` : "at the walls"} (strength about ${Math.round(S)}). They are not one of the groups you know: they want what is in your stores, and then they will be gone.${bandKit(state, v, base) ? ` ${kitText(bandKit(state, v, base))}` : ""} Current defense: ${Math.round(def)}.`,
     choices: [
       {
         label: "Prepare defenses", hint: `Everyone at the base takes a post. Defense ${Math.round(def)} → ${Math.round(prepared)}. Held at 1.2× their strength, a break-in from 0.8×`,
@@ -798,6 +799,14 @@ function raidWarning(state, v) {
   });
 }
 
+// The siege kit an outsider band brings against this base (siege.js raidSiegeKit: sometimes, by preparedness),
+// fixed once it has picked the base.
+function bandKit(state, v, base) {
+  if (!base) return null;
+  if (!v.siegeFor || v.siegeFor.baseId !== base.id) v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.id * 31 + base.id, outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
+  return v.siegeFor.kit;
+}
+
 function paidOff(state, v, base) {
   v.paid = true;
   v.spared = [...(v.spared || []), base ? base.id : -1];
@@ -813,7 +822,7 @@ function defendAgainst(state, v, base) {
   v.phase = "battle";
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name) },
+    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base) },
     ambush: base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours }, // canRetreat: a way out away from them (deploy.js); they loot and move on
     layout: "baseDefence", deploy: true,
   });
@@ -840,7 +849,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   const def = baseDefense(state, base);
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   // The walls, the yard and the buildings count (defences.js raidTier), with the same thresholds as a group's raid.
-  const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8);
+  const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8, bandKit(state, v, base)); // siege.js: their ladders, ram and grenades
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const store = count(base, "storehouse") > 0;
   const att = vStrength(v);
