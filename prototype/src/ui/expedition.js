@@ -8,7 +8,7 @@ import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, pa
 import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
-import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS } from "../sim/orders.js";
+import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
 import { crossingsFrom, boatPlan, boatTip, gatherInfo, matsText } from "../sim/crossing.js";
 import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
 import { BUILDINGS } from "../sim/buildings.js";
@@ -148,6 +148,7 @@ export function renderExpedition(state, ui, p) {
         ${ord("mission", ` data-mission="scavenge"`, "Scavenge here", loot || queueing ? MISSIONS.scavenge.desc : "Nothing left worth searching on this tile.", !loot && !queueing)}
         ${ord("mission", ` data-mission="survey"`, `Look around (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
         ${CAMP_HOURS.map((h) => ord("camp", ` data-hours="${h ?? ""}"`, h ? `Camp ${h}h` : "Camp (until broken)", `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}. The hurt heal a little each hour (infected wounds need meds); nobody travels, so no road events. Supplies keep draining.`)).join("")}
+        ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Water for a base that runs short in summer.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
         ${opts.filter((o) => o.mission !== "scavenge").map((o) => ord("mission", ` data-mission="${o.mission}"`, esc(o.label), o.disabled || o.desc, !!o.disabled && !queueing)).join("")}
       </div>

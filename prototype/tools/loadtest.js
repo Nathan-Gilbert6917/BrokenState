@@ -10,6 +10,7 @@ import { GEAR, SUPPLIES } from "../src/sim/data.js";
 import {
   launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, partyMembers, partyCapacity, carryCapacity,
   poolLoad, partySpeed, STANCES, fuelForPath, startReturn, weighTeam, onTheMove, rationsFor, leaveVehicle, giveOrder,
+  waterForHours, waterPerHour, partyPace,
 } from "../src/sim/parties.js";
 import {
   LOAD_BANDS, MAX_LOAD, BADBACK_MAX, teamLoad, personLoad, wornLoad, maxLoad, bandIndex, shareLoad, poolAtBand, BIKE_EASE,
@@ -22,6 +23,7 @@ import { estimatePlan } from "../src/sim/plans.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { crossingsFrom, boatPlan } from "../src/sim/crossing.js";
+import { seasonOfDay, thirstFactor, thirstAt, THIRST } from "../src/sim/weather.js";
 
 const SEED = Number(process.argv[2] || 42);
 const AP_DAYS = Number(process.argv[3] || 60);
@@ -305,6 +307,68 @@ section("Plans: the estimate's rations count the load");
   const move = legs.reduce((a, l) => a + l.hours, 0);
   const want = Math.ceil((pe.pace.eatMove * move + 2 * 24) / 24 - 1e-9);
   check(pe.food === want && pe.food > Math.ceil((2 * pe.total) / 24) - 1, `plan rations: on the move at the load's rate, resting at one a day (${pe.food} food for ${pe.total}h)`);
+}
+
+section("Summer and heat: water at the day's thirst, the estimate = the trip");
+{
+  // A summer stretch of a week with no hot day (and a hot day), on a few seeds until a trip has no road event.
+  const summerDays = (st) => {
+    let sd = null, hotD = null;
+    for (let d = 0; d < 112 * 3 && (sd == null || hotD == null); d++) {
+      if (seasonOfDay(d).key !== "summer") continue;
+      if (sd == null && seasonOfDay(d + 7).key === "summer" && [0, 1, 2, 3, 4, 5, 6, 7].every((k) => thirstFactor(st, d + k) === THIRST.summer)) sd = d;
+      if (hotD == null && thirstFactor(st, d) >= THIRST.heat) hotD = d;
+    }
+    return { sd, hotD };
+  };
+  const sup = { food: 10, water: 14 };
+  let exact = false, hotD = null;
+  for (const sd0 of [SEED + 3, SEED + 4, SEED + 5, SEED + 6, SEED + 7]) {
+    const st = world(sd0);
+    const h = hub(st);
+    const days = summerDays(st);
+    hotD = hotD ?? days.hotD;
+    if (days.sd == null) continue;
+    st.hour = days.sd * 24 + 6;
+    const ids = atBase(st, h.id).slice(0, 2).map((x) => plain(x).id);
+    const dest = destFrom(st, h.tile, 5, 7);
+    const e = estimateTrip(st, { memberIds: ids, dest, vehicle: false, stance: "normal", supplies: sup });
+    const eat = rationsFor(e.pace, e.hoursOut + e.hoursBack, 0, 6, 2);
+    check(e.water > e.food && near(e.waterExact, eat * THIRST.summer, 1e-6), `summer: the trip needs ${THIRST.summer}× the rations in water (${e.food} food, ${e.water} water; ${r1(eat * THIRST.summer)})`);
+    const res = launchExpedition(st, { memberIds: ids, dest, mission: "move", stance: "normal", supplies: sup });
+    check(!res.error, `launch: ${res.error}`);
+    const p = res.party;
+    const w0 = p.supplies.water, f0 = p.supplies.food;
+    const flags = {};
+    const r = run(st, p, flags);
+    if (flags.event) { console.log("  (an event changed the trip: next seed)"); continue; }
+    check(r.hours === e.hoursOut, `the summer trip took the estimate (${e.hoursOut}h → ${r.hours}h)`);
+    check(near(w0 - p.supplies.water, ((e.pace.eatMove * e.hoursOut) / 24) * THIRST.summer, 1e-6) && near(w0 - p.supplies.water, (f0 - p.supplies.food) * THIRST.summer, 1e-6), `water drunk on the way = the rations × ${THIRST.summer} (${r1(w0 - p.supplies.water)} water for ${r1(f0 - p.supplies.food)} food)`);
+    exact = true;
+    break;
+  }
+  check(exact, "a summer trip without road events to compare");
+  // On a hot day the team drinks at least 1.6 a head; the estimate counts each hour at its own day's thirst.
+  const st2 = world(SEED + 3);
+  const h2 = hub(st2);
+  hotD = summerDays(st2).hotD;
+  st2.hour = (hotD - 1) * 24 + 12; // the trip runs from the day before into the hot day
+  const ids2 = atBase(st2, h2.id).slice(0, 2).map((x) => plain(x).id);
+  const dest2 = destFrom(st2, h2.tile, 5, 7);
+  const e2 = estimateTrip(st2, { memberIds: ids2, dest: dest2, vehicle: false, stance: "normal", supplies: sup });
+  const want2 = waterForHours(st2, st2.hour, [[e2.hoursOut, e2.pace.eatFoot], [6, 2], [e2.hoursBack, e2.pace.eatFoot]]);
+  check(near(e2.waterExact, want2, 1e-9) && e2.waterExact > rationsFor(e2.pace, e2.hoursOut + e2.hoursBack, 0, 6, 2) * thirstFactor(st2, hotD - 1), `into a heat wave: each hour at its day's thirst (${r1(e2.waterExact)} water, ${e2.food} food)`);
+  const res2 = launchExpedition(st2, { memberIds: ids2, dest: dest2, mission: "move", stance: "normal", supplies: { food: 10, water: 20 } });
+  const p2 = res2.party;
+  let drunk = 0, expect = 0, same = true;
+  for (let i = 0; i < 48 && p2.phase !== "waiting"; i++) {
+    const before = p2.supplies.water, want = waterPerHour(st2, p2, partyMembers(st2, p2), st2.hour + 1);
+    tickOnce(st2, p2, {});
+    expect += want; drunk += before - p2.supplies.water;
+    if (!near(before - p2.supplies.water, want, 1e-9)) same = false;
+    if (thirstAt(st2) >= THIRST.heat && onTheMove(p2)) check(near(waterPerHour(st2, p2), (rationsFor(partyPace(st2, p2), 1, 0, 0, 2) * thirstAt(st2)), 1e-9), "a hot hour on the road: the load's rate × the heat's thirst");
+  }
+  check(same && near(drunk, expect, 1e-6), `every hour drunk at that hour's thirst (${r1(drunk)})`);
 }
 
 section("Determinism");

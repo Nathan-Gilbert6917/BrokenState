@@ -92,7 +92,7 @@ import { borderTiles } from "./hives.js";
 import { newItem } from "./inventory.js";
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
-import { travelFactor } from "./weather.js";
+import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
 import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear } from "./trade.js";
 import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
@@ -1386,10 +1386,11 @@ function gateCard(state, v, base, lead) {
   }
   if (!v.done.shelter) {
     const cost = n * O.explorers.shelterDays;
+    const wcost = Math.ceil(cost * thirstAhead(state, O.explorers.shelterDays) - 1e-9); // more in summer and a heat wave
     choices.push({
-      label: `Shelter them for ${O.explorers.shelterDays} days (${cost} food, ${cost} water)`, hint: `${n} ${n === 1 ? "person" : "people"} eat and drink at ${base.name} (1 food and 1 water each a day). Everyone there feels better for it (mood +${O.explorers.shelterMood}); guests often leave a gift`,
-      disabled: (st) => !here(st) || (base.stock.food || 0) < cost || (base.stock.water || 0) < cost,
-      ai: (st) => { const d = (base.stock.food || 0) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
+      label: `Shelter them for ${O.explorers.shelterDays} days (${cost} food, ${wcost} water)`, hint: `${n} ${n === 1 ? "person" : "people"} eat and drink at ${base.name} (1 food and 1 water each a day, more water in summer). Everyone there feels better for it (mood +${O.explorers.shelterMood}); guests often leave a gift`,
+      disabled: (st) => !here(st) || (base.stock.food || 0) < cost || (base.stock.water || 0) < wcost,
+      ai: (st) => { const d = (base.stock.food || 0) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" || (base.stock.water || 0) < wcost + residents(st, base.id).length * 5 ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
       resolve: (st) => {
         if (!here(st)) return gone;
         v.done.shelter = true;
@@ -1421,7 +1422,7 @@ function shelterDay(state, v) {
   const base = baseById(state, v.shelterBase);
   if (!base) return endShelter(state, v);
   base.stock.food = Math.max(0, (base.stock.food || 0) - v.size);
-  base.stock.water = Math.max(0, (base.stock.water || 0) - v.size);
+  base.stock.water = Math.max(0, (base.stock.water || 0) - v.size * thirstAt(state)); // the day's thirst (weather.js)
 }
 function endShelter(state, v) {
   const base = baseById(state, v.shelterBase);

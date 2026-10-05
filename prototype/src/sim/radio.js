@@ -38,6 +38,7 @@ import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { marketOf } from "./trade.js";
 import { diplomacyDaily } from "./diplomacy.js";
+import { thirstFactor } from "./weather.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -284,10 +285,11 @@ export function radioDaily(state) {
   const rng = state.rng;
   for (const f of state.factions) {
     if (!f.alive) continue;
-    // Groups have wells: water refills toward 6 a head (what you sell them stays).
+    // Groups have wells: water refills toward 6 a head (what you sell them stays), slower when they drink more (summer,
+    // a heat wave: weather.js), so their water runs lower and dearer then.
     const cap = f.pop * 6;
     if (f.stock.water == null) f.stock.water = cap;
-    else if (f.stock.water < cap) f.stock.water = Math.min(cap, f.stock.water + f.pop * 0.5);
+    else if (f.stock.water < cap) f.stock.water = Math.min(cap, f.stock.water + (f.pop * 0.5) / thirstFactor(state));
     if (f.wares && today - (f.waresDay || 0) >= 7) ensureWares(state, f, true);
     grudgeRaid(state, f);
   }

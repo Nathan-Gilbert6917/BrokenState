@@ -12,11 +12,11 @@
 import { SKILL_NAMES, TRAITS } from "./data.js";
 import { log, addCard, day, hub, baseById, residents, survivorById, makeSurvivor, skill } from "./world.js";
 import { baseBeds } from "./buildings.js";
-import { foodOutlook, waterOutlook, WATER } from "./economy.js";
+import { foodOutlook, waterOutlook, drinkRate } from "./economy.js";
 import { partyMembers, partyTile, carried, takeSupply, planPath, partySpeed, hoursLeft, tileLabel } from "./parties.js";
 import { newItem, stow, allItems } from "./inventory.js";
 import { attitude, changeGoodwill } from "./factions.js";
-import { foodNeedFactor } from "./weather.js";
+import { foodNeedFactor, thirstAhead } from "./weather.js";
 
 export const JOIN_FOOD = 5;                         // food a newcomer eats on arrival at a base (less if there is less)
 export const PART_BASE = { food: 3, water: 3 };     // per person, from the base, to part ways
@@ -73,7 +73,7 @@ export function baseOutlook(state, base, k = 0) {
   const stock = Math.max(0, fo.stock != null ? fo.stock : base.stock.food || 0); // fresh and preserved food
   const burnK = burn + k * perHead;
   const wo = waterOutlook(state, base);
-  const waterNet = wo.net, waterNetWith = r1(wo.net - k * WATER.drink);
+  const waterNet = wo.net, waterNetWith = r1(wo.net - k * drinkRate(state)); // today's rate: more in summer
   return {
     people, beds, free: beds - people, freeWith: beds - people - k,
     food: stock, foodDays: burn > 0 ? stock / burn : null, foodDaysWith: burnK > 0 ? Math.max(0, stock - JOIN_FOOD * k) / burnK : null,
@@ -87,7 +87,8 @@ export function outlookText(o, k) {
   return `${o.free >= 0 ? o.free : 0} of ${o.beds} beds free${o.free < 0 ? ` (${-o.free} already without one)` : ""}${k ? `, ${o.freeWith >= 0 ? `${o.freeWith} after` : `${-o.freeWith} without a bed after`}` : ""}; food for ${daysText(o.foodDays)}${k ? ` (${daysText(o.foodDaysWith)} with them)` : ""}; ${water}`;
 }
 
-// The team's food and water against the way home, now and with k more mouths (1 food and 1 water a day each).
+// The team's food and water against the way home, now and with k more mouths (1 food and 1 water a day each, the
+// water times the thirst of the days ahead: more in summer and a heat wave).
 export function teamOutlook(state, p, k = 0) {
   const members = partyMembers(state, p).length;
   const food = carried(p, "food"), water = carried(p, "water");
@@ -99,11 +100,13 @@ export function teamOutlook(state, p, k = 0) {
   const hours = p.phase === "back" ? left : left + (p.dest != null && left > 0 ? 6 + homeFrom(p.dest) : homeFrom(partyTile(p)));
   const days = Math.max(0.5, hours / 24);
   const need = (n) => Math.ceil(n * days);
-  const have = Math.min(food, water);
+  const thirst = thirstAhead(state, days);
+  const needWater = (n) => Math.ceil(n * days * thirst);
+  const have = Math.min(food, water / thirst);
   return {
     members, food, water, hours: Math.round(hours), home,
     days: members ? have / members : 0, daysWith: have / Math.max(1, members + k),
-    need: need(members + k), ok: food >= need(members + k) && water >= need(members + k),
+    need: need(members + k), needWater: needWater(members + k), ok: food >= need(members + k) && water >= needWater(members + k),
   };
 }
 
@@ -181,7 +184,7 @@ export function recruitCard(state, candidates, ctx) {
   if (p) {
     choices.push({
       label: `Take ${them} along`, kind: "take",
-      hint: (() => { const t = teamOutlook(state, p, n); return `They join the team and carry their own share. Team food ${Math.floor(t.food)}, water ${Math.floor(t.water)}: ${r1(t.days)} days for ${t.members}, ${r1(t.daysWith)} with them; about ${t.hours} hours from ${t.home.name}${t.ok ? "" : ` (not enough: ${t.need} of each needed)`}`; })(),
+      hint: (() => { const t = teamOutlook(state, p, n); return `They join the team and carry their own share. Team food ${Math.floor(t.food)}, water ${Math.floor(t.water)}: ${r1(t.days)} days for ${t.members}, ${r1(t.daysWith)} with them; about ${t.hours} hours from ${t.home.name}${t.ok ? "" : ` (not enough: ${t.need} food and ${t.needWater} water needed)`}`; })(),
       disabled: (st) => !waiting().length || !state.parties.includes(p) || !teamOutlook(st, p, waiting().length).ok,
       resolve: (st) => {
         const list = waiting();

@@ -439,17 +439,20 @@ function takeHarvest(base, p) {
 }
 
 // ---------- water for crops ----------
-// Water the planted plots need today: nothing on a rainy day outdoors, half again in a heat wave.
-// dry: as on a dry day (no rain), for planning. Moist soil halves it; a heat wave or dry spell adds half.
+// Water the planted plots need today: nothing on a rainy day outdoors, a fifth more on a summer day, half again in
+// a heat wave or dry spell. dry: as on a dry day (no rain), for planning. Moist soil halves it.
+export const CROP_SUMMER_WATER = 1.2, CROP_HOT_WATER = 1.5;
 export function cropWaterNeed(state, base, { dry = false } = {}) {
   const w = todayWeather(state);
   const hot = w.key === "heat" || w.key === "drought" || (w.hi ?? 20) >= 30;
+  const summer = Weather.season && Weather.season(state).key === "summer";
+  const mult = hot ? CROP_HOT_WATER : summer ? CROP_SUMMER_WATER : 1;
   const soil = dry ? 0.4 : (w.soil ?? 0.5);
   let need = 0;
   for (const p of farmOf(state, base).plots) {
     if (p.stage !== "growing") continue;
     if (!p.gh && !dry && (w.rain || 0) > 0) continue;
-    need += CROPS[p.crop].water * (hot ? 1.5 : 1) * (!p.gh && soil >= 0.6 ? 0.5 : 1);
+    need += CROPS[p.crop].water * mult * (!p.gh && soil >= 0.6 ? 0.5 : 1);
   }
   return Math.round(need * 10) / 10;
 }

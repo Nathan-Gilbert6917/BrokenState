@@ -4,9 +4,9 @@
 // end-turn confirmation. Usage: node tools/fieldtest.js [seed]
 import { createWorld, tickHour, hub, atBase, addCard, survivorById } from "../src/sim/world.js";
 import {
-  launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel,
+  launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel, waterPerHour,
 } from "../src/sim/parties.js";
-import { queueEstimate, startOrder, queueText } from "../src/sim/orders.js";
+import { queueEstimate, startOrder, queueText, besideWater, FETCH_WATER_HOURS } from "../src/sim/orders.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../src/sim/fieldheat.js";
 import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN_HOURS, CAMP_CHECKIN } from "../src/sim/plans.js";
 import { hiveDistance } from "../src/sim/hives.js";
+import { seasonOfDay, thirstFactor, THIRST } from "../src/sim/weather.js";
 import { endTurnDecision, requestEndTurn, setConfirmEnd, unitsWithActions, cui } from "../src/ui/combat.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -297,6 +298,86 @@ section("ETA and rations for a whole plan match the trip");
     }
   }
   note(`${matched}/${total} plans without road cards matched to the hour`);
+}
+
+// ======================================================================
+section("Summer and heat waves: a plan's water at each day's thirst matches what the team drinks");
+{
+  let compared = 0;
+  for (const seed of [SEED, 7, 11]) {
+    for (const [mission, steps, preset] of [["move", PRESETS.camp.steps(1), "camp"], ["recon", [{ kind: "survey" }, { kind: "camp", hours: 24 }, { kind: "home" }], "custom"]]) {
+      const state = mk(seed);
+      // From the day before the first hot summer day: the camp runs into the heat wave.
+      let hotD = null;
+      for (let d = 0; d < 112 * 3 && hotD == null; d++) if (seasonOfDay(d).key === "summer" && thirstFactor(state, d) >= THIRST.heat) hotD = d;
+      state.hour = (hotD - 1) * 24 + 8;
+      const dest = tileNear(state, 4, 7, (t) => !t.loc);
+      const ids = crewOf(state, 3);
+      const est = estimatePlan(state, { memberIds: ids, dest, vehicle: false, stance: "normal", fuel: 0, mission, steps });
+      check(est && est.water > est.food && est.water === Math.ceil(est.waterExact - 1e-9), `seed ${seed} ${preset} plan in summer: ${est.food} food, ${est.water} water (more water: summer and the heat wave)`);
+      const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", supplies: { food: est.food + 2, water: est.water + 4, ammo: 10 }, plan: { preset, steps } });
+      const p = res.party;
+      let drunk = 0, delay = 0, events = 0;
+      for (let i = 0; i < 24 * 6 && !home(state, p); i++) {
+        p.lastConflict = state.hour + 1; state.hordes.length = 0;
+        const want = waterPerHour(state, p, partyMembers(state, p), state.hour + 1);
+        const before = p.supplies.water + (p.cargo.supplies.water || 0);
+        tickHour(state);
+        const after = home(state, p) ? before - want : p.supplies.water + (p.cargo.supplies.water || 0);
+        if (Math.abs(before - after - want) > 1e-9) events++;
+        drunk += want;
+        for (let k = state.cards.length - 1; k >= 0; k--) {
+          const c = state.cards[k];
+          state.cards.splice(k, 1);
+          if (c.isOrders || c.planCard) continue;
+          const b = p.progress;
+          const ch = c.choices.find((x) => !x.uiAction && choiceOk(state, x));
+          if (ch) ch.resolve(state);
+          if (p.progress < b) delay += b - p.progress;
+        }
+        if (state.combat) { state.combat = null; events++; }
+      }
+      if (delay || events) { note(`seed ${seed} ${preset}: road events (${Math.round(delay)}h delay, ${events} odd hours): not compared`); continue; }
+      compared++;
+      check(home(state, p) && Math.abs(drunk - est.waterExact) < 1e-6, `seed ${seed} ${preset}: drank ${drunk.toFixed(2)} water, planned ${est.waterExact.toFixed(2)}`);
+    }
+  }
+  check(compared >= 2, `summer plans compared to the trip (${compared})`);
+}
+
+// ======================================================================
+section("Fetch water: a plan to a river or lake shore fills the containers and brings the water home");
+{
+  const state = mk();
+  const h = hub(state);
+  const shore = tileNear(state, 2, 9, (t) => besideWater(state, t.id));
+  const dry = tileNear(state, 2, 6, (t) => !besideWater(state, t.id));
+  check(shore != null && dry != null, "test setup: a shore and a dry tile in reach");
+  const steps = [{ kind: "water" }, { kind: "home" }];
+  const ids = crewOf(state, 3);
+  const est = estimatePlan(state, { memberIds: ids, dest: shore, vehicle: false, stance: "normal", mission: "move", steps });
+  check(est && est.returns && est.legs.some((l) => l.label === "Fetch water" && l.hours === FETCH_WATER_HOURS), `the plan counts ${FETCH_WATER_HOURS}h to fill the containers`);
+  const res = launchExpedition(state, { memberIds: ids, dest: shore, mission: "move", stance: "normal", supplies: { food: est.food + 2, water: est.water + 2 }, plan: { preset: "custom", steps } });
+  const p = res.party;
+  check(p.orders[0] && p.orders[0].type === "water" && p.orders[0].at === shore, "the queue: Fetch water at the shore, then home");
+  const w0 = h.stock.water;
+  let filled = 0;
+  for (let i = 0; i < 24 * 5 && !home(state, p); i++) {
+    p.lastConflict = state.hour + 1; state.hordes.length = 0;
+    tickHour(state);
+    filled = Math.max(filled, p.cargo.supplies.water || 0);
+    for (let k = state.cards.length - 1; k >= 0; k--) { const c = state.cards[k]; state.cards.splice(k, 1); const ch = c.choices.find((x) => !x.uiAction && choiceOk(state, x)); if (!c.isOrders && !c.planCard && ch) ch.resolve(state); }
+    if (state.combat) state.combat = null;
+  }
+  check(home(state, p) && filled >= 30, `home with ${Math.floor(filled)} water filled at the shore`);
+  check(h.stock.water > w0 + filled * 0.5, `the hub's water went up (${Math.round(w0)} → ${Math.round(h.stock.water)})`);
+  // Not on a dry tile: the order fails with a reason.
+  const st2 = mk();
+  const r2 = launchExpedition(st2, { memberIds: crewOf(st2, 2), dest: dry, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
+  const p2 = r2.party;
+  for (let i = 0; i < 48 && p2.phase !== "waiting"; i++) { p2.lastConflict = st2.hour + 1; st2.hordes.length = 0; tickHour(st2); st2.cards.length = 0; if (st2.combat) st2.combat = null; }
+  const msg = startOrder(st2, p2, { type: "water" });
+  check(/only on a tile next to a river or lake/.test(msg) && !(p2.cargo.supplies.water > 0), `away from water: "${msg}"`);
 }
 
 // ======================================================================
