@@ -24,6 +24,7 @@ import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladder
 import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
+import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 
 // ---------- constants ----------
@@ -1471,12 +1472,19 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8" };
 const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
+  if (t.dead || t.down) {
+    // Lying on the ground: the fallen's own picture (ui/downsprites.js) laid flat onto the floor's two axes, so it
+    // turns with the view (the body along the world's x).
+    const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
+    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: unitFacing(b, t), scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
+    return;
+  }
   const cv = unitCanvas(state, b, t, H.salt);
   if (!cv) return;
   let facing = unitFacing(b, t);
@@ -1485,31 +1493,18 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  if (t.dead || t.down) {
-    // Lying on the ground: the sprite on its side, flattened into the view.
-    ctx.translate(X, Y - 2 * S);
-    ctx.scale(1, 0.55);
-    ctx.rotate((Math.PI / 2) * facing);
-    if (!silhouette && t.dead) ctx.globalAlpha *= 0.55;
-    ctx.drawImage(cv, -w / 2, -hgt * 0.56, w, hgt);
-  } else {
-    ctx.translate(X, Y);
-    if (facing < 0) ctx.scale(-1, 1);
-    const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
-    if (!silhouette && spent) ctx.globalAlpha *= 0.65;
-    ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
-  }
+  ctx.translate(X, Y);
+  if (facing < 0) ctx.scale(-1, 1);
+  const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
+  if (!silhouette && spent) ctx.globalAlpha *= 0.65;
+  ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
 function drawUnitIso(ctx, state, b, s, H, now) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   void now;
   const ring = t.down ? (t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f") : ringOf(t);
-  if (t.dead) {
-    // A pool of blood under the dead.
-    ctx.fillStyle = "rgba(90,18,16,0.55)";
-    ctx.beginPath(); ctx.ellipse(X + 2 * S, Y, 11 * S, 5 * S, 0, 0, Math.PI * 2); ctx.fill();
-  } else {
+  if (!t.dead) { // (the dead lie in their own pool of blood: ui/downsprites.js)
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.beginPath(); ctx.ellipse(X + 1.5 * S, Y + 0.5 * S, 10 * S, 4.6 * S, 0, 0, Math.PI * 2); ctx.fill();
     const sel = t.id === H.sel;

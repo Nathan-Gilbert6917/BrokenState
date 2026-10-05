@@ -29,7 +29,8 @@ import {
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say } from "./combat.js";
 import { BUILDINGS, buildingHint } from "./buildingmaps.js";
 import { raidEnemies } from "./scavenge.js";
-import { applyZType } from "./zombietypes.js";
+import { applyZType, battleTypes } from "./zombietypes.js";
+import { MILDEAD, siteDeadMix, maxMix } from "./deadsoldiers.js";
 import { newItem, itemLoad } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
 import { findCarried } from "./stealth.js";
@@ -298,6 +299,8 @@ function placeGroups(state, c, place, n = c.block) {
     if (g.kind !== "zombies") continue;
     g.count = Math.max(1, Math.round(g.count * deadMult(n) * place.dead));
     g.power += CRAWL.DEAD.powerPerBlock * (n - 1);
+    // A police station's dead are riot police (deadsoldiers.js MILDEAD.SITE), whatever the city around it.
+    if (MILDEAD.SITE[place.key]) g.mix = maxMix(g.mix, MILDEAD.SITE[place.key]);
   }
   if (place.raiders) {
     const R = CRAWL.RAIDERS;
@@ -743,6 +746,14 @@ function makeEncounter(state, c, n, ctx) {
       const k = Math.round(enemy.count * sp);
       if (k > 0) enemy.types = { [rng.pick(CRAWL.SPECIAL.types)]: k };
     }
+    // The armoured dead of the city (deadsoldiers.js siteDeadMix: riot police, soldiers near a base): no dice.
+    const mil = siteDeadMix(state, c.tile);
+    if (mil) {
+      enemy.mix = mil;
+      const add = battleTypes(mil, enemy.count) || {};
+      const have = Object.values(enemy.types || {}).reduce((a, v) => a + v, 0);
+      for (const k of Object.keys(add)) { const m = Math.min(add[k], enemy.count - have); if (m > 0) (enemy.types = enemy.types || {})[k] = m; }
+    }
   }
   const text = kind === "patrol" ? `${enemy.count} raiders come down the street, guns up.` :
     kind === "breakout" ? `The city is roused: ${enemy.count} of the dead fill the streets between you and the edge. You will have to fight your way out, or find a gap.` :
@@ -937,6 +948,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
         if (!opts.map) return eventGrab(state, p, c, ev, mil, done, fightNow);
         const inf = state.tiles[c.tile].infection || 0;
         const dead = { kind: "zombies", count: Math.round((mil ? 4 : 3) + n * 0.8 + inf * 3), power: 2 + inf * 3 + CRAWL.DEAD.powerPerBlock * (n - 1) + (mil ? 1 : 0), name: mil ? "the dead in uniform" : "the dead" };
+        if (mil) dead.mix = { soldier: MILDEAD.CHECKPOINT }; // the soldiers who held it, still in their armour (deadsoldiers.js)
         const err = enterStreet(state, p, ev, mil ? ["barracks", "armory", "wreck", "campsite"] : ["medwreck", "wreck", "wreck"], [dead]);
         return err;
       }

@@ -58,6 +58,7 @@ export const GEAR = {
   // Extra worn pieces (inventory.js): head, arms and legs armor and a real pack.
   bikehelmet: { name: "Motorcycle helmet",        slot: "head",   skill: null,       power: 0.7, req: 0, value: 15, noise: 0, desc: "Scratched but solid. Keeps teeth off your skull.", weight: 1.5, cat: "armor" },
   riothelmet: { name: "Riot helmet",              slot: "head",   skill: null,       power: 1.2, req: 0, value: 35, noise: 0, desc: "Police issue, with a visor.", weight: 1.8, cat: "armor" },
+  milhelmet:  { name: "Combat helmet",            slot: "head",   skill: null,       power: 1.4, req: 0, value: 45, noise: 0, desc: "An army helmet, kevlar under the cloth cover. Stops a bite to the skull and most splinters. Usually taken off one of the dead soldiers.", weight: 1.5, cat: "armor" },
   kneeguards: { name: "Knee and shin guards",     slot: "legs",   skill: null,       power: 0.5, req: 0, value: 10, noise: 0, desc: "Hard plastic from a dirt-bike shop. Bites slide off.", weight: 1, cat: "armor" },
   assaultpack:{ name: "Assault pack",             slot: "backpack", skill: null,     power: 1, req: 0,   value: 40, noise: 0, carry: 10, slots: 8, ease: 0.12, desc: "A military pack: 8 pack slots, +10 kg max load, and its frame spreads the weight: the wearer's load counts 12% lighter for their load band.", weight: 2, cat: "packs" },
   // Makeshift gear (crafting.js): weaker than the real thing and it wears out. dur = uses before it breaks

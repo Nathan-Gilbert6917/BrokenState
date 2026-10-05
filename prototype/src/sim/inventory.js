@@ -18,6 +18,7 @@
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
+import { bodyLoot } from "./deadsoldiers.js";
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -373,6 +374,13 @@ export function enemyBody(rng, u, kit) {
   const body = ensureInv({ name: u.name, kind: u.kind, uid: u.id, kit: u.kit || null, supplies: {} });
   const add = (k, n) => { if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n; };
   if (u.kind === "zombie") {
+    // A dead soldier or riot cop (deadsoldiers.js): worn armour, a helmet, rounds, now and then more.
+    const mil = u.ztype ? bodyLoot(rng, u.ztype, newItem) : null;
+    if (mil) {
+      for (const [k, n] of Object.entries(mil.sup)) add(k, n);
+      for (const it of mil.gear) stow(body, it, ""); // (a second rifle with nowhere to go stays on the ground)
+      return body;
+    }
     if (rng.chance(0.12)) add("ammo", rng.int(2, 6));
     if (rng.chance(0.05)) add("meds", 1);
     if (rng.chance(0.06)) stow(body, newItem(rng.pick(ZOMBIE_FINDS), rng.pick([0.5, 0.7, 0.85])), "");
@@ -395,6 +403,24 @@ export function enemyBody(rng, u, kit) {
   if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1])), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, newItem(rng.pick(kit.finds), 1), ""); // pockets: smokes, a ring (combat.js KITS finds)
   return body;
+}
+// One of the dead searched where it fell in a raid (combat.js searchBox): what the person had on them, kept modest
+// (bodies are a bonus; the buildings are the loot). A dead soldier or riot cop: their kit (deadsoldiers.js).
+// { sup, gear }. ZBODY: chances of each kind of find.
+export const ZBODY = {
+  ammo: [0.08, 2, 6], food: [0.12, 1, 1], meds: [0.05, 1, 1], scrap: [0.06, 1, 1],
+  find: 0.3, FINDS: ["phone", "phone", "lighters", "smokes", "candy", "chocolate", "goldring", "watch", "photos", "batteries", "bandagekit", "knife", "cigarettes", "cards"],
+  pistol: 0.02, bag: 0.03,
+};
+export function deadBodyFinds(rng, ztype) {
+  const mil = ztype ? bodyLoot(rng, ztype, newItem) : null;
+  if (mil) return mil;
+  const sup = {}, gear = [];
+  for (const k of ["ammo", "food", "meds", "scrap"]) { const [p, lo, hi] = ZBODY[k]; if (rng.chance(p)) sup[k] = rng.int(lo, hi); }
+  if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(newItem(k, GEAR[k].dur ? 1 : rng.pick([0.5, 0.7, 0.85]))); }
+  if (rng.chance(ZBODY.pistol)) { gear.push(newItem("pistol", rng.pick([0.4, 0.55, 0.7]))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
+  if (rng.chance(ZBODY.bag)) gear.push(newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7])));
+  return { sup, gear };
 }
 export const allyBody = (s, u) => ({ name: s.name, kind: "ally", uid: u ? u.id : null, sid: s.id, supplies: {} });
 

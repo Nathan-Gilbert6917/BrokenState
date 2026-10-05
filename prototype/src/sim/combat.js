@@ -32,7 +32,7 @@ import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect,
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE } from "./throwables.js";
@@ -46,8 +46,9 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
-import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn } from "./zombietypes.js"; // a hive's special dead
+import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
+import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
@@ -303,7 +304,7 @@ let W = MAP_W, H = MAP_H;
 // The grid helpers below read W and H: every entry point that takes a battle points them at that battle's own size
 // first, so a battle made in between (another world, a raid, a turned deploy map) never leaves the wrong ones.
 const bindDims = (b) => { if (b && b.w && b.h) { W = b.w; H = b.h; } };
-const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action point (zombies: the middle ground between the old 4/5 and the halved 2/3, review C-10)
+export const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action point (zombies: the middle ground between the old 4/5 and the halved 2/3, review C-10)
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
 export const HUNKER_DEF = 20;
@@ -994,6 +995,7 @@ export function createBattle(state, setup) {
     losCache: new Int8Array(W * H * W * H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
   b.reinfMax = Math.round(b.infection * 5);
+  b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
   const layoutCtx = (phase) => ({
     phase, state, rng, W, H, inside, cellAt: (x, y) => b.cells[idx(x, y)],
@@ -1043,7 +1045,9 @@ export function createBattle(state, setup) {
   const flankTop = pc[1] >= mid; // flankers come from the side farther from your people
   let zn = 0, hn = 0;
   // A hive's special dead among them (e.types: { runner: 3, ... }, zombietypes.js), spread through the zombies.
-  const ztypes = typeList(e.types, kinds.filter((k) => k === "zombies").length);
+  // e.mix (shares, no types): the armoured dead of a military site met on the road (deadsoldiers.js).
+  const nz = kinds.filter((k) => k === "zombies").length;
+  const ztypes = e.types ? typeList(e.types, nz) : mixList(e.mix, nz);
   kinds.forEach((k, i) => {
     const u = enemyUnit(b, rng, k, e.power, k === "zombies" ? ++zn : ++hn);
     if (k === "zombies" && ztypes[zn - 1]) applyZType(u, ztypes[zn - 1], !!e.elite, e.power);
@@ -1101,9 +1105,11 @@ function foesOf(b, u) {
 
 // ---------- actions ----------
 // nonLethal (Subdue, stealth.js): a person brought to 0 is knocked out, not killed.
-export function damage(b, t, raw, by, nonLethal = false) {
+// hit: { how: "shot" | "melee" | "bash" | "fire" | "blast", crit, sneak } for the armoured dead (deadsoldiers.js
+// armorVs: their armour by the weapon that struck); everyone else takes raw × their armor.
+export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * t.armor;
+  const eff = raw * (t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) return eff;
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
@@ -1118,6 +1124,9 @@ export function damage(b, t, raw, by, nonLethal = false) {
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
     if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
+    // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
+    // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway).
+    else if (b.raid && t.kind === "zombie" && !t.boss) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
     say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
   }
   return eff;
@@ -1223,7 +1232,7 @@ function fire(b, a, t, opts = {}) {
   if (hit) {
     const crit = rng.chance(o.crit / 100);
     const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1);
-    const eff = Math.round(damage(b, t, raw, a));
+    const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit }));
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
     text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
     fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, acid: !!w.acid });
@@ -1246,10 +1255,12 @@ function strike(b, a, t) {
   const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
   a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
   const amb = a.low ? strikeBonus(b, a) : 1; // a crawler out of hiding (zombietypes.js)
+  const gap = t.ztype ? stabsGap(a, t) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js)
   const hit = rng.chance(o.chance / 100) || sure;
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1) * amb, a)); // meleeMult: Brawler
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
+    if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
@@ -1522,6 +1533,8 @@ function reinforcements(b) {
   if (n <= 0) return;
   for (let i = 0; i < n; i++) {
     const z = enemyUnit(b, rng, "zombies", 2 + b.infection * 3, b.units.filter((u) => u.kind === "zombie").length + 1);
+    const zk = nextOfMix(b); // the armoured dead of a military site come in among them (deadsoldiers.js)
+    if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
     z.ap = 2;
@@ -1547,7 +1560,7 @@ function bestShot(b, u, foes, opts = {}) {
   for (const t of foes) {
     if (!canSee(b, u, t)) continue;
     const o = shotOdds(b, u, t, u.x, u.y, opts);
-    const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * t.armor;
+    const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * (t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor); // a dead soldier's plates by this gun
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
     v *= shotPriority(b, t);
@@ -2533,6 +2546,7 @@ export function createRaid(state, setup) {
     },
   };
   b.reinfMax = 0;
+  b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
   const ok = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
   const entry = map.zones[0];
@@ -2561,8 +2575,10 @@ export function createRaid(state, setup) {
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0)));
     if (!count) continue;
     if (g.kind === "zombies") {
+      const zl = mixList(g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js)
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
+        if (zl[i]) applyZType(u, zl[i], false, g.power);
         const cells = [];
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ok(x, y) && dist(x, y, center[0], center[1]) >= 8 && zoneAt(b, x, y) < 0) cells.push([x, y]);
         const c = rng.pick(cells);
@@ -2698,6 +2714,8 @@ function spawnWave(b, n) {
   const made = Math.min(n, cells.length);
   for (let i = 0; i < made; i++) {
     const z = enemyUnit(b, rng, "zombies", 2 + b.infection * 3, b.units.filter((u) => u.kind === "zombie").length + 1);
+    const zk = nextOfMix(b); // the armoured dead of a military site come in among them (deadsoldiers.js)
+    if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
     z.aware = true;
@@ -2719,7 +2737,16 @@ function searchBox(state, b, u, box) {
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
-    if (box.kind === "body") {
+    if (box.kind === "body" && box.zombie) {
+      // One of the dead (inventory.js deadBodyFinds): pockets, now and then a pistol; a dead soldier's kit.
+      const f = deadBodyFinds(rng, box.ztype);
+      Object.assign(sup, f.sup);
+      gear.push(...f.gear);
+      if (box.ztype === "spitter") { // the burst acid sac is still dripping
+        const eff = Math.round(damage(b, u, rng.int(4, 8), null));
+        say(b, `${u.name} gets acid on their hands from the burst sac (${eff}).`, "danger");
+      }
+    } else if (box.kind === "body") {
       sup.ammo = rng.int(3, 10);
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(0.15)) sup.meds = 1;

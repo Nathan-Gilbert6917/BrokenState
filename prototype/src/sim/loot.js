@@ -55,7 +55,7 @@ export const ITEM_TAGS = {
   spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], crossbow: ["crime", "camp"], pipegun: ["crime"],
   // armor
   vest: ["police", "military", "guns", "prison", "crash", "crime"], plate: ["military", "crash"], bikehelmet: ["home", "garage", "fire", "sport", "crime"],
-  riothelmet: ["police", "prison", "military", "crash"], kneeguards: ["garage", "guns", "tools", "sport", "crime"],
+  riothelmet: ["police", "prison", "military", "crash"], milhelmet: ["military", "crash"], kneeguards: ["garage", "guns", "tools", "sport", "crime"],
   riotarms: ["police", "prison"], riotlegs: ["police", "prison"],
   padding: ["camp", "crime", "home"], shinguards: ["crime"], tirevest: ["crime", "garage"], sportspads: ["school", "sport", "home"],
   footballhelmet: ["school", "sport"], scrapvest: ["crime"],

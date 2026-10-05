@@ -18,7 +18,8 @@ import { CRAFTS } from "../src/sim/crafting.js";
 import { HUMVEE_GEAR, HIKER_STUFF } from "../src/sim/events.js";
 import { THROWABLES } from "../src/sim/stealth.js";
 import { worthTier } from "../src/sim/valuation.js";
-import { newItem } from "../src/sim/inventory.js";
+import { newItem, ZBODY } from "../src/sim/inventory.js";
+import { MILDEAD } from "../src/sim/deadsoldiers.js";
 import { Rng } from "../src/sim/rng.js";
 
 const quiet = process.argv.includes("--quiet");
@@ -46,6 +47,9 @@ for (const [k, kit] of Object.entries(KITS)) {
   addAll(kit.loot, `body:${k}`); addAll(kit.finds || [], `body:${k}`); if (kit.pack) addAll([kit.pack[0]], `body:${k}`);
 }
 addAll(ZOMBIE_FINDS, "body:zombie"); addAll(ZOMBIE_PACKS, "body:zombie"); addAll(ZOMBIE_PACK_STUFF, "body:zombie");
+addAll(ZBODY.FINDS, "body:zombie"); // one of the dead searched in a raid (inventory.js deadBodyFinds)
+// The armoured dead's bodies (deadsoldiers.js MILDEAD.BODY): a dead soldier's or riot cop's kit.
+for (const [k, B] of Object.entries(MILDEAD.BODY)) addAll([...B.armor, ...B.items].map(([key]) => key), `body:dead ${k}`);
 for (const [t, list] of Object.entries(WARES)) addAll(list, `sold:${t}`);
 addAll(RARE_GEAR, "merchants"); addAll(MERCHANT_VALUABLES, "merchants"); addAll(TRAVEL_GEAR, "travellers");
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");

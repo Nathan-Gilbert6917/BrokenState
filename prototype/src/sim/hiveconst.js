@@ -131,4 +131,14 @@ export const ZTYPES = {
   shepherd: { name: "Shepherd", short: "Sh", hp: 1.6, dmg: 0.8, aim: 0, mob: 3, armor: 0.85, share: 0.02, wall: 1.6, weight: 2.6, priority: 3, keep: SHEPHERD.KEEP, senses: [], aura: SHEPHERD.AURA,
               special: `Stays behind its pack and steps around fire. The dead within ${SHEPHERD.AURA} tiles of it ignore decoys and fire, go for the living and the breaches, and keep together.`,
               counter: "Kill it first, at range: the aura ends with it. Until then decoys and fire are wasted on its pack." },
+  // Not bred by hives (no growth unlocks them, share 0): the dead who were soldiers or riot police and still wear their
+  // armour, found at military sites, police stations and in hordes that crossed them (deadsoldiers.js MILDEAD, where
+  // the armour by weapon lives). armor here: the rough average the AI and fights by the numbers use; mob null: the
+  // ordinary dead's pace (never faster: the kit weighs them down).
+  soldier:  { name: "Dead soldier", short: "So", hp: 1.3, dmg: 1.0, aim: 0, mob: null, armor: 0.65, share: 0, wall: 1.1, weight: 1.7, military: true,
+              special: "A soldier who turned in a plate carrier and a helmet: pistol rounds, knives and machetes barely get through (rifles mostly do); more health than the ordinary dead, no faster.",
+              counter: "Rifles and the assault rifle, a sledgehammer or bat, critical (head) shots, fire and pipe bombs, or a blade from behind or on one that has not seen you." },
+  riot:     { name: "Dead riot cop", short: "Ri", hp: 1.25, dmg: 1.0, aim: 0, mob: null, armor: 0.65, share: 0, wall: 1.1, weight: 1.5, military: true,
+              special: "Riot police in hard-shell gear and a visored helmet: blows, blades and buckshot glance off, but the soft vest does little against rifle rounds.",
+              counter: "Rifles (hunting, lever-action, carbine, assault), critical shots, fire; a blade from behind." },
 };

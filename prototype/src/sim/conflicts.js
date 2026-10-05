@@ -15,7 +15,7 @@
 // goodwill is high. Over time they may escape, be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
-import { stripAll, itemLoad } from "./inventory.js";
+import { stripAll, itemLoad, newItem } from "./inventory.js";
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
 } from "./world.js";
@@ -38,6 +38,8 @@ import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 import { driveOff } from "./aiscav.js";
 import { warRaidOnPlayer } from "./diplomacy.js";
 import { retreatFrom } from "./conquest.js";
+import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
+import { battleTypes } from "./zombietypes.js";
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -126,7 +128,7 @@ export function fightOdds(state, p, enemy, ambush) {
   return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
 }
 
-function enemyGroup(state, p, f, scale = 1) {
+function enemyGroup(state, p, f, scale = 1, horde = null) {
   const rng = state.rng;
   const n = partyMembers(state, p).length;
   if (!f) {
@@ -134,7 +136,11 @@ function enemyGroup(state, p, f, scale = 1) {
     const count = Math.round((5 + t.infection * 14 + (isNight(state) ? 3 : 0)) * scale * rng.range(0.8, 1.25));
     // On a hive's land the dead are tougher: +1 power, +3 on the red-skull ring around a hive (hives.js).
     const hz = zombieToughness(state, partyTile(p));
-    return { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
+    // The armoured dead (deadsoldiers.js): by a military site, or the ones a horde picked up crossing one.
+    const mix = maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix));
+    const g = { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
+    if (mix) { g.mix = mix; g.types = battleTypes(mix, g.count); }
+    return g;
   }
   const def = FACTION_TYPES[f.type];
   let count = Math.round((n * rng.range(0.8, 1.5) + 1) * scale);
@@ -372,7 +378,7 @@ export function stationaryEncounter(state, p, opts = {}) {
   let card;
   if (src.zombies && opts.horde && !spotted) {
     const scale = Math.min(2.2, 1.2 + opts.horde.size / 150);
-    card = forcedCard(state, p, makeConflict(state, p, "surge", null, enemyGroup(state, p, null, scale), { identified: true, horde: opts.horde.size }));
+    card = forcedCard(state, p, makeConflict(state, p, "surge", null, enemyGroup(state, p, null, scale, opts.horde), { identified: true, horde: opts.horde.size }));
   } else card = src.zombies ? zombieEncounter(state, p, spotted) : factionEncounter(state, p, src.f, spotted, src.aiParty);
   if (!card) return null;
   p.lastConflict = state.hour;
@@ -741,7 +747,7 @@ function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
   const enemy = extra.enemy || c.enemy;
   startCombat(state, {
     tile: partyTile(p), partyId: p.id,
-    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name },
+    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
     ambush, canRetreat: true, handler: "conflict",
     context: { ...c, lead, goodwillHit, resumePhase: p.conflictResume || "out", ...extra },
   });
@@ -1152,6 +1158,21 @@ function victoryRewards(state, p, c, result) {
       const key = rng.pick(["ammo", "meds"]);
       out.push(`${helped.name} thank you with ${addCargo(state, p, key, key === "ammo" ? 40 : 4)} ${key}.`);
     }
+  }
+  // Dead soldiers among the dead (deadsoldiers.js), the fight resolved by the numbers: a body or two to strip (on the
+  // map they are searched like any body, so nothing here then).
+  const mil = c.enemy && c.enemy.kind === "zombies" && !(result && result.tactical) ? armoredOf(c.enemy.mix) : null;
+  if (mil) {
+    const got = [];
+    for (const kind of Object.keys(mil)) {
+      const n = Math.min(2, Math.round(c.enemy.count * mil[kind] * 0.5));
+      for (let i = 0; i < n; i++) {
+        const loot = bodyLoot(rng, kind, newItem);
+        for (const [k, q] of Object.entries(loot.sup)) got.push(`${addCargo(state, p, k, q)} ${k}`);
+        for (const g of loot.gear) if (stowGear(state, p, g)) got.push(g.name);
+      }
+    }
+    if (got.length) out.push(`Off the dead soldiers: ${got.join(", ")}.`);
   }
   if (c.type === "contest" && c.scavPartyId != null) {
     const said = driveOff(state, p, c.scavPartyId, addCargo); // aiscav.js: they leave the site, and drop their haul

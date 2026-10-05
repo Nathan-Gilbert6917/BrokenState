@@ -1308,6 +1308,27 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>I</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     check(/Battle view/.test(readme) && /isoview\.js/.test(readme), "the README describes the battle view");
+    // The fallen (ui/downsprites.js): bodies of every kind lie flat in both views (their own pictures, not the
+    // standing sprite turned over), a searched body too.
+    {
+      const DS = await import("../src/ui/downsprites.js");
+      DS.setDownCanvasMaker(cvs);
+      const rd = list.find((x) => x.name === "raid");
+      const rb = rd.b, fallen = [];
+      for (const u of rb.units.filter((q) => q.side === "enemy").slice(0, 4)) { u.dead = true; fallen.push(u); if (u.kind === "zombie") u.ztype = fallen.length % 2 ? "soldier" : null; }
+      const mine = rb.units.filter((q) => q.side === "player");
+      mine[0].down = true; mine[1].down = true; mine[1].ko = true;
+      rb.raid.containers.push({ id: 99999, x: fallen[0].x, y: fallen[0].y, kind: "body", uid: fallen[0].id, searched: true, label: "a body" });
+      let bad = 0, imgs = 0;
+      for (const v of ["iso", "top"]) {
+        UI.setBattleView(v);
+        try { ISO.iso.battle = null; UI.drawCombat(rd.st, NOW); log = []; UI.drawCombat(rd.st, NOW); imgs += log.filter((l) => l.startsWith("drawImage")).length; } catch (e) { bad++; console.log(`  error drawing the fallen (${v}): ${e.stack}`); }
+      }
+      UI.setBattleView("iso");
+      const pics = [...fallen, mine[0], mine[1]].map((u) => DS.unitDownCanvas(rd.st, rb, u, 0));
+      check(!bad && !nan && imgs > 10 && pics.every(Boolean) && pics[0] !== DS.unitDownCanvas(rd.st, { ...rb, raid: { ...rb.raid, containers: [] } }, fallen[0], 0), `the fallen draw in both views (${fallen.length} dead, 2 down; ${imgs} images), each with its own downed picture, a searched body with its own`);
+      for (const u of rb.units) { u.dead = false; u.down = false; u.ko = false; }
+    }
     // Speed (headless, a stub canvas: the script's share of a frame) on the biggest maps.
     const t = [];
     for (const name of ["hive", "raid", "base-yard"]) {

@@ -28,6 +28,7 @@
 // about to be sounded.
 import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
+import { armorVs } from "./deadsoldiers.js";
 
 export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4, struct: [40, 60] };
 export const FRAG = { r: 1.5, dmg: [20, 30], wake: 12, noise: 4, struct: [30, 45] };
@@ -71,8 +72,9 @@ const caught = (b, x, y, r) => b.units.filter((t) => active(t) && dist(t.x, t.y,
 
 function hurtAll(b, by, list, [lo, hi], what) {
   const parts = [];
+  const how = what === "FIRE" ? "fire" : "blast"; // the armoured dead (deadsoldiers.js): fire ignores their armour
   for (const t of list) {
-    const eff = Math.round(damage(b, t, b.rng.int(lo, hi), by));
+    const eff = Math.round(damage(b, t, b.rng.int(lo, hi), by, false, { how }));
     if (by && by.xpT && t.side === "enemy") { by.xpT.hits++; if (t.dead) by.xpT.kills++; }
     parts.push(`${t.name} ${eff}${t.dead ? " (dead)" : t.down ? " (down)" : ""}`);
     fx(b, { type: "melee", from: [t.x, t.y], to: [t.x, t.y], hit: true, crit: false, dmg: eff, side: by ? by.side : "enemy", text: what });
@@ -197,9 +199,11 @@ export function burnRange(u) {
 function burn(b, u, what) {
   const [lo, hi] = burnRange(u);
   const raw = b.rng.int(lo, hi);
-  say(b, `${u.name} ${what} (${Math.round(raw * u.armor)}).`, u.side === "player" ? "danger" : "good");
-  fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: Math.round(raw * u.armor), side: "fire", text: "BURN" });
-  damage(b, u, raw, null);
+  const fire = { how: "fire" }; // the armoured dead (deadsoldiers.js): fire ignores their armour
+  const eff = Math.round(raw * armorVs(u, null, fire));
+  say(b, `${u.name} ${what} (${eff}).`, u.side === "player" ? "danger" : "good");
+  fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: eff, side: "fire", text: "BURN" });
+  damage(b, u, raw, null, false, fire);
   if (u.kind === "zombie" && u.dead) b.burned = (b.burned || 0) + 1;
 }
 
