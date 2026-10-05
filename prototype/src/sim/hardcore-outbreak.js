@@ -5,10 +5,11 @@
 // - 1–2 hives. The outbreak origin's hive (the one of mapgen's origin cluster nearest the origin), and, when the
 //   military holds its base (a group of type military: hardcore-groups.js; else the map's first National Guard base),
 //   a second one 3–6 tiles from that base, close enough that its hordes reach the gates in 2–3 days. The seed decides
-//   whether it is already a young hive or a mass of the dead building one (it stands in 2–4 weeks). With no military
+//   whether it is already a young hive or a mass of the dead building one (it stands in 1–2 weeks). With no military
 //   at all a second hive starts at another hot spot half the time. Every other hive mapgen placed is taken off the map.
 // - Infection 0% everywhere but the outbreak areas around those hives.
-// The first year. Over HC.ERA_OFFSET days (180–365, from the seed: the normal game's day 1 is this many days later):
+// The first year. Over HC.ERA_OFFSET days (56–112: half to one 112-day game year, from the seed; the normal game's
+// day 1 is this many days later; also kept as state.hardcore.eraOffset):
 // - Infection spreads toward what a normal game starts with (mapgen's levels, kept per tile as t.infGoal): outward
 //   from the hives (a front that grows to FRONT_MAX tiles), into the cities and towns first (each settlement turns
 //   on its own day, the nearer the outbreak the sooner, the cities before the towns; the dead pack them at a level of
@@ -16,16 +17,17 @@
 //   the normal start every tile has its normal level; hives.js keeps radiating around every hive as always. Everything
 //   that reads tile.infection (scavenging, travel encounters, battles, the map layer) follows.
 // - New hives rise where a normal game has them at its start: each removed hive's tile becomes a build site on its
-//   own day (the origin's cluster first), with the dead of the place already gathered there (hives.js builds the hive
-//   in about four weeks, as with any site). They stop once the state holds as many hives as a normal start.
+//   own day (the origin's cluster first), with the dead of the place already gathered there and part of the hive
+//   grown (hives.js finishes it in SITE_DAYS, as with any site). They stop once the state holds a normal start's count.
 // - The eras (eras.js rampDay): every ramp keyed to the year or the game day (the tech tree's tiers and special dead,
 //   bigger hordes, the outbreak beyond the border and its floor, the victories' year) counts from the normal start, so
 //   a hardcore run's day N ramps like a normal run's day N − offset. The hives' normal cadence of build sites and the
 //   hordes from beyond the border begin later too (SITES_AFTER, BORDER_FROM).
 // - The military base's hive: it grows (MIL_INCOME more a day) and sends hordes at the base, every MIL_GAP days and
-//   bigger each time (MIL_SIZE × what it takes to break the base's defence), so that the base gives way somewhere in
-//   months 2–6 (MIL_OVERRUN, from the seed). How the military fights back and what happens when it falls is
-//   hardcore-groups.js's. With no military group nothing is sent; the hive stands near the empty base.
+//   bigger each time (MIL_SIZE × what it takes to break the base's defence: survivable for the first weeks, breaking it
+//   from MIL_BREAK_AT of the way on), so that the base gives way at MIL_OVERRUN × the first year (from the seed,
+//   about days 22–100). How the military fights back and what happens when it falls is hardcore-groups.js's. With no
+//   military group nothing is sent; the hive stands near the empty base.
 // Everything here runs only in a hardcore world (state.mode === "hardcore"); a normal game never calls it.
 import { day, log } from "./world.js";
 import { ensureHives, newHive, hiveAt, deliverToSite } from "./hives.js";
@@ -38,10 +40,11 @@ import { partyTile } from "./parties.js";
 import { worldScale } from "./worldsize.js";
 
 export const HC = {
-  ERA_OFFSET: [180, 365], // days from the fall to a normal game's day 1 (per world, from its seed)
+  ERA_OFFSET: [56, 112],  // days from the fall to a normal game's day 1: half to one game year (per world, from its seed)
   START_R: 4,             // the outbreak area around a starting hive on day 1 (tiles)
   FRONT_MAX: 24,          // the front out from the hives reaches this much farther by the normal start (× √ map area)
   FRONT_SOFT: 6,          // ... fading in over this many tiles
+  CATCH_UP: 0.03,         // a tile below its level rises this much more a day (on top of hives.js's 0.02)
   OPEN_POW: 1.6,          // open country: its normal level × (share of the year gone) ^ this
   SETTLE_RAMP: 0.25,      // a settlement fills up over this share of the year once its day comes
   CITY_ONSET: [0.02, 0.25], // a city's day: this share of the year, from right by the outbreak to 40+ tiles away
@@ -50,20 +53,21 @@ export const HC = {
   SETTLE_R: 2,            // town tiles: within this of its center (cities: their city and suburb tiles)
   // New hives through the first year: build sites at the normal start's hive spots, due at these shares of the year.
   ORIGIN_DUE: [0.12, 0.5], OTHER_DUE: [0.3, 0.8],
-  SITE_MASS: 1100,        // the dead already gathered at such a site (≈ 26 days to the hive standing)
+  SITE_DAYS: [12, 20],    // such a site has the dead gathered and part of the hive grown: it stands in this many days
   SITES_AFTER: 1,         // the hives' own new build sites (hives.js, every 120–180 days) begin this share of the year late
   BORDER_FROM: 0.5,       // hordes from beyond the border begin at this share of the year
   // The military base's hive.
   MIL_DIST: [3, 6],       // tiles from the base
   MIL_SITE: 0.5,          // chance it starts as a mass building the hive rather than a young hive
-  MIL_SITE_DAYS: [14, 28],// ... standing in this many days
+  MIL_SITE_DAYS: [7, 14], // ... standing in this many days
   SECOND_SPOT: 0.5,       // no military at all: chance of a second hive at another hot spot
   MIL_INCOME: 3,          // more resources a day for it (the dead of the base's surroundings)
-  MIL_OVERRUN: [60, 180], // the day the base is meant to give way (per world, from its seed)
-  MIL_FIRST: [4, 8],      // days after the hive stands before its first horde at the base
-  MIL_GAP: [12, 4],       // days between hordes at the base: at first, and by the overrun day
+  MIL_OVERRUN: [0.4, 0.9], // the base is meant to give way at this share of the first year (per world, from its seed)
+  MIL_HOLD: 14,           // ... and at least this many days after its hive stands
+  MIL_FIRST: [3, 6],      // days after the hive stands before its first horde at the base
+  MIL_GAP: [7, 3],        // days between hordes at the base: at first, and by the overrun day
   MIL_SIZE: [0.3, 1.4],   // horde size × what breaks the base's defence: at first, and by the overrun day
-  MIL_BREAK_EARLY: 25,    // ... it reaches 1 this many days before the overrun day (a few hard blows break a base)
+  MIL_BREAK_AT: 0.7,      // ... it reaches 1 (a blow that breaks the base) this share of the way to the overrun day
 };
 
 const hash = (n) => { let x = (n >>> 0) ^ 0x2545f491; x = Math.imul(x ^ (x >>> 16), 0x7feb352d); x = Math.imul(x ^ (x >>> 15), 0x846ca68b); return (x ^ (x >>> 16)) >>> 0; };
@@ -125,18 +129,20 @@ export function setupHardcoreOutbreak(state) {
   }
   for (const h of state.hives) O.start.push(h.tile);
   // The military's hive, if it is not the origin's: a young hive, or the dead gathered and building it.
+  let standsIn = 0; // days until the military's hive stands
   if (milTile != null && !state.tiles[milTile].hive) {
     if (rng.chance(HC.MIL_SITE)) {
-      const days = rng.int(HC.MIL_SITE_DAYS[0], HC.MIL_SITE_DAYS[1]);
-      gatherSite(state, milTile, null, days);
+      standsIn = rng.int(HC.MIL_SITE_DAYS[0], HC.MIL_SITE_DAYS[1]);
+      gatherSite(state, milTile, null, standsIn);
     } else {
       state.hives.push(newHive(state, milTile, HIVE.START_RES));
     }
     O.start.push(milTile);
   }
   if (milBase != null && milTile != null) {
+    const overrun = Math.max(1 + standsIn + HC.MIL_HOLD, Math.round(offset * rng.range(HC.MIL_OVERRUN[0], HC.MIL_OVERRUN[1])));
     O.mil = {
-      tile: milTile, base: milBase, factionId: mf ? mf.id : null, overrun: rng.int(HC.MIL_OVERRUN[0], HC.MIL_OVERRUN[1]),
+      tile: milTile, base: milBase, factionId: mf ? mf.id : null, overrun,
       stood: state.tiles[milTile].hive ? 1 : null, next: null, sent: 0, dead: 0, done: null,
     };
   }
@@ -179,13 +185,13 @@ function pickMilTile(state, base, me) {
 }
 
 // A build site with the dead already gathered (they build the hive at hives.js's pace: at most 40 a day go in).
-// days: it stands in about this many days (some of the hive is grown already); else the full SITE_MASS gathers.
+// days: it stands in about this many days (some of the hive is grown already).
 function gatherSite(state, tile, tag = null, days = null) {
   const biomass = days == null ? 0 : Math.max(0, HIVE.SITE_BIOMASS - HIVE.SITE_INTAKE * days);
   const site = { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, chosen: state.hour, score: 0, biomass, started: null, hardcore: tag || "military" };
   state.hiveSites.push(site);
   state.hiveInfo.stats.sites++;
-  let left = days == null ? HC.SITE_MASS : HIVE.SITE_BIOMASS - biomass + 60;
+  let left = HIVE.SITE_BIOMASS - biomass + 60;
   while (left >= 30) {
     const n = Math.min(HORDE_MAX_SIZE - 50, left);
     const h = makeHorde(state, { tile, size: n, role: "build", site: site.id, target: tile, split: true });
@@ -254,6 +260,8 @@ function spreadInfection(state, O, offset, first = false) {
     if (near <= HC.START_R) level = Math.max(level, 0.85 - 0.12 * near);
     t.infBase = Math.min(1, level);
     if (first) t.infection = t.infBase;
+    // A short year: the dead pour in faster than hives.js's 0.02 a day alone would bring them.
+    else if (t.infection < t.infBase) t.infection = Math.min(t.infBase, t.infection + HC.CATCH_UP);
   }
 }
 
@@ -266,7 +274,7 @@ function sitesDaily(state, O) {
     if (standing >= O.normalHives) continue; // as many as a normal start already
     const at = siteTile(state, tile);
     if (at == null) continue;
-    gatherSite(state, at, "spread");
+    gatherSite(state, at, "spread", state.rng.int(HC.SITE_DAYS[0], HC.SITE_DAYS[1]));
     if (state.live.has(at)) log(state, `The dead are pouring out of the stricken places and gathering in a great mass nearby. Something is being built there.`, "danger");
   }
 }
@@ -303,10 +311,10 @@ function militaryDaily(state, O) {
   hive.res = Math.min(HIVE.RES_CAP, hive.res + HC.MIL_INCOME);
   if (M.next == null) M.next = M.stood + state.rng.int(HC.MIL_FIRST[0], HC.MIL_FIRST[1]);
   if (d < M.next) return;
-  // How far along: 0 when it first sends, 1 by the overrun day (MIL_BREAK_EARLY days before it, the size that breaks).
-  const span = Math.max(10, M.overrun - M.stood);
+  // How far along: 0 when it first sends, 1 by the overrun day (MIL_BREAK_AT of the way: the size that breaks it).
+  const span = Math.max(HC.MIL_HOLD, M.overrun - M.stood);
   const t = clamp01((d - M.stood) / span);
-  const breakAt = clamp01((M.overrun - HC.MIL_BREAK_EARLY - M.stood) / span);
+  const breakAt = HC.MIL_BREAK_AT;
   const k = t <= breakAt ? lerp(HC.MIL_SIZE[0], 1, breakAt ? t / breakAt : 1) : lerp(1, HC.MIL_SIZE[1], (t - breakAt) / Math.max(0.01, 1 - breakAt));
   // What breaks the base's defence (factions.js resolveRaidOnFaction: a horde of n hits with n × 0.12 against
   // 8 + their strength × 0.8, and breaks it above 1.1 × that).

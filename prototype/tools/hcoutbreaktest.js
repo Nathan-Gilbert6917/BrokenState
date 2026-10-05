@@ -1,12 +1,12 @@
 // Hardcore mode, the outbreak (src/sim/hardcore-outbreak.js, eras.js rampDay).
 // - The start: 1–2 hives (never more), one by the outbreak origin, one 3–6 tiles from the military's base (a hive, or a
 //   mass of the dead building one); no other hive, site or horde left from mapgen's hives; infection 0 away from the
-//   outbreak areas on day 1; the era offset 180–365.
-// - The first year (365 days, the player kept fed): infection spreads, towns and cities above open country by day 120;
-//   by about day 365 the land's infection and the hive count are a normal start's (the same seed's normal world on its
-//   day 1, printed side by side at days 1, 90, 180, 270, 365); no border hordes, no border hive and no tier above 0
-//   before the offset allows; the military base's hive sends hordes that reach the base, and the base gives way in
-//   the run (the day is printed).
+//   outbreak areas on day 1; the era offset 56–112 days (half to one 112-day game year).
+// - The first year (250 days, the player kept fed): infection spreads, towns and cities above open country by day 30;
+//   by day 112 at the latest the land's infection and the hive count are a normal start's (the same seed's normal world
+//   on its day 1, printed side by side at days 1, 30, 60, 90, 112); no border hordes, no border hive and no tier above 0
+//   before the offset allows; the military base's hive sends hordes that reach the base, the base holds the first two
+//   weeks and gives way in the run (the day is printed).
 // - The era offset: rampDay, the year, the victories' year, the outbreak floor, the tech tiers and the border mix in
 //   a hardcore world count from the normal start; a normal world's are its own days.
 // - Save / load a hardcore world mid-year: identical after another 30 days.
@@ -96,9 +96,9 @@ for (const seed of firstYear) {
   const town = far.length ? far[far.length >> 1] : null;
   const deadPower = () => { const z = raidEnemies(st, town.id).find((x) => x.kind === "zombies"); return z ? z.power : 0; };
   const pow1 = town ? deadPower() : null;
-  let tierEarly = 0, borderEarly = 0, borderSiteEarly = 0, floorEarly = 0, overrun = null, hitDay = null;
+  let tierEarly = 0, borderEarly = 0, borderSiteEarly = 0, floorEarly = 0, overrun = null, hitDay = null, hives112 = 0;
   const milBase = O.mil ? O.mil.base : null;
-  while (day(st) <= 365 && !st.gameOver) {
+  while (day(st) <= 250 && !st.gameOver) {
     tickHour(st);
     if (st.hour % 24 !== 0) continue;
     keep(st);
@@ -109,21 +109,22 @@ for (const seed of firstYear) {
     if (d <= off && hiveFloor(st) !== 0) floorEarly++;
     if (mf && hitDay == null && mf.hordeHitDay != null) hitDay = mf.hordeHitDay;
     if (mf && overrun == null && (!mf.alive || !mf.bases.includes(milBase))) overrun = d;
-    if ([90, 120, 180, 270, 365].includes(d) && !marks[d]) { marks[d] = infStats(st); console.log(row(`hardcore d${d}`, marks[d], st)); }
+    if ([30, 60, 90, 112, 250].includes(d) && !marks[d]) { marks[d] = infStats(st); console.log(row(`hardcore d${d}`, marks[d], st)); }
+    if (d === 112) hives112 = st.hives.length + st.hiveSites.filter((s) => s.started != null).length;
   }
   if (!check(!st.gameOver, `seed ${seed}: the run lasted the year`)) continue;
-  check(marks[1].land < marks[90].land && marks[90].land < marks[180].land && marks[180].land <= marks[365].land + 0.01, `seed ${seed}: the infection grows through the year (${[1, 90, 180, 365].map((d) => f3(marks[d].land)).join(" → ")})`);
-  check(marks[120].settle > marks[120].open * 1.3, `seed ${seed}: day 120: towns and cities (${f3(marks[120].settle)}) well above open country (${f3(marks[120].open)})`);
-  check(marks[90].land < sn.land * 0.85, `seed ${seed}: day 90: still well below a normal start (${f3(marks[90].land)} vs ${f3(sn.land)})`);
-  check(Math.abs(marks[365].land - sn.land) <= sn.land * 0.2 && Math.abs(marks[365].urban - sn.urban) <= 0.15, `seed ${seed}: day 365: the land at a normal start's level (${f3(marks[365].land)} vs ${f3(sn.land)}; cities ${f3(marks[365].urban)} vs ${f3(sn.urban)})`);
-  if (town) check(pow1 <= 2.05 && deadPower() > pow1 + 0.1, `seed ${seed}: scavenging ${town.loc.name}: the dead's power ${pow1.toFixed(2)} on day 1, ${deadPower().toFixed(2)} on day 365 (it reads the infection)`);
+  check(marks[1].land < marks[30].land && marks[30].land < marks[60].land && marks[60].land <= marks[112].land + 0.01, `seed ${seed}: the infection grows through the year (${[1, 30, 60, 112].map((d) => f3(marks[d].land)).join(" → ")})`);
+  check(marks[30].settle > marks[30].open * 1.3, `seed ${seed}: day 30: towns and cities (${f3(marks[30].settle)}) well above open country (${f3(marks[30].open)})`);
+  check(marks[30].land < sn.land * 0.85, `seed ${seed}: day 30: still well below a normal start (${f3(marks[30].land)} vs ${f3(sn.land)})`);
+  check(Math.abs(marks[112].land - sn.land) <= sn.land * 0.2 && Math.abs(marks[112].urban - sn.urban) <= 0.15, `seed ${seed}: day 112: the land at a normal start's level (${f3(marks[112].land)} vs ${f3(sn.land)}; cities ${f3(marks[112].urban)} vs ${f3(sn.urban)})`);
+  if (town) check(pow1 <= 2.05 && deadPower() > pow1 + 0.1, `seed ${seed}: scavenging ${town.loc.name}: the dead's power ${pow1.toFixed(2)} on day 1, ${deadPower().toFixed(2)} on day 250 (it reads the infection)`);
   const want = n.hives.length;
-  check(st.hives.length + st.hiveSites.filter((s) => s.started != null).length >= want - 1 && st.hives.length <= want + 2, `seed ${seed}: day 365: ${st.hives.length} hives (${st.hiveSites.length} sites) against a normal start's ${want} (${st.hiveInfo.stats.built} built this year, ${st.hiveInfo.stats.destroyed} destroyed)`);
+  check(hives112 >= want - 1 && hives112 <= want + 1 && st.hives.length <= want + 2, `seed ${seed}: day 112: ${hives112} hives standing or being built against a normal start's ${want} (day 250: ${st.hives.length}; ${st.hiveInfo.stats.built} built, ${st.hiveInfo.stats.destroyed} destroyed)`);
   check(!tierEarly, `seed ${seed}: no hive past tier 0 before day ${off + TECH.TIER_DAY[1]} (offset + ${TECH.TIER_DAY[1]})`);
   check(!borderEarly && !borderSiteEarly && !floorEarly, `seed ${seed}: no border hordes before day ${Math.round(off * HC.BORDER_FROM)}, no border hive and no hive floor before the normal start (day ${off + 1})`);
   if (mf) {
-    check(hitDay != null && hitDay <= 60, `seed ${seed}: the base's hive's hordes reached ${mf.name}'s base (first on day ${hitDay}; ${O.mil.sent} hordes, ${O.mil.dead} of the dead sent)`);
-    check(overrun != null && overrun >= 40 && overrun <= 220, `seed ${seed}: ${mf.name}'s base gave way on day ${overrun} (meant for about day ${O.mil.overrun}; months 2–6)`);
+    check(hitDay != null && hitDay <= 30, `seed ${seed}: the base's hive's hordes reached ${mf.name}'s base (first on day ${hitDay}; ${O.mil.sent} hordes, ${O.mil.dead} of the dead sent)`);
+    check(overrun != null && overrun >= 15 && overrun <= 130, `seed ${seed}: ${mf.name}'s base held the first two weeks and gave way on day ${overrun} (meant for about day ${O.mil.overrun}: ${HC.MIL_OVERRUN.join("–")} of the year)`);
   } else console.log(`    (seed ${seed}: no military group in this world: the hive near the National Guard base sends nobody)`);
 }
 
@@ -137,7 +138,7 @@ console.log("The era offset");
   check(yearOf(at(st, off)) === 1 && yearOf(at(st, off + yearStartDay(3))) === 3 && yearOf(at(n, yearStartDay(3))) === 3, `the year counts from the normal start (hardcore day ${off + yearStartDay(3)} is year 3)`);
   const win = yearStartDay(ERAS.WIN_FROM_YEAR);
   check(!winOpen(at(st, win)) && !winOpen(at(st, win + off - 1)) && winOpen(at(st, win + off)) && winOpen(at(n, win)), `no victory before day ${win + off} (a normal world: day ${win})`);
-  check(eraProgress(at(st, 100)).winDay === win + off && eraProgress(at(st, 100)).fall.before && !eraProgress(at(st, off + 2)).fall.before && eraProgress(at(n, 100)).fall === null, "the Goals panel's numbers: the victories' day and the first year");
+  check(eraProgress(at(st, 20)).winDay === win + off && eraProgress(at(st, 20)).fall.before && !eraProgress(at(st, off + 2)).fall.before && eraProgress(at(n, 100)).fall === null, "the Goals panel's numbers: the victories' day and the first year");
   check(beforeFall(at(st, off)) && !beforeFall(at(st, off + 1)) && !beforeFall(at(n, 5)), "before the fall's year is out: until the offset");
   st.noOutbreak = true;
   check(hiveFloor(at(st, off)) === 0 && hiveFloor(at(st, off + 1)) === ERAS.OUTBREAK.FLOOR[0][1] && hiveFloor(at(n, 1)) === ERAS.OUTBREAK.FLOOR[0][1], `the outbreak beyond the border keeps its floor of hives from day ${off + 1} (a normal world: day 1)`);
