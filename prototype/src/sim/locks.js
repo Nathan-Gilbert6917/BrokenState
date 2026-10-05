@@ -9,7 +9,8 @@
 //   pick    lockpicks (the "Crowbar and lockpicks" item on the unit): 55% + 4% a Stealth point − 15% a difficulty step
 //           above 1 (+10% Quiet Hands), 5–95%; 1 action an attempt, Heat +1, the picks lose 1 use; Stealth XP 6 on a
 //           success, 2 on a miss. A safe can only be picked or keyed.
-//   force   with the crowbar: 85% + 1.5% a Mechanics point − 20% a step, 1 action, loud: Heat +6 and it wakes
+//   force   with the crowbar (or a pry weapon: a crowbar, fire axe or sledgehammer, barOf): 85% + 1.5% a
+//           Mechanics point − 20% a step, 1 action, loud: Heat +6 and it wakes
 //           everything within 8 tiles. Without one (kick, smash): 50% − 20% a step, both actions, Heat +10, wakes
 //           everything within 11; only difficulty 1–2.
 // Keys are named for a site ("Dunmore Police Station key") and open every lock there. They turn up on human bodies
@@ -100,6 +101,9 @@ function itemsOf(s) {
   return [...items, ...pack];
 }
 export const picksOf = (s) => itemsOf(s).find((it) => it.key === "crowbar" && !(Number.isFinite(it.dur) && it.dur <= 0)) || null;
+// Something to force a lock with: the lockpicks' crowbar, or a pry weapon (data.js GEAR pry: a crowbar, a fire axe,
+// a sledgehammer) carried anywhere on the person.
+export const barOf = (s) => picksOf(s) || itemsOf(s).find((it) => GEAR[it.key] && GEAR[it.key].pry) || null;
 // Wears the picks one use; removes them when they are worn out. Returns true if they snapped.
 function wearPicks(s, it) {
   if (!Number.isFinite(it.dur)) return false;
@@ -124,7 +128,7 @@ export function openOdds(state, b, u, lock) {
   const pc = clamp(PICK.base + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (def.diff - 1) + (u.quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0), 0.05, 0.95);
   out.pick = picks ? { ok: true, chance: pc, ap: 1, label: "Pick", why: "" } : { ok: false, chance: pc, ap: 1, label: "Pick", why: "Needs lockpicks (the Crowbar and lockpicks item) on this person." };
   if (!def.force) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${def.name.toLowerCase()} cannot be forced: pick it or use a key.` };
-  else if (picks) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (def.diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
+  else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (def.diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
   else if (def.diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (def.diff - 1), 0.05, 0.95), ap: SMASH.ap, label: "Smash", why: u.ap >= SMASH.ap ? "" : "Smashing it takes both actions." };
   else out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: "Too solid to smash without a crowbar." };
   return out;
@@ -419,7 +423,7 @@ export function lockedSearchHour(state, e, p, members) {
     chance = 1 - (1 - chance) ** 2; // two tries in the hour
     heat = PICK.heat * 2;
     gainXp(state, picker, "stealth", PICK.xpWin);
-  } else if (def.force && picker) { how = "force"; chance = clamp(FORCE.base + FORCE.perMech * skill(best("mechanics"), "mechanics") - FORCE.perDiff * (def.diff - 1), 0.05, 0.95); heat = 8; }
+  } else if (def.force && (picker || members.some((s) => barOf(s)))) { how = "force"; chance = clamp(FORCE.base + FORCE.perMech * skill(best("mechanics"), "mechanics") - FORCE.perDiff * (def.diff - 1), 0.05, 0.95); heat = 8; }
   else if (def.force && def.diff <= SMASH.maxDiff) { how = "smash"; chance = clamp(SMASH.base - SMASH.perDiff * (def.diff - 1), 0.05, 0.95); heat = 12; }
   e.heat = Math.min(100, e.heat + heat);
   const lower = def.name.toLowerCase();

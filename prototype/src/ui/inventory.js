@@ -17,21 +17,25 @@ import {
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
 import { shortName } from "./names.js";
+import { useItemOn, useText } from "../sim/comforts.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 
 // ---------- item tiles ----------
-const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun"]);
-const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲" };
+const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun", "revolver", "leverrifle", "carbine"]);
+const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲",
+  guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", molotov: "🔥", flare: "🎆", smokegren: "💨", cuffs: "⛓", gamecall: "📯",
+  camonet: "⛺", ghillie: "🌿", stove: "⛺", scentmask: "🫙", ragboots: "🥾" };
+// By trade category (data.js CATEGORIES): valuables and treats at a glance.
+const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
 const SUPPLY_ICON = { food: "🥫", water: "💧", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
 function icon(key) {
   const d = GEAR[key];
-  if (key === "crossbow") return "🏹";
   if (GUNS.has(key)) return "🔫";
-  return TOOL_ICON[key] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
+  return TOOL_ICON[key] || CAT_ICON[d.cat] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
 }
 
 // Hover text for an item, with the skill-gap rule for the person who would use it.
@@ -43,7 +47,13 @@ export function itemTip(item, s = null) {
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
   else if (d.book) bits.push(d.book.skill ? `book: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js
-  else bits.push(`power ${d.power}${d.req && d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req}` : ""}`);
+  else if (d.valuable) bits.push("a valuable: good for nothing but trade");
+  else if (d.use) bits.push(`used up: ${useText(item.key)} (select it, then Use)`); // sim/comforts.js
+  else if (d.comfort) bits.push(d.comfort.team ? `comfort: +${d.comfort.team} mood a day for everyone at the base or on the team that has it` : `keepsake: +${d.comfort.self} mood a day to whoever carries it`);
+  else if (d.heat) bits.push("camp kit: less Heat for the team that carries it (see the team's Heat)"); // sim/fieldheat.js
+  else if (d.defence) bits.push("base defence: works from a base's armory (see the base's horde defences)"); // sim/defences.js
+  else if (d.throw) bits.push("thrown in battle (Throw button), from a pocket, the pack, the cargo or the armory");
+  else if (d.power) bits.push(`power ${d.power}${d.req && d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req}` : ""}`);
   if (s && d.skill && d.req) {
     const e = gearEffect(s, item);
     if (e.gap > 0) bits.push(e.usable ? `${s.name.split(" ")[0]} is ${e.gap} below the skill: weaker${e.damageChance ? ", may damage it" : ""}` : `${s.name.split(" ")[0]} cannot use it`);
@@ -138,6 +148,7 @@ function selBar(state, ui, place) {
   const st = storageFor(state, place);
   return `<div class="invsel small">Selected: <b>${esc(item.name)}</b>. Click a slot, pocket or pack cell to move it there.
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
+    ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
 
@@ -273,6 +284,7 @@ export const INV_ACTIONS = {
   "inv-click": (state, ui, d) => clickLoc(state, ui, d.loc),
   "inv-cancel": (state, ui) => { ui.invSel = null; },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
+  "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   "loot-open": (state, ui) => { ui.inv = { sid: null, loot: true, body: null }; ui.invSel = null; ui.invMsg = ""; },
   "loot-body": (state, ui, d) => { ui.inv.body = Number(d.i); ui.invSel = null; },
   "loot-sup": (state, ui, d) => { ui.invMsg = takeSupply(state, Number(d.i), d.key); },
