@@ -58,7 +58,7 @@ export const ERAS = {
   GROW: {
     horde: 0.03, hordeMax: 0.3,          // roaming, attacking and border hordes: +3% a year, at most +30% (year 12)
     gangArms: 0.02, gangArmsMax: 0.2,    // aggressive groups' strength (raids, wars, the base they defend): +2% a year
-    recruit: 2, recruitMax: 20,          // aggressive groups recruit up to RAIDS.RECRUIT_UNTIL (45) + 2 a year
+    recruit: 1, recruitMax: 10,          // aggressive groups recruit up to RAIDS.RECRUIT_UNTIL (45) + 1 a year
     gangPop: 1, gangPopMax: 10,          // new gangs from beyond the border: 12–18 people + 1 a year
     raiderSize: 0.25, raiderSizeMax: 3,  // outsider raider bands: up to 14 people + 1 every four years (visitors.js)
     raiderPower: 0.05, raiderPowerMax: 0.5, // ... each as strong as 6.0 at most + 0.05 a year (rifles and plate)
@@ -66,7 +66,7 @@ export const ERAS = {
   LATE_MIN_AGG: 2,        // from the late game at least this many hostile aggressive groups (factions.js newGangs; RAIDS.MIN_AGG = 2 before)
   LATE_RAIDER_BANDS: 0,   // more outsider raider bands on the map at a time from the late game (visitors.js caps)
   BANDWAGON: 0.25, BANDWAGON_CAP: 60, // a coalition holding over half the land: peaceful groups outside +0.25 goodwill a day, up to 60 (factions.js)
-  ALLY_LATE: 1,           // from the late game every coalition member sends one more fighter to your hive and base assaults (alliance.js)
+  ALLY_LATE: 2,           // from the late game every coalition member sends two more fighters to your hive and base assaults (alliance.js)
   WIN_FROM_YEAR: 8,
   // The hives late in the game (hives.js): the brood inside a hive (and its Broodmother's dead) fights BROOD more
   // a year from BROOD_FROM (at most BROOD_MAX: a hive stormed in year 12 is 30% tougher than in year 3), and no new
