@@ -563,6 +563,7 @@ export function siteBuildings(tile) {
 // The building a raid explores (combat.js createRaid): setup.raid.building (an option id, or "street"), else a
 // single-building site's own; null for the street map.
 export function raidBuilding(state, tile, setup) {
+  if (setup && setup.raid && setup.raid.place) return setup.raid.place; // a city crawl's place ({ id, key, name }, citycrawl.js)
   const sb = siteBuildings(tile);
   if (!sb) return null;
   const want = setup && setup.raid ? setup.raid.building : null;

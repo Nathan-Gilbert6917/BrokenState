@@ -1496,6 +1496,7 @@ export function engagedWith(state, p) {
   if (battlePending(state, p.id)) return "battle";
   if (state.engagement && state.engagement.partyId === p.id) return "search";
   if (tradePending(state, p.id)) return "trade";
+  if (p.crawl) return "crawl"; // a city crawl (citycrawl.js): its block card holds the team
   return null;
 }
 

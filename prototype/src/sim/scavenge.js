@@ -17,6 +17,7 @@ import { itemLoad, newItem } from "./inventory.js";
 import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
+import { crawlTile, startCrawl } from "./citycrawl.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -85,6 +86,8 @@ export function startScavenge(state, p) {
   }
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
+    // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot).
+    if (crawlTile(t) && p.owner === "player") return startCrawl(state, p);
     const groups = raidEnemies(state, p.dest);
     const total = groups.reduce((a, g) => a + g.count, 0);
     const names = groups.map((g) => g.name).join(" and ");

@@ -22,6 +22,7 @@ import {
 import { startOrder, resumeQueue, besideWater } from "./orders.js";
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
+import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
@@ -816,6 +817,7 @@ function idleTeams(state) {
   for (const p of [...state.parties]) {
     if (p.owner !== "player" || p.kind === "convoy" || !state.parties.includes(p)) continue;
     const hasCard = state.cards.some((c) => c.partyId === p.id);
+    if (p.crawl) { if (!hasCard && !state.combat) crawlAutoStep(state, p); continue; } // a city crawl left open when the autopilot came on (citycrawl.js)
     if (p.phase === "waiting" && !hasCard) teamAct(state, p);
     const halted = p.phase === "engaged" && !hasCard && !(state.engagement && state.engagement.partyId === p.id) &&
       !(state.trade && state.trade.partyId === p.id) && !state.combat;
