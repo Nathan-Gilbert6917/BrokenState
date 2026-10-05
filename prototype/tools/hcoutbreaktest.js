@@ -1,18 +1,21 @@
 // Hardcore mode, the outbreak (src/sim/hardcore-outbreak.js, eras.js rampDay).
-// - The start: 1–2 hives (never more), one by the outbreak origin, one 3–6 tiles from the military's base (a hive, or a
-//   mass of the dead building one); no other hive, site or horde left from mapgen's hives; infection 0 away from the
-//   outbreak areas on day 1; the era offset 56–112 days (half to one 112-day game year).
+// - The start (16 seeds): one hive, in the city nearest the outbreak origin; the tile 3–6 from the military's base
+//   where the dead will mass a few days after its strike force leaves; your three far from that city; no other hive,
+//   site or horde left from mapgen's hives; infection 0 away from the outbreak area on day 1; the era offset 56–112
+//   days (half to one 112-day game year).
 // - The first year (250 days, the player kept fed): infection spreads, towns and cities above open country by day 30;
 //   by day 112 at the latest the land's infection and the hive count are a normal start's (the same seed's normal world
 //   on its day 1, printed side by side at days 1, 30, 60, 90, 112); no border hordes, no border hive and no tier above 0
-//   before the offset allows; the military base's hive sends hordes that reach the base, the base holds the first two
-//   weeks and gives way in the run (the day is printed).
+//   before the offset allows; the dead mass by the military base and their hive stands (it once never did on seed 42:
+//   the garrison's sorties ate the mass), its hordes reach the base and it gives way on days 20–60 (the day is printed).
 // - The era offset: rampDay, the year, the victories' year, the outbreak floor, the tech tiers and the border mix in
 //   a hardcore world count from the normal start; a normal world's are its own days.
 // - Save / load a hardcore world mid-year: identical after another 30 days.
 // Usage: node tools/hcoutbreaktest.js [seeds...]
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
-import { HC, outbreakProgress, hardcoreEraOffset } from "../src/sim/hardcore-outbreak.js";
+import { HC, outbreakProgress, hardcoreEraOffset, hcOutbreakCity } from "../src/sim/hardcore-outbreak.js";
+import { hcMilitary } from "../src/sim/hardcore-groups.js";
+import { HC_START } from "../src/sim/hardcore-start.js";
 import { rampDay, yearOf, winOpen, hiveFloor, yearStartDay, ERAS, eraProgress, beforeFall, ensureEraState } from "../src/sim/eras.js";
 import { hiveTier, eraTier, borderMix } from "../src/sim/hivetech.js";
 import { TECH } from "../src/sim/hiveconst.js";
@@ -55,20 +58,28 @@ const row = (label, s, st) => `    ${label.padEnd(12)} land ${f3(s.land)}  citie
 
 // ---------- 1. the start ----------
 console.log("The start");
-for (const seed of seeds) {
+const startSeeds = process.argv.length > 2 ? seeds : [...seeds, 99, 4242, 5, 77, 31337, 1, 2, 3, 11, 13, 500, 888];
+for (const seed of startSeeds) {
   const st = createWorld({ seed, factionCount: 7, mode: "hardcore" });
   const g = st.grid, O = st.hardcore.outbreak;
   const off = st.hardcore.eraOffset;
   check(off >= HC.ERA_OFFSET[0] && off <= HC.ERA_OFFSET[1] && off === hardcoreEraOffset(st), `seed ${seed}: era offset ${off} days (${HC.ERA_OFFSET.join("–")})`);
-  check(st.hives.length >= 1 && st.hives.length + st.hiveSites.length <= 2, `seed ${seed}: ${st.hives.length} hive(s) and ${st.hiveSites.length} gathering mass(es) at the start (1–2 in all; a normal start has ${O.normalHives})`);
-  check(st.hives.some((h) => g.distance(h.tile, st.originId) <= 6), `seed ${seed}: a hive by the outbreak origin`);
+  check(st.hives.length === 1 && st.hiveSites.length === 0, `seed ${seed}: ${st.hives.length} hive and ${st.hiveSites.length} gathering mass at the start (one hive; a normal start has ${O.normalHives})`);
+  const city = O.city;
+  const nearest = [...st.cityIds].sort((a, b) => g.distance(a, st.originId) - g.distance(b, st.originId) || a - b)[0];
+  check(city === nearest && city === hcOutbreakCity(st) && st.hives.length && st.hives[0].id === O.cityHive && g.distance(st.hives[0].tile, city) <= HC.CITY_REACH,
+    `seed ${seed}: the first hive is in ${st.tiles[city].loc.name} (the city nearest the origin, ${g.distance(city, st.originId)} tiles from it), ${g.distance(st.hives[0].tile, city)} from its centre on ${st.tiles[st.hives[0].tile].terrain}`);
   const flagged = st.tiles.filter((t) => t.hive).map((t) => t.id).sort().join();
-  check(flagged === st.hives.map((h) => h.tile).sort().join() && st.hiveSites.every((s) => s.hardcore === "military") &&
-    st.hordes.every((h) => h.role === "mass" && st.hiveSites.some((s) => s.id === h.site)), `seed ${seed}: no hive, site or horde left from the hives taken off the map`);
+  check(flagged === st.hives.map((h) => h.tile).sort().join() && st.hordes.every((h) => h.hive === O.cityHive), `seed ${seed}: no hive, site or horde left from the hives taken off the map`);
   const mf = st.factions.find((f) => f.alive && f.type === "military");
   const base = mf ? mf.bases[0] : st.militaryIds[0];
-  const milNear = [...st.hives.map((h) => h.tile), ...st.hiveSites.map((s) => s.tile)].filter((t) => g.distance(t, base) >= HC.MIL_DIST[0] && g.distance(t, base) <= HC.MIL_DIST[1]);
-  check(milNear.length >= 1 && O.mil && O.mil.base === base, `seed ${seed}: a ${st.hiveSites.length ? "mass building a hive" : "hive"} ${milNear.length ? g.distance(milNear[0], base) : "?"} tiles from the ${mf ? `military's base (${mf.name})` : "National Guard base (no military group)"}`);
+  const md = O.mil ? g.distance(O.mil.tile, base) : -1;
+  const strikeDay = hcMilitary(st) ? hcMilitary(st).strikeDay : null;
+  check(O.mil && O.mil.base === base && md >= HC.MIL_DIST[0] && md <= HC.MIL_DIST[1] && !st.tiles[O.mil.tile].hive &&
+    O.mil.gatherDay >= strikeDay + HC.MIL_GATHER[0] && O.mil.gatherDay <= strikeDay + HC.MIL_GATHER[1],
+    `seed ${seed}: the base's hive will rise ${md} tiles from ${mf ? `the military's base (${mf.name})` : "the National Guard base"}: the dead mass there on day ${O.mil && O.mil.gatherDay} (the strike force leaves on day ${strikeDay})`);
+  const team = st.parties.find((p) => p.owner === "player");
+  if (team) check(g.distance(team.path[team.idx], city) >= HC_START.SPAWN.outbreakCity[1], `seed ${seed}: your three start ${g.distance(team.path[team.idx], city)} tiles from the outbreak city`);
   const centres = [...st.hives.map((h) => h.tile), ...st.hiveSites.map((s) => s.tile)];
   const away = st.tiles.filter((t) => centres.every((c) => g.distance(c, t.id) > HC.START_R + 1));
   const hotAway = away.filter((t) => t.infection > 0.005).length;
@@ -125,8 +136,10 @@ for (const seed of firstYear) {
   check(!tierEarly, `seed ${seed}: no hive past tier 0 before day ${off + TECH.TIER_DAY[1]} (offset + ${TECH.TIER_DAY[1]})`);
   check(!borderEarly && !borderSiteEarly && !floorEarly, `seed ${seed}: no border hordes before day ${Math.round(off * HC.BORDER_FROM)}, no border hive and no hive floor before the normal start (day ${off + 1})`);
   if (mf) {
-    check(hitDay != null && hitDay <= 30, `seed ${seed}: the base's hive's hordes reached ${mf.name}'s base (first on day ${hitDay}; ${O.mil.sent} hordes, ${O.mil.dead} of the dead sent)`);
-    check(overrun != null && overrun >= 15 && overrun <= 130, `seed ${seed}: ${mf.name}'s base held the first two weeks and gave way on day ${overrun} (meant for about day ${O.mil.overrun}: ${HC.MIL_OVERRUN.join("–")} of the year)`);
+    const M = O.mil;
+    check(M.gathered === M.gatherDay && M.stood != null && M.stood <= M.gatherDay + M.standsIn + 4, `seed ${seed}: the dead massed by the base on day ${M.gathered} and their hive stood on day ${M.stood} (meant in ${M.standsIn} days; ${M.fed} more of the dead drifted in)`);
+    check(hitDay != null && M.stood != null && hitDay <= M.stood + 12, `seed ${seed}: the base's hive's hordes reached ${mf.name}'s base (first on day ${hitDay}; ${M.sent} hordes, ${M.dead} of the dead sent)`);
+    check(overrun != null && overrun >= 20 && overrun <= 60 && overrun > M.stood, `seed ${seed}: ${mf.name}'s base gave way on day ${overrun}, ${overrun - M.stood} days after its hive stood (meant for about day ${M.overrun}; 20–60)`);
   } else console.log(`    (seed ${seed}: no military group in this world: the hive near the National Guard base sends nobody)`);
 }
 

@@ -23,22 +23,36 @@
 //   where they are heading), give them food, ask a friendly band for help (a little of what its type carries), or go on.
 //   What they think of you then is what the group thinks of you when it has its hub.
 //
-// The military (HC_MILITARY)
+// The military (HC_MILITARY): how the Guard fell, the first weeks of the hardcore era
 // - Always there: its base on one of the map's military sites (state.militaryIds, at least MIN_FROM_YOU tiles from
 //   you when it can), POP soldiers with plenty of ammo, known from the start. It neither expands nor grows: the base
 //   is closed to civilians and cut off.
-// - The outbreak work (hardcore-outbreak.js) puts a hive near it whose hordes grind it down (factions.js
-//   resolveRaidOnFaction). It fights back: sorties (SORTIE_CHANCE a day against a horde within SORTIE_RANGE: kills
-//   SORTIE_KILL × its strength, sometimes a soldier lost) and culls (every CULL_GAP days against a hive within
-//   CULL_RANGE: CULL_RES of the hive's stores and CULL_GUARD of its guard). Destroy the hive and the hordes stop.
-// - With HELP_AT of its soldiers left it asks you for help (a card, with a hub): 40 ammo (harder sorties for
+// - The strike. On its strike day (STRIKE_DAY, from the seed) it sends STRIKE_SHARE of its soldiers against the first
+//   hive, in the city where the outbreak began (hardcore-outbreak.js hcOutbreakCity): a column of trucks on the map
+//   (state.hardcore.groups.military.strike, drawn like a group's convoy where you can see it) that drives there by day
+//   (STRIKE_SPEED). At the city it fights FIGHT_DAYS days by the numbers: its guns cut down FIGHT_KILL of the dead a
+//   soldier a day, the city's dead first (CITY_DEAD, more where the city is thick with them, CITY_REFILL more pouring
+//   in each day) and then the hive's guard (at most HIVE_HURT of it) and HIVE_RES of its stores a day; it loses
+//   FIGHT_LOSS of its soldiers in all (more the more of the dead there were against its guns). The hive survives,
+//   weakened. The survivors break off and fall back to a site CUT_OFF_R tiles from the hive, and the road home is
+//   cut: they hold out there while the base's hive stands (HOLD_MAX days at most), and go home when it is gone.
+//   Radio lines, a timelapse caption, a card when you are in contact (a radio at your hub, a friendly Guard) or see it.
+// - Meanwhile the dead mass near the base and build a hive while the garrison is thin (hardcore-outbreak.js), whose
+//   hordes grind the garrison down (factions.js resolveRaidOnFaction). It fights back: sorties (SORTIE_CHANCE a day
+//   against a free horde within SORTIE_RANGE: kills SORTIE_KILL × its strength, sometimes a soldier lost) and culls
+//   (every CULL_GAP days against a hive within CULL_RANGE: CULL_RES of the hive's stores and CULL_GUARD of its guard;
+//   before the hive stands, CULL_MASS of the gathering mass). Destroy the hive and the hordes stop.
+// - With HELP_AT of the garrison left it asks you for help (a card, with a hub): 40 ammo (harder sorties for
 //   SUPPLY_DAYS days) or 6 meds (MEDS_POP wounded back on the walls). At EVAC_AT it sends its civilians to you.
-// - It falls when it is ground down to BREAK_POP soldiers, its base is lost or the group is broken: the base is a ruin
-//   full of the dead (a horde of the fallen, infection, the armory's loot left behind), DEAD of the last defenders
-//   die, 1–3 reach you as recruits, the rest (REMNANT) flee as a remnant band: a small one (under JOIN_SMALL) makes
-//   for the nearest peaceful group to be taken in, or comes to you when there is none (under FOUND_MIN); a bigger one
-//   joins a group (JOIN_CHANCE) or founds a small military or fortress group. A last radio message, a card and a
-//   timelapse caption.
+// - It falls when the garrison is ground down to GARRISON_BREAK of what stayed (BREAK_MIN at least), its base is lost
+//   or the group is broken: the base is a ruin full of the dead (a horde of the fallen, infection, the armory's loot
+//   left behind), DEAD of the last defenders die, 1–3 reach you as recruits. The military is gone, and what is left of
+//   it becomes groups of its own: the garrison's survivors (the "Holdouts" of the base, a fortress) and the strike
+//   force's stragglers ("Remnant of the 3rd Battalion", military), each a band on the road (as the first bands) that
+//   founds its hub somewhere defensible SPLINTER_FOUND days later; too few for one (under FOUND_MIN) join the other,
+//   and too few in all make for a peaceful group or come to you. The fortress one may turn to raiding once the
+//   raiders' day comes (raidersDaily: a splinter counts as desperate). A last radio message, a card and a timelapse
+//   caption.
 //
 // Raiders (HC_GROUPS.RAIDERS_FROM)
 // - No raider groups at the start, no outsider raider bands (visitors.js) and no new gangs (factions.js newGangs)
@@ -57,11 +71,15 @@ import { isHardcore } from "./hardcore.js";
 import { hash01 } from "./skills.js";
 import { haulFor, AISCAV } from "./aiscav.js";
 import { reduceHorde, makeHorde } from "./hordes.js";
+import { mergeMix } from "./zombietypes.js";
 import { worldScale } from "./worldsize.js";
 import { chronicleNote } from "./chronicle.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { changeRelation } from "./diplomacy.js";
 import { isMember } from "./alliance.js";
+import { hiveById } from "./hives.js";
+import { findPath } from "./hex.js";
+import { hcOutbreak, hcOutbreakCity } from "./hardcore-outbreak.js";
 
 export const HC_GROUPS = {
   // What a band starts with, by the type it will become (you: 3 people, about 10 food, 10 water, 6 ammo).
@@ -74,11 +92,11 @@ export const HC_GROUPS = {
   },
   TYPES: ["traders", "commune", "fortress", "zealot", "expansionist"],
   START_MIN: 14, START_MAX: 34, START_APART: 7, START_NEAR_PREF: 6, HIVE_CLEAR: 5,
-  GOAL_REACH: 22, GOAL_FROM_YOU: 10, GOAL_APART: 8, GOAL_HIVE: 6,
+  GOAL_REACH: 22, GOAL_FROM_YOU: 10, GOAL_APART: 8, GOAL_HIVE: 6, SPLINTER_HIVE: 10, SPLINTER_BITE: 0.3,
   FOUND_DAYS: [8, 29], FORCE_AFTER: 10, FORCE_RADIUS: 3,
   SPEED: 0.6, DAY_FROM: 6, DAY_TO: 20,
   EAT: 0.7, FORAGE: 0.5, STARVE: 0.3, ROAD_DEATH: 0.015,
-  SCAV_TAKE: 0.05, SCAV_EFF: 0.8, SCAV_DAYS: 2, STOP_DETOUR: 4, STOP_LOOT: 0.2,
+  SCAV_TAKE: 0.05, SCAV_EFF: 0.8, SCAV_DAYS: 2, STOP_DETOUR: 4, STOP_LOOT: 0.2, STOP_INF: 0.6,
   HORDE_KILL: 1.5, HORDE_BITE: 30, MEET_GW: 5, GIFT_GW: 12, ASK_GW: -2,
   QUIET_GRACE: 10, QUIET_MAX: 60,
   // The raiders' day: RAIDERS_FROM × the era offset (the day the normal game would start, state.hardcore.eraOffset
@@ -86,11 +104,18 @@ export const HC_GROUPS = {
   RAIDERS_FROM: [0.6, 1.0], ERA_OFFSET: [56, 112], TURN_BASE: 0.004, TURN_BY: 14, TURN_MAX: 2,
 };
 export const HC_MILITARY = {
-  POP: [30, 40], MIN_FROM_YOU: 12, HIVE_RANGE: 10, BREAK_POP: 10,
-  SORTIE_RANGE: 6, SORTIE_CHANCE: 0.3, SORTIE_MIN_POP: 12, SORTIE_KILL: [0.6, 1.2], SORTIE_LOSS: 0.35,
-  CULL_GAP: [12, 20], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_LOSS: 0.4,
-  HELP_AT: 0.65, EVAC_AT: 0.45, SUPPLY_DAYS: 14, MEDS_POP: 2,
-  DEAD: [0.3, 0.5], REMNANT: [3, 10], FOUND_MIN: 4, JOIN_SMALL: 6, JOIN_CHANCE: 0.5, JOIN_RANGE: 20, RUIN_LOOT: 0.7, FALLEN_HORDE: [0.6, 1.0],
+  POP: [36, 46], MIN_FROM_YOU: 12, HIVE_RANGE: 10, BREAK_POP: 10,
+  // The strike on the city hive.
+  STRIKE_DAY: [3, 12], STRIKE_SHARE: [0.5, 0.65], STRIKE_SPEED: 1.0, STRIKE_KEEP: 13,
+  FIGHT_DAYS: [2, 4], FIGHT_KILL: [5, 9], FIGHT_LOSS: [0.5, 0.7], CITY_DEAD: [500, 900], CITY_REFILL: [60, 140],
+  HIVE_HURT: 0.6, HIVE_RES: [2, 5], CUT_OFF_R: [3, 8], HOLD_MAX: 60, HOLD_DEATH: 0.02, SEE_R: 8,
+  // The garrison that stayed.
+  GARRISON_BREAK: 0.65, BREAK_MIN: 8,
+  SORTIE_RANGE: 6, SORTIE_CHANCE: 0.3, SORTIE_KILL: [0.6, 1.2], SORTIE_LOSS: 0.25,
+  CULL_GAP: [10, 16], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_MASS: [0.08, 0.16], CULL_LOSS: 0.4,
+  HELP_AT: 0.85, EVAC_AT: 0.7, SUPPLY_DAYS: 14, MEDS_POP: 2,
+  // The fall, and the groups it leaves.
+  DEAD: [0.1, 0.25], FOUND_MIN: 4, HOLD_MIN: 5, SPLINTER_GRAB: 0.2, SPLINTER_TURN: 0.5, JOIN_RANGE: 20, RUIN_LOOT: 0.7, FALLEN_HORDE: [0.6, 1.0], FALLEN_SOLDIER: 0.6, SPLINTER_FOUND: [8, 20],
 };
 const B = HC_GROUPS, M = HC_MILITARY;
 const STOCK_KEYS = ["food", "water", "fuel", "ammo", "meds", "parts", "scrap", "preserved", "jars"];
@@ -212,6 +237,9 @@ function createMilitary(state, name, color) {
   H.military = {
     id: f.id, tile, startPop: pop, lastPop: pop, fell: false, fellDay: null, how: null, nextCull: rng.int(M.CULL_GAP[0], M.CULL_GAP[1]),
     sorties: 0, culls: 0, killed: 0, lost: 0, helpAsked: false, evacSent: false, suppliedUntil: 0, hiveSince: null, lastSortieLog: -99,
+    // The strike on the city hive (hardcore-outbreak.js reads the day for when the dead mass by the base).
+    strikeDay: M.STRIKE_DAY[0] + Math.floor(hash01(state.seed, "hc-strike") * (M.STRIKE_DAY[1] - M.STRIKE_DAY[0] + 1)),
+    strike: null, garrison: null, breakPop: M.BREAK_POP, splinters: [],
   };
   log(state, `The National Guard still holds ${tileLabel(state, tile)}: ${name}, about ${Math.round(pop / 5) * 5} soldiers. Their radio says the base is closed to civilians.`, "info");
   return f;
@@ -237,6 +265,7 @@ export function makeBand(state, type, opts = {}) {
     tile, path: [tile], idx: 0, progress: 0, phase: "camp", stops: [], goal: null, joinId: opts.joinId ?? null,
     foundAt, forceAt: foundAt + B.FORCE_AFTER, campUntil: 0, started: d, remnant: !!opts.remnant, helped: false, lastSeen: null, act: "on the road",
   };
+  if (opts.splinter) { b.splinter = true; b.splinterOf = opts.splinter; } // what was left of the military (militaryFalls)
   H.bands.push(b);
   planRoute(state, b);
   return b;
@@ -251,6 +280,8 @@ function bandStart(state, type) {
   const pt = hcPlayerTile(state);
   const lo = scaled(state, B.START_MIN), hi = scaled(state, B.START_MAX);
   const hives = state.tiles.filter((t) => t.hive).map((t) => t.id);
+  const city = hcOutbreakCity(state); // the first hive rises there (hardcore-outbreak.js, set up after the bands)
+  if (city != null) hives.push(city);
   const pref = new Set(PREFERRED_SITES[type] || []);
   const others = [...H.bands.map((b) => b.tile), ...state.factions.flatMap((f) => f.bases)];
   const cands = [];
@@ -281,7 +312,7 @@ function goalOk(state, b, id, strict = true) {
   const apart = strict ? B.GOAL_APART : 4;
   if (state.factions.some((f) => f.alive && f.bases.some((x) => g.distance(x, id) < apart))) return false;
   if (bandsOf(state).some((o) => o !== b && o.goal != null && !o.joinId && g.distance(o.goal, id) < apart)) return false;
-  const hiveR = strict ? B.GOAL_HIVE : 3;
+  const hiveR = strict ? (b.splinter ? B.SPLINTER_HIVE : B.GOAL_HIVE) : 3; // the military's splinters know what a hive does
   if ((state.hives || []).some((h) => g.distance(h.tile, id) < hiveR) || (state.hiveSites || []).some((s) => g.distance(s.tile, id) < hiveR)) return false;
   if (!state.hives && state.tiles.some((x) => x.hive && g.distance(x.id, id) < hiveR)) return false;
   return true;
@@ -325,6 +356,7 @@ function planRoute(state, b) {
     for (const id of g.within(b.tile, Math.max(4, direct))) {
       const t = state.tiles[id];
       if (!t.loc || blocked(t) || t.hive || t.owner != null || (t.loot || 0) < B.STOP_LOOT || id === goal || t.loc.type === "city") continue;
+      if (t.ruin || (t.infection || 0) >= B.STOP_INF) continue; // not where the dead are thick (a fallen base, a hive's city)
       if (g.distance(b.tile, id) + g.distance(id, goal) - direct > B.STOP_DETOUR) continue;
       if (state.bases.some((x) => g.distance(x.tile, id) < 4)) continue;
       const s = (t.loot || 0) / (1 + g.distance(b.tile, id) / 8);
@@ -335,6 +367,12 @@ function planRoute(state, b) {
   stops.push({ tile: goal, kind: "settle" });
   return setPath(state, b, stops);
 }
+// A way on the road that goes around the hives (their guards would eat a band alive); vehicle: by truck.
+function bandPath(state, from, to, vehicle = false) {
+  const hives = new Set((state.hives || []).map((h) => h.tile));
+  if (!hives.size) return planPath(state, from, to, vehicle);
+  return findPath(state.grid, from, to, (a, c) => (hives.has(c) && c !== to ? Infinity : moveCost(state, a, c, vehicle)));
+}
 function setPath(state, b, stops) {
   b.stops = stops;
   return nextLeg(state, b);
@@ -343,7 +381,7 @@ function nextLeg(state, b) {
   while (b.stops.length) {
     const s = b.stops[0];
     if (s.tile === b.tile) { arriveAt(state, b); return true; }
-    const res = planPath(state, b.tile, s.tile, false);
+    const res = bandPath(state, b.tile, s.tile);
     if (res) {
       b.path = res.path; b.idx = 0; b.progress = 0; b.phase = "travel";
       b.act = s.kind === "scav" ? `heading for ${tileLabel(state, s.tile)} to scavenge` : s.kind === "join" ? "looking for people to take them in" : "heading for a place to settle";
@@ -380,6 +418,7 @@ export function hardcoreGroupsHour(state) {
     }
     meetTeams(state, b);
   }
+  moveStrike(state);
 }
 const roundPop = (n) => (n >= 10 ? Math.round(n / 5) * 5 : n);
 
@@ -409,7 +448,10 @@ function hordeBite(state, b) {
   if (!hz) return false;
   const rng = grng(state);
   const power = b.pop * (FACTION_TYPES[b.type] ? FACTION_TYPES[b.type].arms : 1);
-  const lost = Math.min(b.pop, Math.max(0, Math.round((hz.size / B.HORDE_BITE) * rng.range(0.4, 1.2))));
+  let lost = Math.min(b.pop, Math.max(0, Math.round((hz.size / B.HORDE_BITE) * rng.range(0.4, 1.2))));
+  // Soldiers (the military's splinters) fight their way through: fewer lost, and never most of them at once.
+  // They scatter before the dead and regroup: a bite does not leave them too few to found their hub.
+  if (b.splinter) lost = Math.max(0, Math.min(Math.round(lost / (FACTION_TYPES[b.type] ? FACTION_TYPES[b.type].arms : 1)), Math.ceil(b.pop * B.SPLINTER_BITE), b.pop - M.FOUND_MIN));
   reduceHorde(state, hz, power * B.HORDE_KILL);
   if (lost) loseBandPeople(state, b, lost, `to the dead near ${tileLabel(state, b.tile)}`);
   return true;
@@ -574,6 +616,7 @@ function foundHub(state, b, tile) {
     lootedGear: [], raidCooldown: rng.int(8, 16), founded: d, hcBand: true,
   };
   if (b.remnant) f.hcRemnant = true;
+  if (b.splinter) f.hcSplinter = true; // what was left of the military (militaryFalls)
   if (desperate) f.prevType = b.type;
   const t = state.tiles[tile];
   if (t.ruin) delete t.ruin; // they built on the ruins
@@ -623,14 +666,21 @@ export function militaryStatus(state, f) {
   const m = hcMilitary(state);
   if (!m || !f || m.id !== f.id) return null;
   if (m.fell) return { word: `overrun on day ${m.fellDay}`, share: 0, fell: true };
-  const share = Math.max(0, f.pop) / Math.max(1, m.startPop);
-  const word = share > 0.75 ? "holding" : share > 0.55 ? "under pressure" : share > 0.4 ? "wavering" : "breaking";
+  // Of the soldiers who stayed at the base (all of them before the strike force left).
+  const share = Math.max(0, f.pop) / Math.max(1, m.garrison || m.startPop);
+  let word = share > 0.85 ? "holding" : share > 0.7 ? "under pressure" : share > 0.55 ? "wavering" : "breaking";
+  const s = m.strike;
+  if (s && s.phase === "travel") word += `; its strike force is on the road to ${tileLabel(state, s.city)}`;
+  else if (s && s.phase === "fight") word += `; its strike force is fighting at ${tileLabel(state, s.city)}`;
+  else if (s && (s.phase === "retreat" || s.phase === "holed")) word += `; its strike force is cut off near ${tileLabel(state, s.hold ?? s.tile)}`;
+  else if (s && s.phase === "home") word += "; its strike force is coming home";
   return { word, share, fell: false };
 }
 
-// The military's day: it fights back (sorties, culls) and calls for help; the outbreak work's hordes are what wear it
-// down (hardcore-outbreak.js, through factions.js resolveRaidOnFaction). Its fall is detected here: the faction gone,
-// its base lost, or too few left to hold the walls (BREAK_POP).
+// The military's day: the strike on the city hive, then the garrison fights back (sorties, culls) and calls for
+// help; the outbreak work's hordes are what wear it down (hardcore-outbreak.js, through factions.js
+// resolveRaidOnFaction). Its fall is detected here: the faction gone, its base lost, or too few left to hold the
+// walls (m.breakPop: BREAK_POP, then GARRISON_BREAK of the garrison once the strike force has gone).
 function militaryDaily(state) {
   const m = hcMilitary(state);
   if (!m || m.fell) return;
@@ -639,10 +689,12 @@ function militaryDaily(state) {
   if (!f.alive || !f.bases.includes(m.tile)) return militaryFalls(state, f, f.alive ? "overrun" : "broken");
   const rng = grng(state), g = state.grid, d = day(state);
   const base = m.tile;
+  strikeDaily(state, f, m);
+  const breakPop = m.breakPop ?? M.BREAK_POP;
   const boosted = d < (m.suppliedUntil || 0);
-  // Sorties against the dead near the base.
-  const targets = state.hordes.filter((h) => g.distance(h.tile, base) <= M.SORTIE_RANGE);
-  if (targets.length && f.pop >= M.SORTIE_MIN_POP && rng.chance(M.SORTIE_CHANCE * (boosted ? 1.5 : 1))) {
+  // Sorties against the free dead near the base (not a hive's guard, nor a mass building a hive: the culls are for those).
+  const targets = state.hordes.filter((h) => g.distance(h.tile, base) <= M.SORTIE_RANGE && h.role !== "guard" && h.role !== "mass" && h.role !== "build");
+  if (targets.length && f.pop > breakPop && rng.chance(M.SORTIE_CHANCE * (boosted ? 1.5 : 1))) {
     const h = targets.sort((a, b) => g.distance(a.tile, base) - g.distance(b.tile, base) || a.id - b.id)[0];
     const kill = Math.round(strength(f) * rng.range(M.SORTIE_KILL[0], M.SORTIE_KILL[1]) * (boosted ? 1.5 : 1));
     const before = h.size;
@@ -659,24 +711,250 @@ function militaryDaily(state) {
   if (d >= m.nextCull) {
     m.nextCull = d + rng.int(M.CULL_GAP[0], M.CULL_GAP[1]);
     const hv = (state.hives || []).filter((h) => g.distance(h.tile, base) <= M.CULL_RANGE).sort((a, b) => g.distance(a.tile, base) - g.distance(b.tile, base) || a.id - b.id)[0];
-    if (hv && f.pop >= M.SORTIE_MIN_POP) {
-      hv.res = Math.max(0, hv.res - rng.int(M.CULL_RES[0], M.CULL_RES[1]));
-      const guard = state.hordes.find((h) => h.hive === hv.id && h.role === "guard");
-      if (guard) reduceHorde(state, guard, guard.size * rng.range(M.CULL_GUARD[0], M.CULL_GUARD[1]));
+    // Before a hive stands: the mass of the dead gathered to build one (hardcore-outbreak.js), shelled where it waits.
+    const site = !hv ? (state.hiveSites || []).filter((s) => s.hardcore && g.distance(s.tile, base) <= M.CULL_RANGE).sort((a, b) => g.distance(a.tile, base) - g.distance(b.tile, base) || a.id - b.id)[0] : null;
+    const masses = site ? state.hordes.filter((h) => h.role === "mass" && h.site === site.id) : [];
+    if ((hv || masses.length) && f.pop > breakPop + 1) {
+      if (hv) {
+        hv.res = Math.max(0, hv.res - rng.int(M.CULL_RES[0], M.CULL_RES[1]));
+        const guard = state.hordes.find((h) => h.hive === hv.id && h.role === "guard");
+        if (guard) reduceHorde(state, guard, guard.size * rng.range(M.CULL_GUARD[0], M.CULL_GUARD[1]));
+      } else {
+        const share = rng.range(M.CULL_MASS[0], M.CULL_MASS[1]);
+        for (const h of masses) reduceHorde(state, h, Math.round(h.size * share));
+      }
       const dead = rng.chance(M.CULL_LOSS) ? 1 : 0;
       f.pop -= dead;
       m.culls++; m.lost += dead;
-      if (f.known) log(state, `Explosions toward ${hv.name || tileLabel(state, hv.tile)}: ${f.name} shelled the hive${dead ? " and lost a soldier doing it" : ""}.`, "info");
+      if (f.known) log(state, `Explosions toward ${hv ? hv.name || tileLabel(state, hv.tile) : tileLabel(state, site.tile)}: ${f.name} shelled ${hv ? "the hive" : "the dead massing there"}${dead ? " and lost a soldier doing it" : ""}.`, "info");
     }
   }
   if (m.hiveSince == null && (state.hives || []).some((h) => g.distance(h.tile, base) <= M.HIVE_RANGE)) m.hiveSince = d;
   m.lastPop = f.pop;
-  // Calls to you, as the soldiers are ground down.
-  const share = f.pop / Math.max(1, m.startPop);
+  // Calls to you, as the soldiers who stayed are ground down.
+  const share = f.pop / Math.max(1, m.garrison || m.startPop);
   if (!m.helpAsked && share <= M.HELP_AT) { m.helpAsked = true; helpCall(state, f, m); }
   if (!m.evacSent && share <= M.EVAC_AT) { m.evacSent = true; evacuation(state, f, m); }
   // Too few left to hold the walls: the base is overrun.
-  if (f.pop <= M.BREAK_POP) militaryFalls(state, f, "overrun");
+  if (f.pop <= breakPop) militaryFalls(state, f, "overrun");
+}
+
+// ---------- the strike on the city hive ----------
+const STRIKE_OUT = ["travel", "fight", "retreat", "holed", "home"]; // phases while the strike force is out (not back, not gone)
+export const hcStrike = (state) => { const m = hcMilitary(state); return m && m.strike && STRIKE_OUT.includes(m.strike.phase) ? m.strike : null; };
+
+// "the 3rd Battalion" / "Bravo Company": the unit sent out (not the group's own name).
+function strikeName(state, f) {
+  const r = hash01(state.seed, "hc-strike-name");
+  if (/Battalion/.test(f.name)) { const n = `${["Alpha", "Bravo", "Charlie", "Delta"][Math.floor(r * 4)]} Company`; return { name: n, the: n }; }
+  const n = `${["1st", "2nd", "3rd", "4th", "5th", "7th"][Math.floor(r * 6)]} Battalion`;
+  return { name: n, the: `the ${n}` };
+}
+// Are you in touch with what the strike force does (cards)? A radio at your hub, a Guard that likes you, or your
+// people near enough to see it.
+function inContact(state, f, s) {
+  if (s.seen) return true;
+  const h = hub(state);
+  if (h && h.radio) return true;
+  if (f.known && (attitude(f) === "Friendly" || attitude(f) === "Allied")) return true;
+  const pt = hcPlayerTile(state);
+  return pt != null && (state.grid.distance(pt, s.tile) <= M.SEE_R || state.grid.distance(pt, s.hiveTile) <= M.SEE_R);
+}
+
+function strikeDaily(state, f, m) {
+  const d = day(state);
+  if (!m.strike) {
+    if (m.strikeDay != null && d >= m.strikeDay) launchStrike(state, f, m);
+    return;
+  }
+  const s = m.strike;
+  if (s.phase === "fight") return fightDay(state, f, m, s);
+  if (s.phase === "holed") {
+    const rng = grng(state);
+    if (s.pop > 1 && rng.chance(M.HOLD_DEATH)) { s.pop--; s.lost++; }
+    // The way home opens when the base's hive is gone (you, or the Guard, destroyed it), or after HOLD_MAX days.
+    const O = hcOutbreak(state);
+    const hiveGone = O && O.mil && O.mil.done != null;
+    if (hiveGone || d >= s.failed + M.HOLD_MAX) goHome(state, f, m, s, hiveGone ? "the hive by the base is gone" : "the roads have thinned");
+  }
+}
+
+function launchStrike(state, f, m) {
+  const g = state.grid, rng = grng(state), d = day(state);
+  m.strikeDay = null; // once
+  const O = hcOutbreak(state);
+  let hive = O && O.cityHive != null ? hiveById(state, O.cityHive) : null;
+  if (!hive) hive = (state.hives || []).filter((h) => g.distance(h.tile, m.tile) > M.HIVE_RANGE).sort((a, b) => g.distance(a.tile, m.tile) - g.distance(b.tile, m.tile) || a.id - b.id)[0] || null;
+  if (!hive) return;
+  // Where they deploy: beside the hive, the side nearest the base.
+  const stage = g.neighbors(hive.tile).filter((id) => !blocked(state.tiles[id]) && !state.tiles[id].hive).sort((a, b) => g.distance(a, m.tile) - g.distance(b, m.tile) || a - b)[0];
+  if (stage == null) return;
+  let vehicle = true;
+  let res = bandPath(state, m.tile, stage, true);
+  if (!res) { vehicle = false; res = bandPath(state, m.tile, stage, false); }
+  if (!res) return;
+  const n = Math.round(f.pop * rng.range(M.STRIKE_SHARE[0], M.STRIKE_SHARE[1]));
+  const sent = Math.max(0, Math.min(n, f.pop - M.STRIKE_KEEP));
+  if (sent < 4) return;
+  f.pop -= sent;
+  m.garrison = f.pop;
+  m.breakPop = Math.max(M.BREAK_MIN, Math.round(m.garrison * M.GARRISON_BREAK));
+  const ammo = Math.round((f.stock.ammo || 0) * (sent / (sent + f.pop)));
+  f.stock.ammo = (f.stock.ammo || 0) - ammo;
+  const { name, the } = strikeName(state, f);
+  const city = O && O.city != null ? O.city : hive.tile;
+  m.strike = {
+    name, the, pop: sent, start: sent, tile: m.tile, path: res.path, idx: 0, progress: 0, vehicle, phase: "travel",
+    hiveId: hive.id, hiveTile: hive.tile, city, left: d, arrived: null, fightDays: rng.int(M.FIGHT_DAYS[0], M.FIGHT_DAYS[1]),
+    fought: 0, lossGoal: null, killed: 0, lost: 0, cityDead: 0, guard0: 0, failed: null, hold: null, home: null, seen: false, ammo, color: f.color,
+  };
+  const s = m.strike;
+  const place = tileLabel(state, city);
+  log(state, `📻 ${f.name}: "${cap1(the)} is moving on ${place}. We burn the hive out at the source. Everyone else, stay off the roads."`, "info");
+  log(state, `${f.name} sent ${sent} soldiers in trucks against the hive in ${place}. ${f.pop} stayed to hold ${tileLabel(state, m.tile)}.`, "info");
+  chronicleNote(state, `${f.name} sent ${the} (${sent} soldiers) against the hive in ${place}.`, "world", m.tile, true);
+  if (inContact(state, f, s)) addCard(state, {
+    title: `${f.name} goes on the attack`,
+    text: `The radio crackles with orders: ${f.name} is sending ${the}, ${sent} soldiers in a column of trucks, to burn out the hive in ${place} where it all began. ${f.pop} stay behind to hold ${tileLabel(state, m.tile)}. If they win, the state has a chance.`,
+    choices: [{ label: "Good luck to them", resolve: () => "" }],
+  });
+}
+
+// The column on the road (every hour, by day): to the city, to its holdout when it is beaten, home when the way opens.
+function moveStrike(state) {
+  const m = hcMilitary(state);
+  const s = m && m.strike;
+  if (!s || !["travel", "retreat", "home"].includes(s.phase)) return;
+  const live = state.live || new Set();
+  const h = hourOfDay(state);
+  if (h >= B.DAY_FROM && h < B.DAY_TO && s.idx < s.path.length - 1) {
+    s.progress += M.STRIKE_SPEED;
+    while (s.idx < s.path.length - 1) {
+      const from = s.path[s.idx], to = s.path[s.idx + 1];
+      let cost = moveCost(state, from, to, s.vehicle);
+      if (!Number.isFinite(cost)) cost = moveCost(state, from, to, false);
+      if (!Number.isFinite(cost)) { s.path = s.path.slice(0, s.idx + 1); break; }
+      if (s.progress < cost) break;
+      s.progress -= cost;
+      s.idx += 1;
+      s.tile = to;
+    }
+  }
+  if (live.has(s.tile) && !s.seen) {
+    s.seen = true;
+    const f = factionById(state, m.id);
+    log(state, `Your people watch ${s.vehicle ? "a column of military trucks" : "soldiers on foot"} near ${tileLabel(state, s.tile)}: ${s.the} of ${f ? f.name : "the Guard"}, about ${roundPop(s.pop)} soldiers, ${s.phase === "travel" ? `heading for ${tileLabel(state, s.city)}` : s.phase === "home" ? "heading home" : "falling back, carrying their wounded"}.`, "info");
+  }
+  if (s.idx >= s.path.length - 1) strikeArrives(state, m, s);
+}
+
+function strikeArrives(state, m, s) {
+  const f = factionById(state, m.id);
+  const rng = grng(state), d = day(state);
+  s.progress = 0;
+  if (s.phase === "travel") {
+    s.phase = "fight";
+    s.arrived = d;
+    const hive = hiveById(state, s.hiveId);
+    const guard = hive ? state.hordes.find((h) => h.hive === hive.id && h.role === "guard") : null;
+    s.guard0 = guard ? guard.size : 0;
+    // The city's dead: more where the city is thick with them.
+    s.cityDead = Math.round(rng.int(M.CITY_DEAD[0], M.CITY_DEAD[1]) * (0.6 + (state.tiles[s.city].infection || 0)));
+    // What it will cost: FIGHT_LOSS of them, more the more of the dead there are against their guns.
+    const fire = s.start * FACTION_TYPES.military.arms * ((M.FIGHT_KILL[0] + M.FIGHT_KILL[1]) / 2) * s.fightDays;
+    const pressure = s.cityDead + s.guard0;
+    s.lossGoal = clamp(rng.range(M.FIGHT_LOSS[0], M.FIGHT_LOSS[1]) * (0.8 + 0.4 * (pressure / (pressure + fire))), 0.45, 0.8);
+    if (f) log(state, `📻 ${s.name}: "In position at ${tileLabel(state, s.city)}. Contact everywhere. Engaging."`, "danger");
+  } else if (s.phase === "retreat") {
+    s.phase = "holed";
+    if (f) log(state, `📻 ${s.name}: "Dug in at ${tileLabel(state, s.tile)}. ${s.pop} of us. The road to the base is crawling with them; we cannot get through."`, "danger");
+  } else if (s.phase === "home") {
+    s.phase = "back";
+    if (f && f.alive && f.bases.includes(m.tile)) {
+      f.pop += s.pop;
+      f.stock.ammo = (f.stock.ammo || 0) + s.ammo;
+      m.garrison = Math.max(m.garrison || 0, f.pop);
+      log(state, `📻 ${f.name}: "${cap1(s.the)} is home. ${s.pop} of the ${s.start} who went out."`, "info");
+      chronicleNote(state, `The last of ${s.the} made it back to ${tileLabel(state, m.tile)}.`, "world", m.tile);
+    }
+  }
+}
+
+// A day of the fight in the city: the guns against the city's dead and the hive's guard, by the numbers.
+function fightDay(state, f, m, s) {
+  const rng = grng(state), d = day(state);
+  const hive = hiveById(state, s.hiveId);
+  if (!hive) {
+    log(state, `📻 ${s.name}: "The hive at ${tileLabel(state, s.city)} is already dead. Streets are clear enough. Coming home."`, "good");
+    return goHome(state, f, m, s, null);
+  }
+  const guard = state.hordes.find((h) => h.hive === hive.id && h.role === "guard");
+  const fire = Math.round(s.pop * FACTION_TYPES.military.arms * rng.range(M.FIGHT_KILL[0], M.FIGHT_KILL[1]));
+  const fromCity = Math.min(s.cityDead, Math.round(fire * 0.6));
+  s.cityDead -= fromCity;
+  let fromGuard = 0;
+  if (guard) {
+    const floor = Math.round(Math.max(s.guard0, guard.size) * (1 - M.HIVE_HURT)); // the hive is hurt, never destroyed
+    fromGuard = Math.max(0, Math.min(fire - fromCity, guard.size - floor));
+    if (fromGuard) reduceHorde(state, guard, fromGuard);
+  }
+  hive.res = Math.max(0, hive.res - rng.int(M.HIVE_RES[0], M.HIVE_RES[1]));
+  s.cityDead += rng.int(M.CITY_REFILL[0], M.CITY_REFILL[1]); // the city's dead keep pouring in
+  s.killed += fromCity + fromGuard;
+  s.fought++;
+  const goal = Math.round(s.start * s.lossGoal);
+  const last = s.fought >= s.fightDays;
+  let lost = last ? goal - s.lost : Math.round((goal / s.fightDays) * rng.range(0.8, 1.2));
+  lost = clamp(lost, 1, Math.max(1, s.pop - 2));
+  s.pop -= lost;
+  s.lost += lost;
+  s.ammo = Math.max(0, s.ammo - Math.round(fire / 3));
+  // The soldiers who fell rise in their body armour and join the hive's guard (zombietypes.js "soldier" dead).
+  const g2 = state.hordes.find((h) => h.hive === hive.id && h.role === "guard");
+  if (g2) { g2.mix = mergeMix(g2.mix, g2.size, { soldier: 1 }, lost); g2.size += lost; }
+  if (!last) {
+    log(state, `📻 ${s.name} at ${tileLabel(state, s.city)}: "...${["they just keep coming", "need ammunition at the north block", "we are losing the street", "pull the wounded back"][rng.int(0, 3)]}..." (${lost} soldiers lost today, about ${fromCity + fromGuard} of the dead cut down)`, "danger");
+    return;
+  }
+  failStrike(state, f, m, s, hive);
+}
+
+// The strike fails: the survivors break off and fall back to a site near the city; the road home is cut.
+function failStrike(state, f, m, s, hive) {
+  const g = state.grid, rng = grng(state), d = day(state);
+  s.failed = d;
+  const taken = (id) => state.bases.some((b) => g.distance(b.tile, id) < 2) || state.factions.some((o) => o.alive && o.bases.includes(id));
+  const cands = [];
+  for (const id of g.within(hive.tile, M.CUT_OFF_R[1])) {
+    const t = state.tiles[id], k = g.distance(hive.tile, id);
+    if (k < M.CUT_OFF_R[0] || blocked(t) || t.hive || taken(id)) continue;
+    if (t.loc && t.loc.type !== "city") cands.push({ id, w: (PREFERRED_SITES.fortress.includes(t.loc.type) || PREFERRED_SITES.military.includes(t.loc.type) ? 3 : 1) * (t.terrain === "city" || t.terrain === "suburb" ? 0.5 : 1) });
+  }
+  const open = cands.length ? null : g.within(hive.tile, M.CUT_OFF_R[1]).filter((id) => g.distance(hive.tile, id) >= M.CUT_OFF_R[0] && !blocked(state.tiles[id]) && !state.tiles[id].hive);
+  const hold = cands.length ? rng.weighted(cands, (c) => c.w).id : open && open.length ? rng.pick(open) : s.tile;
+  s.hold = hold;
+  s.vehicle = false; // the trucks are lost in the streets
+  const res = hold !== s.tile ? bandPath(state, s.tile, hold, false) : null;
+  if (res) { s.path = res.path; s.idx = 0; s.progress = 0; s.phase = "retreat"; }
+  else { s.path = [s.tile]; s.idx = 0; s.phase = "holed"; }
+  const city = tileLabel(state, s.city), at = tileLabel(state, hold);
+  const guardLeft = state.hordes.find((h) => h.hive === hive.id && h.role === "guard");
+  log(state, `📻 ${s.name}: "We cannot take it. There are too many of them. ${s.lost} dead... falling back to ${at}. The road to the base is cut."`, "death");
+  log(state, `The strike on the hive in ${city} has failed: ${cap1(s.the)} lost ${s.lost} of ${s.start} soldiers and cut down about ${s.killed} of the dead. The hive still stands${guardLeft && s.guard0 && guardLeft.size < s.guard0 ? ", its guard thinned" : ""}.`, "death");
+  chronicleNote(state, `The strike on the hive in ${city} failed: ${s.lost} of ${s.start} soldiers lost; the rest are cut off near ${at}.`, "death", s.city, true);
+  if (inContact(state, f, s)) addCard(state, {
+    title: `The strike on ${city} has failed`,
+    text: `${cap1(s.the)} of ${f.name} fought ${s.fought} days in ${city}. They cut down about ${s.killed} of the dead, but the city's dead kept pouring in around the hive. ${s.lost} of the ${s.start} soldiers are dead. The ${s.pop} left have fallen back to ${at}, cut off: the road to their base is full of the dead. ${f.pop} soldiers hold ${tileLabel(state, m.tile)} alone.`,
+    choices: [{ label: "OK", resolve: () => "" }],
+  });
+}
+
+function goHome(state, f, m, s, why) {
+  const res = bandPath(state, s.tile, m.tile, s.vehicle);
+  s.home = day(state);
+  if (!res) { s.phase = "holed"; s.failed = day(state); return; } // try again later
+  s.path = res.path; s.idx = 0; s.progress = 0; s.phase = "home";
+  if (why) log(state, `📻 ${s.name}: "${cap1(why)}. We are coming home."`, "info");
 }
 
 function helpCall(state, f, m) {
@@ -725,6 +1003,7 @@ function militaryFalls(state, f, how) {
   m.fell = true; m.fellDay = d; m.how = how;
   const tile = m.tile;
   const pop = Math.max(0, f.pop);
+  m.fallPop = pop;
   const wasAlive = f.alive;
   f.alive = false; f.bases = []; f.pact = null; f.pop = 0;
   for (const q of [...state.parties]) if (q.owner === f.id) removeParty(state, q);
@@ -747,30 +1026,60 @@ function militaryFalls(state, f, how) {
       n.infGoal = Math.max(n.infGoal || 0, 0.6);
     }
     const fallen = Math.round(fallenAll * rng.range(M.FALLEN_HORDE[0], M.FALLEN_HORDE[1])) + 20;
-    makeHorde(state, { tile, size: fallen, role: "roam" });
+    makeHorde(state, { tile, size: fallen, role: "roam", mix: { soldier: M.FALLEN_SOLDIER } }); // the garrison's dead in their armour (zombietypes.js)
   }
   recomputeOwnership(state);
   clearStaleAlerts(state);
-  // Who got out.
+  // Who got out: a few to you, the garrison's survivors, and the strike force cut off out in the state.
   const h = hub(state);
   const team = !h ? state.parties.find((p) => p.owner === "player" && p.kind !== "convoy" && partyMembers(state, p).length) : null;
-  let toYou = (h || team) && pop - dead >= 2 ? Math.min(pop - dead, rng.int(1, 3)) : 0;
-  const left = Math.max(0, pop - dead - toYou);
-  let remnant = left >= M.REMNANT[0] ? Math.min(M.REMNANT[1], left) : 0; // too few: they scatter and are lost
-  // A small remnant looks for people to take it in: a peaceful group near, else you; a bigger one may found its own.
-  const dist = (o) => Math.min(...o.bases.map((x) => g.distance(x, tile)));
-  const peaceful = state.factions.filter((o) => o.alive && o.bases.length && !isAggressiveType(o) && dist(o) <= M.JOIN_RANGE);
-  const join = remnant && peaceful.length && (remnant < M.JOIN_SMALL || rng.chance(M.JOIN_CHANCE)) ? peaceful.sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0] : null;
-  if (remnant && remnant < M.FOUND_MIN && !join) { if (h || team) toYou += remnant; remnant = 0; }
+  // 1–3 make it to you; enough of them stay together to be a group of their own when they can.
+  const out = Math.max(0, pop - dead);
+  let toYou = (h || team) && out >= 2 ? Math.min(out, rng.int(1, 3)) : 0;
+  if (toYou && out - toYou < M.HOLD_MIN && out > M.HOLD_MIN) toYou = out - M.HOLD_MIN;
+  let held = Math.max(0, out - toYou);
+  const s = hcStrike(state);
+  let cut = s ? s.pop : 0;
+  if (s) s.phase = "gone";
+  // Too few for a group of their own (HOLD_MIN): they make for the others.
+  if (held && held < M.HOLD_MIN && cut >= M.HOLD_MIN) { cut += held; held = 0; }
+  else if (cut && cut < M.HOLD_MIN && held >= M.HOLD_MIN) { held += cut; cut = 0; }
+  else if (held && cut && held < M.HOLD_MIN && cut < M.HOLD_MIN && held + cut >= M.HOLD_MIN) { cut += held; held = 0; }
+  const splinters = [];
+  const holdName = holdoutsName(state, tile, f);
+  if (held >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "fortress", holdName, held, nearTile(state, tile), freeColor(state, f.color), "the garrison"));
+  if (cut >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "military", `Remnant of ${s.the}`, cut, s.tile, f.color, s.the, s));
+  for (let i = splinters.length - 1; i >= 0; i--) if (!splinters[i]) splinters.splice(i, 1);
+  // A handful in all: a peaceful group near takes them in, else they come to you; with neither they scatter.
+  let rest = (held < M.HOLD_MIN ? held : 0) + (cut < M.HOLD_MIN ? cut : 0);
+  let join = null;
+  if (rest) {
+    const dist = (o) => Math.min(...o.bases.map((x) => g.distance(x, tile)));
+    const peaceful = state.factions.filter((o) => o.alive && o.bases.length && !isAggressiveType(o) && dist(o) <= M.JOIN_RANGE);
+    join = peaceful.sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0] || null;
+    if (join) {
+      const b = makeBand(state, "fortress", {
+        name: `${f.name} stragglers`, color: f.color, tile: nearTile(state, tile), pop: rest, remnant: true, joinId: join.id,
+        stock: { food: rest * 3, water: rest * 2, ammo: rest * 12, meds: 1, fuel: 0, parts: 0, scrap: 2, preserved: rest, jars: 0 },
+        goodwill: f.goodwill, foundAt: d + 20,
+      });
+      if (b) b.known = f.known;
+    } else if (h || team) { toYou += rest; rest = 0; }
+  }
+  m.splinters = splinters.map((b) => b.id);
+  m.toYou = toYou;
   const last = ["the perimeter is gone", "they are inside the wire", "fall back to the armory"][rng.int(0, 2)];
   if (wasAlive || how === "overrun") {
     log(state, `📻 Last transmission from ${place}: "...${last}... to anyone listening, stay away from ${place}. God help you." Then nothing.`, "death");
   }
-  log(state, `${place} has fallen to the dead. ${f.name} is gone${remnant ? `; a few of them got out` : ""}.`, "death");
-  chronicleNote(state, `${place} fell to the dead: ${f.name} is gone.`, "death", tile, true);
+  const names = splinters.map((b) => b.name);
+  log(state, `${place} has fallen to the dead. ${f.name} is gone${names.length ? `; what is left of it goes its own way as ${names.join(" and ")}` : ""}.`, "death");
+  chronicleNote(state, `${place} fell to the dead: ${f.name} is gone${names.length ? `. What was left of it split into ${names.join(" and ")}` : ""}.`, "death", tile, true);
+  const away = s ? ` ${cap1(s.the)}, cut off since the strike on ${tileLabel(state, s.city)}, never made it back.` : "";
+  const parts = splinters.map((b) => `${b.name} (${b.pop}, ${b.splinterOf})`);
   addCard(state, {
     title: `${place} has fallen`,
-    text: `The Guard held ${place} for ${d} days. ${how === "overrun" ? "In the end the hive's dead came over the walls faster than they could be shot." : "There were too few of them left to hold the walls."} About ${fallenAll} soldiers died there and walk with the dead now.${remnant ? ` ${remnant} got away on the road${join ? `, making for ${join.known ? join.name : "another group"}` : ""}.` : ""}${toYou ? ` ${toYou} made it to your people.` : ""} What was left in the armory is still in there, among the dead.`,
+    text: `The Guard held ${place} for ${d} days${s ? ", with half its soldiers gone to the city" : ""}. ${how === "overrun" ? "In the end the hive's dead came over the walls faster than they could be shot." : "There were too few of them left to hold the walls."} About ${fallenAll} soldiers died there and walk with the dead now.${away}${parts.length ? ` The military is finished; what is left of it has split into ${parts.join(" and ")}, each looking for a place of its own.` : ""}${join && rest ? ` A few stragglers are making for ${join.known ? join.name : "another group"}.` : ""}${toYou ? ` ${toYou} made it to your people.` : ""} What was left in the armory is still in there, among the dead.`,
     choices: [{ label: "OK", resolve: () => "" }],
   });
   if (toYou) {
@@ -780,17 +1089,47 @@ function militaryFalls(state, f, how) {
       intro: `${toYou === 1 ? "A soldier" : `${toYou} soldiers`} from ${place} reached ${h ? h.name : "your people"}, armed and exhausted. They ask to join you.`,
     });
   }
-  if (remnant) {
-    const start = g.within(tile, 3).filter((id) => g.distance(id, tile) >= 2 && !blocked(state.tiles[id]) && !state.tiles[id].hive);
-    const type = rng.chance(0.5) ? "military" : "fortress";
-    makeBand(state, type, {
-      name: `${f.name} remnant`, color: f.color, tile: start.length ? rng.pick(start) : tile, pop: remnant, remnant: true, joinId: join ? join.id : null,
-      stock: { food: remnant * 3, water: remnant * 2, ammo: remnant * 12, meds: 3, fuel: 0, parts: 1, scrap: 5, preserved: remnant, jars: 0 },
-      goodwill: f.goodwill, foundAt: d + rng.int(10, 30),
-    });
-    const b = bandsOf(state)[bandsOf(state).length - 1];
-    if (b) b.known = f.known;
-  }
+}
+
+// A group of what was left of the military: a band on the road that founds its hub somewhere defensible.
+// The garrison's survivors carry out a share of the base's stores (SPLINTER_GRAB); the strike force what it has left.
+function makeSplinter(state, f, type, name, pop, tile, color, of, strike = null) {
+  const rng = grng(state), d = day(state);
+  const st = f.stock || {}, k = strike ? 0 : M.SPLINTER_GRAB;
+  const grab = (key, min) => Math.max(min, Math.round((st[key] || 0) * k));
+  const b = makeBand(state, type, {
+    name, color, tile, pop, remnant: true, splinter: of,
+    stock: {
+      food: grab("food", pop * 4), water: grab("water", pop * 2), ammo: strike ? Math.max(pop * 10, strike.ammo) : grab("ammo", pop * 14), meds: grab("meds", 3),
+      fuel: type === "military" ? 4 : grab("fuel", 0), parts: grab("parts", 1), scrap: grab("scrap", 6), preserved: grab("preserved", pop), jars: 0,
+    },
+    goodwill: f.goodwill, foundAt: d + rng.int(M.SPLINTER_FOUND[0], M.SPLINTER_FOUND[1]),
+  });
+  if (!b) return null;
+  b.known = f.known;
+  log(state, `${name} (${pop} ${of === "the garrison" ? "of the garrison" : `of ${of}`}) ${type === "military" ? "keep their ranks and their flag" : "dig in for themselves"}: they mean to find a place of their own.`, "info");
+  return b;
+}
+// "Marrow Guard Holdouts", "Cedar Falls Depot Holdouts": the garrison's survivors, by the base's name.
+function holdoutsName(state, tile, f) {
+  const t = state.tiles[tile];
+  const n = t.loc && t.loc.name ? t.loc.name : f.name;
+  const short = n.replace(/ National Guard base$/i, " Guard").replace(/ Army depot$/i, " Depot").replace(/ (base|depot)$/i, "");
+  return `${short} Holdouts`;
+}
+// A tile 3–4 out from the fallen base to start from, away from the hive and the dead (else 2–3 out, else the base's).
+function nearTile(state, tile) {
+  const g = state.grid;
+  const hives = (state.hives || []).map((h) => h.tile);
+  const free = (id) => !blocked(state.tiles[id]) && !state.tiles[id].hive && !state.hordes.some((h) => h.tile === id);
+  let c = g.within(tile, 4).filter((id) => g.distance(id, tile) >= 3 && free(id) && hives.every((h) => g.distance(h, id) >= 3));
+  if (!c.length) c = g.within(tile, 3).filter((id) => g.distance(id, tile) >= 2 && free(id));
+  return c.length ? grng(state).pick(c) : tile;
+}
+// A colour no living group or band wears (else the fallen military's).
+function freeColor(state, fallback) {
+  const used = new Set([fallback, ...state.factions.filter((o) => o.alive).map((o) => o.color), ...bandsOf(state).map((b) => b.color)]);
+  return FACTION_COLORS.find((c) => !used.has(c)) || fallback;
 }
 
 // ---------- raiders ----------
@@ -806,7 +1145,8 @@ function raidersDaily(state) {
   if (H.turned >= B.TURN_MAX) return;
   const elig = state.factions.filter((f) => f.alive && f.bases.length && f.type !== "raider" && f.type !== "military" && !f.pact && !isMember(state, f) && f.goodwill < 40);
   if (!elig.length) return;
-  const desperation = (f) => (f.stock.food < f.pop * 3 ? 1 : 0) + (f.pop < 12 ? 0.5 : 0) + (isAggressiveType(f) ? 1 : 0) + (f.bases.length === 1 ? 0.3 : 0);
+  // A splinter of the fallen military (militaryFalls) has guns, grievances and nobody to answer to.
+  const desperation = (f) => (f.stock.food < f.pop * 3 ? 1 : 0) + (f.pop < 12 ? 0.5 : 0) + (isAggressiveType(f) ? 1 : 0) + (f.bases.length === 1 ? 0.3 : 0) + (f.hcSplinter ? M.SPLINTER_TURN : 0);
   for (const f of elig) {
     if (rng.chance(B.TURN_BASE * (1 + 3 * desperation(f)))) { turnRaider(state, f); if (H.turned >= B.TURN_MAX) return; }
   }
@@ -838,7 +1178,19 @@ export function bandTipLines(state, tile, live = state.live) {
     const label = FACTION_TYPES[b.type] ? FACTION_TYPES[b.type].label.toLowerCase() : "group";
     out.push({ color: b.color, text: b.known ? `${b.name}: a band of about ${roundPop(b.pop)} on the road (will be a ${label}), ${b.act}` : `A band of about ${roundPop(b.pop)} survivors on the road` });
   }
+  const s = hcStrike(state);
+  if (s && s.tile === tile && live.has(tile)) {
+    const act = s.phase === "travel" ? `on the way to the hive in ${tileLabel(state, s.city)}` : s.phase === "fight" ? `fighting the dead around the hive in ${tileLabel(state, s.city)}` : s.phase === "home" ? "on the way home" : "cut off, holding out";
+    out.push({ color: s.color, text: `${cap1(s.the)} (the military): about ${roundPop(s.pop)} soldiers, ${act}` });
+  }
   return out;
+}
+// The map (ui/render.js): the bands, and the military's strike force while it is out (drawn like a group's convoy).
+export function hcMapBands(state) {
+  const list = bandsOf(state);
+  const s = hcStrike(state);
+  if (!s) return list;
+  return [...list, { id: "strike", name: s.the, type: "military", tile: s.tile, pop: s.pop, color: s.color, path: s.path, idx: s.idx, convoy: !!s.vehicle, strike: true }];
 }
 // For the Groups tab: one line about a band you know.
 export function bandInfo(state, b) {
