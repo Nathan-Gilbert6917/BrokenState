@@ -16,6 +16,7 @@ import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { thirdRing } from "../sim/thirdside.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
@@ -84,7 +85,7 @@ function view(b) {
   const vis = playerVision(b);
   const u = selUnit(b);
   const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap, { manual: true }) : null; // an order by hand may walk into fire
-  const seen = new Set(b.units.filter((e) => e.side === "enemy" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id));
+  const seen = new Set(b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
   const ghosts = b.over ? [] : enemyGhosts(b);
   cui.cache = { key, vis, reach, seen, u, ghosts };
   return cui.cache;
@@ -195,6 +196,13 @@ export function combatClick(state, px, py) {
   }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
+  // The third side (sim/thirdside.js): attacking them takes a second click, and turns them (or all the soldiers) on you.
+  if (who && who.side === "third" && active(who) && v.seen.has(who.id)) {
+    if (cui.thirdAsk === who.id) { cui.thirdAsk = null; return void attack(state, u, who); }
+    cui.thirdAsk = who.id;
+    cui.msg = who.team === "military" ? `${who.name} is a soldier, not your enemy. Click again to attack: every soldier here will fight back, and their group will not forget it.` : `${who.name} is not with the enemy. Click again to attack them: their group will fight back.`;
+    return;
+  }
   // Raids: click a container next to the selected unit to search it.
   if (b.raid) {
     // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
@@ -929,6 +937,8 @@ function previewHtml(b) {
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
+  // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
+  if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
   if (t && t.side === "player") {
@@ -1131,7 +1141,7 @@ export function drawCombat(state, now) {
   // Units (dead and down first).
   const order = b.units.filter((x) => !x.left && !x.fled && !x.off).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
-    if (t.side === "enemy" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
+    if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
     const pos = animPos(b, t, now);
     drawUnit(state, b, t, pos[0], pos[1], cs, t.id === cui.sel);
   }
@@ -1843,7 +1853,7 @@ function drawObject(k, px, py, cs, n, cell = null) {
 function drawUnit(state, b, t, cx, cy, cs, selected) {
   const r = cs * 0.34;
   const zombie = t.kind === "zombie";
-  let ring = t.side === "player" ? "#8fc1ff" : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
+  let ring = t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
   const cv = unitCanvas(state, b, t, cui.salt);
   const facing = unitFacing(b, t);
   if (t.dead) {

@@ -24,6 +24,7 @@ import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladder
 import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
+import { thirdRing } from "../sim/thirdside.js";
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1147,7 +1148,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off) continue;
-    if (t.side === "enemy" && !(active(t) ? v.seen.has(t.id) : vis[t.y * b.w + t.x])) continue;
+    if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : vis[t.y * b.w + t.x])) continue; // the enemy and the third side (sim/thirdside.js) under the fog
     const [wx, wy] = H.animPos(t, now);
     const [uu, vv] = ptView(wx, wy, r, b.w, b.h);
     const tx = Math.max(0, Math.min(b.w - 1, Math.floor(wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(wy)));
@@ -1509,7 +1510,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 
 // ---------- units ----------
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff" };
-const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
+const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
 function drawBody(ctx, state, b, s, H, silhouette = false) {

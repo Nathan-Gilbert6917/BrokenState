@@ -1,11 +1,13 @@
-﻿// Hardcore mode, the other groups (sim/hardcore-groups.js): bands that found their hubs, the military's stand and
-// fall, no raiders before state.hardcore.raidersFrom, save/load mid-founding, a normal world untouched.
+﻿// Hardcore mode, the other groups (sim/hardcore-groups.js): bands that found their hubs, the military's arc (its
+// strike on the city hive fails, the hive by its base, the fall, the splinter groups; save/load with the strike
+// force on the road; destroying the base's hive saves it), no raiders before state.hardcore.raidersFrom, save/load
+// mid-founding, a normal world untouched.
 // Usage: node tools/hcgroupstest.js [--quick]
 import { createWorld, tickHour, day, supplyValue, hub } from "../src/sim/world.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { bandsOf, hcMilitary, hardcoreGroupsHour, HC_GROUPS, HC_MILITARY } from "../src/sim/hardcore-groups.js";
-import { hiveName } from "../src/sim/hives.js";
-import { makeHorde } from "../src/sim/hordes.js";
+import { destroyHive } from "../src/sim/hives.js";
+import { tileLabel } from "../src/sim/parties.js";
 import { worldScale } from "../src/sim/worldsize.js";
 
 const quick = process.argv.includes("--quick");
@@ -159,47 +161,84 @@ console.log("Save and load mid-founding");
 }
 
 // ---------- the military ----------
-console.log("The military against the hive");
-// The outbreak work drives the hordes at the base (state.hardcore.outbreak.mil). Without it in this branch, the test
-// does it: a hive near the base sends an attack horde at it every few days, bigger each time.
-const MSEEDS = quick ? [4242, 7] : [4242, 7, 99, 1234];
-const falls = [];
+console.log("The military's arc: the strike on the city hive, the hive by the base, the fall, the splinter groups");
+// The strike force goes out on its day with half or more of the soldiers, reaches the city hive, fails with heavy
+// losses (the hive stands) and is cut off; the dead mass by the base and build a hive; the base falls on days 20–60;
+// what is left becomes groups of its own that found hubs; 1–3 soldiers come to you.
+const MSEEDS = quick ? [4242, 7, 42] : [4242, 7, 99, 1234, 42, 2024, 5, 13];
+const arcs = [];
 for (const seed of MSEEDS) {
   const s = createWorld({ seed, factionCount: 7, mode: "hardcore" });
   const mil = s.factions.find((f) => f.type === "military");
-  const base = mil.bases[0], g = s.grid;
-  const outbreak = !!(s.hardcore.outbreak && s.hardcore.outbreak.mil);
-  let hive = s.hives.filter((h) => g.distance(h.tile, base) <= HC_MILITARY.HIVE_RANGE).sort((a, b) => g.distance(a.tile, base) - g.distance(b.tile, base))[0];
-  if (!hive) {
-    const tile = g.within(base, 7).find((id) => g.distance(id, base) >= 5 && s.tiles[id].terrain !== "water" && !s.tiles[id].loc && !s.tiles[id].hive);
-    s.tiles[tile].hive = true;
-    hive = { id: (s.hiveSeq = (s.hiveSeq || 0) + 1), tile, res: 5, born: s.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(s, tile) };
-    s.hives.push(hive);
-  }
-  let fell = null, waves = 0;
-  runDays(s, 160, (st) => {
-    if (fell == null && hcMilitary(st).fell) fell = hcMilitary(st).fellDay;
-    if (!outbreak && fell == null && day(st) % 5 === 0 && st.hives.includes(hive)) {
-      waves++;
-      makeHorde(st, { tile: hive.tile, size: 40 + waves * 12, role: "attack", hive: hive.id, goal: { tile: base, factionId: mil.id }, target: base });
+  const g = s.grid, O = s.hardcore.outbreak;
+  const pop0 = mil.pop;
+  const r = { seed, strikeDay: hcMilitary(s).strikeDay };
+  runDays(s, 100, (st) => {
+    const m = hcMilitary(st), x = m.strike, d = day(st);
+    if (x && r.sent == null) { r.sent = x.left; r.n = x.start; r.garrison = m.garrison; }
+    if (x && x.arrived != null && r.arrived == null) { r.arrived = x.arrived; r.reach = g.distance(x.tile, x.hiveTile); }
+    if (x && x.failed != null && r.failed == null) { r.failed = x.failed; r.lost = x.lost; r.killed = x.killed; r.hiveStands = st.hives.some((h) => h.id === x.hiveId); r.hold = x.hold; }
+    if (x && x.phase === "back" && !m.fell && r.back == null) r.back = d;
+    if (O.mil && O.mil.stood != null) r.stood = O.mil.stood;
+    if (m.fell && r.fell == null) {
+      r.fell = m.fellDay; r.toYou = m.toYou || 0;
+      r.splinters = bandsOf(st).filter((b) => m.splinters.includes(b.id)).map((b) => ({ id: b.id, name: b.name, type: b.type, pop: b.pop }));
     }
   });
   const m = hcMilitary(s);
-  if (s.gameOver && fell == null) { console.log(`     seed ${seed}: skipped (your side died on day ${day(s)} before the base fell: this test does not play your start)`); continue; }
-  falls.push(fell);
-  const hi = outbreak ? Math.round(1.1 * s.hardcore.eraOffset) : 160;
-  check(fell != null && fell <= hi, `seed ${seed}: overrun on day ${fell}${outbreak ? ` (era offset ${s.hardcore.eraOffset})` : ` after ${waves} test waves`} (${m.sorties} sorties, ${m.culls} culls, ${m.killed} dead cut down, ${m.lost} soldiers lost in sorties; ran to day ${day(s)}${s.gameOver ? ", game over" : ""}${s.hives.includes(hive) ? "" : ", its hive gone"})`);
-  check(m.sorties > 0, `seed ${seed}: the Guard fought back`);
-  if (fell != null) {
-    const t = s.tiles[m.tile];
-    check(!mil.alive && !!t.ruin && t.infection >= 0.6, `seed ${seed}: the base is a ruin full of the dead (infection ${t.infection.toFixed(2)})`);
-    check(s.log.some((l) => /Last transmission/.test(l.text)), `seed ${seed}: a last radio message`);
-    const rem = s.factions.find((f) => f.hcRemnant) || bandsOf(s).find((b) => b.remnant) || s.log.find((l) => /remnant were taken in|remnant/.test(l.text));
-    console.log(`     seed ${seed}: remnant: ${rem ? (rem.name || rem.text) : "none (scattered)"}`);
-  }
+  const tag = `seed ${seed}:`;
+  check(r.sent === r.strikeDay && r.sent >= HC_MILITARY.STRIKE_DAY[0] && r.sent <= HC_MILITARY.STRIKE_DAY[1] && r.n / pop0 >= 0.45 && r.n / pop0 <= 0.7,
+    `${tag} the strike force left on day ${r.sent} with ${r.n} of ${pop0} soldiers (${Math.round((100 * r.n) / pop0)}%; ${r.garrison} stayed)`);
+  check(r.arrived != null && r.arrived - r.sent <= 4 && r.reach <= 1, `${tag} it drove to the city hive and engaged on day ${r.arrived}`);
+  check(r.failed != null && r.lost / r.n >= 0.45 && r.hiveStands, `${tag} it failed on day ${r.failed}: ${r.lost} of ${r.n} lost (${Math.round((100 * r.lost) / r.n)}%), about ${r.killed} of the dead cut down, the hive still standing; the rest cut off near ${r.hold != null ? tileLabel(s, r.hold) : "?"}`);
+  check(r.stood != null && (r.fell == null || r.stood < r.fell), `${tag} the dead massed by the base (day ${O.mil.gathered}) and their hive stood on day ${r.stood}`);
+  check(r.fell != null && r.back == null, `${tag} the base fell on day ${r.fell} (${m.sorties} sorties, ${m.culls} culls, ${m.killed} of the dead cut down); the strike force never got back`);
+  if (r.fell == null) { arcs.push(r); continue; }
+  const t = s.tiles[m.tile];
+  check(!mil.alive && !!t.ruin && t.infection >= 0.6 && s.log.some((l) => /Last transmission/.test(l.text)), `${tag} the old military is gone: its base a ruin full of the dead (infection ${t.infection.toFixed(2)}), a last radio message`);
+  r.founded = r.splinters.map((b) => s.factions.find((f) => f.id === b.id)).filter(Boolean);
+  check(r.splinters.length >= 1 && r.splinters.every((b) => /^Remnant of |Holdouts$/.test(b.name) && (b.type === "military" || b.type === "fortress")),
+    `${tag} it split into ${r.splinters.map((b) => `${b.name} (${b.type}, ${b.pop})`).join(" and ")}; ${r.toYou} soldier(s) came to you`);
+  check(r.founded.length >= 1 && r.founded.every((f) => f.hcSplinter && f.founded > r.fell), `${tag} by day 100 ${r.founded.map((f) => `${f.name} founded at ${tileLabel(s, f.bases[0] ?? m.tile)} on day ${f.founded}${f.type === "raider" ? " (turned raider)" : ""}${f.alive ? "" : " (since gone)"}`).join("; ") || "none founded"}`);
+  arcs.push(r);
 }
-check(falls.length >= Math.min(2, MSEEDS.length - 1), `${falls.length} of ${MSEEDS.length} seeds played to the fall`);
-check(new Set(falls).size > 1 || falls.length < 2, `the fall comes on different days by the seed (${falls.join(", ")})`);
+{
+  const fell = arcs.filter((r) => r.fell != null);
+  const inWindow = fell.filter((r) => r.fell >= 20 && r.fell <= 60);
+  console.log(`     per seed: ${arcs.map((r) => `${r.seed}: strike d${r.sent}, failed d${r.failed}, hive by the base d${r.stood}, fell d${r.fell ?? "-"}, ${r.splinters ? r.splinters.length : 0} splinter(s), ${r.toYou ?? 0} to you`).join(" | ")}`);
+  check(inWindow.length >= Math.ceil(arcs.length * 0.75), `the base fell on days 20–60 on ${inWindow.length} of ${arcs.length} seeds (${arcs.map((r) => r.fell ?? "-").join(", ")})`);
+  check(new Set(fell.map((r) => r.fell)).size > 1, "the fall comes on different days by the seed");
+  check(fell.filter((r) => r.splinters.length === 2).length >= Math.ceil(fell.length / 2), `two splinter groups on ${fell.filter((r) => r.splinters.length === 2).length} of ${fell.length} falls`);
+  check(fell.filter((r) => r.toYou >= 1).length >= Math.ceil(fell.length * 0.75), `soldiers came to you as recruits on ${fell.filter((r) => r.toYou >= 1).length} of ${fell.length} falls`);
+}
+// Save and load mid-arc: the strike force on the road.
+{
+  const s = createWorld({ seed: 42, factionCount: 7, mode: "hardcore" });
+  for (let i = 0; i < 24 * 15 && !(hcMilitary(s).strike && hcMilitary(s).strike.phase === "travel" && hcMilitary(s).strike.idx > 0); i++) { keepAlive(s); s.cards.length = 0; tickHour(s); }
+  const x = hcMilitary(s).strike;
+  check(!!x && x.phase === "travel", `seed 42: the strike force is on the road on day ${day(s)} (${x && x.idx} of ${x && x.path.length - 1} tiles)`);
+  s.cards.length = 0;
+  const saved = JSON.stringify(serializeState(s));
+  const fp = (st) => JSON.stringify([hcMilitary(st), st.hardcore.outbreak.mil, st.factions.map((f) => [f.id, f.name, f.type, f.alive, f.bases, f.pop]), bandsOf(st).map((b) => [b.id, b.tile, b.pop, b.phase, b.goal])]);
+  runDays(s, 45);
+  const a = fp(s);
+  const t = deserializeState(JSON.parse(saved));
+  check(hcMilitary(t).strike && hcMilitary(t).strike.phase === "travel", "the save holds the strike force on the road");
+  runDays(t, 45);
+  check(fp(t) === a, `the loaded world plays the arc out the same (day ${day(t)}: ${hcMilitary(t).fell ? `the base fell on day ${hcMilitary(t).fellDay}` : "the base holds"})`);
+}
+// Destroy the hive by the base (you, say) and the base holds; the strike force's survivors come home.
+{
+  const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const O = s.hardcore.outbreak, mil = s.factions.find((f) => f.type === "military");
+  runDays(s, 60, (st) => {
+    const hv = st.hives.find((h) => h.tile === O.mil.tile);
+    if (hv) destroyHive(st, hv, "in the test");
+  });
+  const m = hcMilitary(s);
+  check(O.mil.stood != null && O.mil.done != null && mil.alive && !m.fell, `seed 4242: its hive stood on day ${O.mil.stood} and was destroyed: the base holds (${mil.pop} soldiers on day ${day(s)})`);
+  check(m.strike && m.strike.phase === "back" && mil.pop >= m.breakPop, `the strike force's ${m.strike && m.strike.pop} survivors made it home (${m.strike && m.strike.phase})`);
+}
 // Without a hive and its hordes the base holds, and the Guard does not grow (cut off, closed to civilians).
 {
   const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
@@ -207,7 +246,7 @@ check(new Set(falls).size > 1 || falls.length < 2, `the fall comes on different 
   s.hives.length = 0;
   s.hordes.length = 0;
   s.hiveInfo.nextBorderDay = 9999;
-  if (s.hardcore.outbreak) s.hardcore.outbreak.off = true; // a hint for the outbreak work's own hordes, if any
+  if (s.hardcore.outbreak) s.hardcore.outbreak.mil = null; // no hive by the base either (hardcore-outbreak.js)
   const mil = s.factions.find((f) => f.type === "military");
   const pop0 = mil.pop;
   runDays(s, 90);

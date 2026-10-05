@@ -49,6 +49,10 @@ import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lo
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
+// The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
+// below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
+import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
+import { isHardcore } from "./hardcore.js";
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -185,6 +189,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
+  if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
 }
@@ -445,6 +450,9 @@ export const KITS = {
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
               finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey"] },
+  // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
+  survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
+              finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries"] },
 };
 
 const idx = (x, y) => y * W + x;
@@ -1110,6 +1118,7 @@ export function createBattle(state, setup) {
     if (e.factionId != null && u.kind === "human") u.factionId = e.factionId; // prisoners.js: whose people they are
     b.units.push(u);
   });
+  if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
@@ -1133,15 +1142,19 @@ export function createBattle(state, setup) {
 }
 
 // Who a unit fights. Zombies drawn in by noise attack anyone alive, and raiders shoot back.
+// thirdside.js: the third side fights its own foes; enemy people go after it by enemyTargetsThird; the dead go for
+// anyone; your people never go after it on their own (only an order to shoot one does: damage turns it hostile).
 function foesOf(b, u) {
+  if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
-  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild));
-  return b.units.filter((o) => o.side !== u.side && active(o));
+  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
+  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && o.side === "third"));
 }
 
 // ---------- actions ----------
 // nonLethal (Subdue, stealth.js): a person brought to 0 is knocked out, not killed.
 export function damage(b, t, raw, by, nonLethal = false) {
+  if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
   const eff = raw * t.armor;
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) return eff;
@@ -1157,7 +1170,7 @@ export function damage(b, t, raw, by, nonLethal = false) {
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
     if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
-    say(b, `${t.name} is dead.`, "good");
+    say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
   }
   return eff;
 }
@@ -1225,7 +1238,7 @@ export function moveAlong(b, u, path) {
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
-      if (!o.ow || o.side === u.side || !active(o) || !active(u)) continue;
+      if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
       if (!canSee(b, o, u) || !canFire(b, o)) continue;
       o.ow = false;
       say(b, `${o.name} reacts on overwatch.`, "info");
@@ -1483,7 +1496,7 @@ export function endPlayerTurn(state) {
   if (!b || b.over || b.phase !== "player") return;
   for (const u of b.units) if (u.side === "player") u.ap = 0;
   b.phase = "enemy";
-  for (const u of b.units) if (u.side === "enemy" && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; }
+  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
@@ -1493,6 +1506,7 @@ export function endPlayerTurn(state) {
   // Sleepers look around at the start of their turn.
   for (const u of b.units) if (u.side === "player" && active(u)) detect(b, u);
   b.queue = b.units.filter((u) => u.side === "enemy" && active(u)).sort((a, c) => (a.kind === "zombie") - (c.kind === "zombie")).map((u) => u.id);
+  for (const u of b.units) if (u.side === "third" && active(u)) b.queue.push(u.id); // thirdside.js: after the enemy
   bump(b);
 }
 
@@ -1657,6 +1671,11 @@ function bestMove(b, u, foes, field = null) {
 
 function aiUnit(b, u) {
   if (!active(u)) return;
+  if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
+    const plan = thirdPlan(b, u);
+    if (plan === "hold") { u.ap = 0; return; }
+    if (plan === "flee") return flee(b, u);
+  }
   const rng = b.rng;
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
@@ -2262,6 +2281,7 @@ function endBattle(state, b, outcome) {
     tactical: true, worn: true, bodies: b.bodies.length,
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js: taken home by finishCombat
     carriedIds, // the downed taken out in a retreat
+    third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     // A base battle (interior.js): where it was decided: held at the wall, in the yard, in the buildings; or lost.
     ...(b.tier ? { tier: outcome === "victory" ? b.tier.stage : outcome === "retreat" ? "abandoned" : "overrun", fellBack: b.tier.map === "interior" } : {}),
     // The retreat was sounded (soundRetreat): who got out, who was caught, who was carried or had to be dropped.
@@ -2573,7 +2593,8 @@ export function createRaid(state, setup) {
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
       vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)),
-      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
+      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? tile.loot : 0.5) * 1.3)),
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
@@ -2604,7 +2625,8 @@ export function createRaid(state, setup) {
   const groups = setup.enemy.groups || [{ kind: setup.enemy.kind, count: setup.enemy.count, power: setup.enemy.power }];
   let pod = 0, zn = 0, hn = 0;
   const buildings = map.areas.filter((a) => !a.outdoor);
-  if (pick) placeInterior(state, b, map, groups.map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
+  // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
+  if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
     // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center).
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" ? raidDeadScale(W, H) : 1))));
@@ -2630,6 +2652,7 @@ export function createRaid(state, setup) {
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];
         if (g.factionId != null) u.factionId = g.factionId; // prisoners.js: whose people they are
+        if (g.side === "neutral" || g.side === "military") thirdSideUnit(b, u, g, i); // thirdside.js: survivors hiding here, a squad clearing it
         b.units.push(u);
       }
       pod++;
@@ -2881,6 +2904,7 @@ function endRaid(state, b) {
     loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
+    third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle: R.vehicleZone >= 0, heat: Math.round(R.heat),
       searched: R.containers.filter((c) => c.searched && c.kind !== "body").length, total: R.containers.filter((c) => c.kind !== "body").length,
