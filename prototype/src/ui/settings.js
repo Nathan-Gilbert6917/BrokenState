@@ -1,7 +1,7 @@
 // The settings view (⚙ in the top bar, the ⚙ Menu button in a battle, or Esc on the map with nothing else open):
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
-// Options (autosave, confirmations, pause on focus loss, UI size, the battle's end-turn question, zombie look, the
-// keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// Options (autosave, confirmations, pause on focus loss, UI size, map detail, the battle's end-turn question, zombie look,
+// the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
@@ -13,6 +13,7 @@ import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, worldSizeOf, sizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd } from "./combat.js";
 import { helpTab } from "./help.js";
+import { setMapDetail } from "./terraindeco.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -25,7 +26,10 @@ export const inDesktopApp = () => typeof navigator !== "undefined" && /Electron/
 
 // main.js hands over what the view needs from it (options, the desktop flag, the autosave's state; see run() below).
 let API = null;
-export function initSettings(api) { API = api; }
+export function initSettings(api) {
+  API = api;
+  if (api && api.options) setMapDetail(api.options.mapDetail !== false); // ui/terraindeco.js: the State Map's terrain detail
+}
 
 // sec: the Help tab's topic (a ui/help.js topic id).
 export const openSettings = (ui, tab = "game", sec = "") => {
@@ -148,6 +152,7 @@ function optionsTab(state, ui, api) {
     </div>
     <h3>Display</h3><div class="setrow">
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
+      <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button data-action="zlook-open"${tip("Palette, gore and variants of the dead in battle")}>Zombie look…</button>
     </div>
     <h3>Keys</h3><table class="setkeys">${KEYS.map(([k, d]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(d)}</td></tr>`).join("")}</table>`;
@@ -304,6 +309,11 @@ export const SETTINGS_ACTIONS = {
 
 export const SETTINGS_CHANGE = {
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
+  "set-mapdetail": (state, ui, el, api) => {
+    api.options.mapDetail = el.value !== "flat";
+    setMapDetail(api.options.mapDetail);
+    saveOptions(api.options);
+  },
   "set-autodays": (state, ui, el, api) => {
     const n = Number(el.value);
     if (AUTOSAVE_DAYS.includes(n)) { api.options.autosaveDays = n; saveOptions(api.options); }

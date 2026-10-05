@@ -115,3 +115,62 @@ What each style adds on top:
 The estimated cost of the hybrid is about 2.5–3× today's chunk redraw (up to about 4 ms per 512 px chunk, and about 150–200 ms for the first full 4K screen at a new zoom level). Steady-state frame cost is unchanged. Memory is about 10–40 MB of textures plus about 0.7 MB of per-world data.
 
 A good first step is B alone. It touches only `geometry()` and one loop in `drawGround`, can be judged in the real game, and C's fringes can follow as a second pass.
+
+---
+
+## Built: B's decals with A's water (`prototype/src/ui/terraindeco.js`)
+
+The game now draws style B with style A's rippled water. Zoomed out the map keeps today's flat colors.
+
+**What appears where.** Placement is fixed per world: each tile is seeded from its id and the world's seed, never from `state.rng`. A tile's decals are placed the first time it is drawn.
+
+| Terrain | Decals |
+|---|---|
+| Forest | 4–6 round trees and 2–3 pines, plus a bush. Broadleaf trees turn gold and red in autumn and stand bare in winter. |
+| Farmland near a farm, ranch or barn (2 tiles) | Crop rows, fences, hay bales, grass tufts |
+| Other farmland | Grass tufts, bushes, the odd tree, fence, hay bale, dead tree, crop patch or burnt-out farmhouse |
+| Hills | Mounds, rocks, tufts, the odd tree |
+| Mountains | Two peaks, rocks, the odd pine |
+| Suburbs | Houses (about a third burnt out), yard trees, cars, wrecks, fences |
+| City | Blocks (some ruined), rubble, wrecks, cars |
+| Roads (any land) | Wrecked or abandoned cars beside the road |
+| Water (rivers, lakes) | A's rippled texture, and reeds on the banks |
+
+- In snow (the weather's snow-cover wash), every decal shows its snow-capped version.
+- Decals come pre-shaded for live, reported and unknown ground, so a decal always takes its own tile's shade. The weather wash and the infection tint are drawn on top of them.
+- Decals keep off roads and bridges and stay inside the map at its edge.
+- A tile showing a site, a base, a hive or a hive build site has a clear zone: the sprite, its plate, and below them the name and skulls. Decals of that tile and its six neighbours stay out of that zone while it is in use. When a site appears or goes, its chunks are drawn again.
+
+**Zoom.** Below zoom 0.6 the map is flat, exactly as before. Decals and the water texture fade in between 0.6 and 0.75 and are fully in from 0.75 up. At 2 or more device px per sprite px, decals are crisp, like the site sprites. Below that they are smoothed and drawn from a 2× atlas.
+
+**Map detail option.** Menu → Options → Display → *Map detail: Detailed / Flat*. Detailed is the default. The choice is saved with the other options (`brokenstate.options`). Flat draws the old map at every zoom.
+
+**Timelapse.** The detail is on: it uses the same renderer and the same decals. Its fit-the-whole-map view is below zoom 0.6, so it stays flat. Zoomed in on a Huge map, a frame took about 18 ms against 13 ms flat (median, with a GPU flush).
+
+**Performance.** Measured in the preview on a Huge map (100 × 66) with a 3840 × 2160 device canvas at 2.75 device px per CSS px. Each number is the best of 3–4 runs with a GPU flush. The machine was busy (CPU at 100% with other jobs), so compare the rows with each other rather than reading them as absolutes.
+
+| Zoom | First 4K screen, flat (today) | First 4K screen, detailed | Per chunk (partial redraw), flat → detailed | Pan frame (cached chunks) |
+|---|---|---|---|---|
+| 0.45 | 55 ms | 37 ms (flat bucket) | 0.9 → 0.6 ms | same |
+| 0.68 (fading in) | 35 ms | 55 ms | 0.9 → 1.4 ms | same |
+| 1.0 | 33 ms | 49 ms | 0.8 → 1.2 ms | same |
+| 1.6 | 37 ms | 41 ms | 0.8 → 0.9 ms | same |
+| 2.6 | 48 ms | 47 ms | 1.2 → 1.2 ms | same |
+
+- **First draw of a new world at zoom 1** (new geometry, decals placed for the 544 tiles on screen): 46 ms against 27 ms flat.
+- **Steady play:** no per-frame cost. Panning over cached chunks costs the same either way (0.2–0.6 ms of script a frame). The decals are baked into the chunk cache.
+- **Partial redraws:** at most about 1.4 ms per chunk, within `mapTuning.budgetMs` (3 ms).
+- **Memory:** about 1.7 MB of textures in total:
+  - the decal atlas: 0.19 MB at 1×, 0.76 MB at 2× (three shade bands, plain and snowy)
+  - the water texture: 3 × 0.25 MB
+- **Placement data:** at most about 1.8 MB on a Huge map with every tile placed, and less when only part of the map has been drawn.
+- **Unchanged:** chunk-cache memory.
+- **One-time costs:** atlas about 6 ms in the browser; the water texture under 100 ms (cold, in Node), built once. Placing every tile of a Huge map takes about 40 ms in the browser; it is only done for tiles as they are drawn.
+- **Atlas format:** the atlas and the water texture are ImageBitmaps. Drawing sub-images of a canvas cost about 30× more per `drawImage` in Chrome.
+
+| Screenshot | What |
+|---|---|
+| `final-normal-far.png`, `final-normal-fade.png`, `final-normal-mid.png`, `final-normal-close.png` | Normal map: zoom 0.45 (flat), 0.68 (fading in), 1.0, 2.2 |
+| `final-huge-far.png`, `final-huge-mid.png`, `final-huge-close.png` | Huge map around the hub: zoom 0.4, 1.0, 2.2 |
+| `final-huge-city-mid.png`, `final-huge-city-close.png` | A Huge map's city (Dev Reveal): zoom 1.4 and 2.4, with infection and a hive's land |
+| `final-winter-city-mid.png`, `final-winter-city-close.png` | The same place in winter with snow cover: snow caps, bare broadleaf trees |

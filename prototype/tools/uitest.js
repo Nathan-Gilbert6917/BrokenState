@@ -666,5 +666,145 @@ section("Help: the menu's Help tab, the Layers box and the ? buttons (ui/help.js
   htmlOk(settingsModal(w, u2, { options: { autosave: true, autosaveDays: 1 }, desktop: false, autosaveInfo: () => ({}) }), "menu: Help tab");
 }
 
+// ---------------------------------------------------------------------------------------------------------
+section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render.js), the Map detail option");
+{
+  const R = await import("../src/ui/render.js");
+  const T = await import("../src/ui/terraindeco.js");
+  const { WORLD_SIZES } = await import("../src/sim/worldsize.js");
+  const { settingsModal, openSettings, SETTINGS_CHANGE, initSettings } = await import("../src/ui/settings.js");
+  const { loadOptions, DEFAULT_OPTIONS } = await import("../src/ui/saves.js");
+  globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
+  // A stub 2D context: records every drawImage from the decal atlas (its target rectangle) and any NaN argument.
+  let atlasCv = new Set(), decals = [], nanArgs = 0, calls = 0;
+  const ctxStub = new Proxy({ measureText: (t) => ({ width: String(t).length * 5 }), getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) }, {
+    get: (o, k) => (k in o ? o[k] : (...a) => {
+      calls++;
+      if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nanArgs++;
+      if (k === "drawImage" && atlasCv.has(a[0])) decals.push([a[5], a[6], a[7], a[8]]);
+    }),
+    set: (o, k, v) => ((o[k] = v), true),
+  });
+  T.setDecoCanvas((w, h) => ({ width: w, height: h, getContext: () => ctxStub }));
+  let screen = { width: 1600, height: 900 };
+  R.initRenderer({ getContext: () => ctxStub, getBoundingClientRect: () => screen, width: 0, height: 0 });
+  for (const r of [1, 2]) atlasCv.add(T.decoAtlas(r).cv);
+  const frame = (st, zoom, dpr = 1) => {
+    window.devicePixelRatio = dpr;
+    R.resize();
+    R.camera.zoom = zoom;
+    R.centerOn(st, hub(st).tile);
+    R.redrawMap(true);
+    decals = [];
+    R.render(st);
+    return decals.length;
+  };
+  const origLayers = new Set(R.view.layers);
+  const sizeLabel = (st) => `${st.grid.width}×${st.grid.height} map`;
+
+  // Every size, every zoom, both device scales, detailed and flat: draws without errors or NaN, decals only from the
+  // fade-in zoom up (and none with Flat).
+  let errs = 0, bad = [], sizes = [];
+  for (const size of Object.keys(WORLD_SIZES)) {
+    const st = createWorld({ seed: seed + 3, factionCount: 6, size });
+    const counts = [];
+    for (const detail of [true, false]) {
+      T.setMapDetail(detail);
+      for (const zoom of [0.3, 0.5, 0.65, 1, 1.6, 2.6]) for (const dpr of [1, 2]) {
+        try {
+          const k = frame(st, zoom, dpr);
+          const want = detail && zoom > T.DECO_FADE[0];
+          if (want ? k === 0 : k > 0) bad.push(`${size} zoom ${zoom} dpr ${dpr} ${detail ? "detailed" : "flat"}: ${k} decals`);
+          if (detail && dpr === 1) counts.push(`${zoom}: ${k}`);
+        } catch (e) { if (errs++ < 3) console.log(`  error (${size}, zoom ${zoom}, dpr ${dpr}): ${e.stack}`); }
+      }
+    }
+    sizes.push(`${size} ${st.grid.width}×${st.grid.height} (${counts.join(", ")})`);
+  }
+  T.setMapDetail(true);
+  check(!errs && !nanArgs, `every size renders at every zoom, detailed and flat, without errors (${errs}) or NaN arguments (${nanArgs})`);
+  check(!bad.length, `decals only from zoom ${T.DECO_FADE[0]} up and never with Flat (${bad.slice(0, 3).join("; ")})`);
+  console.log(`  decals drawn on a 1600×900 screen by zoom: ${sizes.join("; ")}`);
+  check(T.decoAlpha(0.6) === 0 && T.decoAlpha(0.675) > 0.4 && T.decoAlpha(0.675) < 0.6 && T.decoAlpha(0.75) === 1, `decals fade in between zoom ${T.DECO_FADE.join(" and ")}`);
+
+  // Placement: the same for the same seed (another world in between), different for another seed; it never touches
+  // the simulation's random numbers, and neither does drawing.
+  const a = createWorld({ seed: 77, factionCount: 6 });
+  const rngBefore = JSON.stringify(a.rng);
+  const rowsKey = (D) => T.decorRows(D).map((r) => r.join(",")).join(";");
+  // Placed lazily as tiles are drawn: the renderer's placement holds only the tiles of the screen, placed in screen order.
+  frame(a, 1.2);
+  const Da = R.mapDecor();
+  check(JSON.stringify(a.rng) === rngBefore, "placing and drawing decals leaves state.rng untouched");
+  const partly = Da.len.filter((_, id) => Da.start[id] >= 0).length;
+  const ka = rowsKey(Da);
+  check(partly > 0 && partly < a.tiles.length, `decals are placed only for the tiles drawn (${partly} of ${a.tiles.length} after one screen)`);
+  T.placeDecor(createWorld({ seed: 5, factionCount: 6 }), R.HEX);
+  const Db = T.placeDecor(createWorld({ seed: 77, factionCount: 6 }), R.HEX);
+  check(rowsKey(Db) === ka, `the same seed places the same decals, whatever order the tiles are placed in (${T.decorRows(Da).length} decals)`);
+  check(rowsKey(T.placeDecor(createWorld({ seed: 78, factionCount: 6 }), R.HEX)) !== ka, "another seed places them differently");
+  const far = Math.max(...T.decorRows(Da).map((r) => Math.max(-r[2], r[2] + r[4], -r[3], r[3] + r[5])));
+  check(far <= Da.reach && Da.reach <= 35, `decals stay within 35 px of their tile's center (render.js DECO_REACH; ${far.toFixed(1)})`);
+  const perTerrain = {};
+  for (let id = 0; id < a.tiles.length; id++) { const k = a.tiles[id].terrain; perTerrain[k] = perTerrain[k] || [0, 0]; perTerrain[k][0]++; perTerrain[k][1] += Da.len[id]; }
+  console.log(`  decals per tile: ${Object.entries(perTerrain).map(([k, [n, d]]) => `${k} ${(d / n).toFixed(1)}`).join(", ")}; placement data ${kb(Da.bytes)}`);
+  check(perTerrain.forest[1] / perTerrain.forest[0] > 5 && perTerrain.city[1] / perTerrain.city[0] >= 3 && perTerrain.plains[1] / perTerrain.plains[0] >= 2, "forests are dense, cities built up, farmland dotted");
+
+  // Clear zones and roads, end to end: the whole map drawn at once with every site, base and hive shown; no decal
+  // drawn over a clear zone in use or on a road.
+  R.view.devReveal = true;
+  R.view.layers = new Set(["pois", "teams", "hordes", "territory"]);
+  for (const st of [a, createWorld({ seed: seed + 3, factionCount: 10, size: "large" })]) {
+    const g = st.grid, D = T.placeDecor(st, R.HEX);
+    screen = { width: R.HEX * Math.sqrt(3) * (g.width + 1) * 1.2, height: R.HEX * 1.5 * (g.height + 2) * 1.2 };
+    window.devicePixelRatio = 1;
+    R.resize();
+    R.camera.zoom = 1.2; R.camera.x = -R.HEX * 2; R.camera.y = -R.HEX * 2;
+    R.redrawMap(true);
+    decals = [];
+    R.render(st);
+    const clear = new Set([...st.tiles.filter((t) => t.loc && !t.loc.crash).map((t) => t.id), ...st.bases.map((b) => b.tile), ...st.tiles.filter((t) => t.hive).map((t) => t.id)]);
+    const zones = [];
+    for (const id of clear) { const [x, y] = g.toPixel(id, R.HEX); for (const z of T.CLEAR_ZONE) zones.push([x + z[0], y + z[1], x + z[2], y + z[3]]); }
+    const segs = [];
+    for (const t of st.tiles) for (const m of t.roadLinks || []) if (m > t.id) { const [x0, y0] = g.toPixel(t.id, R.HEX), [x1, y1] = g.toPixel(m, R.HEX); segs.push([x0, y0, x1, y1, t.bridge || st.tiles[m].bridge ? 6.5 : 2.6]); }
+    const hitZone = decals.filter(([x, y, w, h]) => zones.some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
+    const distSeg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], l = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / l)); return Math.hypot(s[0] + dx * t - px, s[1] + dy * t - py); };
+    const onRoad = decals.filter(([x, y, w, h]) => segs.some((s) => { // sample the decal's box against the road's band
+      for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) if (distSeg(x + (w * i) / 4, y + (h * j) / 4, s) < s[4] / 2) return true;
+      return false;
+    })).length;
+    const total = T.decorRows(D).length;
+    check(decals.length > total * 0.5 && decals.length < total, `${sizeLabel(st)}: the whole map drawn shows most decals, minus the clear zones (${decals.length} of ${total})`);
+    check(!hitZone, `${sizeLabel(st)}: no decal over the ${clear.size} sites', bases' and hives' icons and names (${hitZone} over)`);
+    check(!onRoad, `${sizeLabel(st)}: no decal on a road or bridge (${onRoad} on ${segs.length} road links)`);
+  }
+  R.view.devReveal = false;
+  R.view.layers = origLayers;
+
+  // The Map detail option: default Detailed, persisted, the menu's select switches the renderer.
+  check(DEFAULT_OPTIONS.mapDetail === true && loadOptions().mapDetail === true, "Map detail defaults to Detailed");
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const api = { options: loadOptions(), desktop: false, autosaveInfo: () => ({}), refresh() {}, track() {} };
+  initSettings(api);
+  const u3 = { started: true, scale: 1, speed: 0, slot: null, settings: null };
+  openSettings(u3, "options");
+  let html = settingsModal(createWorld({ seed, factionCount: 4 }), u3, api);
+  check(/data-action="set-mapdetail"/.test(html) && /<option value="detailed" selected>Detailed<\/option>/.test(html), "the Options tab has Map detail: Detailed / Flat");
+  Object.assign(CHANGE, SETTINGS_CHANGE);
+  handlersOk(html, "Options tab");
+  SETTINGS_CHANGE["set-mapdetail"](null, u3, { value: "flat" }, api);
+  check(!T.deco.detail && loadOptions().mapDetail === false, "choosing Flat turns the detail off and is saved");
+  T.setMapDetail(true);
+  initSettings({ ...api, options: loadOptions() });
+  check(!T.deco.detail, "a saved Flat is applied at start-up");
+  check(frame(a, 1.5) === 0, "Flat: no decals up close");
+  SETTINGS_CHANGE["set-mapdetail"](null, u3, { value: "detailed" }, api);
+  check(T.deco.detail && loadOptions().mapDetail === true && frame(a, 1.5) > 0, "back to Detailed: decals again");
+  delete globalThis.localStorage;
+  T.setDecoCanvas(null);
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

@@ -5,7 +5,7 @@ import { partyTile, plannedTile } from "../sim/parties.js";
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
-import { weatherTint } from "../sim/weather.js";
+import { weatherTint, season } from "../sim/weather.js";
 import { radioNodes } from "../sim/radio.js";
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
@@ -22,6 +22,7 @@ import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
+import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 
 export const HEX = 26;
 
@@ -176,6 +177,9 @@ function geometry(state) {
     hordeT: new Int32Array(n), nHorde: 0, buildT: new Int32Array(n), nBuild: 0,
     siteCode: new Int32Array(n).fill(-1), siteDesc: new Array(n).fill(null), descZoom: NaN,
     list: new Int32Array(n), roads: new Int32Array(n), buckets: [],
+    // Terrain detail (ui/terraindeco.js): decal placements (made the first time they are drawn), and the tiles whose
+    // clear zone is in use (a site, base, hive or hive build site is drawn there), as a flag and a list.
+    deco: null, clr: new Uint8Array(n), clrAt: new Int32Array(n), clrGen: 0, clrList: new Int32Array(n), nClr: 0, clrNew: new Int32Array(n),
   };
   for (let i = 0; i < n; i++) {
     const t = tiles[i];
@@ -191,6 +195,7 @@ function geometry(state) {
     }
   }
   for (const k of keys) for (const f of SHADES) G.terrColors.push(shade(TERRAIN[k].color, f));
+  G.waterIdx = keys.indexOf("water");
   for (let i = 0; i < G.terrColors.length; i++) G.buckets.push([]);
   geo = G;
   dropCache();
@@ -270,7 +275,14 @@ function tilesIn(G, x0, y0, x1, y1, out) {
 }
 
 // This frame's switches for the cached layers.
-const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, ringSkulls: false };
+// deco: how much terrain detail shows (0 flat .. 1, ui/terraindeco.js decoAlpha), dsc its atlas scale, snow: the
+// snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare.
+const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
+const WATER_RGB = [1, 3, 5].map((k) => parseInt(TERRAIN.water.color.slice(k, k + 2), 16));
+const DECO_REACH = 35; // a tile's decals reach at most this far from its center (terraindeco.js MAX_REACH + 1)
+// The current world's decal placement (ui/terraindeco.js placeDecor), for the headless tools.
+export const mapDecor = () => (geo ? geo.deco : null);
+const reach = () => (F.deco > 0 ? Math.max(REACH, geo && geo.deco ? geo.deco.reach : DECO_REACH) : REACH);
 const ownerColor = new Map(), fbAt = new Map(), factionIdx = new Map(), besiegedFb = new Set();
 
 // The per-frame pass: what every tile shows as far as you know (never more: `live` decides), the hives, hordes and
@@ -360,7 +372,21 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
       if (code) markSite(G.x[id], G.y[id]);
     } else if (rezoom && code) G.siteDesc[id] = siteDesc(state, id, code, fb);
   }
+  // Clear zones of the terrain decals: tiles drawn with a site, a base, a hive or a hive build site keep their decals
+  // (and those under the name hanging down from them) out of the way. A change redraws the chunks around it.
+  const gen = ++G.clrGen;
+  let nn = 0;
+  const keep = (i) => { if (G.clrAt[i] !== gen) { G.clrAt[i] = gen; G.clrNew[nn++] = i; } };
+  for (const id of G.sites) if (G.siteCode[id] > 0) keep(id);
+  for (const id of ownBase) keep(id);
+  for (let a = 0; a < nh; a++) keep(G.hives[a]);
+  for (let a = 0; a < nbs; a++) keep(G.buildT[a]);
+  for (let a = 0; a < nn; a++) { const i = G.clrNew[a]; if (!G.clr[i]) { G.clr[i] = 1; markClear(i); } }
+  for (let a = 0; a < G.nClr; a++) { const i = G.clrList[a]; if (G.clrAt[i] !== gen) { G.clr[i] = 0; markClear(i); } }
+  const t = G.clrList; G.clrList = G.clrNew; G.clrNew = t; G.nClr = nn;
 }
+// A tile's clear zone switched (ui/terraindeco.js CLEAR_ZONE): the decals of it and its neighbours that touch the zone.
+const markClear = (i) => markDirty(geo.x[i] - 52, geo.y[i] - 48, geo.x[i] + 52, geo.y[i] + 56);
 
 // How a site is drawn at this zoom: kind 1 another group's base (dyn: besieged, drawn every frame for the pulse),
 // 2 a dot (minor sites zoomed out), 3 a site sprite on its zone plate. Also where its name goes.
@@ -393,8 +419,8 @@ function paintSite(d, px, py) {
 const canCache = () => typeof document !== "undefined" && !!document && typeof document.createElement === "function";
 // Without offscreen canvases: the ground and the sites of the visible area drawn straight onto the map.
 function drawDirect(state, S, ox, oy, cw, chh) {
-  const G = geo, x0 = ox / S, y0 = oy / S, x1 = (ox + cw) / S, y1 = (oy + chh) / S;
-  const n = tilesIn(G, x0 - REACH, y0 - REACH, x1 + REACH, y1 + REACH, G.list);
+  const G = geo, x0 = ox / S, y0 = oy / S, x1 = (ox + cw) / S, y1 = (oy + chh) / S, rc = reach();
+  const n = tilesIn(G, x0 - rc, y0 - rc, x1 + rc, y1 + rc, G.list);
   let nr = 0;
   const m = tilesIn(G, x0 - ROAD_REACH, y0 - ROAD_REACH, x1 + ROAD_REACH, y1 + ROAD_REACH, G.roads);
   for (let a = 0; a < m; a++) if (state.tiles[G.roads[a]].road) G.roads[nr++] = G.roads[a];
@@ -411,8 +437,8 @@ function drawDirect(state, S, ox, oy, cw, chh) {
 // Draws one chunk: the ground of every tile that reaches into it, then the sites, in the same order as a full frame.
 function paintChunk(state, L, ch, i, j) {
   const G = geo, S = L.S, C = L.C;
-  const x0 = (i * C) / S, y0 = (j * C) / S, x1 = ((i + 1) * C) / S, y1 = ((j + 1) * C) / S;
-  const n = tilesIn(G, x0 - REACH, y0 - REACH, x1 + REACH, y1 + REACH, G.list);
+  const x0 = (i * C) / S, y0 = (j * C) / S, x1 = ((i + 1) * C) / S, y1 = ((j + 1) * C) / S, rc = reach();
+  const n = tilesIn(G, x0 - rc, y0 - rc, x1 + rc, y1 + rc, G.list);
   let nr = 0;
   const m = tilesIn(G, x0 - ROAD_REACH, y0 - ROAD_REACH, x1 + ROAD_REACH, y1 + ROAD_REACH, G.roads);
   for (let a = 0; a < m; a++) if (state.tiles[G.roads[a]].road) G.roads[nr++] = G.roads[a];
@@ -464,6 +490,25 @@ function drawGround(state, n, nr) {
     ctx.fillStyle = G.terrColors[ci];
     ctx.fill();
   });
+  // Terrain detail (ui/terraindeco.js), fading in as you zoom in: rippled water in rivers and lakes, then the decals
+  // (trees, fields, rocks, houses, wrecks…), both pre-shaded for live, reported and unknown tiles.
+  if (F.deco > 0 && G.deco) {
+    const sm0 = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = F.dsc.smooth;
+    ctx.imageSmoothingQuality = "low";
+    for (let f = 0; f < 3; f++) {
+      const b = G.buckets[G.waterIdx * 3 + f], pat = b.length ? waterPattern(ctx, waterTexture(F.dsc.R, WATER_RGB, f)) : null;
+      if (!pat) continue;
+      ctx.beginPath();
+      for (const id of b) hexSub(X[id], Y[id], HEX + 0.5);
+      ctx.globalAlpha = F.deco;
+      ctx.fillStyle = pat;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    drawDecor(ctx, G.deco, list, n, G.key, G.clr, decoAtlas(F.dsc.R), F.snow, F.deco, SEASON_LOOK[F.season]);
+    ctx.imageSmoothingEnabled = sm0;
+  }
   // Season and weather wash over the land (weather.js): one fill for every land tile.
   if (F.tint) {
     ctx.beginPath();
@@ -549,7 +594,7 @@ function drawGround(state, n, nr) {
 }
 
 // ---------- frame check: skip a frame when nothing on the map changed ----------
-const last = { canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false };
+const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false };
 let forceDraw = true;
 // A cheap fingerprint of what moves on the map between ticks (orders given while paused, a base built, a horde).
 function moverHash(state) {
@@ -569,9 +614,9 @@ function unchanged(state, now) {
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
     last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
-    last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash;
+    last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail;
   if (same && now - last.at < (last.anim ? ANIM_MS : IDLE_MS)) return true;
-  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false });
+  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail });
   forceDraw = false;
   return false;
 }
@@ -601,7 +646,13 @@ export function render(state) {
   F.poisOn = on("pois");
   F.tint = on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
   F.ringSkulls = zoom > SKULL_ZOOM * 0.7;
-  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${!!state.timelapse}|${state.factions.length}`;
+  // Terrain detail: none zoomed out or with the Flat option; snow caps while the snow-cover wash is on (weather.js).
+  F.deco = decoAlpha(zoom);
+  F.dsc = decoScale(S);
+  F.snow = !!F.tint && F.tint.startsWith("rgba(235,240,248,");
+  F.season = season(state).key;
+  if (F.deco > 0 && (!G.deco || G.deco.tiles !== state.tiles)) G.deco = placeDecor(state, HEX);
+  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}`;
   if (dpr !== cacheDpr) { cacheDpr = dpr; dropCache(); }
   else if (key !== cacheKey) dirtyAll();
   cacheKey = key;
