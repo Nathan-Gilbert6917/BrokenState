@@ -45,14 +45,17 @@ import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
 import { CRAFTS, craftQueue, craftQuality, meetsNeeds } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
-import { studyable, canStudy } from "./blueprints.js";
+import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
-import { scavLeft, SCAV_FLOOR } from "./economy.js";
+import { scavLeft, SCAV_FLOOR, waterOutlook } from "./economy.js";
 import { prisonersAt } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 
 export const PRIO_MAX = 5;
+const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
+// Assignments a queued build may take one hand from (no station, lesson, book or repair job to give back).
+const LOOSE = ["farm", "scavenge", "hunt", "fish"];
 export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
@@ -164,13 +167,15 @@ export const WORK_TYPES = {
   },
   build: {
     name: "Build", ing: "Building", short: "Build", role: "build", skill: "mechanics",
-    desc: "Works the construction queue: one builder per 40 work-hours queued, up to 3. Stops while the base is on alert or under siege.",
+    desc: "Works the construction queue: one builder per 40 work-hours queued, up to 3 (4 while a well, rain catcher or cistern is queued: water comes first, ahead of a hungry farm). A queued build always keeps one hand with Build set, even when the farm would take everyone. Stops while the base is on alert or under siege.",
     open(ctx) {
       const q = ctx.base.construction;
       if (!q.length) return { cap: 0, why: "nothing to build" };
       if (underAttack(ctx.state, ctx.base)) return { cap: 0, why: "on alert: nobody builds" };
       const left = q.reduce((a, j) => a + j.hours - j.progress, 0);
-      return { cap: Math.min(3, Math.max(1, Math.ceil(left / 40))), urg: 4.5 }; // before a comfortable farm (3), after a hungry one (5+)
+      const water = q.some((j) => WATER_BUILDS.includes(j.type));
+      // before a comfortable farm (3), after a hungry one (5+); water (the summer plan) before both
+      return { cap: Math.min(water ? 4 : 3, Math.max(1, Math.ceil(left / 40)) + (water ? 1 : 0)), urg: water ? 7 : 4.5, water };
     },
   },
   repair: {
@@ -219,12 +224,20 @@ export const WORK_TYPES = {
   },
   study: {
     name: "Study", ing: "Studying", short: "Read", role: "read", skill: null,
-    desc: "Studies a blueprint or manual in the armory, or reads a skill book (one reader a copy; comics and novels only when spirits are low).",
+    desc: "Studies a blueprint or manual in the armory, or reads a skill book (one reader a copy; comics and novels only when spirits are low). A manual or blueprint nobody studies yet pulls the best qualified person with Study set (whatever its priority) while food is not down to days and nothing attacks: the buildings and crafts it unlocks (cisterns, the trench, the clinic …) wait for it.",
     open(ctx) {
       const bp = studyable(ctx.state, ctx.base).length;
       const books = Object.values(ctx.books).reduce((a, v) => a + Math.max(0, v), 0);
       return bp + books ? { cap: bp + books, urg: bp ? 2 : 1 } : { cap: 0, why: "no books or blueprints here" };
     },
+    // The governor's rule (blueprints.js planBlueprintStudy): a manual or blueprint in the armory gets a reader.
+    emergency(ctx) {
+      if (ctx.threat.urgent || ctx.foodDays < 4) return null;
+      const open = studyable(ctx.state, ctx.base).filter((id) => !ctx.studying.has(id));
+      return open.length ? { slots: open.length, why: "a manual or blueprint to study (it unlocks buildings or crafts)" } : null;
+    },
+    emergencyCan: (ctx, s) => studyable(ctx.state, ctx.base).some((id) => canStudy(s, id) && !ctx.studying.has(id)),
+    rank: (s, ctx) => Math.max(0, ...studyable(ctx.state, ctx.base).filter((id) => canStudy(s, id)).map((id) => skill(s, BLUEPRINTS[id].skill))),
     can: (ctx, s) => (studyFor(ctx, s) ? "" : "nothing here they can learn from"),
     take(ctx, s) {
       const r = studyFor(ctx, s);
@@ -296,6 +309,8 @@ export function stationWork(state, base, st, opsNow = new Set()) {
     if (k === "meds" && ((s.scrap || 0) < SCRAP_KEEP.meds || (s.food || 0) < n * 6)) return `scrap kept for building (under ${SCRAP_KEEP.meds}) or food short`;
     if (k === "parts" && ((s.scrap || 0) < SCRAP_KEEP.parts || !atBase(state, base.id).some((p) => skill(p, "mechanics") >= 4))) return `scrap kept for building (under ${SCRAP_KEEP.parts}), or nobody with Mechanics 4`;
   }
+  // Water is tight (it runs out within 8 days): no water into the kitchen or the still, as the governor rations.
+  if ((k === "preserve" || k === "still") && !own) { const wo = waterOutlook(state, base); if (wo.net < 0 && wo.daysLeft < 8) return `water kept for drinking (${Math.floor(wo.daysLeft)} days left)`; }
   if (!hasOrder(base, st) && k === "preserve") {
     const store = foodStore(state, base);
     const sk = season(state).key;
@@ -364,10 +379,10 @@ const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
   { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, teach: 4, study: 4, scavenge: 4 }) },
   { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
-  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, scavenge: 4 }) },
+  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
-  { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4 }) },
+  { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
   { name: "Hunter", pri: P({ hunt: 1, fish: 1, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
   { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, scavenge: 4 }) },
@@ -639,7 +654,7 @@ export function planBase(state, base) {
     const em = T.emergency(ctx);
     if (!em) continue;
     let slots = em.slots;
-    const cands = [...ctx.free].filter((s) => prio(state, s, key) > 0 && minOk(state, s, key) && !(T.can && T.can(ctx, s))).sort((a, b) => rankOf(ctx, b, key) - rankOf(ctx, a, key) || a.id - b.id);
+    const cands = [...ctx.free].filter((s) => prio(state, s, key) > 0 && minOk(state, s, key) && (T.emergencyCan ? T.emergencyCan(ctx, s) : !(T.can && T.can(ctx, s)))).sort((a, b) => rankOf(ctx, b, key) - rankOf(ctx, a, key) || a.id - b.id);
     for (const s of cands) {
       if (slots <= 0) break;
       if (give(s, key, prio(state, s, key), "emerg", `Emergency: ${em.why} (${T.name} is set)`)) slots--;
@@ -666,6 +681,24 @@ export function planBase(state, base) {
       if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
       const higher = (reasons.get(x.s.id) || []).filter((r) => prio(state, x.s, r.key) < p);
       give(x.s, x.key, p, "work", `${WORK_TYPES[x.key].ing}: priority ${p}${higher.length ? ` (before it: ${higher.map((r) => `${WORK_TYPES[r.key].name}: ${r.why}`).join("; ")})` : ""}`);
+    }
+  }
+  // A queued build keeps one hand (the governor's rule against the builder deadlock): when the farm or the like took
+  // everyone with Build set, the one with Build highest (then the best builder) switches to it.
+  const bo = ctx.open("build");
+  if (bo.cap > 0 && ctx.used.build === 0) {
+    const cands = managed.filter((s) => {
+      if (prio(state, s, "build") <= 0 || !minOk(state, s, "build")) return false;
+      if (ctx.free.has(s)) return true;
+      const a = out.get(s.id);
+      return !!a && a.kind === "work" && LOOSE.includes(a.t);
+    }).sort((a, b) => prio(state, a, "build") - prio(state, b, "build") || rankOf(ctx, b, "build") - rankOf(ctx, a, "build") || a.id - b.id);
+    const s = cands[0];
+    if (s) {
+      const was = out.get(s.id);
+      if (was && !ctx.free.has(s)) ctx.used[was.t]--;
+      ctx.free.add(s);
+      give(s, "build", prio(state, s, "build"), "emerg", `${WORK_TYPES.build.ing}: one hand stays on the queued build${was && was.t ? ` (${WORK_TYPES[was.t].name} took everyone else)` : ""}`);
     }
   }
   for (const s of ctx.free) {
