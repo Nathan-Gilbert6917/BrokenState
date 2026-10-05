@@ -32,6 +32,7 @@ import { CELL, active, unitAt, unitById, say, fx, reachable, pathTo, distField, 
 import { throwAt, THROWABLES, throwablesOf } from "./stealth.js";
 import { blastSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
 import { shepherdsOf } from "./decoys.js";
+import { ACID } from "./acid.js";
 import { count } from "./buildings.js";
 import { ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { raidPrep, outsiderPrep } from "./eras.js";
@@ -628,12 +629,13 @@ export function botSiege(state, b, u) {
 }
 
 // ---------- what a renderer draws (top-down ui/combat.js, isometric ui/isoview.js) ----------
-// Plain data: fire cells, smoke, flares, decoys, ladders (up: against the wall at x, y from its foot fx, fy; down:
+// Plain data: fire cells, acid pools (acid.js: fade = turns left ÷ ACID.turns), smoke, flares, decoys, ladders (up: against the wall at x, y from its foot fx, fy; down:
 // lying at its foot), rams (at the lead, with its crew and the gate it is battering), Shepherds' auras.
 export function battleOverlays(b) {
   const lead = (r) => (r.lead != null ? unitById(b, r.lead) : null);
   return {
     fires: (b.fires || []).map((f) => ({ x: f.x, y: f.y, turns: f.turns })),
+    acid: (b.acid || []).map((p) => ({ x: p.x, y: p.y, turns: p.turns, fade: Math.max(0.25, Math.min(1, p.turns / ACID.turns)) })),
     smoke: (b.smoke || []).map((s) => ({ x: s.x, y: s.y, r: s.r, turns: s.turns, thick: !!s.thick })),
     flares: (b.flares || []).map((f) => ({ x: f.x, y: f.y, r: f.r, turns: f.turns })),
     decoys: (b.lures || []).filter((l) => l.turns > 0).map((l) => ({ x: l.x, y: l.y, key: l.key, radius: l.radius, turns: l.turns, sense: l.sense || (THROWABLES[l.key] && THROWABLES[l.key].sense) || ["noise"], decoy: !!(THROWABLES[l.key] && THROWABLES[l.key].decoy) })),

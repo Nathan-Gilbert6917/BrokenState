@@ -23,6 +23,7 @@
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
+import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
@@ -1076,6 +1077,21 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = `rgba(255,${110 + Math.round(60 * Math.sin((ph + c.x * 0.13 + c.y * 0.07) * Math.PI * 2))},40,0.42)`;
     ctx.beginPath(); diamond(ctx, c.x, c.y, tileTop(b, c.x, c.y)); ctx.fill();
   }
+  // A spitter's acid (sim/acid.js): a green puddle a cell with bubbles rising and popping, fading as it dries up.
+  const phA = ((now || 0) % 1600) / 1600;
+  for (const c of OV.acid) {
+    const z0 = tileTop(b, c.x, c.y), a = c.fade;
+    ctx.fillStyle = `rgba(100,180,40,${0.22 * a})`;
+    ctx.beginPath(); diamond(ctx, c.x, c.y, z0); ctx.fill();
+    ctx.fillStyle = `rgba(150,222,60,${0.48 * a})`;
+    ctx.beginPath(); diamond(ctx, c.x, c.y, z0, 3); ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const t = (phA + k / 3 + c.x * 0.37 + c.y * 0.21) % 1;
+      const [X, Y] = project(c.x + 0.25 + ((k * 0.31 + c.x * 0.13) % 0.5), c.y + 0.3 + ((k * 0.23 + c.y * 0.17) % 0.45), z0);
+      ctx.strokeStyle = `rgba(215,255,130,${(1 - t) * 0.85 * a})`; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(X, Y - t * 2 * S, (1 + t * 2.5) * S, (0.6 + t * 1.5) * S, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
   // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
   for (const a of OV.auras) {
     if (!vis[a.y * b.w + a.x]) continue;
@@ -1318,7 +1334,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   if (h && v.reach && u && H.mode === "move" && !H.unitAt(h.x, h.y) && isFinite(v.reach.dist[h.y * b.w + h.x])) {
     const path = H.pathTo(v.reach, h.x, h.y);
-    ctx.strokeStyle = v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166";
+    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
     ctx.lineWidth = Math.max(2, 0.8 * S);
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
@@ -1613,7 +1629,7 @@ function drawFxIso(ctx, b, now, H) {
     const text = f.text ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(Math.max(12, (f.crit ? 5.4 : 4.6) * S))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`; ctx.lineWidth = 3;
     const y = ty - UNIT_H * 0.7 * S - (el / 1400) * 14 * S;
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);
