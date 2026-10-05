@@ -496,9 +496,11 @@ if (GAMES > 0) {
       agg.squadfight += st["road-squadfight"] || 0;
       agg.fights += (st["fight-victory"] || 0) + (st["fight-defeat"] || 0) + (st["fight-retreat"] || 0);
       agg.joined += s.survivors.filter((x) => x.wanderer).length;
+      (agg.ends = agg.ends || []).push(`day ${day(s)}${s.gameOver ? " (over)" : ""}, ${s.survivors.filter((x) => x.alive).length} alive, ${s.factions.filter((f) => f.alive && f.type === "military" && f.bases.length).length} military`);
     }
     const roadMet = agg.road.neutral + agg.road.hostile + agg.road.military;
     const siteMet = agg.site.neutral + agg.site.hostile + agg.site.military;
+    console.log(`  ${mode} games: ${agg.ends.join("; ")}`);
     console.log(`  ${mode}: ${agg.trips} trips launched, ${agg.tiles} tiles walked, ${agg.visits} site visits`);
     console.log(`    road: ${roadMet} met (${agg.road.neutral} neutral, ${agg.road.hostile} aggressive [${agg.robbery} robbing others], ${agg.road.military} squads [${agg.squadfight} fighting the dead]) = ${r2((roadMet / Math.max(1, agg.tiles)) * 100)} per 100 tiles, ${r2((roadMet / Math.max(1, agg.trips)) * 10)} per 10 trips`);
     console.log(`    sites: ${siteMet} met (${agg.site.neutral} neutral, ${agg.site.hostile} aggressive, ${agg.site.military} squads) = ${r2((siteMet / Math.max(1, agg.visits)) * 10)} per 10 searches or raids`);

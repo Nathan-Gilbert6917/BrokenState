@@ -138,7 +138,7 @@ export function afterRaid(state, result, setup) {
   }
   // Cuts and fevers from the hours spent searching (health.js), as in the hour-by-hour search.
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
-  wanderersAfterRaid(state, p, result); // wanderers.js: the survivors you found there can be talked to; the soldiers remember
+  wanderersAfterRaid(state, p, result, setup.tile); // wanderers.js: the survivors you found there can be talked to; the soldiers remember
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
   if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);

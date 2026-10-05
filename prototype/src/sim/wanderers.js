@@ -43,17 +43,20 @@ export const WANDER = {
   SITE_CAT: { urban: 0.3, town: 0.3, special: 0.2, rural: 0.08 }, ROAD_TILE: 0.06,
   // A site searched or raided: SITE × density × the mode's factor, at most SITE_MAX (one roll per visit).
   SITE: 0.25, SITE_MAX: 0.7,
+  // One roll per site per SITE_WINDOW hours: whoever is there stays until met (a search, a raid), then is gone;
+  // searching the same place again within the window meets nobody new.
+  SITE_WINDOW: 72,
   // Hardcore: × (1 + HC_EARLY × e^(−day / HC_FADE)): about ×3.2 on day 1, ×2 by day 25, ×1.4 by day 60, ×1.1 by day 110.
   HC_EARLY: 2.2, HC_FADE: 35,
   // Who you meet (shares; the aggressive ones ×HOSTILE_CITY in a city; soldiers only near a military base).
-  KIND: { neutral: 0.58, hostile: 0.3, military: 0.12 }, HOSTILE_CITY: 1.5, MIL_RANGE: 18, MIL_HARDCORE: 1.5,
+  KIND: { neutral: 0.58, hostile: 0.3, military: 0.15 }, HOSTILE_CITY: 1.5, MIL_RANGE: 24, MIL_HARDCORE: 1.5,
   // Neutral groups: sizes [n, weight]; moods (weight, talk chance before skill).
   NEUTRAL_SIZE: [[1, 45], [2, 30], [3, 15], [4, 10]], NEUTRAL_POWER: 2.2,
   MOODS: { wary: { w: 0.4, talk: 0.2 }, friendly: { w: 0.35, talk: 0.45 }, desperate: { w: 0.25, talk: 0.35 } },
   TALK_SKILL: 0.025, GIFT_BONUS: 0.3, AGAIN_BONUS: 0.15, GIFT: { food: 2, water: 2 },
-  // Aggressive survivors: 2–4 (one more in a city), power per head; what they take when you hand it over; the talk DC;
+  // Aggressive survivors: 2–4 (one more in a city; never more than HOSTILE_OVER over the team met), power per head; what they take when you hand it over; the talk DC;
   // the chance one of them asks to come along after a good talk; a share seen robbing others (observed).
-  HOSTILE_SIZE: [2, 4], HOSTILE_POWER: 2.8, ROB_SHARE: 0.3, TALK_DC: 10, JOIN_AFTER_TALK: 0.15, ROBBERY: 0.4,
+  HOSTILE_SIZE: [2, 4], HOSTILE_POWER: 2.6, HOSTILE_OVER: 1, ROB_SHARE: 0.3, TALK_DC: 10, JOIN_AFTER_TALK: 0.15, ROBBERY: 0.4,
   // Military squads: size, power per soldier; a share met fighting the dead; goodwill for news, help, an attack.
   SQUAD_SIZE: [3, 5], SQUAD_POWER: 5, FIGHTING: 0.45, GW_NEWS: 2, GW_HELP: 8, GW_ATTACK: -30, GW_ASIDE: 2,
   // The people you left (light simulation, once a day): at most MAX groups remembered; a chance a day to move a tile,
@@ -160,6 +163,8 @@ function neutralFor(state, tileId, rng) {
   return { g: newNeutralGroup(state, tileId, rng), again: false };
 }
 const hostileCount = (state, tileId, rng) => rng.int(W.HOSTILE_SIZE[0], W.HOSTILE_SIZE[1]) + (state.tiles[tileId].terrain === "city" ? 1 : 0);
+// Loose bands pick on people their own size: never more than HOSTILE_OVER over the team they stop.
+const sized = (state, p, n) => Math.max(W.HOSTILE_SIZE[0], Math.min(n, partyMembers(state, p).length + W.HOSTILE_OVER));
 const squadPower = (f) => Math.round((2.2 + (FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].arms : 1) * 1.6) * 10) / 10;
 const weaponName = (s) => (s.gear.weapon && GEAR[s.gear.weapon.key] ? GEAR[s.gear.weapon.key].name.toLowerCase() : null);
 const lookOf = (n) => (n === 1 ? "someone on their own" : n === 2 ? "two people" : `a group of ${NUM[n] || n}`);
@@ -220,21 +225,22 @@ export function rollWanderer(state, p, tileId) {
 }
 
 // ---------- at a site ----------
-// Who is at a site this hour: [{ kind: "neutral" | "hostile" | "military", wid?, n, f? }] (empty: nobody). One roll
-// per tile and hour, kept for two days, so the raid map, a building's interior and the hour-by-hour search agree.
+// Who is at a site now: [{ kind: "neutral" | "hostile" | "military", wid?, n, f? }] (empty: nobody). One roll per tile
+// and SITE_WINDOW hours, so the raid map, a building's interior and the hour-by-hour search agree; once met they are
+// gone from the site (siteMet) for the rest of the window.
 export function siteRoll(state, tileId) {
   const t = state.tiles[tileId];
   if (!t || t.terrain === "water" || t.hive) return [];
   if (state.bases.some((b) => b.tile === tileId) || state.factions.some((f) => f.alive && f.bases.includes(tileId))) return [];
-  const key = `${tileId}:${state.hour}`;
+  const key = `${tileId}:${Math.floor(state.hour / W.SITE_WINDOW)}`;
   const ws = state.wanderers;
   if (ws && ws.sites[key]) return ws.sites[key];
   const c = siteChance(state, tileId);
-  if (hash01(state.seed, "wander-site", tileId, state.hour) >= c) {
+  if (hash01(state.seed, "wander-site", key) >= c) {
     if (ws) { ws.sites[key] = []; bump(state, "site-visits"); } // nobody: remembered too (once someone has been met)
     return [];
   }
-  const rng = rngFor(state, "wander-site-who", tileId, state.hour);
+  const rng = rngFor(state, "wander-site-who", key);
   const pick = pickKind(state, tileId, rng, true);
   const out = [];
   if (pick.kind === "neutral") out.push({ kind: "neutral", wid: neutralFor(state, tileId, rng).g.wid });
@@ -297,6 +303,12 @@ export function siteEncounter(state, p, tileId) {
     else { const f = factionById(state, r.fid); if (f && f.alive) card = squadCard(state, p, f, r.n, { site: true }); }
     if (card) addCard(state, card);
   }
+  siteMet(state, tileId);
+}
+// The people at a site were met (a search, a raid): they leave it (the neutrals go on in the daily simulation).
+export function siteMet(state, tileId) {
+  const ws = state.wanderers;
+  if (ws) ws.sites[`${tileId}:${Math.floor(state.hour / W.SITE_WINDOW)}`] = [];
 }
 
 // ---------- the cards ----------
@@ -424,6 +436,7 @@ function fightChoice(state, p, c, ambush, label, extra = "") {
 
 // Aggressive survivors who found you first (on the road, or squatting at a site you came to search).
 export function hostileCard(state, p, n, opts = {}) {
+  n = sized(state, p, n);
   const c = { type: "hostile", site: !!opts.site, enemy: hostileEnemy(n) };
   const run = skillChance(bestSkill(state, p, "stealth") + runBonus(state, p), 9);
   const talk = skillChance(talkSkill(state, p), W.TALK_DC);
@@ -431,15 +444,16 @@ export function hostileCard(state, p, n, opts = {}) {
     : `${cap(NUM[n] || String(n))} ragged people step out from behind a wreck, armed with whatever they could find: "Bags on the ground. Slowly."`;
   const choices = [
     {
-      label: "Hand over some of what you carry", hint: `They take about ${pct(W.ROB_SHARE)} of the team's supplies (not the gear) and let you go`, ai: () => 0.3,
+      label: "Hand over some of what you carry", hint: `They take about ${pct(W.ROB_SHARE)} of the team's supplies (not the gear) and let you go`, ai: () => 0.25,
       resolve: (st) => { const lost = rob(st, p, W.ROB_SHARE, null, false); bump(st, "robbed"); goOn(st, p, opts); return `They take ${lost} and back away into the ruins.`; },
     },
     {
-      label: "Talk them down", hint: `Speech check, ${pct(talk)}. They are desperate, not soldiers. Failure: they open fire`, ai: () => talk * 0.95,
+      label: "Talk them down", hint: `Speech check, ${pct(talk)}. They are desperate, not soldiers. Failure: they open fire`,
+      ai: () => talk - (1 - talk) * (1 - odds(state, p, c.enemy, opts.site ? null : "enemy")), // a failed talk is a fight on their terms
       resolve: (st) => {
         const ok = st.rng.chance(talk);
         gainXp(st, talker(st, p), "speech", USE.talk + (ok ? USE.talkWon : 0));
-        if (!ok) { bump(st, "hostile-talk-fail"); return fight(st, p, c, "enemy", "They are not listening. Someone fires first."); }
+        if (!ok) { bump(st, "hostile-talk-fail"); return fight(st, p, c, opts.site ? null : "enemy", "They are not listening. Someone fires first."); }
         bump(st, "hostile-talk-ok");
         let extra = "";
         if (st.rng.chance(W.JOIN_AFTER_TALK)) {
@@ -467,6 +481,7 @@ export function hostileCard(state, p, n, opts = {}) {
 
 // Aggressive survivors you saw first (waiting by the road).
 function hostileSeenCard(state, p, n) {
+  n = sized(state, p, n);
   const c = { type: "hostile", enemy: hostileEnemy(n) };
   const sneak = skillChance(bestSkill(state, p, "stealth") + (isNight(state) ? 1 : 0), 8 + Math.round(n / 3));
   const text = `From cover you see ${NUM[n] || n} armed people crouched behind a wreck by the road, watching the way you were heading. They have not seen you.`;
@@ -489,6 +504,7 @@ function hostileSeenCard(state, p, n) {
 
 // Aggressive survivors robbing neutrals: help the victims (they fight beside you as a third side), or not.
 function robberyCard(state, p, n, g) {
+  n = sized(state, p, n);
   const victims = g.people.length;
   const third = [{ side: "neutral", kind: "survivors", count: victims, power: W.NEUTRAL_POWER, name: victims === 1 ? first(g.people[0]) : "the travellers", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health })) }];
   const c = { type: "rescue", enemy: hostileEnemy(n), wid: g.wid, third, allyPower: victims * W.NEUTRAL_POWER * 0.5 };
@@ -662,7 +678,8 @@ function onWandererCombat(state, result, setup) {
 
 // ---------- after a raid on the map (scavenge.js afterRaid) ----------
 // The neutrals you found (and did not fire on) can be talked to now; the soldiers remember how it went.
-export function wanderersAfterRaid(state, p, result) {
+export function wanderersAfterRaid(state, p, result, tileId = null) {
+  if (tileId != null && state.wanderers) siteMet(state, tileId);
   const third = result && result.third;
   if (!third) return;
   for (const r of third) {
@@ -693,8 +710,9 @@ export function wanderersDaily(state) {
   const ws = state.wanderers;
   if (!ws) return;
   const d = day(state);
-  // Old site rolls are dropped after two days.
-  for (const k of Object.keys(ws.sites)) if (Number(k.split(":")[1]) < state.hour - 48) delete ws.sites[k];
+  // Site rolls from before the last window are dropped.
+  const win = Math.floor(state.hour / W.SITE_WINDOW);
+  for (const k of Object.keys(ws.sites)) if (Number(k.split(":")[1]) < win - 1) delete ws.sites[k];
   if (!ws.groups.length) return;
   const S = W.SIM;
   const g0 = state.grid;
