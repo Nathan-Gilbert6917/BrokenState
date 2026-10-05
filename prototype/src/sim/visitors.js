@@ -10,6 +10,7 @@
 //   clamp(30 − 0.06 × day, 10, 30) × 0.75–1.25 days (about every 29 days early, 23 at day 120, 16 at day 240, 10 from day 334),
 //   at most 1 band on the map (2 from day 120, 3 from day 240). Merchants: the first on days 8–14, then every 10–16
 //   days, 1 at a time (2 from day 150). Explorers: the first on days 5–10, then every 6–12 days, at most 2.
+//   Hardcore mode: no raider bands before state.hardcore.raidersFrom (day 150–270: hardcore-groups.js).
 //
 // Raiders (kind "raiders")
 // - A band of clamp(3 + day / 30 + 0–2, 3, 14) people, each as strong as 2.6 + min(3.4, day / 80) (clubs and old
@@ -102,6 +103,7 @@ import { knownLoc } from "./discovery.js";
 import { rumourFromNews } from "./survey.js";
 import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS, raidPaceOpen, noteRaid, outsiderPrep } from "./eras.js";
 import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
+import { hcNoRaiders } from "./hardcore-groups.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -394,6 +396,8 @@ export function visitorsDaily(state) {
   settleBands(state);
   for (const kind of VISITOR_KINDS) {
     if (d < info.next[kind]) continue;
+    // Hardcore (hardcore-groups.js): no raider bands from outside before the raiders appear in the state.
+    if (kind === "raiders" && hcNoRaiders(state)) { info.next.raiders = Math.max(info.next.raiders, state.hardcore.raidersFrom); continue; }
     const n = visitorsOf(state).filter((v) => v.kind === kind).length;
     if (n < capFor(kind, d) + (kind === "raiders" && isLate(state) ? ERAS.LATE_RAIDER_BANDS : 0)) spawnVisitor(state, kind);
     info.next[kind] = d + gapDays(kind, d, info.rng);
