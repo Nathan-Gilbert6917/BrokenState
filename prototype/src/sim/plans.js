@@ -31,6 +31,7 @@ import {
   HUNT, MEAT_KG, huntTeam, expectHunt, fishKit, expectFish, snareLine, snareHours, expectSnare, packFishingGear, meatIn,
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
+import { expectForage } from "./foraging.js";
 import { partyVehicle } from "./vehicles.js";
 import { supplyLoad, poolLoad } from "./parties.js";
 
@@ -54,6 +55,7 @@ export const STEP_KINDS = {
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
   hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
+  forage:   { label: "Forage", desc: "Gather wild food around the target for some hours (foraging.js): berries, nuts, mushrooms, greens, roots and apples. Anyone can; Farming and Scouting help. Forest is best, farmland good, towns little; summer and autumn plentiful, spring some, winter almost nothing. Quiet, but time on one spot builds Heat." },
   fish:     { label: "Fish", desc: "Fish a river or lake shore for some hours with a fishing rod or net (the hub's goes along if nobody carries one). Quiet. Ice fishing in a freeze needs a crowbar, machete or axe and catches half." },
   snare:    { label: "Snares (2h)", desc: "Set a line of 8 snares (snare wire, or 2 scrap of fence wire), or check a line of yours already there (1h): collect the catch and leave it set. Quiet; a rabbit a day or so in good country; come back within 2–3 days." },
   searcharea: { label: "Search the area", desc: "Find a downed aircraft or supply drop in its search circle: look around at the spots that clear the most unsearched ground (2h each, up to 8), then search the wreck when it turns up (crashes.js)." },
@@ -121,6 +123,7 @@ export function stepsToOrders(state, steps, tile) {
       case "water": out.push({ type: "water", ...place }); break;
       case "hunt": out.push({ type: "hunt", hours: huntHours(s), ...place }); break;
       case "fish": out.push({ type: "fish", hours: huntHours(s), ...place }); break;
+      case "forage": out.push({ type: "forage", hours: huntHours(s), ...place }); break;
       case "snare": out.push({ type: "snare", ...(s.mode ? { mode: s.mode } : {}), ...place }); break;
       case "wait": out.push({ type: "wait", hours: Math.max(1, Math.round(s.hours || 6)) }); break;
       case "move": if (s.tile != null) { out.push({ type: "move", tile: s.tile }); at = s.tile; known = true; } break;
@@ -139,6 +142,7 @@ export const stepLabel = (state, s) => {
     case "sweep": { const o = sweepOpts(s); return `Survey ${o.radius} tiles around for ${o.hours}h`; }
     case "hunt": return `Hunt ${huntHours(s)}h`;
     case "fish": return `Fish ${huntHours(s)}h`;
+    case "forage": return `Forage ${huntHours(s)}h`;
     case "snare": return s.mode === "check" ? "Check the snares" : s.mode === "set" ? "Set snares" : "Snares: set (or check)";
     case "move": return `Move to ${tileLabel(state, s.tile)}`;
     default: return STEP_KINDS[s.kind]?.label || s.kind;
@@ -228,7 +232,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24);
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
     else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
-    else if (s.kind === "hunt" || s.kind === "fish" || s.kind === "snare") {
+    else if (s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage") {
       const start = at;
       const hours = s.kind === "snare" ? snareHours(state, tile, s.mode) : huntHours(s);
       stay(stepLabel(state, s), hours);
@@ -240,10 +244,11 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
         const t = huntTeam(state, members, ammo);
         if (!t.why) got = expectHunt(state, t.team, tile, hours, start, t.loud, room).rations;
       } else if (s.kind === "fish") got = expectFish(state, fishKit(members, kitItems), tile, hours, start, room).rations;
+      else if (s.kind === "forage") got = members.length ? expectForage(state, members, tile, hours, start, room).rations : 0;
       else if (snareLine(state, tile) && s.mode !== "set") { const l = snareLine(state, tile); got = expectSnare(state, tile, l.check ?? l.set, start + hours).rations * 0.8; }
       if (got > 0) {
         haul += got;
-        haulKg += got * MEAT_KG;
+        haulKg += got * (s.kind === "forage" ? 0.5 : MEAT_KG); // foraged food weighs as packed food (foraging.js)
         legs[legs.length - 1].haul = Math.round(got * 10) / 10;
         const eaten = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + members.length * restH) / 24 : 0;
         reweigh(eaten);

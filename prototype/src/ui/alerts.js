@@ -18,6 +18,8 @@ import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
+import { baseFoodHint, landFoodHint } from "../sim/foraging.js";
+import { carried } from "../sim/parties.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -49,13 +51,31 @@ const SECTIONS = {
       if (b.hungerDays > 0 || food < 1) out.push({ key: `starve:${b.id}`, kind: "starve", icon: "🍽", tone: "danger", text: `${b.name} is out of food`, tip: "Everyone there goes hungry: they lose health every day and nobody heals. Bring food (supply run, trade) or move people. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {
         const o = foodOutlook(state, b);
-        if (o.daysLeft < 5) out.push({ key: `food:${b.id}`, kind: "food", icon: "🥫", tone: o.daysLeft < 2 ? "danger" : "warn", text: `${b.name}: food for ${Math.max(0, Math.floor(o.daysLeft))} day${Math.floor(o.daysLeft) === 1 ? "" : "s"}`, tip: `About ${Math.floor(o.stock)} food in store and ${Math.round(o.eat * 10) / 10} eaten a day, not counting harvests to come. Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
+        if (o.daysLeft < 5) {
+          // Under 3 days: where food from the land is (sim/foraging.js): "hunt or forage nearby: forest to the east".
+          const hint = o.daysLeft < 3 ? baseFoodHint(state, b) : "";
+          out.push({ key: `food:${b.id}`, kind: "food", icon: "🥫", tone: o.daysLeft < 2 ? "danger" : "warn", text: `${b.name}: food for ${Math.max(0, Math.floor(o.daysLeft))} day${Math.floor(o.daysLeft) === 1 ? "" : "s"}${hint ? `: ${hint.replace(/ \(.*\)$/, "")}` : ""}`, tip: `About ${Math.floor(o.stock)} food in store and ${Math.round(o.eat * 10) / 10} eaten a day, not counting harvests to come.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}: put people on the Forage job (Work tab or their role), or send a team to hunt or forage.` : ""} Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
+        }
       }
       if (b.thirstDays > 0 || (b.stock.water || 0) < 1) out.push({ key: `thirst:${b.id}`, kind: "thirst", icon: "🚱", tone: "danger", text: `${b.name} is out of water`, tip: "Thirst kills faster than hunger: everyone there loses health every day. Wells, rain catchers, filters or a supply run. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {
         const w = waterOutlook(state, b);
         if (w.daysLeft < 3) out.push({ key: `water:${b.id}`, kind: "water", icon: "💧", tone: w.daysLeft < 1.5 ? "danger" : "warn", text: `${b.name}: water for ${Math.max(0, Math.floor(w.daysLeft))} day${Math.floor(w.daysLeft) === 1 ? "" : "s"}`, tip: `${Math.floor(w.stock)} water in store, ${w.net} a day. Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
       }
+    }
+  },
+  // A team in the field running out of food (under 1.5 days; the no-base road team has its own, ui/hardcore.js): where
+  // food from the land is nearby (sim/foraging.js).
+  fieldfood(state, out) {
+    if (!state.bases.length) return;
+    for (const p of state.parties) {
+      if (p.owner !== "player" || p.kind === "convoy" || p.phase === "back") continue;
+      const n = partyMembers(state, p).length;
+      if (!n) continue;
+      const days = (carried(p, "food") + carried(p, "preserved")) / n;
+      if (days >= 1.5) continue;
+      const hint = landFoodHint(state, p);
+      out.push({ key: `teamfood:${p.id}`, kind: "teamfood", icon: "🥫", tone: days < 0.5 ? "danger" : "warn", text: `${teamLabel(state, p)}: food for ${Math.round(days * 10) / 10} days${hint ? `: ${hint.replace(/, about.*$/, "")}` : ""}`, tip: `The team is running out of food: out of it, everyone loses health every hour.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}.` : ""} Forage, hunt or fish (team panel), search a farm, grocery or diner, or head home. Click to open the team panel.`, go: { team: p.id } });
     }
   },
   stations(state, out) {
@@ -148,7 +168,7 @@ const SECTIONS = {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "teamfood", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];
