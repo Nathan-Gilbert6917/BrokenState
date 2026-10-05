@@ -51,6 +51,10 @@ import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosave
 import { loadOptions, saveOptions } from "./ui/saves.js";
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { toManual } from "./sim/work.js";
+import {
+  loadLayout, saveLayout, setFolded, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
+} from "./ui/layout.js";
+import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -75,7 +79,13 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, legendCollapsed: false, ordersCollapsed: false, crewEdited: false, ...freshUi() };
+const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, crewEdited: false, ...freshUi() };
+// Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
+// keep their old ui flags, which read and write the layout.
+const layout = loadLayout();
+for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "orders"]]) {
+  Object.defineProperty(ui, prop, { enumerable: true, get: () => layout[p], set: (v) => { layout[p] = !!v; saveLayout(layout); } });
+}
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
 ui.scale = options.uiScale;
@@ -107,8 +117,18 @@ if (!$("alerts")) {
   al.className = "hidden";
   $("mapwrap").appendChild(al);
 }
+// The bars between the map and its panels, the map-only button and resizable windows (ui/windows.js), set up before
+// the map measures itself so a folded panel's room is the map's from the start.
+initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow = true; } });
 initRenderer(canvas);
 initCombatUI($("combatmap"));
+// The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
+if (typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    if (Math.round(r.width * d) !== canvas.width || Math.round(r.height * d) !== canvas.height) resize();
+  }).observe(canvas);
+}
 centerOn(state, hub(state).tile);
 
 // ---------- loop ----------
@@ -246,27 +266,73 @@ function tidyUi() {
   if (state.combat && ui.inv && !ui.inv.loot) { ui.inv = null; ui.invSel = null; } // only the loot screen goes over a battle
 }
 
+// ---------- folded panels ----------
+// Runs fn (which folds, unfolds or resizes panels) and gives the map the room: the canvas is measured again and
+// the camera moved so the land under the mouse stays where it was. One redraw, no cache rebuilt.
+function relayout(fn) {
+  const a = canvas.getBoundingClientRect();
+  fn();
+  const b = canvas.getBoundingClientRect();
+  if (a.left !== b.left || a.top !== b.top || a.width !== b.width || a.height !== b.height) {
+    if (!ui.timelapse) { camera.x += (b.left - a.left) / camera.zoom; camera.y += (b.top - a.top) / camera.zoom; }
+    resize();
+  }
+  dirtyNow = true;
+}
+function foldPanel(p, v) {
+  relayout(() => { setFolded(layout, p, v); applyLayout(layout); });
+  saveLayout(layout);
+}
+// What was picked at the last refresh (autoReveal compares), the danger alerts already seen, and a tile clicked on
+// the map since (that shows the right panel even when the same tile is clicked again).
+let picked = null, dangerSeen = null, dangerState = null, mapClicked = false, rightToTop = false;
+function autoShow() {
+  const now = { state, started: ui.started, sel: ui.selected, xp: ui.expedition, tab: ui.tab };
+  if (dangerState !== state) { dangerSeen = null; dangerState = state; }
+  const d = newDangerAlerts(dangerSeen, ui.alertList);
+  dangerSeen = d.seen;
+  const show = autoReveal(layout, picked, now, { autoOpen: options.autoOpen, newDanger: d.fresh.length > 0, clicked: mapClicked });
+  picked = now;
+  mapClicked = false;
+  if (!show.length) return;
+  relayout(() => { for (const p of show) setFolded(layout, p, false); applyLayout(layout); });
+  saveLayout(layout);
+  if (show.includes("right")) rightToTop = true; // what was picked, from the top
+}
+// The alerts stack, or its folded button (ui/layout.js alertsPill).
+function alertsHTML(html) {
+  if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
+  return html.includes('class="al ') ? alertsFoldButton() + html : html;
+}
+
 function refresh(user = true) {
   dirty = false;
   dirtyNow = false;
   lastRefresh = last;
   tidyUi();
   noteNames(state);
+  const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
+  autoShow();
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
   setHTML("tb-stock", tb.stock, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
-  setHTML("left", renderLeft(state, ui), user);
-  setHTML("right", renderRight(state, ui), user);
-  setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
+  // A folded panel is not drawn (it is drawn again when it opens).
+  if (!layout.left) setHTML("left", renderLeft(state, ui), user);
+  if (!layout.right) {
+    setHTML("right", renderRight(state, ui), user);
+    if (rightToTop) { rightToTop = false; $("right").scrollTop = 0; }
+  }
+  if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
+  else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
-  setPanel("alerts", renderAlerts(state, ui), user); // the alerts stack on the right of the map (ui/alerts.js)
+  setPanel("alerts", alertsHTML(alerts), user);
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   $("banner").classList.toggle("dev", !!ui.dev);
@@ -279,7 +345,7 @@ function refresh(user = true) {
 }
 
 function refreshModal(user) {
-  const html = renderModal(state, ui);
+  const html = windowFrame(renderModal(state, ui), modalKind(state, ui)); // big windows get resize grips (ui/layout.js)
   const modal = $("modal");
   if (!html) {
     modal.classList.add("hidden");
@@ -295,6 +361,7 @@ function refreshModal(user) {
     const boxTop = same && box ? box.scrollTop : 0, bodyTop = same && body ? body.scrollTop : 0;
     if (setHTML("modal", html, user)) {
       modalShown = kind;
+      fitWindows(); // the size and place the player gave this kind of window (ui/windows.js)
       const nb = modal.querySelector(".box"), nbody = modal.querySelector(".basebody");
       if (nb && boxTop) nb.scrollTop = boxTop;
       if (nbody && bodyTop) nbody.scrollTop = bodyTop;
@@ -454,6 +521,16 @@ const actions = {
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
+  // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), map
+  // only (fold them all; again: back as they were), and the menu's reset (windows and panels as they first were).
+  "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
+  "win-reset": () => {
+    resetWindows();
+    relayout(() => { resetLayout(layout); applyLayout(layout); });
+    saveLayout(layout);
+    if (ui.settings) { ui.settings.msg = "Windows and panels are back to their usual size and place."; ui.settings.err = false; }
+  },
   // Base management.
   openbase: (d) => {
     if (!baseById(state, Number(d.id))) { log(state, "That base is gone.", "info"); return; }
@@ -712,7 +789,11 @@ for (const [k, fn] of Object.entries(VISITOR_ACTIONS)) actions[k] = (d) => fn(st
 // Jobs, market board, world affairs and the coalition (ui/diplomacy.js); some reuse the handlers above (plan, center, rd-open).
 for (const [k, fn] of Object.entries(DIPLO_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).
-for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => { if (k === "tl-open" && state.combat) return; fn(state, ui, d); };
+for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
+  if (k === "tl-open" && state.combat) return;
+  fn(state, ui, d);
+  if (k === "tl-open") watchFloating($("timelapse")); // its boxes resize from the corner (ui/windows.js)
+};
 // Relationships, the mood breakdown and the memorial wall (ui/relations.js).
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
@@ -746,7 +827,7 @@ document.addEventListener("drop", (ev) => {
 });
 
 const changeActions = {
-  uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(resize, 50); options.uiScale = ui.scale; saveOptions(options); },
+  uiscale: (el) => { ui.scale = Number(el.value); document.documentElement.style.setProperty("--ui-scale", ui.scale); setTimeout(() => { resize(); fitWindows(); }, 50); options.uiScale = ui.scale; saveOptions(options); },
   // A work role ("w:…", priorities) or a fixed job (Manual) (ui/work.js).
   role: (el) => {
     const s = survivorById(state, Number(el.dataset.id));
@@ -1051,6 +1132,7 @@ window.addEventListener("mouseup", (e) => {
       const team = state.parties.find((q) => contactable(q) && partyTile(q) === id);
       ui.expedition = team ? team.id : null;
       ui.xpMsg = "";
+      mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
     }
     ui.selected = id;
     view.selected = id;
@@ -1240,6 +1322,13 @@ window.addEventListener("keydown", (e) => {
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
+  // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only.
+  if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+    const fold = e.code === "BracketLeft" ? (e.shiftKey ? "orders" : "left") : e.code === "BracketRight" ? (e.shiftKey ? "alerts" : "right") :
+      e.code === "KeyL" && !e.shiftKey ? "log" : null;
+    if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
+    if (e.code === "Backslash" || e.code === "IntlBackslash") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
+  }
   if (e.code === "Space") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
@@ -1270,7 +1359,7 @@ window.addEventListener("keyup", (e) => {
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
-  frameErrors, devSpeeds: DEV_SPEEDS, options,
+  frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {

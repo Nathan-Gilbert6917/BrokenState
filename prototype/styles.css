@@ -32,12 +32,37 @@ h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--accent); text-trans
 .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .spread { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 
+/* The page: the top bar, the left panel, the map, the right panel and the log under the map, with a slim bar between
+   each panel and the map (fold it with a click, drag it to resize: ui/windows.js, ui/layout.js). A folded panel is
+   0 wide and its bar becomes a strip with its name. --left-size / --right-size / --log-size: a width the player set. */
 #app {
+  --gut: 0.6rem; --strip: 1.8rem;
+  --left-w: var(--left-size, 22rem); --right-w: var(--right-size, 21rem); --log-h: var(--log-size, 9.5rem);
+  --lgut: var(--gut); --rgut: var(--gut); --bgut: var(--gut);
   display: grid; height: 100vh;
-  grid-template-columns: calc(22rem) 1fr calc(21rem);
-  grid-template-rows: auto 1fr calc(9.5rem);
-  grid-template-areas: "top top top" "left map right" "left log right";
+  grid-template-columns: var(--left-w) var(--lgut) minmax(0, 1fr) var(--rgut) var(--right-w);
+  grid-template-rows: auto minmax(0, 1fr) var(--bgut) var(--log-h);
+  grid-template-areas: "top top top top top" "left lgut map rgut right" "left lgut bgut rgut right" "left lgut log rgut right";
 }
+body.fold-left #app { --left-w: 0px; --lgut: var(--strip); }
+body.fold-right #app { --right-w: 0px; --rgut: var(--strip); }
+body.fold-log #app { --log-h: 0px; --bgut: 1.7rem; }
+body.fold-left #left, body.fold-right #right, body.fold-log #log { display: none; }
+.gut { position: relative; display: flex; align-items: center; justify-content: center; background: var(--panel); color: var(--muted); user-select: none; overflow: hidden; font-size: 0.78rem; line-height: 1; }
+.gut:hover { background: var(--panel-2); color: var(--accent); }
+#gut-left { grid-area: lgut; cursor: col-resize; border-right: 1px solid var(--line); }
+#gut-right { grid-area: rgut; cursor: col-resize; border-left: 1px solid var(--line); }
+#gut-log { grid-area: bgut; cursor: row-resize; border-top: 1px solid var(--line); }
+.gut .gut-shut { display: none; }
+body.fold-left #gut-left, body.fold-right #gut-right, body.fold-log #gut-log { cursor: pointer; }
+body.fold-left #gut-left .gut-open, body.fold-right #gut-right .gut-open, body.fold-log #gut-log .gut-open { display: none; }
+body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.fold-log #gut-log .gut-shut { display: flex; }
+.gut-left .gut-shut, .gut-right .gut-shut { writing-mode: vertical-rl; align-items: center; gap: 0.6rem; font-size: 0.9rem; white-space: nowrap; }
+.gut-left .gut-line, .gut-right .gut-line { display: none; }
+.gut-log .gut-shut { width: 100%; align-items: center; gap: 0.7rem; padding: 0 0.7rem; font-size: 0.9rem; white-space: nowrap; }
+.gut-log .gut-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); opacity: 0.8; }
+.gut kbd { font: inherit; font-size: 0.75rem; border: 1px solid var(--line); border-radius: 4px; padding: 0.1rem 0.3rem; color: var(--muted); }
+#tb-maponly { padding: 0.15rem 0.45rem; }
 #topbar { grid-area: top; display: flex; align-items: center; gap: 1rem; padding: 0.45rem 0.9rem; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 #topbar .title { font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }
 #topbar .clock { font-variant-numeric: tabular-nums; min-width: 9rem; }
@@ -300,9 +325,9 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 #devpanel .dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.3rem; vertical-align: middle; }
 
 /* Timelapse viewer (ui/timelapse.js): the map fills the window, panels float over it */
-body.tl-on #app { grid-template-columns: 0 1fr 0; grid-template-rows: 0 1fr 0; }
+body.tl-on #app { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 minmax(0, 1fr) 0 0; }
 body.tl-on #topbar, body.tl-on #left, body.tl-on #right, body.tl-on #log, body.tl-on #legend, body.tl-on #orders,
-body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner { display: none !important; }
+body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on #alerts { display: none !important; }
 #timelapse { position: absolute; inset: 0; pointer-events: none; z-index: 7; font-size: 0.82rem; }
 #timelapse > div { pointer-events: auto; position: absolute; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.6rem; }
 #timelapse .tl-info { left: 0.6rem; top: 0.6rem; width: 19rem; max-height: calc(100% - 7.5rem); overflow-y: auto; }
@@ -491,3 +516,39 @@ button.wsch.s-s { background: #2c2a44; color: var(--muted); }
 .worktab label.wcf { display: inline-flex; align-items: center; gap: 0.3rem; }
 .worktab label.wcf input[type="number"] { width: 4rem; }
 .worksurv { margin-bottom: 0.6rem; }
+
+/* Resizable windows (ui/windows.js, ui/layout.js): main.js wraps a big window's box in .win with grips on its edges
+   and corners; the title moves it. .sized: the player set a size (the box fills it, its content scrolls);
+   .placed: the player moved it (it leaves the centered spot). */
+#modal .win { position: relative; max-width: 100vw; max-height: 100vh; }
+#modal .win.placed { position: absolute; margin: 0; }
+#modal .win.sized > .box { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; }
+#modal .win.sized > .box.basebox, #modal .win.sized > .box.settings { display: flex; flex-direction: column; }
+#modal .win.sized > .box.basebox > .basebody { flex: 1 1 auto; min-height: 4rem; max-height: none; }
+#modal .win.sized > .box.settings > .helpwrap { flex: 1 1 auto; min-height: 10rem; height: auto; }
+#modal .win.sized > .box.settings > .slots { flex: 1 1 auto; min-height: 6rem; max-height: none; }
+#modal .win.sized .memorial { max-height: none; }
+#modal .win > .box > h1:first-child, #modal .win > .box > .spread:first-child { cursor: move; }
+#modal .wgrip { position: absolute; z-index: 3; display: block; }
+#modal .g-n, #modal .g-s { left: 1.1rem; right: 1.1rem; height: 0.7rem; cursor: ns-resize; }
+#modal .g-n { top: -0.45rem; }
+#modal .g-s { bottom: -0.45rem; }
+#modal .g-e, #modal .g-w { top: 1.1rem; bottom: 1.1rem; width: 0.7rem; cursor: ew-resize; }
+#modal .g-e { right: -0.55rem; }
+#modal .g-w { left: -0.45rem; }
+#modal .g-ne, #modal .g-nw, #modal .g-se, #modal .g-sw { width: 1.3rem; height: 1.3rem; }
+#modal .g-ne { top: -0.45rem; right: -0.45rem; cursor: nesw-resize; }
+#modal .g-nw { top: -0.45rem; left: -0.45rem; cursor: nwse-resize; }
+#modal .g-sw { bottom: -0.45rem; left: -0.45rem; cursor: nesw-resize; }
+#modal .g-se { bottom: -0.2rem; right: -0.2rem; cursor: nwse-resize; opacity: 0.75;
+  background: linear-gradient(135deg, transparent 0 52%, var(--accent) 52% 60%, transparent 60% 70%, var(--accent) 70% 78%, transparent 78%); }
+#modal .g-se:hover { opacity: 1; }
+body.win-dragging, body.win-dragging * { user-select: none !important; }
+/* The timelapse's boxes resize from their corner (remembered with the windows). */
+#timelapse .tl-info, #timelapse .tl-caps { resize: both; min-width: 12rem; min-height: 8rem; max-width: calc(100% - 1.2rem); }
+
+/* Folded alerts: one button with the count; open alerts have a small fold button on top. */
+.al-pill { align-self: flex-end; background: rgba(20,22,26,0.93); border: 1px solid var(--line); border-radius: 99px; padding: 0.3rem 0.85rem; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.al-pill.danger { border-color: var(--danger); color: #ffd0cc; animation: alpulse 1.8s ease-in-out infinite; }
+@keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
+.al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }

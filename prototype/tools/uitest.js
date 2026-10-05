@@ -11,6 +11,8 @@
 // - the Repairs tab after a raid: the last raid's damage, Repair all with the bill, Patch on a damaged building
 // - help: the menu's Help tab (every topic, Map layers / Map legend), the compact Layers box and idle right panel,
 //   the ? buttons opening Help at a topic that exists
+// - windows and panels (ui/layout.js, ui/windows.js): folding, map only, auto-open, folded alerts, remembered
+//   layout and window sizes, drags clamped at several UI sizes, the menu's controls, keys in README and Help
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -664,6 +666,173 @@ section("Help: the menu's Help tab, the Layers box and the ? buttons (ui/help.js
   check(helpTab("no-such-topic").includes(`<h2>${topics[0].title}</h2>`), "an unknown topic shows the first one");
   openSettings(u2, "help");
   htmlOk(settingsModal(w, u2, { options: { autosave: true, autosaveDays: 1 }, desktop: false, autosaveInfo: () => ({}) }), "menu: Help tab");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Windows and panels: folding, map only, auto-open, window sizes (ui/layout.js, ui/windows.js)");
+{
+  const L = await import("../src/ui/layout.js");
+  const { settingsModal, openSettings, SETTINGS_ACTIONS, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
+  Object.assign(CHANGE, SETTINGS_CHANGE); // the Options tab's drop-downs
+  const { helpTopics } = await import("../src/ui/help.js");
+  const { DEFAULT_OPTIONS } = await import("../src/ui/saves.js");
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; };
+  const blocked = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+
+  // Folding each panel, map only and back.
+  const lay = L.defaultLayout();
+  check(L.PANEL_KEYS.every((p) => lay[p] === false) && !lay.all, "every panel is shown at first");
+  let flips = 0;
+  for (const p of L.PANEL_KEYS) if (L.setFolded(lay, p) && lay[p] && L.setFolded(lay, p) && !lay[p] && L.setFolded(lay, p, true) && lay[p] && L.setFolded(lay, p, false) && !lay[p]) flips++;
+  check(flips === L.PANEL_KEYS.length, `each panel folds and shows again (${L.PANEL_KEYS.join(", ")})`);
+  check(!L.setFolded(lay, "left", false) && !L.setFolded(lay, "nope", true), "showing a shown panel or an unknown one changes nothing");
+  L.setFolded(lay, "log", true);
+  check(L.toggleAll(lay) && L.PANEL_KEYS.every((p) => lay[p]) && lay.all, "map only folds everything");
+  L.setFolded(lay, "right", false); // opened by itself meanwhile
+  check(!L.toggleAll(lay) && !lay.all && lay.log && !lay.left && !lay.right && !lay.alerts && !lay.legend, "map only again: back as they were (the folded log stays folded)");
+
+  // Remembered in the browser; broken, odd or blocked storage.
+  const st = mem();
+  L.setPanelSize(lay, "left", 30);
+  L.toggleAll(lay);
+  check(L.saveLayout(lay, st) && eq(L.loadLayout(st), lay), "the layout (map only, folds, widths) is saved and loaded the same");
+  st.setItem(L.LAYOUT_KEY, "{broken");
+  check(eq(L.loadLayout(st), L.defaultLayout()), "broken JSON: the defaults");
+  st.setItem(L.LAYOUT_KEY, JSON.stringify({ left: "yes", right: true, size: { left: 999, right: -5, log: "x" } }));
+  const odd = L.loadLayout(st);
+  check(odd.left === false && odd.right === true && odd.size.left === L.PANEL_SIZE.left.max && odd.size.right === L.PANEL_SIZE.right.min && odd.size.log === null, "odd values ignored or clamped");
+  check(eq(L.loadLayout(blocked), L.defaultLayout()) && L.saveLayout(lay, blocked) === false && L.saveLayout(lay, null) === false, "blocked or missing storage: defaults, and saving fails quietly");
+  const s2 = L.defaultLayout();
+  check(L.panelSize(s2, "left") === 22 && L.setPanelSize(s2, "left", 5) && s2.size.left === L.PANEL_SIZE.left.min && L.setPanelSize(s2, "left", null) && s2.size.left === null, "panel widths are clamped; none means the usual width");
+  L.resetLayout(lay);
+  check(eq(lay, L.defaultLayout()), "reset: everything shown at the usual widths");
+
+  // Auto-open: what was picked opens the panel that shows it.
+  const S = {};
+  const pick = (o = {}) => ({ state: S, started: true, sel: -1, xp: null, tab: "bases", ...o });
+  const f = L.defaultLayout();
+  for (const p of L.PANEL_KEYS) f[p] = true;
+  check(eq(L.autoReveal(f, pick(), pick({ sel: 12 })), ["right"]), "a tile, site or base picked opens the right panel");
+  check(eq(L.autoReveal(f, pick(), pick({ xp: 4 })), ["right"]), "a team's panel opened (map, list, alert, card) opens the right panel");
+  check(eq(L.autoReveal(f, pick({ sel: 12 }), pick({ sel: 12 }), { clicked: true }), ["right"]), "clicking the same tile again opens it too");
+  check(eq(L.autoReveal(f, pick(), pick({ tab: "teams" })), ["left"]), "a tab key opens the left panel");
+  check(eq(L.autoReveal(f, pick({ xp: 4, sel: 3 }), pick({ xp: null, sel: -1 })), []), "a panel closing opens nothing");
+  check(eq(L.autoReveal(f, pick(), pick(), { newDanger: true }), ["alerts"]), "a new urgent alert opens folded alerts");
+  f.all = { left: false };
+  check(eq(L.autoReveal(f, pick(), pick(), { newDanger: true }), []), "but not in map-only mode");
+  f.all = null;
+  check(!L.autoReveal(f, pick(), pick({ sel: 3, tab: "people", xp: 2 }), { newDanger: true, clicked: true }).includes("log"), "the log never opens by itself");
+  check(eq(L.autoReveal(f, pick(), pick({ sel: 12, tab: "teams" }), { autoOpen: false, clicked: true }), []), "the option switches it off");
+  check(eq(L.autoReveal(f, pick({ state: {} }), pick({ sel: 12, tab: "x" })), []) && eq(L.autoReveal(f, null, pick({ sel: 1 })), []), "a new or loaded world opens nothing");
+  check(eq(L.autoReveal(f, pick({ started: false }), pick({ tab: "teams", sel: 4 })), []), "starting the game opens nothing");
+  check(eq(L.autoReveal(L.defaultLayout(), pick(), pick({ sel: 12, tab: "teams" }), { newDanger: true }), []), "panels already open: nothing to do");
+  let d = L.newDangerAlerts(null, [{ key: "a", tone: "danger" }, { key: "b", tone: "warn" }]);
+  check(!d.fresh.length, "the first look at the alerts finds nothing new");
+  d = L.newDangerAlerts(d.seen, [{ key: "a", tone: "danger" }, { key: "c", tone: "warn" }, { key: "x", tone: "danger" }]);
+  check(eq(d.fresh, ["x"]), "a new danger alert is new; a new warning or one seen before is not");
+
+  // Folded alerts: one button with the count, red with an urgent one; real alerts from a hungry base.
+  const w = createWorld({ seed: seed + 13, factionCount: 6 });
+  w.started = true;
+  hub(w).stock.food = 0;
+  hub(w).stock.preserved = 0;
+  const au = freshUi();
+  renderAlerts(w, au);
+  const pill = L.alertsPill(au.alertList);
+  htmlOk(pill, "folded alerts");
+  check(au.alertList.length > 0 && pill.includes(`${au.alertList.length} alert`) && /class="al-pill danger"/.test(pill) && /data-action="panel-toggle" data-p="alerts"/.test(pill), `folded alerts: count ${au.alertList.length}, red, opens them`);
+  check(L.alertsPill([], "") === "" && L.alertsPill([], "<div class=\"al-flash\">x</div>").includes("al-flash"), "no alerts: no button (a key's flash line stays)");
+  htmlOk(L.alertsFoldButton(), "the alerts' fold button");
+
+  // Windows: which get grips, the frame, the remembered sizes.
+  const big = ["trade", "inv:1", "loot", "survivor:7", "base", "planner", "settings", "memorial", "diary", "roster", "radio", "caravan", "diplo", "route", "newrun", "zlook"];
+  check(big.every((k) => L.windowKey(k)) && L.windowKey("survivor:7") === "survivor" && L.windowKey("inv:3") === "inv", "big windows resize, one size per kind (any survivor, any inventory)");
+  check(["card", "result", "over", "search", null, ""].every((k) => L.windowKey(k) === ""), "cards, results and the end screen do not");
+  const box = `<div class="box wide basebox"><div class="spread"><input class="basename" data-action="baserename" value="Hub"></div><div class="basebody">x</div></div>`;
+  const fr = L.windowFrame(box, "base");
+  htmlOk(fr, "a window's frame");
+  check(fr.startsWith(`<div class="win" data-win="base">`) && (fr.match(/class="wgrip /g) || []).length === 8 && fr.includes(box), "a window gets its frame and eight grips (edges and corners)");
+  check(L.windowFrame(box, "card") === box && L.windowFrame(null, "base") === "", "a card is left as it is; no window: nothing");
+  const ws = mem();
+  L.saveWindows({ base: { w: 60, h: 40, x: 10, y: 20 }, inv: { x: 5, y: 6 }, "bad-key": { w: 30, h: 30 }, survivor: { w: "x", h: 2 } }, ws);
+  const lw = L.loadWindows(ws);
+  check(eq(lw.base, { w: 60, h: 40, x: 10, y: 20 }) && eq(lw.inv, { x: 5, y: 6 }) && !lw["bad-key"] && !lw.survivor, "window sizes are saved and loaded; odd entries dropped");
+  ws.setItem(L.WINDOWS_KEY, "nope");
+  check(eq(L.loadWindows(ws), {}) && eq(L.loadWindows(blocked), {}) && L.saveWindows({}, blocked) === false, "broken or blocked storage: no sizes, no error");
+
+  // Dragging edges, corners and the title at several UI sizes and screens: on screen, never under the minimum.
+  let bad = 0, runs = 0;
+  for (const scale of [0.75, 1, 1.5, 2]) {
+    const rem = 16 * scale;
+    for (const [vw, vh] of [[1280, 720], [1920, 1080], [3840, 2160]]) {
+      const start = { x: 100, y: 80, w: Math.min(vw - 100, 40 * rem), h: Math.min(vh - 80, 25 * rem) };
+      for (const dir of [...L.GRIPS, "move"]) {
+        for (const [dx, dy] of [[-5000, -5000], [5000, 5000], [30, -20], [-40, 60]]) {
+          runs++;
+          const r = L.dragRect(start, dir, dx, dy, vw, vh, rem);
+          const rw = r.w ?? start.w, rh = r.h ?? start.h;
+          const ok = [r.x, r.y, rw, rh].every(Number.isFinite) && r.x >= 0 && r.y >= 0 && r.x + rw <= vw + 0.5 && r.y + rh <= vh + 0.5 &&
+            rw >= Math.min(vw, L.WIN_MIN.w * rem) - 0.5 && rh >= Math.min(vh, L.WIN_MIN.h * rem) - 0.5;
+          if (!ok) { bad++; if (bad < 4) console.log(`    off: ${dir} ${dx},${dy} at ${vw}x${vh} ×${scale}: ${JSON.stringify(r)}`); }
+        }
+      }
+    }
+  }
+  check(!bad, `every drag stays on screen and above the minimum size (${runs} drags, ${bad} wrong)`);
+  const st0 = { x: 200, y: 100, w: 800, h: 500 };
+  const e = L.dragRect(st0, "e", 50, 0, 1920, 1080), wl = L.dragRect(st0, "w", 50, 0, 1920, 1080), mv = L.dragRect(st0, "move", 30, 40, 1920, 1080);
+  check(e.x === 200 && e.w === 850 && wl.x === 250 && wl.w === 750 && wl.x + wl.w === 1000, "the right edge grows to the right; the left edge moves with the right edge fixed");
+  check(mv.x === 230 && mv.y === 140 && mv.w === null, "the title moves the window and leaves its size");
+  check(L.dragRect(st0, "se", -5000, -5000, 1920, 1080).w === L.WIN_MIN.w * 16, "a window stops at its minimum width");
+  const off = L.clampRect({ x: 5000, y: -50, w: null, h: null, bw: 800, bh: 600 }, 1920, 1080);
+  check(off.x === 1120 && off.y === 0, "a window remembered off screen comes back on it");
+  const huge = L.clampRect({ x: 0, y: 0, w: 9000, h: 9000 }, 1280, 720);
+  check(huge.w === 1280 && huge.h === 720, "a window remembered bigger than the screen fits it");
+
+  // On a page: the classes and widths on the body (a stand-in for the browser's document).
+  const cls = new Set(), props = new Map(), tips = {};
+  let mapOnly = null;
+  globalThis.document = {
+    body: { classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } },
+    documentElement: { style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) } },
+    getElementById: (id) => (id === "tb-maponly" ? { classList: { toggle: (c, on) => { mapOnly = on; } } } : id.startsWith("gut-") ? { dataset: (tips[id] = tips[id] || {}) } : null),
+  };
+  try {
+    const { applyLayout } = await import("../src/ui/windows.js");
+    const pl = L.defaultLayout();
+    applyLayout(pl);
+    check(!cls.size && !props.size && mapOnly === false && /fold the left panel away/.test(tips["gut-left"].tip), "open panels: no fold classes, the bars say they fold");
+    L.setFolded(pl, "left", true); L.setFolded(pl, "log", true); L.setPanelSize(pl, "right", 30);
+    applyLayout(pl);
+    check(cls.has("fold-left") && cls.has("fold-log") && !cls.has("fold-right") && props.get("--right-size") === "min(30rem, 35vw)" && /Show the left panel/.test(tips["gut-left"].tip), "folded panels and a set width reach the page");
+    L.toggleAll(pl); applyLayout(pl);
+    check(cls.has("map-only") && cls.has("fold-right") && mapOnly === true, "map only: every fold class and the top bar button lit");
+    L.toggleAll(pl); applyLayout(pl);
+    check(!cls.has("map-only") && !cls.has("fold-right") && cls.has("fold-left"), "and back as it was");
+    L.resetLayout(pl); applyLayout(pl);
+    check(!cls.size && !props.size, "reset: nothing folded, usual widths");
+  } finally { delete globalThis.document; }
+
+  // The menu's new controls, main.js's handlers and keys, the README and the Help topic.
+  check(DEFAULT_OPTIONS.autoOpen === true, "Auto-open panels on select is on by default");
+  const u3 = { started: true, scale: 1, speed: 0, slot: null, settings: null };
+  openSettings(u3, "options");
+  const opts = { ...DEFAULT_OPTIONS }, api = { options: opts, desktop: false, autosaveInfo: () => ({}) };
+  let html = settingsModal(w, u3, api);
+  htmlOk(html, "menu: Options with windows and panels");
+  check(/data-action="set-opt" data-k="autoOpen"/.test(html) && /data-action="win-reset"/.test(html) && /data-sec="windows-and-panels"/.test(html), "Options has Auto-open, Reset window sizes and a ? to the help");
+  SETTINGS_ACTIONS["set-opt"](w, u3, { k: "autoOpen" }, api);
+  check(opts.autoOpen === false && /✗ Auto-open panels on select/.test(settingsModal(w, u3, api)), "the option switches off");
+  check(["panel-toggle", "panel-all", "win-reset"].every(inMain), "main.js handles panel-toggle, panel-all and win-reset");
+  check(["BracketLeft", "BracketRight", "\"KeyL\"", "Backslash"].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ])");
+  check(/windowFrame\(renderModal\(state, ui\), modalKind\(state, ui\)\)/.test(mainSrc) && /fitWindows\(\)/.test(mainSrc), "every window on screen goes through the frame and gets its remembered size");
+  check(/mapClicked = true/.test(mainSrc) && /autoReveal\(layout, picked, now/.test(mainSrc) && /options\.autoOpen/.test(mainSrc), "main.js opens panels on a map click, a pick and the option");
+  check(["| [ / ] |", "| L |", "| Shift+[ / Shift+] |", "| \\ (backslash)", "Window edges, corners, title", "Reset window sizes", "Auto-open panels on select"].every((k) => readme.includes(k)), "the README lists the panel keys, window drags and the options");
+  const topic = helpTopics().find((t) => t.id === "windows-and-panels");
+  check(topic && ["<b>[</b>", "<b>]</b>", "<b>L</b>", "<b>Shift+]</b>", "<b>Shift+[</b>", "<b>\\</b>", "Reset window sizes", "Auto-open panels on select"].every((k) => topic.html.includes(k)), "Help → Windows and panels lists the keys and options");
+  if (topic) htmlOk(topic.html, "Help → Windows and panels");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
