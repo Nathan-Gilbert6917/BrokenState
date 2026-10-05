@@ -2,7 +2,7 @@
 // Heat and danger), trip plans (presets run in order, ETA and rations for the whole plan, "come home" conditions,
 // cards on finds), the radio rule (no orders out of contact except through the team's cards) and the battle's
 // end-turn confirmation. Usage: node tools/fieldtest.js [seed]
-import { createWorld, tickHour, hub, atBase, addCard, survivorById } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, addCard, survivorById, makeSurvivor } from "../src/sim/world.js";
 import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel, waterPerHour,
 } from "../src/sim/parties.js";
@@ -191,10 +191,13 @@ section("Trouble by Heat and danger: a quiet night is mostly safe, days next to 
   // An encounter while camping uses the conflict cards and the team goes back to its camp afterwards.
   const state = mk();
   const cityT = state.tiles.find((t) => t.terrain === "city" && t.infection > 0.3).id;
-  const p = placeTeam(state, cityT, 3, { type: "camp", hours: null });
-  let seen = 0, kinds = new Set(), bad = 0;
+  let p = placeTeam(state, cityT, 3, { type: "camp", hours: null });
+  let seen = 0, kinds = new Set(), bad = 0, lost = 0;
   for (let k = 0; k < 400 && seen < 25; k++) {
     p.heat = 100; p.heatTrouble = null; p.lastConflict = null; p.eventHour = null;
+    // Patched up between encounters: fights by the numbers are as deadly as the battle map (breakoff.js), and this
+    // checks the encounters, not how long a team lasts.
+    for (const id of p.members || []) { const s = survivorById(state, id); if (s && s.alive) s.health = 100; }
     if (p.phase !== "task" || !p.task) startOrder(state, p, { type: "camp", hours: null });
     state.cards.length = 0;
     const card = fieldHeatHour(state, p, addCard);
@@ -206,9 +209,18 @@ section("Trouble by Heat and danger: a quiet night is mostly safe, days next to 
     // Answer it with the first open choice; battles resolve by the numbers.
     play(state, p, 0);
     const c = state.cards.shift();
-    if (c) { (c.choices.find((x) => choiceOk(state, x)) || c.choices[0]).resolve(state); }
+    // No fight if it can be helped: fights by the numbers are as deadly as the battle map now (breakoff.js), and a
+    // team lost in the fifth encounter would end the count.
+    if (c) { (c.choices.find((x) => choiceOk(state, x) && !x.fight) || c.choices.find((x) => choiceOk(state, x)) || c.choices[0]).resolve(state); }
     for (let g = 0; g < 6 && state.cards.length; g++) { const d = state.cards.shift(); (d.choices.find((x) => /^Carry on|^Wait here|^Continue/.test(x.label)) || d.choices.find((x) => choiceOk(state, x)) || d.choices[0]).resolve(state); }
-    if (!state.parties.includes(p)) break;
+    // A team lost in a fight (as deadly by the numbers as on the battle map, breakoff.js): the next one camps there.
+    if (!state.parties.includes(p)) {
+      lost++;
+      for (const s of state.survivors) if (s.alive && s.location.kind === "base") s.health = 100;
+      if (atBase(state, hub(state).id).length < 3) for (let n = 0; n < 3; n++) { const s = makeSurvivor(state); s.location = { kind: "base", baseId: hub(state).id }; state.survivors.push(s); }
+      p = placeTeam(state, cityT, 3, { type: "camp", hours: null });
+      continue;
+    }
     if (p.phase === "out" && p.path.length <= 1) bad++;
   }
   check(seen >= 10, `trouble came (${seen} cards: ${[...kinds].join(", ")})`);
