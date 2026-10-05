@@ -113,4 +113,14 @@ export const ZTYPES = {
   crawler:  { name: "Crawler",  short: "C", hp: 0.8, dmg: 1.2, aim: 10, mob: 3, armor: 1, share: 0.06, wall: 0.5, weight: 1.3, reveal: 2.5, ambush: 1.6, slip: 0.6,
               special: "Low in the grass: unseen until it is within 2 tiles, in light or has struck, and its first bite hits hard. At the walls some slip past and attack inside.",
               counter: "Watchtowers and floodlights (they see them coming), flares, keeping your people together." },
+  // Not bred by hives (no growth unlocks them, share 0): the dead who were soldiers or riot police and still wear their
+  // armour, found at military sites, police stations and in hordes that crossed them (deadsoldiers.js MILDEAD, where
+  // the armour by weapon lives). armor here: the rough average the AI and fights by the numbers use; mob null: the
+  // ordinary dead's pace (never faster: the kit weighs them down).
+  soldier:  { name: "Dead soldier", short: "So", hp: 1.3, dmg: 1.0, aim: 0, mob: null, armor: 0.65, share: 0, wall: 1.1, weight: 1.7, military: true,
+              special: "A soldier who turned in a plate carrier and a helmet: pistol rounds, knives and machetes barely get through (rifles mostly do); more health than the ordinary dead, no faster.",
+              counter: "Rifles and the assault rifle, a sledgehammer or bat, critical (head) shots, fire and pipe bombs, or a blade from behind or on one that has not seen you." },
+  riot:     { name: "Dead riot cop", short: "Ri", hp: 1.25, dmg: 1.0, aim: 0, mob: null, armor: 0.65, share: 0, wall: 1.1, weight: 1.5, military: true,
+              special: "Riot police in hard-shell gear and a visored helmet: blows, blades and buckshot glance off, but the soft vest does little against rifle rounds.",
+              counter: "Rifles (hunting, lever-action, carbine, assault), critical shots, fire; a blade from behind." },
 };

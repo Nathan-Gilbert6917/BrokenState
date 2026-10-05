@@ -3,8 +3,9 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell,
+  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, WEAPONS,
 } from "../sim/combat.js";
+import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -13,11 +14,12 @@ import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
+import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", soldier: "#a8b878", riot: "#8aa0c8" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -897,7 +899,13 @@ function previewHtml(b) {
     const o = u && active(u) ? odds(b, u, t) : null;
     const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
     // A hive's special dead (sim/zombietypes.js): what it does and what beats it.
-    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
+    // The armoured dead (sim/deadsoldiers.js): how much of the selected unit's weapon gets through.
+    const ar = t.ztype && MILDEAD.ARMOR[t.ztype] && u && active(u) ? (() => {
+      const melee = !!(WEAPONS[u.weapon] && WEAPONS[u.weapon].melee);
+      const m = armorVs(t, u, { how: melee ? "melee" : "shot" });
+      return ` <span class="${m >= 0.8 ? "good" : m >= 0.55 ? "warn" : "danger"}">Armour: ${Math.round(m * 100)}% of ${esc(u.weaponName)}'s damage gets through${stabsGap(u, t) ? ` (a blade from behind or unseen: all of it)` : ""}; critical hits always do.</span>`;
+    })() : "";
+    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""}${ar} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The knocked out (sim/stealth.js).
@@ -923,7 +931,12 @@ function previewHtml(b) {
     if (lockText) return lockText;
     const box = boxAt(b, h.x, h.y);
     if (box) {
-      const hint = box.kind === "body" ? "Ammo, maybe food, meds or their gear." : areaHint(b.raid.areas[box.area].type) + ".";
+      const hint = box.kind !== "body" ? areaHint(b.raid.areas[box.area].type) + "."
+        : !box.zombie ? "Ammo, maybe food, meds or their gear."
+        : box.ztype === "soldier" ? "A dead soldier: worn body armour, a helmet, rounds, now and then a rifle or a radio."
+        : box.ztype === "riot" ? "A dead riot cop: the riot helmet and guards, a baton, cuffs, a few rounds."
+        : box.ztype === "spitter" ? "What was on them, if you mind the acid still dripping from the sac."
+        : "What they had on them when they turned: small things, now and then a pistol.";
       const near = u && nearBox(u, box);
       return `<b>${esc(box.label)}</b> · ${box.searched ? "searched" : box.partial ? "something left inside (no room last time)" : "not searched"}<br><span class="muted">${hint}</span>${box.searched ? "" : `<br>${near ? "Click or press S to search (1 action)." : "Move next to it to search."}`}`;
     }
@@ -1241,7 +1254,8 @@ function drawRaidOverlay(b, cs) {
   }
   for (const c of R.containers) {
     const px = ox + c.x * cs, py = oy + c.y * cs;
-    if (c.kind === "body") {
+    // A fallen unit's body (uid) is its own picture (ui/downsprites.js), drawn with the units: only its marker here.
+    if (c.kind === "body" && c.uid == null) {
       ctx.fillStyle = c.searched ? "rgba(120,110,100,0.5)" : "#6b5a44";
       roundRect(px + cs * 0.22, py + cs * 0.55, cs * 0.56, cs * 0.3, 4); ctx.fill();
     }
@@ -1743,10 +1757,10 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   const r = cs * 0.34;
   const zombie = t.kind === "zombie";
   let ring = t.side === "player" ? "#8fc1ff" : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
-  const cv = unitCanvas(state, b, t, cui.salt);
   const facing = unitFacing(b, t);
   if (t.dead) {
-    drawSprite(ctx, cv, cx, cy + cs * 0.08, cs, { facing, lying: true, alpha: 0.45 });
+    // The body lying where it fell (ui/downsprites.js: its own picture per kind; pockets out once searched).
+    drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.06, [cs, 0], [0, cs], { facing, scale: downScale(t), alpha: 0.92 });
     if (t.side === "player") {
       ctx.strokeStyle = "#8fc1ff";
       ctx.lineWidth = 2;
@@ -1770,7 +1784,8 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
   }
   const big = t.boss ? 1.3 : t.ztype === "brute" ? 1.15 : 1; // bosses and brutes stand taller
-  drawSprite(ctx, cv, cx, t.down ? cy + cs * 0.1 : cy - (big - 1) * cs * 0.4, cs * big, { facing, lying: !!t.down, alpha: spent ? 0.6 : 1 });
+  if (t.down) drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.08, [cs, 0], [0, cs], { facing, scale: downScale(t) }); // curled up, wounded or out cold
+  else drawSprite(ctx, unitCanvas(state, b, t, cui.salt), cx, cy - (big - 1) * cs * 0.4, cs * big, { facing, lying: false, alpha: spent ? 0.6 : 1 });
   if (t.ztype && !t.down) {
     // The kind's letter in its ring color (an elite one gets a star).
     ctx.font = `800 ${Math.round(cs * 0.2)}px Segoe UI, sans-serif`;

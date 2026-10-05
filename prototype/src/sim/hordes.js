@@ -15,6 +15,7 @@ import { hordeAttackBase, hordeWarnings } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
+import { hordeMilitaryPickup } from "./deadsoldiers.js";
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -161,6 +162,7 @@ export function hordesHour(state) {
 
 function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
+  hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
   const base = state.bases.find((b) => b.tile === h.tile);
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));

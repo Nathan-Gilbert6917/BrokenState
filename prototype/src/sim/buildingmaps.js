@@ -31,6 +31,7 @@ import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { interiorOccupants } from "./wanderers.js";
 import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide } from "./combat.js";
+import { applyZType, mixList } from "./zombietypes.js";
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -1240,8 +1241,10 @@ export function placeInterior(state, b, map, groups) {
     if (!(g.count > 0)) continue;
     if (g.kind === "zombies") {
       const n = Math.max(1, Math.round(g.count * scale));
+      const zl = mixList(g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js)
       for (let i = 0; i < n; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
+        if (zl[i]) applyZType(u, zl[i], false, g.power);
         u.aware = false; u.pod = pod++;
         let c = null;
         if (rng.chance(BMAP.OUTSIDE_DEAD)) c = rng.pick(outsideCells());

@@ -14,7 +14,7 @@
 // into unit counts for a battle (battleTypes) and weighed in fights by the numbers (mixWeight, typeStrength).
 // Everything here is deterministic: the battle's rng only.
 import { ZTYPES, TECH } from "./hiveconst.js";
-import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUnit } from "./combat.js";
+import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUnit, ZOMBIE_MOVE } from "./combat.js";
 import { flareLit } from "./throwables.js";
 
 export const ZKINDS = Object.keys(ZTYPES);
@@ -74,8 +74,21 @@ export function typeList(types, count) {
   for (let i = 0; i < n; i++) out[Math.floor((i * count) / n)] = kinds[i];
   return out;
 }
+// The dead that come in during a battle (reinforcements drawn by noise) in the battle's mix (b.zmix, set where the
+// battle is made: the armoured dead of a military site, deadsoldiers.js): the nth one is of a kind when that kind's
+// share × n crosses a whole number. No dice, so nothing else in the battle changes. Returns the kind or null.
+export function nextOfMix(b, mix = b && b.zmix) {
+  if (!mix) return null;
+  const n = (b.zspawn = (b.zspawn || 0) + 1);
+  for (const k of ZKINDS) if (mix[k] > 0 && Math.floor(n * mix[k] + 1e-9) > Math.floor((n - 1) * mix[k] + 1e-9)) return k;
+  return null;
+}
+// The kinds of n of the dead made at once, in a mix by shares (battleTypes then typeList, spread through them).
+export const mixList = (mix, n) => typeList(battleTypes(mix, n), n);
+
 // A fight by the numbers (combat.js autoResolveCombat): × the enemy's strength for the special dead among them.
 export function typeStrength(enemy) {
+  if (enemy && !enemy.types && enemy.mix) return mixWeight(enemy.mix, "weight", enemy.elite); // shares only (deadsoldiers.js)
   if (!enemy || !enemy.types) return 1;
   const count = Math.max(1, enemy.count || 1);
   let extra = 0;
@@ -96,8 +109,9 @@ export function applyZType(u, kind, elite = false, power = 2) {
   u.maxHp = u.hp = Math.max(8, Math.round(u.maxHp * hpM));
   u.dmgMult = Math.round(u.dmgMult * z.dmg * (elite ? TECH.ELITE_DMG : 1) * 100) / 100;
   u.meleeAim += z.aim;
-  u.mob = z.mob;
-  u.armor = z.armor;
+  if (z.mob) u.mob = z.mob;
+  else u.mob = Math.min(u.mob, ZOMBIE_MOVE); // the armoured dead (deadsoldiers.js): never faster than a walker
+  u.armor = z.armor; // the armoured dead: an average; combat.js damage asks deadsoldiers.js armorVs per hit
   u.power = power;
   if (kind === "spitter") { u.weapon = "acid"; u.weaponName = "Acid spit"; u.aim = z.spitAim + power * 3; u.cd = 0; }
   if (kind === "crawler") u.low = true;

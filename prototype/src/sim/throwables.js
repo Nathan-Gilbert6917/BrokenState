@@ -12,6 +12,7 @@
 // The AI (combat.js autoPlayerTurn): a pipe bomb or a Molotov on three or more enemies bunched up and none of
 // yours near, a smoke grenade when the retreat is about to be sounded.
 import { say, fx, damage, active, alertNear, alertPod } from "./combat.js";
+import { armorVs } from "./deadsoldiers.js";
 
 export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4 };
 export const FIRE = { r: 1.5, turns: 3, hit: [12, 18], burn: [8, 14] };
@@ -30,8 +31,9 @@ const caught = (b, x, y, r) => b.units.filter((t) => active(t) && dist(t.x, t.y,
 
 function hurtAll(b, by, list, [lo, hi], what) {
   const parts = [];
+  const how = what === "FIRE" ? "fire" : "blast"; // the armoured dead (deadsoldiers.js): fire ignores their armour
   for (const t of list) {
-    const eff = Math.round(damage(b, t, b.rng.int(lo, hi), by));
+    const eff = Math.round(damage(b, t, b.rng.int(lo, hi), by, false, { how }));
     if (by && by.xpT && t.side === "enemy") { by.xpT.hits++; if (t.dead) by.xpT.kills++; }
     parts.push(`${t.name} ${eff}${t.dead ? " (dead)" : t.down ? " (down)" : ""}`);
     fx(b, { type: "melee", from: [t.x, t.y], to: [t.x, t.y], hit: true, crit: false, dmg: eff, side: by ? by.side : "enemy", text: what });
@@ -73,8 +75,9 @@ export function fireStep(b, u, x, y) {
 // The burn line first, then the damage (so a death reads after it).
 function burn(b, u, what) {
   const raw = b.rng.int(FIRE.burn[0], FIRE.burn[1]);
-  say(b, `${u.name} ${what} (${Math.round(raw * u.armor)}).`, u.side === "player" ? "danger" : "good");
-  damage(b, u, raw, null);
+  const fire = { how: "fire" };
+  say(b, `${u.name} ${what} (${Math.round(raw * armorVs(u, null, fire))}).`, u.side === "player" ? "danger" : "good");
+  damage(b, u, raw, null, false, fire);
 }
 
 // The start of each player turn: whoever stands in the flames burns, then fires, smoke and flares burn down.

@@ -317,6 +317,7 @@ const LOCK_LOOT = {
   crash:    { sup: [["meds", 0.6, 2, 5], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08]], key: 0 },
 };
 const BP_MULT = { lock: 4, room: 2, plain: 0.5 };
+const ZBODY_KEY = 0.04; // a key to a nearby place on one of the dead (their own house, a car, a shop)
 // sup / gear: what the normal roll put in (changed in place). Returns nothing; keys go to R.foundKeys.
 export function lockedLoot(state, b, u, box, sup, gear) {
   const R = b.raid;
@@ -332,6 +333,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
   };
   if (box.kind === "body") {
     if (box.kit) giveKey(0.12, "body");
+    else if (box.zombie) giveKey(ZBODY_KEY, "zbody"); // one of the dead still has their keys (combat.js searchBox)
     return;
   }
   const lk = box.lock ? LOCKS[box.lock.kind] : null;

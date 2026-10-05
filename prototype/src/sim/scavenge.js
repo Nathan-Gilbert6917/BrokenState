@@ -17,6 +17,9 @@ import { itemLoad, newItem } from "./inventory.js";
 import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
+import { siteDeadMix, bodyLoot, MILDEAD } from "./deadsoldiers.js";
+import { mixWeight } from "./zombietypes.js";
+import { ZTYPES } from "./hiveconst.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -45,7 +48,10 @@ export function raidEnemies(state, tileId) {
   // A hive's land (hives.js): more of the dead and tougher (+1 power), and on the red-skull ring around a hive +3.
   const hz = zombieToughness(state, tileId);
   const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1));
-  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" });
+  // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
+  // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
+  const mix = siteDeadMix(state, tileId);
+  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : "the dead", mix });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   const kindOf = (f) => (f.type === "military" ? "soldiers" : f.type === "zealot" ? "zealots" : "raiders");
@@ -204,12 +210,22 @@ export function searchHour(state) {
   // Encounters.
   let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + locked;
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
-    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0);
+    // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
+    const mil = siteDeadMix(state, e.tile);
+    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0);
     const ammoUse = e.approach === "loud" ? members.length * 6 : members.length * 2;
     p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - ammoUse);
     const power = members.reduce((a, m) => a + combatPower(m), 0) * ((p.supplies.ammo || 0) > 0 ? 1 : 0.6);
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
+      const kind = !e.guarded && mil ? ["soldier", "riot"].find((k) => mil[k] > 0) : null;
+      if (kind && rng.chance(Math.min(0.8, mil[kind] * MILDEAD.SEARCH_BODY))) { // one of them was a soldier: his kit
+        const loot = bodyLoot(rng, kind, newItem);
+        const got = [];
+        for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${k}`); }
+        for (const g of loot.gear) { e.found.gear.push(g); got.push(g.name); }
+        if (got.length) line += ` Off a ${ZTYPES[kind].name.toLowerCase()}'s body: ${got.join(", ")}.`;
+      }
       if (e.guarded) {
         const f = factionById(state, e.guarded);
         if (f) { f.pop = Math.max(0, f.pop - 1); changeGoodwill(state, f, -6, "you raided their base"); }

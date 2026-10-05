@@ -93,6 +93,9 @@ const matchups = [
   { name: "3 vs 12 zombies (power 2), 3 spitters", players: 3, enemy: { kind: "zombies", count: 12, types: { spitter: 3 } }, power: 2 },
   { name: "3 vs 12 zombies (power 2), 1 screamer", players: 3, enemy: { kind: "zombies", count: 12, types: { screamer: 1 } }, power: 2 },
   { name: "3 vs 12 zombies (power 2), 3 crawlers", players: 3, enemy: { kind: "zombies", count: 12, types: { crawler: 3 } }, power: 2 },
+  // The armoured dead (deadsoldiers.js): soldiers at a National Guard base, riot police at a police station.
+  { name: "3 vs 12 zombies (power 2), 5 dead soldiers", players: 3, enemy: { kind: "zombies", count: 12, types: { soldier: 5 } }, power: 2 },
+  { name: "3 vs 12 zombies (power 2), 4 riot cops", players: 3, enemy: { kind: "zombies", count: 12, types: { riot: 4 } }, power: 2 },
   { name: "3 vs 12 zombies (power 2), 1 of each, elite", players: 3, enemy: { kind: "zombies", count: 12, types: { runner: 1, brute: 1, spitter: 1, screamer: 1, crawler: 1 }, elite: true }, power: 2 },
 ];
 

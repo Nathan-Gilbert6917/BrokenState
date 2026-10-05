@@ -288,7 +288,9 @@ const ZPAL = {
 const ZCLOTH = ["#4a5566", "#6a4a3a", "#55603f", "#6d6f73", "#7a3b32", "#3d3d42", "#8a7a5a", "#45606b"];
 export const ZOMBIE_VARIANTS = ["walker", "runner", "bloated", "brute"];
 
-export function paintZombie(variant, seed, look = zlook) {
+// A zombie's colours, build and top: the first draws of its seed, shared by the standing sprite (paintZombie, which
+// goes on drawing from the same rng) and the one lying dead (downsprites.js), so a body looks like the one that fell.
+export function zombieLookOf(variant, seed, look = zlook) {
   const rng = new Rng(seed * 2654435761 + 17);
   const pal = look.palette === "mixed" ? ZPAL[rng.pick(["rotten", "ashen", "pale", "rotten", "ashen"])] : ZPAL[look.palette] || ZPAL.rotten;
   const skin = rng.pick(pal);
@@ -296,10 +298,14 @@ export function paintZombie(variant, seed, look = zlook) {
   const pants = desat(shade(rng.pick(ZCLOTH), -0.3), 0.4);
   const gore = Number(look.gore) || 0;
   const eye = look.eyes === "red" || (variant === "runner" && look.eyes !== "dead") ? "#e2412f" : look.eyes === "glow" ? "#e8e07a" : "#c8c4b0";
-  const p = painter();
   const build = variant === "runner" ? "slim" : variant === "bloated" ? "bloated" : variant === "brute" ? "brute" : rng.pick(["slim", "average", "average", "heavy"]);
-  const [L, R] = BUILD[build];
   const style = variant === "brute" ? "tank" : rng.pick(["tshirt", "jacket", "flannel", "tshirt", "hoodie"]);
+  return { rng, pal, skin, cloth, pants, gore, eye, build, style };
+}
+export function paintZombie(variant, seed, look = zlook) {
+  const { rng, skin, cloth, pants, gore, eye, build, style } = zombieLookOf(variant, seed, look);
+  const p = painter();
+  const [L, R] = BUILD[build];
   if (variant === "walker" && rng.chance(0.5)) drawHair(p, "long", shade(rng.pick(["#3b2a1e", "#6b6b6b", "#8a6a3a"]), -0.3));
   drawLegs(p, L, R, pants, variant === "runner" ? "run" : "stand");
   if (variant === "bloated") {
@@ -360,45 +366,135 @@ export function zombieVariant(u, seed, look = zlook) {
 }
 
 // ---------- human enemies ----------
-export function paintEnemyHuman(kit, factionColor, weaponKey, armorKey, seed) {
+// A hostile person's look by kit and seed (every draw of the seed, in the order the painter made them): shared by the
+// standing sprite and the one lying knocked out or dead (downsprites.js).
+export function enemyLookOf(kit, seed) {
   const rng = new Rng(seed * 40503 + 11);
   const skin = rng.pick(["#f0cdb5", "#d9a37c", "#c08a5f", "#a06e46", "#7d5233", "#5c3a24"]);
   const hair = rng.pick(["#1d1a17", "#3b2a1e", "#6b4526", "#9a6a3a", "#8a8a8a"]);
+  if (kit === "soldiers") {
+    const olive = rng.pick(["#4f5a36", "#55603b", "#4a5232"]);
+    return { kit, skin, hair, olive, facial: rng.pick(["none", "stubble"]) };
+  }
+  if (kit === "zealots") {
+    const robe = rng.pick(["#c9c2b0", "#b8b0a0", "#d4cdbd"]);
+    return { kit, skin, hair, robe, facial: rng.pick(["none", "beard", "stache"]) };
+  }
+  const jacket = rng.pick(["#3a2a20", "#2a2522", "#4a3526", "#2f3338"]);
+  const pants = rng.pick(["#2b3442", "#3a3a3a", "#4f4a3a"]);
+  const topStyle = rng.pick(["jacket", "tank", "jacket"]);
+  const armStyle = rng.pick(["jacket", "tshirt"]);
+  const facial = rng.pick(["none", "beard", "stubble"]);
+  const hairStyle = rng.pick(["short", "buzz", "mohawk", "long", "bald"]);
+  const acc = rng.pick(["bandana", "bandana", "cap", "headband"]);
+  const studs = rng.chance(0.5);
+  return { kit: "raiders", skin, hair, jacket, pants, topStyle, armStyle, facial, hairStyle, acc, studs };
+}
+export function paintEnemyHuman(kit, factionColor, weaponKey, armorKey, seed) {
+  const k = enemyLookOf(kit, seed);
+  const { skin, hair } = k;
   const p = painter();
   const fc = factionColor || "#a63a32";
   if (kit === "soldiers") {
-    const olive = rng.pick(["#4f5a36", "#55603b", "#4a5232"]);
+    const olive = k.olive;
     drawLegs(p, 6, 14, shade(olive, -0.1));
     drawTorso(p, 6, 14, olive, "jacket", skin);
     drawArmor(p, armorKey || "vest", 6, 14);
     drawArms(p, 6, 14, olive, skin, "jacket");
     p.rect(6, 12, 6, 12, fc); p.rect(5, 12, 5, 12, fc); // armband in group color
-    drawHead(p, skin); drawEyes(p); drawFacial(p, rng.pick(["none", "stubble"]), hair, skin);
+    drawHead(p, skin); drawEyes(p); drawFacial(p, k.facial, hair, skin);
     p.rect(6, 1, 14, 3, shade(olive, -0.15)); p.rect(6, 4, 6, 5, shade(olive, -0.15)); p.rect(14, 4, 14, 5, shade(olive, -0.3)); p.rect(8, 1, 12, 1, olive); // helmet
   } else if (kit === "zealots") {
-    const robe = rng.pick(["#c9c2b0", "#b8b0a0", "#d4cdbd"]);
+    const robe = k.robe;
     p.rect(6, 17, 14, 22, shade(robe, -0.1)); p.rect(14, 17, 14, 22, shade(robe, -0.3)); p.rect(10, 18, 10, 22, shade(robe, -0.25));
     drawTorso(p, 6, 14, robe, "tshirt", robe);
     p.rect(6, 16, 14, 16, fc); // sash in group color
     for (let y = 11; y <= 15; y++) p.set(6 + (y - 11), y, fc);
     drawArms(p, 6, 14, robe, skin, "jacket");
-    drawHead(p, skin); drawEyes(p); drawFacial(p, rng.pick(["none", "beard", "stache"]), hair, skin);
+    drawHead(p, skin); drawEyes(p); drawFacial(p, k.facial, hair, skin);
     p.rect(6, 1, 14, 3, shade(robe, -0.15)); p.rect(6, 4, 6, 10, shade(robe, -0.15)); p.rect(14, 4, 14, 10, shade(robe, -0.35)); // hood
     p.set(10, 2, fc);
   } else {
     // Raiders: leather and denim, a bandana or cap in the group's color.
-    const jacket = rng.pick(["#3a2a20", "#2a2522", "#4a3526", "#2f3338"]);
-    const pants = rng.pick(["#2b3442", "#3a3a3a", "#4f4a3a"]);
-    drawLegs(p, 6, 14, pants);
-    drawTorso(p, 6, 14, jacket, rng.pick(["jacket", "tank", "jacket"]), skin);
+    drawLegs(p, 6, 14, k.pants);
+    drawTorso(p, 6, 14, k.jacket, k.topStyle, skin);
     drawArmor(p, armorKey, 6, 14);
-    drawArms(p, 6, 14, jacket, skin, rng.pick(["jacket", "tshirt"]));
-    drawHead(p, skin); drawEyes(p); drawFacial(p, rng.pick(["none", "beard", "stubble"]), hair, skin);
-    drawHair(p, rng.pick(["short", "buzz", "mohawk", "long", "bald"]), hair);
-    drawAccessory(p, rng.pick(["bandana", "bandana", "cap", "headband"]), fc, 6, 14);
-    if (rng.chance(0.5)) { p.set(7, 13, "#b8b0a0"); p.set(13, 12, "#b8b0a0"); } // studs / patches
+    drawArms(p, 6, 14, k.jacket, skin, k.armStyle);
+    drawHead(p, skin); drawEyes(p); drawFacial(p, k.facial, hair, skin);
+    drawHair(p, k.hairStyle, hair);
+    drawAccessory(p, k.acc, fc, 6, 14);
+    if (k.studs) { p.set(7, 13, "#b8b0a0"); p.set(13, 12, "#b8b0a0"); } // studs / patches
   }
   drawWeapon(p, weaponKey, 14);
+  return p;
+}
+
+// ---------- the armoured dead (sim/deadsoldiers.js) ----------
+// A dead soldier: rotting skin (the zombie palette), camo fatigues with a sleeve torn off, a plate carrier with
+// pouches, a combat helmet with its strap hanging, boots. A dead riot cop: black uniform, a hard chest shell with
+// shoulder pads, arm and shin guards, a black helmet with its visor cracked and pushed up. Reaching like walkers.
+export const CAMO = ["#55603b", "#3e4630", "#6b6a4a", "#4a3f2c"];
+export function armoredLookOf(kind, seed, look = zlook) {
+  const z = zombieLookOf("walker", seed, look);
+  return { ...z, kind, build: kind === "riot" ? "heavy" : "average" };
+}
+export function paintArmoredDead(kind, seed, look = zlook) {
+  const z = armoredLookOf(kind, seed, look);
+  const { rng, skin, gore, eye } = z;
+  const p = painter();
+  const [L, R] = BUILD[z.build];
+  const mid = Math.floor((L + R) / 2);
+  if (kind === "riot") {
+    const UNI = "#23262d", SHELL = "#3a3d44", GUARD = "#2e3137";
+    drawLegs(p, L, R, UNI);
+    p.rect(L, 19, mid - 1, 21, GUARD); p.rect(mid + 1, 19, R - 1, 21, shade(GUARD, -0.2)); // shin guards
+    p.rect(L, 20, mid - 1, 20, "#4a4e56");
+    drawTorso(p, L, R, UNI, "jacket", skin);
+    p.rect(L + 1, 11, R - 1, 15, SHELL); p.rect(L + 1, 11, R - 1, 11, shade(SHELL, 0.2));
+    for (const y of [13, 15]) p.rect(L + 2, y, R - 2, y, shade(SHELL, -0.3)); // the shell's segments
+    drawArms(p, L, R, UNI, skin, "jacket", "reach");
+    p.rect(L - 3, 10, L, 11, SHELL); p.rect(R, 10, R + 2, 11, SHELL); // shoulder pads
+    p.rect(R + 2, 13, R + 4, 14, GUARD); // forearm guard
+    drawHead(p, skin, 0, 0);
+    p.set(8, 6, eye); p.set(12, 6, eye);
+    p.rect(9, 8, 11, 8, "#3a1412");
+    p.rect(6, 1, 14, 3, "#1c1e22"); p.rect(6, 4, 6, 6, "#1c1e22"); p.rect(14, 4, 14, 6, "#141518"); p.rect(8, 1, 12, 1, "#2c2f35"); // helmet
+    p.rect(7, 4, 13, 4, "#9fb4c4"); p.set(9, 4, "#d6e4ee"); p.set(12, 4, "#5f7484"); // the visor, pushed up and cracked
+  } else {
+    const camo = (x0, y0, x1, y1, base) => {
+      p.rect(x0, y0, x1, y1, base);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (((x * 7 + y * 13 + seed) % 5) === 0) p.set(x, y, CAMO[1 + ((x + y + seed) % 3)]);
+    };
+    const BOOT = "#2a2620", CARRIER = rng.pick(["#6b6a4a", "#5b5a40", "#7a6a48"]);
+    drawLegs(p, L, R, CAMO[0]);
+    camo(L + 1, 17, R - 1, 21, CAMO[0]);
+    p.rect(mid, 19, mid, 21, shade(CAMO[0], -0.45));
+    p.rect(L, 21, mid, 22, BOOT); p.rect(mid + 1, 21, R, 22, BOOT);
+    drawTorso(p, L, R, CAMO[0], "jacket", skin);
+    camo(L, 11, R, 16, CAMO[0]);
+    // The plate carrier: its plates, pouches across the front, the straps over the shoulders.
+    p.rect(L + 1, 11, R - 1, 15, CARRIER);
+    p.rect(L + 1, 11, L + 1, 15, shade(CARRIER, 0.15)); p.rect(R - 1, 11, R - 1, 15, shade(CARRIER, -0.25));
+    for (const x of [L + 2, mid, R - 3]) p.rect(x, 14, x + 1, 15, shade(CARRIER, -0.3));
+    p.rect(L + 2, 10, L + 2, 11, shade(CARRIER, -0.2)); p.rect(R - 2, 10, R - 2, 11, shade(CARRIER, -0.2));
+    p.rect(L, 16, R, 16, "#2a2420");
+    drawArms(p, L, R, CAMO[0], skin, "jacket", "reach");
+    // A torn sleeve: the reaching forearm bare, rotten and bitten.
+    p.rect(R + 3, 11, R + 6, 12, shade(skin, -0.05)); p.set(R + 4, 12, "#7a1c18");
+    drawHead(p, skin, 0, 0);
+    p.set(8, 6, eye); p.set(12, 6, eye);
+    p.rect(9, 8, 11, 8, "#3a1412");
+    if (gore > 0) p.set(10, 9, "#8a1c18");
+    const HEL = rng.pick(["#4f5a36", "#55603b", "#5b5a40"]);
+    p.rect(6, 1, 14, 3, HEL); p.rect(6, 4, 6, 5, HEL); p.rect(14, 4, 14, 5, shade(HEL, -0.3)); p.rect(8, 1, 12, 1, shade(HEL, 0.18)); // helmet
+    p.rect(5, 4, 15, 4, shade(HEL, -0.2)); // the rim
+    p.set(7, 7, "#2a2620"); p.set(7, 8, "#2a2620"); // the chin strap, hanging loose
+  }
+  const wounds = gore === 0 ? 0 : gore === 1 ? rng.int(2, 3) : rng.int(4, 6);
+  for (let i = 0; i < wounds; i++) {
+    const x = rng.int(L, R + 4), y = rng.int(5, 20);
+    if (p.get(x, y)) p.set(x, y, rng.chance(0.6) ? "#8a1c18" : "#5c1210");
+  }
   return p;
 }
 
@@ -422,6 +518,10 @@ export function survivorCanvas(app, weaponKey = null, armorKey = null) {
 export function zombieCanvas(variant, seed, look = zlook) {
   const s = Math.abs(seed | 0) % 97;
   return cached(`z:${variant}:${s}:${look.palette}:${look.gore}:${look.eyes}:${look.clothes}`, () => paintZombie(variant, s, look));
+}
+export function armoredCanvas(kind, seed, look = zlook) {
+  const s = Math.abs(seed | 0) % 97;
+  return cached(`a:${kind}:${s}:${look.palette}:${look.gore}:${look.eyes}`, () => paintArmoredDead(kind, s, look));
 }
 export function enemyCanvas(kit, color, weaponKey, armorKey, seed) {
   const s = Math.abs(seed | 0) % 61;
@@ -489,6 +589,7 @@ export function unitCanvas(state, b, t, salt = 0) {
   const seed = (t.id * 131 + salt) | 0;
   // A hive's special dead (sim/zombietypes.js): runners and brutes are the zombie variants, the rest their own.
   if (t.ztype === "runner" || t.ztype === "brute") return zombieCanvas(t.ztype, seed);
+  if (t.ztype === "soldier" || t.ztype === "riot") return armoredCanvas(t.ztype, seed); // the armoured dead (sim/deadsoldiers.js)
   if (t.ztype) return ztypeBattleCanvas(t.ztype);
   if (t.kind === "zombie") {
     const vk = `${seed}:${zlook.variants}`;
