@@ -412,7 +412,7 @@ export function caravanCard(state, p, text = "") {
       },
     });
   }
-  choices.push({ label: `Return home to ${home.name} (${eta(home.tile)})`, hint: "Everything carried goes into the stores there", order: true, resolve: (st) => startReturn(st, p) || "" });
+  if (home) choices.push({ label: `Return home to ${home.name} (${eta(home.tile)})`, hint: "Everything carried goes into the stores there", order: true, resolve: (st) => startReturn(st, p) || "" });
   choices.push({ label: "Team panel…", hint: "People, gear, supplies and vehicle", uiAction: { type: "expedition", partyId: p.id }, resolve: () => "" });
   choices.push({ label: "Other orders…", hint: "The usual orders card: move anywhere, camp, scavenge, …", resolve: (st) => { awaitOrders(st, p, "The caravan waits for orders."); return ""; } });
   addCard(state, {

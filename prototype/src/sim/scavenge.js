@@ -13,7 +13,7 @@ import { searchHazards } from "./health.js";
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, newItem } from "./inventory.js";
-import { rollFind } from "./loot.js";
+import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 
@@ -184,6 +184,8 @@ export function searchHour(state) {
   // A small find: a valuable, a comfort, smokes, a throwable (loot.js SITE_FINDS; its own dice too).
   const small = rollFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`);
   if (small) { e.found.gear.push(small); finds.push(small.name); }
+  const gearFind = rollHuntFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // snare wire, a rod, a net (loot.js HUNT_FINDS)
+  if (gearFind) { e.found.gear.push(gearFind); finds.push(gearFind.name); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
   const locked = lockedSearchHour(state, e, p, members);
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower

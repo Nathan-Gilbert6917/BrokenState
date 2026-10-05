@@ -20,6 +20,7 @@ import {
 import { teamLoad, burdenRecord, rationRate, wornLoad } from "./load.js";
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf } from "./conflicts.js";
+import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
@@ -37,6 +38,7 @@ import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
+import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { siteKnown, siteNamed } from "./discovery.js";
 
 export const STANCES = {
@@ -57,9 +59,13 @@ export const MISSIONS = {
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running." },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak them out, storm the base, negotiate or pay a ransom." },
+  assault:     { name: "Assault their base", desc: "Attack a group's base (or one of yours they took): a tactical battle against its defenders behind their walls. Win and it is your outpost, with its land and part of its stores; a group that loses its last base is finished. Bring five or six fighters. Attacking a group that is not hostile costs dearly with it, its friends and every peaceful group." },
   survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
+  retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
+  hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
+  fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
@@ -96,7 +102,8 @@ export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(sta
 
 export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (SUPPLIES[k] && Number.isFinite(v) && v > 0 ? v * SUPPLIES[k].weight : 0), 0);
 // Kg of found cargo: supplies, and items by weight (a pack in the cargo also counts what is inside it, inventory.js itemLoad).
-export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) : 0);
+// Fresh game (hunting.js) is food that weighs MEAT_KG a ration instead of 0.5: carcasses, bones and hide.
+export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) : 0);
 // Everything the team shares out: packed supplies and found cargo (load.js).
 export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 // Room left for more (found goods): what the team can carry less what it already does. A team the autopilot packs
@@ -237,8 +244,9 @@ export function partyPace(state, p) {
 
 // Pace and rations a planned team would have (the planner and launch): stance × load (× Pathfinder on foot, as the
 // trip gets from its first hour, skills.js skillsHour). members: survivors; supplies: what it packs; v: its vehicle.
-export function plannedPace(state, { members, supplies = {}, v = null, stance = "normal" }) {
-  const t = teamLoad(members, supplyLoad(supplies), v);
+// extraKg: more on top of the packed supplies (the planner's expected haul of fresh game, plans.js).
+export function plannedPace(state, { members, supplies = {}, v = null, stance = "normal", extraKg = 0 }) {
+  const t = teamLoad(members, supplyLoad(supplies) + Math.max(0, extraKg), v);
   const st = STANCES[stance]?.speed || 1;
   const pf = members.some((s) => hasPerk(s, "pathfinder")) ? 1.1 : 1;
   const mode = travelMode(v);
@@ -335,7 +343,8 @@ export function waterForHours(state, startHour, segs) {
 // fuel: what the vehicle can burn (tank + cans); leave it out to assume enough. supplies: what the team packs (its
 // load sets its pace and rations, load.js); v: the vehicle (object or id) when there is one.
 export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBaseId, fuel, supplies = {}, v = null }) {
-  const home = baseById(state, homeBaseId || hub(state).id);
+  const home = baseById(state, homeBaseId || (hub(state) || {}).id);
+  if (!home) return null; // no base left (conquest.js exiles)
   const members = (memberIds || []).map((id) => survivorById(state, id)).filter(Boolean);
   const veh = plannedVehicle(state, vehicle, v, members.length || (memberIds || []).length);
   const mode = travelMode(veh);
@@ -383,6 +392,8 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 // ---------- launching player expeditions ----------
 // Missions after which the team waits at the destination (or stays for good): no way back is planned.
 export const STAY_MISSIONS = ["move", "recon", "outpost"];
+// Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
+export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
@@ -397,6 +408,7 @@ export function missionProblem(state, tile, mission) {
     if (theirs) return `${theirs.name} holds that place.`;
   }
   if (mission === "scavenge" && t.terrain === "water") return "There is nothing to search on the water.";
+  if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
   return null;
 }
 
@@ -405,6 +417,7 @@ export function launchExpedition(state, opts) {
   const memberIds = [...new Set(opts.memberIds || [])];
   const vehicleId = opts.vehicleId || null;
   const home = hub(state);
+  if (!home) return { error: "You have no base to send a team from." };
   // Every supply key is present and a plain number (no missing keys, NaN or negative amounts later on).
   const supplies = {};
   for (const k of Object.keys(SUPPLIES)) supplies[k] = 0;
@@ -617,6 +630,7 @@ function playerPartyHour(state, p) {
   reweigh(state, p); // load.js: weighed again when it stops, or when it got heavier
   consume(state, p, members);
   if (!state.parties.includes(p)) return;
+  gameSpoilHour(state, p); // hunting.js: fresh game in the cargo spoils by the temperature
   // Heat from staying put, the plan's conditions and finds, check-ins out of contact (plans.js, fieldheat.js).
   fieldHour(state, p);
   if (!state.parties.includes(p)) return;
@@ -654,7 +668,9 @@ export const waterPerHour = (state, p, members = partyMembers(state, p), hour = 
 function consume(state, p, members) {
   const n = rationRate(p.burden, members, p.vehicle, onTheMove(p)); // rations a day at this hour's rate
   const s = p.supplies;
-  s.food = (s.food || 0) - n / 24;
+  // Fresh game in the cargo is eaten first: it is the food that spoils (hunting.js).
+  const game = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, n / 24) : 0;
+  s.food = (s.food || 0) - n / 24 + game;
   s.water = (s.water || 0) - (n / 24) * thirstAt(state); // more in summer and on a hot day (weather.js)
   // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
   // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
@@ -737,13 +753,18 @@ function onEnterTile(state, p, tileId) {
 export function trimCargo(state, p, into = null) {
   const dropped = { supplies: {}, gear: [], text: "" };
   let over = poolLoad(p) - partyCapacity(state, p); // found cargo goes first; packed supplies stay with the team
+  // Fresh game first: the heaviest food for what it is worth (hunting.js).
+  if (over > 1e-9 && meatIn(p.cargo) > 0) {
+    const drop = takeMeat(p.cargo, Math.min(meatIn(p.cargo), Math.ceil(over / MEAT_KG - 1e-9)));
+    if (drop > 0) { dropped.supplies.food = drop; over -= drop * MEAT_KG; }
+  }
   const keys = Object.keys(p.cargo.supplies).sort((a, b) => SUPPLIES[a].value / SUPPLIES[a].weight - SUPPLIES[b].value / SUPPLIES[b].weight);
   for (const k of keys) {
     if (over <= 1e-9) break;
     const drop = Math.min(Math.ceil(over / SUPPLIES[k].weight - 1e-9), Math.floor(p.cargo.supplies[k] || 0));
     if (drop <= 0) continue;
     p.cargo.supplies[k] -= drop;
-    dropped.supplies[k] = drop;
+    dropped.supplies[k] = (dropped.supplies[k] || 0) + drop;
     over -= drop * SUPPLIES[k].weight;
   }
   const byValue = [...p.cargo.gear].sort((a, b) => (GEAR[a.key]?.value || 0) * (a.quality || 1) - (GEAR[b.key]?.value || 0) * (b.quality || 1));
@@ -815,10 +836,12 @@ export function orderOptions(state, p) {
   if (fb) add("trade");
   if (p.caravan) add("caravan"); // a trade caravan's stop card (caravans.js)
   if (fb && captivesOf(state, fb.id).length) add("rescue");
+  if (fb) add("assault");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
   if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
-    add("outpost", scrap < 15 ? `Needs 15 scrap carried (have ${Math.floor(scrap)})` : null);
+    const need = outpostScrap(state, tile);
+    add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
   }
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
@@ -1004,18 +1027,21 @@ function arrive(state, p) {
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
-      if (t.terrain === "water" || blocked || scrap < 15) {
+      const need = outpostScrap(state, p.dest);
+      if (t.terrain === "water" || blocked || scrap < need) {
         awaitOrders(state, p, t.terrain === "water" ? "An outpost cannot be built on water or on a bridge." : mine ? "You already have a base here." :
-          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : `The team does not have the 15 scrap needed to build (it carries ${Math.floor(scrap)}).`, { failed: true });
+          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).`, { failed: true });
         return "";
       }
       const base = {
-        id: newId(), tile: p.dest, type: "outpost", name: outpostName(state, p.dest),
+        id: newId(), tile: p.dest, type: hub(state) ? "outpost" : "hub", name: outpostName(state, p.dest), // no hub left (conquest.js exiles): this is the new one
         stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
         radio: false, watchtower: false, buildings: [], construction: [], armory: [],
       };
-      takeSupply(p, "scrap", 15);
+      takeSupply(p, "scrap", need);
+      if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       addStock(base, p.supplies);
+      unloadGame(base, p.cargo);
       addStock(base, p.cargo.supplies);
       base.armory.push(...p.cargo.gear);
       const v = partyVehicle(state, p);
@@ -1085,6 +1111,8 @@ function arrive(state, p) {
     case "rescue":
       p.phase = "engaged";
       return rescueArrive(state, p);
+    case "assault":
+      return assaultArrive(state, p); // conquest.js: the assault card and its battle
     case "help": {
       const siege = state.parties.find((q) => q.id === p.helpFor && q.phase === "siege");
       const f = factionById(state, p.helpFaction);
@@ -1308,7 +1336,8 @@ function cullCard(state, p, horde) {
           if (partyFuel(st, p) < 3) { awaitOrders(st, p, "Not enough fuel left for a fire.", { failed: true }); return "The team has less than 3 fuel."; }
           useFuel(st, p, 3);
           horde.lureUntil = st.hour + 72;
-          horde.target = st.grid.neighbors(horde.tile).sort((a, b) => st.grid.distance(b, hub(st).tile) - st.grid.distance(a, hub(st).tile))[0];
+          const away = hub(st) ? hub(st).tile : partyTile(p); // away from the hub (or the team, with no base left)
+          horde.target = st.grid.neighbors(horde.tile).sort((a, b) => st.grid.distance(b, away) - st.grid.distance(a, away))[0];
           awaitOrders(st, p, "The fire draws the dead away.");
           return "The fire draws the dead away from your land for a few days.";
         },
@@ -1324,6 +1353,10 @@ export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
   const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
+  if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
+    if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Build outpost) or take one back (Assault their base).", { failed: true, hold: true });
+    return "There is no base to go home to.";
+  }
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands."; // lands first
   p.homeBaseId = home.id;
   let res = planPath(state, partyTile(p), home.tile, p.vehicle);
@@ -1366,8 +1399,10 @@ function addStock(base, supplies) {
 
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
+  if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
   addStock(home, p.supplies);
+  unloadGame(home, p.cargo);
   addStock(home, p.cargo.supplies);
   home.armory.push(...p.cargo.gear);
   const v = partyVehicle(state, p);
@@ -1413,6 +1448,7 @@ export function wipeParty(state, p) {
   const base = state.bases.find((b) => b.tile === tile);
   if (base) {
     addStock(base, p.supplies);
+    unloadGame(base, p.cargo);
     addStock(base, p.cargo.supplies);
     base.armory.push(...p.cargo.gear);
     if (v) v.loc = { kind: "base", baseId: base.id };

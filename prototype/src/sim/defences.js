@@ -25,6 +25,7 @@ import { hordeScore, reduceHorde } from "./hordes.js";
 import { ensureHives, zombieToughness } from "./hives.js";
 import { BOSS_NAMES } from "./hiveconst.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
+import { raidDamage } from "./breakdowns.js";
 
 export const DEFENCE = {
   WALL_BASE: 15, WALL_PER: 18, GUARD_PER_POWER: 2, ALERT_WEIGHT: 0.8,
@@ -151,6 +152,7 @@ export function hordeAttackBase(state, h, base) {
   stats.breakIns++;
   const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - limit * DEFENCE.HELD_BACK)));
   log(state, `A horde of ${h.size}${bosses ? ` led by a ${BOSS_NAMES.horde}` : ""} broke through the defences of ${base.name} (they stop about ${limit}). About ${through} of the dead are inside.${notes.length ? ` ${notes.join(" ")}` : ""}`, "death");
+  if (!people.length && base.type === "outpost") return wreckEmpty(state, base, h, through);
   if (!people.length) return overrun(state, base, h, through, "Nobody was there to stop them.");
   const force = breakInForce(state, base, through, bosses);
   h.busy = true; // held in place until the fight is over
@@ -158,7 +160,7 @@ export function hordeAttackBase(state, h, base) {
   fightNow(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "zombies", count: force.count, power: force.power, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
-    ambush: null, canRetreat: false, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true,
+    ambush: null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
     context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit },
   });
 }
@@ -197,6 +199,19 @@ function smash(state, base, bosses) {
   return out;
 }
 
+// An outpost with nobody in it (a base taken from a group and left as land, conquest.js): the dead tear through,
+// spoil half the food, water and meds, batter what was built and move on. Nobody is there to lose it: it stays yours.
+function wreckEmpty(state, base, h, through) {
+  state.hiveInfo.stats.overrun++;
+  for (const k of ["food", "water", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+  const dmg = raidDamage(state, base, { strength: Math.min(60, through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
+  log(state, `The dead tore through ${base.name}: nobody was there. Half the food, water and meds were spoiled. ${dmg.text}`, "danger");
+  if (h && state.hordes.includes(h)) {
+    reduceHorde(state, h, Math.round(through * 0.05));
+    if (state.hordes.includes(h)) retreat(state, h, base);
+  }
+}
+
 function overrun(state, base, h, through, why = "") {
   const rng = state.rng;
   state.hiveInfo.stats.overrun++;
@@ -231,6 +246,19 @@ registerCombatHandler("hordeBreakIn", (state, result, setup) => {
     return;
   }
   if (h) reduceHorde(state, h, Math.round(c.through * share));
+  if (result.outcome === "retreat" && base && state.bases.includes(base)) {
+    // Pulled out of the fight: the people who got out hide outside the walls while the dead tear through the base
+    // (half the food, water and meds spoiled, the walls and defences battered), then come back once the horde has
+    // moved on. Nobody else is hurt and the base (an outpost too) stays yours.
+    state.hiveInfo.stats.overrun++;
+    for (const k of ["food", "water", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+    const dmg = raidDamage(state, base, { strength: Math.min(60, c.through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
+    if (h && state.hordes.includes(h)) retreat(state, h, base);
+    const text = `Your people pulled out of ${base.name} and waited outside while the dead tore through it. Half the food, water and meds were spoiled. ${dmg.text} The horde has moved on and everyone who got out is back inside.`;
+    log(state, text, "danger");
+    addCard(state, { title: "Pulled out", text, choices: [{ label: "OK", resolve: () => "" }] });
+    return;
+  }
   if (base && state.bases.includes(base)) overrun(state, base, h, c.through, "The defenders were beaten.");
   const text = `The defenders of ${base ? base.name : "the base"} were beaten and the dead overran it.`;
   addCard(state, { title: "Overrun", text, choices: [{ label: "OK", resolve: () => "" }] });

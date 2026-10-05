@@ -75,6 +75,8 @@ export const ITEM_TAGS = {
   barbedwire: ["farm", "tools", "military", "industry", "prison"], beartrap: ["hunt", "farm", "outdoor", "tools"],
   tripwire: ["camp", "crime", "military", "outdoor", "tools"], sandbags: ["military", "fire", "industry", "tools"],
   // camp kit against Heat
+  // hunting.js: snares and fishing gear
+  snarewire: ["farm", "hunt", "outdoor", "tools", "camp"], fishrod: ["outdoor", "hunt", "camp", "tools", "shop", "sport"], fishnet: ["outdoor", "hunt", "camp", "farm", "tools"],
   camonet: ["military", "hunt", "crash"], ghillie: ["hunt", "guns", "military"], scentmask: ["camp", "crime", "hunt"],
   ragboots: ["camp", "crime", "home"], stove: ["camp", "outdoor", "military", "hunt", "mall"],
   // comforts and things to use up
@@ -147,6 +149,15 @@ export const SITE_FINDS = {
   airdrop: { p: 0.14, items: { chocolate: 3, instcoffee: 2, smokegren: 0.5, flare: 1, batteries: 1, cigarettes: 1 } },
 };
 
+// Hunting and fishing gear (hunting.js) at the sites where people kept it: a roll of its own each search hour, apart
+// from the small finds (so adding it changed no other find).
+export const HUNT_FINDS = {
+  farm: { p: 0.03, items: { snarewire: 1 } }, barn: { p: 0.03, items: { snarewire: 1 } }, ranch: { p: 0.04, items: { snarewire: 1 } },
+  hardware: { p: 0.05, items: { fishrod: 1, snarewire: 1 } }, feedstore: { p: 0.04, items: { snarewire: 2, fishnet: 1 } },
+  cabin: { p: 0.06, items: { fishrod: 1, snarewire: 1 } }, lodge: { p: 0.08, items: { fishrod: 1.5, snarewire: 1.5, fishnet: 1 } },
+  campground: { p: 0.06, items: { fishrod: 2, fishnet: 1 } }, ranger: { p: 0.05, items: { snarewire: 1, fishrod: 1 } },
+};
+
 // ---------- small finds per raid container (combat.js searchBox) ----------
 // p = chance per container (× 0.5 + the site's richness, × Scavenging); items = weights.
 export const AREA_FINDS = {
@@ -199,6 +210,16 @@ export function rollFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "find", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "findpick", tileId, state.hour, salt));
+  return key ? newItem(key, 1) : null;
+}
+// Hunting and fishing gear at a site this search hour (HUNT_FINDS; its own dice too), or null.
+export function rollHuntFind(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? HUNT_FINDS[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "huntfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "huntpick", tileId, state.hour, salt));
   return key ? newItem(key, 1) : null;
 }
 

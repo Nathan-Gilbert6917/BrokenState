@@ -1,0 +1,198 @@
+// Panels and windows: which panels around the map are folded away, how wide they are, and the size and place of
+// each kind of window. The rules here are plain functions on plain objects (tools/uitest.js runs them without a
+// browser); ui/windows.js puts them on the page and main.js calls both.
+//
+// Panels: the left panel (tabs), the right panel (tile, team and site info), the log under the map, and three boxes
+// over the map: the alerts, the running orders and the Layers box. Each folds to a slim strip or a small button and
+// comes back with a click, a key ([ ] L, Shift+[ Shift+]) or, when the player picks something it shows, by itself
+// (autoReveal). "Map only" (\) folds them all and the next press puts them back as they were.
+//
+// Windows: every big window (base, survivor, trade, inventory, planner, menu…) can be resized from its edges and
+// corners and moved by its title. Sizes are kept in rem (they grow with the UI size), places in pixels, both clamped
+// to the screen. Remembered per kind of window in the browser (localStorage, failures ignored).
+
+export const LAYOUT_KEY = "brokenstate.layout";
+export const WINDOWS_KEY = "brokenstate.windows";
+
+// Panel widths in rem: default, smallest, largest (the largest is also capped to a share of the screen).
+export const PANEL_SIZE = {
+  left: { def: 22, min: 14, max: 48 },
+  right: { def: 21, min: 14, max: 48 },
+  log: { def: 9.5, min: 4, max: 40 },
+};
+export const PANEL_KEYS = ["left", "right", "log", "alerts", "orders", "legend"];
+export const PANEL_KEYS_HELP = { left: "[", right: "]", log: "L", alerts: "Shift+]", orders: "Shift+[", legend: "", all: "\\" };
+
+// Smallest window, in rem; windows never get bigger than the screen.
+export const WIN_MIN = { w: 22, h: 12 };
+// Windows that stay as they are: answers to a card, results and the end screen are short and come and go.
+const FIXED_KINDS = new Set(["card", "result", "over", "search"]);
+
+const storage = () => {
+  try { return typeof localStorage !== "undefined" ? localStorage : null; } catch { return null; }
+};
+const num = (v, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null);
+
+// ---------- panels ----------
+export function defaultLayout() {
+  return { left: false, right: false, log: false, alerts: false, orders: false, legend: false, all: null, size: { left: null, right: null, log: null } };
+}
+
+export function loadLayout(store = storage()) {
+  const L = defaultLayout();
+  try {
+    const raw = store && store.getItem(LAYOUT_KEY);
+    if (!raw) return L;
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== "object") return L;
+    for (const k of PANEL_KEYS) if (typeof v[k] === "boolean") L[k] = v[k];
+    if (v.all && typeof v.all === "object") {
+      L.all = {};
+      for (const k of PANEL_KEYS) L.all[k] = v.all[k] === true;
+    }
+    if (v.size && typeof v.size === "object") for (const k of Object.keys(PANEL_SIZE)) L.size[k] = num(v.size[k], PANEL_SIZE[k].min, PANEL_SIZE[k].max);
+  } catch { /* unreadable: the defaults */ }
+  return L;
+}
+export function saveLayout(L, store = storage()) {
+  try { store.setItem(LAYOUT_KEY, JSON.stringify(L)); return true; } catch { return false; } // blocked: this session only
+}
+
+// Fold or unfold one panel (v: true folds, false shows, undefined flips). Returns true when it changed.
+export function setFolded(L, p, v) {
+  if (!PANEL_KEYS.includes(p)) return false;
+  const next = v === undefined ? !L[p] : !!v;
+  if (L[p] === next) return false;
+  L[p] = next;
+  return true;
+}
+
+// Map only: fold everything, remembering what was open; again: put it back the way it was.
+export function toggleAll(L) {
+  if (L.all) {
+    for (const k of PANEL_KEYS) L[k] = !!L.all[k];
+    L.all = null;
+    return false;
+  }
+  L.all = Object.fromEntries(PANEL_KEYS.map((k) => [k, !!L[k]]));
+  for (const k of PANEL_KEYS) L[k] = true;
+  return true;
+}
+// Everything shown again (the menu's reset), widths back to normal.
+export function resetLayout(L) {
+  Object.assign(L, defaultLayout());
+}
+
+export function setPanelSize(L, p, rem) {
+  const d = PANEL_SIZE[p];
+  if (!d) return false;
+  const v = rem == null ? null : num(Number(rem), d.min, d.max);
+  if (L.size[p] === v) return false;
+  L.size[p] = v;
+  return true;
+}
+export const panelSize = (L, p) => L.size[p] ?? PANEL_SIZE[p].def;
+
+// What the player just picked, and the panel that shows it: before / after are { state, started, sel, xp, tab }.
+// - a tile or site picked (selected tile changed), a team's panel opened: the right panel
+// - another tab on the left (B P G T, a link that switches it): the left panel
+// - a new alert that matters (danger), outside map-only mode: the alerts
+// Nothing opens for a new log line. Returns the panels to show (folded ones only).
+export function autoReveal(L, before, after, opts = {}) {
+  if (opts.autoOpen === false || !after || !after.started || !before || before.state !== after.state || !before.started) return [];
+  const out = [];
+  if ((after.sel !== before.sel && after.sel >= 0) || (after.xp !== before.xp && after.xp != null) || opts.clicked) out.push("right");
+  if (after.tab !== before.tab) out.push("left");
+  if (opts.newDanger && !L.all) out.push("alerts");
+  return out.filter((p) => L[p]);
+}
+
+// Danger alerts not seen before (keys), for autoReveal. seen: a Set kept between refreshes (null the first time).
+export function newDangerAlerts(seen, list) {
+  const keys = (list || []).filter((a) => a && a.tone === "danger").map((a) => a.key);
+  if (!seen) return { seen: new Set(keys), fresh: [] };
+  return { seen: new Set(keys), fresh: keys.filter((k) => !seen.has(k)) };
+}
+
+// The alerts folded: one button with the count (a red dot when one of them is a danger), plus the flash line.
+export function alertsPill(list, flashHtml = "") {
+  const n = (list || []).length;
+  const danger = (list || []).some((a) => a && a.tone === "danger");
+  if (!n) return flashHtml;
+  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" data-tip="Show the alerts (Shift+])">🔔 ${n} alert${n === 1 ? "" : "s"} ▾</button>`;
+}
+// The fold button over the alerts when they are open.
+export const alertsFoldButton = () => `<button class="al-fold" data-action="panel-toggle" data-p="alerts" data-tip="Fold the alerts away (Shift+])">▴</button>`;
+
+// ---------- windows ----------
+// The kind of window to remember a size for (the survivor screen is one kind whoever it shows), or "" when this
+// kind is not resizable.
+export function windowKey(kind) {
+  if (!kind) return "";
+  const k = String(kind).split(":")[0];
+  return FIXED_KINDS.has(k) ? "" : k;
+}
+
+export function loadWindows(store = storage()) {
+  const out = {};
+  try {
+    const raw = store && store.getItem(WINDOWS_KEY);
+    if (!raw) return out;
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== "object") return out;
+    for (const [k, g] of Object.entries(v)) {
+      if (!g || typeof g !== "object" || !/^[a-z]+$/.test(k)) continue;
+      const w = num(g.w, 8, 400), h = num(g.h, 4, 400), x = num(g.x, -1e5, 1e5), y = num(g.y, -1e5, 1e5);
+      const e = {};
+      if (w != null && h != null) { e.w = w; e.h = h; }
+      if (x != null && y != null) { e.x = x; e.y = y; }
+      if (Object.keys(e).length) out[k] = e;
+    }
+  } catch { /* unreadable: no sizes */ }
+  return out;
+}
+export function saveWindows(W, store = storage()) {
+  try { store.setItem(WINDOWS_KEY, JSON.stringify(W)); return true; } catch { return false; }
+}
+
+// A window rectangle in pixels kept on the screen: at least the minimum size (or the whole screen when it is
+// smaller), at most the screen, and its top left inside it.
+export function clampRect(r, vw, vh, rem = 16) {
+  const minW = Math.min(vw, WIN_MIN.w * rem), minH = Math.min(vh, WIN_MIN.h * rem);
+  const w = r.w == null ? null : Math.max(minW, Math.min(vw, r.w));
+  const h = r.h == null ? null : Math.max(minH, Math.min(vh, r.h));
+  const bw = w ?? Math.min(vw, r.bw ?? 0), bh = h ?? Math.min(vh, r.bh ?? 0);
+  const x = r.x == null ? null : Math.max(0, Math.min(vw - bw, r.x));
+  const y = r.y == null ? null : Math.max(0, Math.min(vh - bh, r.y));
+  return { x, y, w, h };
+}
+
+// Dragging an edge or corner (dir: n s e w ne nw se sw) or the title (dir "move") by dx, dy from the rectangle
+// the drag started with. Sizes stop at the minimum without the opposite edge moving.
+export function dragRect(start, dir, dx, dy, vw, vh, rem = 16) {
+  let { x, y, w, h } = start;
+  const minW = Math.min(vw, WIN_MIN.w * rem), minH = Math.min(vh, WIN_MIN.h * rem);
+  if (dir === "move") return clampRect({ x: x + dx, y: y + dy, w: null, h: null, bw: w, bh: h }, vw, vh, rem);
+  if (dir.includes("e")) w = Math.max(minW, Math.min(vw - x, w + dx));
+  if (dir.includes("s")) h = Math.max(minH, Math.min(vh - y, h + dy));
+  if (dir.includes("w")) { const nw = Math.max(minW, Math.min(x + w, w - dx)); x += w - nw; w = nw; }
+  if (dir.includes("n")) { const nh = Math.max(minH, Math.min(y + h, h - dy)); y += h - nh; h = nh; }
+  return clampRect({ x, y, w, h }, vw, vh, rem);
+}
+
+// The grips around a resizable window (ui/windows.js handles them); built into the modal's HTML by main.js.
+export const GRIPS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+export function windowFrame(html, kind) {
+  const key = windowKey(kind);
+  if (!html || !key) return html || "";
+  return `<div class="win" data-win="${key}">${html}${GRIPS.map((d) => `<i class="wgrip g-${d}" data-grip="${d}"></i>`).join("")}</div>`;
+}
+
+// ---------- help ----------
+export function windowsHelp() {
+  return `The panels around the map fold away to give the map more room, and big windows can be resized and moved.<br><br>
+    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the running orders. The Layers box folds with its ▾ button. A folded log shows its latest line on its strip.<br><br>
+    <b>Map only:</b> <b>\\</b> (backslash) or the ▣ button in the top bar folds every panel and box at once; press it again to put them back the way they were.<br><br>
+    <b>Opening by themselves:</b> when you pick something a folded panel shows, it opens: a tile, site, base or team clicked on the map, a team opened from a list, an alert or a log link: the right panel; a tab key (B P G T): the left panel; a new urgent alert (red) opens folded alerts, except in map-only mode. The log never opens for a new line. Switch this off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>
+    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.`;
+}

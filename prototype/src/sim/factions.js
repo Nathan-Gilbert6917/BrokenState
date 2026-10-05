@@ -32,10 +32,12 @@
 //   3 tiles of your bases).
 // - A group that breaks another (the raid or war raid that finishes it) takes over its bases (up to its cap), 2–4 of
 //   its survivors and half its stores. A group broken by hordes or by you is picked over by the strongest
-//   aggressive group within 15 tiles (50%). A winning raid between groups takes the base 80% of the time for an
-//   aggressive attacker (50% otherwise), and they carry home half of the 40% of the stores the defenders lose.
+//   aggressive group within 15 tiles (50%). A winning raid between groups decides the base's fate (baseFate): raze
+//   it (razeChance, aggressive types only), keep it (keepChance) or loot it and go; they carry home half of the 40%
+//   of the stores the defenders lose. A group is broken at GROUP_BREAK (3) people.
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
-//   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile.
+//   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
+//   bands from outside that settle use it too, visitors.js settleBands).
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
   newId, log, addCard, day, hub, atBase, combatPower, hurt, playerStrength,
@@ -52,6 +54,8 @@ import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
 import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
+import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
+import { controlledLand, ALLIANCE } from "./alliance.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -60,7 +64,21 @@ export const RAIDS = {
   PROVOKED: { military: 0.03, fortress: 0.02, traders: 0.01, commune: 0.01 },
   EXPAND_AGG: 0.02, EXPAND_RANGE: 7, KEEP_CLEAR: 3, BASES_AGG: 6, BASES: 4, HEIR_RANGE: 15, HEIR_CHANCE: 0.5,
   TAKE_BASE_AGG: 0.8, MIN_AGG: 2, NEW_GANG_FROM: 60, NEW_GANG: 0.02, RECRUIT: 0.12, RECRUIT_BASE: 0.02, RECRUIT_UNTIL: 45, COOL_OFF: 0.1,
+  // Keeping a base won in a raid (keepChance): by type, × nearness to their own bases (1 within KEEP_NEAR tiles,
+  // falling to 0.4 at KEEP_FAR), × richness (0.8 + stock value / 2000, at most 1.4); none beyond maxBases. A base
+  // of yours: the hub × KEEP_HUB. A clearly outmatched group (raid ≥ ABANDON × its defence) may give up a base
+  // that is not its main one (ABANDON_CHANCE) and fall back to the others.
+  KEEP: { raider: 0.8, expansionist: 0.9, zealot: 0.7, military: 0.55, fortress: 0.5, traders: 0.3, commune: 0.3 },
+  KEEP_NEAR: 7, KEEP_FAR: 25, KEEP_HUB: 0.35, ABANDON: 1.6, ABANDON_CHANCE: 0.5,
+  // Razing a base won in a raid (razeChance): only aggressive types, by type, × (1 + 0.25 a grudge point, at most 4),
+  // × 1–2 by distance (a base they could not hold is burned, KEEP_NEAR to KEEP_FAR tiles from their own bases).
+  RAZE: { raider: 0.22, zealot: 0.12, expansionist: 0.05 }, RAZE_GRUDGE: 0.25, RAZE_RUIN_LOOT: 0.25,
+  RAZE_HUB: 0.4, RAZE_EMPTY: 0.5, // your hub, and a base with nobody in it (nothing to make an example of), burn less often
 };
+// A group of GROUP_BREAK people or fewer is broken (collapseFaction): every floor that kept groups above 8 (war raids,
+// peace when a side is worn down) lets them be ground down this far.
+export const GROUP_BREAK = 3;
+export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const PREFERRED_SITES = {
@@ -144,7 +162,7 @@ export function breakPactIfHostile(state, f) {
     r.paused = "pact";
     for (const id of r.escortIds || []) {
       const s = survivorById(state, id);
-      if (s && s.alive && s.location.kind === "route") s.location = { kind: "base", baseId: hub(state).id };
+      if (s && s.alive && s.location.kind === "route" && hub(state)) s.location = { kind: "base", baseId: hub(state).id };
     }
     log(state, `The trade route to ${f.name} is paused: there is no pact any more.`, "danger");
   }
@@ -183,6 +201,40 @@ export function nearestOwnBase(state, f, tile) {
 }
 // How many bases a group can hold: aggressive groups grow with their people (2 + people / 10, at most 6).
 export const maxBases = (f) => (isAggressiveType(f) ? clamp(2 + Math.floor(f.pop / 10), 2, RAIDS.BASES_AGG) : RAIDS.BASES);
+// The chance a group that won a raid keeps the base (instead of looting it and going home): its type, how far it is
+// from its own bases, how rich the place is; never beyond what it can hold. value: the base's stock value.
+export function keepChance(state, f, tile, value = 0) {
+  if (!f || !f.alive || f.bases.length >= maxBases(f) || f.bases.includes(tile)) return 0;
+  const g = state.grid;
+  const d = f.bases.length ? Math.min(...f.bases.map((b) => g.distance(b, tile))) : 0;
+  const near = d <= RAIDS.KEEP_NEAR ? 1 : clamp(1 - (0.6 * (d - RAIDS.KEEP_NEAR)) / (RAIDS.KEEP_FAR - RAIDS.KEEP_NEAR), 0.4, 1);
+  const rich = clamp(0.8 + value / 2000, 0.8, 1.4);
+  return clamp((RAIDS.KEEP[f.type] ?? 0.5) * near * rich, 0, 0.95);
+}
+
+// How likely a winning raid burns the base to the ground (aggressive types only): see RAIDS.RAZE.
+export function razeChance(state, f, tile) {
+  if (!f || !f.alive || !RAIDS.RAZE[f.type]) return 0;
+  const g = state.grid;
+  const d = f.bases.length ? Math.min(...f.bases.filter((b) => b !== tile).map((b) => g.distance(b, tile)).concat([99])) : 99;
+  const far = d <= RAIDS.KEEP_NEAR ? 1 : clamp(1 + (d - RAIDS.KEEP_NEAR) / (RAIDS.KEEP_FAR - RAIDS.KEEP_NEAR), 1, 2);
+  return clamp(RAIDS.RAZE[f.type] * (1 + RAIDS.RAZE_GRUDGE * Math.min(4, f.grudge || 0)) * far, 0, 0.8);
+}
+// What a group does with a base it won: "raze" (burn it down), "keep" (hold it) or "leave" (loot it and go home).
+// keepMult scales the wish to keep it (the hub, a break-in).
+export function baseFate(state, f, tile, value = 0, keepMult = 1, razeMult = 1) {
+  const rng = state.rng;
+  if (rng.chance(razeChance(state, f, tile) * razeMult)) return "raze";
+  return rng.chance(keepChance(state, f, tile, value) * keepMult) ? "keep" : "leave";
+}
+// A group's base burned down by another group: nobody holds the tile, it is a ruin (a little to scavenge, cheap to build on).
+export function razeGroupBase(state, target, tile, attacker) {
+  const t = state.tiles[tile];
+  t.ruin = { name: tileLabel(state, tile), day: day(state), by: attacker ? attacker.name : "raiders", from: target ? target.name : "" };
+  t.loot = Math.max(t.loot || 0, RAIDS.RAZE_RUIN_LOOT);
+  state.stats.razedGroups = (state.stats.razedGroups || 0) + 1;
+  if ((attacker && attacker.known) || (target && target.known) || state.live.has(tile)) log(state, `${attacker ? knownName(attacker, "Raiders") : "Raiders"} burned ${target ? `${knownName(target, "a group")}'s base at ` : ""}${tileLabel(state, tile)} to the ground.`, "danger");
+}
 
 export function factionsDaily(state) {
   const rng = state.rng;
@@ -274,7 +326,7 @@ export function factionsDaily(state) {
       }
     }
 
-    if (f.pop <= 2) collapseFaction(state, f);
+    if (groupBroken(f)) collapseFaction(state, f);
   }
   newGangs(state);
   aiScavDaily(state); // aiscav.js: scavenging parties out, sites in their own land stripped
@@ -297,25 +349,37 @@ function newGangs(state) {
     state.factions.every((f) => !f.alive || f.bases.every((b) => g.distance(b, t.id) >= 8)));
   if (!sites.length) return;
   const type = rng.pick(["raider", "raider", "zealot", "expansionist"]);
-  const def = FACTION_TYPES[type];
   const site = rng.pick(sites);
-  const used = new Set(state.factions.map((f) => f.name));
-  const name = def.names.find((n) => !used.has(n)) || ["II", "III", "IV", "V", "VI"].map((n) => `${def.names[0]} ${n}`).find((n) => !used.has(n)) || `${def.names[0]} ${state.factions.length}`;
-  const pop = rng.int(12, 18);
-  const f = {
-    id: newId(), name, type, color: FACTION_COLORS[state.factions.length % FACTION_COLORS.length],
-    bases: [site.id], pop, alive: true, known: false,
-    goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
-    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 },
-    lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state),
-  };
-  state.factions.push(f);
-  recomputeOwnership(state);
+  makeGang(state, site.id, { type, pop: rng.int(12, 18), rng });
   state.stats.newGangs = (state.stats.newGangs || 0) + 1;
   if (state.live.has(site.id)) log(state, `A new gang from beyond the border has moved into ${site.loc.name}.`, "danger");
   else log(state, `Travellers speak of a new gang settling somewhere ${dirFromHub(state, site.id)}.`, "danger");
 }
+// A new hostile group on a tile (a gang from beyond the border, a raider band from outside that settles: visitors.js).
+// opts: { type, pop, name, stock (added to the usual start), known, rng }. Returns the group.
+export function makeGang(state, tile, opts = {}) {
+  const rng = opts.rng || state.rng;
+  const type = opts.type || "raider";
+  const def = FACTION_TYPES[type];
+  const used = new Set(state.factions.map((f) => f.name));
+  const name = opts.name && !used.has(opts.name) ? opts.name : def.names.find((n) => !used.has(n)) || ["II", "III", "IV", "V", "VI"].map((n) => `${def.names[0]} ${n}`).find((n) => !used.has(n)) || `${def.names[0]} ${state.factions.length}`;
+  const pop = opts.pop || 12;
+  const f = {
+    id: newId(), name, type, color: FACTION_COLORS[state.factions.length % FACTION_COLORS.length],
+    bases: [tile], pop, alive: true, known: !!opts.known,
+    goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
+    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 },
+    lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state),
+  };
+  for (const [k, q] of Object.entries(opts.stock || {})) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q;
+  state.factions.push(f);
+  const t = state.tiles[tile];
+  if (t.ruin) delete t.ruin; // they built on the ruins
+  recomputeOwnership(state);
+  return f;
+}
 function dirFromHub(state, tile) {
+  if (!hub(state)) return "out in the state";
   const a = state.tiles[hub(state).tile], b = state.tiles[tile];
   const dx = b.x - a.x, dy = b.y - a.y;
   return Math.abs(dx) > Math.abs(dy) * 2 ? (dx > 0 ? "to the east" : "to the west") : Math.abs(dy) > Math.abs(dx) * 2 ? (dy > 0 ? "to the south" : "to the north") : `to the ${dy > 0 ? "south" : "north"}${dx > 0 ? "east" : "west"}`;
@@ -361,7 +425,7 @@ function launchRaid(state, f) {
   if (tgt.kind === "player") {
     const base = baseById(state, tgt.baseId);
     const p = spawnAiParty(state, f, "raid", tgt.from, tgt.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: tgt.baseId, tile: tgt.tile } });
-    if (p) p.esc = f.raidEsc || 1;
+    if (p) { p.esc = f.raidEsc || 1; f.raidedYou = day(state); } // the autopilot's grudge (autopilot.js conquest)
     return;
   }
   const raidStrength = Math.max(RAIDS.MIN, strength(f) * rng.range(0.25, 0.4));
@@ -371,7 +435,7 @@ function launchRaid(state, f) {
 // How much a group wants to hit one of your bases (see the header): greed, your land, their grudge, their size, distance.
 export function playerRaidWeight(state, f, b, d) {
   const greed = clamp(supplyValue(b.stock) / RAIDS.GREED, 0.4, 3);
-  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.length - 1);
+  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured).length - 1); // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
   const grudge = 1 + RAIDS.GRUDGE * Math.min(RAIDS.GRUDGE_MAX, f.grudge || 0);
   const size = clamp(strength(f) / RAIDS.SIZE_REF, 0.6, 2);
   return RAIDS.PLAYER_W * greed * land * grudge * size / (1 + d / RAIDS.DIST);
@@ -441,6 +505,14 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   if (!base || !f) return null;
   f.known = true; // they are at your walls: you know who they are
   const beaten = opts.beaten || null;
+  // Abandoned before they got here (Retreat on the warning card): they walk in and keep it, or burn it (conquest.js).
+  if (!beaten && base.abandoned != null && !atBase(state, base.id).length) {
+    warRaidOnPlayer(state, party, false);
+    raidWon(state, f);
+    if (rng.chance(razeChance(state, f, base.tile) * (base.type === "hub" ? RAIDS.RAZE_HUB : 1))) { razePlayerBase(state, base, f); return { outcome: "razed", text: `${f.name} burned ${base.name} to the ground.`, dmg: null }; }
+    const occ = occupyPlayerBase(state, base, f, { garrison: raidForce(f, party.strength).count, retreated: true, outcome: "retreat" });
+    return { outcome: "taken", text: occ ? `${f.name} moved into ${base.name}.` : "", dmg: null };
+  }
   const people = beaten ? [] : atBase(state, base.id);
   const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
   const def = baseDefense(state, base) + allies.power;
@@ -453,7 +525,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const hurtWho = new Map();
   const wound = (s, amt, why) => { hurt(state, s, amt, base.tile, why); hurtWho.set(s.id, `${s.name.split(" ")[0]}${s.alive ? "" : " (killed)"}`); };
   warRaidOnPlayer(state, party, ratio >= RAIDS.HOLD); // diplomacy.js: a war raid on your base counts for the war
-  let outcome, head;
+  let outcome, head, keep = false, raze = false;
   if (ratio >= RAIDS.HOLD) {
     outcome = "held";
     state.stats.raidsRepelled += 1;
@@ -470,6 +542,8 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     for (let i = 0; i < 2 && people.length; i++) wound(rng.pick(people), rng.int(15, 45), `defending ${base.name}`);
     f.pop = Math.max(0, f.pop - 1);
     raidWon(state, f);
+    // An outpost they broke into may be kept (a third as likely as after an overrun): the people there leave.
+    if (base.type === "outpost" && rng.chance(keepChance(state, f, base.tile, supplyValue(base.stock)) * CONQUEST.BREAKIN_KEEP)) keep = true;
   } else {
     outcome = "overrun";
     head = `${f.name} overran ${base.name}.`;
@@ -477,15 +551,30 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     steal(base.stock, count(base, "storehouse") ? 0.25 : 0.5, f.stock);
     for (let i = 0; i < 3 && people.length; i++) wound(rng.pick(people), rng.int(30, 70), `when ${base.name} was overrun`);
     raidWon(state, f);
-    if (base.type === "outpost") {
+    // They may keep it (conquest.js: the people there walk to your nearest base; the hub's job moves there), or burn
+    // it to the ground (aggressive types: razeChance).
+    const fate = baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
+      (base.type === "hub" ? RAIDS.RAZE_HUB : 1) * (people.length || beaten ? 1 : RAIDS.RAZE_EMPTY));
+    keep = fate === "keep";
+    raze = fate === "raze";
+    if (raze) {
+      razePlayerBase(state, base, f);
+      return { outcome: "razed", text: `${head} They burned ${base.name} to the ground.`, dmg: null };
+    }
+    if (!keep && base.type === "outpost" && (people.length || beaten)) { // an empty one (land you hold, conquest.js) is looted and left standing
       // Survivors who live flee to the hub; the outpost is lost (world.removeBase: vehicles left behind,
       // stations cleared, supply runs paused, and the log says what went with it).
       removeBase(state, base, "has been lost");
     }
   }
   base.alert = false;
+  // The raid damage stays on a base they keep (its walls are what an assault to take it back faces).
+  const dmg = state.bases.includes(base) ? raidDamage(state, base, { strength: att, hours, outcome, by: f.name }) : null;
+  if (keep && state.bases.includes(base)) {
+    occupyPlayerBase(state, base, f, { garrison: raidForce(f, att).count, outcome });
+    return { outcome: "taken", text: `${head} They kept ${base.name}.`, dmg };
+  }
   const kept = state.bases.includes(base);
-  const dmg = kept ? raidDamage(state, base, { strength: att, hours, outcome, by: f.name }) : null;
   if (dmg && (dmg.broken.length || dmg.destroyed || dmg.damaged.length)) log(state, `${base.name}: ${dmg.text}`, outcome === "held" ? "info" : "danger");
   const took = stolenText(before, base.stock);
   const hurtNames = [...hurtWho.values()];
@@ -526,7 +615,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
-    if (target.pop <= 2) collapseFaction(state, target, attacker);
+    if (groupBroken(target)) collapseFaction(state, target, attacker);
     return held;
   }
   raidSoured(state, attacker, target);
@@ -537,6 +626,18 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const who = attacker ? knownName(attacker) : party.raidName || "a horde"; // raidName: raiders from outside (visitors.js)
   const whom = knownName(target, `the people at ${tileLabel(state, party.target.tile)}`);
   const report = state.live.has(party.target.tile) || (attacker && target.known);
+  // Clearly outmatched at a base that is not their main one: they may give it up and fall back to the others.
+  if (att > def * RAIDS.ABANDON && target.bases.length > 1 && party.target.tile !== target.bases[0] && rng.chance(RAIDS.ABANDON_CHANCE)) {
+    const lost = party.target.tile;
+    target.bases = target.bases.filter((b) => b !== lost);
+    for (const k of Object.keys(target.stock)) { const q = target.stock[k] * 0.1; target.stock[k] -= q; if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + q; }
+    const kept = attacker && rng.chance(keepChance(state, attacker, lost));
+    if (kept) attacker.bases.push(lost);
+    recomputeOwnership(state);
+    state.stats.abandonedBases = (state.stats.abandonedBases || 0) + 1;
+    if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} gave up ${tileLabel(state, lost)} to ${who} without a fight${kept ? "" : " (it stands empty)"}.`, "info");
+    return false;
+  }
   if (att > def * 1.1) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
@@ -549,12 +650,14 @@ export function resolveRaidOnFaction(state, party, helpers) {
       const lost = party.target.tile;
       target.bases = target.bases.filter((b) => b !== lost);
       target.lostBaseDay = day(state); // valuation.js: they want weapons and defences, and sell off fine things
-      if (attacker && attacker.bases.length < maxBases(attacker) && rng.chance(isAggressiveType(attacker) ? RAIDS.TAKE_BASE_AGG : 0.5)) attacker.bases.push(lost);
+      const fate = attacker ? baseFate(state, attacker, lost) : "leave"; // keep it, burn it or loot it and go
+      if (fate === "keep") attacker.bases.push(lost);
+      else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
     if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss} dead).`, "danger");
     if (attacker && isAggressiveType(attacker) && rng.chance(0.5)) attacker.pop += 1; // a win draws fighters to them
-    if (target.pop <= 2) collapseFaction(state, target, attacker);
+    if (groupBroken(target)) collapseFaction(state, target, attacker);
     return false;
   }
   target.pop = Math.max(1, target.pop - rng.int(0, 2));
@@ -587,7 +690,7 @@ export function collapseFaction(state, f, by = null) {
   clearStaleAlerts(state);
   // Some survivors look for a new home.
   // A recruit card (recruits.js): 1–3 of them, with the hub's beds, food and water.
-  if (state.rng.chance(0.6)) {
+  if (state.rng.chance(0.6) && hub(state)) {
     const n = state.rng.int(1, 3);
     const list = Array.from({ length: n }, () => makeCandidate(state, { quality: 0.9, minHealth: 45 }));
     offerRecruits(state, list, {
@@ -714,7 +817,7 @@ export function raidWarning(state, party) {
   const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength, a break-in from ${RAIDS.BREAK}×; the longer they stay at the walls, the more they smash.`,
+    text: `${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength, a break-in from ${RAIDS.BREAK}×; the longer they stay at the walls, the more they smash.`,
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
@@ -740,7 +843,25 @@ export function raidWarning(state, party) {
         disabled: (st) => !atBase(st, base.id).length || !st.parties.includes(party),
         resolve: (st) => defendInPerson(st, party),
       },
+      retreatChoice(state, base, party, f),
       { label: "Hold as you are", resolve: () => "You wait." },
     ],
   });
+}
+
+// "Retreat": everyone at the base leaves before the raid gets there (conquest.js retreatFrom); the raiders walk in
+// and keep it. To your nearest other base, or onto the road when this is the last one.
+function retreatChoice(state, base, party, f) {
+  const to = nearestOtherBase(state, base);
+  const n = atBase(state, base.id).length;
+  return {
+    label: to ? `Retreat to ${to.name}` : `Abandon ${base.name} and take to the road`,
+    hint: `Everyone at ${base.name} (${n}) leaves now with what they can carry (water, food, scrap, ammo, meds; a vehicle if one is parked there)${to ? ` and walks to ${to.name}, ${state.grid.distance(to.tile, base.tile)} tiles away` : ": you have no other base, so they become a team on the road that has to found a new base or take this one back"}. ${f.name} take ${base.name} without a fight, with what is left in it. Nobody is hurt here; you can try to take it back later (Assault their base).`,
+    retreat: true,
+    disabled: (st) => !st.bases.includes(base) || !atBase(st, base.id).length || !st.parties.includes(party),
+    resolve: (st) => {
+      if (!st.parties.includes(party)) return "The raiders are already gone.";
+      return retreatFrom(st, base, party);
+    },
+  };
 }

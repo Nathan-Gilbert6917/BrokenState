@@ -571,6 +571,7 @@ const groupOf = (state, type) => {
     defendInPerson(s2, raid); // headless: resolved by the numbers through the same handler
     const card = s2.cards.find((c) => c.title === "Raid defense");
     if (!card || /beat off/.test(card.text)) continue;
+    if (!s2.bases.includes(h)) continue; // they kept or burned the hub (conquest.js, tools/conquertest.js): not this check's case
     losses++;
     check(!s2.parties.includes(raid), "after a lost defence the raid is over (no second attack at full strength)");
     check(h.stock.scrap < 100 && h.alert === false, `the raiders took their share once (scrap ${h.stock.scrap})`);

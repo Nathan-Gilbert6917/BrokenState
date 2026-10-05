@@ -275,7 +275,7 @@ export function supplyArrive(state, p) {
 function headHome(state, p, job) {
   const dest = baseById(state, p.destBaseId);
   const home = baseById(state, p.homeBaseId) || hub(state);
-  if (dest) {
+  if (dest && home) {
     const n = partyMembers(state, p).length;
     const back = planPath(state, dest.tile, home.tile, p.vehicle) || planPath(state, dest.tile, home.tile, false);
     if (back) {

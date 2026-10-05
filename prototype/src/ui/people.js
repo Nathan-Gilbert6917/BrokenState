@@ -36,7 +36,7 @@ export function recruitModal(state, card) {
   const after = (withK) => (k ? ` <span class="muted">→ ${withK} with ${k === 1 ? "them" : "them all"}</span>` : "");
   const water = (d, net) => (d == null ? `steady (${net >= 0 ? "+" : ""}${n1(net)} a day)` : daysText(d));
   const t = v.team;
-  const baseBox = `<div class="card small"><div class="kv">
+  const baseBox = !o ? `<div class="card small muted">You have no base left: they can only join the team.</div>` : `<div class="card small"><div class="kv">
       <div${tip("Beds at the base, and how many are free now")}>Beds</div><div class="${o.freeWith < 0 ? "danger" : ""}">${Math.max(0, o.free)} of ${o.beds} free${after(o.freeWith >= 0 ? `${o.freeWith} free` : `${-o.freeWith} without a bed`)}</div>
       <div${tip("Days of food at today's eating and spoilage, without harvests (taking someone in costs 5 food each on arrival)")}>Food</div><div>${Math.floor(o.food)} · ${daysText(o.foodDays)}${after(daysText(o.foodDaysWith))}</div>
       <div${tip("Days of water left at today's rate (steady: the well and rain keep up)")}>Water</div><div>${Math.floor(o.water)} · ${water(o.waterDays, o.waterNet)}${after(water(o.waterDaysWith, o.waterNetWith))}</div>

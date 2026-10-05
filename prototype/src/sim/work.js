@@ -36,7 +36,7 @@
 import { atBase, skill, combatPower, hourOfDay } from "./world.js";
 import { SKILLS, SKILL_NAMES } from "./data.js";
 import { BUILDINGS, RECIPES, stations, underAttack, assignStations } from "./buildings.js";
-import { hasOrder, orderHold, stationIO } from "./production.js";
+import { hasOrder, orderHold, stationIO, stationOrder } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { farmersWanted, farmOf } from "./farming.js";
 import { edibleFood, foodStore } from "./storage.js";
@@ -50,8 +50,10 @@ import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR } from "./economy.js";
 import { prisonersAt } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
+import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 
 export const PRIO_MAX = 5;
+export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
 const STICKY = 1.5;                           // staying on the same job this hour
@@ -136,7 +138,7 @@ export const WORK_TYPES = {
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
-    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes.",
+    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap the next building needs is left alone (ammo under 50, meds 40, parts 60).",
     open: (ctx) => stationOpen(ctx, (k) => k !== "preserve", "no workshop station"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k !== "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && st != null && stationKindById(ctx, st) !== "preserve",
@@ -144,12 +146,12 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter, two with 3+ jobs queued. Needs the recipe's skill.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill.",
     open(ctx) {
       const jobs = craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] && meetsNeeds(ctx.base, CRAFTS[j.recipe]));
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? "the queued crafts need a workshop" : "nothing in the craft queue" };
       const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
-      return { cap: jobs.length >= 3 ? 2 : 1, urg: 3 + (water ? 4 : 0) };
+      return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
     can(ctx, s) {
       const ok = craftQueue(ctx.base).some((j) => {
@@ -236,6 +238,31 @@ export const WORK_TYPES = {
     desc: "Picks through the ruins around the base: usually finds nothing, and the area is picked over for good. Real supplies come from trips (crews).",
     open: (ctx) => (scavLeft(ctx.base) > SCAV_FLOOR + 0.02 ? { cap: 99, urg: 0 } : { cap: 0, why: "the surroundings are picked clean" }),
   },
+  // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
+  hunt: {
+    name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
+    desc: "Hunts the land within 2 tiles with a Hunting cabin here (up to 2 people, while food is short of the season's goal), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    open(ctx) {
+      const why = huntWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const days = ctx.foodDays;
+      if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
+      return { cap: CABIN.hunters, urg: days < 7 ? 7 : days < 20 ? 4.5 : 2.5 };
+    },
+    rank: (s) => hunterMult(s) * 10 * (bestHuntWeapon(s) ? 1 : 0.4),
+  },
+  fish: {
+    name: "Fish", ing: "Fishing", short: "Fish", role: "fish", skill: "scouting",
+    desc: "Fishes the river or lake by this base 3 hours a day while food is short of the season's goal: one fishing rod or net each (carried or in the armory). Fresh fish spoils fast; a fished-out spot comes back in a week or two.",
+    open(ctx) {
+      const why = fishWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const days = ctx.foodDays;
+      if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
+      return { cap: fishWorkCap(ctx.state, ctx.base), urg: days < 7 ? 6.5 : days < 20 ? 4 : 2 };
+    },
+    rank: (s) => fisherMult(s) * 10,
+  },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
 
@@ -252,18 +279,29 @@ export function stationWork(state, base, st, opsNow = new Set()) {
   const k = stationKind(st);
   const n = Math.max(1, atBase(state, base.id).length);
   const s = base.stock;
+  // The scrap the build queue needs is kept back unless the player's own order says otherwise (a steward's or the
+  // governor's order only sets the stock target, like the governor's stationWorth).
+  const own = hasOrder(base, st) && stationOrder(base, st).by === "player";
   if (hasOrder(base, st)) {
     const hold = orderHold(state, base, st);
     if (hold) return hold;
-  } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; if ((s.scrap || 0) < 30) return "scrap kept for building (under 30)"; }
-  else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; if ((s.scrap || 0) < 15 || (s.food || 0) < n * 6) return "short of scrap or food"; }
-  else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; if ((s.scrap || 0) < 45) return "scrap kept (under 45)"; }
-  else if (k === "preserve") {
+  } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; }
+  else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; }
+  else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; }
+  // Priorities staff a station as soon as it has work (the governor only with hands left over), so the floor is
+  // higher than the governor's: enough scrap stays for the next building to be queued (walls 25, a bunkhouse 20,
+  // plus the 10 the governor keeps back).
+  if (!own) {
+    if (k === "ammo" && (s.scrap || 0) < SCRAP_KEEP.ammo) return `scrap kept for building (under ${SCRAP_KEEP.ammo})`;
+    if (k === "meds" && ((s.scrap || 0) < SCRAP_KEEP.meds || (s.food || 0) < n * 6)) return `scrap kept for building (under ${SCRAP_KEEP.meds}) or food short`;
+    if (k === "parts" && ((s.scrap || 0) < SCRAP_KEEP.parts || !atBase(state, base.id).some((p) => skill(p, "mechanics") >= 4))) return `scrap kept for building (under ${SCRAP_KEEP.parts}), or nobody with Mechanics 4`;
+  }
+  if (!hasOrder(base, st) && k === "preserve") {
     const store = foodStore(state, base);
     const sk = season(state).key;
     if ((s.food || 0) < n * 14 + 9) return "food kept for eating (no order set)";
     if (!(store.outside >= 1 || ((sk === "summer" || sk === "autumn") && (s.food || 0) >= Math.min(store.cap * 0.6, n * 25)))) return "nothing spoiling (no order set)";
-  } else if (k === "still") {
+  } else if (!hasOrder(base, st) && k === "still") {
     if (!(foodStore(state, base).outside >= 1 || edibleFood(base) / n >= 30)) return "no surplus food (no order set)";
     if ((s.water || 0) < n * 2 + 2) return "water kept for drinking";
   }
@@ -324,14 +362,16 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 2, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
+  { name: "Hunter", pri: P({ hunt: 1, fish: 1, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
   { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, scavenge: 4 }) },
+  { name: "Hunting party", kind: "crew", pri: P({ hunt: 2, fish: 2, farm: 3, build: 4 }), crew: { field: { hunt: 1, fish: 2, recover: 3 }, size: 2, rules: { hurt: 45, food: 1, cargo: true } } },
 ];
 
 export function workState(state) {
@@ -350,7 +390,7 @@ function addRole(state, r) {
 }
 // A crew's field settings (crews.js reads them).
 export const defaultCrew = () => ({
-  field: { scavenge: 1, recover: 2, vehicle: 2, trade: 3, supply: 3 },
+  field: { scavenge: 1, recover: 2, vehicle: 2, trade: 3, supply: 3, hunt: 3, fish: 3 },
   range: 10, maxHours: 24, size: 3, stance: "normal", vehicle: "auto", ammo: 10, meds: 2, spare: 1.3,
   rules: { hurt: 45, food: 1, cargo: true }, rest: 1, paused: false, handleAll: false, style: "balanced",
   out: null, log: [], lastTrip: -99,
