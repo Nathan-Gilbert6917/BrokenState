@@ -5,6 +5,7 @@ import {
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell,
 } from "../sim/combat.js";
+import { windowsNear, BMAP } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -15,9 +16,11 @@ import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
+import { herded, sensesOf } from "../sim/decoys.js";
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -80,7 +83,7 @@ function view(b) {
   // enemies they see; ghosts where unseen ones were last seen.
   const vis = playerVision(b);
   const u = selUnit(b);
-  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap) : null;
+  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap, { manual: true }) : null; // an order by hand may walk into fire
   const seen = new Set(b.units.filter((e) => e.side === "enemy" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id));
   const ghosts = b.over ? [] : enemyGhosts(b);
   cui.cache = { key, vis, reach, seen, u, ghosts };
@@ -194,6 +197,8 @@ export function combatClick(state, px, py) {
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
   // Raids: click a container next to the selected unit to search it.
   if (b.raid) {
+    // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
+    if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
     const box = boxAt(b, c.x, c.y);
     if (box && !box.searched && (!CELL[b.cells[c.y * W + c.x].k].walk || (u.x === c.x && u.y === c.y))) {
       if (nearBox(u, box)) return void act(state, { type: "search", unit: u.id, box: box.id });
@@ -385,7 +390,7 @@ export function combatKey(state, e) {
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag" };
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -459,6 +464,8 @@ export function combatAction(state, key, d) {
     if (u && t) attack(state, u, t);
     return;
   }
+  // A site with several buildings (sim/buildingmaps.js): which one to explore, or the street.
+  if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
   // R is the retreat key of a normal battle. A raid has no retreat strip: say how to leave instead.
@@ -498,6 +505,7 @@ export function combatAction(state, key, d) {
     else cui.msg = cui.mode === "drag" ? "Click the body (or someone down) next to you, then where to drag it." : "";
     return;
   }
+  if (v === "drop") return void act(state, { type: "drop", unit: u.id, target: Number(d.id) }); // rocks from the walls (sim/siege.js)
   if (v === "meds") {
     const others = players(b).filter((o) => o !== u && !o.dead && !o.left && adjacent(u, o) && (o.down ? !o.stab : o.hp < o.maxHp));
     if (!others.length) return void act(state, { type: "meds", unit: u.id, target: u.id });
@@ -566,6 +574,7 @@ export function renderCombatPanel(state) {
 
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
+  if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (retreatAskOpen(b)) html += retreatConfirmHtml(b, askPlan(b)); // right under the team, where it is seen
 
   if (u && active(u) && b.phase === "player") {
@@ -581,6 +590,7 @@ export function renderCombatPanel(state) {
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${stealthButtons(state, b, u, btn)}
+      ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
@@ -645,8 +655,13 @@ function raidHead(state, b, phase) {
   const stage = Math.min(3, Math.floor(R.heat / 25));
   const left = R.containers.filter((c) => !c.searched && c.kind !== "body").length;
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];
+  // A building's own map (sim/buildingmaps.js): its name, its ways out, people inside who are not placed yet.
+  const I = R.interior;
+  const exits = I && R.plan ? (R.plan.exits || []).filter((e) => e.zone >= 0).map((e) => e.name.toLowerCase()) : [];
+  const waiting = I && R.occupants ? R.occupants.waiting.reduce((a, w) => a + w.count, 0) : 0;
   return `<div class="cbhead">
-    <div class="cbtitle">Scavenging ${esc(b.place)}</div>
+    <div class="cbtitle">Scavenging ${I ? `the ${esc(I.name.toLowerCase())} · ` : ""}${esc(b.place)}</div>
+    ${I ? `<div class="small muted" data-tip="Every way out has a green extraction zone outside it. Locked doors (padlocks) open like any lock, from either side.">Ways out: the front${exits.length ? `, ${esc(exits.join(", "))}` : ""}${waiting ? ` · <span class="warn">${waiting} other people inside</span>` : ""}</div>` : ""}
     <div class="small muted">Turn ${b.turn} · about ${Math.floor((b.turn - 1) / 6)}h ${((b.turn - 1) % 6) * 10}m in · ${phase}</div>
     <div class="small" style="margin-top:0.35rem" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat: <b>${HEAT_NAMES[stage]}</b> (${Math.round(R.heat)})</div>
     <div class="heat" style="margin:0.25rem 0 0.4rem"><i style="left:${Math.min(100, R.heat)}%"></i></div>
@@ -670,7 +685,20 @@ function raidButtons(b, u, btn) {
   const searchTip = near.length ? `Search ${near[0].label.toLowerCase()} (1 action). ${near[0].kind === "body" ? "" : areaHint(b.raid.areas[near[0].area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
-  return `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  // A building's windows (sim/buildingmaps.js): climb through one next to you.
+  if (b.raid.interior) {
+    const wins = windowsNear(b, u);
+    html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${u.name.split(" ")[0]} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
+  }
+  return html;
+}
+
+// A site with several buildings (sim/buildingmaps.js): pick the one to explore before anyone acts, or the street.
+function chooseHtml(b) {
+  const list = b.raid.choose || [];
+  return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
+    <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}`)}">${esc(o.name)}${o.size ? ` <span class="muted">${o.size}</span>` : ""}</button>`).join("")}</div></div>`;
 }
 
 // ---------- the stealth kit (sim/stealth.js) ----------
@@ -690,10 +718,27 @@ function stealthButtons(state, b, u, btn) {
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
     const T = THROWABLES[k];
-    const what = T.fx ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
+    const what = T.fx || T.decoy ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
       : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
     html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`${what} ${T.keep ? "" : `${have[k]} left.`}`)}">${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
   }
+  return html;
+}
+
+// ---------- siege kit (sim/siege.js): ladders, the ram, rocks from the walls ----------
+function siegeButtons(b, u, btn) {
+  const ap = u.ap;
+  let html = "";
+  const lt = ladderTargets(b, u);
+  if (u.ladder > 0 || lt.length) html += btn("ladder", "Set ladder", `1 action: set ${u.ladder > 0 ? "the ladder you carry" : "the fallen ladder"} against the wall section next to you; then anyone can climb it onto the walkway (exposed while on it: +10 to be hit, no cover). Defenders can push it off.${lt.length ? "" : " Stand at the foot of a wall section first."}`, ap > 0 && lt.length > 0);
+  const pl = pushable(b, u);
+  if (pl.length) html += btn("push", `Push ladder (${pushChance(b, u, pl[0])}%)`, `1 action: shove the enemy's ladder off the wall (${LADDER.PUSH}% + a fifth of melee aim + Tough or Brave, −15 with someone on it). Whoever is on it falls (${LADDER.FALL[0]}–${LADDER.FALL[1]} damage).`, ap > 0);
+  const r = ramOf(b, u);
+  if (r && r.lead === u.id) html += btn("ram", "Swing ram", `Bring the ram's crew to bear on the barred gate or door right in front: ${RAM.DMG[0]}–${RAM.DMG[1]} damage per carrier next to the lead (${RAM.MIN}–${RAM.CREW}). Ends the crew's turn.`, ap > 0 && ramTargets(b, u).length > 0);
+  if (r) html += btn("dropRam", "Set ram down", "Let go of the ram: the crew can shoot and take cover again. Anyone can take it up again with someone next to them.", true);
+  else if ((b.rams || []).some((x) => x.dropped && x.side === u.side && Math.max(Math.abs(x.x - u.x), Math.abs(x.y - u.y)) <= 1)) html += btn("takeRam", "Take up ram", `Take the ram up with whoever of yours stands next to you (it needs ${RAM.MIN}). It moves at ${RAM.MOB} tiles an action.`, ap > 0);
+  const dt = dropTargets(b, u);
+  if (dt.length) html += `<button data-action="cb-act" data-v="drop" data-id="${dt[0].id}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`Drop a rock from the wall on ${dt[0].name} below (${DROP.CHANCE}%: ${DROP.DMG[0]}–${DROP.DMG[1]}; on a ram's crew one more of them is hit). Ends the turn.`)}">Drop rock on ${esc(dt[0].name)}</button>`;
   return html;
 }
 
@@ -877,9 +922,12 @@ function previewHtml(b) {
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
     const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
+    // What it follows (sim/decoys.js), a Shepherd's pack, the siege kit it carries (sim/siege.js).
+    const sense = t.kind === "zombie" ? (herded(b, t) ? ' · <span class="danger">herded by a Shepherd: decoys and fire do not work on it</span>' : ` · <span class="muted">follows ${sensesOf(b, t).join(" and ") || "nothing"}</span>`) : "";
+    const kit = t.ram != null && ramOf(b, t) ? ' · <span class="warn">carrying the ram (no cover)</span>' : t.ladder ? ' · <span class="warn">carrying a ladder</span>' : t.throwables && Object.values(t.throwables).some((n) => n > 0) ? ' · <span class="warn">has grenades</span>' : b.cells[t.y * W + t.x].k === "siegeladder" ? ' · <span class="warn">on a ladder (exposed)</span>' : "";
     // A hive's special dead (sim/zombietypes.js): what it does and what beats it.
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
@@ -913,6 +961,10 @@ function previewHtml(b) {
   }
   const cobj = b.cells[h.y * W + h.x];
   const cell = CELL[cobj.k];
+  // A building's map (sim/buildingmaps.js): windows to climb, doors, the room under the mouse.
+  const room = b.raid && b.raid.interior ? b.raid.areas.find((a) => !a.outdoor && h.x > a.x0 && h.x < a.x0 + a.w - 1 && h.y > a.y0 && h.y < a.y0 + a.h - 1) : null;
+  if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
+  if (b.raid && b.raid.interior && cobj.k === "idoor") return `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>: blocks sight. Walk through it to open it${cobj.roll ? ": hauling it up is loud (Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}.${room ? ` ${esc(room.name)}.` : ""}`;
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
   const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";
   if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}`;
@@ -929,12 +981,15 @@ function previewHtml(b) {
   else if (cell.climb) s += ` ${cell.name}: the way up (climbing costs ${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}).`;
   if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
+  if (room) s += ` ${esc(room.name)}${room.type ? ` (${esc(areaHint(room.type).replace(/^Likely: /, "likely ").toLowerCase())})` : ""}.`;
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
   return s;
 }
 
 // ---------- drawing ----------
 const FLOOR = { grass: "#36432c", field: "#4a4a2c", dirt: "#4a4234", gravel: "#47464a", road: "#2f3135", floor: "#3b3129", rubble: "#423e3b" };
+// A building's floors by room (sim/buildingmaps.js c.fl).
+const ROOM_FLOOR = { wood: "#3b3129", tile: "#4c4a44", conc: "#3e3d3b", carpet: "#3a2f34", dirt: "#40372b" };
 
 function hash(x, y) {
   let h = (x * 374761393 + y * 668265263) | 0;
@@ -974,12 +1029,12 @@ export function drawCombat(state, now) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = b.cells[y * W + x];
     const px = ox + x * cs, py = oy + y * cs;
-    ctx.fillStyle = FLOOR[c.f] || FLOOR.grass;
+    ctx.fillStyle = (c.f === "floor" && c.fl && ROOM_FLOOR[c.fl]) || FLOOR[c.f] || FLOOR.grass;
     ctx.fillRect(px, py, cs, cs);
     const n = hash(x, y);
     if (c.f === "grass" || c.f === "field") { ctx.fillStyle = `rgba(255,255,255,${0.02 + n * 0.03})`; ctx.fillRect(px + n * cs * 0.6, py + ((n * 7) % 1) * cs * 0.6, cs * 0.25, cs * 0.25); }
     if (c.f === "road" && y % 2 === 0 && x % 2 === 0) { ctx.fillStyle = "#6b6a4a"; ctx.fillRect(px + cs * 0.2, py + cs - 1, cs * 0.6, 2); }
-    drawObject(c.k, px, py, cs, n, c);
+    drawObject(c.k === "siegeladder" ? "palisade" : c.k, px, py, cs, n, c); // a siege ladder is drawn over its wall (drawSiegeTop)
     // Raised ground (verticality): lighter the higher it is.
     const hh = c.h ?? CELL[c.k].h ?? 0;
     if (hh && CELL[c.k].walk) { ctx.fillStyle = `rgba(255,236,190,${0.08 * hh})`; ctx.fillRect(px, py, cs, cs); }
@@ -1020,7 +1075,8 @@ export function drawCombat(state, now) {
   ctx.fillStyle = b.night ? "rgba(3,5,14,0.7)" : "rgba(5,6,8,0.5)";
   for (let i = 0; i < W * H; i++) if (!v.vis[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
   if (b.night) drawLights(b, cs); // flashlight cones (sim/stealth.js)
-  drawLures(b, cs, now); // thrown bottles, noise makers, firecrackers
+  drawLures(b, cs, now); // thrown bottles, noise makers, firecrackers; fire, smoke, decoys
+  drawSiegeTop(b, cs, now, v.vis); // ladders, rams, a Shepherd's aura (sim/siege.js battleOverlays)
 
   // Movement range: blue = 1 action, yellow = dash.
   if (v.reach && cui.mode === "move" && u) {
@@ -1199,16 +1255,19 @@ function drawRaidOverlay(b, cs) {
     ctx.font = `700 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
     ctx.fillStyle = z.vehicle ? "#a9cbff" : "#6cc48a";
     const ty = z.y0 === 0 ? oy + (z.y0 + z.h) * cs + cs * 0.35 : oy + z.y0 * cs - 4;
-    ctx.fillText(z.vehicle ? "VEHICLE · EXTRACT" : "EXTRACT", ox + (z.x0 + z.w / 2) * cs, ty);
+    ctx.fillText(z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", ox + (z.x0 + z.w / 2) * cs, ty);
   });
   ctx.font = `600 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
   for (const a of R.areas) {
-    const x = ox + (a.x0 + a.w / 2) * cs, y = oy + a.y0 * cs + (a.outdoor ? cs * 0.4 : -3);
-    const w = ctx.measureText(a.name).width + 10;
+    if (a.noLabel) continue; // halls and corridors (sim/buildingmaps.js)
+    // A building's rooms (sim/buildingmaps.js): the name inside the room, at its top.
+    const x = ox + (a.x0 + a.w / 2) * cs, y = oy + a.y0 * cs + (a.outdoor ? cs * 0.4 : R.interior ? cs * 1.4 : -3);
+    const name = a.locked && !(R.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name;
+    const w = ctx.measureText(name).width + 10;
     ctx.fillStyle = "rgba(15,17,20,0.75)";
     ctx.fillRect(x - w / 2, y - cs * 0.32, w, cs * 0.4);
     ctx.fillStyle = "#e6d8b8";
-    ctx.fillText(a.name, x, y);
+    ctx.fillText(name, x, y);
   }
   for (const c of R.containers) {
     const px = ox + c.x * cs, py = oy + c.y * cs;
@@ -1352,20 +1411,77 @@ function drawLures(b, cs, now) {
   // Flames, smoke and flare light (sim/throwables.js): soft discs over the ground, flickering.
   const ph2 = ((now || 0) % 900) / 900;
   const disc = (c, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs * (c.r + 0.5), 0, Math.PI * 2); ctx.fill(); };
-  for (const c of b.flares || []) disc(c, "rgba(255,90,70,0.10)");
-  for (const c of b.fires || []) {
-    disc(c, `rgba(255,${120 + Math.round(60 * Math.sin(ph2 * Math.PI * 2))},40,0.32)`);
-    for (let i = 0; i < 5; i++) { const a = i * 1.26 + ph2 * 6; ctx.fillStyle = "rgba(255,200,80,0.7)"; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5 + Math.cos(a) * 0.8) * cs, oy + (c.y + 0.5 + Math.sin(a) * 0.8) * cs, cs * 0.1, 0, Math.PI * 2); ctx.fill(); }
+  const OV = battleOverlays(b);
+  for (const c of OV.flares) disc(c, "rgba(255,90,70,0.10)");
+  // Burning cells (one each, sim/throwables.js): the cell glows, tongues of flame flicker in it.
+  for (const c of OV.fires) {
+    const px = ox + c.x * cs, py = oy + c.y * cs;
+    ctx.fillStyle = `rgba(255,${100 + Math.round(60 * Math.sin((ph2 + c.x * 0.13 + c.y * 0.07) * Math.PI * 2))},30,0.5)`;
+    ctx.fillRect(px, py, cs, cs);
+    for (let i = 0; i < 4; i++) {
+      const fl = (ph2 * 3 + i * 0.29 + c.x * 0.11) % 1, fx0 = px + cs * (0.2 + i * 0.2), h = cs * (0.3 + 0.25 * Math.sin(fl * Math.PI)) * (c.turns > 1 ? 1 : 0.7);
+      ctx.fillStyle = i % 2 ? "rgba(255,200,70,0.9)" : "rgba(255,110,40,0.85)";
+      ctx.beginPath(); ctx.moveTo(fx0 - cs * 0.09, py + cs * 0.85); ctx.quadraticCurveTo(fx0, py + cs * 0.85 - h * 1.2, fx0 + cs * 0.09, py + cs * 0.85); ctx.closePath(); ctx.fill();
+    }
   }
-  for (const c of b.smoke || []) disc(c, "rgba(200,205,210,0.45)");
-  for (const c of b.flares || []) drawThrowable("flare", ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs);
-  for (const l of b.lures || []) {
+  // Smoke: a smoke grenade's pale cloud; a fire's dark column (it blocks sight through it).
+  for (const c of OV.smoke) {
+    if (c.thick) { ctx.fillStyle = "rgba(30,28,30,0.38)"; ctx.beginPath(); ctx.arc(ox + (c.x + 0.6) * cs, oy + (c.y + 0.25) * cs, cs * 0.42, 0, Math.PI * 2); ctx.fill(); continue; }
+    disc(c, "rgba(200,205,210,0.45)");
+  }
+  for (const c of OV.flares) drawThrowable("flare", ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs);
+  for (const l of OV.decoys) {
     const cx = ox + (l.x + 0.5) * cs, cy = oy + (l.y + 0.5) * cs;
     const ph = ((now || 0) % 1200) / 1200;
-    ctx.strokeStyle = `rgba(255,209,102,${0.55 * (1 - ph)})`;
+    const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
+    const col = kind === "heat" ? [255, 122, 74] : kind === "light" ? [255, 242, 192] : [255, 209, 102];
+    ctx.strokeStyle = `rgba(${col.join(",")},${0.55 * (1 - ph)})`;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, cs * (0.4 + ph * 1.4), 0, Math.PI * 2); ctx.stroke();
+    if (l.decoy) { ctx.setLineDash([3, 6]); ctx.strokeStyle = `rgba(${col.join(",")},0.3)`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, cs * l.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     drawThrowable(l.key, cx, cy, cs);
+  }
+}
+
+// Siege objects (sim/siege.js battleOverlays): a ladder against the wall (or lying at its foot), a ram at its lead,
+// a ladder on a carrier's back, a Shepherd's aura.
+function drawSiegeTop(b, cs, now, vis) {
+  const { ox, oy } = geo;
+  const OV = battleOverlays(b);
+  const ph = ((now || 0) % 1600) / 1600;
+  for (const a of OV.auras) {
+    if (vis && !vis[a.y * W + a.x]) continue;
+    const cx = ox + (a.x + 0.5) * cs, cy = oy + (a.y + 0.5) * cs;
+    ctx.fillStyle = "rgba(200,190,255,0.07)"; ctx.beginPath(); ctx.arc(cx, cy, cs * (a.r + 0.5), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(232,226,255,0.7)"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -ph * 22;
+    ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+  const ladder = (x0, y0, x1, y1, w, col) => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1, px = (-dy / len) * w, py = (dx / len) * w;
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, cs * 0.07); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x0 + px, y0 + py); ctx.lineTo(x1 + px, y1 + py); ctx.moveTo(x0 - px, y0 - py); ctx.lineTo(x1 - px, y1 - py); ctx.stroke();
+    ctx.lineWidth = Math.max(1.5, cs * 0.05);
+    for (let k = 1; k <= 4; k++) { const t = k / 5; ctx.beginPath(); ctx.moveTo(x0 + dx * t + px, y0 + dy * t + py); ctx.lineTo(x0 + dx * t - px, y0 + dy * t - py); ctx.stroke(); }
+    ctx.lineCap = "butt";
+  };
+  for (const l of OV.ladders) {
+    const [dx, dy] = l.dir;
+    if (l.up) ladder(ox + (l.fx + 0.5 - dx * 0.1) * cs, oy + (l.fy + 0.5 - dy * 0.1) * cs, ox + (l.wx + 0.5 + dx * 0.35) * cs, oy + (l.wy + 0.5 + dy * 0.35) * cs, cs * 0.17, l.side === "enemy" ? "#c08a50" : "#d4a86a");
+    else ladder(ox + (l.fx + 0.5 + dy * 0.45) * cs, oy + (l.fy + 0.5 - dx * 0.45) * cs, ox + (l.fx + 0.5 - dy * 0.45) * cs, oy + (l.fy + 0.5 + dx * 0.45) * cs, cs * 0.14, "rgba(160,120,80,0.8)");
+  }
+  for (const m of OV.rams) {
+    if (m.x < 0 || (vis && !vis[m.y * W + m.x])) continue;
+    const f = m.target ? [Math.sign(m.target[0] - m.x), Math.sign(m.target[1] - m.y)] : m.face && (m.face[0] || m.face[1]) ? m.face : [1, 0];
+    const x0 = ox + (m.x + 0.5 - f[0] * 0.8) * cs, y0 = oy + (m.y + 0.5 - f[1] * 0.8) * cs, x1 = ox + (m.x + 0.5 + f[0] * 0.6) * cs, y1 = oy + (m.y + 0.5 + f[1] * 0.6) * cs;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#5b3d22"; ctx.lineWidth = cs * 0.24; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = "#7d5a34"; ctx.lineWidth = cs * 0.08; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.fillStyle = "#9aa0a8"; ctx.beginPath(); ctx.arc(x1, y1, cs * 0.14, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const c of OV.carried) {
+    const x = ox + c.x * cs, y = oy + c.y * cs;
+    ladder(x + cs * 0.15, y + cs * 0.85, x + cs * 0.85, y + cs * 0.15, cs * 0.09, "rgba(192,138,80,0.9)");
   }
 }
 
@@ -1381,6 +1497,20 @@ function drawThrowable(key, cx, cy, cs) {
   } else if (key === "flare") {
     ctx.fillStyle = "#c8362e"; ctx.fillRect(cx - s * 0.2, cy - s * 0.8, s * 0.4, s * 1.4);
     ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(cx, cy - s * 0.9, s * 0.35, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "frag") {
+    ctx.fillStyle = "#4f5a3a"; ctx.beginPath(); ctx.ellipse(cx, cy, s * 0.55, s * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#8a8f96"; ctx.fillRect(cx - s * 0.2, cy - s * 0.95, s * 0.4, s * 0.3);
+  } else if (key === "alarmclock") {
+    ctx.fillStyle = "#c9a548"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f0ead8"; ctx.beginPath(); ctx.arc(cx, cy, s * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#c9a548"; ctx.beginPath(); ctx.arc(cx - s * 0.5, cy - s * 0.6, s * 0.22, 0, Math.PI * 2); ctx.arc(cx + s * 0.5, cy - s * 0.6, s * 0.22, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "pocketradio") {
+    ctx.fillStyle = "#3a3f48"; roundRect(cx - s * 0.7, cy - s * 0.45, s * 1.4, s * 0.9, s * 0.15); ctx.fill();
+    ctx.fillStyle = "#9aa0a8"; ctx.beginPath(); ctx.arc(cx - s * 0.25, cy, s * 0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#9aa0a8"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx + s * 0.5, cy - s * 0.45); ctx.lineTo(cx + s * 0.8, cy - s * 1.1); ctx.stroke();
+  } else if (key === "handwarmer" || key === "heatpack") {
+    ctx.fillStyle = key === "heatpack" ? "#e8e2d4" : "#d86a3a"; roundRect(cx - s * 0.6, cy - s * 0.45, s * 1.2, s * 0.9, s * 0.2); ctx.fill();
+    ctx.fillStyle = "#ff7a4a"; ctx.fillRect(cx - s * 0.1, cy - s * 0.3, s * 0.2, s * 0.6); ctx.fillRect(cx - s * 0.3, cy - s * 0.1, s * 0.6, s * 0.2);
   } else if (key === "pipebomb") {
     ctx.fillStyle = "#6a6a68"; ctx.fillRect(cx - s * 0.8, cy - s * 0.3, s * 1.6, s * 0.6);
     ctx.fillStyle = "#3a3a38"; ctx.fillRect(cx - s * 0.9, cy - s * 0.4, s * 0.2, s * 0.8); ctx.fillRect(cx + s * 0.7, cy - s * 0.4, s * 0.2, s * 0.8);
@@ -1631,6 +1761,34 @@ function drawObject(k, px, py, cs, n, cell = null) {
       break;
     case "stairs":
       ctx.fillStyle = "#5e4a36"; for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? "#6e573f" : "#56432f"; ctx.fillRect(px + cs * 0.08, py + cs * (0.08 + i * 0.21), cs * 0.84, cs * 0.21); }
+      break;
+    // A building's map (sim/buildingmaps.js): doors closed and open (a roller door's slats), tall shelving, tables,
+    // beds, cell bars.
+    case "idoor":
+      ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs, cs);
+      if (cell && cell.roll) { ctx.fillStyle = "#6c737a"; ctx.fillRect(px + 1, py + cs * 0.1, cs - 2, cs * 0.8); ctx.fillStyle = "#454b51"; for (let i = 1; i < 4; i++) ctx.fillRect(px + 1, py + cs * (0.1 + i * 0.2), cs - 2, 1.5); }
+      else { ctx.fillStyle = "#8a6a44"; ctx.fillRect(px + cs * 0.12, py + cs * 0.12, cs * 0.76, cs * 0.76); ctx.fillStyle = "#c9c0a8"; ctx.fillRect(px + cs * 0.66, py + cs * 0.46, cs * 0.08, cs * 0.08); }
+      break;
+    case "odoor":
+      ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs * 0.12, cs); ctx.fillRect(px + cs * 0.88, py, cs * 0.12, cs);
+      if (!(cell && cell.roll)) { ctx.save(); ctx.translate(px + cs * 0.15, py + cs * 0.15); ctx.rotate(0.75); ctx.fillStyle = "#8a6a44"; ctx.fillRect(0, 0, cs * 0.6, cs * 0.1); ctx.restore(); }
+      break;
+    case "rack":
+      ctx.fillStyle = "#3a3f44"; ctx.fillRect(px + cs * 0.06, py + cs * 0.16, cs * 0.88, cs * 0.68);
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = ["#7a3b34", "#3b5a7a", "#7a6a34", "#3f6b4a"][(i + Math.floor(n * 4)) % 4]; ctx.fillRect(px + cs * (0.1 + i * 0.21), py + cs * 0.24, cs * 0.16, cs * 0.52); }
+      break;
+    case "table":
+      ctx.fillStyle = "#8a6a44"; ctx.fillRect(px + cs * 0.16, py + cs * 0.16, cs * 0.68, cs * 0.68);
+      ctx.strokeStyle = "#4e3a26"; ctx.strokeRect(px + cs * 0.16, py + cs * 0.16, cs * 0.68, cs * 0.68);
+      break;
+    case "bed":
+      ctx.fillStyle = "#4e3a26"; ctx.fillRect(px + cs * 0.12, py + cs * 0.06, cs * 0.76, cs * 0.88);
+      ctx.fillStyle = "#8a8678"; ctx.fillRect(px + cs * 0.16, py + cs * 0.1, cs * 0.68, cs * 0.8);
+      ctx.fillStyle = "#c9c4b4"; ctx.fillRect(px + cs * 0.2, py + cs * 0.12, cs * 0.6, cs * 0.18);
+      break;
+    case "bars":
+      ctx.strokeStyle = "#8a939c"; ctx.lineWidth = Math.max(1.5, cs * 0.06);
+      ctx.beginPath(); for (let i = 0; i < 4; i++) { ctx.moveTo(px + cs * (0.15 + i * 0.23), py); ctx.lineTo(px + cs * (0.15 + i * 0.23), py + cs); } ctx.moveTo(px, cy); ctx.lineTo(px + cs, cy); ctx.stroke();
       break;
     case "bdoor": case "doorway":
       ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs, cs);

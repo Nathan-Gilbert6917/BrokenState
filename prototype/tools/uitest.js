@@ -1196,7 +1196,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // base, a base defence on the wall map at night and on the yard map after the fall back, a base without walls.
     const list = battles(seed);
     const sizes = Object.fromEntries(list.map(({ name, b }) => [name, `${b.w}×${b.h}`]));
-    check(list.length === 10 && ["field-town", "raid", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
+    check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
     const BS = await import("../src/sim/battlesize.js");
     const cls = (n) => BS.sizeClass(...sizes[n].split("×").map(Number));
     check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && cls("raid") === "M" && cls("base-yard") === "XL" && cls("base-open") === "L",
@@ -1225,7 +1225,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const again = battles(seed);
     const same = list.filter((x, i) => sig(x) === sig(again[i])).length;
     check(same === list.length, `the same battle draws the same frame every time (${same}/${list.length})`);
-    // The camera on a new battle (sim/battlesize.js maps): a big map opens on your people (all on screen) at 1.5–3 CSS px
+    // The camera on a new battle (sim/battlesize.js maps): a big map opens on your people (all on screen) at 1.5–2.5 CSS px
     // an art pixel, the small ones whole; an enemy off screen gets an edge marker (a red arrow) without errors or NaN.
     {
       const bad = [], zooms = [];
@@ -1249,7 +1249,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // height (ground, walkway and roofs 1, towers 2); where something nearer the camera covers that point, the pick is
     // that nearer cell (never one behind it).
     let total = 0, exact = 0, wrong = 0, raised = 0, raisedOk = 0, behindWall = 0;
-    for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid"].includes(x.name))) {
+    for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid", "raid-building"].includes(x.name))) {
       for (let rot = 0; rot < 4; rot++) for (const zoom of [2, 6]) {
         ISO.iso.battle = null; UI.drawCombat(st, NOW);
         ISO.iso.rot = rot; ISO.iso.zoom = zoom; ISO.iso.target = null;

@@ -46,6 +46,7 @@ import { armoryDefence, tierMults, TIERS } from "./defences.js";
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { dimsAt, baseScale, densify } from "./battlesize.js";
+import { siegeWallCut } from "./siege.js";
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
 // H_GROW rows taller at a time (up to H_TRIES times) if its buildings do not all fit, and its wall map is as much longer
@@ -198,7 +199,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
       for (let y0 = 0; y0 + h <= H; y0++) for (let x0 = I.BUILD_X[0]; x0 + w <= I.BUILD_X[1]; x0++) if (fits(x0, y0, w, h)) tries.push([x0, y0]);
       if (!tries.length) continue;
       // The main house sits in the middle of the west side; the rest where the base's dice put them.
-      const pick = s.key === "hall" ? tries.reduce((a, p) => (Math.abs(p[1] + h / 2 - H / 2) + Math.abs(p[0] - I.BUILD_X[0] - 2) * 0.5 < Math.abs(a[1] + h / 2 - H / 2) + Math.abs(a[0] - I.BUILD_X[0] - 2) * 0.5 ? p : a), tries[0]) : tight ? tries[rng.int(0, Math.min(2, tries.length - 1))] : rng.pick(tries); // a taller map (the buildings did not fit): packed more tightly
+      const pick = s.key === "hall" ? tries.reduce((a, p) => (Math.abs(p[1] + h / 2 - H / 2) + Math.abs(p[0] - I.BUILD_X[0] - 2) * 0.5 < Math.abs(a[1] + h / 2 - H / 2) + Math.abs(a[0] - I.BUILD_X[0] - 2) * 0.5 ? p : a), tries[0]) : tight ? tries[rng.int(0, Math.min(2, tries.length - 1))] : H > INTERIOR.H ? nearMiddle(tries, w, h, H, rng) : rng.pick(tries); // a taller map (the buildings did not fit): packed more tightly; a big base's: the compound round the gate's rows
       spot = [pick[0], pick[1], w, h];
       break;
     }
@@ -307,6 +308,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     }
   }
   scatter(walled ? 3 : 4, "crate", I.YARD_X - 2, I.WALL_X - 2);
+  if (W > INTERIOR.W || H > INTERIOR.H) groundsBeyond(cells, W, H, I, out, used, rng);
   // A big yard is not an empty one: crates, barrels and hay over the open ground (battlesize.js), never in a building's
   // margin or by the wall.
   densify(cells, W, H, rng, { target: I.YARD_COVER, keep: (x, y) => !!used[y * W + x], props: (f) => YARD_PROPS[f] || null });
@@ -317,6 +319,41 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
   return out;
 }
 
+// On a big base's yard map (a Large or Extra-large hub: sim/battlesize.js) the buildings cluster round the middle rows,
+// where the gate and the breaches are, as on the old 16-row map; the grounds, fields and clutter lie beyond them. One
+// of the YARD_NEAR spots nearest the middle row.
+const YARD_NEAR = 4;
+function nearMiddle(tries, w, h, H, rng) {
+  const d = (p) => Math.abs(p[1] + h / 2 - H / 2);
+  const best = tries.slice().sort((a, c) => d(a) - d(c) || c[0] - a[0]).slice(0, YARD_NEAR);
+  return best[rng.int(0, best.length - 1)];
+}
+// A big base's grounds beyond its compound (west of the buildings and the far rows, inside the wall): grass with the
+// base's fields (one 3–5 × 2–3 plot a GROUND_PLOT tiles of grounds) and, from densify, trees and rocks.
+const GROUND_PLOT = 90;
+function groundsBeyond(cells, W, H, I, out, used, rng) {
+  const bs = out.buildings;
+  if (!bs.length) return;
+  const x0 = Math.min(...bs.map((s) => s.x0)) - 2, y0 = Math.min(...bs.map((s) => s.y0)) - 2, y1 = Math.max(...bs.map((s) => s.y0 + s.h)) + 1;
+  const beyond = (x, y) => x < I.WALL_X - 1 && (x < x0 || ((y < y0 || y > y1) && x < I.YARD_X - 2));
+  let n = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = cells[y * W + x]; if (beyond(x, y) && c.k === "open" && c.f === "dirt" && !used[y * W + x]) { c.f = "grass"; n++; } }
+  for (let i = 0; i < Math.round(n / GROUND_PLOT); i++) {
+    const w = rng.int(3, 5), h = rng.int(2, 3);
+    for (let t = 0; t < 20; t++) {
+      const px = rng.int(1, W - w - 1), py = rng.int(1, H - h - 1);
+      let ok = true;
+      for (let y = py - 1; y <= py + h && ok; y++) for (let x = px - 1; x <= px + w && ok; x++) ok = beyond(x, y) && cells[y * W + x].k === "open" && cells[y * W + x].f === "grass" && !used[y * W + x];
+      if (!ok) continue;
+      for (let y = py; y < py + h; y++) for (let x = px; x < px + w; x++) cells[y * W + x].f = "field";
+      break;
+    }
+  }
+  // A woodlot of the grounds: trees, rocks, hay and fencing as cover all over (not the empty field of a parade ground).
+  densify(cells, W, H, rng, { target: GROUND_COVER, keep: (x, y) => !beyond(x, y) || !!used[y * W + x], props: (f) => GROUND_PROPS[f] || null });
+}
+const GROUND_COVER = 0.95;
+const GROUND_PROPS = { grass: ["tree", "tree", "rock", "fence", "hay"], field: ["hay", "fence"] };
 const YARD_PROPS = { dirt: ["crate", "barrel", "crate", "hay"], field: ["hay"], grass: ["rock", "tree"] };
 
 // Clutter (not buildings) on the way from the back gate to every door, ladder and the wall is cleared.
@@ -559,6 +596,8 @@ export function toInterior(state, b, opts = {}) {
   for (const u of standing) if (u.x < 0) { const p = nearestFree(b, W0, H0, 4, Math.floor(H0 / 2), (x, y) => okCell(x, y) && zoneE(x, y)) || nearestFree(b, W0, H0, 4, Math.floor(H0 / 2), okCell); if (p) { u.x = p[0]; u.y = p[1]; } }
   // Whatever burned, smoked or rang on the wall map stays there.
   b.fires = []; b.smoke = []; b.flares = []; b.lures = [];
+  b.ladders = []; // the ladders stay against the old wall (siege.js); a ram goes on with its crew, its old target gone
+  b.rams = (b.rams || []).filter((r) => !r.dropped); for (const r of b.rams) r.target = null;
   b.ghosts = {};
   const floodlit = !!(b.deploy && b.deploy.floodlit);
   finishInterior(b, side, lay, { walled: true, zoneE, floodlit, night: b.night, base, deploy: !!b.setup.deploy });
@@ -657,7 +696,10 @@ export function tierAI(b, u) {
 export function baseTiers(state, base, setup, ratio) {
   const ctx = (setup && setup.context) || {};
   const night = ctx.night != null ? ctx.night : isNight(state);
-  const m = tierMults(state, base, night);
+  const m = { ...tierMults(state, base, night) };
+  // Raiders with siege kit (siege.js): ladders, a ram and grenades make the walls count less.
+  const kit = setup && setup.enemy && setup.enemy.siege;
+  if (kit && m.walled) m.wall = Math.max(1, m.wall - siegeWallCut(kit));
   const wall = ratio * m.wall, yard = wall * m.yard, last = yard * m.buildings;
   const tier = m.walled && wall >= TIERS.HELD_AT_WALL ? "wall" : yard >= 1 ? "yard" : "buildings";
   return { wall, yard, last, tier, mults: m };

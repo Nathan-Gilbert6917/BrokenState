@@ -153,6 +153,12 @@ export function lockRaid(state, b) {
       if (c.kind === "car") c.label = `${area.name}: wreckage`;
       else if (c.kind === "crate") c.label = `${area.name}: cargo case`;
     }
+    // A building's map (buildingmaps.js) locks some containers by its own dice (a gun cage, a drug cabinet, a safe).
+    if (c.lockKind && LOCKS[c.lockKind]) {
+      c.lock = { kind: c.lockKind, open: false, tries: 0 };
+      c.label = `${area.name}: ${LOCKS[c.lockKind].name.toLowerCase()}`;
+      continue;
+    }
     const rule = RULES[area.type];
     if (!rule || !rule[0].includes(c.kind)) continue;
     let kind = rule[1], p = rule[2];
@@ -162,8 +168,9 @@ export function lockRaid(state, b) {
     c.label = `${area.name}: ${LOCKS[kind].name.toLowerCase()}`;
   }
   // A locked room: every door of one building with containers, if that really seals it off.
+  // A building's map comes with its locked rooms and exits (R.doors, buildingmaps.js); the street map gets one by chance.
   const pRoom = (type && ROOM[type]) ?? 0.15;
-  if (roll("room") < pRoom) {
+  if (!R.interior && roll("room") < pRoom) {
     const cands = R.areas.filter((a) => !a.outdoor && a.doors && a.doors.length && R.containers.some((c) => c.area === a.id));
     const start = cands.length ? Math.floor(roll("which") * cands.length) % cands.length : 0;
     for (let i = 0; i < cands.length; i++) {
@@ -178,7 +185,13 @@ export function lockRaid(state, b) {
     }
   }
   const nBox = R.containers.filter((c) => c.lock).length;
-  if (nBox || R.doors.length) b.log.push({ turn: b.turn, k: "info", text: `${nBox ? `${nBox} locked container${nBox === 1 ? "" : "s"}` : ""}${nBox && R.doors.length ? " and " : ""}${R.doors.length ? `a locked room (${R.areas[R.doors[0].area].name})` : ""} here. Open them from next to them: key, lockpicks or force.${hasKey(state, b.tileId) ? ` You have the ${keyName(state, b.tileId)}.` : ""}` });
+  const roomIds = [...new Set(R.doors.filter((d) => d.area != null && R.areas[d.area]).map((d) => d.area))];
+  const exitDoors = R.doors.filter((d) => d.area == null).length;
+  const bits = [];
+  if (nBox) bits.push(`${nBox} locked container${nBox === 1 ? "" : "s"}`);
+  if (roomIds.length) bits.push(roomIds.length === 1 ? `a locked room (${R.areas[roomIds[0]].name})` : `locked rooms (${roomIds.map((i) => R.areas[i].name).join(", ")})`);
+  if (exitDoors) bits.push(`${exitDoors === 1 ? "a locked way out" : `${exitDoors} locked door cells on the ways out`}`);
+  if (bits.length) b.log.push({ turn: b.turn, k: "info", text: `${bits.join(" and ")} here. Open them from next to them: key, lockpicks or force.${hasKey(state, b.tileId) ? ` You have the ${keyName(state, b.tileId)}.` : ""}` });
 }
 // Locks a building's doors if that cuts its containers off from the entry; otherwise leaves the map as it was.
 function sealRoom(b, a) {
@@ -275,14 +288,16 @@ export function openLock(state, b, u, act, H) {
     t.lock.open = true;
     t.lock.how = act.method === "force" && !o.crowbar ? "smash" : act.method;
     if (t.door) {
-      const c = b.cells[t.y * b.w + t.x];
-      c.k = "open";
-      c.f = "floor";
+      // An opened door: open floor on the street map; an open door in a building (buildingmaps.js, no longer two
+      // storeys of sight-blocking).
+      const openCell = (dc) => { dc.k = R.interior ? "odoor" : "open"; dc.f = "floor"; delete dc.t; };
+      openCell(b.cells[t.y * b.w + t.x]);
       b.losCache.fill(0);
-      const area = R.areas[t.door.area];
+      const area = t.door.area != null ? R.areas[t.door.area] : null;
       // Every door of the room opens with the same key; a forced door is just broken.
-      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; const dc = b.cells[d.y * b.w + d.x]; dc.k = "open"; dc.f = "floor"; }
+      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(b.cells[d.y * b.w + d.x]); }
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
+      else H.say(b, "The way out is open.", "info");
     }
     H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked" });
   } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked" });

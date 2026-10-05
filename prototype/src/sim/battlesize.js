@@ -249,6 +249,28 @@ export function fledFarEnough(b, u) {
   return mine.every((p) => Math.hypot(p.x - u.x, p.y - u.y) >= CLEAR.GONE && !los(b, p.x, p.y, u.x, u.y));
 }
 
+// ---------- building maps (buildingmaps.js) ----------
+// A raid into one building is the building's own floor plan (sized by its archetype) with the outside around it. A
+// single-building site keeps its plan but gets at least its site's size class (a hospital's map Large, a gas
+// station's Small–Medium): the outside margins grow (the parking lot and the street in front, the yard and the alley
+// round the back) and densify covers the new ground. At a site with several buildings each is at least Small.
+// margins: the archetype's own; returns the grown margins.
+export function fitMargins(bw, bh, margins, [tw, th]) {
+  const m = { ...margins };
+  const ew = Math.max(0, tw - (bw + m.left + m.right)), eh = Math.max(0, th - (bh + m.front + m.back));
+  m.left += Math.floor(ew / 2); m.right += Math.ceil(ew / 2);
+  m.front += Math.ceil(eh / 2); m.back += Math.floor(eh / 2);
+  return m;
+}
+export const buildingTarget = (tile, single) => (single ? raidDims(tile) : dimsAt(S));
+// The outside of a building's map topped up with props (never inside the building or within a tile of it, nor in or
+// next to an extraction zone).
+export function densifyOutside(map, rng, terrain) {
+  const B = map.building, zs = map.zones || [];
+  const keep = (x, y) => (x >= B.x0 - 1 && x <= B.x0 + B.w && y >= B.y0 - 1 && y <= B.y0 + B.h) || zs.some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
+  return densify(map.cells, map.w, map.h, rng, { target: coverTarget(terrain), keep });
+}
+
 // ---------- raids ----------
 // How many rooms and outdoor areas a raid map of w × h gets (between its class's range).
 export function raidAreaRange(w, h) {

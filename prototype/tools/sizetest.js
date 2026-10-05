@@ -84,11 +84,11 @@ function baseFight(st, list, enemy, walls = true, type = "hub") {
 
 // Every context: name, the class it should be, and how to build it on a world.
 const CONTEXTS = [
-  { name: "raid: gas station", cls: "S", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
-  { name: "raid: pharmacy", cls: "S", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) },
-  { name: "raid: supermarket", cls: "M", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
+  { name: "raid: gas station (its building)", cls: "S", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
+  { name: "raid: pharmacy (its building)", cls: "S|M", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) },
+  { name: "raid: supermarket (its building)", cls: "M|L", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
   { name: "raid: farm", cls: "M", make: (st) => raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]) },
-  { name: "raid: hospital", cls: "L", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },
+  { name: "raid: hospital (its building)", cls: "L", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },
   { name: "raid: city center", cls: "L", make: (st) => raid(st, "city", [{ kind: "zombies", count: 8, power: 2.5 }, { kind: "raiders", count: 3, power: 4 }]) },
   { name: "field: 3 vs 3 raiders, plains", cls: "M", players: 3, make: (st) => field(st, "plains", null, { kind: "raiders", count: 3, power: 4 }, { road: true }) },
   { name: "field: 3 vs 4 raiders, forest", cls: "M", players: 3, make: (st) => field(st, "forest", null, { kind: "raiders", count: 4, power: 5 }) },
@@ -165,7 +165,9 @@ for (const ctx of CONTEXTS) {
   }
   // Every enemy can be got at: something next to it is reachable (the dead in a hive's openings, guards indoors).
   const near = (u) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].some(([dx, dy]) => { const x = u.x + dx, y = u.y + dy; return x >= 0 && y >= 0 && x < b.w && y < b.h && b.reach[y * b.w + x]; });
-  const unreachable = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss && !near(u)).length;
+  // (One of the dead shut in a locked room of a building is meant to be: buildingmaps.js LOCKED_DEAD.)
+  const lockedIn = (u) => !!b.raid && (b.raid.areas || []).some((a) => a.locked && u.x >= a.x0 && u.x < a.x0 + a.w && u.y >= a.y0 && u.y < a.y0 + a.h);
+  const unreachable = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss && !near(u) && !lockedIn(u)).length;
   let where = "";
   if (!b.raid && !b.tier && !b.setup.ambush) {
     const pc = pcOf(b), E = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss), P = b.units.filter((u) => u.side === "player");
@@ -181,7 +183,7 @@ for (const ctx of CONTEXTS) {
   // Wall maps are a wall and an approach, not ground to cross: only a token check there.
   const coverOk = cs.share >= target - 0.04;
   const yard = interiorSize(A.st.bases[0]);
-  const wantCls = ctx.wallOf ? sizeClass(yard.W, yard.H) === ctx.wallOf : cls === ctx.cls;
+  const wantCls = ctx.wallOf ? sizeClass(yard.W, yard.H) === ctx.wallOf : ctx.cls.split("|").includes(cls);
   check(det && !bad.length && !unreachable && coverOk && wantCls,
     `${ctx.name}: ${b.w}×${b.h} (${SIZE_CLASSES[cls].name}${ctx.wallOf ? `; its yard map ${dimStr([interiorSize(A.st.bases[0]).W, interiorSize(A.st.bases[0]).H])}` : ""}), cover within ${COVER.R} tiles of ${Math.round(cs.share * 100)}% of the open ground${where}${det ? "" : " NOT DETERMINISTIC"}${bad.length ? ` [${bad.slice(0, 3).join("; ")}]` : ""}${unreachable ? ` [${unreachable} enemies out of reach]` : ""}`);
   // The first shot or blow, the AI playing both sides (field fights, hives and assaults; raids are a search).
@@ -337,9 +339,10 @@ if (!QUICK) {
     const avgMs = ms.reduce((a, c) => a + c, 0) / Math.max(1, ms.length), maxMs = ms[ms.length - 1] || 0, p95 = ms[Math.floor(ms.length * 0.95)] || 0;
     worstMs = Math.max(worstMs, maxMs);
     allMs.push(...ms);
-    const k = (byClass[m.cls] = byClass[m.cls] || { turns: 0, n: 0, over: 0 });
+    const kc = m.base ? m.cls : sizeClass(...size.split("×").map(Number)); // the map's class (a base: its yard's)
+    const k = (byClass[kc] = byClass[kc] || { turns: 0, n: 0, over: 0 });
     k.turns += turns; k.n += N; k.over += over;
-    console.log(`  ${m.cls.padEnd(2)} ${m.name.padEnd(46)} ${size.padStart(5)}  turns ${(turns / N).toFixed(1).padStart(4)}  over 60: ${Math.round((over / N) * 100)}%  won ${Math.round((won / N) * 100)}%  called clear ${clear}  AI a turn ${avgMs.toFixed(1)} ms (p95 ${p95.toFixed(1)}, max ${maxMs.toFixed(1)})`);
+    console.log(`  ${kc.padEnd(2)} ${m.name.padEnd(46)} ${size.padStart(5)}  turns ${(turns / N).toFixed(1).padStart(4)}  over 60: ${Math.round((over / N) * 100)}%  won ${Math.round((won / N) * 100)}%  called clear ${clear}  AI a turn ${avgMs.toFixed(1)} ms (p95 ${p95.toFixed(1)}, max ${maxMs.toFixed(1)})`);
   }
   console.log(`  by class: ${CLASS_KEYS.filter((k) => byClass[k]).map((k) => `${SIZE_CLASSES[k].name} ${(byClass[k].turns / byClass[k].n).toFixed(1)} turns, ${Math.round((byClass[k].over / byClass[k].n) * 100)}% over the limit`).join("; ")}`);
   allMs.sort((a, c) => a - c);

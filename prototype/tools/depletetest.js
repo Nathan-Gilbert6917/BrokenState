@@ -251,7 +251,8 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
     adds += (src.match(/\.loot\s*[+*\/]=/g) || []).length;
   }
   // factions.js / conquest.js: the ruins of a base burned in a raid get a little salvage (a raze, never a regrowth).
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js"];
+  // hardcore-groups.js: the military base overrun in hardcore leaves its armory behind (once, when it falls).
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");
