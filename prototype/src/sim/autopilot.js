@@ -28,7 +28,7 @@ import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater } from "./economy.js";
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
 import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
@@ -1159,9 +1159,8 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
   // (thirst kills in days; a hungry base still has its stock).
   if (areas.production) {
-    const wo = waterOutlook(state, base);
     const fj = craftQueue(base).some((j) => j.recipe === "waterfilter");
-    if (fj && wo.net < 0 && (wo.daysLeft < 6 || (st.water || 0) < people.length * 3)) {
+    if (fj && waterRunningShort(state, base)) {
       const c = ranked("craft", (x) => skill(x, CRAFTS.waterfilter.skill), (x) => !x.inBed && skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min)[0];
       if (c) give(c, "craft");
     }
