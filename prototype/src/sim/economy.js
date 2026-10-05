@@ -156,6 +156,12 @@ export function waterOutlook(state, base) {
   const dryNet = inflow - prod.rain - need.people - need.prisoners - cropWaterNeed(state, base, { dry: true });
   return { stock, cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
 }
+// Water running short now: more drunk than made, and it runs out within 6 days or is under 3 a head. The governor
+// puts a crafter on a queued water filter only then (autopilot planRoles), and so do work priorities (work.js).
+export function waterRunningShort(state, base) {
+  const wo = waterOutlook(state, base);
+  return wo.net < 0 && (wo.daysLeft < 6 || (base.stock.water || 0) < atBase(state, base.id).length * 3);
+}
 
 // ---------- the summer water outlook ----------
 // A planning figure for summer, by the usual summer weather rather than today's: wells and springs give about 90% on
