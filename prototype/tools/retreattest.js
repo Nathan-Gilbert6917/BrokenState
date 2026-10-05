@@ -751,7 +751,13 @@ if (N > 0) {
     const T = res[s].num, c = res[s].cmp;
     check(T.on.dead <= T.off.dead && T.on.wipes <= T.off.wipes, `${s}, by the numbers (${T.policy}): no extra lives or wipes (deaths ${T.off.dead} → ${T.on.dead}, wipes ${T.off.wipes} → ${T.on.wipes})`);
     check(T.on.retreats === 0 || T.on.winnable / T.on.retreats <= 0.25, `${s}, by the numbers: at most a quarter of its retreats are from fights it would have won (${T.on.winnable}/${T.on.retreats})`);
-    if (c.tac.runners >= 10 && c.num.runners >= 10) check(Math.abs(c.tac.out / c.tac.runners - c.num.out / c.num.runners) <= 0.15, `${s}: runners who get out, on the map ${Math.round((c.tac.out / c.tac.runners) * 100)}% vs by the numbers ${Math.round((c.num.out / c.num.runners) * 100)}% (within 15 points)`);
+    // Allowed gap: 15 points, or 2.5 standard errors of the difference when the samples are small (10 runners by the
+    // numbers at 85% come out 100% about one time in seven by chance alone).
+    if (c.tac.runners >= 10 && c.num.runners >= 10) {
+      const a = c.tac.out / c.tac.runners, b = c.num.out / c.num.runners, pp = (c.tac.out + c.num.out) / (c.tac.runners + c.num.runners);
+      const tol = Math.max(0.15, 2.5 * Math.sqrt(Math.max(0.0025, pp * (1 - pp)) * (1 / c.tac.runners + 1 / c.num.runners)));
+      check(Math.abs(a - b) <= tol, `${s}: runners who get out, on the map ${Math.round(a * 100)}% (${c.tac.runners}) vs by the numbers ${Math.round(b * 100)}% (${c.num.runners}) (within ${Math.round(tol * 100)} points)`);
+    }
     if (c.tac.n >= 5 && c.num.n >= 5) check(c.num.home / c.num.team >= c.tac.home / c.tac.team - 0.1, `${s}: a retreat by the numbers brings home at least as many as the map's (−10 points): ${Math.round((c.tac.home / c.tac.team) * 100)}% vs ${Math.round((c.num.home / c.num.team) * 100)}%`);
   }
   // A runner's escape odds per enemy kind where both pull out at about the same moment: the Cautious AI on the map
