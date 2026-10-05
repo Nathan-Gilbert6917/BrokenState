@@ -49,6 +49,7 @@ import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
+import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
@@ -115,6 +116,7 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   b.w = w; b.h = h; b.cells = cells;
   b.losCache = new Int8Array(W * H * W * H);
   b.reach = flood(cells, rx, ry);
+  b.acid = []; // acid pools (acid.js) stay on the old map
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
@@ -747,15 +749,21 @@ function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
 // or stairs (climbCost); the attackers cannot walk through a barred door or a closed gate (they batter it: siegeTarget and bash).
 // opts.manual: a move ordered by hand (it may walk through fire); otherwise people and the Shepherd keep out of the
 // flames (throwables.js): burning cells are closed to them (they can still step out of one).
+// A spitter's acid pool (acid.js) is not closed, only dearer for people: the path is the cheapest by that weight
+// (ACID.cost a pool cell; an order by hand ACID.manual, or ACID.cost with opts.wary), within maxCost real steps; dist
+// is what the steps of that path really cost.
 export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
   const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
+  const aw = acidWeights(b, u, opts.manual && !opts.wary);
   const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
+  const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
   const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
   const start = idx(u.x, u.y);
   d[start] = 0;
+  real[start] = 0;
   const open = [start];
   while (open.length) {
     let bi = 0;
@@ -775,16 +783,18 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const nd = d[cur] + (diag ? 1.5 : 1) + climb;
-      if (nd <= maxCost + 1e-6 && nd < d[j]) {
+      const step = (diag ? 1.5 : 1) + climb;
+      const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
+      if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
         d[j] = nd;
+        if (aw) real[j] = nr;
         prev[j] = cur;
       }
     }
   }
   // Downed bodies can be stepped over but not stood on.
-  const stop = d.slice();
+  const stop = real.slice();
   for (let j = 0; j < W * H; j++) if (occ[j] === 2) stop[j] = Infinity;
   return { dist: stop, prev };
 }
@@ -818,6 +828,7 @@ export function distField(b, sources, walker = null) {
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
   const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c))) && !(burning && burning.has(idx(x, y))); };
+  const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -837,7 +848,7 @@ export function distField(b, sources, walker = null) {
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
       const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
-      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash;
+      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash + (aw ? aw[j] : 0); // aw: acid.js
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
   }
@@ -1189,10 +1200,11 @@ function foesOf(b, u) {
 // ---------- actions ----------
 // nonLethal (Subdue, stealth.js): a person brought to 0 is knocked out, not killed.
 // hit: { how: "shot" | "melee" | "bash" | "fire" | "blast", crit, sneak } for the armoured dead (deadsoldiers.js
-// armorVs: their armour by the weapon that struck); everyone else takes raw × their armor.
+// armorVs: their armour by the weapon that struck); everyone else takes raw × their armor ("acid": half of it, acid.js).
+// A spitter that dies bursts (acid.js spitterBurst).
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * (t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
+  const eff = raw * (hit && hit.how === "acid" ? acidArmor(t) : t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) return eff;
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
@@ -1211,6 +1223,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway).
     else if (b.raid && t.kind === "zombie" && !t.boss) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
     say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
+    if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
   }
   return eff;
 }
@@ -1278,6 +1291,7 @@ export function moveAlong(b, u, path) {
       if (!active(u) || trap !== "spikes") break;
     }
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
+    if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
       if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
@@ -1413,7 +1427,7 @@ export function combatAct(state, act) {
   switch (act.type) {
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
-      const r = reachable(b, u, u.mob * u.ap, { manual: true });
+      const r = reachable(b, u, u.mob * u.ap, { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
       u.ap -= c <= u.mob ? 1 : 2;
@@ -1561,6 +1575,7 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
+  acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
   else reinforcements(b);
@@ -1598,6 +1613,7 @@ function startPlayerTurn(state, b) {
   b.turn++;
   b.phase = "player";
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
+  acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
@@ -1712,6 +1728,7 @@ function scoreCell(b, u, x, y, foes, cost, field) {
   }
   s += best * 0.3;
   if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
+  if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
   if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;
   return s;
@@ -1840,7 +1857,7 @@ function aiMelee(b, u) {
       if (!isFinite(r.dist[i]) || (r.dist[i] > 0 && outsideBase(b, u, i))) continue;
       const x = i % W, y = (i / W) | 0;
       const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)])));
-      const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05;
+      const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05 + (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y) ? ACID.stand / 3 : 0); // people: not into a spitter's acid (acid.js)
       if (!best || sc < best.sc) best = { x, y, sc, cost: r.dist[i], nextTo };
     }
     if (!best || best.cost === 0) {
@@ -3054,10 +3071,13 @@ function autoRaidTurn(state) {
       if (!targets.length) { u.ap = 0; break; }
       const field = distField(b, targets);
       const r = reachable(b, u, u.mob * u.ap);
+      // A spitter's acid (acid.js): not to stop in, and the way there goes round it when it can.
+      const pools = b.acid && b.acid.length ? (i) => (acidAt(b, i % W, (i / W) | 0) ? ACID.cost : 0) : null;
+      const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];
       let best = null;
-      for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || field[i] < field[best])) best = i;
+      for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || score(i) < score(best))) best = i;
       if (best == null || field[best] >= field[idx(u.x, u.y)]) { u.ap = 0; break; }
-      const err = combatAct(state, { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
+      const err = combatAct(state, pools ? { type: "move", unit: u.id, x: best % W, y: (best / W) | 0, wary: true } : { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
       if (err) { u.ap = 0; break; }
     }
   }

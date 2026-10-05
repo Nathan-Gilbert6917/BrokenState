@@ -26,7 +26,8 @@ import { setSteward, stewardHour, setPinned } from "../src/sim/steward.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { productionHour, setStationOrder } from "../src/sim/production.js";
 import { craftQueue } from "../src/sim/crafting.js";
-import { econStats } from "../src/sim/farming.js";
+import { econStats, farmersWanted } from "../src/sim/farming.js";
+import { season } from "../src/sim/weather.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
 import { GEAR } from "../src/sim/data.js";
@@ -164,6 +165,36 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   h.armory.push(newItem("medbook", 1));
   planBase(st, h);
   check(ppl.slice(0, 2).filter((s) => s.role === "read").length === 1, "one copy of a book: one reader, the other goes on");
+}
+
+// ---------- 2b. a craft queue keeps one hand ----------
+{
+  section("A craft queue keeps one hand: from farmers beyond the governor's crew, not below it");
+  const { st, h, ppl } = quiet(42, 8);
+  const gen = st.work.roles.find((x) => x.name === "Generalist"); // Farm 2, Craft 4
+  join(st, ppl, gen);
+  const fw = farmersWanted(st, h);
+  h.stock.food = ppl.length * 30; h.stock.preserved = 0; // short of the season's goal: the farm takes up to 1.6 × 1.2 a plot
+  at(st, 10);
+  planBase(st, h);
+  const farmers0 = ppl.filter((s) => s.role === "farm").length;
+  for (const s of ppl) if (s.role !== "farm") setCell(st, s, "craft", 0); // only the farmers could craft
+  check(fw.active + fw.toSow > 0 && ppl.every((s) => s.role !== "craft"), `nothing queued: nobody crafts (${farmers0} farm, ${fw.active + fw.toSow} plots)`);
+  craftQueue(h).push({ id: 9e9, recipe: "spikedbat", progress: 0, hours: 6 });
+  planBase(st, h);
+  const crafting = ppl.filter((s) => s.role === "craft");
+  // 30 days of food in spring is comfortable for the governor (its target 15 or more): its crew is 0.6 a plot.
+  check(season(st).key === "spring" && farmers0 > fw.need, `the farm took more than the governor's crew (${farmers0} on the plots, crew ${fw.need})`);
+  check(crafting.length === 1 && /one hand stays on the craft queue/.test(crafting[0].task.why) && ppl.filter((s) => s.role === "farm").length === farmers0 - 1,
+    `a job queued: one Generalist (Craft 4) leaves the plots for it (${crafting.length}; ${crafting[0] ? crafting[0].task.why : "-"})`);
+  planBase(st, h);
+  check(ppl.filter((s) => s.role === "craft").length === 1, "the next hour it stays one crafter, not more");
+  // The farm only at its crew: nobody is pulled.
+  const keep = Math.max(1, fw.need);
+  for (const s of ppl.slice(keep)) { setCell(st, s, "farm", 0); setCell(st, s, "craft", 0); }
+  planBase(st, h);
+  check(ppl.slice(0, keep).every((s) => s.role === "farm") && ppl.every((s) => s.role !== "craft"), `the farm only at its crew (${keep}): its farmers stay, the job waits`);
+  craftQueue(h).length = 0;
 }
 
 // ---------- 3. ties, overrides, minimums ----------
@@ -540,6 +571,8 @@ function run(seed, priorities, dice = 0) {
   // The governor's survey trips (survey.js) are off for this comparison: they are extra trips taken with spare hands
   // and only add noise to a measure of who works at home (with them priorities finish ~1.5% fewer buildings).
   st.surveyOff = true;
+  // Likewise people met on the road (wanderers.js): recruits joining and trips cut short are noise for this measure.
+  st.noWanderers = true;
   if (priorities) {
     st.governor.priorityRoles = true;
     workState(st);
@@ -593,9 +626,21 @@ check(sum.pri.food >= sum.gov.food, `priorities harvest at least as much food ($
 // put priorities 1.3% behind, 4 runs 5.3%; with the governor's water filters held while the tanks are full, work.js
 // holdFilters, 8 runs 0.4% and 4 runs 6.6%): a strict "at least as many" would fail on noise, so allow the spread, 7%.
 check(sum.pri.builds >= sum.gov.builds * 0.93, `priorities finish about as many buildings, within the 7% run-to-run spread (${sum.pri.builds} vs ${sum.gov.builds})`);
-// Crafts spread even more per seed (10 to 55); the two modes tied exactly (193 vs 193) before new recipes and loot
-// moved the runs, so allow 5%.
-check(sum.pri.crafts >= sum.gov.crafts * 0.95, `priorities finish about as many crafts, within 5% (${sum.pri.crafts} vs ${sum.gov.crafts})`);
+// Crafts are a small count that a few seeds decide (one colony grows big enough to spare a crafter, the other does
+// not: seed 8 105 vs 18, seed 7 4 vs 50), so a fixed band on the total measures the dice: the paired run-to-run
+// difference has a standard error of about a quarter of the total over 40 runs, and the same code gave 94% on dice
+// 0–3 and 102% on dice 4–7 (before the craft queue kept a hand, work.js planBase, 76% and 86%; at be967e0 a lucky 96%
+// on dice 0–3 and 61% on 4–7). So the check is paired, run by run: priorities may finish fewer only within two
+// standard errors of the mean difference (a mode that stopped crafting, or made half as much, still fails; a fifth
+// fewer, as before that rule, is inside the noise of 40 runs, so the rule itself is checked by the scripted case
+// above, "a craft queue keeps one hand").
+{
+  const diffs = [];
+  for (const seed of seeds) for (let dice = 0; dice < DICE; dice++) diffs.push(results.get(`${seed}|${dice}|true`).crafts - results.get(`${seed}|${dice}|false`).crafts);
+  const m = diffs.reduce((a, v) => a + v, 0) / diffs.length;
+  const se = diffs.length > 1 ? Math.sqrt(diffs.reduce((a, v) => a + (v - m) ** 2, 0) / (diffs.length - 1) / diffs.length) : 0;
+  check(sum.pri.crafts >= sum.gov.crafts || m >= -2 * se, `priorities finish about as many crafts: any shortfall inside the noise (${sum.pri.crafts} vs ${sum.gov.crafts}; a run ${m.toFixed(2)} ± ${se.toFixed(2)}, at least −${(2 * se).toFixed(2)})`);
+}
 
 // ---------- 12. determinism ----------
 section("Determinism: two worlds on priorities with a crew, in one process");

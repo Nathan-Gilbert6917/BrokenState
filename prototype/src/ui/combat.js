@@ -19,6 +19,7 @@ import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./spri
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
@@ -1056,7 +1057,12 @@ function previewHtml(b) {
   if (v.reach && u) {
     const d = v.reach.dist[h.y * W + h.x];
     if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
+    // A spitter's acid (sim/acid.js) on the way there.
+    if (isFinite(d) && d > 0 && !acidAt(b, h.x, h.y) && pathTo(v.reach, h.x, h.y).some(([x, y]) => acidAt(b, x, y)) && u.acidT !== b.turn) s += ` <span class="danger">The way there crosses acid: ${ACID.pool[0]}–${ACID.pool[1]} damage.</span>`;
   }
+  // A spitter's acid pool (sim/acid.js).
+  const pool = acidAt(b, h.x, h.y);
+  if (pool) s = `<b class="danger">Acid</b> <span class="muted">(${pool.turns} turn${pool.turns === 1 ? "" : "s"} left)</span>: ${ACID.pool[0]}–${ACID.pool[1]} damage to the living who step in or start their turn in it (once a turn; armour stops only half as much). The dead walk through it unharmed.${u && u.acidT === b.turn ? " <span class=\"muted\">Already burned this turn.</span>" : ""} ${s}`;
   if (evacAt(b, h.x, h.y)) s += b.tier ? (b.tier.map === "wall" ? " The back gate: one person can slip away from here (the team falls back to the yard instead: Shift+R)." : " The back gate: leaving from here abandons the base.") : " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
   const hh = heightAt(b, h.x, h.y);
   if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
@@ -1207,7 +1213,7 @@ export function drawCombat(state, now) {
     }
     if (v.reach && u && cui.mode === "move" && !unitAt(b, h.x, h.y) && isFinite(v.reach.dist[h.y * W + h.x])) {
       const path = pathTo(v.reach, h.x, h.y);
-      ctx.strokeStyle = v.reach.dist[h.y * W + h.x] <= u.mob ? "#8fc1ff" : "#ffd166";
+      ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * W + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
       ctx.lineWidth = 2.5;
       ctx.setLineDash([5, 4]);
       ctx.beginPath();
@@ -1504,6 +1510,21 @@ function drawLures(b, cs, now) {
   const disc = (c, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs * (c.r + 0.5), 0, Math.PI * 2); ctx.fill(); };
   const OV = battleOverlays(b);
   for (const c of OV.flares) disc(c, "rgba(255,90,70,0.10)");
+  // A spitter's acid (sim/acid.js): a bubbling green puddle a cell, fading as it dries up.
+  const ph3 = ((now || 0) % 1600) / 1600;
+  for (const c of OV.acid) {
+    const px = ox + c.x * cs, py = oy + c.y * cs, a = c.fade;
+    ctx.fillStyle = `rgba(100,180,40,${0.2 * a})`;
+    ctx.fillRect(px, py, cs, cs);
+    ctx.fillStyle = `rgba(150,222,60,${0.5 * a})`;
+    ctx.beginPath(); ctx.ellipse(px + cs * 0.5, py + cs * 0.52, cs * 0.44, cs * 0.34, ((c.x * 0.7 + c.y * 0.3) % 1) * Math.PI, 0, Math.PI * 2); ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const t = (ph3 + k / 3 + c.x * 0.37 + c.y * 0.21) % 1;
+      const bx = px + cs * (0.25 + ((k * 0.31 + c.x * 0.13) % 0.5)), by = py + cs * (0.3 + ((k * 0.23 + c.y * 0.17) % 0.45));
+      ctx.strokeStyle = `rgba(215,255,130,${(1 - t) * 0.85 * a})`; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(bx, by, cs * (0.03 + t * 0.07), 0, Math.PI * 2); ctx.stroke();
+    }
+  }
   // Burning cells (one each, sim/throwables.js): the cell glows, tongues of flame flicker in it.
   for (const c of OV.fires) {
     const px = ox + c.x * cs, py = oy + c.y * cs;
@@ -2079,7 +2100,7 @@ function drawFx(b, now, cs) {
     const text = f.text ? f.text : f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(cs * (f.crit ? 0.36 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`;
     ctx.lineWidth = 3;
     const y = ty - cs * 0.5 - (el / 1400) * cs * 0.6;
