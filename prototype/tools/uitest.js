@@ -1196,7 +1196,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // base, a base defence on the wall map at night and on the yard map after the fall back, a base without walls.
     const list = battles(seed);
     const sizes = Object.fromEntries(list.map(({ name, b }) => [name, `${b.w}×${b.h}`]));
-    check(list.length === 10 && ["field-town", "raid", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
+    check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
     check(sizes["field-town"] === `${C.FIELD_W}×${C.FIELD_H}` && C.FIELD_W === 26 && C.FIELD_H === 18 && sizes.hive === "32×22" && sizes.raid === `${C.RAID_W}×${C.RAID_H}` && C.RAID_W === 34, "bigger maps: a field fight 26×18 (was 18×13), a hive assault 32×22, a raid 34×22 (was 28×18)");
     const wall = list.find((x) => x.name === "base-wall-night"), yard = list.find((x) => x.name === "base-yard");
     const hb = wall.st.bases[0];
@@ -1226,7 +1226,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // height (ground, walkway and roofs 1, towers 2); where something nearer the camera covers that point, the pick is
     // that nearer cell (never one behind it).
     let total = 0, exact = 0, wrong = 0, raised = 0, raisedOk = 0;
-    for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid"].includes(x.name))) {
+    for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid", "raid-building"].includes(x.name))) {
       for (let rot = 0; rot < 4; rot++) for (const zoom of [2, 6]) {
         ISO.iso.battle = null; UI.drawCombat(st, NOW);
         ISO.iso.rot = rot; ISO.iso.zoom = zoom; ISO.iso.target = null;

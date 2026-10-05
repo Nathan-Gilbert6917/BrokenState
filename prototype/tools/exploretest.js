@@ -157,12 +157,13 @@ console.log("Locks: odds, Heat and noise");
 
 console.log("Locks: locked rooms, doors and loot");
 {
-  const r = raidAt(["police", "military", "gunstore", "pharmacy", "hospital", "prison"], { want: (b) => (b.raid.doors || []).length > 0 });
+  // A locked room (a building's map can also have locked ways out: their doors belong to no room).
+  const r = raidAt(["police", "military", "gunstore", "pharmacy", "hospital", "prison"], { want: (b) => (b.raid.doors || []).some((d) => d.area != null) });
   check(!!r, "test setup: a raid with a locked room");
   if (r) {
     const { st, b } = r;
     const u = player(b);
-    const d = b.raid.doors[0];
+    const d = b.raid.doors.find((x) => x.area != null);
     const area = b.raid.areas[d.area];
     const inside = b.raid.containers.filter((c) => c.area === d.area);
     check(inside.length > 0 && inside.every((c) => c.room), `the locked room (${area.name}) holds ${inside.length} container(s), marked as in a locked room`);
@@ -177,7 +178,8 @@ console.log("Locks: locked rooms, doors and loot");
     L.addKey(st, b.tileId, "test");
     u.ap = 2; b.phase = "player";
     const err = combatAct(st, { type: "open", unit: u.id, target: `d${d.id}`, method: "key" });
-    check(!err && b.raid.doors.filter((x) => x.area === d.area).every((x) => x.lock.open && b.cells[x.y * b.w + x.x].k === "open"), `the key opens every door of the room (${err || "ok"})`);
+    // Open floor on the street map, an open door on a building's map (buildingmaps.js).
+    check(!err && b.raid.doors.filter((x) => x.area === d.area).every((x) => x.lock.open && ["open", "odoor"].includes(b.cells[x.y * b.w + x.x].k)), `the key opens every door of the room (${err || "ok"})`);
     check(inside.some((c) => reachIn(c)), "once open the room can be walked into");
   }
   // Locked loot against plain loot (the same container rolled both ways, many times).
