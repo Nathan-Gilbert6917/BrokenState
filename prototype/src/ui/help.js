@@ -1,9 +1,11 @@
 // Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. The topics are
 // the paragraphs of the game's help text (ui/ui.js helpText, one per bold title) plus the map's layers and legend,
 // which used to be spelled out in the Layers popup on the map. Small "?" buttons around the UI (data-action
-// "help-open" data-sec="<topic id>") open the menu at a topic.
+// "help-open" data-sec="<topic id>") open the menu at a topic. Windows and panels (folding, resizing, map only)
+// comes from ui/layout.js.
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
+import { windowsHelp } from "./layout.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -84,8 +86,10 @@ export function helpTopics() {
     const title = m ? m[1].trim().replace(/:$/, "") : "More";
     add(title, m && (m[2] || m[3]) ? chunk.slice(m[0].length).replace(/^[a-z]/, (c) => c.toUpperCase()) : chunk);
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
+    if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
+  if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
   return out;
 }
 
