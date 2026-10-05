@@ -40,6 +40,7 @@ import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
+import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 
@@ -80,6 +81,18 @@ export function transformBattle(b, side) {
   b.reach = flood(cells, p ? p.x : 0, p ? p.y : 0);
   return tf;
 }
+
+// Puts a new map (cells, w × h) under the battle being played (interior.js: the yard and buildings map). The units
+// keep their coordinates; the caller moves them. b.reach is flooded from (rx, ry).
+export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
+  W = w; H = h;
+  b.w = w; b.h = h; b.cells = cells;
+  b.losCache = new Int8Array(W * H * W * H);
+  b.reach = flood(cells, rx, ry);
+  return b;
+}
+// The cells the player side can stand on, flooded from (x, y) (after the map changed).
+export function floodReach(b, x, y) { bindDims(b); b.reach = flood(b.cells, x, y); return b.reach; }
 
 export function combatants(state, setup) {
   let list = [];
@@ -169,14 +182,21 @@ export function autoResolveCombat(state, setup) {
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
   const ratio = mine / Math.max(0.1, theirs);
-  const win = rng.chance(Math.max(0.05, Math.min(0.95, 0.5 + (ratio - 1) * 0.6)));
+  // Defending a base (interior.js baseTiers): the walls, the yard and the buildings each multiply what the defenders
+  // are worth; the battle is won at the tier where they first match the attackers, or lost (overrun).
+  const tiers = setup.layout === "baseDefence" && base ? baseTiers(state, base, setup, ratio) : null;
+  const win = rng.chance(Math.max(0.05, Math.min(0.95, 0.5 + ((tiers ? tiers.last : ratio) - 1) * 0.6)));
+  const tier = tiers ? (win ? tiers.tier : "overrun") : null;
   const tile = party ? partyTile(party) : tileIdOf(setup);
   const hurtIds = [], deadIds = [];
-  const hits = win ? rng.int(0, Math.ceil(people.length / 2)) : rng.int(1, people.length);
+  // A base held at the wall costs less blood than one held in the yard, and a last stand in the buildings costs most.
+  const half = Math.ceil(people.length / 2);
+  const hits = !win ? rng.int(1, people.length) : tier === "wall" ? rng.int(0, Math.ceil(people.length / 3)) : tier === "buildings" ? rng.int(1, half + 1) : rng.int(0, half);
+  const [lo, hi] = !win ? [25, 75] : tier === "buildings" ? [15, 50] : [10, 40];
   for (let i = 0; i < hits && people.length; i++) {
     const s = rng.pick(people);
     if (!s.alive) continue;
-    hurt(state, s, rng.int(win ? 10 : 25, win ? 40 : 75), tile, `in a fight with ${setup.enemy.name || setup.enemy.kind}`);
+    hurt(state, s, rng.int(lo, hi), tile, `in a fight with ${setup.enemy.name || setup.enemy.kind}`);
     (s.alive ? hurtIds : deadIds).push(s.id);
   }
   const killed = win ? setup.enemy.count : Math.floor(setup.enemy.count * rng.range(0.1, 0.5));
@@ -186,6 +206,7 @@ export function autoResolveCombat(state, setup) {
     enemiesKilled: killed, enemiesLeft: setup.enemy.count - killed,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed,
     loot: { supplies: {}, gear: [] },
+    ...(tiers ? { tier, tiers: { wall: tiers.wall, yard: tiers.yard, last: tiers.last } } : {}),
   };
 }
 
@@ -208,10 +229,14 @@ export const HUNKER_DEF = 20;
 const BLEED_TURNS = 3;
 const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 
-// walk: can stand there. cover: 0 none, 1 half, 2 full. los: blocks line of sight.
+// walk: can stand there. cover: 0 none, 1 half, 2 full. los: blocks line of sight (up to tall, 1 by default: a
+// viewer high enough sees over it, verticality below). h: the height a unit standing there is raised to (a cell can
+// set its own c.h). climb: a ladder or stairs, the only way from one height to the next. bar: closed to the attackers
+// until it is broken (its hit points are on the cell: c.hp / c.mhp; c.bar does the same for one cell, a base's gate).
+// A cell can also block sight on its own with c.t (a base's wall: the defenders shoot over it from the walkway).
 export const CELL = {
   open:    { walk: true,  cover: 0, los: false, name: "Open ground" },
-  tree:    { walk: false, cover: 2, los: true,  name: "Tree" },
+  tree:    { walk: false, cover: 2, los: true,  name: "Tree", tall: 2 },
   boulder: { walk: false, cover: 2, los: true,  name: "Boulder" },
   wall:    { walk: false, cover: 2, los: true,  name: "Wall" },
   truck:   { walk: false, cover: 2, los: true,  name: "Burnt-out truck" },
@@ -239,16 +264,45 @@ export const CELL = {
   // hurts and holds the first one to step in (then it is sprung).
   wire:      { walk: true,  cover: 0, los: false, name: "Barbed wire", trap: "wire" },
   beartrap:  { walk: true,  cover: 0, los: false, name: "Bear trap", trap: "beartrap" },
-  hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh" },
+  hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
   // A locked door in a raid (locks.js): blocks movement and sight until it is opened (then it is open floor).
   door:      { walk: false, cover: 2, los: true,  name: "Locked door" },
-  // The base's wall line on a break-in map (deploy.js): shoot over the wall; the dead come in through the gate
-  // and the breaches. A tower (a watchtower) is full cover from anything not right next to it, and +5 aim.
+  // The base's wall line on a break-in map (deploy.js): the defenders shoot over it from the walkway behind it (the
+  // wall's cells block sight from the ground, c.t) and the attackers batter it (c.hp) or come in through the gate
+  // and the breaches. A tower (a watchtower, height 2) is full cover from anything not right next to it.
   palisade:  { walk: false, cover: 2, los: false, name: "Wall" },
   gate:      { walk: true,  cover: 0, los: false, name: "Gate" },
   breach:    { walk: true,  cover: 0, los: false, name: "Breach in the wall" },
-  tower:     { walk: true,  cover: 0, los: false, name: "Watchtower", perch: 2 },
+  tower:     { walk: true,  cover: 0, los: false, name: "Watchtower", perch: 2, h: 2, climb: true },
+  // Verticality and the base's buildings (deploy.js, interior.js).
+  walkway:   { walk: true,  cover: 0, los: false, name: "Wall walkway", h: 1 },
+  ladder:    { walk: true,  cover: 0, los: false, name: "Ladder", climb: true },
+  stairs:    { walk: true,  cover: 0, los: false, name: "Stairs", climb: true },
+  roof:      { walk: true,  cover: 0, los: false, name: "Flat roof", h: 1 },
+  loft:      { walk: true,  cover: 0, los: false, name: "Upper floor", h: 1 },
+  bdoor:     { walk: true,  cover: 0, los: true,  name: "Barred door", bar: true },
+  doorway:   { walk: true,  cover: 0, los: false, name: "Broken door" },
+  smashed:   { walk: true,  cover: 0, los: false, name: "Smashed window" },
+  rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
+  well:      { walk: false, cover: 1, los: false, name: "Well" },
+  barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
 };
+
+// Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
+// anything lower (at most MAX_AIM) and has at least half cover against shooters below it that are not right next to
+// it. Climbing a level (only on a ladder, stairs or a tower's own ladder, never diagonally) costs CLIMB moves, the
+// dead CLIMB_DEAD. A blow struck up at someone higher is MELEE_UP harder. EYE: eye height over the floor (sight lines).
+export const HEIGHT = { SIGHT: 2, AIM: 5, MAX_AIM: 10, COVER: 1, CLIMB: 1, CLIMB_DEAD: 2, MELEE_UP: 10, EYE: 0.6 };
+// Battering a door, a window, the gate or a wall section (base battles): the cost in tiles the AI weighs it at.
+export const SIEGE = { COST: 2, PER_HP: 0.4 };
+// Battering and climbing by the kind of unit (base battles): bash multiplies its blows against a structure, climb is
+// the moves a level up or down. Looked up by its kind, then its variant (more kinds of the dead slot in here: a
+// "variant" or "zkind" key on the unit), then its boss; anything not listed takes its kind's.
+export const UNIT_SIEGE = {
+  human: { bash: 1, climb: HEIGHT.CLIMB }, zombie: { bash: 1, climb: HEIGHT.CLIMB_DEAD },
+  wallbreaker: { bash: 3, climb: 3 }, broodmother: { bash: 2, climb: 3 },
+};
+export const siegeRule = (u) => ({ bash: 1, climb: HEIGHT.CLIMB, ...(u && UNIT_SIEGE[u.kind]), ...(u && UNIT_SIEGE[u.variant || u.zkind]), ...(u && UNIT_SIEGE[u.boss]) });
 
 // Weapon stats in battle, keyed like GEAR. opt = best range; fall = aim lost per tile beyond it.
 export const WEAPONS = {
@@ -305,14 +359,21 @@ const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
 const cellAt = (b, x, y) => CELL[b.cells[idx(x, y)].k];
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
-export const active = (u) => !u.dead && !u.down && !u.left && !u.fled;
-const onMap = (u) => !u.dead && !u.left && !u.fled;
+// off: an attacker still outside, waiting to come in through a breach (interior.js): not on the map yet.
+export const active = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
+const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off;
+// Height of a cell (verticality), whether it is closed to the attackers, a ladder, and something that can be battered.
+export const heightAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? CELL[c.k].h ?? 0; };
+const hAt = (b, x, y) => { const c = b.cells[idx(x, y)]; return c.h ?? CELL[c.k].h ?? 0; };
+export const barredCell = (c) => !!(c.bar || CELL[c.k].bar) && !(c.hp <= 0);
+const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
+export const breakable = (c) => c.hp > 0;
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && u.x === x && u.y === y);
 export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
 export const inEvac = (b, x, y) => b.evacCols > 0 && (b.evacMask ? y != null && !!b.evacMask[y * b.w + x] : x < b.evacCols);
-const bump = (b) => b.rev++;
+const bump = (b) => { b.rev++; trackGhosts(b); };
 
 export function say(b, text, k = "info") {
   b.log.push({ turn: b.turn, text, k });
@@ -460,7 +521,11 @@ function flood(cells, sx, sy) {
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-// Line of sight between cell centers. Full-cover cells block it; grazing a corner does not.
+// Line of sight between cell centers. Full-cover cells block it; grazing a corner does not. With heights (base
+// battles) the line runs from eye to eye (the cell's height + EYE at each end) and a cell only blocks it where the
+// line passes below its top: a blocking cell's top is its tall (1 by default; a base's wall c.t), a raised floor's
+// its height (a walkway, a roof). So someone on a walkway or a roof sees over a wall near them, but not into the
+// dead ground right behind a wall near the target; a watchtower sees over almost everything one storey high.
 export function los(b, x0, y0, x1, y1) {
   bindDims(b);
   const a = idx(x0, y0), c = idx(x1, y1);
@@ -468,12 +533,15 @@ export function los(b, x0, y0, x1, y1) {
   if (v) return v === 1;
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
+  const e0 = hAt(b, x0, y0) + HEIGHT.EYE, e1 = hAt(b, x1, y1) + HEIGHT.EYE;
   let clear = true;
   for (let i = 1; i < n && clear; i++) {
     const px = x0 + 0.5 + (dx * i) / n, py = y0 + 0.5 + (dy * i) / n;
     const cx = Math.floor(px), cy = Math.floor(py);
     if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
-    if (!cellAt(b, cx, cy).los) continue;
+    const cell = b.cells[idx(cx, cy)], C = CELL[cell.k];
+    const top = cell.t || (C.los ? C.tall || 1 : C.walk ? cell.h ?? C.h ?? 0 : 0);
+    if (!top || e0 + ((e1 - e0) * i) / n > top) continue;
     const fx = px - cx, fy = py - cy;
     if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) clear = false;
   }
@@ -481,18 +549,40 @@ export function los(b, x0, y0, x1, y1) {
   return clear;
 }
 
-// A flare's light (throwables.js) shows your people what stands in it, however dark, up to the normal sight range.
-export const canSee = (b, a, t) => (dist(a.x, a.y, t.x, t.y) <= a.sight || (b.flares && b.flares.length && a.side === "player" && dist(a.x, a.y, t.x, t.y) <= SIGHT && flareLit(b, t.x, t.y))) && los(b, a.x, a.y, t.x, t.y);
+// How far a unit sees from where it stands: its sight (night, a flashlight, night vision: stealth.js), +HEIGHT.SIGHT
+// a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
+export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0);
+// Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
+// flare (throwables.js) and, at night, a floodlit cell (deploy.js).
+export function canSeeAt(b, a, x, y) {
+  bindDims(b);
+  const d = dist(a.x, a.y, x, y);
+  if (d > sightRange(b, a)) {
+    if (a.side !== "player") return false;
+    const lit = (b.flares && b.flares.length && flareLit(b, x, y)) || (b.night && b.floodAim && b.lit && b.lit[idx(x, y)]);
+    if (!lit || d > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0)) return false;
+  }
+  return los(b, a.x, a.y, x, y);
+}
+export const canSee = (b, a, t) => canSeeAt(b, a, t.x, t.y);
 
 // Cover a unit at (x, y) has against an attacker at (ax, ay). Cover sits on the 4 sides; it only
 // counts when the attacker is roughly in front of it. Some cover nearby but none facing = flanked.
+// The cover a neighbouring cell gives someone at (x, y): its own (a wall, a barricade), or full cover from a raised
+// floor higher than they stand (the side of a roof, the walkway or a tower seen from below).
+function sideCover(b, x, y, nx, ny) {
+  const c = b.cells[idx(nx, ny)], C = CELL[c.k];
+  if (C.walk && hAt(b, nx, ny) > hAt(b, x, y)) return 2;
+  return C.cover;
+}
+
 export function coverAgainst(b, x, y, ax, ay) {
   bindDims(b);
   let level = 0, any = false;
   const d = dist(x, y, ax, ay) || 1;
   for (const [dx, dy] of DIRS4) {
     if (!inside(x + dx, y + dy)) continue;
-    const c = cellAt(b, x + dx, y + dy).cover;
+    const c = sideCover(b, x, y, x + dx, y + dy);
     if (!c) continue;
     any = true;
     if (((ax - x) * dx + (ay - y) * dy) / d > 0.35) level = Math.max(level, c);
@@ -500,21 +590,35 @@ export function coverAgainst(b, x, y, ax, ay) {
   // Up on a watchtower (deploy.js): full cover from anyone not right next to it.
   const perch = inside(x, y) ? cellAt(b, x, y).perch : 0;
   if (perch && d > 1.5) { level = Math.max(level, perch); any = true; }
+  // Higher ground: at least half cover against a shooter below who is not right next to them.
+  if (d > 1.5 && inside(x, y) && inside(ax, ay) && hAt(b, x, y) > hAt(b, ax, ay)) { level = Math.max(level, HEIGHT.COVER); any = true; }
   return { level, any, flanked: any && level === 0 };
 }
 
 // Cover on each side of a cell, for the shield icons: [east, west, south, north].
 export function coverSides(b, x, y) {
   bindDims(b);
-  return DIRS4.map(([dx, dy]) => (inside(x + dx, y + dy) ? cellAt(b, x + dx, y + dy).cover : 0));
+  return DIRS4.map(([dx, dy]) => (inside(x + dx, y + dy) ? sideCover(b, x, y, x + dx, y + dy) : 0));
 }
 
-// Dijkstra over 8 directions (diagonals 1.5, no corner cutting). Units block cells.
+// The cost of a step from (x, y) to the next cell (verticality): 0 on the level, Infinity where the height changes
+// without a ladder or stairs at either end (or diagonally), else the climb. h: the heights to use (a siege field
+// counts a walkway as ground where the wall in front of it can still be battered down: it comes down with it).
+function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
+  const dh = Math.abs(h(b, nx, ny) - h(b, x, y));
+  if (!dh) return 0;
+  if (diag || !(climbAt(b, x, y) || climbAt(b, nx, ny))) return Infinity;
+  return dh * per;
+}
+
+// Dijkstra over 8 directions (diagonals 1.5, no corner cutting). Units block cells. Heights only change on a ladder
+// or stairs (climbCost); the attackers cannot walk through a barred door or a closed gate (they batter it: siegeTarget and bash).
 export function reachable(b, u, maxCost) {
   bindDims(b);
   const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
+  const foe = u.side === "enemy", per = siegeRule(u).climb;
   const start = idx(u.x, u.y);
   d[start] = 0;
   const open = [start];
@@ -532,7 +636,10 @@ export function reachable(b, u, maxCost) {
       if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
-      const nd = d[cur] + (diag ? 1.5 : 1);
+      if (foe && barredCell(b.cells[j])) continue;
+      const climb = climbCost(b, x, y, nx, ny, diag, per);
+      if (climb === Infinity) continue;
+      const nd = d[cur] + (diag ? 1.5 : 1) + climb;
       if (nd <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
         d[j] = nd;
@@ -557,9 +664,17 @@ export function pathTo(r, x, y) {
 }
 
 // Walking distance from a set of cells to everywhere (ignores units). Used by AI to find a way around walls.
-export function distField(b, sources) {
+// walker: the unit that will walk it (the climb costs the dead more). An attacker's field is a siege field: a barred
+// door, a closed gate, a wall section or a window with hit points left counts as a way through at the cost of
+// battering it down (SIEGE: 2 + 0.4 a hit point), so the dead pile onto the weakest point when no opening is nearer.
+export function distField(b, sources, walker = null) {
   bindDims(b);
   const d = new Float32Array(W * H).fill(Infinity);
+  const siege = !!walker && walker.side === "enemy";
+  const per = siegeRule(walker).climb;
+  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return CELL[c.k].walk || (siege && breakable(c)); };
+  const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
+  const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
   const open = [];
   for (const [x, y] of sources) { d[idx(x, y)] = 0; open.push(idx(x, y)); }
   while (open.length) {
@@ -571,9 +686,14 @@ export function distField(b, sources) {
     const x = cur % W, y = (cur / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
-      if (!inside(nx, ny) || !cellAt(b, nx, ny).walk) continue;
-      if (dx && dy && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
-      const j = idx(nx, ny), nd = d[cur] + (dx && dy ? 1.5 : 1);
+      if (!inside(nx, ny) || !pass(nx, ny)) continue;
+      const diag = dx && dy;
+      if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue; // no corner cutting (as reachable)
+      const climb = climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
+      if (climb === Infinity) continue;
+      const c = b.cells[idx(nx, ny)];
+      const bash = siege && (breakable(c) && (!CELL[c.k].walk || barredCell(c))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash;
       if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; }
     }
   }
@@ -600,16 +720,19 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
-  if (inside(ax, ay) && cellAt(b, ax, ay).perch) aim += 5;
+  // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
+  const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
+  if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d };
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
 }
 
 export function meleeOdds(b, a, t) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0))));
+  const up = hAt(b, t.x, t.y) > hAt(b, a.x, a.y) ? HEIGHT.MELEE_UP : 0; // striking up at someone on higher ground
+  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up)));
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
   return { chance, crit: 10, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
@@ -622,7 +745,45 @@ export const canFire = (b, u) => isRanged(u) && (u.side !== "player" || ammoLeft
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
+  if (t.off) return false;
   return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t)));
+}
+
+// ---------- fog of war ----------
+// Every cell your people can see now (1) or not (0): the union of what each one standing sees (canSeeAt: sight by
+// height, night, light, night vision, optics; walls and buildings block it). Everything after the battle is over.
+export function playerVision(b) {
+  bindDims(b);
+  const vis = new Uint8Array(W * H).fill(b.over ? 1 : 0);
+  if (b.over) return vis;
+  const eyes = b.units.filter((u) => u.side === "player" && active(u));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    for (const e of eyes) if ((e.x === x && e.y === y) || canSeeAt(b, e, x, y)) { vis[y * W + x] = 1; break; }
+  }
+  return vis;
+}
+// Last-seen ghosts: where each enemy was when your people last saw it ({ id: [x, y, turn] }); forgotten once it is
+// seen dead, flees or a new map starts (interior.js). The battle screen draws them faded where nobody sees now.
+function trackGhosts(b) {
+  if (!b || !b.units || !b.losCache) return;
+  const g = b.ghosts || (b.ghosts = {});
+  for (const e of b.units) {
+    if (e.side !== "enemy") continue;
+    if (e.dead || e.fled || e.left || e.off) { if (g[e.id] && (e.fled || e.left || e.off || playerSeesCell(b, e.x, e.y))) delete g[e.id]; continue; }
+    if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn];
+  }
+}
+const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
+// The ghosts to draw: enemies not seen now with a last-seen spot.
+export function enemyGhosts(b) {
+  if (!b.ghosts) return [];
+  const out = [];
+  for (const e of b.units) {
+    const g = b.ghosts[e.id];
+    if (!g || e.side !== "enemy" || !onMap(e) || playerSees(b, e)) continue;
+    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], kind: e.kind, name: e.name, unit: e });
+  }
+  return out;
 }
 
 // ---------- units ----------
@@ -993,9 +1154,15 @@ export function combatAct(state, act) {
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
-  // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry.
+  // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry. On a base's wall map that is
+  // falling back to the yard and the buildings instead (interior.js), as is act "fallBack".
   if (act.type === "soundRetreat") return soundRetreat(state, { leave: act.leave || [] });
-  if (b.phase === "deploy") return deployAct(state, b, act); // deploy.js: placing the defenders before a break-in
+  if (act.type === "fallBack") return fallBack(state, { by: "player" });
+  if (b.phase === "deploy") { // deploy.js: placing the defenders before a break-in (or after falling back, interior.js)
+    const err = deployAct(state, b, act);
+    if (!err) { afterDeploy(state, b); bump(b); }
+    return err;
+  }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   const u = unitById(b, act.unit);
   if (!u || u.side !== "player" || !active(u) || u.ap < 1) return "That unit cannot act.";
@@ -1103,6 +1270,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "enemy" && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; }
   if (b.raid) raidTurn(b);
   else reinforcements(b);
+  if (b.tier) tierEnemyTurn(state, b); // interior.js: the attackers still outside come in through the breaches
   stealthTurn(b); // stealth.js: noise makers still ringing, the knocked out coming to, night eyes for newcomers
   // Sleepers look around at the start of their turn.
   for (const u of b.units) if (u.side === "player" && active(u)) detect(b, u);
@@ -1122,7 +1290,7 @@ export function enemyStep(state) {
   }
   if (u) aiUnit(b, u);
   checkEnd(state, b);
-  if (!b.over && !b.queue.length) startPlayerTurn(b);
+  if (!b.over && !b.queue.length) startPlayerTurn(state, b);
   bump(b);
   return u;
 }
@@ -1131,7 +1299,7 @@ export function runEnemyPhase(state) {
   for (let i = 0; i < 200 && state.combat && state.combat.phase === "enemy" && !state.combat.over; i++) enemyStep(state);
 }
 
-function startPlayerTurn(b) {
+function startPlayerTurn(state, b) {
   b.turn++;
   b.phase = "player";
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
@@ -1145,6 +1313,8 @@ function startPlayerTurn(b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
+  // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
+  if (b.tier && !b.over) tierPlayerTurn(state, b);
 }
 
 // Gunfire on infected ground draws more of the dead from the map edge.
@@ -1195,28 +1365,37 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     const d = dist(x, y, f.x, f.y);
     nearest = Math.min(nearest, d);
     if (!isRanged(f)) { if (d < 2.5) s -= 10; else if (d < 5) s -= (5 - d) * 2; continue; }
-    if (d > f.sight || !los(b, x, y, f.x, f.y)) continue;
+    if (d > sightRange(b, f) || !los(b, x, y, f.x, f.y)) continue;
     const c = coverAgainst(b, x, y, f.x, f.y).level;
     s += c === 2 ? 0 : c === 1 ? -5 : -14;
   }
   if (canFire(b, u)) {
     for (const f of foes) {
-      if (dist(x, y, f.x, f.y) > u.sight || !los(b, x, y, f.x, f.y)) continue;
+      if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
       best = Math.max(best, o.chance + (o.crit >= 40 ? 12 : 0));
     }
   }
   s += best * 0.3;
   if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
+  // The last stand (interior.js): once the yard is lost your people keep to the buildings.
+  if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;
   return s;
+}
+
+// A base battle (deploy.js, interior.js): your people do not go out past the wall line to chase the attackers (the
+// gate and the breaches themselves are held from where they are).
+const WALL_LINE = new Set(["gate", "breach", "palisade"]);
+function outsideBase(b, u, i) {
+  return u.side === "player" && !!b.tier && !!b.tier.interior && !b.tier.interior[i] && !WALL_LINE.has(b.cells[i].k);
 }
 
 function bestMove(b, u, foes) {
   const r = reachable(b, u, u.mob);
-  const field = distField(b, foes.map((f) => [f.x, f.y]));
+  const field = distField(b, foes.map((f) => [f.x, f.y]), u);
   let best = null;
   for (let i = 0; i < W * H; i++) {
-    if (!isFinite(r.dist[i]) || r.dist[i] === 0) continue;
+    if (!isFinite(r.dist[i]) || r.dist[i] === 0 || outsideBase(b, u, i)) continue;
     const x = i % W, y = (i / W) | 0;
     const sc = scoreCell(b, u, x, y, foes, r.dist[i], field) + b.rng.next() * 1.5;
     if (!best || sc > best.sc) best = { x, y, sc };
@@ -1252,11 +1431,14 @@ function aiUnit(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     const shot = bestShot(b, u, foes);
-    const here = scoreCell(b, u, u.x, u.y, foes, 0, distField(b, foes.map((f) => [f.x, f.y])));
+    const here = scoreCell(b, u, u.x, u.y, foes, 0, distField(b, foes.map((f) => [f.x, f.y]), u));
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
     const mv = bestMove(b, u, foes);
     if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); continue; }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
+    // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
+    const wall = siegeTarget(b, u);
+    if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
     if (u.side === "player" || rng.chance(0.6)) u.ow = true;
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
@@ -1266,9 +1448,21 @@ function aiUnit(b, u) {
 // A defender posted at the gate (or a breach) or on a watchtower by the deploy step (deploy.js) holds it: shoots
 // what it can see (point blank at the gate), strikes what is next to it, else watches. With nothing in sight or
 // within 6 tiles (the dead got past), the post is given up and the usual AI takes over.
+// Posts on the yard map (interior.js) kept with nobody in sight: the towers, upper floors and roofs, inside a
+// building at a window, by a door.
+const STICKY = new Set(["tower", "perch", "inside", "door"]);
+// On the wall map (deploy.js) the walkway and the towers ("wall", "tower") are kept while the dead are still outside,
+// even with nobody in sight (night); inside a building ("inside", interior.js) the same as a post.
 function holdPost(b, u) {
   const foes = foesOf(b, u);
-  if (!foes.some((f) => canSee(b, u, f) || dist(u.x, u.y, f.x, f.y) <= 6)) { u.post = null; return false; }
+  if (!foes.some((f) => canSee(b, u, f) || dist(u.x, u.y, f.x, f.y) <= 6)) {
+    const walls = b.tier && b.tier.map === "wall" && (u.post === "wall" || u.post === "tower") && !foes.some((f) => b.tier.interior && b.tier.interior[idx(f.x, f.y)]);
+    const inside = b.tier && b.tier.map === "interior" && STICKY.has(u.post);
+    if (!walls && !inside) { u.post = null; return false; }
+    if (canFire(b, u)) u.ow = true;
+    u.ap = 0;
+    return true;
+  }
   const adj = foes.filter((f) => adjacent(u, f)).sort((a, c) => a.hp - c.hp);
   const shot = bestShot(b, u, adj.length && u.post === "gate" ? adj : foes);
   if (shot) fire(b, u, shot.t);
@@ -1293,19 +1487,23 @@ function aiMelee(b, u) {
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
-    const adj = foes.filter((f) => adjacent(u, f)).sort((a, c) => a.hp - c.hp);
+    // Someone holding a barred gate (or door) is behind it: an attacker has to batter it down first.
+    const adj = foes.filter((f) => adjacent(u, f) && !(u.side === "enemy" && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp);
     if (adj.length) { strike(b, u, adj[0]); u.ap = 0; return; }
     const r = reachable(b, u, u.mob * u.ap);
-    const field = distField(b, foes.map((f) => [f.x, f.y]));
+    const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     let best = null;
     for (let i = 0; i < W * H; i++) {
-      if (!isFinite(r.dist[i])) continue;
+      if (!isFinite(r.dist[i]) || (r.dist[i] > 0 && outsideBase(b, u, i))) continue;
       const x = i % W, y = (i / W) | 0;
-      const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1);
+      const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !(u.side === "enemy" && barredCell(b.cells[idx(f.x, f.y)])));
       const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05;
       if (!best || sc < best.sc) best = { x, y, sc, cost: r.dist[i], nextTo };
     }
     if (!best || best.cost === 0) {
+      // Nowhere closer to go: a barred door, the gate, a wall section or a window on the way is battered instead.
+      const wall = siegeTarget(b, u, field);
+      if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
       // Stuck for three turns with someone of yours lying down next to it (the only way through, often): the dead
       // tear into them. No endless standoff behind a downed body.
       u.stuck = (u.stuck || 0) + 1;
@@ -1323,6 +1521,71 @@ function aiMelee(b, u) {
     u.ap -= best.cost <= u.mob ? 1 : 2;
     moveAlong(b, u, pathTo(r, best.x, best.y));
   }
+}
+
+// ---------- battering through (base battles) ----------
+// An attacker with nowhere closer to go batters a barred door, the gate, a wall section or a window next to it that
+// lies on its siege field's way to the defenders (distField with a walker). Returns [x, y] or null.
+function siegeTarget(b, u, field) {
+  if (u.side !== "enemy") return null;
+  field = field || distField(b, foesOf(b, u).map((f) => [f.x, f.y]), u);
+  const here = field[idx(u.x, u.y)];
+  let best = null;
+  for (const [dx, dy] of DIRS8) {
+    const x = u.x + dx, y = u.y + dy;
+    if (!inside(x, y)) continue;
+    const c = b.cells[idx(x, y)];
+    if (!breakable(c) || (CELL[c.k].walk && !barredCell(c))) continue;
+    if (dx && dy && c.k !== "palisade") continue; // doors, windows and the gate are battered head on
+    if (!(field[idx(x, y)] < here) || (best && field[idx(x, y)] >= best.f)) continue;
+    best = { x, y, f: field[idx(x, y)] };
+  }
+  return best ? [best.x, best.y] : null;
+}
+
+// One blow (or a burst at the lock) at a structure: always lands. The dead tear with their claws, people with what they
+// carry (a gun at a lock costs them no ammo); a Wallbreaker hits three times as hard. At 0 it gives way (breakCell).
+export function bash(b, u, x, y) {
+  bindDims(b);
+  const c = b.cells[idx(x, y)];
+  if (!breakable(c)) return 0;
+  const w = WEAPONS[u.weapon];
+  const base = (w && w.dmg) || BASH;
+  const dmg = Math.max(1, Math.round(b.rng.int(base[0], base[1]) * (u.dmgMult || 1) * siegeRule(u).bash));
+  const was = c.hp;
+  c.hp = Math.max(0, c.hp - dmg);
+  u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
+  const name = structureName(c).toLowerCase();
+  fx(b, { type: "melee", from: [u.x, u.y], to: [x, y], hit: true, crit: false, dmg, side: u.side, text: c.hp > 0 ? `-${dmg}` : "BROKEN" });
+  if (c.hp <= 0) breakCell(b, x, y, u);
+  else if (was > c.mhp / 2 && c.hp <= c.mhp / 2) say(b, `The ${name} is giving way (${c.hp}/${c.mhp}).`, "danger");
+  bump(b);
+  return dmg;
+}
+export function structureName(c) {
+  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" ? "Door" : c.k === "window" ? "Window" : CELL[c.k].name;
+}
+
+// A structure gives way: a wall section becomes a breach (and the walkway behind it comes down), the gate hangs open,
+// a door is broken in, a window smashed. Sight lines change, so the line-of-sight cache is cleared.
+export function breakCell(b, x, y, by = null) {
+  bindDims(b);
+  const c = b.cells[idx(x, y)];
+  const name = structureName(c).toLowerCase();
+  c.hp = 0;
+  if (c.k === "palisade") {
+    c.k = "breach"; delete c.t; c.h = 0;
+    for (const [dx, dy] of DIRS4) {
+      if (!inside(x + dx, y + dy)) continue;
+      const w = b.cells[idx(x + dx, y + dy)];
+      if (w.k === "walkway") { w.k = "rubble"; w.h = 0; }
+    }
+  } else if (c.k === "gate") c.bar = false;
+  else if (c.k === "bdoor") c.k = "doorway";
+  else if (c.k === "window") c.k = "smashed";
+  b.losCache.fill(0);
+  if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
+  say(b, by && by.side === "enemy" ? `${by.kind === "zombie" ? "The dead" : by.name} break${by.kind === "zombie" ? "" : "s"} through the ${name}!` : `The ${name} gives way!`, "danger");
 }
 
 function shouldFlee(b) {
@@ -1373,6 +1636,8 @@ export const RETREAT = {
 export function retreatRefusal(b) {
   if (!b || b.over) return "The battle is over.";
   if (b.raid) return "In a raid you leave by extracting: move into a green extraction zone and press X.";
+  // A base's wall map (deploy.js): the retreat is falling back to the yard and the buildings (interior.js).
+  if (b.tier && b.tier.map === "wall") return b.phase !== "player" ? (b.phase === "deploy" ? "The fight has not started yet." : "Wait for the enemy turn to finish.") : !b.units.some((u) => u.side === "player" && active(u)) ? "Nobody is left standing to fall back." : "";
   if (!b.evacCols) return "There is no way out of this fight: it has to be won or lost here.";
   if (b.phase !== "player") return b.phase === "deploy" ? "The fight has not started yet." : "Wait for the enemy turn to finish.";
   if (!b.units.some((u) => u.side === "player" && active(u))) return "Nobody is left standing to run.";
@@ -1472,6 +1737,7 @@ export function soundRetreat(state, opts = {}) {
   bindDims(b);
   const err = retreatRefusal(b);
   if (err) return err;
+  if (b.tier && b.tier.map === "wall") return fallBack(state, opts); // off the walls, into the yard (interior.js)
   const rng = b.rng;
   const plan = retreatPlan(b, opts.leave || []);
   const rec = b.retreatOrder = { turn: b.turn, by: opts.by || "player", escaped: [], caught: [], carried: [], dropped: [], lines: [] };
@@ -1555,13 +1821,23 @@ export const RETREAT_AI = {
 };
 // The style the AI fights in: the caller's, the battle's (setup.aiStyle), the autopilot's, else Balanced.
 const aiStyle = (state, b, opts) => opts.style || b.setup.aiStyle || (state.autopilot && state.governor && state.governor.personality) || "balanced";
+// On a base's wall map: off the walls (to the yard and the buildings, interior.js) below this ratio once some of them
+// are inside the wall, or with this share of the team down and the ratio under 1.
+export const FALL_BACK_AI = { ratio: 0.5, down: 0.34 };
 export function retreatAdvice(b, style = "balanced") {
   if (retreatRefusal(b)) return null;
+  const o = fightOutlook(b);
+  if (b.tier && b.tier.map === "wall") {
+    // The wall is worth holding while it stands: outgunned, they leave it only once some are already inside.
+    const inside = b.units.some((u) => u.side === "enemy" && active(u) && b.tier.interior[idx(u.x, u.y)]);
+    if (inside && o.ratio < FALL_BACK_AI.ratio) return { why: "the walls cannot be held", fallBack: true, ...o };
+    if (o.down >= FALL_BACK_AI.down && o.ratio < 1) return { why: "too many are down on the walls", fallBack: true, ...o };
+    return null;
+  }
   // Defending a base (a break-in map with a way out): giving up means abandoning it, so every style holds on as
   // long as Aggressive does.
   const home = b.setup.layout === "baseDefence" || b.setup.deploy;
   const T = home ? RETREAT_AI.aggressive : RETREAT_AI[style] || RETREAT_AI.balanced;
-  const o = fightOutlook(b);
   if (o.ratio < T.ratio) return { why: "they are outgunned", ...o };
   if (o.down >= T.down && o.ratio < 1) return { why: "too many of them are down", ...o };
   return null;
@@ -1572,11 +1848,13 @@ export function retreatAdvice(b, style = "balanced") {
 export function autoPlayerTurn(state, opts = {}) {
   const b = state.combat;
   bindDims(b);
-  if (b && !b.over && b.phase === "deploy") return void endDeploy(b); // deploy.js: default positions, then fight
+  if (b && !b.over && b.phase === "deploy") { endDeploy(b); return void afterDeploy(state, b); } // deploy.js: default positions, then fight
   if (!b || b.over || b.phase !== "player") return;
   if (b.raid) return autoRaidTurn(state);
-  // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them.
+  // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them. On a base's
+  // wall map: everyone falls back to the yard and the buildings instead (interior.js).
   const giveUp = opts.retreat === false || state.autoRetreat === false ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
+  if (giveUp && giveUp.fallBack) return void fallBack(state, { by: "ai", why: giveUp.why });
   if (giveUp) {
     botRetreatSmoke(state, b, inEvac); // stealth.js: a smoke grenade over the team first, if anyone has one
     return void soundRetreat(state, { by: "ai", why: giveUp.why });
@@ -1584,11 +1862,20 @@ export function autoPlayerTurn(state, opts = {}) {
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
     if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a pipe bomb or Molotov on a crowd
+    if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
   }
   bump(b);
   if (!b.over) endPlayerTurn(state);
+}
+
+// After the deploy step: a fall back ordered in the player's turn (interior.js) gives the enemy the next turn.
+export function afterDeploy(state, b) {
+  if (!b || b.over || b.phase !== "player" || !b.tier || !b.tier.enemyNext) return;
+  b.tier.enemyNext = false;
+  for (const u of b.units) if (u.side === "player") u.ap = 0;
+  endPlayerTurn(state);
 }
 
 // ---------- ending ----------
@@ -1598,7 +1885,8 @@ function checkEnd(state, b) {
     if (!b.units.some((u) => u.side === "player" && active(u))) endRaid(state, b);
     return;
   }
-  if (!b.units.some((u) => u.side === "enemy" && active(u))) return endBattle(state, b, "victory");
+  // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
+  if (!b.units.some((u) => u.side === "enemy" && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
   if (!b.units.some((u) => u.side === "player" && active(u))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
 }
 
@@ -1682,6 +1970,8 @@ function endBattle(state, b, outcome) {
     tactical: true, worn: true, bodies: b.bodies.length,
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js: taken home by finishCombat
     carriedIds, // the downed taken out in a retreat
+    // A base battle (interior.js): where it was decided: held at the wall, in the yard, in the buildings; or lost.
+    ...(b.tier ? { tier: outcome === "victory" ? b.tier.stage : outcome === "retreat" ? "abandoned" : "overrun", fellBack: b.tier.map === "interior" } : {}),
     // The retreat was sounded (soundRetreat): who got out, who was caught, who was carried or had to be dropped.
     retreatOrder: b.retreatOrder ? { by: b.retreatOrder.by, turn: b.retreatOrder.turn, escaped: b.retreatOrder.escaped.slice(), caught: b.retreatOrder.caught.slice(), carried: b.retreatOrder.carried.slice(), dropped: b.retreatOrder.dropped.slice() } : null,
   };

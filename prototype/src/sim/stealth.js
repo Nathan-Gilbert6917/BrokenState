@@ -28,6 +28,7 @@ import {
   say, fx, moveAlong, alertPod, notice, distField, damage,
 } from "./combat.js";
 import { landEffect, blastSpot, BLAST, FIRE } from "./throwables.js";
+import { battleOptic } from "./optics.js";
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3,
@@ -116,7 +117,10 @@ function takeThrowable(state, b, u, key) {
 
 // ---------- battle setup (createBattle / createRaid) ----------
 export function stealthSetup(state, b) {
-  b.night = !!b.raid && isNight(state);
+  // Night counts in raids and in base battles (a break-in, a raid at the walls: deploy.js, where the floodlights light
+  // the dark); other battles keep daylight sight as before.
+  const ctxNight = b.setup && b.setup.context ? b.setup.context.night : undefined;
+  b.night = !!b.raid ? isNight(state) : b.setup && b.setup.layout === "baseDefence" ? !!(ctxNight ?? isNight(state)) : false;
   b.lures = b.lures || [];
   const mine = b.units.filter((u) => u.side === "player");
   const cx = mine.reduce((a, u) => a + u.x, 0) / Math.max(1, mine.length), cy = mine.reduce((a, u) => a + u.y, 0) / Math.max(1, mine.length);
@@ -132,6 +136,7 @@ export function stealthSetup(state, b) {
       u.suppressor = sup ? sup.item : null;
       u.dropSuppressor = sup ? sup.take : null;
       if (b.night && !u.nvg) u.sight = Math.min(u.sight, u.light ? STEALTH.LIGHT_SIGHT : STEALTH.NIGHT_SIGHT);
+      u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
     } else {
       if (!u.face) u.face = [sign(Math.round(cx - u.x)), sign(Math.round(cy - u.y))];
       nightEyes(b, u);
@@ -483,7 +488,7 @@ export function botAttackThrow(state, b, u) {
 // everyone within 4 tiles of it). Returns true if one was thrown.
 export function botRetreatSmoke(state, b, inEvac) {
   const mine = b.units.filter((u) => u.side === "player" && active(u));
-  const out = mine.filter((u) => !inEvac(b, u.x));
+  const out = mine.filter((u) => !inEvac(b, u.x, u.y));
   if (!out.length) return false;
   const cx = Math.round(out.reduce((a, u) => a + u.x, 0) / out.length), cy = Math.round(out.reduce((a, u) => a + u.y, 0) / out.length);
   for (const u of mine) {

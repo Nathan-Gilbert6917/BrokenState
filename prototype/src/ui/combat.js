@@ -3,7 +3,9 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
+  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell,
 } from "../sim/combat.js";
+import { INTERIOR } from "../sim/interior.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
@@ -59,15 +61,14 @@ function autoSelect(b) {
 function view(b) {
   const key = `${b.rev}:${cui.sel}`;
   if (cui.cache.key === key) return cui.cache;
-  const vis = new Uint8Array(W * H).fill(b.over ? 1 : 0);
-  const eyes = b.units.filter((u) => u.side === "player" && active(u));
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    for (const e of eyes) if (Math.hypot(e.x - x, e.y - y) <= e.sight && los(b, e.x, e.y, x, y)) { vis[y * W + x] = 1; break; }
-  }
+  // Fog of war (sim/combat.js playerVision): what your people see now, by height, light, night and optics; the
+  // enemies they see; ghosts where unseen ones were last seen.
+  const vis = playerVision(b);
   const u = selUnit(b);
   const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap) : null;
   const seen = new Set(b.units.filter((e) => e.side === "enemy" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id));
-  cui.cache = { key, vis, reach, seen, u };
+  const ghosts = b.over ? [] : enemyGhosts(b);
+  cui.cache = { key, vis, reach, seen, u, ghosts };
   return cui.cache;
 }
 
@@ -217,6 +218,16 @@ export function requestEndTurn(state, key) {
   return "end";
 }
 
+// After falling back to the yard (sim/interior.js) the battle opens a short redeploy. With this on, your people keep
+// the default posts and the fight goes straight on (remembered in this browser).
+const REDEPLOY_KEY = "brokenstate.autoRedeploy";
+cui.autoRedeploy = (() => { try { return typeof localStorage !== "undefined" && localStorage.getItem(REDEPLOY_KEY) === "1"; } catch { return false; } })();
+export function setAutoRedeploy(on) {
+  cui.autoRedeploy = !!on;
+  try { localStorage.setItem(REDEPLOY_KEY, on ? "1" : "0"); } catch { /* storage blocked: this session only */ }
+}
+const isRedeploy = (b) => !!(b && b.phase === "deploy" && b.tier && b.tier.map === "interior" && b.tier.fellBackTurn != null);
+
 export function setConfirmEnd(on) {
   cui.confirmEnd = !!on;
   cui.endAsk = null;
@@ -229,6 +240,8 @@ const endAskOpen = (b) => !!cui.endAsk && cui.endAsk.turn === b.turn && cui.endA
 // The button (or Shift+R) opens a confirm in the panel with each unit's odds of getting out and who carries whom;
 // Sound the retreat (or Enter) gives the order, Keep fighting (or Esc) closes it. It lapses when anything happens.
 cui.retreatAsk = null; // { turn, rev, leave: [downed unit ids the player chose not to carry] }
+cui.fallAsk = null; // { turn, rev } of the open "fall back to the yard?" question (the wall map)
+export const fallAskOpen = (b) => !!cui.fallAsk && cui.fallAsk.turn === b.turn && cui.fallAsk.rev === b.rev && b.phase === "player" && !b.over && !!b.tier && b.tier.map === "wall";
 export const retreatAskOpen = (b) => !!cui.retreatAsk && cui.retreatAsk.turn === b.turn && cui.retreatAsk.rev === b.rev && b.phase === "player" && !b.over;
 let planCache = { key: "", plan: null };
 function askPlan(b) {
@@ -293,10 +306,11 @@ export function combatKey(state, e) {
   // The retreat confirm: Enter gives the order, Space does nothing (too easy to press by habit), Esc closes it.
   if (retreatAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-retreat", { v: "go" }); return true; }
   if (retreatAskOpen(b) && e.code === "Space") { cui.msg = "Press Enter or Sound the retreat to give the order, Esc to keep fighting."; return true; }
+  if (fallAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.dragId = null; return true; }
+  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
   if (b.phase === "deploy") return false;
-  if (e.code === "KeyR" && e.shiftKey) { combatAction(state, "cb-retreat", { v: "ask" }); return true; }
+  if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
@@ -337,6 +351,14 @@ export function combatAction(state, key, d) {
     return;
   }
   if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; return; }
+  // A base's wall map (sim/interior.js): everyone off the walls, into the yard and the buildings.
+  if (key === "cb-fallback") {
+    if (d.v === "ask") { cui.fallAsk = fallAskOpen(b) ? null : { turn: b.turn, rev: b.rev }; cui.msg = ""; return; }
+    if (d.v === "cancel") { cui.fallAsk = null; return; }
+    cui.fallAsk = null;
+    return void act(state, { type: "fallBack" });
+  }
+  if (key === "cb-redeploy") return void setAutoRedeploy(!cui.autoRedeploy);
   // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
   if (key === "cb-deploy") {
     if (d.v === "start") return void act(state, { type: "start" });
@@ -406,6 +428,7 @@ export function combatTick(state, now) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
+  if (isRedeploy(b) && cui.autoRedeploy) { act(state, { type: "start" }); return true; }
   if (b.over || b.phase !== "enemy") return false;
   if (now - cui.lastStep < ENEMY_STEP_MS) return false;
   cui.lastStep = now;
@@ -439,6 +462,7 @@ export function renderCombatPanel(state) {
     <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
+    ${tierHtml(b)}
   </div>`;
 
   html += `<h3>Your team</h3><div class="cbroster">`;
@@ -500,8 +524,11 @@ export function renderCombatPanel(state) {
       <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
       <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
   }
-  const noRetreat = b.evacCols && !b.raid ? retreatRefusal(b) : null;
+  const wallMap = !!(b.tier && b.tier.map === "wall");
+  const noRetreat = b.evacCols && !b.raid && !wallMap ? retreatRefusal(b) : null;
+  if (fallAskOpen(b)) html += fallBackConfirmHtml(b);
   html += `<div class="cbfoot">
+    ${wallMap ? `<button class="${fallAskOpen(b) ? "active" : ""}" data-action="cb-fallback" data-v="ask" ${retreatRefusal(b) ? "disabled" : ""} data-tip="${esc(retreatRefusal(b) || "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings. (Shift+R)")}">Fall back to the yard</button>` : ""}
     ${noRetreat != null ? `<button class="${retreatAskOpen(b) ? "active" : ""}" data-action="cb-retreat" data-v="ask" ${noRetreat ? "disabled" : ""} data-tip="${esc(noRetreat || "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried. (Shift+R)")}">Sound the retreat</button>` : ""}
     <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
     ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
@@ -573,10 +600,11 @@ function stealthButtons(state, b, u, btn) {
 // ---------- the deploy step (sim/deploy.js) ----------
 function deployPanel(state, b, u) {
   const D = b.deploy || {};
+  if (D.interior) return interiorDeployPanel(state, b, u, D);
   const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
   let html = `<h3>Deploy · the attack comes from the ${esc(D.side || "east")}</h3>
-    <div class="small muted">Click a defender, then a green cell to place them: anywhere inside the walls, in the gate or a breach (orange: whoever stands there holds it and blocks the way), or on a tower (full cover, +5 aim). The dead come through the openings.</div>
+    <div class="small muted">Click a defender, then a green cell to place them: on the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
     <div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
@@ -591,6 +619,62 @@ function deployPanel(state, b, u) {
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
+  return html;
+}
+
+// ---------- a base battle's tiers (sim/deploy.js, sim/interior.js) ----------
+// One line under the battle's title: which tier the fight is in, the wall and the gate (hit points), the breaches,
+// how many attackers are inside or still outside.
+export function tierHtml(b) {
+  const T = b.tier;
+  if (!T) return "";
+  const foes = b.units.filter((u) => u.side === "enemy" && active(u));
+  if (T.map === "wall") {
+    let gate = 0, gateMax = 0, wall = 0, wallMax = 0, low = 1, breaches = 0;
+    for (const c of b.cells) {
+      if (c.k === "gate" && c.mhp) { gate += c.hp || 0; gateMax += c.mhp; if (!barredCell(c)) breaches++; }
+      if (c.k === "palisade" && c.mhp) { wall += c.hp; wallMax += c.mhp; low = Math.min(low, c.hp / c.mhp); }
+      if (c.k === "breach") breaches++;
+    }
+    const inside = foes.filter((f) => T.interior[f.y * b.w + f.x]).length;
+    const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(foes.length * INTERIOR.BREACH_FRAC));
+    const tip = `Tier 1 of 3: the walls. Shooters on the walkway (height 1) and the towers (height 2) see over the wall and aim down at the attackers; the wall sections and the gate have hit points and the attackers batter them. Once ${need} of them are inside the wall (or any are and nobody holds the wall line), the fight moves to the yard and the buildings; or fall back there yourself (Shift+R). Weakest wall section: ${Math.round(low * 100)}%.`;
+    return `<div class="small cbtier" data-tip="${esc(tip)}"><b>Tier 1 · The walls</b> · gate <b class="${gateMax && gate / gateMax < 0.5 ? "danger" : ""}">${gateMax ? `${Math.round(gate)}/${gateMax}` : "open"}</b> · wall ${wallMax ? `${Math.round((wall / wallMax) * 100)}%` : "–"} · ${breaches} breach${breaches === 1 ? "" : "es"} · <span class="${inside ? "warn" : ""}">${inside} inside</span></div>`;
+  }
+  const waiting = b.units.filter((u) => u.off && !u.dead).length;
+  const yard = foes.filter((f) => T.interior[f.y * b.w + f.x] && !T.indoor[f.y * b.w + f.x]).length;
+  const last = T.stage === "buildings";
+  const tip = last ? "Tier 3 of 3: the last stand. Barred doors and windows have hit points: the dead claw them in, raiders shoot the locks. Inside your people have full cover from the walls and half cover at the windows, and an upper floor (height 1) aims down. If everyone falls, the base is overrun; the green strip is the back gate (abandoning the base)."
+    : `Tier 2 of 3: the yard. Barricades, sandbags, wells and the base's buildings are cover; the buildings can be entered (doors) and their upper floors and flat roofs climbed. The yard is lost once ${INTERIOR.YARD_LOST}× as many attackers as defenders still outside the buildings (at least 3) stand in it: then the last stand.`;
+  return `<div class="small cbtier" data-tip="${esc(tip)}"><b class="${last ? "danger" : ""}">${last ? "Tier 3 · Last stand in the buildings" : "Tier 2 · The yard"}</b> · ${yard} in the yard${waiting ? ` · ${waiting} still outside the wall` : ""}</div>`;
+}
+
+function fallBackConfirmHtml(b) {
+  const out = b.units.filter((u) => u.side === "enemy" && active(u) && !b.tier.interior[u.y * b.w + u.x]).length;
+  return `<div class="small cbmsg cbconfirm"><b class="danger">Fall back to the yard?</b> Everyone climbs down off the wall and falls back into the yard and the buildings: a short redeploy, then the attackers move first and the ${out} still outside pour in through the openings. Downed people stay where they lie.
+    <div style="margin-top:0.35rem"><button class="primary" data-action="cb-fallback" data-v="go" data-tip="Give the order. (Enter)">Fall back</button>
+    <button data-action="cb-fallback" data-v="cancel" data-tip="Close this and hold the wall. (Esc)">Hold the wall</button></div></div>`;
+}
+
+// The deploy step on the yard and buildings map: a base without walls, or the redeploy after falling back.
+function interiorDeployPanel(state, b, u, D) {
+  const after = b.tier && b.tier.fellBackTurn != null;
+  let html = `<h3>${after ? "Redeploy · falling back" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
+    <div class="small muted">${after ? "Your people have left the wall. Place them on the green cells (near where they were, away from the attackers):" : "No walls here: the attackers come straight over the yard. Place your defenders on the green cells:"} in the buildings (barred doors, half cover at the windows), on an upper floor or a flat roof (▲ height 1: further sight, +5 aim down, half cover), on a tower (▲▲), or behind the barricades.</div>
+    <div class="cbactions" style="margin-top:0.4rem">
+      <button data-action="cb-deploy" data-v="defaults" data-tip="The default posts: the best shots on the towers, upper floors and roofs, then at the windows; close fighters inside by the doors; the rest behind cover in the yard.">Default positions</button>
+      ${after ? `<button class="${cui.autoRedeploy ? "active" : ""}" data-action="cb-redeploy" data-tip="When on, falling back skips this step: your people take the default posts and the fight goes on at once. Remembered in this browser.">${cui.autoRedeploy ? "✔" : "✗"} Skip this next time</button>` : ""}
+    </div>`;
+  if (D.floodlit) {
+    html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the yard: shots at anything in the light get +${b.floodAim}${D.night ? ", and at night your people see what stands in it" : ""}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
+      ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
+  }
+  html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+  if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
+  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
+    ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
+  void u;
   return html;
 }
 
@@ -699,11 +783,15 @@ function previewHtml(b) {
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""}</span>`;
+    const hh = heightAt(b, t.x, t.y);
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
   }
+  // A last-seen ghost (sim/combat.js enemyGhosts): where an enemy was when your people last saw it.
+  const ghost = (v.ghosts || []).find((g) => g.x === h.x && g.y === h.y && !v.vis[h.y * W + h.x]);
+  if (ghost) return `<b>${esc(ghost.name)}</b> <span class="muted">last seen here on turn ${ghost.turn}. Nobody sees this tile now: it may have moved.</span>`;
   if (b.phase === "deploy") {
     const k = b.cells[h.y * W + h.x].k;
-    const where = k === "gate" ? "The gate: whoever stands here holds it." : k === "breach" ? "A breach in the wall: whoever stands here holds it." : k === "tower" ? "A watchtower: full cover from anything not next to it, +5 aim." : "";
+    const where = k === "gate" ? "The gate: whoever stands here holds it." : k === "breach" ? "A breach in the wall: whoever stands here holds it." : k === "tower" ? "A watchtower (▲▲ height 2): full cover from anything not next to it, +10 aim down, +4 sight: the widest view." : k === "walkway" ? "The walkway (▲ height 1): shoot down over the wall, +5 aim, +2 sight, half cover against shooters below." : k === "loft" ? "An upper floor (▲ height 1): shoot down through the windows." : k === "roof" ? "A flat roof (▲ height 1): +2 sight, +5 aim down, half cover against shooters below." : k === "ladder" || k === "stairs" ? `${k === "ladder" ? "A ladder" : "Stairs"}: the way up (climbing costs 1 move a level, the dead 2).` : "";
     if (canPlace(b, h.x, h.y)) return `${where ? `<b>${where}</b> ` : ""}Click to place ${selUnit(b) ? esc(selUnit(b).name) : "the selected defender"} here.`;
     if (b.lit && b.lit[h.y * W + h.x]) return "Floodlit: shots at anything here get the light's bonus.";
   }
@@ -721,8 +809,11 @@ function previewHtml(b) {
     const z = zoneAt(b, h.x, h.y);
     if (z >= 0) return `<b>${b.raid.zones[z].vehicle ? "Vehicle extraction zone" : "Extraction zone"}</b><br><span class="muted">Stand here and press X to leave the raid.${b.raid.zones[z].vehicle ? " Leaving here keeps your vehicle." : b.raid.vehicleZone >= 0 ? " Leaving here without anyone taking the vehicle leaves it behind." : ""}</span>`;
   }
-  const cell = CELL[b.cells[h.y * W + h.x].k];
-  if (!cell.walk) return `<b>${cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los ? ", blocks sight" : ""}. Cannot stand here.`;
+  const cobj = b.cells[h.y * W + h.x];
+  const cell = CELL[cobj.k];
+  // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
+  const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";
+  if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}`;
   const sides = coverSides(b, h.x, h.y);
   const best = Math.max(...sides);
   let s = best === 2 ? "Full cover next to this tile." : best === 1 ? "Half cover next to this tile." : "No cover here.";
@@ -730,7 +821,12 @@ function previewHtml(b) {
     const d = v.reach.dist[h.y * W + h.x];
     if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
   }
-  if (evacAt(b, h.x, h.y)) s += " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
+  if (evacAt(b, h.x, h.y)) s += b.tier ? (b.tier.map === "wall" ? " The back gate: one person can slip away from here (the team falls back to the yard instead: Shift+R)." : " The back gate: leaving from here abandons the base.") : " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
+  const hh = heightAt(b, h.x, h.y);
+  if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
+  else if (cell.climb) s += ` ${cell.name}: the way up (climbing costs ${HEIGHT.CLIMB} move a level, the dead ${HEIGHT.CLIMB_DEAD}).`;
+  if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;
+  if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
   return s;
 }
@@ -776,7 +872,10 @@ export function drawCombat(state, now) {
     const n = hash(x, y);
     if (c.f === "grass" || c.f === "field") { ctx.fillStyle = `rgba(255,255,255,${0.02 + n * 0.03})`; ctx.fillRect(px + n * cs * 0.6, py + ((n * 7) % 1) * cs * 0.6, cs * 0.25, cs * 0.25); }
     if (c.f === "road" && y % 2 === 0 && x % 2 === 0) { ctx.fillStyle = "#6b6a4a"; ctx.fillRect(px + cs * 0.2, py + cs - 1, cs * 0.6, 2); }
-    drawObject(c.k, px, py, cs, n);
+    drawObject(c.k, px, py, cs, n, c);
+    // Raised ground (verticality): lighter the higher it is.
+    const hh = c.h ?? CELL[c.k].h ?? 0;
+    if (hh && CELL[c.k].walk) { ctx.fillStyle = `rgba(255,236,190,${0.08 * hh})`; ctx.fillRect(px, py, cs, cs); }
   }
   // Grid.
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
@@ -785,6 +884,9 @@ export function drawCombat(state, now) {
   for (let x = 0; x <= W; x++) { ctx.moveTo(ox + x * cs + 0.5, oy); ctx.lineTo(ox + x * cs + 0.5, oy + H * cs); }
   for (let y = 0; y <= H; y++) { ctx.moveTo(ox, oy + y * cs + 0.5); ctx.lineTo(ox + W * cs, oy + y * cs + 0.5); }
   ctx.stroke();
+
+  drawHeights(b, cs); // edges of raised ground, ▲ marks, the hit points of walls, gates, doors and windows
+  if (b.tier && b.tier.buildings) drawBuildingNames(b, cs);
 
   // Evac strip.
   if (b.evacCols && b.evacMask) {
@@ -864,11 +966,16 @@ export function drawCombat(state, now) {
   }
 
   // Units (dead and down first).
-  const order = b.units.filter((x) => !x.left && !x.fled).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
+  const order = b.units.filter((x) => !x.left && !x.fled && !x.off).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
     if (t.side === "enemy" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
     const pos = animPos(b, t, now);
     drawUnit(state, b, t, pos[0], pos[1], cs, t.id === cui.sel);
+  }
+  // Last-seen ghosts (fog of war): faded where an enemy nobody sees now was last seen.
+  for (const g of v.ghosts || []) {
+    if (v.vis[g.y * W + g.x]) continue;
+    drawGhost(state, b, g, ox + (g.x + 0.5) * cs, oy + (g.y + 0.5) * cs, cs);
   }
 
   // The retreat confirm is open: each unit's odds of getting out over its head.
@@ -920,9 +1027,10 @@ export function drawCombat(state, now) {
   // Phase banner.
   const heatTag = b.raid ? ` · HEAT ${HEAT_NAMES[Math.min(3, Math.floor(b.raid.heat / 25))].toUpperCase()}` : "";
   const nightTag = b.night ? " · NIGHT" : "";
+  const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}` :
-    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${nightTag}` : `ENEMY TURN${heatTag}${nightTag}`;
+    b.phase === "deploy" ? (b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center";
@@ -1011,6 +1119,70 @@ function drawBaseOverlay(b, cs) {
   ctx.lineTo(ax + dir[0] * s - dir[1] * s * 0.7, ay + dir[1] * s - dir[0] * s * 0.7);
   ctx.closePath();
   ctx.fill();
+}
+
+// Verticality and structures: a dark drop edge where raised ground meets lower ground, ▲ (▲▲) on raised cells,
+// and a hit-point bar on a wall section, the gate, a door or a window once it has been hit (the gate always).
+function drawHeights(b, cs) {
+  const { ox, oy } = geo;
+  const hOf = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : heightAt(b, x, y));
+  ctx.lineWidth = Math.max(2, cs * 0.07);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = b.cells[y * W + x];
+    const hh = hOf(x, y);
+    const px = ox + x * cs, py = oy + y * cs;
+    if (hh && CELL[c.k].walk) {
+      ctx.strokeStyle = "rgba(10,8,6,0.75)";
+      ctx.beginPath();
+      if (hOf(x, y + 1) < hh) { ctx.moveTo(px, py + cs - 1); ctx.lineTo(px + cs, py + cs - 1); }
+      if (hOf(x + 1, y) < hh) { ctx.moveTo(px + cs - 1, py); ctx.lineTo(px + cs - 1, py + cs); }
+      if (hOf(x, y - 1) < hh) { ctx.moveTo(px, py + 1); ctx.lineTo(px + cs, py + 1); }
+      if (hOf(x - 1, y) < hh) { ctx.moveTo(px + 1, py); ctx.lineTo(px + 1, py + cs); }
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,226,150,0.85)";
+      ctx.font = `700 ${Math.max(8, Math.round(cs * 0.22))}px Segoe UI, sans-serif`;
+      ctx.textAlign = "left";
+      ctx.fillText("▲".repeat(hh), px + 2, py + Math.max(9, cs * 0.24));
+    }
+    if (c.mhp && (c.hp < c.mhp || c.k === "gate")) {
+      const f = Math.max(0, c.hp / c.mhp);
+      ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8, 4);
+      ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8 * f, 4);
+    }
+  }
+}
+
+// The base's buildings by name on the yard and buildings map (sim/interior.js).
+function drawBuildingNames(b, cs) {
+  const { ox, oy } = geo;
+  ctx.font = `600 ${Math.max(9, Math.round(cs * 0.26))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  for (const s of b.tier.buildings) {
+    if (!s.cells.length) continue;
+    const xs = s.cells.map((c) => c[0]), ys = s.cells.map((c) => c[1]);
+    const x = ox + ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * cs, y = oy + Math.min(...ys) * cs + cs * 0.05;
+    const w = ctx.measureText(s.name).width + 8;
+    ctx.fillStyle = "rgba(15,17,20,0.72)";
+    ctx.fillRect(x - w / 2, y - cs * 0.02, w, cs * 0.32);
+    ctx.fillStyle = "#e6d8b8";
+    ctx.fillText(s.name, x, y + cs * 0.24);
+  }
+}
+
+// A ghost: a faded silhouette with "?" and the turn it was last seen.
+function drawGhost(state, b, g, cx, cy, cs) {
+  ctx.globalAlpha = 0.32;
+  drawSprite(ctx, unitCanvas(state, b, g.unit, cui.salt), cx, cy, cs, { facing: unitFacing(b, g.unit), lying: false, alpha: 1 });
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = "rgba(255,143,133,0.55)";
+  ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(cx, cy + cs * 0.31, cs * 0.36, cs * 0.13, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = `700 ${Math.max(9, Math.round(cs * 0.24))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,209,102,0.9)";
+  ctx.fillText(`? T${g.turn}`, cx, cy - cs * 0.3);
 }
 
 // Flashlight cones on a night raid: each light carrier lights a wedge the way it faces.
@@ -1175,14 +1347,14 @@ function bubble(x, y, lines, color, cw) {
   });
 }
 
-function drawObject(k, px, py, cs, n) {
+function drawObject(k, px, py, cs, n, cell = null) {
   if (k === "open") return;
   const cx = px + cs / 2, cy = py + cs / 2;
   ctx.lineWidth = 1;
   switch (k) {
     case "wall":
       ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs, cs);
-      ctx.fillStyle = "#a39787"; ctx.fillRect(px + 1, py + 1, cs - 2, cs - 4);
+      ctx.fillStyle = cell && cell.t === 2 ? "#8c8070" : "#a39787"; ctx.fillRect(px + 1, py + 1, cs - 2, cs - 4);
       ctx.fillStyle = "#c2b6a4"; ctx.fillRect(px + 1, py + 1, cs - 2, cs * 0.18);
       break;
     case "window":
@@ -1293,8 +1465,60 @@ function drawObject(k, px, py, cs, n) {
       break;
     case "gate":
       ctx.fillStyle = "#5a4630"; ctx.fillRect(px + cs * 0.02, py, cs * 0.16, cs); ctx.fillRect(px + cs * 0.82, py, cs * 0.16, cs);
-      ctx.save(); ctx.translate(px + cs * 0.2, py + cs * 0.1); ctx.rotate(0.5);
-      ctx.fillStyle = "#7a5f40"; ctx.fillRect(0, 0, cs * 0.5, cs * 0.14); ctx.restore(); // a gate leaf hanging off its hinge
+      if (cell && barredCell(cell)) {
+        // Shut and barred (sim/deploy.js): planks across, a steel bar.
+        ctx.fillStyle = "#7a5f40"; ctx.fillRect(px + cs * 0.18, py + cs * 0.04, cs * 0.64, cs * 0.92);
+        ctx.fillStyle = "#5a4630"; for (let i = 0; i < 3; i++) ctx.fillRect(px + cs * (0.24 + i * 0.2), py + cs * 0.04, cs * 0.04, cs * 0.92);
+        ctx.fillStyle = "#8a8a86"; ctx.fillRect(px + cs * 0.1, py + cs * 0.45, cs * 0.8, cs * 0.1);
+      } else {
+        ctx.save(); ctx.translate(px + cs * 0.2, py + cs * 0.1); ctx.rotate(0.5);
+        ctx.fillStyle = "#7a5f40"; ctx.fillRect(0, 0, cs * 0.5, cs * 0.14); ctx.restore(); // a gate leaf hanging off its hinge
+      }
+      break;
+    // Verticality and the base's buildings (sim/deploy.js, sim/interior.js).
+    case "walkway": case "loft":
+      ctx.fillStyle = k === "walkway" ? "#6a5238" : "#5e4a36"; ctx.fillRect(px, py, cs, cs);
+      ctx.strokeStyle = "rgba(20,14,8,0.6)"; ctx.lineWidth = 1;
+      ctx.beginPath(); for (let i = 1; i < 4; i++) { ctx.moveTo(px + (cs * i) / 4, py); ctx.lineTo(px + (cs * i) / 4, py + cs); } ctx.stroke();
+      break;
+    case "roof":
+      ctx.fillStyle = "#4b4c50"; ctx.fillRect(px, py, cs, cs);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(px + n * cs * 0.6, py + ((n * 3) % 1) * cs * 0.6, cs * 0.3, cs * 0.3);
+      break;
+    case "ladder":
+      ctx.strokeStyle = "#a4875c"; ctx.lineWidth = Math.max(2, cs * 0.07);
+      ctx.beginPath(); ctx.moveTo(px + cs * 0.3, py + cs * 0.05); ctx.lineTo(px + cs * 0.3, py + cs * 0.95); ctx.moveTo(px + cs * 0.7, py + cs * 0.05); ctx.lineTo(px + cs * 0.7, py + cs * 0.95);
+      for (let i = 0; i < 4; i++) { ctx.moveTo(px + cs * 0.3, py + cs * (0.18 + i * 0.22)); ctx.lineTo(px + cs * 0.7, py + cs * (0.18 + i * 0.22)); }
+      ctx.stroke();
+      break;
+    case "stairs":
+      ctx.fillStyle = "#5e4a36"; for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? "#6e573f" : "#56432f"; ctx.fillRect(px + cs * 0.08, py + cs * (0.08 + i * 0.21), cs * 0.84, cs * 0.21); }
+      break;
+    case "bdoor": case "doorway":
+      ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs, cs);
+      if (k === "bdoor") {
+        ctx.fillStyle = "#7a5432"; ctx.fillRect(px + cs * 0.12, py + cs * 0.12, cs * 0.76, cs * 0.76);
+        ctx.fillStyle = "#8a8a86"; ctx.fillRect(px + cs * 0.08, py + cs * 0.44, cs * 0.84, cs * 0.12); // the bar
+      } else {
+        ctx.fillStyle = "#3b3129"; ctx.fillRect(px + cs * 0.12, py + cs * 0.12, cs * 0.76, cs * 0.76);
+        ctx.save(); ctx.translate(px + cs * 0.15, py + cs * 0.2); ctx.rotate(0.6); ctx.fillStyle = "#6a4a2c"; ctx.fillRect(0, 0, cs * 0.55, cs * 0.12); ctx.restore();
+      }
+      break;
+    case "smashed":
+      ctx.fillStyle = "#24211e"; ctx.fillRect(px, py, cs, cs);
+      ctx.fillStyle = "#a39787"; ctx.fillRect(px + 1, py + 1, cs - 2, cs * 0.16); ctx.fillRect(px + 1, py + cs * 0.82, cs - 2, cs * 0.16);
+      ctx.fillStyle = "rgba(143,193,224,0.55)"; for (let i = 0; i < 4; i++) ctx.fillRect(px + cs * (0.15 + ((n * 7 + i * 0.31) % 0.7)), py + cs * (0.25 + i * 0.12), cs * 0.07, cs * 0.05);
+      break;
+    case "rubble":
+      ctx.fillStyle = "#5a4c3a";
+      for (let i = 0; i < 6; i++) { const n2 = (n * 5 + i * 0.29) % 1; ctx.fillRect(px + cs * (0.08 + n2 * 0.7), py + cs * (0.1 + ((n2 * 7) % 1) * 0.75), cs * 0.18, cs * 0.12); }
+      break;
+    case "well":
+      ctx.fillStyle = "#6e6a64"; ctx.beginPath(); ctx.arc(px + cs / 2, py + cs / 2, cs * 0.36, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#1f2a33"; ctx.beginPath(); ctx.arc(px + cs / 2, py + cs / 2, cs * 0.22, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "barrel":
+      for (const [dx, dy] of [[0.3, 0.35], [0.68, 0.4], [0.48, 0.7]]) { ctx.fillStyle = "#3f6e8a"; ctx.beginPath(); ctx.arc(px + cs * dx, py + cs * dy, cs * 0.17, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#1f3644"; ctx.stroke(); }
       break;
     case "breach":
       ctx.fillStyle = "#6b5a44";
@@ -1364,6 +1588,16 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.textAlign = "center";
     ctx.fillText(t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", cx, cy - cs * 0.12);
   }
+  // On raised ground (verticality): ▲ by the ring.
+  const hh = heightAt(b, t.x, t.y);
+  if (hh && !t.down) {
+    ctx.font = `800 ${Math.max(9, Math.round(cs * 0.24))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffe296";
+    ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 3;
+    ctx.strokeText("▲".repeat(hh), cx + r + 2, cy + cs * 0.32);
+    ctx.fillText("▲".repeat(hh), cx + r + 2, cy + cs * 0.32);
+  }
   // Health bar.
   const bw = cs * 0.72, bx = cx - bw / 2, by = cy + cs * 0.42;
   ctx.fillStyle = "#1a1d22"; ctx.fillRect(bx, by, bw, 4);
@@ -1380,7 +1614,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]); // ??: going to look at a noise
-  if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : "T", "#e0a84f"]);
+  if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : "T", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
   ctx.font = `700 ${Math.max(9, Math.round(cs * 0.2))}px Segoe UI, sans-serif`;
   tags.forEach(([txt, col], i) => {
