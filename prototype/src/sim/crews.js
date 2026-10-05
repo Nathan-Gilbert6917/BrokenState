@@ -34,6 +34,8 @@ import { crewAI } from "./autopilot.js";
 import { siteKnown } from "./discovery.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
 import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT } from "./hunting.js";
+import { crewSurveyCands, surveySent } from "./survey.js";
+import { packTripKit } from "./kit.js";
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
 export const CREW_LOG = 8;         // trips kept in a crew's log
@@ -107,6 +109,22 @@ export const FIELD_TYPES = {
       if (p) { p.crewRole = ctx.role.id; p.crewName = ctx.role.name; }
       return { partyId: res.job.partyId, kind: "convoy", jobId: res.job.id };
     },
+  },
+};
+// Survey (survey.js): sweep the ground nobody has looked at near home, or a rumour's circle, for hidden places. The
+// crew takes the hub's binoculars and scopes along (kit.js) and comes home after the hours set.
+FIELD_TYPES.survey = {
+  name: "Survey for hidden places", desc: "Sweep the land nobody has looked at within range (or a rumour's circle) for farms, cabins, lodges and camps off the roads, then come home. Takes binoculars along.",
+  cands: (ctx) => crewSurveyCands(ctx.state, ctx.base, ctx.crew).filter((c) => !targeted(ctx.state, c.tile)),
+  launch(ctx, c) {
+    const kit = packTripKit(ctx.state, ctx.base, ctx.team, "sweep");
+    const res = launchTeam(ctx, c);
+    if (!res || res.error) return res;
+    const p = ctx.state.parties.find((x) => x.id === res.partyId);
+    if (p) p.sweepPlan = { ...c.sweep };
+    surveySent(ctx.state);
+    if (kit.length) log(ctx.state, `🚚 ${ctx.role.name} crew takes ${kit.join(", ")}.`, "info");
+    return res;
   },
 };
 // Food from the land (hunting.js): a trip to hunt or fish N hours and come home. The crew picks its best hunters

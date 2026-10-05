@@ -183,6 +183,18 @@ export const GEAR = {
   scentmask:   { name: "Gore scent mask",          slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, small: true, makeshift: true, heat: { stay: 0.6, search: 0.75, hours: 24 }, desc: "Rags soaked in what is left of the dead, sealed in a jar (or a hunter's cover-scent spray). Smeared on when the team stops or starts a search, the dead stop smelling the living for 24 hours: Heat 40% slower on the spot and 25% slower while searching. Used up.", weight: 0.4, cat: "camp" },
   ragboots:    { name: "Rag-wrapped boots",        slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, small: true, makeshift: true, heat: { search: 0.85, stay: 0.95 }, desc: "Strips of blanket bound around the boots: soft steps. A team with them gains Heat 15% slower while searching and 5% slower on the spot.", weight: 0.5, cat: "camp" },
   stove:       { name: "Smokeless stove",          slot: "pack", skill: null, power: 0, req: 0, value: 14, noise: 0, heat: { camp: 0.6 }, desc: "A folding twig stove and a trowel for a Dakota fire hole: hot food with no smoke and little light. A camping team with one gains Heat 40% slower from its fire and cooking.", weight: 1.5, cat: "camp" },
+  // Optics (optics.js): carried by anyone on a team (hands, pockets, pack or the cargo), the best one counts, a second
+  // one adds a quarter of its bonus. optics.look = × the odds of spotting hidden places and finds (the Survey mission,
+  // Look around, a recon's look), reach = tiles further a survey looks well, sight = tiles more the team sees on the
+  // map (spots hordes, raiders and sites earlier), spot = + the chance to see the other side first on the road, night /
+  // fog = what is left of the dark's and fog's penalty on spotting (1 = no penalty), still = only while the team stays
+  // put (surveying, looking around, camping, waiting), base = kept in a base's armory: base.sight more tiles of view
+  // around it (base.tower with a watchtower).
+  monocular:   { name: "Pocket monocular",         slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, small: true, optics: { look: 1.1, spot: 0.04 }, desc: "An 8×25 hunter's monocular on a lanyard. A little better at picking out a roof in the trees: spotting hidden places and finds ×1.1, and the other side a little sooner on the road.", weight: 0.2, cat: "optics" },
+  binoculars:  { name: "Binoculars",               slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, small: true, optics: { look: 1.25, reach: 1, sight: 1, spot: 0.08 }, desc: "Compact 10×42 binoculars, the good all-rounder. Carried by anyone on a team: the team sees a tile further on the map (hordes, raiders and places sooner), spots hidden places and finds ×1.25 and looks a tile further when it surveys, and sees others first more often on the road.", weight: 0.7, cat: "optics" },
+  spotscope:   { name: "Spotting scope",           slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, optics: { look: 1.6, reach: 2, sight: 1, spot: 0.05, still: true }, desc: "A 60× hunting scope on a little tripod. Useless on the move, superb from a hilltop: while the team surveys, looks around, camps or waits, it spots hidden places ×1.6 and looks two tiles further. Heavy.", weight: 2.2, cat: "optics" },
+  thermal:     { name: "Thermal monocular",        slot: "tool", skill: null, power: 0, req: 0, value: 150, noise: 0, small: true, optics: { look: 1.2, reach: 1, spot: 0.06, night: 0.9, fog: 0.9 }, desc: "A military thermal imager: body heat glows through the dark and the fog. Carried, a team spots hidden places ×1.2 and loses almost nothing to night or fog when it looks; in the off hand in a battle at night it sees like night vision goggles.", weight: 0.5, cat: "optics" },
+  telescope:   { name: "Telescope",                slot: "pack", skill: null, power: 0, req: 0, value: 35, noise: 0, bulky: true, optics: { base: { sight: 1, tower: 2 } }, desc: "A stargazer's reflector on a heavy tripod. Kept in a base's armory it watches the country around: +1 tile of view (2 with a watchtower), live, so lookouts see the dead coming and spot places off the map sooner. Too big to take on a trip.", weight: 9, cat: "optics" },
   // Comforts and treats (comforts.js). comfort.team = mood a day for everyone at the base or on the team that has
   // it, comfort.self = for whoever carries it; use = used up for mood now, with an after-effect (buzz).
   cards:       { name: "Deck of playing cards",    slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, small: true, comfort: { team: 0.4 }, desc: "Dog-eared and a joker short. Card games: +0.4 mood a day for everyone at the base or on the team that has a deck (one is enough).", weight: 0.1, cat: "luxury" },
@@ -229,6 +241,7 @@ export const CATEGORIES = {
   vehicle:     { name: "vehicle parts", group: "survival" },
   packs:       { name: "packs and bags", group: "survival" },
   electronics: { name: "radios and electronics", group: "survival" },
+  optics:      { name: "binoculars and scopes", group: "survival" },
   books:       { name: "books", group: "knowledge", stockBy: "key" },
   manuals:     { name: "manuals and blueprints", group: "knowledge", stockBy: "key" },
   luxury:      { name: "comforts", group: "comforts", fine: true },
@@ -247,26 +260,26 @@ export const CATEGORIES = {
 // charge. Missing = 1 ("*" = the default for that type); 0 = they refuse to deal in it. margin = extra on what they
 // charge (traders sell dear). Outsiders: merchants and explorers from visitors.js (outside raiders use "raider").
 export const TRADE_PREFS = {
-  raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
+  raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, optics: 1.3, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
                   liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9,
                   books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6 },
-  military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
+  military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, optics: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
                   gadgets: 1.15, packs: 1.2, medical: 1.15, fuel: 1.15, vehicle: 1.2, manuals: 1.15, smokes: 1.1,
                   melee: 0.7, bow: 0.75, luxury: 0.6, liquor: 0.7, drugs: 0.4, jewelry: 0.7, collectibles: 0.6, farming: 0.7, containers: 0.7, scrap: 0.8 },
-  fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
+  fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, optics: 1.15, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
                   camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8 },
-  traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
+  traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, optics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
                   drugs: 1, scrap: 0.9 },
   commune:      { food: 1.25, water: 1.1, farming: 1.6, medical: 1.3, books: 1.35, manuals: 1.3, tools: 1.25, containers: 1.4, clothing: 1.2, camp: 1.1, treats: 1.35,
                   household: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
                   melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8 },
-  zealot:       { liquor: 0, drugs: 0, smokes: 0, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
+  zealot:       { liquor: 0, drugs: 0, smokes: 0, optics: 0.8, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
                   medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2 },
-  expansionist: { fuel: 1.5, vehicle: 1.6, parts: 1.35, pistol: 1.15, shotgun: 1.2, rifle: 1.25, automatic: 1.35, ammo: 1.2, armor: 1.15, packs: 1.2, electronics: 1.1,
+  expansionist: { fuel: 1.5, vehicle: 1.6, optics: 1.25, parts: 1.35, pistol: 1.15, shotgun: 1.2, rifle: 1.25, automatic: 1.35, ammo: 1.2, armor: 1.15, packs: 1.2, electronics: 1.1,
                   camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8 },
   merchants:    { "*": 1.05, margin: 1.1, food: 1.35, water: 1.3, scrap: 1.4, containers: 1.5, jewelry: 1.3, collectibles: 1.4, gadgets: 1.25, liquor: 1.2, smokes: 1.2,
                   treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9 },
-  explorers:    { food: 1.3, water: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7 },
+  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7 },
 };
 // Small valuables traded as goods (where they exist: gold ring, cigarettes, whiskey, coffee, batteries) are light.
 for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 1, coffee: 0.5, batteries: 0.2 })) if (GEAR[k]) GEAR[k].weight = w;
@@ -282,16 +295,16 @@ for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 
 // road, otherwise hidden until your people see it or hear of it (farms, cabins, lodges, campgrounds, quarries off
 // the road network); "secret" always hidden until found (crash sites, wrecks, supply drops).
 export const LOCATIONS = {
-  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 1, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet", "bicycle", "bat", "revolver", "slingbag"], richness: 0.6, known: "public" },
+  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 1, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet", "bicycle", "bat", "revolver", "slingbag", "binoculars"], richness: 0.6, known: "public" },
   city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 2, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun", "bat", "prybar", "revolver", "slingbag"], richness: 1.0, known: "public" },
-  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.5, known: "road" },
+  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap", "binoculars"], richness: 0.5, known: "road" },
   gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol", "revolver", "prybar", "flashlight"], richness: 0.4, known: "public" },
-  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 1, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack", "bat", "compbow", "slingbag", "hikingpack", "stove"], richness: 0.9, known: "public" },
+  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 1, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack", "bat", "compbow", "slingbag", "hikingpack", "stove", "binoculars"], richness: 0.9, known: "public" },
   hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 5, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "fireaxe"], richness: 0.8, known: "public" },
-  police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 1, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet", "bicycle", "baton", "carbine", "riotarms", "riotlegs", "revolver"], richness: 0.7, known: "public" },
-  military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 1 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack", "rucksack", "carbine", "camonet", "sandbags", "barbedwire", "stove"], richness: 1.1, known: "public" },
+  police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 1, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet", "bicycle", "baton", "carbine", "riotarms", "riotlegs", "revolver", "binoculars"], richness: 0.7, known: "public" },
+  military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 1 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack", "rucksack", "carbine", "camonet", "sandbags", "barbedwire", "stove", "binoculars", "spotscope", "thermal"], richness: 1.1, known: "public" },
   prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine"], richness: 0.7, known: "public" },
-  univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 2, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag"], richness: 0.8, known: "public" },
+  univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 2, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
   airport:  { name: "Regional airport", glyph: "A", cat: "special", danger: 2, loot: { fuel: 4, parts: 2, scrap: 2 }, gear: ["pistol", "slingbag", "hikingpack", "backpack"], richness: 0.8, known: "public" },
   factory:  { name: "Factory",        glyph: "I",  cat: "special", danger: 1, loot: { scrap: 5, parts: 2, fuel: 0.4 }, gear: ["crowbar", "prybar", "sledge", "barbedwire"], richness: 0.8, known: "public" },
@@ -300,8 +313,8 @@ export const LOCATIONS = {
   autoshop:    { name: "Auto shop",          glyph: "Au", cat: "urban", danger: 2, loot: { parts: 4, fuel: 1, scrap: 3 }, gear: ["crowbar", "spikedbat", "kneeguards", "bicycle", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
   pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit"], richness: 0.8, known: "public" },
   supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 1, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife", "slingbag"], richness: 0.95, known: "public" },
-  gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet"], richness: 0.85, known: "public" },
-  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags"], richness: 0.8, known: "public" },
+  gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet", "binoculars", "spotscope", "monocular"], richness: 0.85, known: "public" },
+  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars"], richness: 0.8, known: "public" },
   apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack", "bicycle", "bat", "revolver", "slingbag"], richness: 0.8, known: "public" },
   office:      { name: "Office tower",       glyph: "O",  cat: "urban", danger: 2, loot: { scrap: 3, water: 2, parts: 1, meds: 1 }, gear: ["slingbag", "fireaxe"], richness: 0.6, known: "public" },
   school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 1, scrap: 2, jars: 0.25 }, gear: ["sportspads", "footballhelmet", "backpack", "bicycle", "bat", "slingbag", "fireaxe"], richness: 0.6, known: "public" },
@@ -316,17 +329,17 @@ export const LOCATIONS = {
   feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1, jars: 1 }, gear: ["machete", "huntrifle", "leverrifle", "barbedwire", "beartrap", "sledge"], richness: 0.5, known: "public" },
   // Countryside: sparse, quiet and poorer, often off the road.
   barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
-  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap"], richness: 0.55, known: "road" },
-  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 1, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie"], richness: 0.35, known: "road" },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 1, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove"], richness: 0.55, known: "road" },
+  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars"], richness: 0.55, known: "road" },
+  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 1, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 1, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular"], richness: 0.55, known: "road" },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },
-  ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 2, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove"], richness: 0.5, known: "road" },
-  radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar"], richness: 0.4, known: "road" },
+  ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 2, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular"], richness: 0.5, known: "road" },
+  radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar", "binoculars"], richness: 0.4, known: "road" },
   truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2, preserved: 0.5 }, gear: ["pistol", "shotgun", "revolver", "prybar", "slingbag", "hikingpack"], richness: 0.7, known: "public" },
   crashsite:   { name: "Crash site",         glyph: "X",  cat: "rural", danger: 1, loot: { scrap: 4, parts: 2, fuel: 0.8, meds: 1 }, gear: ["pistol", "slingbag", "backpack", "prybar"], richness: 0.6, known: "secret" },
   // Temporary sites from crash events (crashes.js): never placed by the map, they appear where something came down
   // and burn out after 7–10 days. temp: not a permanent site.
-  crash_mil:   { name: "Army helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { ammo: 5, meds: 2, parts: 2, scrap: 2, fuel: 0.5 }, gear: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "rucksack", "carbine", "camonet"], richness: 1.2, known: "secret" },
+  crash_mil:   { name: "Army helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { ammo: 5, meds: 2, parts: 2, scrap: 2, fuel: 0.5 }, gear: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "rucksack", "carbine", "camonet", "thermal", "binoculars"], richness: 1.2, known: "secret" },
   crash_cargo: { name: "Supply plane wreck",  glyph: "✈", cat: "special", danger: 2, temp: true, loot: { food: 5, water: 3, meds: 2, preserved: 2, parts: 1, scrap: 2, fuel: 0.6 }, gear: ["assaultpack", "vest", "bandagekit", "surgkit", "rucksack", "stove"], richness: 1.2, known: "secret" },
   crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1, known: "secret" },
   crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["hikingpack", "slingbag"], richness: 0.9, known: "secret" },

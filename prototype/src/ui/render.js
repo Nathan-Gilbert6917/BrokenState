@@ -10,6 +10,7 @@ import { radioNodes } from "../sim/radio.js";
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
+import { rumoursOf, surveyTip } from "../sim/survey.js";
 import { hasKey } from "../sim/locks.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
@@ -907,6 +908,7 @@ export function render(state) {
     labels.push({ text: t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].name : "Wreck", x: px, y: py + 7 * s + 12, pri: 1, screen: true, color: "#ffb07a", size: 9 });
   }
   ctx.restore();
+  drawSurveys(state, minX, maxX, minY, maxY, labels);
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.
   for (let a = 0; on("hordes") && a < G.nHorde; a++) {
@@ -1244,6 +1246,64 @@ function badge(x, y, kind, color) {
 }
 
 // Number badge (horde sizes): a pill with white text centered on (x, y).
+// Surveys (sim/survey.js): the circle a team sweeps (teal) with the path it has walked and where it goes next (in radio
+// contact), and rumours of hidden places (a dashed amber circle with "?" and the days left: the place is inside).
+function drawSurveys(state, minX, maxX, minY, maxY, labels) {
+  const G = geometry(state);
+  const s = zoomBoost();
+  const R = HEX * Math.sqrt(3);
+  const off = (px, py, r) => px + r < minX || px - r > maxX || py + r < minY || py - r > maxY;
+  ctx.save();
+  for (const r of rumoursOf(state)) {
+    const px = G.x[r.center], py = G.y[r.center], rad = (r.radius + 0.5) * R;
+    if (off(px, py, rad)) continue;
+    ctx.beginPath();
+    ctx.arc(px, py, rad, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(240,200,90,0.06)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(240,200,90,0.75)";
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([3, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    pill(px, py - 6 * s, `? ${Math.max(1, Math.ceil((r.expires - state.hour) / 24))}d`, "#8a6d1c", s);
+    labels.push({ text: `${r.what[0].toUpperCase()}${r.what.slice(1)}?`, x: px, y: py + 10 * s, pri: 1, screen: true, color: "#f0c85a", size: 9 });
+  }
+  for (const p of state.parties) {
+    if (p.owner !== "player" || !p.task || p.task.type !== "sweep" || p.phase !== "task") continue;
+    const t = p.task;
+    const px = G.x[t.center], py = G.y[t.center], rad = (t.radius + 0.5) * R;
+    if (off(px, py, rad)) continue;
+    ctx.beginPath();
+    ctx.arc(px, py, rad, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(90,200,190,0.07)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(110,215,205,0.85)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // The way it has come (and, in contact, the next spots): a line through the tiles of its route.
+    if (p.radioLive) {
+      const upto = Math.min(t.route.length - 1, t.done);
+      const path = (from, to, style, width) => {
+        ctx.beginPath();
+        let first = true;
+        for (let i = from; i <= to; i++) { const id = t.route[i]; if (first) { ctx.moveTo(G.x[id], G.y[id]); first = false; } else ctx.lineTo(G.x[id], G.y[id]); }
+        ctx.strokeStyle = style;
+        ctx.lineWidth = width;
+        ctx.stroke();
+      };
+      path(0, upto, "rgba(110,215,205,0.7)", 2.2);
+      ctx.setLineDash([2, 4]);
+      path(upto, t.route.length - 1, "rgba(110,215,205,0.35)", 1.5);
+      ctx.setLineDash([]);
+    }
+    pill(px + rad * 0.7, py - rad * 0.7, `${t.done}/${t.hours}h${t.found.length ? ` · ${t.found.length}` : ""}`, "#2f7d76", s);
+  }
+  ctx.restore();
+}
+
 function pill(x, y, text, bg, s) {
   ctx.font = `bold ${Math.round(9 * s)}px Segoe UI`;
   const h = 11 * s, w = Math.max(h, ctx.measureText(text).width + 6 * s);
@@ -1405,6 +1465,7 @@ export function tileTooltip(state, id) {
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
+  for (const line of surveyTip(state, id)) lines.push(`<span style="color:#f0c85a">${esc(line)}</span>`); // sim/survey.js: surveys and rumours
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   return lines.join("<br>");

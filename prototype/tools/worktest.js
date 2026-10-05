@@ -537,6 +537,9 @@ function run(seed, priorities, dice = 0) {
   st.started = true;
   for (let i = 0; i < dice; i++) st.rng.next(); // another roll of the same world
   setAutopilot(st, true, "balanced");
+  // The governor's survey trips (survey.js) are off for this comparison: they are extra trips taken with spare hands
+  // and only add noise to a measure of who works at home (with them priorities finish ~1.5% fewer buildings).
+  st.surveyOff = true;
   if (priorities) {
     st.governor.priorityRoles = true;
     workState(st);

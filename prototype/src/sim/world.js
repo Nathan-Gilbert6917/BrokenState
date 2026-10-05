@@ -42,6 +42,8 @@ import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour } from "./discovery.js";
+import { baseOpticsSight } from "./optics.js";
+import { surveyDaily } from "./survey.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -489,7 +491,7 @@ export function supplyValue(stock) {
 
 // ---------- vision and knowledge ----------
 export function baseVision(base) {
-  return (base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0);
+  return (base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js)
 }
 
 export function snapshot(state, tileId) {
@@ -585,6 +587,7 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     recomputeOwnership(state);
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");

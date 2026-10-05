@@ -98,6 +98,7 @@ import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
 import { knownLoc } from "./discovery.js";
+import { rumourFromNews } from "./survey.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -147,9 +148,9 @@ const RUMORS = [
 ];
 // Good gear merchants bring (data.js GEAR keys), and the books (skills.js WARE_BOOKS: traders).
 export const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultpack", "riothelmet", "vest", "huntrifle", "waterfilter", "suppressor", "flashlight", "shotgun",
-  "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar"];
+  "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar", "binoculars", "spotscope", "thermal", "telescope"];
 // What a band of explorers or refugees may carry to trade (and the valuables merchants bring to sell on).
-export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos"];
+export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos", "monocular", "binoculars"];
 export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "coffee", "cigarettes", "coins", "camera", "diamond", "tea"];
 const RARE_BOOKS = ["medbook", "surgerybook", "enginebook", "gardenbook", "gunbook", "armymanual", "survivalbook", "talkbook", "lockbook", "leadbook", "scavbook"];
 
@@ -1332,7 +1333,7 @@ function gateCard(state, v, base, lead) {
       resolve: (st) => {
         if (!here(st)) return gone;
         v.done.news = true;
-        let text = `"${rumor(st, v)}"`;
+        let text = `"${rumor(st, v)}"${rumourFromNews(st, v.kind === "merchants" ? "merchants" : "travellers", `v${v.serial}`)}`; // survey.js: now and then a hidden place
         if (v.sub !== "scouts") { const k = giveIntel(st, v, 1); text += k ? ` They mark the way they came on your map (${k} tiles).` : " The way they came is already on your map."; }
         else {
           let h = 0;

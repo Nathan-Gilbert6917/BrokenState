@@ -25,6 +25,7 @@ import {
 import { travelMode } from "./vehicles.js";
 import { startOrder, FETCH_WATER_HOURS } from "./orders.js";
 import { fieldHeatHour } from "./fieldheat.js";
+import { sweepEstimate, sweepOpts, SURVEY } from "./survey.js";
 import { huntHours } from "./orders.js";
 import {
   HUNT, MEAT_KG, huntTeam, expectHunt, fishKit, expectFish, snareLine, snareHours, expectSnare, packFishingGear, meatIn,
@@ -43,6 +44,7 @@ export const SEARCH_AREA_HOURS = 22; // the estimate for "Search the area": abou
 
 // Step kinds the planner offers (kind → label, default fields).
 export const STEP_KINDS = {
+  sweep:    { label: "Survey the area", desc: "Sweep the land around where the team stands for hidden places and finds: it moves from spot to spot within the radius for the hours set and ends back where it started (survey.js). Food and water at the moving rate; Heat builds at half the rate of standing still." },
   survey:   { label: "Look around (2h)", desc: "Two hours surveying nearby tiles: better odds of spotting caches, wrecks and camps." },
   scavenge: { label: "Scavenge here", desc: "Search the site the team stands on (a raid on its own map)." },
   nearby:   { label: "Scavenge nearby sites", desc: "Search the best known sites within a few tiles, richest first (what the team sees on the way counts). Sites are picked when the step starts, so the plan adapts." },
@@ -62,6 +64,7 @@ export const STEP_KINDS = {
 export const PRESETS = {
   recon:    { name: "Recon and return", mission: "recon", steps: () => [{ kind: "home" }], desc: "Travel there, survey the area, come home." },
   scavenge: { name: "Scavenge and return", mission: "scavenge", steps: () => [{ kind: "home" }], desc: "Travel there, search the site, come home." },
+  survey:   { name: "Survey trip", mission: "sweep", steps: () => [{ kind: "home" }], desc: "Go there, survey the area around it for the hours set (hidden farms, cabins, lodges, camps, caches), come home." },
   explore:  { name: "Explore", mission: "recon", steps: () => [{ kind: "nearby", radius: 3, count: 2 }, { kind: "home" }], desc: "Recon the target, then search the best sites within 3 tiles by loot (up to 2), then come home." },
   hunt:     { name: "Hunting trip", mission: "move", steps: (days, plan) => [{ kind: "hunt", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go there, hunt for the hours set, come home with the game. Fresh game is heavy (a vehicle helps) and spoils fast: eat it, dry it or smoke it." },
   fish:     { name: "Fishing trip", mission: "move", steps: (days, plan) => [{ kind: "fish", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go to a river or lake shore, fish for the hours set, come home. Needs a fishing rod or net (the hub's goes along)." },
@@ -110,6 +113,7 @@ export function stepsToOrders(state, steps, tile) {
     const place = known ? { at } : {};
     switch (s.kind) {
       case "survey": out.push({ type: "mission", mission: "survey", ...place }); break;
+      case "sweep": out.push({ type: "sweep", ...sweepOpts(s) }); break;
       case "scavenge": out.push({ type: "mission", mission: "scavenge", ...place }); break;
       case "nearby": out.push({ type: "nearby", radius: s.radius || 3, count: s.count || 1, center: at }); known = false; break;
       case "camp": out.push({ type: "camp", hours: Math.max(1, Math.round(s.hours || 24)) }); break;
@@ -132,6 +136,7 @@ export const stepLabel = (state, s) => {
     case "nearby": return `Scavenge up to ${s.count || 1} site${(s.count || 1) === 1 ? "" : "s"} within ${s.radius || 3} tiles, richest first`;
     case "camp": return `Camp ${s.hours % 24 === 0 ? `${s.hours / 24} day${s.hours === 24 ? "" : "s"}` : `${s.hours}h`}`;
     case "wait": return `Wait ${s.hours || 6}h`;
+    case "sweep": { const o = sweepOpts(s); return `Survey ${o.radius} tiles around for ${o.hours}h`; }
     case "hunt": return `Hunt ${huntHours(s)}h`;
     case "fish": return `Fish ${huntHours(s)}h`;
     case "snare": return s.mode === "check" ? "Check the snares" : s.mode === "set" ? "Set snares" : "Snares: set (or check)";
@@ -147,7 +152,7 @@ export const stepLabel = (state, s) => {
 // from / startHour / p: estimate from where a team stands now (orders.js queueEstimate), with what it knows (its
 // pace and rations from its last weighing, load.js); otherwise the pace comes from the crew and what it packs
 // (supplies) with vehicle v (an object or id; `vehicle` true = a truck, "bike" = bikes).
-export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null, supplies = {}, v = null }) {
+export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null, supplies = {}, v = null, sweep = null }) {
   const home = baseById(state, homeBaseId || (hub(state) || {}).id);
   if (!home) return null; // no base left (conquest.js exiles)
   const members = (memberIds || []).map((id) => survivorById(state, id)).filter(Boolean);
@@ -197,16 +202,26 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     return true;
   };
   const stay = (label, hours) => { legs.push({ label, hours, from: tile, to: tile, start: at }); drink += waterForHours(state, at, [[hours, n]]); at += hours; restH += hours; };
+  // A survey (survey.js): its route is fixed when it starts, so its hours and fuel are known; it eats at the moving rate.
+  const surveyLeg = (o) => {
+    const sw = sweepEstimate(state, { ...sweepOpts(o || {}), center: tile, mode: veh, stance: p ? p.stance : stance, fuelMult: pace.fuelMult });
+    legs.push({ label: `Survey ${sw.radius} tiles around ${tileLabel(state, tile)} (${sw.hours}h)`, hours: sw.hours, from: tile, to: tile, start: at, sweep: true, route: sw.route });
+    drink += members.length ? waterForHours(state, at, [[sw.hours, veh ? pace.eatMove : pace.eatFoot]]) : waterForHours(state, at, [[sw.hours, n]]);
+    at += sw.hours; moveH += sw.hours; if (veh) rideH += sw.hours;
+    if (veh === true) { fuelUse += sw.fuel; f = Math.max(0, f - sw.fuel); }
+  };
   if (!travel(dest, `To ${tileLabel(state, dest)}`)) return null;
   const outPath = legs[0] ? legs[0].path : [tile], hoursOut = legs[0] ? legs[0].hours : 0;
   // On site: a search 6h, a recovery or other mission 1h; a recon's 2 hours are paid by the next move.
-  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" ? 0 : 1;
+  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : 1;
   if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite);
+  if (mission === "sweep") surveyLeg(sweep || (p && p.sweepPlan) || {});
   if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * (veh ? pace.rideSpeed ?? pace.speed : sp)); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }
   let returns = false, open = false;
   const chosen = [];
   for (const s of steps || []) {
     if (s.kind === "survey") stay("Look around", SURVEY_STEP_HOURS);
+    else if (s.kind === "sweep") surveyLeg(s);
     else if (s.kind === "scavenge") stay(`Scavenge ${tileLabel(state, tile)}`, SEARCH_HOURS);
     else if (s.kind === "gather") stay("Gather materials", GATHER_STEP_HOURS);
     else if (s.kind === "water") stay("Fetch water", FETCH_WATER_HOURS);
@@ -292,7 +307,7 @@ export function applyPlan(state, p, plan) {
     conditions: { hurt: cond.hurt ?? null, food: cond.food ?? null, cargo: !!cond.cargo },
     active: true, fired: {}, hordes: [], sites: [], searched: p.mission === "scavenge" ? [p.dest] : [], started: state.hour,
   };
-  const est = estimatePlan(state, { memberIds: p.members, dest: p.dest, vehicle: p.vehicle, stance: p.stance, fuel: p.planFuel, mission: p.mission, steps, homeBaseId: p.homeBaseId, p });
+  const est = estimatePlan(state, { memberIds: p.members, dest: p.dest, vehicle: p.vehicle, stance: p.stance, fuel: p.planFuel, mission: p.mission, steps, homeBaseId: p.homeBaseId, p, sweep: p.sweepPlan });
   if (est) {
     p.plannedHours = est.total;
     // The hub's estimated position ("?" sprite, parties.js plannedTile): out, the plan's time away from the
@@ -422,6 +437,7 @@ function currentAsOrders(state, p) {
     const m = p.mission === "recon" ? "survey" : p.mission;
     return [{ type: "move", tile: p.dest }, ...(m !== "move" && MISSIONS[m] && (!MISSIONS[m].hidden || m === "survey") ? [{ type: "mission", mission: m, at: p.dest }] : [])];
   }
+  if (p.phase === "task" && p.task && p.task.type === "sweep") return [{ type: "sweep", radius: p.task.radius, hours: Math.max(SURVEY.hours.min, p.task.hours - p.task.done) }];
   if (p.phase === "task" && p.task && ["camp", "wait"].includes(p.task.type)) {
     const left = p.task.hours == null ? null : Math.max(1, p.task.hours - p.task.done);
     return [{ type: p.task.type, hours: left }];

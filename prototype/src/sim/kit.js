@@ -10,13 +10,18 @@ export const KIT_KG = 1.5;
 const SEARCH_KIT = ["scentmask", "ragboots", "ghillie", "tripwire", "stove", "camonet"];
 const MORALE_KIT = ["harmonica", "cards"];
 const FIGHT_KIT = ["molotov", "pipebomb", "smokegren", "flare", "firecracker", "bottle"];
+// Optics (optics.js): a survey or recon takes the best the base has; other trips a pair of binoculars if there is one.
+const SCOUT_KIT = ["thermal", "binoculars", "spotscope", "monocular"];
+const TRIP_OPTICS = ["binoculars", "monocular"];
+const OPTICS_KG = 2.5; // extra kg a survey or recon may take for its optics
 
 // Moves kit from base.armory onto the crew for a mission. Returns the names of what went along.
 export function packTripKit(state, base, crew, mission) {
   if (!base || !crew.length) return [];
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle", "hive", "rescue"].includes(mission);
-  const want = [...(looting ? SEARCH_KIT : ["tripwire", "stove"]), ...MORALE_KIT, ...(mission === "trade" ? [] : FIGHT_KIT)];
-  const budget = crew.length * KIT_KG;
+  const scouting = mission === "sweep" || mission === "recon";
+  const want = [...(scouting ? SCOUT_KIT : []), ...(looting ? SEARCH_KIT : ["tripwire", "stove"]), ...MORALE_KIT, ...(mission === "trade" ? [] : FIGHT_KIT), ...(scouting || mission === "trade" ? [] : TRIP_OPTICS)];
+  const budget = crew.length * KIT_KG + (scouting ? OPTICS_KG : 0);
   let kg = 0;
   const out = [];
   const taken = new Set();

@@ -14,6 +14,7 @@ import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
+import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
@@ -30,6 +31,7 @@ export function describeOrder(state, o) {
     case "repair": return "Repair vehicle";
     case "treat": { const s = survivorById(state, o.survivorId); return `Treat ${s ? s.name.split(" ")[0] : "someone"}`; }
     case "survey": return "Look around";
+    case "sweep": { const s = sweepOpts(o); return o.done != null ? `Surveying: ${o.done} of ${s.hours} hours, ${(o.found || []).length} place${(o.found || []).length === 1 ? "" : "s"} found` : `Survey ${s.radius} tiles around, ${s.hours}h`; }
     case "home": return "Return home";
     case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
     case "gather": return "Gather boat materials";
@@ -80,9 +82,10 @@ export function orderStatus(state, p) {
 // Hour estimates for every queued order, chained from where the current order ends.
 // Travel uses the same stepping as real movement (travelHours); missions on the spot have no fixed time.
 export function queueEstimate(state, p) {
-  let tile = p.dest ?? partyTile(p);
+  const sw = p.phase === "task" && p.task && p.task.type === "sweep" ? p.task : null; // a survey ends at its centre (survey.js)
+  let tile = sw ? sw.center : p.dest ?? partyTile(p);
   let vehicle = p.vehicle || false;
-  let fuel = vehicle === true ? partyFuel(state, p) : 0;
+  let fuel = vehicle === true ? partyFuel(state, p) - (sw ? routeFuel(state, sw.route.slice(sw.done), true, paceOpts(p).fuelMult) : 0) : 0;
   if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
   // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
   let owed = Math.min(0, p.progress || 0);
@@ -100,6 +103,12 @@ export function queueEstimate(state, p) {
   }
   // A recon on arrival spends two hours looking around, paid by the next move (parties.js survey).
   if (p.phase === "out" && p.mission === "recon") owed = Math.min(0, left - 2 * modeSpeed(p, vehicle));
+  // A Survey mission on arrival: its hours (and a car's fuel) before the queue (survey.js).
+  if (p.phase === "out" && p.mission === "sweep") {
+    const sw = sweepEstimate(state, { ...sweepOpts(p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
+    at += sw.hours;
+    if (vehicle === true) fuel = Math.max(0, fuel - sw.fuel);
+  }
   return (p.orders || []).map((o) => {
     let hours = null;
     if (o.type === "move") {
@@ -116,6 +125,11 @@ export function queueEstimate(state, p) {
     else if (o.type === "repair") hours = REPAIR_HOURS;
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
+    else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
+      const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
+      hours = sw.hours;
+      if (vehicle === true) fuel = Math.max(0, fuel - sw.fuel);
+    }
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
     else if (o.type === "hunt" || o.type === "fish") hours = huntHours(o);
@@ -231,6 +245,10 @@ export function startOrder(state, p, o) {
     }
     case "survey":
       return startOrder(state, p, { type: "mission", mission: "survey" });
+    case "sweep":
+      // A survey around where the team stands (survey.js): the queue's Survey step, the team panel, the right-click menu.
+      if (state.tiles[partyTile(p)].terrain === "water" && !state.tiles[partyTile(p)].bridge) return fail("Survey: not from the water.");
+      return startSweep(state, p, o);
     case "camp":
       startTask(state, p, { type: "camp", hours: o.hours ?? null });
       return `The team makes camp${o.hours ? ` for ${o.hours} hours` : " until you break it"}.`;
@@ -347,6 +365,8 @@ export function taskHour(state, p) {
   if (!t) return awaitOrders(state, p, "", { failed: true });
   t.done += 1;
   if (t.type === "camp") campHour(state, p);
+  if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
+  if (!state.parties.includes(p) || p.task !== t) return;
   // Hunting and fishing roll every hour (hunting.js); with nothing left to hunt or fish with, the job ends early.
   if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p))) {
     if (state.parties.includes(p)) finishTask(state, p);
@@ -374,6 +394,7 @@ function finishTask(state, p) {
   const t = p.task;
   let text = "";
   if (t.type === "survey") text = survey(state, p, 0.25, false);
+  else if (t.type === "sweep") text = sweepDone(state, p);
   else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}`;
   else if (t.type === "repair") text = fieldRepair(state, p);
   else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);

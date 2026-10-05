@@ -128,7 +128,7 @@ export function renderExpedition(state, ui, p) {
   }
 
   // Actions on the spot.
-  const opts = orderOptions(state, p).filter((o) => o.mission !== "survey");
+  const opts = orderOptions(state, p).filter((o) => o.mission !== "survey" && o.mission !== "sweep");
   const loot = state.tiles[tile].loot > 0.05;
   const rep = repairInfo(state, p);
   const camping = p.phase === "task" && p.task && p.task.type === "camp";
@@ -147,6 +147,7 @@ export function renderExpedition(state, ui, p) {
       <div class="xpgrid">
         ${ord("mission", ` data-mission="scavenge"`, "Scavenge here", loot || queueing ? MISSIONS.scavenge.desc : "Nothing left worth searching on this tile.", !loot && !queueing)}
         ${ord("mission", ` data-mission="survey"`, `Look around (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
+        ${[[2, 12], [3, 24], [4, 48]].map(([r, h]) => ord("sweep", ` data-radius="${r}" data-hours="${h}"`, `Survey ${r} tiles, ${h}h`, `${MISSIONS.sweep.desc} From here: ${r} tiles around for ${h} hours, back here at the end.`)).join("")}
         ${CAMP_HOURS.map((h) => ord("camp", ` data-hours="${h ?? ""}"`, h ? `Camp ${h}h` : "Camp (until broken)", `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}. The hurt heal a little each hour (infected wounds need meds); nobody travels, so no road events. Supplies keep draining.`)).join("")}
         ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Water for a base that runs short in summer.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}

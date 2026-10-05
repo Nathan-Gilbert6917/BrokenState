@@ -32,6 +32,7 @@ import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
+import { opticsFor } from "./optics.js";
 import { noteRescue } from "./relations.js";
 import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 import { driveOff } from "./aiscav.js";
@@ -340,6 +341,7 @@ export function spotFirstChance(state, p) {
   if (p.vehicle) c -= 0.1;
   c -= travelEffects(state).ambush; // fog and whiteouts hide the other side until it is close (weather.js)
   if (isNight(state) && members.some((m) => m.traits.includes("nightowl") || (m.gear.tool && m.gear.tool.key === "nvg"))) c += 0.15;
+  c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: travelEffects(state).sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
   return clamp(c, 0.05, 0.9);
 }
 
