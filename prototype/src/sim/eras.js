@@ -12,8 +12,11 @@
 //   RECRUIT_UNTIL + GROW.recruit a year), new gangs from beyond the border arrive bigger (+GROW.gangPop people a
 //   year), outsider raider bands bring more people and better guns than their first-year ceiling.
 // - Late game (year 8 on, above all year 10+): the reckoning. The growth goes on to its caps (most reached around
-//   year 12–14), at least LATE_MIN_AGG aggressive groups stay in the state (new gangs keep coming), more outsider
-//   bands roam at once.
+//   year 12–14), at least LATE_MIN_AGG hostile aggressive groups stay in the state (new gangs keep coming), and
+//   LATE_RAIDER_BANDS more outsider bands may roam at once. The coalition has grown into an army: every member sends
+//   ALLY_LATE more fighters to your hive and base assaults (alliance.js hiveAllies, assaultAllies). The hives
+//   multiplying (hives.js: a new site every 120–180 days) is the main growth of all: about 6 hives in year 1,
+//   9 in year 7, 12–15 by years 12–15 when nobody destroys them.
 //
 // Winning (world.js checkGameOver)
 // - Neither victory comes before year WIN_FROM_YEAR (6): until the fifth winter is over the outbreak still burns
@@ -45,15 +48,16 @@ export const ERAS = {
   GROW_FROM: 3, // the first year the threats grow (year 3: one step, year 4: two ...)
   // Growth per year from GROW_FROM, and its cap.
   GROW: {
-    horde: 0.04, hordeMax: 0.4,          // roaming, attacking and border hordes: +4% a year, at most +40% (year 12)
-    gangArms: 0.03, gangArmsMax: 0.3,    // aggressive groups' strength (raids, wars, the base they defend): +3% a year
+    horde: 0.01, hordeMax: 0.1,          // roaming, attacking and border hordes: +1% a year, at most +10% (year 12)
+    gangArms: 0.02, gangArmsMax: 0.2,    // aggressive groups' strength (raids, wars, the base they defend): +2% a year
     recruit: 2, recruitMax: 20,          // aggressive groups recruit up to RAIDS.RECRUIT_UNTIL (45) + 2 a year
-    gangPop: 1.5, gangPopMax: 15,        // new gangs from beyond the border: 12–18 people + 1.5 a year
-    raiderSize: 1, raiderSizeMax: 10,    // outsider raider bands: up to 14 people + 1 a year (visitors.js)
-    raiderPower: 0.2, raiderPowerMax: 2, // ... each as strong as 6.0 at most + 0.2 a year (rifles and plate)
+    gangPop: 1, gangPopMax: 10,          // new gangs from beyond the border: 12–18 people + 1 a year
+    raiderSize: 0.25, raiderSizeMax: 3,  // outsider raider bands: up to 14 people + 1 every four years (visitors.js)
+    raiderPower: 0.05, raiderPowerMax: 0.5, // ... each as strong as 6.0 at most + 0.05 a year (rifles and plate)
   },
-  LATE_MIN_AGG: 3,        // from the late game at least this many hostile aggressive groups (factions.js newGangs; 2 before)
-  LATE_RAIDER_BANDS: 1,   // one more outsider raider band on the map at a time from the late game (visitors.js caps)
+  LATE_MIN_AGG: 2,        // from the late game at least this many hostile aggressive groups (factions.js newGangs; RAIDS.MIN_AGG = 2 before)
+  LATE_RAIDER_BANDS: 0,   // more outsider raider bands on the map at a time from the late game (visitors.js caps)
+  ALLY_LATE: 1,           // from the late game every coalition member sends one more fighter to your hive and base assaults (alliance.js)
   WIN_FROM_YEAR: 6,
   ACCORD: { DAYS: 112, DECAY: 2, SEASONS: 12, GRACE: 56 },
   CONTAIN: { DAYS: 28 },

@@ -23,7 +23,9 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.noNewGangs = true; return st; };
+// erasOff: the eras' clocks (eras.js: no victory before year 6, the Accord held a year, a season clear of hives) are
+// tools/eratest.js's; here the victory rules themselves are checked, at the moment their conditions are met.
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.noNewGangs = true; st.erasOff = true; return st; };
 const pick = (card, re) => card.choices.find((c) => re.test(c.label));
 const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t);
 function nearFree(st, from, lo, hi, avoid = []) {
@@ -228,7 +230,7 @@ section("The coalition victory: only members left, more than half the land, hive
   check(checkGameOver(st2) && st2.victoryReason === "hives", "destroying every hive is still the hive victory");
 }
 
-section("Late gangs: raider bands that settle, at any time; the coalition win is instant");
+section("Late gangs: raider bands that settle, at any time; the coalition's conditions are met at once (the Accord's year is eratest.js's)");
 {
   const V = await import("../src/sim/visitors.js");
   const st = world();

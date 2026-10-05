@@ -233,6 +233,7 @@ const t0 = Date.now();
   check(!st.victory, "with hives left the game goes on");
   for (const h of [...st.hives]) destroyHive(st, h, "in the test");
   for (const s of [...st.hiveSites]) s.started = null;
+  st.erasOff = true; // the eras' clocks (year 6, the outbreak beyond the border, a season clear) are tools/eratest.js's; this checks the rule itself
   runDays(st, 1);
   check(st.victory && st.gameOver, "destroying every hive wins the game");
   check(st.log.some((l) => /^Every hive is destroyed/.test(l.text)), "the victory is in the log");

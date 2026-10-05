@@ -581,6 +581,7 @@ section("The coalition");
 section("Alliance victory");
 {
   const st = setup();
+  st.erasOff = true; // the eras' clocks (no victory before year 6, the Accord held a year) are tools/eratest.js's; this checks the rule itself
   const live = st.factions.filter((f) => f.alive);
   const done = (f) => J.ensureJobs(st).list.push({ id: 6000 + f.id, fid: f.id, type: "scout", status: "done", endDay: day(st), data: {}, reward: { goodwill: 0, supplies: {}, gear: [] }, title: "x", desc: "", target: 0 });
   for (const f of live) { f.goodwill = 80; f.pact = "trade"; done(f); f.known = true; }
@@ -621,6 +622,7 @@ section("Alliance victory");
   check(checkGameOver(st) && st.victory && st.victoryReason === "alliance" && st.log.some((l) => /^The Calder Coalition holds/.test(l.text)), "checkGameOver: the coalition's victory, with its reason");
   // Without the coalition, the same world is the hive victory.
   const st2 = setup();
+  st2.erasOff = true;
   st2.hives.length = 0; st2.hiveSites.length = 0;
   check(checkGameOver(st2) && st2.victoryReason === "hives", "no coalition: destroying every hive is the hive victory");
   const gp = A.goalsProgress(st);

@@ -48,7 +48,7 @@ import { reduceHorde } from "./hordes.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, relation, changeRelation, warsOf, enemyIn, warBetween, autoWarTrade } from "./diplomacy.js";
 import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDaily } from "./jobs.js";
-import { eraProgress, ERAS } from "./eras.js";
+import { eraProgress, ERAS, isLate } from "./eras.js";
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -193,8 +193,26 @@ export function hiveAllies(state, hive) {
   const out = { fighters: 0, names: [] };
   const groups = new Set(allianceMembers(state).filter((f) => f.bases.some((b) => g.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)));
   for (const j of activeJobs(state)) if (j.type === "hive" && j.data.hiveId === hive.id) { const f = factionById(state, j.fid); if (f && f.alive) groups.add(f); }
+  const extra = isLate(state) ? ERAS.ALLY_LATE : 0; // eras.js: one more each from the late game
   for (const f of groups) {
-    const n = clamp(Math.round(f.pop / 10), 1, 3);
+    const n = clamp(Math.round(f.pop / 10), 1, 3) + extra;
+    out.fighters += n;
+    out.names.push(`${f.name} (${n})`);
+  }
+  return out;
+}
+// Fighters the coalition sends when you storm a group's base (conquest.js assaultForce): every member with a base
+// within HIVE_RANGE of it that is not on good terms with the defenders (relations under VOTE_REL) sends 1 per 10
+// people (1–3), one more from the late game (eras.js: the coalition has grown into an army). Each keeps one defender
+// off your squad (conquest.js: at most 40% of them).
+export function assaultAllies(state, target, tile) {
+  const g = state.grid;
+  const out = { fighters: 0, names: [] };
+  const extra = isLate(state) ? ERAS.ALLY_LATE : 0;
+  for (const f of allianceMembers(state)) {
+    if (f === target || !f.bases.some((b) => g.distance(b, tile) <= ALLIANCE.HIVE_RANGE)) continue;
+    if (relation(state, f, target) >= ALLIANCE.VOTE_REL) continue;
+    const n = clamp(Math.round(f.pop / 10), 1, 3) + extra;
     out.fighters += n;
     out.names.push(`${f.name} (${n})`);
   }

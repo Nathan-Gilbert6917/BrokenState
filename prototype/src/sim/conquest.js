@@ -65,7 +65,7 @@ import { makeCandidate, offerRecruits } from "./recruits.js";
 import { takePrisonersAt, prisonersOf } from "./prisoners.js";
 import { addBuilding, baseWalls, assignStations } from "./buildings.js";
 import { pactsOf, relation } from "./diplomacy.js";
-import { isMember, allianceMembers, ensureAlliance } from "./alliance.js";
+import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
@@ -108,6 +108,7 @@ export function nativeWalls(f, tile) {
   return f.bases[0] === tile ? CONQUEST.WALLS.home : CONQUEST.WALLS.open;
 }
 // What an assault on this base faces: { kind, count, power, fortified, walls, people, occupied }.
+const ALLY_SHARE = 0.4; // coalition fighters keep at most 40% of the defenders off your squad (at least MIN_DEF left)
 export function assaultForce(state, f, tile) {
   const def = FACTION_TYPES[f.type];
   const occ = occupiedAt(state, tile);
@@ -121,9 +122,14 @@ export function assaultForce(state, f, tile) {
     count = clamp(Math.round(people * CONQUEST.FIGHT_SHARE), CONQUEST.MIN_DEF, Math.max(CONQUEST.MIN_DEF, Math.min(CONQUEST.MAX_DEF, people)));
     walls = nativeWalls(f, tile);
   }
+  // The coalition's fighters (alliance.js assaultAllies): members near the base each keep some defenders busy.
+  const allies = assaultAllies(state, f, tile);
+  const held = Math.min(allies.fighters, Math.floor(count * ALLY_SHARE), Math.max(0, count - CONQUEST.MIN_DEF));
+  count -= held;
   return {
     kind: KIND_OF[f.type], count, power: Math.round((2.6 + def.arms * 1.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`,
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
+    allies: held ? { held, names: allies.names } : null,
   };
 }
 // The odds the card shows (the same sum the statistical resolver uses: combat.js autoResolveCombat).
@@ -172,7 +178,7 @@ function assaultCard(state, p, f) {
   return {
     title: `Assault: ${tileLabel(state, tile)}`, partyId: p.id, where: tileLabel(state, tile), assault: { factionId: f.id, tile },
     text: `${occ ? `${f.name} hold ${occ.name}, the base they took from you on day ${occ.day}` : `${f.name} (${attitude(f).toLowerCase()}) hold this base`}: about ${force.people} people, ${force.count} of them on ${wallText} (defence ×${force.fortified}). ` +
-      `${last ? `It is their last base: take it and ${f.name} is finished.` : `They hold ${f.bases.length} bases.`}${occ ? ` ${occupiedText(state, occ)}` : ""}${warn ? ` ${warn}` : ""}`,
+      `${force.allies ? `Coalition fighters (${force.allies.names.join(", ")}) keep ${force.allies.held} of the defenders busy. ` : ""}${last ? `It is their last base: take it and ${f.name} is finished.` : `They hold ${f.bases.length} bases.`}${occ ? ` ${occupiedText(state, occ)}` : ""}${warn ? ` ${warn}` : ""}`,
     choices: [
       { label: "Storm the base (tactical battle)", fight: { odds, enemy: force, ambush: null }, hint: `About ${Math.round(odds * 100)}% to win against ${force.count} defenders behind ${wallText}. Win and the base is yours: an outpost with its land and part of its stores. You can fall back from the left edge`,
         resolve: (st) => startAssault(st, p, f) },

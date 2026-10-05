@@ -13,6 +13,8 @@ import * as E from "../src/sim/eras.js";
 import { ensureAlliance, controlledLand, landCentres, ALLIANCE, allianceVictory, goalsProgress } from "../src/sim/alliance.js";
 import { destroyHive, hivesSecured } from "../src/sim/hives.js";
 import { strength, makeGang, factionsDaily } from "../src/sim/factions.js";
+import { assaultForce } from "../src/sim/conquest.js";
+import { relation, changeRelation } from "../src/sim/diplomacy.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { FACTION_TYPES } from "../src/sim/data.js";
@@ -62,6 +64,31 @@ async function main() {
       `year 6: an aggressive group's strength ×${agg.gear.toFixed(2)}; a ${calm.type} group's unchanged`);
     const gang = makeGang(st, st.tiles.find((t) => t.loc && t.owner == null && !t.hive).id, { type: "raider", pop: 15 });
     check(gang.gear === E.gangArms(st), "a new gang arrives with the year's arms");
+  }
+
+  console.log("Coalition fighters in base assaults");
+  {
+    const st = world(4);
+    const g = st.grid;
+    let pair = null;
+    for (const f of st.factions) for (const m of st.factions) {
+      if (pair || f === m || !f.alive || !m.alive) continue;
+      if (m.bases.some((b) => g.distance(b, f.bases[0]) <= 15)) pair = { f, m };
+    }
+    if (check(!!pair, "two groups within 15 tiles of each other")) {
+      const { f, m } = pair;
+      if (relation(st, m, f) >= 10) changeRelation(st, m, f, -40 - relation(st, m, f));
+      f.pop = 40;
+      const before = assaultForce(st, f, f.bases[0]);
+      const A = ensureAlliance(st);
+      A.members.push(m.id);
+      const mid = assaultForce(st, f, f.bases[0]);
+      at(st, E.yearStartDay(8));
+      const late = assaultForce(st, f, f.bases[0]);
+      check(mid.count < before.count && mid.allies && late.count < mid.count,
+        `a member nearby keeps defenders busy: ${before.count} → ${mid.count} (year 1) → ${late.count} (late game, one more fighter)`);
+      check(late.count >= Math.min(before.count, 3) && before.count - late.count <= Math.floor(before.count * 0.4), "at most 40% of them, at least 3 left");
+    }
   }
 
   console.log("Victory clocks");
