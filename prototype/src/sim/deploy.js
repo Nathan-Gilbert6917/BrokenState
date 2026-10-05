@@ -7,6 +7,8 @@
 // (interior.js: tier 2 the yard with its barricades, wire and sandbags, tier 3 the last stand inside the buildings).
 //
 // The wall map (laid out with the attackers on the east edge, then turned: transformBattle in combat.js):
+//   18 columns deep and 13 rows long (longer for a base with more buildings: as long as its yard map is tall, less 3;
+//   defences.js registers the size, interior.js wallMapRows); the ladders' rows scale with it.
 //   a base with walls built has a wall line (column 12 of 18). Each wall section has hit points (WALL_HP + WALL_HP_PER
 //   × the base's wall strength, buildings.js baseWalls: a hub with one wall section 112, three 184; an outpost with
 //   one 88) and blocks sight from the ground; the gate (2 cells in the middle, 100 hit points, 180 with a reinforced
@@ -126,7 +128,10 @@ export function deployMap(b, ctx, base, c) {
   if (count(base, "watchtower")) for (const y of [1, H - 2]) if (!breaches.some((o) => Math.abs(o - y) < 2)) { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
   // Ladders up to the walkway (and the towers, which have their own).
   const ladders = [];
-  for (const y of DEPLOY.LADDER_ROWS) if (y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 2, y, "ladder"); ladders.push([X - 2, y]); }
+  for (const y0 of DEPLOY.LADDER_ROWS) {
+    const y = Math.round((y0 * (H - 1)) / 12); // the rows for 13; a longer wall (a bigger base) spreads them out
+    if (y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 2, y, "ladder"); ladders.push([X - 2, y]); }
+  }
   // Barricades: a second line behind the wall.
   const k = count(base, "barricades");
   for (let i = 0; i < k * 3 + (count(base, "gate") ? 2 : 0); i++) {

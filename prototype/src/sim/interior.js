@@ -7,7 +7,8 @@
 // When BREACH_MIN attackers (or a BREACH_FRAC share of those left, if more) stand inside the wall at the start of your
 // turn, or any do and nobody holds the wall line any more, the fight moves to this map; or the defenders fall back
 // here themselves (the wall map's retreat: fallBack). Everyone keeps health, wounds, ammo (the base's stock), what
-// they carry and where they were, more or less: a wall-map cell (x, y) becomes (x + 12, y × 15 / 12) on this 26 × 16 map here, so the
+// they carry and where they were, more or less: a wall-map cell (x, y) becomes (x + 12, y scaled from the wall map's rows
+// to this map's) on this 26 × 16 map (taller for a base whose buildings do not all fit: interiorSize), so the
 // walkway and the gate are just inside this map's wall (column 24) and the breaches are where they were. The
 // attackers inside the wall come with them; those still outside wait off the map and come in through the openings,
 // WAVE + WAVE_PER_OPENING a turn. Then a short redeploy (the deploy step again, inside REDEPLOY tiles of where your
@@ -43,8 +44,10 @@ import { armoryDefence, tierMults, TIERS } from "./defences.js";
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 
+// W × H: the map's size; a base whose buildings do not all fit in H rows gets a taller one (H_STEPS, up to the last:
+// interiorSize), and its wall map is as much longer (deploy.js, 3 rows fewer than this map's).
 export const INTERIOR = {
-  W: 26, H: 16, WALL_X: 24, YARD_X: 15, BUILD_X: [2, 19], EVAC: 2, SHIFT_X: 12,
+  W: 26, H: 16, H_STEPS: [16, 18, 20, 22, 24, 26, 28], WALL_ROWS: 3, WALL_X: 24, YARD_X: 15, BUILD_X: [2, 19], EVAC: 2, SHIFT_X: 12,
   DOOR_HP: 45, WIDE_DOOR_HP: 60, WINDOW_HP: 20,
   BREACH_MIN: 3, BREACH_FRAC: 0.25, WAVE: 3, WAVE_PER_OPENING: 2, YARD_LOST: 1.5,
   REDEPLOY: 12, REDEPLOY_GAP: 3,
@@ -100,10 +103,38 @@ export function layoutSeed(base) {
 }
 
 // ---------- the map (east-facing: the attackers on the east edge) ----------
+// The map's size for a base: the shortest of H_STEPS that holds all its buildings (the same base and buildings, the
+// same size). { W, H }.
+const sizeCache = new Map();
+export function interiorSize(base) {
+  const key = base ? `${layoutSeed(base)}|${structuresOf(base).length}` : "none";
+  let s = sizeCache.get(key);
+  if (!s) {
+    const lay = buildInterior(base, { walled: true });
+    s = { W: lay.W, H: lay.H };
+    if (sizeCache.size > 200) sizeCache.clear();
+    sizeCache.set(key, s);
+  }
+  return s;
+}
+// The rows of a base's wall map (deploy.js): as tall as its yard map, less WALL_ROWS (13 for the usual 16).
+export const wallMapRows = (base) => interiorSize(base).H - INTERIOR.WALL_ROWS;
+
 // opts: walled, rows (the wall map's wall line, east-facing, top to bottom: { k, hp, mhp, bar }), c (the setup's
-// context: pits, kit, through), night. Returns the cells and what is where.
+// context: pits, kit, through), night. Returns the cells and what is where, with the map's size (W, H: the shortest
+// of H_STEPS that holds every building).
 export function buildInterior(base, opts = {}) {
-  const I = INTERIOR, W = I.W, H = I.H;
+  const steps = INTERIOR.H_STEPS;
+  let out = null;
+  for (const H of steps) {
+    out = layInterior(base, opts, H);
+    if (!out.missed) break;
+  }
+  return out;
+}
+
+function layInterior(base, opts, H) {
+  const I = INTERIOR, W = I.W;
   const rng = new Rng(layoutSeed(base));
   const cells = Array.from({ length: W * H }, (_, i) => ({ k: "open", f: i % W >= I.WALL_X ? "grass" : "dirt" }));
   const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -113,10 +144,11 @@ export function buildInterior(base, opts = {}) {
   const indoor = new Uint8Array(W * H);
   const free = (x, y) => { const c = at(x, y); return !!c && c.k === "open" && !used[y * W + x]; };
   const walled = !!opts.walled;
-  const out = { cells, indoor, buildings: [], towers: [], openings: [], lofts: [], roofs: [], doors: [], windows: [], walled };
-  // The wall line (column 24) as it stood on the wall map, rows scaled from 13 to 16.
+  const out = { W, H, missed: 0, cells, indoor, buildings: [], towers: [], openings: [], lofts: [], roofs: [], doors: [], windows: [], walled };
+  // The wall line (column 24) as it stood on the wall map, rows scaled from its height (13 for 16) to this map's.
   if (walled) {
-    const rows = opts.rows || [...Array(13).keys()].map((y) => ({ k: y === 5 || y === 6 ? "gate" : "palisade", bar: true }));
+    const r0 = H - I.WALL_ROWS, gm = Math.floor(r0 / 2);
+    const rows = opts.rows || [...Array(r0).keys()].map((y) => ({ k: y === gm - 1 || y === gm ? "gate" : "palisade", bar: true }));
     const h0 = rows.length;
     for (let y = 0; y < H; y++) {
       const r = rows[Math.round((y * (h0 - 1)) / (H - 1))] || { k: "palisade" };
@@ -148,11 +180,11 @@ export function buildInterior(base, opts = {}) {
       for (let y0 = 0; y0 + h <= H; y0++) for (let x0 = I.BUILD_X[0]; x0 + w <= I.BUILD_X[1]; x0++) if (fits(x0, y0, w, h)) tries.push([x0, y0]);
       if (!tries.length) continue;
       // The main house sits in the middle of the west side; the rest where the base's dice put them.
-      const pick = s.key === "hall" ? tries.reduce((a, p) => (Math.abs(p[1] + h / 2 - H / 2) + Math.abs(p[0] - 4) * 0.5 < Math.abs(a[1] + h / 2 - H / 2) + Math.abs(a[0] - 4) * 0.5 ? p : a), tries[0]) : rng.pick(tries);
+      const pick = s.key === "hall" ? tries.reduce((a, p) => (Math.abs(p[1] + h / 2 - H / 2) + Math.abs(p[0] - 4) * 0.5 < Math.abs(a[1] + h / 2 - H / 2) + Math.abs(a[0] - 4) * 0.5 ? p : a), tries[0]) : H > I.H ? tries[rng.int(0, Math.min(2, tries.length - 1))] : rng.pick(tries); // a taller map (the buildings did not fit): packed more tightly
       spot = [pick[0], pick[1], w, h];
       break;
     }
-    if (!spot) continue;
+    if (!spot) { out.missed++; continue; }
     const [x0, y0, w, h] = spot;
     claim(x0, y0, w, h);
     if (s.roof) roofBlock(x0, y0, w, h, s);
@@ -307,14 +339,15 @@ function outsideOf(cells, W, H, x, y) {
 // ---------- a base without walls: the battle opens here (layout phases, defences.js "baseDefence") ----------
 export function interiorMap(b, ctx, base, c) {
   const lay = buildInterior(base, { walled: false, c });
-  resizeBattle(b, INTERIOR.W, INTERIOR.H, lay.cells, 0, Math.floor(INTERIOR.H / 2));
+  resizeBattle(b, lay.W, lay.H, lay.cells, 0, Math.floor(lay.H / 2));
   b.deployPlan = { walled: false, interior: true, gate: [], breaches: [], towers: lay.towers, lay };
 }
 
 export function interiorUnits(b, ctx, base, c) {
   const state = ctx.state;
-  const I = INTERIOR, W0 = I.W, H0 = I.H;
+  const I = INTERIOR;
   const lay = b.deployPlan.lay;
+  const W0 = lay.W, H0 = lay.H;
   const okCell = (x, y) => x >= 0 && y >= 0 && x < W0 && y < H0 && b.reach[y * W0 + x] && CELL[b.cells[y * W0 + x].k].walk && !unitAt(b, x, y);
   const floodlit = c.floodlit ?? (!!base && count(base, "floodlights") > 0 && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= 2));
   const night = c.night ?? isNight(state);
@@ -351,7 +384,7 @@ export function interiorUnits(b, ctx, base, c) {
 // After the map is laid out and the units placed (east-facing): turn it, and set the masks, the way out, the deploy
 // step and the tier record.
 function finishInterior(b, side, lay, o) {
-  const I = INTERIOR, W0 = I.W, H0 = I.H;
+  const I = INTERIOR, W0 = lay.W, H0 = lay.H;
   const zoneArr = new Uint8Array(W0 * H0);
   for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) zoneArr[y * W0 + x] = o.zoneE(x, y) ? 1 : 0; // before the units are turned
   transformBattle(b, side);
@@ -403,7 +436,7 @@ function nearestFree(b, W0, H0, x, y, ok) {
 // The best shots on the towers, then the upper floors and the roofs (where they can see the yard), then indoors at
 // the windows; close fighters inside by the doors; anyone left behind the barricades and sandbags in the yard.
 export function interiorDefaults(b, lay, okCell, zoneE) {
-  const W0 = INTERIOR.W;
+  const W0 = lay.W || INTERIOR.W, H0 = lay.H || INTERIOR.H;
   const defs = b.units.filter((u) => u.side === "player" && active(u));
   for (const u of defs) { u.post = null; u.x = -100; }
   const close = (u) => !!WEAPONS[u.weapon].melee || u.weapon === "shotgun" || u.weapon === "pipegun";
@@ -417,7 +450,7 @@ export function interiorDefaults(b, lay, okCell, zoneE) {
     return true;
   };
   const adj4 = (x, y, test) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => test(x + dx, y + dy));
-  const isK = (k) => (x, y) => x >= 0 && y >= 0 && x < W0 && y < INTERIOR.H && b.cells[y * W0 + x].k === k;
+  const isK = (k) => (x, y) => x >= 0 && y >= 0 && x < W0 && y < H0 && b.cells[y * W0 + x].k === k;
   // Perches: towers, then loft cells by a window, then the yard edge of the roofs, east first.
   const east = (a, c) => c[0] - a[0];
   const perches = [
@@ -426,10 +459,10 @@ export function interiorDefaults(b, lay, okCell, zoneE) {
     ...lay.roofs.slice().sort(east),
   ];
   const windows = [];
-  for (let y = 0; y < INTERIOR.H; y++) for (let x = 0; x < W0; x++) if (lay.indoor[y * W0 + x] && b.cells[y * W0 + x].k === "open" && adj4(x, y, isK("window"))) windows.push([x, y]);
+  for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) if (lay.indoor[y * W0 + x] && b.cells[y * W0 + x].k === "open" && adj4(x, y, isK("window"))) windows.push([x, y]);
   windows.sort(east);
   const byDoors = [];
-  for (let y = 0; y < INTERIOR.H; y++) for (let x = 0; x < W0; x++) if (lay.indoor[y * W0 + x] && b.cells[y * W0 + x].k === "open" && adj4(x, y, isK("bdoor"))) byDoors.push([x, y]);
+  for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) if (lay.indoor[y * W0 + x] && b.cells[y * W0 + x].k === "open" && adj4(x, y, isK("bdoor"))) byDoors.push([x, y]);
   byDoors.sort(east);
   const left = [];
   for (const u of shooters) {
@@ -444,11 +477,11 @@ export function interiorDefaults(b, lay, okCell, zoneE) {
   // The rest: the yard, behind cover facing the attack, not right next to an opening.
   for (const u of left) {
     let best = null;
-    for (let y = 0; y < INTERIOR.H; y++) for (let x = INTERIOR.YARD_X - 2; x <= INTERIOR.WALL_X - 3; x++) {
+    for (let y = 0; y < H0; y++) for (let x = INTERIOR.YARD_X - 2; x <= INTERIOR.WALL_X - 3; x++) {
       if (!ok(x, y) || lay.indoor[y * W0 + x]) continue;
       const dOpen = Math.min(99, ...lay.openings.map(([ox, oy]) => Math.hypot(x - ox, y - oy)));
       if (dOpen < 3) continue;
-      const sc = coverAgainst(b, x, y, W0 - 1, y).level * 3 - Math.abs(x - (INTERIOR.WALL_X - 7)) * 0.3 - Math.abs(y - INTERIOR.H / 2) * 0.1;
+      const sc = coverAgainst(b, x, y, W0 - 1, y).level * 3 - Math.abs(x - (INTERIOR.WALL_X - 7)) * 0.3 - Math.abs(y - H0 / 2) * 0.1;
       if (!best || sc > best.sc) best = { x, y, sc };
     }
     if (best) { u.x = best.x; u.y = best.y; }
@@ -461,7 +494,7 @@ function removeSpot(list, u) { const i = list.findIndex(([x, y]) => x === u.x &&
 // why: "breach" (they are through), "ordered" (you sounded it), "ai" (the battle AI did).
 export function toInterior(state, b, opts = {}) {
   const T = b.tier;
-  const I = INTERIOR, W0 = I.W, H0 = I.H;
+  const I = INTERIOR;
   const base = state.bases.find((x) => x.id === b.setup.baseId) || null;
   const side = T.side;
   const un = sideUntf(side, T.w0, T.h0), tfA = sideTf(side, T.w0, T.h0);
@@ -470,6 +503,7 @@ export function toInterior(state, b, opts = {}) {
   for (let y = 0; y < T.h0; y++) { const [x, yy] = tfA(DEPLOY.WALL_X, y); const c = b.cells[yy * b.w + x]; rows.push({ k: c.k, hp: c.hp, mhp: c.mhp, bar: c.bar }); }
   const pos = new Map(b.units.map((u) => [u.id, un(u.x, u.y)]));
   const lay = buildInterior(base, { walled: true, rows, c: b.setup.context || {} });
+  const W0 = lay.W, H0 = lay.H;
   resizeBattle(b, W0, H0, lay.cells, 0, Math.floor(H0 / 2));
   const mapY = (y) => Math.max(0, Math.min(H0 - 1, Math.round((y * (H0 - 1)) / (T.h0 - 1))));
   const walkable = (x, y) => x >= 0 && y >= 0 && x < W0 && y < H0 && b.reach[y * W0 + x] && CELL[b.cells[y * W0 + x].k].walk;

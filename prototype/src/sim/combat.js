@@ -225,7 +225,19 @@ const tileIdOf = (setup) => (setup.tile && typeof setup.tile === "object" ? setu
 // Tactical engine
 // ======================================================================================
 
-export const MAP_W = 18, MAP_H = 13;
+export const MAP_W = 18, MAP_H = 13; // a base's wall map (deploy.js), and the scale the field layouts were drawn at
+// Battle map sizes: an encounter in the field (genMap scales its layout from 18 × 13 to this), a hive assault. A
+// layout can set its own (registerBattleSize: a base's wall map, sized to its buildings).
+export const FIELD_W = 26, FIELD_H = 18, HIVE_W = 32, HIVE_H = 22;
+var sizes; // eslint-disable-line no-var
+export function registerBattleSize(key, fn) {
+  (sizes = sizes || new Map()).set(key, fn);
+}
+export function battleSize(state, setup) {
+  const fn = setup && setup.layout && sizes ? sizes.get(setup.layout) : null;
+  const s = fn ? fn(state, setup) : null;
+  return s && s[0] > 0 && s[1] > 0 ? s : [FIELD_W, FIELD_H];
+}
 // Current battle size. Only one battle runs at a time; createBattle / createRaid set these.
 let W = MAP_W, H = MAP_H;
 // The grid helpers below read W and H: every entry point that takes a battle points them at that battle's own size
@@ -409,7 +421,10 @@ function take(b, k, n) {
 export const ammoLeft = (b) => pool(b, "ammo");
 export const medsLeft = (b) => pool(b, "meds");
 
-// ---------- battle map ----------
+/// ---------- battle map ----------
+// The field map. Its layouts were drawn for 18 × 13 and are scaled to the battle's size (FIELD_W × FIELD_H): fixed
+// columns and rows by the width and height, how many things are scattered by the area, and on a bigger map a few
+// more buildings where there are buildings.
 function genMap(rng, tile) {
   const t = tile || { terrain: "plains" };
   const floor = { plains: "grass", forest: "grass", hills: "dirt", mountain: "gravel", suburb: "grass", city: "rubble", water: "grass" }[t.terrain] || "grass";
@@ -417,18 +432,21 @@ function genMap(rng, tile) {
   const at = (x, y) => (inside(x, y) ? cells[idx(x, y)] : null);
   const free = (x, y) => { const c = at(x, y); return c && c.k === "open"; };
   const put = (x, y, k, f) => { const c = at(x, y); if (c) { c.k = k; if (f) c.f = f; } };
+  const fx = W / MAP_W, fy = H / MAP_H, area = fx * fy;
+  const X = (v) => Math.round(v * fx), Y = (v) => Math.round(v * fy), N = (n) => Math.round(n * area);
   const rx = (lo = 3, hi = W - 4) => rng.int(lo, hi);
   const scatter = (k, n, lo = 3, hi = W - 4) => {
     // Crates may go indoors; everything else stays outside.
-    for (let i = 0; i < n; i++) { const x = rx(lo, hi), y = rng.int(0, H - 1); if (free(x, y) && at(x, y).f !== "road" && (k === "crate" || at(x, y).f !== "floor")) put(x, y, k); }
+    for (let i = 0; i < N(n); i++) { const x = rx(lo, hi), y = rng.int(0, H - 1); if (free(x, y) && at(x, y).f !== "road" && (k === "crate" || at(x, y).f !== "floor")) put(x, y, k); }
   };
   // Sparse cover inside the deployment zones so nobody starts in the open.
-  const edgeCover = (k, n) => { scatter(k, n, 1, 3); scatter(k, n, W - 4, W - 2); };
+  const edgeCover = (k, n) => { scatter(k, n, 1, X(3)); scatter(k, n, W - 1 - X(3), W - 2); };
   const rectFree = (x0, y0, w, h) => {
     for (let y = y0 - 1; y <= y0 + h; y++) for (let x = x0 - 1; x <= x0 + w; x++) if (inside(x, y) && (at(x, y).k !== "open" || at(x, y).f === "road")) return false;
     return x0 >= 0 && y0 >= 0 && x0 + w <= W && y0 + h <= H;
   };
-  const building = (w, h, lo = 4, hi = W - 5 - w) => {
+  let built = 0;
+  const building = (w, h, lo = X(4), hi = W - X(5) - w) => {
     for (let tries = 0; tries < 25; tries++) {
       const x0 = rng.int(lo, Math.max(lo, hi)), y0 = rng.int(0, H - h);
       if (!rectFree(x0, y0, w, h)) continue;
@@ -443,6 +461,7 @@ function genMap(rng, tile) {
       const doors = w * h > 30 ? 3 : 2;
       edge.slice(0, doors).forEach(([x, y]) => put(x, y, "open", "floor"));
       edge.slice(doors, doors + rng.int(1, 3)).forEach(([x, y]) => put(x, y, "window"));
+      built++;
       return true;
     }
     return false;
@@ -456,47 +475,50 @@ function genMap(rng, tile) {
 
   // Road strip with wrecks.
   if (t.road) {
-    const r = rng.int(5, 7);
+    const r = rng.int(Y(5), Y(7));
     for (let x = 0; x < W; x++) for (const y of [r, r + 1]) put(x, y, "open", "road");
-    for (let i = 0; i < rng.int(2, 4); i++) { const x = rx(4, W - 5), y = rng.pick([r, r + 1]); put(x, y, rng.chance(0.3) ? "truck" : "car"); }
+    for (let i = 0; i < Math.round(rng.int(2, 4) * fx); i++) { const x = rx(X(4), W - X(5)), y = rng.pick([r, r + 1]); put(x, y, rng.chance(0.3) ? "truck" : "car"); }
   }
   // River for water tiles: a band with a couple of fords.
   if (t.terrain === "water") {
-    const c = rng.int(8, 9);
-    const fords = [rng.int(1, 4), rng.int(8, 11)];
+    const c = rng.int(X(8), X(9));
+    const fords = [rng.int(Y(1), Y(4)), rng.int(Y(8), Y(11))];
     for (let y = 0; y < H; y++) for (const x of [c, c + 1]) if (!fords.some((f) => Math.abs(f - y) <= 0) && at(x, y).f !== "road") put(x, y, "water");
   }
 
   const type = t.loc ? t.loc.type : null;
   switch (type) {
-    case "town": building(5, 4); building(4, 4); scatter("car", 3); fenceLine(rx(), rng.int(1, H - 2), 4, true); break;
-    case "farm": building(6, 4); fenceLine(rx(3, 6), rng.int(1, 3), 8, true); fenceLine(rx(3, 6), rng.int(9, 11), 8, true); scatter("hay", 6); break;
-    case "gas": building(4, 3); scatter("pump", 3, 6, 11); scatter("car", 2); break;
+    case "town": building(5, 4); building(4, 4); scatter("car", 3); fenceLine(rx(), rng.int(1, H - 2), X(4), true); break;
+    case "farm": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 6); break;
+    case "gas": building(4, 3); scatter("pump", 3, X(6), X(11)); scatter("car", 2); break;
     case "mall": building(8, 5); scatter("car", 6); break;
     case "hospital": case "univ": case "factory": building(7, 5); scatter("crate", 4); scatter("car", 2); break;
     case "police": building(5, 4); scatter("car", 4); scatter("crate", 2); break;
-    case "military": building(5, 4); fenceLine(rx(5, 7), rng.int(1, 4), 6, true, "sandbag"); fenceLine(rx(5, 7), rng.int(8, 11), 6, true, "sandbag"); scatter("truck", 2); scatter("crate", 3); break;
-    case "prison": building(6, 5); fenceLine(5, 0, 9, false); fenceLine(12, 2, 9, false); break;
+    case "military": building(5, 4); fenceLine(rx(X(5), X(7)), rng.int(1, Y(4)), X(6), true, "sandbag"); fenceLine(rx(X(5), X(7)), rng.int(Y(8), Y(11)), X(6), true, "sandbag"); scatter("truck", 2); scatter("crate", 3); break;
+    case "prison": building(6, 5); fenceLine(X(5), 0, Y(9), false); fenceLine(X(12), Y(2), Y(9), false); break;
     case "airport": scatter("truck", 3); scatter("crate", 4); scatter("car", 2); break;
     case "dam": for (let x = 0; x < W; x++) if (free(x, 0)) put(x, 0, "water"); building(5, 3); break;
     case "quarry": scatter("boulder", 6); scatter("rock", 8); for (const c of cells) if (c.f === floor) c.f = "dirt"; break;
     // Map site types (mapgen.js): big city blocks, small shops, garages, farms, cabins, open-air sites.
     case "apartments": case "office": case "supermarket": case "school": case "warehouse": case "hardware": building(7, 5); scatter("car", 3); scatter("crate", 3); break;
     case "pharmacy": case "gunstore": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
-      building(5, 4); building(4, 3); scatter("car", 2); fenceLine(rx(), rng.int(1, H - 2), 4, true); break;
+      building(5, 4); building(4, 3); scatter("car", 2); fenceLine(rx(), rng.int(1, H - 2), X(4), true); break;
     case "autoshop": case "firestation": case "truckstop": building(5, 4); scatter("truck", 2); scatter("car", 3); scatter("crate", 2); break;
-    case "ranch": case "barn": building(6, 4); fenceLine(rx(3, 6), rng.int(1, 3), 8, true); fenceLine(rx(3, 6), rng.int(9, 11), 8, true); scatter("hay", 5); break;
+    case "ranch": case "barn": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 5); break;
     case "cabin": case "lodge": case "ranger": building(4, 3); scatter("crate", 2); break;
     case "campground": case "crashsite": scatter("crate", 4); scatter(type === "crashsite" ? "truck" : "car", 2); break;
-    case "radiotower": building(3, 3); fenceLine(rx(4, 8), rng.int(2, 10), 6, true); scatter("crate", 2); break;
+    case "radiotower": building(3, 3); fenceLine(rx(X(4), X(8)), rng.int(Y(2), Y(10)), X(6), true); scatter("crate", 2); break;
     default: break;
   }
+  // A bigger map has room for a few more buildings around a site that has them (a shed, a house, an outbuilding).
+  const sited = built;
+  for (let i = 0; i < Math.round(sited * (area - 1) * 0.5); i++) building(rng.int(4, 5), rng.int(3, 4));
   switch (t.terrain) {
     case "forest": scatter("tree", 30); scatter("rock", 5); edgeCover("tree", 3); break;
     case "hills": scatter("rock", 14); scatter("boulder", 5); edgeCover("rock", 3); break;
     case "mountain": scatter("boulder", 12); scatter("rock", 10); edgeCover("boulder", 2); break;
-    case "suburb": building(5, 4); building(4, 3); fenceLine(rx(), rng.int(0, H - 1), 5, rng.chance(0.5)); scatter("car", 3); scatter("tree", 5); edgeCover("car", 1); edgeCover("tree", 2); break;
-    case "city": building(6, 4); building(5, 4); building(4, 3); scatter("car", 4); scatter("truck", 2); scatter("crate", 4); edgeCover("crate", 2); break;
+    case "suburb": building(5, 4); building(4, 3); if (area > 1.6) building(5, 4); fenceLine(rx(), rng.int(0, H - 1), X(5), rng.chance(0.5)); scatter("car", 3); scatter("tree", 5); edgeCover("car", 1); edgeCover("tree", 2); break;
+    case "city": building(6, 4); building(5, 4); building(4, 3); if (area > 1.6) { building(6, 5); building(4, 4); } scatter("car", 4); scatter("truck", 2); scatter("crate", 4); edgeCover("crate", 2); break;
     default: scatter("rock", 5); scatter("tree", 6); edgeCover("rock", 2); edgeCover("tree", 1); break;
   }
   if (type === "farm" || type === "ranch") for (const c of cells) if (c.f === "grass") c.f = "field";
@@ -859,7 +881,7 @@ const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2)
 export function createBattle(state, setup) {
   setup.relAim = friendAim(state, combatants(state, setup), setup); // relations.js: aim per survivor id
   if (setup.mode === "raid") return createRaid(state, setup);
-  W = MAP_W; H = MAP_H;
+  [W, H] = battleSize(state, setup);
   const rng = state.rng;
   const tileId = tileIdOf(setup);
   const tile = state.tiles[tileId];
@@ -900,7 +922,8 @@ export function createBattle(state, setup) {
   // Player side.
   const people = combatants(state, setup).slice().sort((a, c) => combatPower(c) - combatPower(a)).slice(0, MAX_PLAYERS);
   const mid = H / 2;
-  const pcells = pickCells(people.length, (x) => x <= 3, (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
+  const sc = (x) => Math.round((x * W) / MAP_W); // deploy columns, drawn for an 18-wide map, scaled to this one
+  const pcells = pickCells(people.length, (x) => x <= sc(3), (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
   people.forEach((s, i) => {
     const u = playerUnit(b, s);
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
@@ -919,7 +942,7 @@ export function createBattle(state, setup) {
   if (setup.ambush === "player") {
     // Unaware and clustered around a couple of spots.
     const nPods = Math.max(1, Math.min(3, Math.ceil(count / 4)));
-    pods = pickCells(nPods, (x) => x >= 9 && x <= W - 4, () => rng.next() * 3);
+    pods = pickCells(nPods, (x) => x >= sc(9) && x <= W - 4, () => rng.next() * 3);
   }
   const flankTop = pc[1] >= mid; // flankers come from the side farther from your people
   let zn = 0, hn = 0;
@@ -936,12 +959,12 @@ export function createBattle(state, setup) {
       c = pickCells(1, (x, y) => dist(x, y, pod[0], pod[1]) <= 3.2, (x, y) => -dist(x, y, pod[0], pod[1]) + coverScore(x, y) * 0.5)[0];
     } else if (setup.ambush === "enemy") {
       if (u.kind === "zombie") c = pickCells(1, (x, y) => { const d = dist(x, y, pc[0], pc[1]); return d >= 3.5 && d <= 7 && x > 1; }, () => 0)[0];
-      else if (i % 2) c = pickCells(1, (x, y) => x >= 4 && x <= 9 && (flankTop ? y <= 2 : y >= H - 3), (x, y) => coverScore(x, y))[0];
-      else c = pickCells(1, (x) => x >= W - 6, (x, y) => coverScore(x, y))[0];
+      else if (i % 2) c = pickCells(1, (x, y) => x >= sc(4) && x <= sc(9) && (flankTop ? y <= 2 : y >= H - 3), (x, y) => coverScore(x, y))[0];
+      else c = pickCells(1, (x) => x >= sc(12), (x, y) => coverScore(x, y))[0];
     } else {
-      c = pickCells(1, (x) => x >= W - 5, (x, y) => (u.kind === "zombie" ? 0 : coverScore(x, y)))[0];
+      c = pickCells(1, (x) => x >= W - sc(5), (x, y) => (u.kind === "zombie" ? 0 : coverScore(x, y)))[0];
     }
-    c = c || pickCells(1, (x) => x >= 6, (x) => x)[0];
+    c = c || pickCells(1, (x) => x >= sc(6), (x) => x)[0];
     if (!c) return;
     u.x = c[0]; u.y = c[1];
     if (e.factionId != null && u.kind === "human") u.factionId = e.factionId; // prisoners.js: whose people they are
@@ -2034,7 +2057,7 @@ export function closeCombat(state, { take = true } = {}) {
 // zones. A vehicle you bring is parked in its own zone: extract there to keep it.
 // ======================================================================================
 
-export const RAID_W = 28, RAID_H = 18;
+export const RAID_W = 34, RAID_H = 22; // was 28 × 18 (the terrain scattered over it scales with the area)
 export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
 
 // Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
@@ -2228,7 +2251,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
   }
 
   // Terrain cover.
-  const scatter = (k, n) => { for (let i = 0; i < n; i++) { const x = rng.int(1, W - 2), y = rng.int(0, H - 1); if (free(x, y)) put(x, y, k); } };
+  const scatter = (k, n) => { for (let i = 0; i < Math.round((n * W * H) / (28 * 18)); i++) { const x = rng.int(1, W - 2), y = rng.int(0, H - 1); if (free(x, y)) put(x, y, k); } };
   switch (t.terrain) {
     case "forest": scatter("tree", 70); scatter("rock", 10); break;
     case "hills": scatter("rock", 30); scatter("boulder", 12); scatter("tree", 10); break;

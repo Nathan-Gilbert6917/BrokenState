@@ -20,13 +20,14 @@ import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
 import {
   createBattle, startCombat, autoPlayerTurn, runEnemyPhase, closeCombat, combatants, registerCombatHandler, registerBattleLayout, endBattleNow,
+  registerBattleSize, MAP_W, MAP_H,
 } from "./combat.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { ensureHives, zombieToughness } from "./hives.js";
 import { BOSS_NAMES, ZTYPES } from "./hiveconst.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { raidDamage } from "./breakdowns.js";
-import { defensibleCount } from "./interior.js";
+import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
 
 // A hive's special dead at the walls (hivetech.js, numbers in hiveconst.js ZTYPES): each one presses the walls by
@@ -500,6 +501,13 @@ export function placeUnitRight(b, ctx, u, minX) {
 // The base's battle map (deploy.js): the wall line with its gate and breaches, barricades, the trench and spike
 // pits, watchtowers; floodlights light the approach; the attack comes from the side the attackers came from, and
 // with setup.deploy the player places the defenders first.
+// The wall map is 18 columns deep and as long as the base's yard map is tall, less 3 (13 rows for the usual 16; a
+// base with more buildings than fit gets a bigger yard and a longer wall: interior.js interiorSize). Without walls the
+// battle opens on the yard map, which sets its own size.
+registerBattleSize("baseDefence", (state, setup) => {
+  const base = state.bases.find((x) => x.id === setup.baseId) || null;
+  return base && count(base, "walls") > 0 ? [MAP_W, wallMapRows(base)] : [MAP_W, MAP_H];
+});
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
