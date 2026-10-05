@@ -25,8 +25,9 @@ import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
   CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
-  say, fx, moveAlong, alertPod, notice, distField, damage,
+  say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
+import { BMAP, throwLanding, noiseDamp } from "./buildingmaps.js";
 import { landEffect, blastSpot, BLAST, FIRE } from "./throwables.js";
 import { battleOptic } from "./optics.js";
 
@@ -278,11 +279,20 @@ export function stealthAct(state, b, u, t, act) {
       const key = act.item && have[act.item] ? act.item : THROW_KEYS.find((k) => have[k]);
       if (!key) return "Nothing to throw.";
       const T = THROWABLES[key];
-      const x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
+      let x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
       if (!(x >= 0 && y >= 0 && x < b.w && y < b.h)) return "Throw it where?";
+      // Inside a building (buildingmaps.js) a throw goes through open doorways but not through walls or closed doors:
+      // it drops where it hits.
+      let short = false;
+      if (!T.self && b.raid && b.raid.interior) {
+        const land = throwLanding(b, u.x, u.y, x, y);
+        if (!land) return "No room to throw it that way: a wall or a closed door is right in front.";
+        short = land[0] !== x || land[1] !== y;
+        [x, y] = land;
+      }
       const d = dist(u.x, u.y, x, y);
       if (!T.self && d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
-      if (!T.self && d < 2) return "Throw it further away.";
+      if (!T.self && d < 2 && !short) return "Throw it further away.";
       if (!T.keep && !takeThrowable(state, b, u, key)) return "Nothing to throw.";
       u.ap -= 1;
       u.hunker = false;
@@ -296,7 +306,7 @@ export function stealthAct(state, b, u, t, act) {
       if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
       const extra = T.fx ? landEffect(b, u, T, x, y) : "";
       const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : " Nothing seems to notice.") : "";
-      say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, n || extra ? "good" : "info");
+      say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}${short ? "; it hits a wall and drops short" : ""}.${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, n || extra ? "good" : "info");
       return "";
     }
     case "drag": {
@@ -348,17 +358,31 @@ export function stealthTurn(b) {
   }
 }
 
-// Unaware enemies within earshot of a lure go to look. Returns how many.
+// Unaware enemies within earshot of a lure go to look. Returns how many. Inside a building (buildingmaps.js) walls and
+// closed doors muffle the noise (each one between counts as BMAP.WALL_DAMP tiles more), and the dead already after
+// you turn to the noise too unless one of your people is close and in their sight (BMAP.DIVERT_NEAR): break off,
+// shut a door and throw something, and they go.
 function pull(b, lure) {
   let n = 0;
+  const inside = !!(b.raid && b.raid.interior);
   for (const e of b.units) {
-    if (e.side !== "enemy" || e.aware || !active(e) || e.reinforcement) continue;
-    if (dist(e.x, e.y, lure.x, lure.y) > lure.radius) continue;
+    if (e.side !== "enemy" || !active(e)) continue;
+    if (e.aware && !(inside && lure.divert !== false && e.kind === "zombie" && divertable(b, e))) continue;
+    if (e.reinforcement && !inside) continue;
+    const d = dist(e.x, e.y, lure.x, lure.y) + (inside ? noiseDamp(b, e.x, e.y, lure.x, lure.y) : 0);
+    if (d > lure.radius) continue;
+    if (e.aware) { e.aware = false; e.diverted = true; }
     e.investigate = { x: lure.x, y: lure.y, turns: STEALTH.INVESTIGATE_TURNS, key: lure.key };
     n++;
   }
   return n;
 }
+// A sound somewhere (a door being battered, buildingmaps.js): the unaware within earshot come to look (the dead already
+// after someone keep at it).
+export function noiseAt(b, x, y, radius, key = "noise") {
+  return pull(b, { x, y, radius, key, turns: 1, divert: false });
+}
+const divertable = (b, e) => !b.units.some((p) => p.side === "player" && active(p) && dist(p.x, p.y, e.x, e.y) <= BMAP.DIVERT_NEAR && los(b, e.x, e.y, p.x, p.y));
 
 // The AI of an unaware enemy (combat.js aiUnit): bodies first, then an investigation. Returns true when the turn
 // was used up; false lets the usual behaviour run (it may have just become aware).
@@ -377,7 +401,9 @@ function investigate(b, u) {
     if (inv.turns <= 0) { delete u.investigate; u.wp = null; }
   } else {
     const r = reachable(b, u, u.kind === "zombie" ? 3 : u.mob);
-    const field = distField(b, [[inv.x, inv.y]]);
+    // Inside a building the dead find their way round the walls and batter the closed doors on it (buildingmaps.js).
+    const inside = !!(b.raid && b.raid.interior);
+    const field = distField(b, [[inv.x, inv.y]], inside && u.kind === "zombie" ? u : null);
     let best = -1;
     for (let i = 0; i < b.w * b.h; i++) {
       if (!isFinite(r.dist[i]) || !isFinite(field[i])) continue;
@@ -385,6 +411,7 @@ function investigate(b, u) {
     }
     if (best < 0 || !isFinite(field[best])) delete u.investigate;
     else if (r.dist[best] > 0) moveAlong(b, u, pathTo(r, best % b.w, (best / b.w) | 0));
+    else if (inside && u.kind === "zombie") { const door = siegeTarget(b, u, field); if (door) bash(b, u, door[0], door[1]); }
     u.face = [sign(inv.x - u.x), sign(inv.y - u.y)];
   }
   notice(b, u);

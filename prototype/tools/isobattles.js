@@ -69,6 +69,9 @@ export function battles(seed = 42, only = null) {
     me.slice(0, 2).forEach((u, i) => { if (inside[i * 2]) { u.x = inside[i * 2][0]; u.y = inside[i * 2][1]; } });
     b.cells[fr.y * b.w + fr.x].k = "odoor";
     b.losCache.fill(0);
+    // One of them peeks deeper in (the peeked cells are drawn tinted).
+    const deep = inside[Math.min(inside.length - 1, 12)];
+    if (deep) b.peeks = [{ turn: b.turn, unit: me[0].id, x: deep[0], y: deep[1], dx: deep[0], dy: deep[1] + 1, r: 8 }];
     return b;
   });
   add("hive", (st) => field(st, fakeTile(st, "forest", null), { kind: "zombies", count: 20, power: 4, types: { runner: 3, brute: 2, spitter: 2, screamer: 1, crawler: 3 }, name: "the brood" }, { layout: "hive" }));

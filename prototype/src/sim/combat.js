@@ -46,7 +46,7 @@ import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
-import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP } from "./buildingmaps.js";
+import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -351,7 +351,9 @@ export const CELL = {
   // Building interiors (buildingmaps.js): a closed door blocks sight until someone walks through it (moveAlong opens
   // it: odoor; a roller door is loud to haul up), tall shelving blocks sight (sneak down the aisles), tables, beds and
   // cell bars are half cover you see over or through.
-  idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door" },
+  // A closed door is barred to the dead (they batter it: its hit points) and to people while someone braces it;
+  // people otherwise open it (doorOpens), which ends their move.
+  idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door", bar: true },
   odoor:     { walk: true,  cover: 0, los: false, name: "Open door" },
   rack:      { walk: false, cover: 2, los: true,  name: "Shelving" },
   table:     { walk: false, cover: 1, los: false, name: "Table" },
@@ -439,6 +441,14 @@ const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off;
 export const heightAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? CELL[c.k].h ?? 0; };
 const hAt = (b, x, y) => { const c = b.cells[idx(x, y)]; return c.h ?? CELL[c.k].h ?? 0; };
 export const barredCell = (c) => !!(c.bar || CELL[c.k].bar) && !(c.hp <= 0);
+// A building's closed door (buildingmaps.js): people open it unless someone braces it from the other side; the dead
+// never do (they batter it down). Is someone bracing this door cell?
+export function doorHeld(b, c) {
+  if (c.held == null) return false;
+  const h = b.units.find((o) => o.id === c.held);
+  return !!(h && active(h) && h.brace && b.cells[h.brace[1] * b.w + h.brace[0]] === c);
+}
+const doorOpens = (b, u, c) => c.k === "idoor" && !!u && u.kind === "human" && !doorHeld(b, c);
 const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && u.x === x && u.y === y);
@@ -720,7 +730,7 @@ export function reachable(b, u, maxCost) {
       if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
-      if (foe && barredCell(b.cells[j])) continue;
+      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j])) continue;
       const climb = climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
       const nd = d[cur] + (diag ? 1.5 : 1) + climb;
@@ -776,7 +786,7 @@ export function distField(b, sources, walker = null) {
       const climb = climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
-      const bash = siege && (breakable(c) && (!CELL[c.k].walk || barredCell(c))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+      const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
       const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash;
       if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; }
     }
@@ -830,7 +840,7 @@ export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && (u.side !== "play
 export function playerSees(b, t) {
   bindDims(b);
   if (t.off) return false;
-  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t)));
+  return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t))) || (!!b.peeks && peekSees(b, t.x, t.y));
 }
 
 // ---------- fog of war ----------
@@ -843,6 +853,7 @@ export function playerVision(b) {
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     for (const e of eyes) if ((e.x === x && e.y === y) || canSeeAt(b, e, x, y)) { vis[y * W + x] = 1; break; }
+    if (!vis[y * W + x] && b.peeks && peekSees(b, x, y)) vis[y * W + x] = 2; // a peek through a door this turn (buildingmaps.js)
   }
   return vis;
 }
@@ -1109,6 +1120,7 @@ function detect(b, mover) {
 export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
+  if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;
@@ -1118,7 +1130,8 @@ export function moveAlong(b, u, path) {
     u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
-    if (b.cells[idx(x, y)].k === "idoor") openDoor(b, x, y, u); // a building's closed door swings open (buildingmaps.js)
+    // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
+    const stopAtDoor = b.cells[idx(x, y)].k === "idoor" && openDoor(b, x, y, u) && u.side !== "player";
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
@@ -1141,7 +1154,7 @@ export function moveAlong(b, u, path) {
       fire(b, o, u, { reaction: true });
     }
     if (u.side === "player" && active(u)) detect(b, u);
-    if (!active(u)) break;
+    if (!active(u) || stopAtDoor) break;
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
 }
@@ -1334,6 +1347,12 @@ export function combatAct(state, act) {
     case "open": { // locks.js: a locked container or door next to the unit, by key, lockpicks or force
       if (!b.raid) return "Nothing to open.";
       const err = openLock(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      break;
+    }
+    case "close": case "brace": case "peek": { // buildingmaps.js: a building's doors (close one, brace one, peek through one)
+      if (!b.raid) return "No doors here.";
+      const err = doorAct(state, b, u, act, { say, alertNear, fx });
       if (err) return err;
       break;
     }
@@ -1646,7 +1665,7 @@ function aiMelee(b, u) {
 // ---------- battering through (base battles) ----------
 // An attacker with nowhere closer to go batters a barred door, the gate, a wall section or a window next to it that
 // lies on its siege field's way to the defenders (distField with a walker). Returns [x, y] or null.
-function siegeTarget(b, u, field) {
+export function siegeTarget(b, u, field) {
   if (u.side !== "enemy") return null;
   field = field || distField(b, foesOf(b, u).map((f) => [f.x, f.y]), u);
   const here = field[idx(u.x, u.y)];
@@ -1671,8 +1690,11 @@ export function bash(b, u, x, y) {
   if (!breakable(c)) return 0;
   const w = WEAPONS[u.weapon];
   const base = (w && w.dmg) || BASH;
-  const dmg = Math.max(1, Math.round(b.rng.int(base[0], base[1]) * (u.dmgMult || 1) * siegeRule(u).bash));
+  // A building's door someone braces from the other side gives way at half the rate (buildingmaps.js).
+  const held = (c.k === "idoor" || c.k === "door") && doorHeld(b, c) ? BMAP.BRACE : 1;
+  const dmg = Math.max(1, Math.round(b.rng.int(base[0], base[1]) * (u.dmgMult || 1) * siegeRule(u).bash * held));
   const was = c.hp;
+  if (b.raid && (c.k === "idoor" || c.k === "door")) doorNoise(b, x, y); // the battering carries: Heat, the dead nearby come too
   c.hp = Math.max(0, c.hp - dmg);
   u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
   const name = structureName(c).toLowerCase();
@@ -1695,7 +1717,7 @@ export function openDoor(b, x, y, u = null) {
       if (inside(nx, ny) && b.cells[idx(nx, ny)].k === "idoor" && b.cells[idx(nx, ny)].roll && !list.some(([px, py]) => px === nx && py === ny)) list.push([nx, ny]);
     }
   }
-  for (const [px, py] of list) { const d = b.cells[idx(px, py)]; d.k = "odoor"; delete d.t; }
+  for (const [px, py] of list) { const d = b.cells[idx(px, py)]; d.k = "odoor"; if (d.t) d.tOpen = d.t; delete d.t; }
   b.losCache.fill(0);
   if (c.roll && b.raid) {
     b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
@@ -1707,7 +1729,7 @@ export function openDoor(b, x, y, u = null) {
 }
 
 export function structureName(c) {
-  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" ? "Door" : c.k === "window" ? "Window" : CELL[c.k].name;
+  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
 }
 
 // A structure gives way: a wall section becomes a breach (and the walkway behind it comes down), the gate hangs open,
@@ -1726,6 +1748,7 @@ export function breakCell(b, x, y, by = null) {
     }
   } else if (c.k === "gate") c.bar = false;
   else if (c.k === "bdoor") c.k = "doorway";
+  else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
   else if (c.k === "window") c.k = "smashed";
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
@@ -2429,6 +2452,7 @@ export function createRaid(state, setup) {
       areas: map.areas, containers: map.containers, zones: map.zones,
       vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: 12,
       found: {}, foundGear: [], richness: Math.max(0.35, Math.min(1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
       doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
@@ -2617,6 +2641,7 @@ function searchBox(state, b, u, box) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness;
+  const reward = box.kind === "body" ? 1 : R.reward ?? 1; // buildingmaps.js rewardMult: city sites pay more, the countryside less
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
@@ -2634,9 +2659,9 @@ function searchBox(state, b, u, box) {
       const def = AREAS[R.areas[box.area].type];
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
-        sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
+        sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(newItem(key, 1));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
@@ -2761,6 +2786,9 @@ function autoRaidTurn(state) {
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
+      // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
+      const esc = leave && R.interior ? botEscape(state, b, u, R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
+      if (esc && !combatAct(state, esc)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       const adj = foes.find((f) => adjacent(u, f));

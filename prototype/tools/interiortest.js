@@ -12,7 +12,10 @@ import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
   createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, AREAS, AREA_SETS, los, active, registerOccupantSide, chooseBuilding,
+  playerVision, playerSees, enemyUnit, endPlayerTurn, survivorById,
 } from "../src/sim/combat.js";
+import { noiseAt } from "../src/sim/stealth.js";
+import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
 import { Rng } from "../src/sim/rng.js";
@@ -283,6 +286,119 @@ console.log("Doors, roller doors and windows");
     }
     check(done, "found a window to climb");
     void active;
+  }
+}
+
+// ======================================================================================
+// The lab: an interior raid's map wiped to two rooms split by a wall (column 12) with one door at (12, 6); one of your
+// people, the dead and guards placed by hand; no waves.
+function lab(opts = {}) {
+  const r = raidAt(["house", "pharmacy", "police"], { groups: [], seed: 4000 + (opts.seed || 0) });
+  const { st, b } = r;
+  const W = b.w, H = b.h;
+  b.cells = b.cells.map(() => ({ k: "open", f: "floor", fl: "tile" }));
+  for (let y = 0; y < H; y++) b.cells[y * W + 12] = { k: "wall", f: "floor" };
+  b.cells[6 * W + 12] = { k: opts.open ? "odoor" : "idoor", f: "floor", hp: 30, mhp: 30 };
+  b.reach = new Uint8Array(W * H).fill(1);
+  b.losCache.fill(0);
+  b.raid.containers = []; b.raid.doors = []; b.raid.spawnCap = 0; b.raid.heat = 0;
+  const me = b.units.filter((u) => u.side === "player");
+  const u = me[0];
+  for (const o of me.slice(1)) { o.left = true; o.x = 0; o.y = H - 1; }
+  b.units = b.units.filter((x) => x.side === "player");
+  u.x = 11; u.y = 6; u.ap = 2; u.hp = u.maxHp = 9999; // a punching bag: the tests count turns, not wounds
+  b.phase = "player"; b.turn = 1; b.peeks = [];
+  const add = (kind, x, y, aware = true) => { const e = enemyUnit(b, st.rng, kind, 2, b.units.length + 1); e.x = x; e.y = y; e.aware = aware; e.pod = b.units.length + 10; e.home = [x, y]; if (kind !== "zombies") e.hp = e.maxHp = 9999; b.units.push(e); return e; };
+  const door = () => b.cells[6 * W + 12];
+  const turn = () => { for (const p of b.units) if (p.side === "player") p.ap = 0; endPlayerTurn(st); runEnemyPhase(st); };
+  return { st, b, u, add, door, turn, W };
+}
+
+console.log("Peeking, closing and bracing doors, the dead at a door, noise indoors (a two-room lab)");
+{
+  // Peek: see the next room this turn without moving or spending an action.
+  {
+    const { st, b, u, add, W } = lab();
+    const z = add("zombies", 16, 6, false);
+    const before = playerVision(b)[6 * W + 16];
+    const err = combatAct(st, { type: "peek", unit: u.id });
+    const vis = playerVision(b);
+    check(!err && !before && vis[6 * W + 16] && vis[2 * W + 15] && playerSees(b, z) && u.x === 11 && u.y === 6 && u.ap === 2, `a peek through a closed door shows the room beyond and who is in it, without moving or an action (${err || "ok"})`);
+    check(combatAct(st, { type: "peek", unit: u.id }) !== "", "once a turn per unit");
+    b.turn++;
+    check(!playerVision(b)[6 * W + 16], "the next turn the room is dark again");
+  }
+  // Close a door: sight is cut.
+  {
+    const { st, b, u, door } = lab({ open: true });
+    const saw = los(b, 11, 6, 15, 6);
+    const err = combatAct(st, { type: "close", unit: u.id });
+    check(saw && !err && door().k === "idoor" && !los(b, 11, 6, 15, 6) && u.ap === 1, `closing an open door (1 action, quiet) blocks sight again (${err || "ok"})`);
+  }
+  // The dead batter a closed door: turns by its strength; two together faster; bracing it slows them.
+  const batter = (n, brace) => {
+    const { st, b, u, add, door } = lab({ seed: n + (brace ? 10 : 0) });
+    for (let i = 0; i < n; i++) add("zombies", 13 + i, 6 + (i ? 1 : 0));
+    if (brace) combatAct(st, { type: "brace", unit: u.id });
+    let t = 0;
+    while (door().k === "idoor" && t < 30) { turn(st, b); t++; }
+    return { t, k: door().k, heat: b.raid.heat, log: b.log.map((l) => l.text).join("|") };
+    function turn() { for (const p of b.units) if (p.side === "player") p.ap = 0; endPlayerTurn(st); runEnemyPhase(st); }
+  };
+  const one = batter(1), two = batter(2), held = batter(1, true);
+  check(one.k === "doorway" && one.t >= 2 && one.heat > 0, `one of the dead batters a 30-point door down in ${one.t} turns, noisily (Heat ${Math.round(one.heat)}); it stays broken`);
+  check(two.t <= one.t, `two together take ${two.t} turns`);
+  check(held.t > one.t, `braced from this side it holds ${held.t} turns`);
+  // A closed door behind someone running buys turns.
+  const chase = (open) => {
+    const L = lab({ open, seed: 30 });
+    L.u.x = 4; L.u.y = 6;
+    L.add("zombies", 17, 6);
+    let t = 0;
+    while (!L.b.units.some((e) => e.side === "enemy" && Math.max(Math.abs(e.x - L.u.x), Math.abs(e.y - L.u.y)) <= 1) && t < 30) { L.turn(); t++; }
+    return t;
+  };
+  const tOpen = chase(true), tShut = chase(false);
+  check(tShut >= tOpen + 2, `the dead reach someone behind an open door in ${tOpen} turns, behind a shut one in ${tShut}`);
+  // Humans open doors (an action: they stop in the doorway); a braced door they must break.
+  {
+    const L = lab({ seed: 40 });
+    L.u.x = 4; L.u.y = 6;
+    const g = L.add("raiders", 15, 6);
+    let t = 0;
+    while (L.door().k === "idoor" && t < 6) { L.turn(); t++; }
+    check(L.door().k === "odoor", `a raider opens the closed door (turn ${t})`);
+    const M = lab({ seed: 41 });
+    M.add("raiders", 15, 6);
+    combatAct(M.st, { type: "brace", unit: M.u.id });
+    M.turn();
+    check(M.door().k !== "odoor", `braced, it does not open for them (${M.door().k}, ${M.door().hp}/${M.door().mhp})`);
+    void g;
+  }
+  // Thrown noise indoors: through the doorway into the other room, it pulls the dead there; at a wall it drops short.
+  {
+    const L = lab({ open: true, seed: 50 });
+    L.u.x = 9; L.u.y = 6;
+    const z = L.add("zombies", 7, 7, false);
+    const chaser = L.add("zombies", 4, 5, true);
+    const s = survivorById(L.st, L.u.sid);
+    stow(s, newItem("firecracker"));
+    const err = combatAct(L.st, { type: "throw", unit: L.u.id, item: "firecracker", x: 16, y: 6 });
+    check(!err && z.investigate && z.investigate.x === 16 && !chaser.aware && chaser.investigate, `firecrackers thrown through the doorway into the next room pull the dead to them, even one after you that is not close by (${err || "ok"})`);
+    L.u.x = 1; L.u.y = L.b.h - 2; // slip away out of their sight
+    for (let i = 0; i < 6; i++) L.turn();
+    check(z.x > 12 || chaser.x > 12, `they go into the other room after it (${z.x},${z.y} and ${chaser.x},${chaser.y})`);
+    const M = lab({ seed: 51 });
+    M.u.x = 8; M.u.y = 3;
+    stow(survivorById(M.st, M.u.sid), newItem("bottle"));
+    combatAct(M.st, { type: "throw", unit: M.u.id, item: "bottle", x: 15, y: 3 });
+    const lure = (M.b.lures || [])[0];
+    check(lure && lure.x <= 11, `thrown at a wall it drops short (landed ${lure && `${lure.x},${lure.y}`})`);
+    // Through a wall a noise carries less far.
+    const N = lab({ seed: 52 });
+    const far = N.add("zombies", 18, 6, false);
+    noiseAt(N.b, 8, 6, 8);
+    check(!far.investigate, "a noise 10 tiles off behind a wall and a shut door is not heard (it would be in the open)");
   }
 }
 
