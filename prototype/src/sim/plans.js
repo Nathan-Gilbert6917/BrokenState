@@ -128,7 +128,8 @@ export const stepLabel = (state, s) => {
 // pace and rations from its last weighing, load.js); otherwise the pace comes from the crew and what it packs
 // (supplies) with vehicle v (an object or id; `vehicle` true = a truck, "bike" = bikes).
 export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null, supplies = {}, v = null }) {
-  const home = baseById(state, homeBaseId || hub(state).id);
+  const home = baseById(state, homeBaseId || (hub(state) || {}).id);
+  if (!home) return null; // no base left (conquest.js exiles)
   const members = (memberIds || []).map((id) => survivorById(state, id)).filter(Boolean);
   const pv = p ? null : plannedVehicle(state, vehicle, v, members.length || (memberIds || []).length);
   const pace = p ? partyPace(state, p) : plannedPace(state, { members, supplies, v: pv, stance });
@@ -287,6 +288,7 @@ const foodDays = (state, p) => {
 };
 function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
+  if (!home) return null; // no base left (conquest.js exiles)
   const res = planPath(state, partyTile(p), home.tile, p.vehicle) || planPath(state, partyTile(p), home.tile, false);
   const mode = res && p.vehicle && planPath(state, partyTile(p), home.tile, p.vehicle) ? p.vehicle : false;
   return res ? travelHours(state, res.path, { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode) }).hours : null;

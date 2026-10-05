@@ -27,15 +27,22 @@
 // over land or water (side with one: +6 with it, −8 with the other and −10 between them; or a compromise: a Speech
 // check of 25% + 4% a point + goodwill / 400; it works: +3 with both and +5 between them, it fails: −3 with both).
 //
-// Alliance victory: the coalition (you and its members) controls more than half of the state's land (land tiles
-// within CONTROL_RANGE of one of your bases or a member's base), every group still alive is a member, and no hive
-// stands or is being built (hives.js hivesSecured). world.js checkGameOver ends the run with the coalition's victory.
+// Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members)
+// controls more than half of the state's land and every group still alive is a member. Groups you broke (conquest.js:
+// take their last base) or that collapsed do not count; with none left standing, you alone are the coalition.
+// Land: land tiles within reach of a base: your hub and every base you took from another group STRONGHOLD_RANGE (9),
+// an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale
+// with the square root of the area (Small 7 / 5, Large 11 / 9, Huge 14 / 11), so it takes about as many bases on any
+// map. world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
 import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork } from "./radio.js";
 import { available, need } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
+import { count } from "./buildings.js";
+import { worldScale } from "./worldsize.js";
+import { inviteGoodwill, infamy, lostBases, assaultForce } from "./conquest.js";
 import { reduceHorde } from "./hordes.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, relation, changeRelation, warsOf, enemyIn, warBetween, autoWarTrade } from "./diplomacy.js";
@@ -44,7 +51,7 @@ import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDa
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
   SHARE_HORDES: 12, SHARE_HIVES: 15, SHARE_LAND: 3, RAID_RANGE: 20, RAID_SHARE: 0.15, HORDE_CUT: 0.15,
-  HIVE_RANGE: 15, CONTROL_RANGE: 6, LAND_NEEDED: 0.5, COUNCIL_EVERY: 28, COUNCIL_FIRST: 15,
+  HIVE_RANGE: 15, MEMBER_RELAY: 12, NEIGHBOUR: 8, CONTROL_RANGE: 7, STRONGHOLD_RANGE: 9, WALLED_RANGE: 1, LAND_NEEDED: 0.5, COUNCIL_EVERY: 28, COUNCIL_FIRST: 15,
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -56,7 +63,11 @@ export const isMember = (state, f) => !!f && !!state.alliance && state.alliance.
 export const allianceMembers = (state) => (state.alliance ? state.alliance.members.map((id) => factionById(state, id)).filter((f) => f && f.alive) : []);
 
 // ---------- joining ----------
-const reachable = (state, f) => canRadioGroup(state, f) || state.parties.some((p) => p.owner === "player" && f.bases.includes(partyTile(p)) && (p.phase === "waiting" || p.phase === "engaged"));
+// members' radios carry the invitation), or a base of yours within NEIGHBOUR tiles of theirs.
+// members' radios carry the invitation).
+const reachable = (state, f) => canRadioGroup(state, f) || state.parties.some((p) => p.owner === "player" && f.bases.includes(partyTile(p)) && (p.phase === "waiting" || p.phase === "engaged")) ||
+  allianceMembers(state).some((m) => m !== f && m.bases.some((b) => f.bases.some((x) => state.grid.distance(b, x) <= ALLIANCE.MEMBER_RELAY))) ||
+  state.bases.some((b) => f.bases.some((x) => state.grid.distance(b.tile, x) <= ALLIANCE.NEIGHBOUR)); // a base of yours next door: you talk over the fence
 // The council's vote on a candidate: { yes, no, passes } (no members: no vote).
 export function councilVote(state, f) {
   const ms = allianceMembers(state).filter((m) => m !== f);
@@ -68,9 +79,10 @@ export function inviteProblem(state, f) {
   if (!f || !f.alive) return "They are gone.";
   if (isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (!f.known) return "You have not met them.";
-  if (!reachable(state, f)) return `${f.name} is out of radio reach (or send a team to their gates).`;
+  if (!reachable(state, f)) return `${f.name} is out of radio reach (send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them).`;
   if (attitude(f) === "Hostile") return `${f.name} is hostile.`;
-  if (f.goodwill < ALLIANCE.GOODWILL) return `${f.name} needs goodwill ${ALLIANCE.GOODWILL} (now ${Math.round(f.goodwill)}).`;
+  const want = inviteGoodwill(state, f, ALLIANCE.GOODWILL); // conquest.js: peaceful groups want more from a conqueror
+  if (f.goodwill < want) return `${f.name} needs goodwill ${want}${want > ALLIANCE.GOODWILL ? ` (${ALLIANCE.GOODWILL}, more because of the groups you have conquered)` : ""} (now ${Math.round(f.goodwill)}).`;
   if (!f.pact) return `${f.name} needs a pact with you first.`;
   const foe = allianceMembers(state).find((m) => warBetween(state, m, f));
   if (foe) return `${f.name} is at war with ${foe.name}, a member.`;
@@ -214,7 +226,7 @@ function askToJoin(state) {
 export const nextCouncilDay = (state) => { const d = day(state); const k = Math.max(0, Math.ceil((d - ALLIANCE.COUNCIL_FIRST) / ALLIANCE.COUNCIL_EVERY)); const n = ALLIANCE.COUNCIL_FIRST + k * ALLIANCE.COUNCIL_EVERY; return n < d ? n + ALLIANCE.COUNCIL_EVERY : n; };
 function council(state, ms) {
   const d = day(state);
-  if (!ms.length || d < ALLIANCE.COUNCIL_FIRST || (d - ALLIANCE.COUNCIL_FIRST) % ALLIANCE.COUNCIL_EVERY !== 0) return;
+  if (!ms.length || !hub(state) || d < ALLIANCE.COUNCIL_FIRST || (d - ALLIANCE.COUNCIL_FIRST) % ALLIANCE.COUNCIL_EVERY !== 0) return;
   const A = ensureAlliance(state);
   if (A.lastCouncil === d) return;
   A.lastCouncil = d;
@@ -314,13 +326,22 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
 }
 
 // ---------- victory ----------
-// Land the coalition controls: land tiles within CONTROL_RANGE of your bases or a member's base.
+// How far a base's land reaches (see the header), scaled by the world size.
+export function controlRadius(state, kind, walled = false) {
+  const r = kind === "stronghold" ? ALLIANCE.STRONGHOLD_RANGE : ALLIANCE.CONTROL_RANGE + (walled ? ALLIANCE.WALLED_RANGE : 0);
+  return Math.max(3, Math.round(r * Math.sqrt(worldScale(state))));
+}
+export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" || b.captured ? "stronghold" : "outpost", count(b, "walls") > 0);
+// Every centre of coalition land with its radius: your bases and the members' bases.
+export function landCentres(state) {
+  return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...allianceMembers(state).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
+}
+// Land the coalition controls: land tiles within reach of your bases or a member's base.
 export function controlledLand(state) {
   const g = state.grid;
-  const centres = [...state.bases.map((b) => b.tile), ...allianceMembers(state).flatMap((f) => f.bases)];
   let land = 0, held = 0;
   const mark = new Uint8Array(state.tiles.length);
-  for (const c of centres) for (const id of g.within(c, ALLIANCE.CONTROL_RANGE)) mark[id] = 1;
+  for (const c of landCentres(state)) for (const id of g.within(c.tile, c.r)) mark[id] = 1;
   for (const t of state.tiles) {
     if (t.terrain === "water") continue;
     land++;
@@ -328,7 +349,9 @@ export function controlledLand(state) {
   }
   return { held, land, pct: land ? held / land : 0 };
 }
-// Progress toward both victories, for the Goals panel and the tools.
+// Progress toward both victories, for the Goals panel and the tools. alliance.outsiders: each group still alive and
+// outside the coalition with what to do about it: "invite" (it could join now), "court" (not yet: why), or
+// "defeat" (hostile: take its bases), and the fewest defenders at one of its bases.
 export function goalsProgress(state) {
   const st = state.hives ? hiveStats(state) : { destroyed: 0 };
   const hivesLeft = (state.hives || []).length;
@@ -339,15 +362,24 @@ export function goalsProgress(state) {
   const land = controlledLand(state);
   const hivesOk = hivesSecured(state);
   const landOk = land.pct > ALLIANCE.LAND_NEEDED;
-  const allIn = ms.length > 0 && groups.every((f) => isMember(state, f));
+  const allIn = groups.every((f) => isMember(state, f));
+  const outsiders = groups.filter((f) => !isMember(state, f)).map((f) => {
+    const why = inviteProblem(state, f);
+    const hostile = attitude(f) === "Hostile";
+    const smallest = f.bases.length ? Math.min(...f.bases.map((t) => assaultForce(state, f, t).count)) : 0;
+    return { id: f.id, name: f.known ? f.name : "a group you have not met", known: f.known, bases: f.bases.length, pop: f.pop, why,
+      advice: !why ? "invite" : !f.known ? "find" : hostile ? "defeat" : "court", hostile, defenders: smallest };
+  });
   return {
     hives: { destroyed: st.destroyed || 0, left: hivesLeft, building, sites, ok: hivesOk },
-    alliance: { land, landOk, members: ms.length, groups: groups.length, outside: groups.filter((f) => !isMember(state, f)).map((f) => f.id), allIn, hivesLeft, hivesOk, ok: landOk && allIn && hivesOk },
+    alliance: { land, landOk, members: ms.length, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk,
+      infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && allIn },
   };
 }
 export function allianceVictory(state) {
-  if (!state.alliance || !state.alliance.members.length || !alive(state).length) return false;
-  return goalsProgress(state).alliance.ok;
+  if (!alive(state).length || !state.bases.length) return false;
+  if (!state.factions.every((f) => !f.alive || isMember(state, f))) return false; // cheap check first
+  return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
 }
 
 // ---------- the AI governor (autopilot.js autopilotDaily) ----------

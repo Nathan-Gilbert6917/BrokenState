@@ -270,7 +270,7 @@ function nextStep(state, role, p) {
   if (c.out && c.out.mission === "scavenge" && (p.crewChain || 0) < CHAIN_MAX && teamFit(state, role, p)) {
     const h = hub(state);
     const site = nearbySites(state, { center: partyTile(p), from: partyTile(p), radius: 3, p, exclude: p.plan ? p.plan.searched : [] })
-      .find((s) => state.grid.distance(s.tile, h.tile) <= c.range && !targeted(state, s.tile) && (s.tile === partyTile(p) || planPath(state, partyTile(p), s.tile, p.vehicle)));
+      .find((s) => h && state.grid.distance(s.tile, h.tile) <= c.range && !targeted(state, s.tile) && (s.tile === partyTile(p) || planPath(state, partyTile(p), s.tile, p.vehicle)));
     if (site) {
       p.crewChain = (p.crewChain || 0) + 1;
       startOrder(state, p, { type: "nearby", radius: 3, count: 1, center: partyTile(p) });

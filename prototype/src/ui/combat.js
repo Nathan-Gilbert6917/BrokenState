@@ -787,7 +787,11 @@ export function drawCombat(state, now) {
   ctx.stroke();
 
   // Evac strip.
-  if (b.evacCols) {
+  if (b.evacCols && b.evacMask) {
+    // A base battle's way out, on the side away from the attack (sim/deploy.js).
+    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.evacMask[y * W + x]) ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
+  } else if (b.evacCols) {
     ctx.fillStyle = "rgba(108,196,138,0.16)";
     ctx.fillRect(ox, oy, b.evacCols * cs, H * cs);
     ctx.strokeStyle = "rgba(108,196,138,0.7)";

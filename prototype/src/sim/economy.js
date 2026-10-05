@@ -298,7 +298,7 @@ function baseDaily(state, base) {
 // 5 food on arrival (what the hub has then, never below zero).
 function maybeStranger(state) {
   const h = hub(state);
-  if (!state.rng.chance(0.06)) return;
+  if (!state.rng.chance(0.06) || !h) return; // no base left (conquest.js exiles): nobody to come to
   const s = makeCandidate(state, { quality: 0.85 });
   offerRecruits(state, [s], { source: "stranger", baseId: h.id, title: "A stranger at the gate", intro: `${s.name} has been surviving alone and asks to join ${h.name}.` });
 }
@@ -395,7 +395,7 @@ export function routesDaily(state) {
 export function releaseEscorts(state, r) {
   for (const id of r.escortIds) {
     const s = survivorById(state, id);
-    if (s && s.alive && s.location.kind === "route") s.location = { kind: "base", baseId: hub(state).id };
+    if (s && s.alive && s.location.kind === "route" && hub(state)) s.location = { kind: "base", baseId: hub(state).id };
   }
 }
 

@@ -177,7 +177,7 @@ export function crashCard(state, c, w = { label: c.witness, from: c.from }, dir 
         label: crew.length >= 2 ? `Send a search team (${crew.map((s) => s.name.split(" ")[0]).join(", ")})` : "Send a search team",
         hint: est && est.ok ? `On foot from the hub with ${est.text}: recon the circle, look around until the wreck is found (up to ${CRASH.maxLooks} looks), search it, come home. About ${Math.ceil(est.days)} days.` : (est ? est.why : "Not enough people free at the hub (2 or more, leaving 3 at home)."),
         disabled: () => !(est && est.ok) || c.gone || !searchCrew(state).length,
-        ai: (st) => (est && est.ok && atBase(st, hub(st).id).length >= 6 ? 6 : 0),
+        ai: (st) => (est && est.ok && hub(st) && atBase(st, hub(st).id).length >= 6 ? 6 : 0),
         resolve: (st) => sendSearchTeam(st, c),
       },
     ],
