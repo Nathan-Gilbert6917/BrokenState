@@ -185,6 +185,7 @@ const teamKey = (state, p) => state.parties.indexOf(p);
 // The card for a meeting on this tile, or null. A hostile military's checkpoint is added by conflicts.js itself
 // (returns null then). p.eventHour is set either way.
 export function rollWanderer(state, p, tileId) {
+  if (state.noWanderers) return null; // test switch: nobody on the move is met
   if (p.owner !== "player" || p.kind === "convoy" || p.crewRole != null) return null;
   if (state.bases.some((b) => b.tile === tileId)) return null;
   if (state.wanderers) bump(state, "road-tiles"); // counted once someone has been met (no state at all before that)
@@ -230,7 +231,7 @@ export function rollWanderer(state, p, tileId) {
 // gone from the site (siteMet) for the rest of the window.
 export function siteRoll(state, tileId) {
   const t = state.tiles[tileId];
-  if (!t || t.terrain === "water" || t.hive) return [];
+  if (state.noWanderers || !t || t.terrain === "water" || t.hive) return []; // noWanderers: test switch
   if (state.bases.some((b) => b.tile === tileId) || state.factions.some((f) => f.alive && f.bases.includes(tileId))) return [];
   const key = `${tileId}:${Math.floor(state.hour / W.SITE_WINDOW)}`;
   const ws = state.wanderers;

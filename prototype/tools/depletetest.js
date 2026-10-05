@@ -252,7 +252,9 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   }
   // factions.js / conquest.js: the ruins of a base burned in a raid get a little salvage (a raze, never a regrowth).
   // hardcore-groups.js: the military base overrun in hardcore leaves its armory behind (once, when it falls).
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js"];
+  // hardcore-loot.js: a hardcore world starts with twice the loot (set once when the world is made) and the surplus only
+  // fades. citycrawl.js: a crawl's searches lower the city tile's loot (Math.max(floor, loot - ...)), like a raid.
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");

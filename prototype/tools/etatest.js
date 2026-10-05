@@ -46,6 +46,7 @@ function runUntil(state, p, done, stats, strict = true) {
   for (let n = 0; n < 24 * 40; n++) {
     state.hordes.length = 0;
     p.lastConflict = state.hour; // road conflicts off for this check
+    state.noWanderers = true; // ... and the people met on the road (wanderers.js)
     tickHour(state);
     resolveCards(state, p, stats);
     if (state.combat) state.combat = null;

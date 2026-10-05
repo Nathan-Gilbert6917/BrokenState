@@ -25,7 +25,8 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(`\n${t}`);
 // erasOff: the eras' clocks (eras.js: no victory before year 6, the Accord held a year, a season clear of hives) are
 // tools/eratest.js's; here the victory rules themselves are checked, at the moment their conditions are met.
-const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.noNewGangs = true; st.erasOff = true; return st; };
+// noWanderers: people met on the road (wanderers.js) would stop the teams under test with cards nobody answers here.
+const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.noNewGangs = true; st.erasOff = true; st.noWanderers = true; return st; };
 const pick = (card, re) => card.choices.find((c) => re.test(c.label));
 const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t);
 function nearFree(st, from, lo, hi, avoid = []) {
