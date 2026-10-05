@@ -146,10 +146,15 @@ function resolveCards(state, p, stats) {
     if (c.isOrders) { i++; continue; }
     state.cards.splice(i, 1);
     const before = p.progress;
+    // A meeting on the road (wanderers.js) halts the team until its card is answered (conflicts.js halt): a
+    // road-event delay like a card that costs hours, even though progress is not taken back. Met on the tile the
+    // leg ends on, the team is still "engaged" at the end of that hour and reaches it (or starts its next order)
+    // an hour later than planned. Road conflicts are off here (lastConflict), so a halt is a meeting.
+    const halted = p.phase === "engaged";
     const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     if (ch) ch.resolve(state);
     stats.cards += 1;
-    if (p.progress < before) stats.delay += 1;
+    if (p.progress < before || halted) stats.delay += 1;
   }
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders) state.cards.splice(i, 1);
 }

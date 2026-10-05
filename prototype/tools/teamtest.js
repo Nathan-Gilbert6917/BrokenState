@@ -26,6 +26,10 @@ function mk(seed = SEED, stock = {}) {
   const state = createWorld({ seed, factionCount: 7 });
   state.started = true;
   state.autoCombat = true;
+  // noWanderers: people met on the road (wanderers.js) halt a moving team on a card ("Survivors on the road").
+  // These cases throw event cards away unanswered, so a meeting left the team regrouping where it was met,
+  // short of the shore or the vehicle it was sent to (as in conquertest and etatest).
+  state.noWanderers = true;
   Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100, ...stock });
   return state;
 }

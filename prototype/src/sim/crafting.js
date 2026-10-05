@@ -168,12 +168,12 @@ export function cancelCraft(state, base, id) {
 }
 
 // A job held back this hour (job.held = the hour): work priorities leave the governor's or a steward's water filter
-// queued while the tanks are full enough (work.js holdFilters); the crafters work the jobs behind it.
+// queued while the tanks are full enough and a build is queued (work.js holdFilters); the crafters work the jobs behind it.
 export const craftHeld = (state, job) => job.held != null && state.hour - job.held <= 1;
 // Why a job is not moving (empty string when it is).
 export function craftJobStatus(state, base, job) {
   const r = CRAFTS[job.recipe];
-  if (craftHeld(state, job)) return "Waits: the tanks are full enough (a filter clogs up day by day, needed or not)";
+  if (craftHeld(state, job)) return "Waits: the tanks are full enough and a build is queued (a filter clogs up day by day, needed or not)";
   if (!crafters(state, base).length) return "No crafters. Set someone's role to Craft.";
   if (!meetsNeeds(base, r)) return `Needs ${needsText(r)} here`;
   if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;

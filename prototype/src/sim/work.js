@@ -149,10 +149,10 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A water filter the governor or a steward queued waits while the tanks are three-quarters full (it clogs up day by day, needed or not); the jobs behind it go first.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (it clogs up day by day, needed or not); the jobs behind it go first.",
     open(ctx) {
       const jobs = openCrafts(ctx);
-      if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough" : "the queued crafts need a workshop") : "nothing in the craft queue" };
+      if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough and a build is queued" : "the queued crafts need a workshop") : "nothing in the craft queue" };
       const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
       return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
@@ -289,12 +289,17 @@ const openCrafts = (ctx) => craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] 
 // a filter queued until spare hands or a shortage come along (planRoles); crafted the moment someone with Craft set is
 // free, priorities finished 286 crafts to the governor's 152 and 7% fewer buildings over worktest's 40 runs. A filter
 // already started, or one in the player's own queue, is left alone.
+// Only while something is queued to build: those spare hands are what the governor crafts its filters with. Over
+// worktest's 40 runs 100 of its 158 filters were crafted into tanks ¾ full with nothing queued to build (7 with a build
+// queued); held then too, priorities crafted 114 and 185 crafts in all to its 213 (the held filters also fill the
+// queue, planCrafts queues no gear past 3 jobs). Released with nothing to build: 292 crafts, buildings 1301 to 1323
+// (on 8 rolls 2630 to 2635), food still ahead.
 const FILTER_HOLD = 0.75;
 function holdFilters(state, base) {
   const q = craftQueue(base);
   if (!q.some((j) => j.recipe === "waterfilter")) return;
   const auto = !!state.autopilot || !!(base.steward && base.steward.on && base.steward.areas && base.steward.areas.production !== false);
-  const hold = auto && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base);
+  const hold = auto && base.construction.length > 0 && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base);
   for (const j of q) {
     if (j.recipe !== "waterfilter") continue;
     if (hold && !(j.progress > 0)) j.held = state.hour;

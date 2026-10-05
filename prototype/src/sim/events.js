@@ -381,10 +381,14 @@ export function rollTravelEvent(state, p, tileId) {
   const conflict = rollConflict(state, p, tileId);
   if (conflict) return conflict;
   // People on the move (wanderers.js): survivors, armed strangers, a military squad. Its own dice (hash01): with
-  // nobody met the rest of this roll is unchanged. A hostile squad's checkpoint card is added by conflicts.js.
+  // nobody met the rest of this roll is unchanged. A hostile squad's checkpoint card is added by conflicts.js (which
+  // marks the hour): then nothing else this roll. Only that is checked, not p.eventHour itself: the callers keep their
+  // own one-card-an-hour rule, and a blanket check made every later roll in an hour that already had a card come back
+  // empty (teamtest's 6000 rolls for a "Tempers flare" card all returned nothing).
+  const markedBefore = p.eventHour;
   const met = rollWanderer(state, p, tileId);
   if (met) return guarded(state, p, met, tileId);
-  if (p.eventHour === state.hour) return null;
+  if (p.eventHour !== markedBefore) return null;
   if (!state.rng.chance(chance)) return null;
   const options = EVENTS.filter((e) => e.when(state, p, t));
   if (!options.length) return null;
