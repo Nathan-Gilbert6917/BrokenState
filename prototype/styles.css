@@ -300,6 +300,7 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .invgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
 .invgrid .islot { padding-top: 0.25rem; min-height: 2.6rem; }
 .istore { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr)); gap: 0.3rem; min-height: 4rem; max-height: 22rem; overflow-y: auto; margin-top: 0.35rem; padding: 0.35rem; border: 1px dashed var(--line); border-radius: 8px; cursor: pointer; align-content: start; }
+.istore, .islot, .invgrid { user-select: none; } /* dragging an item never drags a text selection instead (ui/inventory.js) */
 .istore:hover { border-color: var(--info); }
 .invwho { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .invsel { margin-top: 0.6rem; background: var(--panel-2); border-left: 3px solid var(--accent); padding: 0.35rem 0.6rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }

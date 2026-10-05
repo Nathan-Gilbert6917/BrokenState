@@ -269,7 +269,7 @@ function tidyUi() {
   if (ui.survivor != null && !survivorById(state, ui.survivor)) { ui.survivor = null; ui.lookEdit = null; }
   if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; }
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
-  if (state.combat && ui.inv && !ui.inv.loot) { ui.inv = null; ui.invSel = null; } // only the loot screen goes over a battle
+  if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
 }
 
 // ---------- folded panels ----------
@@ -522,7 +522,7 @@ const actions = {
   // Autopilot: an AI governor runs the holdout (sim/autopilot.js). A battle or loot screen left open is finished for you.
   "dev-autopilot": () => {
     if (!ui.started || state.gameOver) return;
-    if (!state.autopilot) { ui.cardResult = null; if (ui.inv && ui.inv.loot) { ui.inv = null; ui.invSel = null; } }
+    if (!state.autopilot) { ui.cardResult = null; if (ui.inv && (ui.inv.loot || ui.inv.raid)) { ui.inv = null; ui.invSel = null; } }
     setAutopilot(state, !state.autopilot);
   },
   "dev-persona": (d) => { setPersonality(state, d.v); },
@@ -840,7 +840,7 @@ document.addEventListener("drop", (ev) => {
   ev.preventDefault();
   releaseHold();
   const from = ev.dataTransfer.getData("text/plain");
-  if (from) { invDrop(state, ui, from, el.dataset.drop); refresh(); }
+  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey); refresh(); } // Shift: half a supply stack (raid search window)
 });
 
 const changeActions = {

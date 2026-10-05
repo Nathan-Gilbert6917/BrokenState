@@ -13,6 +13,7 @@ import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, 
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
+import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
@@ -195,6 +196,16 @@ export function combatClick(state, px, py) {
     cui.msg = "";
     return;
   }
+  // Raids (sim/raidloot.js): a container already gone through, or the vehicle, opens the search window (no action).
+  if (b.raid && u && active(u)) {
+    const box = boxAt(b, c.x, c.y);
+    if (box && box.contents && nearBox(u, box) && (!CELL[b.cells[c.y * W + c.x].k].walk || (u.x === c.x && u.y === c.y))) return void openSearch(state, b, u, box);
+    if (b.cells[c.y * W + c.x].k === "vehicle" && b.raid.vehicleZone >= 0) {
+      if (atVehicle(b, u)) { cui.lootReq = { uid: u.id, box: null }; return; }
+      cui.msg = "Walk to the vehicle to load or unload it.";
+      return;
+    }
+  }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
   // The third side (sim/thirdside.js): attacking them takes a second click, and turns them (or all the soldiers) on you.
@@ -212,7 +223,7 @@ export function combatClick(state, px, py) {
     if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
     const box = boxAt(b, c.x, c.y);
     if (box && !box.searched && (!CELL[b.cells[c.y * W + c.x].k].walk || (u.x === c.x && u.y === c.y))) {
-      if (nearBox(u, box)) return void act(state, { type: "search", unit: u.id, box: box.id });
+      if (nearBox(u, box)) return void openSearch(state, b, u, box);
       cui.msg = "Move next to it to search.";
       return;
     }
@@ -220,6 +231,17 @@ export function combatClick(state, px, py) {
   if (cui.mode !== "move") { cui.mode = "move"; cui.msg = ""; return; }
   if (v.reach && isFinite(v.reach.dist[c.y * W + c.x]) && v.reach.dist[c.y * W + c.x] > 0) act(state, { type: "move", unit: u.id, x: c.x, y: c.y });
   else cui.msg = "Out of reach.";
+}
+
+// Search: the first look costs the action and rolls what is inside (sim/combat.js searchBox); then the search window
+// (ui/inventory.js) opens over the battle to take things by hand. Nothing inside: no window, the log says so.
+function openSearch(state, b, u, box) {
+  box = box || searchableNear(b, u)[0];
+  if (!box) { cui.msg = "Stand next to an unsearched container (yellow box marker) to search it."; return; }
+  if (!box.contents && !act(state, { type: "search", unit: u.id, box: box.id, open: true })) return;
+  const n = box.contents ? box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length : 0;
+  if (n || atVehicle(b, u) || box.partial) cui.lootReq = { uid: u.id, box: box.id };
+  else cui.msg = `Nothing useful in the ${box.kind === "body" ? box.label : box.label.toLowerCase()}.`;
 }
 
 // A body, someone knocked out or a downed teammate on a tile (things Drag can move).
@@ -400,7 +422,7 @@ export function combatKey(state, e) {
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace" };
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -476,6 +498,13 @@ export function combatAction(state, key, d) {
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
+  if (v === "search" && b.raid) return void openSearch(state, b, u, null);
+  if (v === "vehicle" && b.raid) {
+    if (b.raid.vehicleZone < 0) { cui.msg = "You came on foot: there is no vehicle here."; return; }
+    if (!atVehicle(b, u)) { cui.msg = "Walk to the vehicle (its zone, or next to it) to load or unload it."; return; }
+    cui.lootReq = { uid: u.id, box: null };
+    return;
+  }
   // R is the retreat key of a normal battle. A raid has no retreat strip: say how to leave instead.
   if (v === "retreat" && b.raid) { cui.msg = "In a raid you leave by extracting: move into a green extraction zone and press X."; return; }
   if (v === "move") { cui.mode = "move"; return; }
@@ -667,7 +696,10 @@ export function viewBar() {
 function raidHead(state, b, phase) {
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
-  const cap = party ? Math.round(partyCapacity(state, party)) : 0, load = party ? Math.round(poolLoad(party)) : 0; // kg (sim/load.js)
+  // kg (sim/raidloot.js): the selected survivor's own load, and the vehicle's.
+  const sel = selUnit(b);
+  const me = sel && sel.side === "player" && party ? personalLoad(state, sel) : null;
+  const trunk = party ? trunkInfo(state, b) : null;
   const stage = Math.min(3, Math.floor(R.heat / 25));
   const left = R.containers.filter((c) => !c.searched && c.kind !== "body").length;
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];
@@ -682,7 +714,8 @@ function raidHead(state, b, phase) {
     <div class="small" style="margin-top:0.35rem" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat: <b>${HEAT_NAMES[stage]}</b> (${Math.round(R.heat)})</div>
     <div class="heat" style="margin:0.25rem 0 0.4rem"><i style="left:${Math.min(100, R.heat)}%"></i></div>
     <div class="small cbsupply">
-      <span data-tip="Weight carried by the team (and vehicle). Anything that does not fit stays in the container.">Load <b>${load}/${cap}</b></span>
+      ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
+      ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
       <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2).">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
@@ -698,10 +731,12 @@ function raidButtons(b, u, btn) {
   const near = searchableNear(b, u);
   const z = zoneAt(b, u.x, u.y);
   const zone = z >= 0 ? b.raid.zones[z] : null;
-  const searchTip = near.length ? `Search ${near[0].label.toLowerCase()} (1 action). ${near[0].kind === "body" ? "" : areaHint(b.raid.areas[near[0].area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
+  const searchTip = near.length ? `Search ${near[0].label.toLowerCase()} (1 action${near[0].contents ? "; already opened: free" : ""}) and pick what to take. ${near[0].kind === "body" ? "" : areaHint(b.raid.areas[near[0].area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
-  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  const veh = b.raid.vehicleZone >= 0;
+  const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
+  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];

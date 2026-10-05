@@ -149,6 +149,7 @@ export function stealthSetup(state, b) {
       const sup = s && SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;
       u.suppressor = sup ? sup.item : null;
       u.dropSuppressor = sup ? sup.take : null;
+      u.daySight = u.sight; // refitSenses
       if (b.night && !u.nvg) u.sight = Math.min(u.sight, u.light ? STEALTH.LIGHT_SIGHT : STEALTH.NIGHT_SIGHT);
       u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
     } else {
@@ -570,4 +571,18 @@ export function botRetreatSmoke(state, b, inEvac) {
     return !stealthAct(state, b, u, null, { type: "throw", item: "smokegren", x, y });
   }
   return false;
+}
+
+// A tool put in the off hand (or a gun changed) in the middle of a raid (raidloot.js, combat.js refitUnit): the light,
+// night vision, scope and suppressor count at once. daySight: what the unit sees by day (night caps it again).
+export function refitSenses(b, u, s) {
+  if (!s) return;
+  const tool = s.gear.tool;
+  u.light = !!(tool && tool.key === "flashlight");
+  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal"));
+  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, u.light ? STEALTH.LIGHT_SIGHT : STEALTH.NIGHT_SIGHT) : u.daySight;
+  u.optic = battleOptic(s, b.night);
+  const sup = SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;
+  u.suppressor = sup ? sup.item : null;
+  u.dropSuppressor = sup ? sup.take : null;
 }

@@ -328,7 +328,7 @@ section("The third side on the raid map: survivors hiding, a squad clearing the 
     raids++;
     const r = b.result.third || [];
     if (r.some((x) => x.hostile)) hostile++;
-    if (r.some((x) => x.team === "neutral" && x.met)) met++;
+    if (r.some((x) => x.team === "neutral" && x.met) && b.result.outcome === "extracted") met++; // a team wiped out talks to nobody
     if (r.some((x) => x.team === "military" && x.met)) squadMet++;
     s.cards.length = 0;
     finishCombat(s, setup, b.result);
@@ -383,7 +383,7 @@ section("Building interiors: a raid inside with survivors, a squad or squatters 
     }
     const r = b.result.third || [];
     if (r.some((x) => x.hostile)) turned++;
-    if (r.some((x) => x.team === "neutral" && x.met && x.alive)) met++;
+    if (r.some((x) => x.team === "neutral" && x.met && x.alive) && b.result.outcome === "extracted") met++; // a team wiped out talks to nobody
     s.cards.length = 0;
     finishCombat(s, setup, b.result);
     wanderersAfterRaid(s, p, b.result);

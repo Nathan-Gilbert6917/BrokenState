@@ -40,6 +40,7 @@ import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, 
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
+import { refitSenses } from "./stealth.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
@@ -53,6 +54,7 @@ import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // th
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
+import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -952,6 +954,24 @@ function playerUnit(b, s) {
   };
 }
 
+// A weapon or armor put on or taken off in the middle of a raid (the search window, raidloot.js) counts at once.
+// u.fit is what playerUnit gave when the raid started; perks and the rest added since stay on top.
+function refitUnit(b, u, s) {
+  if (!u.fit) return;
+  const id = b.nextId;
+  const f = playerUnit(b, s);
+  b.nextId = id;
+  u.aim += f.aim - u.fit.aim;
+  u.dmgMult *= f.dmgMult / (u.fit.dmgMult || 1);
+  u.armor *= f.armor / (u.fit.armor || 1);
+  u.medicine += f.medicine - (u.fit.medicine ?? f.medicine); // a med kit in the off hand (crafting.js medKitBonus)
+  if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
+  u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
+  for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "load"]) u[k] = f[k];
+  refitSenses(b, u, s); // stealth.js: a flashlight, night vision, scope or suppressor counts at once
+}
+setRefit(refitUnit);
+
 export function enemyUnit(b, rng, kind, power, n) {
   const p = Math.max(1, power);
   if (kind === "zombies") {
@@ -1377,12 +1397,25 @@ export function combatAct(state, act) {
     case "search": {
       if (!b.raid) return "Nothing to search.";
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
-      if (!box || box.searched || !nearBox(u, box)) return "Move next to something to search first.";
+      if (!box || !nearBox(u, box) || (box.searched && !(act.open && box.contents))) return "Move next to something to search first.";
       if (box.lock && !box.lock.open) return lockedMsg(box); // locks.js
-      if (u.ap < searchCost(b, u)) return "Too dark: searching without a flashlight takes both actions.";
-      u.ap -= searchCost(b, u); // stealth.js: both actions in the dark without a light
-      searchBox(state, b, u, box);
+      // open: the player's search window (ui/inventory.js) moves things by hand. A container already gone through
+      // opens again for free; the first look costs the action (both in the dark without a light, stealth.js).
+      if (act.open && box.contents) return "";
+      // Bots and tests: a container already opened is a free look; what they take costs hauling time (raidloot.js).
+      if (!box.contents) {
+        if (u.ap < searchCost(b, u)) return "Too dark: searching without a flashlight takes both actions.";
+        u.ap -= searchCost(b, u);
+      }
+      searchBox(state, b, u, box, !!act.open);
       break;
+    }
+    case "stash": { // raidloot.js: everything carried loose into the vehicle (free; the window does it item by item)
+      if (!b.raid || !atVehicle(b, u)) return "Move to the vehicle first.";
+      const r = stashAll(state, u.id);
+      if (!r.put.length) return r.left ? (u.ap > 0 ? "The vehicle is full." : "No time left this turn to load the vehicle.") : "Nothing carried to put in.";
+      say(b, `${u.name} loads ${r.put.join(", ")} into the vehicle.${r.left ? " The rest does not fit." : ""}`, "info");
+      return "";
     }
     case "extract": {
       if (!b.raid) return "Use Retreat.";
@@ -1507,7 +1540,11 @@ function startPlayerTurn(state, b) {
     u.ap = active(u) ? 2 : 0;
     if (u.down && !u.stab && !u.dead && !u.left) {
       u.bleed--;
-      if (u.bleed <= 0) { u.dead = true; say(b, `${u.name} bled out.`, "death"); }
+      if (u.bleed <= 0) {
+        u.dead = true;
+        const pile = dropHaul(b, u); // raidloot.js: what they carried stays where they fell, for the others to pick up
+        say(b, `${u.name} bled out.${pile ? " What they carried lies where they fell." : ""}`, "death");
+      }
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
@@ -2562,7 +2599,9 @@ export function createRaid(state, setup) {
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
   }
+  for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
+  raidCarrySetup(state, b); // raidloot.js: each survivor's share of the load, an empty pair of arms for finds
 
   // Enemies: guards around buildings, the dead scattered about. Nobody has seen you yet.
   const center = [entry.x0 + 1, entry.y0 + 1];
@@ -2725,7 +2764,8 @@ function spawnWave(b, n) {
   if (made) say(b, `${made} more of the dead shamble in, drawn by the commotion.`, "danger");
 }
 
-function searchBox(state, b, u, box) {
+// open: the player looks inside (the search window does the taking); else what fits is taken at once (bots, tests).
+function searchBox(state, b, u, box, open = false) {
   const rng = state.rng;
   const R = b.raid;
   const s = survivorById(state, u.sid);
@@ -2777,35 +2817,19 @@ function searchBox(state, b, u, box) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     box.contents = { sup, gear };
   }
-  const got = [];
-  const left = [];
-  let room = party ? cargoRoom(state, party) : 0;
-  for (const [k, q] of Object.entries(box.contents.sup)) {
-    const take = party ? Math.min(q, unitsThatFit(room, k)) : 0;
-    if (take > 0) {
-      party.cargo.supplies[k] = (party.cargo.supplies[k] || 0) + take;
-      R.found[k] = (R.found[k] || 0) + take;
-      room -= take * SUPPLIES[k].weight;
-      got.push(`${take} ${k}`);
-    }
-    if (q - take > 0) left.push(`${q - take} ${k}`);
-    box.contents.sup[k] = q - take;
+  if (open) {
+    const n = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
+    if (!n) { box.searched = true; box.partial = false; }
+    say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${n ? `${n} thing${n === 1 ? "" : "s"} inside` : "nothing useful"}.`, n ? "good" : "info");
+    if (!n) fx(b, { type: "loot", to: [box.x, box.y], text: "empty" });
+    return;
   }
-  box.contents.gear = box.contents.gear.filter((g) => {
-    if (party && room >= itemLoad(g)) {
-      party.cargo.gear.push(g);
-      R.foundGear.push(g);
-      room -= itemLoad(g);
-      got.push(g.name);
-      return false;
-    }
-    left.push(g.name);
-    return true;
-  });
-  box.searched = !left.length;
-  if (left.length) box.partial = true;
+  // raidloot.js: onto the survivor (pockets, pack, carried) as far as they can carry.
+  const r = party ? autoTake(state, b, u, box) : { got: [], left: box.contents.gear.length };
+  const got = r.got;
   const what = got.length ? got.join(", ") : "nothing useful";
-  say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${what}.${left.length ? ` No room for ${left.join(", ")} (left inside).` : ""}`, got.length ? "good" : "info");
+  say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${what}.${r.left ? (r.outOfTime ? " Out of time for the rest this turn." : " No room for the rest (left inside).") : ""}`, got.length ? "good" : "info");
+  if (r.left && !r.outOfTime && !(box.skipBy || []).includes(u.id)) (box.skipBy || (box.skipBy = [])).push(u.id); // bots: the rest does not fit on them
   fx(b, { type: "loot", to: [box.x, box.y], text: got.length ? `+${got.length > 1 ? got.length + " items" : got[0]}` : "empty" });
 }
 
@@ -2815,6 +2839,7 @@ function endRaid(state, b) {
   b.over = true;
   b.phase = "over";
   const hurtIds = [], deadIds = [], extractedIds = [], carriedIds = [];
+  const home = new Set(); // units who come home with what they carry (raidloot.js)
   const lines = [];
   // Someone walked out: the downed can be carried. A stabilized teammate lives; one still bleeding takes the
   // same chance as the downed in a lost battle. With nobody out, everyone still on the map is lost.
@@ -2830,6 +2855,7 @@ function endRaid(state, b) {
       if (hp < s.health - 0.01) hurt(state, s, (s.health - hp) / u.armor, b.tileId, `while scavenging ${b.place}`);
       if (!s.alive) { deadIds.push(s.id); lines.push(`${u.name} died.`); continue; }
       carriedIds.push(s.id);
+      home.add(u.id);
       hurtIds.push(s.id);
       lines.push(`${u.name} was carried out, barely alive (health ${Math.round(s.health)}).`);
       continue;
@@ -2841,10 +2867,12 @@ function endRaid(state, b) {
       continue;
     }
     extractedIds.push(s.id);
+    home.add(u.id);
     if (u.hp < s.health - 0.01) hurt(state, s, (s.health - u.hp) / u.armor, b.tileId, `while scavenging ${b.place}`);
     if (!s.alive) { deadIds.push(s.id); continue; }
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
   }
+  raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   const vehicleKept = R.vehicleZone >= 0 && b.units.some((u) => u.side === "player" && u.left && !u.dead && u.exitZone === R.vehicleZone);
   if (R.vehicleZone >= 0 && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
   const enemies = b.units.filter((u) => u.side === "enemy");
@@ -2882,8 +2910,13 @@ function autoRaidTurn(state) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   for (const u of b.units.filter((x) => x.side === "player")) {
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
-      const full = party && cargoRoom(state, party) < 2;
-      const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some((c) => !botDone(c)); // botDone: searched, or a lock it gave up on (locks.js)
+      // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
+      const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
+      const unload = mine < 2 && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < 55 && u.noStash !== b.turn;
+      if (unload && atVehicle(b, u)) { if (combatAct(state, { type: "stash", unit: u.id })) u.noStash = b.turn; continue; }
+      const full = !!party && mine < 2 && !unload;
+      const todo = (c) => !botDone(c) && !(c.skipBy && c.skipBy.includes(u.id)); // skipBy: nothing in it fits on this one
+      const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some(todo); // botDone: searched, or a lock it gave up on (locks.js)
       const z = zoneAt(b, u.x, u.y);
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
@@ -2902,15 +2935,23 @@ function autoRaidTurn(state) {
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
       const lockAct = !leave ? autoLock(state, b, u) : null; // locks.js: key, picks or force, by the odds and the Heat
       if (lockAct && !combatAct(state, lockAct)) continue;
-      if (!leave && searchableNear(b, u).length && u.ap >= searchCost(b, u)) { combatAct(state, { type: "search", unit: u.id }); continue; }
+      const nearBoxes = searchableNear(b, u).filter(todo);
+      if (!leave && !unload && nearBoxes.length && (nearBoxes[0].contents || u.ap >= searchCost(b, u))) {
+        if (combatAct(state, { type: "search", unit: u.id, box: nearBoxes[0].id })) u.ap = 0;
+        continue;
+      }
       let targets;
-      if (leave) {
+      if (unload) {
+        const zz = R.zones[R.vehicleZone];
+        targets = [];
+        for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
+      } else if (leave) {
         const zs = R.vehicleZone >= 0 && R.heat <= 80 ? [R.zones[R.vehicleZone]] : R.zones;
         targets = [];
         for (const zz of zs) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
       } else {
         targets = [];
-        for (const c of R.containers) if (!botDone(c)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
+        for (const c of R.containers) if (todo(c)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
         targets.push(...lockTargets(b)); // locks.js: the doors of a locked room
       }
       if (!targets.length) { u.ap = 0; break; }
