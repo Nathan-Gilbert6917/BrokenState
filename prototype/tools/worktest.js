@@ -540,6 +540,8 @@ function run(seed, priorities, dice = 0) {
   // The governor's survey trips (survey.js) are off for this comparison: they are extra trips taken with spare hands
   // and only add noise to a measure of who works at home (with them priorities finish ~1.5% fewer buildings).
   st.surveyOff = true;
+  // Likewise people met on the road (wanderers.js): recruits joining and trips cut short are noise for this measure.
+  st.noWanderers = true;
   if (priorities) {
     st.governor.priorityRoles = true;
     workState(st);

@@ -26,6 +26,7 @@ function mk(seed = SEED, stock = {}) {
   const state = createWorld({ seed, factionCount: 7 });
   state.started = true;
   state.autoCombat = true;
+  state.noWanderers = true; // people met on the road (wanderers.js) would stop the teams under test with their own cards
   Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100, ...stock });
   return state;
 }
