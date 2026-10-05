@@ -36,7 +36,7 @@
 import { atBase, skill, combatPower, hourOfDay } from "./world.js";
 import { SKILLS, SKILL_NAMES } from "./data.js";
 import { BUILDINGS, RECIPES, stations, underAttack, assignStations } from "./buildings.js";
-import { hasOrder, orderHold, stationIO } from "./production.js";
+import { hasOrder, orderHold, stationIO, stationOrder } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { farmersWanted, farmOf } from "./farming.js";
 import { edibleFood, foodStore } from "./storage.js";
@@ -136,7 +136,7 @@ export const WORK_TYPES = {
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
-    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes.",
+    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap building needs is left alone (ammo under 30, meds 15, parts 45).",
     open: (ctx) => stationOpen(ctx, (k) => k !== "preserve", "no workshop station"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k !== "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && st != null && stationKindById(ctx, st) !== "preserve",
@@ -252,18 +252,26 @@ export function stationWork(state, base, st, opsNow = new Set()) {
   const k = stationKind(st);
   const n = Math.max(1, atBase(state, base.id).length);
   const s = base.stock;
+  // The scrap the build queue needs is kept back unless the player's own order says otherwise (a steward's or the
+  // governor's order only sets the stock target, like the governor's stationWorth).
+  const own = hasOrder(base, st) && stationOrder(base, st).by === "player";
   if (hasOrder(base, st)) {
     const hold = orderHold(state, base, st);
     if (hold) return hold;
-  } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; if ((s.scrap || 0) < 30) return "scrap kept for building (under 30)"; }
-  else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; if ((s.scrap || 0) < 15 || (s.food || 0) < n * 6) return "short of scrap or food"; }
-  else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; if ((s.scrap || 0) < 45) return "scrap kept (under 45)"; }
-  else if (k === "preserve") {
+  } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; }
+  else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; }
+  else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; }
+  if (!own) {
+    if (k === "ammo" && (s.scrap || 0) < 30) return "scrap kept for building (under 30)";
+    if (k === "meds" && ((s.scrap || 0) < 15 || (s.food || 0) < n * 6)) return "short of scrap or food";
+    if (k === "parts" && ((s.scrap || 0) < 45 || !atBase(state, base.id).some((p) => skill(p, "mechanics") >= 4))) return "scrap kept (under 45), or nobody with Mechanics 4";
+  }
+  if (!hasOrder(base, st) && k === "preserve") {
     const store = foodStore(state, base);
     const sk = season(state).key;
     if ((s.food || 0) < n * 14 + 9) return "food kept for eating (no order set)";
     if (!(store.outside >= 1 || ((sk === "summer" || sk === "autumn") && (s.food || 0) >= Math.min(store.cap * 0.6, n * 25)))) return "nothing spoiling (no order set)";
-  } else if (k === "still") {
+  } else if (!hasOrder(base, st) && k === "still") {
     if (!(foodStore(state, base).outside >= 1 || edibleFood(base) / n >= 30)) return "no surplus food (no order set)";
     if ((s.water || 0) < n * 2 + 2) return "water kept for drinking";
   }
@@ -324,7 +332,7 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 2, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 3, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
   { name: "Farmer", pri: P({ farm: 1, cook: 2, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
