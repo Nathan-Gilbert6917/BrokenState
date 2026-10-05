@@ -21,7 +21,7 @@ import { newItem, packOf, POCKETS } from "./inventory.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
-import { STAGING, ESTABLISH_LABEL, needText } from "./staging.js";
+import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
 export const HC_START = {
   CREW: 3,
@@ -89,7 +89,9 @@ export function hubFounded(state, base, when = "") {
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
-  const text = `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
+  const text = base.tier === 0
+    ? `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
+    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
@@ -250,7 +252,9 @@ export function hardcoreStartDaily(state) {
 }
 
 // Tiles near the team worth founding on (the autopilot and the tile panel hint): open or a farm, not owned, not a hive,
-// low infection, water beside or near, sites around. Best first.
+// low infection, water beside or near, sites around. Best first. HUB_WATER: the score for the nearest river or lake
+// (beside it, 2 or 3 tiles away, none within 3).
+export const HUB_WATER = { beside: 6, two: 1.5, three: 0.5, none: -2 };
 export function hubSites(state, from, radius = 6) {
   const g = state.grid;
   const out = [];
@@ -259,12 +263,15 @@ export function hubSites(state, from, radius = 6) {
     if (t.terrain === "water" || t.terrain === "mountain" || t.terrain === "city" || t.hive) continue;
     if (t.owner != null && t.owner !== "player") continue;
     if (state.factions.some((f) => f.alive && f.bases.includes(id)) || state.bases.some((b) => b.tile === id)) continue;
-    const water = g.within(id, 1).some((n) => state.tiles[n].terrain === "water") ? 3 : g.within(id, 3).some((n) => state.tiles[n].terrain === "water") ? 1 : 0;
+    // Water decides most (staging.js: no spring, so a camp or shelter drinks only what is beside it or carried in).
+    const ws = waterSource(state, id);
+    const water = ws && ws.dist <= 1 ? 3 : ws ? 1 : 0;
+    const wScore = !ws ? HUB_WATER.none : ws.dist <= 1 ? HUB_WATER.beside : ws.dist === 2 ? HUB_WATER.two : HUB_WATER.three;
     const sites = g.within(id, 4).filter((n) => state.tiles[n].loc && state.tiles[n].loc.type !== "city").length;
     const kind = t.loc ? ({ farm: 2.5, ranch: 2, town: 1.5, church: 1.5, school: 1.2, motel: 1, barn: 1, feedstore: 1, prison: 1.5, cabin: 1, lodge: 1, ranger: 1 }[t.loc.type] ?? 0.5) : 0;
     const danger = (t.infection || 0) * 8 + (g.within(id, 3).some((n) => state.tiles[n].hive) ? 6 : 0);
-    const sc = water + Math.min(4, sites * 0.6) + kind - danger - g.distance(from, id) * 0.35;
-    out.push({ id, sc: r1(sc), water, sites });
+    const sc = wScore + Math.min(4, sites * 0.6) + kind - danger - g.distance(from, id) * 0.35;
+    out.push({ id, sc: r1(sc), water, waterDist: ws ? ws.dist : null, waterKind: ws ? ws.kind : null, sites });
   }
   return out.sort((a, b) => b.sc - a.sc || a.id - b.id);
 }

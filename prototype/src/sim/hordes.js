@@ -16,6 +16,7 @@ import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
+import { shelterHeat } from "./fieldheat.js";
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -81,7 +82,9 @@ export function splitHorde(state, h, n) {
 export function baseHeat(state, base) {
   const people = atBase(state, base.id);
   const workshop = mannedStations(state, base); // stations with an operator at work; idle "Operate" people make no noise
-  return people.length + workshop * 3 + (base.radio ? 2 : 0) + (base.type === "hub" ? 3 : 0) + generatorHeat(base) + (base.huntNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js)
+  // A shelter (tier 0, buildings.js): its fire, vehicles parked and shooting nearby (fieldheat.js shelterHeat) instead of the hub's flat 3.
+  const own = base.type !== "hub" ? 0 : base.tier === 0 ? Math.round(shelterHeat(state, base).total * 10) / 10 : 3;
+  return people.length + workshop * 3 + (base.radio ? 2 : 0) + own + generatorHeat(base) + (base.huntNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js)
 }
 
 // Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or

@@ -343,6 +343,33 @@ function paintHub(L) {
   return p;
 }
 
+// A shelter (tier 0, sim/buildings.js SHELTER): the staging camp finished. The shack roofed in your color with a
+// stovepipe, a lean-to and the tarp, rain barrels and a fire pit in a yard of trampled earth, the scrap barricade
+// closed all round with a gap for a gate, the flag up. Built-up: rain catchers, a drying rack, a farm plot.
+function paintShelter(L) {
+  const p = painter(32, 23);
+  const yb = 21, c = L.color, tarp = shade(c, 0.12);
+  p.rect(1, 14, 30, yb, DIRT);
+  p.rect(1, 14, 30, 14, shade(DIRT, -0.25));
+  for (const [x, y] of [[5, 17], [13, 19], [21, 16], [27, 18]]) p.set(x, y, shade(DIRT, 0.18));
+  flag(p, 29, 0, c, 9, 3);
+  house(p, 15, 8, 10, 7, BOARDS, c, { rh: 3 });                    // the shack
+  p.rect(23, 2, 23, 5, shade(METAL, -0.1)); p.set(23, 1, SMOKE); p.set(24, 0, SMOKE_FAINT); // stovepipe
+  p.rect(9, 10, 14, 10, WOOD_LIT); p.rect(9, 11, 9, 14, WOOD);      // lean-to on the shack's side
+  p.rect(10, 11, 14, 14, shade(BOARDS, -0.15));
+  tent(p, 5, 16, 5, tarp);                                          // the tarp shelter
+  if (L.farms) crops(p, 2, 18, 8, 19);
+  barrel(p, 26, 18, false); p.set(26, 15, shade(METAL, 0.3)); p.set(27, 15, shade(METAL, 0.3)); // rain barrel
+  if (L.rain) { barrel(p, 28, 18, false); p.rect(25, 14, 29, 14, shade(tarp, -0.2)); }
+  if (L.rack) for (let x = 18; x <= 22; x += 2) { p.rect(x, 16, x, 18, WOOD); p.set(x + 1, 16, "#8a4a2a"); }
+  campfire(p, 11, 18, L.fire !== false);
+  crate(p, 22, 17, 3, 2, BOARDS);
+  palisade(p, 0, 12, yb + 1, 5);                                    // the barricade, a gap for the gate
+  palisade(p, 17, 31, yb + 1, 5);
+  p.rect(13, yb - 1, 16, yb, shade(WOOD, -0.45));
+  return p;
+}
+
 function paintOutpost(L) {
   const p = painter(28, 22);
   const yb = 19, c = L.color;
@@ -574,7 +601,7 @@ function paintCamp(color, lit = true) {
 // trampled ground with a pile of stakes; 1 the first stretch of barricade and the posts of a shack; 2 the shack half
 // boarded, the barricade on both sides; 3 the shack roofed in your color, the barricade all but closed, a flag up.
 // The tarp, roof and flag are in your color (like the camp and base sprites).
-function paintStaging(stage, color) {
+function paintStaging(stage, color, lit = true) {
   const p = painter(30, 21);
   const yb = 19, tarp = shade(color, 0.12);
   p.rect(1, 13, 28, yb, DIRT);                                    // trampled ground
@@ -593,7 +620,7 @@ function paintStaging(stage, color) {
   crate(p, 19, 15, 4, 3);
   crate(p, 23, 14, 3, 4, BOARDS);
   if (stage < 2) crate(p, 21, 12, 3, 3, shade(WOOD_LIT, -0.1));
-  campfire(p, 12, 17);
+  campfire(p, 12, 17, lit);
   // A pile of stakes waiting (fewer as the barricade grows) and the barricade itself along the front.
   const pile = 3 - Math.min(3, stage);
   for (let i = 0; i < pile; i++) p.rect(23 - i, 18 - i, 28 - i, 18 - i, i % 2 ? WOOD : WOOD_LIT);
@@ -2114,8 +2141,8 @@ export const wakeCanvas = () => cached("wake", paintWake);
 // One of your bases. look: { kind: "hub" | "outpost", color, walls, tower, radio, hosp, farms, workshop, big }.
 export function baseSpriteCanvas(look) {
   const L = look;
-  const key = `base:${L.kind}:${L.color}:${L.walls}:${+!!L.tower}${+!!L.radio}${+!!L.workshop}${+!!L.big}:${L.hosp}:${L.farms}`;
-  return cached(key, () => (L.kind === "hub" ? paintHub(L) : paintOutpost(L)));
+  const key = `base:${L.kind}:${L.color}:${L.walls}:${+!!L.tower}${+!!L.radio}${+!!L.workshop}${+!!L.big}:${L.hosp}:${L.farms}:${+!!L.rain}${+!!L.rack}${+(L.fire !== false)}`;
+  return cached(key, () => (L.kind === "shelter" ? paintShelter(L) : L.kind === "hub" ? paintHub(L) : paintOutpost(L)));
 }
 
 // Another group's base by group type (raider, military, fortress, zealot, expansionist, traders, commune).
@@ -2147,9 +2174,9 @@ export function campSpriteCanvas(color, lit = true) {
 }
 
 // Your staging camp by stage (0–3, sim/staging.js stagingStage), tinted with your color.
-export function stagingSpriteCanvas(stage, color) {
+export function stagingSpriteCanvas(stage, color, lit = true) {
   const k = Math.max(0, Math.min(3, stage | 0));
-  return cached(`staging:${k}:${color}`, () => paintStaging(k, color));
+  return cached(`staging:${k}:${color}:${+!!lit}`, () => paintStaging(k, color, lit));
 }
 
 // The ruins of a razed base (render.js; sim/conquest.js and factions.js tile.ruin): scorched yard, two charred

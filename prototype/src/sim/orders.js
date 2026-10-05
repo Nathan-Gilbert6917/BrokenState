@@ -15,6 +15,7 @@ import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
 import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
+import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
@@ -251,8 +252,9 @@ export function startOrder(state, p, o) {
       if (state.tiles[partyTile(p)].terrain === "water" && !state.tiles[partyTile(p)].bridge) return fail("Survey: not from the water.");
       return startSweep(state, p, o);
     case "camp":
+      if (o.fire != null) p.campFire = !!o.fire; // the camp fire (fieldheat.js): lit unless told otherwise
       startTask(state, p, { type: "camp", hours: o.hours ?? null });
-      return `The team makes camp${o.hours ? ` for ${o.hours} hours` : " until you break it"}.`;
+      return `The team makes camp${o.hours ? ` for ${o.hours} hours` : " until you break it"}${fireLit(p) ? "" : ", without a fire"}.`;
     case "repair": {
       const r = repairInfo(state, p);
       if (!r.ok) return fail(`Repair: ${r.reason}`);
@@ -417,11 +419,13 @@ const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `$
 // An infected wound does not heal in camp (it needs meds). A camp with no food or no water gives no rest:
 // nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume).
 export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? (BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24 : 0);
+// The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   if (starving(p)) return;
+  const mood = fireLit(p) ? FIRE.campMood : FIRE.campMoodOut;
   for (const s of partyMembers(state, p)) {
     s.health = Math.min(100, s.health + campHealPerHour(state, p, s));
-    s.mood = Math.min(100, (s.mood || 0) + 0.3);
+    s.mood = Math.min(100, (s.mood || 0) + mood);
   }
 }
 

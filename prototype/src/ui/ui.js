@@ -33,7 +33,7 @@ import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
-  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count,
+  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -75,8 +75,8 @@ import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance } from "../sim/hunting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard } from "./hardcore.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING } from "../sim/staging.js";
+import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, stageRows, fireButton } from "./hardcore.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -179,7 +179,7 @@ function renderBases(state) {
     const rate = buildRate(state, b);
     const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
     return `<div class="card">
-      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${b.type === "hub" ? "Main hub" : "Outpost"}</span></div>
+      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)}</span></div>
       <div class="kv small" style="margin-top:0.4rem">
         <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
         <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
@@ -443,7 +443,7 @@ export function renderRight(state, ui) {
       ${walk || base || stagingView(state) ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${stagingTileCard(state, id)}
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
       <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
@@ -1022,7 +1022,7 @@ function baseModal(state, ui) {
   const tab = ui.baseView.tab;
   const body = { overview: baseOverview, work: workTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
-    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
+    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
@@ -1112,6 +1112,20 @@ function baseMedical(state, b) {
   </div>`;
 }
 
+// A shelter (tier 0, sim/buildings.js): the stages and what the step up takes (with the button), its water, its
+// fire and what its Heat is made of (sim/fieldheat.js shelterHeat).
+function shelterRows(state, b) {
+  const v = shelterView(state, b);
+  if (!v) return "";
+  const t = v.tier;
+  const up = BUILDINGS.hub_up, chk = canBuild(state, b, "hub_up");
+  const btn = t.queued ? "" : ` <button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="hub_up" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${up.desc} Pay now; the builders here do the rest (Construction tab).` : chk.reason)}>${esc(up.name)}</button>`;
+  return `${stageRows(t)}${btn ? `<div></div><div>${btn}</div>` : ""}
+    <div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+    <div${tip("A shelter's Heat in place of the hub's flat 3: its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
+    <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
+}
+
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
@@ -1126,6 +1140,7 @@ function baseOverview(state, b) {
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
+        ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         <div${tip("Where the fresh food is kept and what spoils a day (storage room: cellars, storehouse, cold store; above it, food is stored outside and spoils fast), and the preserved stock")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
@@ -1199,7 +1214,7 @@ function baseConstruction(state, b) {
     </div>
     <div>
       <h3>Build</h3>
-      ${Object.entries(BUILDINGS).map(([k, d]) => {
+      ${Object.entries(BUILDINGS).filter(([, d]) => !d.shelterOnly || isShelter(b)).sort(([ka], [kb]) => (isShelter(b) ? (kb === "hub_up") - (ka === "hub_up") : 0)).map(([k, d]) => {
         const chk = canBuild(state, b, k);
         return `<div class="card small"${tip(d.desc)}>
           <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>

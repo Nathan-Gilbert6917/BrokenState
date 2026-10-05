@@ -21,6 +21,7 @@ import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
+import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
 import { orderSweepAt, sweepOpts } from "./sim/survey.js";
@@ -591,6 +592,13 @@ const actions = {
   "sr-release": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(releaseHeld(state, j, d.how)); },
   "sr-delete": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(deleteSupplyRun(state, j)); },
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
+  // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
+  campfire: (d) => {
+    const lit = d.lit === "1";
+    if (d.base) { ui.baseMsg = setFire(state, baseOf(d), lit); return; }
+    if (d.team) { ui.xpMsg = setFire(state, partyById(d.team), lit); return; }
+    if (state.staging) log(state, setFire(state, state.staging, lit), "info");
+  },
   // Medical: treat at a base with the base's meds. In the field it is a 1-hour team order (xp-order, type treat).
   treat: (d) => { baseSay(treatAtBase(state, baseOf(d), Number(d.id))); },
   cancelbuild: (d) => { ui.baseMsg = cancelBuild(state, baseOf(d), Number(d.id)) || "Cancelled."; },

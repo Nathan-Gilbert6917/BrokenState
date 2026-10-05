@@ -8,7 +8,7 @@
 //   gain  = activity × place × hive land × team size × night × stance
 //     activity: fishing 0.7, setting or checking snares 0.8, waiting / holding / look around / treating 1.0,
 //               hunting 1.2 (and +6 a gunshot, hunting.js), gathering / crafting / repairs 1.5,
-//               building the staging camp 1.6 (staging.js), building a boat 1.8 (hammering), camp 2.0 (fire, cooking smells)
+//               building a boat 1.8 (hammering); a camp and the staging camp: the camp danger model below instead
 //     place:    countryside 1.0, suburbs 1.4, city 1.8, then × (1 + 0.6 × infection)
 //     hive land ×1.4, the red ring around a hive ×2
 //     team size 0.7 + 0.1 a person (3 people 1.0, 6 people 1.3)
@@ -27,6 +27,14 @@
 //   conflict card, the road's rule).
 // A quiet countryside camp for a night (10 hours) reaches Heat ~25 and has about a 1–2% chance of trouble;
 // three days camped in a city near a group or a hive reaches 100 within a day and sees trouble every day or so.
+//
+// Camps are different (camp danger, CAMP_HEAT below): a team's camp (the Camp order), the staging camp (staging.js)
+// and anyone at the staging camp whatever they do gain Heat from what the camp does instead of the activity table:
+// its fire (lit or out: a toggle), the people there, the vehicles parked there, shooting at or next to it lately
+// (state.gunfire, fading over a day or two) and building work. A camp's Heat settles (CAMP_HEAT.settle an hour) rather
+// than climbing to 100, so a small dark camp stays quiet and a big one with a bonfire, trucks and gunfights does not.
+// A shelter (buildings.js, tier 0) is a base: its Heat is the base's (hordes.js baseHeat) with the same fire, vehicle
+// and shooting terms (shelterHeat) in place of the hub's flat 3.
 import { partyMembers, partyTile, tileLabel } from "./parties.js";
 import { conflictChance, stationaryEncounter, COOLDOWN_HOURS } from "./conflicts.js";
 import { zombieToughness } from "./hives.js";
@@ -34,13 +42,15 @@ import { heatMult } from "./skills.js";
 import { GEAR } from "./data.js";
 import { carriedAll } from "./comforts.js";
 import { log } from "./world.js";
+import { partyVehicle, isCar } from "./vehicles.js";
+import * as Weather from "./weather.js";
 
 export const HEAT_MAX = 100;
 export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
 export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
-// stage: building the staging camp (staging.js), hammering by day and a fire at night.
+// stage and camp: only where campSite does not apply (it always does for them: the camp danger model, CAMP_HEAT).
 const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, stage: 1.6, cross: 1.8, camp: 2 };
 const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
 
@@ -61,31 +71,201 @@ const atHome = (state, tile) => state.bases.some((b) => state.grid.distance(b.ti
 // Heat gained this hour on the spot, with the reasons (team panel tooltip).
 export function heatGain(state, p, activity = stationaryActivity(p), hour = state.hour) {
   if (!activity) return { gain: 0, parts: [] };
+  const site = campSite(state, p, activity, hour);
+  if (site) return campGain(state, p, site, hour);
   const tile = partyTile(p);
   const t = state.tiles[tile];
   const parts = [];
   let g = ACTIVITY[activity] || 1;
   parts.push(`${ACT_NAME[activity] || activity} ×${g}`);
+  g *= placeMult(state, tile, parts);
+  const n = partyMembers(state, p).length;
+  const size = Math.round((0.7 + 0.1 * n) * 10) / 10;
+  g *= size;
+  if (size !== 1) parts.push(`${n} people ×${size}`);
+  if (isNightHour(hour)) { // night, as world.js isNight
+    const nf = activity === "camp" ? 1.3 : 0.8;
+    g *= nf;
+    parts.push(activity === "camp" ? "fire at night ×1.3" : "dark ×0.8");
+  }
+  g *= teamMult(state, p, parts);
+  const kit = kitMult(state, p, activity === "camp" ? ["stay", "camp"] : ["stay"], hour);
+  if (kit.mult !== 1) { g *= kit.mult; parts.push(...kit.parts); }
+  return { gain: g, parts };
+}
+const isNightHour = (hour) => hour % 24 < 6 || hour % 24 >= 20;
+// The place: city, suburbs, infection, hive land (multipliers, their reasons pushed onto parts).
+function placeMult(state, tile, parts) {
+  const t = state.tiles[tile];
+  let g = 1;
   const place = t.terrain === "city" ? 1.8 : t.terrain === "suburb" ? 1.4 : 1;
   if (place > 1) parts.push(`${t.terrain === "city" ? "city" : "suburbs"} ×${place}`);
   g *= place;
   if (t.infection > 0.05) { const inf = 1 + 0.6 * t.infection; g *= inf; parts.push(`infection ×${inf.toFixed(1)}`); }
   const tough = zombieToughness(state, tile);
   if (tough) { const h = tough >= 3 ? 2 : 1.4; g *= h; parts.push(`${tough >= 3 ? "next to a hive" : "hive land"} ×${h}`); }
-  const n = partyMembers(state, p).length;
-  const size = Math.round((0.7 + 0.1 * n) * 10) / 10;
-  g *= size;
-  if (size !== 1) parts.push(`${n} people ×${size}`);
-  if (hour % 24 < 6 || hour % 24 >= 20) { // night, as world.js isNight
-    const nf = activity === "camp" ? 1.3 : 0.8;
-    g *= nf;
-    parts.push(activity === "camp" ? "fire at night ×1.3" : "dark ×0.8");
-  }
+  return g;
+}
+// The team: stealthy, the Ranger perk.
+function teamMult(state, p, parts) {
+  let g = 1;
   if (p.stance === "stealthy") { g *= 0.8; parts.push("stealthy ×0.8"); }
   if (heatMult(state, p) !== 1) { g *= heatMult(state, p); parts.push(`Ranger ×${heatMult(state, p)}`); } // skills.js perk
-  const kit = kitMult(state, p, activity === "camp" ? ["stay", "camp"] : ["stay"], hour);
-  if (kit.mult !== 1) { g *= kit.mult; parts.push(...kit.parts); }
-  return { gain: g, parts };
+  return g;
+}
+
+// ---------- camp danger ----------
+// Heat an hour at a camp, added up (then × the place, stealthy and Ranger, and the camp kit carried):
+//   presence  0.3 (people living on one spot: tracks, rubbish, noise)
+//   people    0.12 a person there (at the staging camp: every team on its tile)
+//   fire      lit: 0.5 by day (smoke), 1.4 at night (the light carries); out: nothing. A smokeless stove carried (GEAR
+//             heat "camp") ×0.6 on the fire.
+//   vehicles  0.5 a car parked there, 0.7 the pickup (engines, fuel smell, tracks), and raiders want them: +0.12 to the
+//             tile's danger each (tileDanger)
+//   shots     0.1 a gunshot fired at or next to the camp (a neighbour tile counts half), halving every 18 hours
+//             (state.gunfire, noteGunfire: every fight's shots), at most +3
+//   work      0.3 while the building work goes on (staging.js, daylight)
+// The Heat settles 3% an hour on the spot (it levels off near 33 × the hourly gain): three people working with the fire
+// lit day and night level off near 60; the fire out at night, near 35; one quiet team camping a night stays under 20.
+export const CAMP_HEAT = {
+  presence: 0.3, person: 0.12, fireDay: 0.5, fireNight: 1.4, stove: 0.6, car: 0.5, truck: 0.7, carDanger: 0.12, carDangerMax: 0.36,
+  shot: 0.1, shotCap: 3, shotHalf: 18, shotKeep: 120, shotAdj: 0.5, work: 0.3, settle: 0.03,
+};
+// A shelter's Heat (base Heat, hordes.js baseHeat) in place of the hub's flat 3: the fire 1 by day / 3 at night, a car
+// parked there 1.5 (the pickup 2), 0.25 a weighted gunshot nearby (at most 6). Its people count as at any base.
+export const SHELTER_HEAT = { fireDay: 1, fireNight: 3, car: 1.5, truck: 2, shot: 0.25, shotCap: 6 };
+// The fire's comforts, at a camp or a shelter: warmth (cold exposure × warm while it burns), cooked food and boiled
+// water (without it: a raw chance a person a day of a stomach bug, at a camp; a shelter's dirty-water risk doubles) and
+// spirits (mood an hour in camp, lit / out; a shelter's people +moodLit a day with it, coldMood a day without it in the
+// cold).
+export const FIRE = { warm: 0.35, raw: 0.015, campMood: 0.3, campMoodOut: 0.1, shelterMood: 0.5, coldMood: -1, coldAt: 4 };
+
+export const fireLit = (x) => !!x && (x.campFire ?? x.fire) !== false;
+// Where a team's Heat is a camp's: at the staging camp (any activity on the spot), or camping. null: neither.
+// { kind, tile, teams, people, vehicles, fire, working, where }
+export function campSite(state, p, activity = stationaryActivity(p), hour = state.hour) {
+  if (!p || !activity) return null;
+  const tile = partyTile(p);
+  const camp = state.staging;
+  if (camp && camp.tile === tile && p.owner === "player") {
+    const teams = state.parties.filter((q) => q.id !== p.id && q.owner === "player" && q.kind !== "convoy" && partyTile(q) === tile && partyMembers(state, q).length);
+    teams.unshift(p); // p may be a planning copy (safeHours)
+    const h = hour % 24;
+    const working = (camp.workers || 0) > 0 && h >= 7 && h < 19 && camp.progress < camp.work - 1e-9;
+    return { kind: "staging", tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.map((q) => partyVehicle(state, q)).filter(isCar), fire: fireLit(camp), working, where: camp };
+  }
+  if (activity !== "camp") return null;
+  return { kind: "team", tile, teams: [p], people: partyMembers(state, p).length, vehicles: [partyVehicle(state, p)].filter(isCar), fire: fireLit(p), working: false, where: p };
+}
+const r1 = (v) => Math.round(v * 10) / 10;
+const vehicleHeat = (v, C) => (v.type === "truck" ? C.truck : C.car);
+// The rows of a camp's hourly gain before the multipliers: [{ key, label, v }].
+export function campRows(state, site, hour = state.hour, kitP = null) {
+  const C = CAMP_HEAT, rows = [];
+  rows.push({ key: "presence", label: "camped here", v: C.presence });
+  if (site.people) rows.push({ key: "people", label: `${site.people} ${site.people === 1 ? "person" : "people"}`, v: C.person * site.people });
+  if (site.fire) {
+    const night = isNightHour(hour);
+    let v = night ? C.fireNight : C.fireDay;
+    const stove = kitP && teamKit(state, kitP).some((it) => it && it.key === "stove");
+    if (stove) v *= C.stove;
+    rows.push({ key: "fire", label: `fire${night ? " at night" : ""}${stove ? " (smokeless stove)" : ""}`, v });
+  }
+  for (const v of site.vehicles) rows.push({ key: "vehicle", label: (VEHICLE_WORD[v.type] || "vehicle"), v: vehicleHeat(v, C) });
+  const sh = shotsNear(state, site.tile, hour);
+  if (sh.w >= 0.5) rows.push({ key: "shots", label: shotsLabel(sh.age), v: Math.min(C.shotCap, C.shot * sh.w) });
+  if (site.working) rows.push({ key: "work", label: "building work", v: C.work });
+  return rows;
+}
+const VEHICLE_WORD = { truck: "truck", sedan: "car" };
+export const rowsText = (rows) => rows.map((r) => `${r.label[0].toUpperCase()}${r.label.slice(1)}: +${r.v >= 1 ? r1(r.v) : Math.round(r.v * 100) / 100}`).join(", ");
+// A camp's Heat this hour for team p there: { gain, parts, rows, mult }.
+export function campGain(state, p, site, hour = state.hour) {
+  const rows = campRows(state, site, hour, p);
+  const base = rows.reduce((a, r) => a + r.v, 0);
+  const multParts = [];
+  let mult = placeMult(state, site.tile, multParts) * teamMult(state, p, multParts);
+  const kit = kitMult(state, p, ["stay"], hour);
+  if (kit.mult !== 1) { mult *= kit.mult; multParts.push(...kit.parts); }
+  const parts = [rowsText(rows), ...multParts];
+  return { gain: base * mult, parts, rows, mult, base };
+}
+// The camp danger view for a panel: the staging camp (or a team's camp): the gain an hour now, the rows, the level it
+// settles at, the Heat now (the highest of the teams there).
+export function campDanger(state, at, hour = state.hour) {
+  const p = at.teams ? at.teams[0] : null;
+  if (!p) return null;
+  const g = campGain(state, p, at, hour);
+  const heat = Math.max(0, ...at.teams.map((q) => q.heat || 0));
+  return { ...g, heat, settles: Math.min(HEAT_MAX, g.gain / CAMP_HEAT.settle), text: `${rowsText(g.rows)}${g.parts.length > 1 ? ` (${g.parts.slice(1).join(", ")})` : ""}` };
+}
+// The staging camp's danger without asking for a team (null when nobody is there: the panel shows what it would be).
+export function stagingDanger(state, camp = state.staging, hour = state.hour) {
+  if (!camp) return null;
+  const teams = state.parties.filter((q) => q.owner === "player" && q.kind !== "convoy" && partyTile(q) === camp.tile && partyMembers(state, q).length);
+  const site = { kind: "staging", tile: camp.tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.map((q) => partyVehicle(state, q)).filter(isCar), fire: fireLit(camp), working: (camp.workers || 0) > 0 && hour % 24 >= 7 && hour % 24 < 19, where: camp };
+  if (!teams.length) {
+    const rows = campRows(state, site, hour);
+    return { rows, gain: 0, heat: 0, settles: 0, text: `Nobody there. ${rowsText(rows)}` , empty: true };
+  }
+  return campDanger(state, site, hour);
+}
+
+// ---------- gunfire (every fight's shots, combat.js finishCombat) ----------
+// state.gunfire: [{ tile, hour, n }], kept CAMP_HEAT.shotKeep hours.
+export function noteGunfire(state, tile, n) {
+  if (tile == null || !(n >= 1)) return;
+  const list = state.gunfire || (state.gunfire = []);
+  const last = list[list.length - 1];
+  if (last && last.tile === tile && last.hour === state.hour) last.n += n;
+  else list.push({ tile, hour: state.hour, n: Math.round(n) });
+  while (list.length && state.hour - list[0].hour > CAMP_HEAT.shotKeep) list.shift();
+}
+// Weighted shots at or next to a tile (fading by half every shotHalf hours) and the hours since the latest.
+export function shotsNear(state, tile, hour = state.hour) {
+  let w = 0, age = Infinity;
+  for (const s of state.gunfire || []) {
+    const a = hour - s.hour;
+    if (a < 0 || a > CAMP_HEAT.shotKeep) continue;
+    const d = s.tile === tile ? 1 : state.grid.distance(s.tile, tile) <= 1 ? CAMP_HEAT.shotAdj : 0;
+    if (!d) continue;
+    w += s.n * d * Math.pow(0.5, a / CAMP_HEAT.shotHalf);
+    age = Math.min(age, a);
+  }
+  return { w, age };
+}
+export const shotsLabel = (age) => (age < 6 ? "shots just now" : age < 24 ? "shots today" : age < 48 ? "shots yesterday" : `shots ${Math.floor(age / 24)} days ago`);
+
+// ---------- the shelter (a tier-0 base): its share of base Heat ----------
+export function shelterHeat(state, base, hour = state.hour) {
+  const S = SHELTER_HEAT, rows = [];
+  if (fireLit(base)) rows.push({ key: "fire", label: `fire${isNightHour(hour) ? " at night" : ""}`, v: isNightHour(hour) ? S.fireNight : S.fireDay });
+  for (const v of state.vehicles.filter((x) => x.loc && x.loc.kind === "base" && x.loc.baseId === base.id && isCar(x))) rows.push({ key: "vehicle", label: VEHICLE_WORD[v.type] || "vehicle", v: vehicleHeat(v, S) });
+  const sh = shotsNear(state, base.tile, hour);
+  if (sh.w >= 0.5) rows.push({ key: "shots", label: shotsLabel(sh.age), v: Math.min(S.shotCap, S.shot * sh.w) });
+  return { rows, total: rows.reduce((a, r) => a + r.v, 0), text: rowsText(rows) };
+}
+
+// ---------- the fire toggle ----------
+// x: the staging camp, a shelter (a base with tier 0) or a team (its camp). Returns the message.
+export function setFire(state, x, lit) {
+  if (!x) return "";
+  if (x.members) x.campFire = !!lit; else x.fire = !!lit;
+  return lit ? "The fire is lit: warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." : "The fire is out: darker and quieter, but cold food, unboiled water and cold nights.";
+}
+// The fire a team sits by, for its comforts: the staging camp's at the camp, its own while it camps; null: no camp.
+export function teamFire(state, p) {
+  const camp = state.staging;
+  if (camp && p.owner === "player" && partyTile(p) === camp.tile && (p.phase === "task" || p.phase === "waiting")) return fireLit(camp);
+  if (p.phase === "task" && p.task && p.task.type === "camp") return fireLit(p);
+  return null;
+}
+// What a sensible camp does with its fire this hour (the autopilot): lit by day for cooking, at night only in the cold
+// or with someone badly hurt; out otherwise (the light carries).
+export function fireWanted(state, { hurt = false, hour = state.hour } = {}) {
+  const w = Weather.weather ? Weather.weather(state) : null;
+  const cold = !!w && w.lo <= FIRE.coldAt;
+  return !isNightHour(hour) || cold || hurt;
 }
 
 // ---------- camp kit (data.js GEAR heat) ----------
@@ -164,6 +344,9 @@ export function tileDanger(state, p, tile = partyTile(p)) {
   if (tough) { d += tough >= 3 ? 0.8 : 0.3; parts.push(tough >= 3 ? "next to a hive" : "hive land"); }
   const horde = state.hordes.find((h) => state.grid.distance(h.tile, tile) <= 3);
   if (horde) { d += 0.2; parts.push("a horde within 3 tiles"); }
+  // Vehicles parked at a camp: raiders want them (camp danger, CAMP_HEAT.carDanger each).
+  const site = p && p.owner === "player" ? campSite(state, p) : null;
+  if (site && site.vehicles.length) { d += Math.min(CAMP_HEAT.carDangerMax, CAMP_HEAT.carDanger * site.vehicles.length); parts.push(`${site.vehicles.length === 1 ? "a vehicle" : `${site.vehicles.length} vehicles`} parked (raiders want them)`); }
   d = Math.min(2, d);
   if (hasTripwire(state, p)) { d *= KIT.tripwire; parts.push(`a tripwire alarm ×${KIT.tripwire}`); }
   return { danger: d, parts, horde };
@@ -181,12 +364,14 @@ export function heatInfo(state, p) {
   const dz = tileDanger(state, p);
   const chance = activity && !home ? troubleChance(heat, dz.danger) : 0;
   const moving = p.phase === "out" || p.phase === "back";
-  let text = `Heat ${Math.round(heat)}/100: noise, smoke and smell from staying in one place. `;
+  const camp = !home && activity ? campSite(state, p, activity) : null;
+  let text = `Heat ${Math.round(heat)}/100: ${camp ? "the camp's fire, people, vehicles and any shooting lately" : "noise, smoke and smell from staying in one place"}. `;
   if (home) text += "At one of your bases: no Heat here.";
+  else if (camp) text += `${camp.kind === "staging" ? "The staging camp" : "The camp"} adds ${g.gain.toFixed(1)} an hour (${g.parts.join(", ")}) and loses ${Math.round(CAMP_HEAT.settle * 100)}% of its Heat an hour: it settles near ${Math.round(Math.min(HEAT_MAX, g.gain / CAMP_HEAT.settle))}. The fire is ${camp.fire ? "lit" : "out"}. Danger here: ${dangerWord(dz.danger)}${dz.parts.length ? ` (${dz.parts.join(", ")})` : ""}. Chance of trouble: ${(chance * 100).toFixed(1)}% this hour, growing with the Heat.`;
   else if (activity) text += `Rising ${g.gain.toFixed(1)} an hour here (${g.parts.join(", ")}). Danger here: ${dangerWord(dz.danger)}${dz.parts.length ? ` (${dz.parts.join(", ")})` : ""}. Chance of trouble (the dead, a horde, scavengers or raiders finding the team): ${(chance * 100).toFixed(1)}% this hour, growing with the Heat. Moving on lets it fall ${HEAT_DECAY} an hour.`;
   else if (moving) text += `Falling ${HEAT_DECAY} an hour while the team moves.`;
   else text += "Not rising now.";
-  return { heat, gain: g.gain, danger: dz.danger, chance, text, activity, level: heat < 25 ? "low" : heat < 50 ? "rising" : heat < 75 ? "high" : "extreme" };
+  return { heat, gain: g.gain, danger: dz.danger, chance, text, activity, camp, rows: g.rows || null, level: heat < 25 ? "low" : heat < 50 ? "rising" : heat < 75 ? "high" : "extreme" };
 }
 
 // Hourly, from parties.js playerPartyHour (after food and water). Builds or sheds Heat and may bring trouble:
@@ -201,8 +386,11 @@ export function fieldHeatHour(state, p, addCard) {
     return null;
   }
   useScentMask(state, p); // a gore scent mask goes on when the team starts to gain Heat
-  p.heat = Math.min(HEAT_MAX, (p.heat || 0) + heatGain(state, p, activity).gain);
+  p.heat = nextHeat(state, p, activity, p.heat || 0, state.hour);
   p.heatTile = tile;
+  // The staging camp rolls for trouble once an hour, whoever is there (not once a team).
+  const camp = state.staging;
+  if (camp && camp.tile === tile) { if (camp.rollHour === state.hour) return null; camp.rollHour = state.hour; }
   // One thing at a time: no trouble while the team has a card open, or right after the last trouble.
   if (state.cards.some((c) => c.partyId === p.id) || state.combat || (p.heatTrouble != null && state.hour - p.heatTrouble < HEAT_COOLDOWN)) return null;
   // The road's rule too: at most one conflict per team every 20 hours (conflicts.js COOLDOWN_HOURS).
@@ -221,7 +409,15 @@ export function fieldHeatHour(state, p, addCard) {
   return card;
 }
 
+// Heat after an hour on the spot: a camp settles (CAMP_HEAT.settle) as it gains; anything else only gains.
+export function nextHeat(state, p, activity, heat, hour = state.hour) {
+  const settle = campSite(state, p, activity, hour) ? 1 - CAMP_HEAT.settle : 1;
+  return Math.min(HEAT_MAX, heat * settle + heatGain(state, p, activity, hour).gain);
+}
+
 function heatLead(state, p, activity) {
+  const site = campSite(state, p, activity);
+  if (site) return `${site.fire ? "The camp's fire" : "The camp"}${site.vehicles.length ? " and the vehicles parked there" : ""}${shotsNear(state, site.tile).w >= 3 ? " (and the gunfire lately)" : ""} drew attention at ${tileLabel(state, partyTile(p))}.`;
   const what = { camp: "The camp's fire and cooking smells", cross: "The hammering on the shore", gather: "The noise on the shore", craft: "The noise of the work", hunt: "The hunt (and its gunshots)" }[activity] || "Too long in one place";
   return `${what} drew attention at ${tileLabel(state, partyTile(p))}.`;
 }
@@ -232,7 +428,7 @@ export function safeHours(state, p, activity = "camp", limit = 0.03, max = 96) {
   const dz = tileDanger(state, p);
   let heat = p.heat || 0;
   for (let h = 1; h <= max; h++) {
-    heat = Math.min(HEAT_MAX, heat + heatGain(state, { ...p, phase: "task", task: { type: activity } }, activity).gain);
+    heat = nextHeat(state, { ...p, phase: "task", task: { type: activity } }, activity, heat, state.hour + h - 1);
     if (troubleChance(heat, dz.danger) > limit) return h - 1;
   }
   return null;
@@ -244,7 +440,7 @@ export function heatPreview(state, p, activity, hours, startHour = state.hour) {
   const dz = tileDanger(state, p);
   let heat = p.heat || 0, safe = 1;
   for (let h = 0; h < hours; h++) {
-    heat = Math.min(HEAT_MAX, heat + heatGain(state, p, activity, startHour + h).gain);
+    heat = nextHeat(state, p, activity, heat, startHour + h);
     safe *= 1 - troubleChance(heat, dz.danger);
   }
   return { heat, risk: 1 - safe, danger: dz.danger, word: dangerWord(dz.danger) };
