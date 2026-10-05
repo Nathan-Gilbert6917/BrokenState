@@ -1,0 +1,661 @@
+<section id="actions">
+  <h2>Player actions reference</h2>
+  <p class="lede">Every order, mission and decision the player can give in the prototype, grouped by where it is given: the State Map, a team in the field, a base, a tactical battle or raid, diplomacy and trade, prisoners, and the decision cards. Each table says what the action does, what it costs or needs, and where to find it. Numbers are taken from the code (<code>sim/orders.js</code>, <code>parties.js</code>, <code>plans.js</code>, <code>markers.js</code>, <code>locks.js</code>, <code>deploy.js</code> and the UI files).</p>
+
+  <aside class="tip"><b>Design intent:</b> the game starts paused, and giving an order never changes the speed. An order given while paused is armed and starts when you unpause (the pause banner counts the waiting orders). Every card stops the clock until it is answered. Out of radio contact a team follows its plan and can only be given orders through the cards it raises (the radio rule, <code>plans.js commandable</code>).</aside>
+
+  <h3>1. State Map: sending a team from the hub <span class="status built">Built</span></h3>
+  <p>Right-click any land tile (or pick an action in the tile panel) and choose a mission marked <i>(from hub)</i>. This opens the <b>trip planner</b> with that tile as the target. Only missions that fit what you know about the tile are offered: hidden sites nobody has found are bare ground, and nothing is offered on open water or on your own base.</p>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Send recon</td><td>Travel there and spend 2 hours looking around (an extra-careful look for caches, wrecks and camps), then wait for orders.</td><td>Any land tile. A one-way trip: the team waits there.</td><td>Right-click → <i>Send recon (from hub)</i>; planner mission <i>Recon</i></td></tr>
+      <tr><td>Send a team here (Move here)</td><td>Travel there and wait for orders.</td><td>Any reachable land tile. One-way.</td><td>Right-click → <i>Send a team here</i>; planner mission <i>Move here</i></td></tr>
+      <tr><td>Survey the area</td><td>Sweep the land around the target for hidden sites (farms, cabins, lodges, camps off the roads) and finds, moving from spot to spot, ending back at the centre.</td><td>Radius 2–4 tiles, 6–48 hours. Odds shown as good / fair / poor with reasons (Scouting, team size, ground, daylight, optics, car is poor).</td><td>Right-click → <i>Survey the area</i>; planner mission <i>Survey</i>, preset <i>Survey trip</i></td></tr>
+      <tr><td>Hunting trip</td><td>Go, hunt 8 hours (changeable), come home with the game.</td><td>Offered where game abundance is 0.08 or more. Needs a hunting weapon (rifle or bow best; firearms use 1 ammo a shot and add Heat). Fresh game weighs 1 kg a ration and spoils fast.</td><td>Right-click → <i>Hunting trip</i>; planner preset</td></tr>
+      <tr><td>Fishing trip</td><td>Go to a river or lake shore, fish 8 hours, come home.</td><td>Needs a fishing rod or net (the hub's goes along). A frozen river needs a crowbar, machete or axe and gives half.</td><td>Right-click → <i>Fishing trip</i>; planner preset</td></tr>
+      <tr><td>Scavenge / raid</td><td>Raid the site on its own tactical map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone.</td><td>A site believed to hold loot (above 5%). Not on water. One search at a time per site.</td><td>Right-click → <i>Scavenge / raid</i>; planner mission</td></tr>
+      <tr><td>Trade visit</td><td>Go to a known group's base: barter, give gifts, propose pacts, ransom captives.</td><td>A known group base on the tile.</td><td>Right-click on a group base; planner mission</td></tr>
+      <tr><td>Rescue captives</td><td>Go to the base where your people are held; on arrival a card offers sneak in, storm, negotiate or pay a ransom.</td><td>The group holds captives of yours.</td><td>Right-click on that group's base</td></tr>
+      <tr><td>Assault their base / Retake the base</td><td>A tactical battle against the defenders behind their walls. Win and the base is your outpost (with land and part of its stores).</td><td>A group base (or one of yours they hold). Attacking a group that is not hostile costs 30 goodwill at once, ends any pact, and a coalition member leaves. Bring five or six fighters.</td><td>Right-click on a group base; planner mission (with a warning note)</td></tr>
+      <tr><td>Build outpost</td><td>Found a satellite base; the team stays as its first staff (a vehicle stays with it).</td><td>15 scrap carried (5 on the ruins of a razed base). Not on water, not on another group's land, not where you already have a base. With no base left, the outpost becomes the hub.</td><td>Right-click → <i>Build outpost</i>; planner mission</td></tr>
+      <tr><td>Recover bodies</td><td>Collect what is left at a death site before scavengers strip it (most valuable first).</td><td>A death-site marker on the tile. Takes what fits in the cargo and says what was left.</td><td>Right-click on a grave marker</td></tr>
+      <tr><td>Recover vehicle</td><td>Get an abandoned vehicle of yours running again (and pick up any cargo left in it).</td><td>Tank plus carried fuel must reach 2. Below 15% condition it needs 1 part or a Mechanics 6+ survivor (bikes: 1 scrap or part). A team that already has a vehicle can still take the cargo.</td><td>Right-click on a vehicle marker; planner shows "Bring fuel cans"</td></tr>
+      <tr><td>Investigate find</td><td>Check a spotted cache, wrecked car or abandoned camp.</td><td>A find marker not yet emptied. Cache: 6–14 food, 1–3 meds, 15–40 ammo. Camp: 3–8 food, 4–10 scrap, 10–25 ammo and notes that reveal a group's bases or a hive within 10 tiles. Wrecked car: a card (see section 4).</td><td>Right-click on a find marker</td></tr>
+      <tr><td>Cull horde</td><td>Thin out or lure away a horde on or next to the tile (card on arrival).</td><td>A known horde there.</td><td>Right-click on a horde</td></tr>
+      <tr><td>Destroy hive</td><td>Storm an infestation hive: a hard battle against its brood (10–18 of the dead at power 5+) and the Broodmother (300 health). Or burn it.</td><td>A known hive. Bring five or six well-armed fighters.</td><td>Right-click on a hive</td></tr>
+      <tr><td>Burn the growth</td><td>Attack a structure a hive grew beside it: fight its guard in a small battle, or burn it.</td><td>A known, living growth. 4 fuel burns 60 of its 100 flesh; 2 Molotovs burn 100; it regrows 5 a day. Bring three or four fighters.</td><td>Right-click on a growth</td></tr>
+    </tbody>
+  </table>
+  <p>Hidden missions used by the game itself (not in the planner list): <i>Look around</i> (2 hours, as an order), <i>Relief squad</i> (help a group under siege), <i>Convoy</i> (trade route), <i>Trade caravan</i> (your caravan's stops), <i>Retreat</i> (people leaving a base before it falls), <i>Hunting</i> and <i>Fishing</i> (team names while a plan hunts or fishes).</p>
+
+  <h3>2. The trip planner <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Setting</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Mission</td><td>Any non-hidden mission from the table above.</td><td>The sim refuses a mission that cannot go to the tile (outpost on water, assault where nobody holds the place).</td><td>Planner: Mission drop-down</td></tr>
+      <tr><td>Crew</td><td>Tick people at the hub. Taking them pauses their work there.</td><td>At least one; alive, at the hub, not on another team or route.</td><td>Planner: Crew list (skills, gear, worn kg shown)</td></tr>
+      <tr><td>Transport</td><td>On foot, the hub's bicycles (one each), or a parked car.</td><td>Bikes: no fuel, 0.75 a road tile, racks carry 15 kg each. Cars: pickup 650 kg payload / 30 tank, sedan 400 kg / 18; 0.6 fuel a road tile, 1.5 off-road, ×1 to 60% load, ×1.3 at 100%, up to ×1.6 at 125%.</td><td>Planner: Transport buttons</td></tr>
+      <tr><td>Stance</td><td>Pace against risk.</td><td>Stealthy: 25% slower, 40% fewer events. Normal. Rushed: 30% faster, 40% more events.</td><td>Planner: Stance</td></tr>
+      <tr><td>Supplies</td><td>Food, preserved food, water, fuel, meds, ammo, parts, scrap packed from the hub.</td><td>Weighed against what the crew can carry on top of what they wear (40 kg each, 28 with Bad Back, more with a pack or Packrat). Over the limit the launch is refused.</td><td>Planner: Supplies table; <i>Auto-fill (+25% margin)</i></td></tr>
+      <tr><td>Plan presets</td><td>Builds the order queue that runs after the target.</td><td>Recon and return; Scavenge and return; Survey trip; Explore (recon, then the best 2 sites within 3 tiles, then home); Hunting trip; Fishing trip; Camp N days, then return; Custom.</td><td>Planner: PLAN section</td></tr>
+      <tr><td>Plan steps</td><td>Add, reorder or remove steps (nothing after Return home).</td><td>Survey the area; Look around (2h); Scavenge here; Scavenge nearby sites (up to N within R tiles, picked when the step starts); Camp; Gather boat materials (3h); Fetch water (2h); Wait; Move to a site; Hunt; Fish; Snares (2h); Search the area (crash circle, up to 8 looks); Return home.</td><td>Planner: PLAN section</td></tr>
+      <tr><td>"If … then come home"</td><td>Checked every hour; the team turns home by itself with a <i>Coming home</i> card.</td><td>Anyone hurt below N health (default 40, 10–90); food below N days (default 1, 0.5–10); the cargo is full.</td><td>Planner: PLAN section</td></tr>
+      <tr><td>Send team</td><td>Launches the trip (when the clock runs, if paused).</td><td>A route must exist; supplies must be at the hub.</td><td>Planner: <i>Send team</i></td></tr>
+    </tbody>
+  </table>
+  <p>The planner shows the arrival time, round trip, food, water and fuel needed for the whole plan (stepped hour by hour like the real trip, weather included), each person's load band and pace, and a Heat look-ahead for camp and wait steps.</p>
+
+  <h3>3. Team orders in the field <span class="status built">Built</span></h3>
+  <p>Given from the <b>team panel</b> (click a team on the map, in the Teams tab or in the Running orders list), from its <b>orders card</b> when it waits, or by right-clicking a tile while a team is in contact. A waiting or working team starts an order at once; a moving team (or one with <i>Queue mode</i> on) adds it to the end of its queue.</p>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Move… / Queue move… / Redirect…</td><td>Pick any tile; the team travels there and waits. Redirect changes the current destination.</td><td>A land route (or a vehicle route). Redirect needs radio contact.</td><td>Team panel; Teams tab <i>Move…</i>; orders card <i>Move to another tile…</i>; right-click <i>Move team (N) here</i></td></tr>
+      <tr><td>Return home</td><td>Head back to the home base with everything carried (drops the rest of the queue, unless queued).</td><td>A way home; a team cut off by water gets a <i>Cannot go home</i> card.</td><td>Team panel; Teams tab; orders card</td></tr>
+      <tr><td>Hold here</td><td>Wait; supplies keep draining. Out of contact a holding team checks in every 12 hours.</td><td>—</td><td>Orders card</td></tr>
+      <tr><td>Scavenge here</td><td>Raid the site the team stands on.</td><td>Loot above 5%.</td><td>Team panel; orders card</td></tr>
+      <tr><td>Look around (2h)</td><td>Survey nearby tiles: better odds of spotting caches, wrecks and camps.</td><td>2 hours on the spot (builds a little Heat).</td><td>Team panel; orders card; plan step</td></tr>
+      <tr><td>Survey 2 tiles 12h / 3 tiles 24h / 4 tiles 48h</td><td>Sweep around the team's tile for hidden places and finds, ending back where it started.</td><td>Not from water. Heat builds at half the standing-still rate.</td><td>Team panel; right-click <i>Survey here with team: 3 tiles, 12h</i></td></tr>
+      <tr><td>Camp 8h / 24h / until broken</td><td>Rest: the hurt heal (twice a base's natural rate plus 0.4 × the best Medicine a day), mood +0.3 an hour.</td><td>Needs food and water (none, no healing). Infected wounds need meds. Camping builds the most Heat.</td><td>Team panel; orders card <i>Set up camp (8h)</i></td></tr>
+      <tr><td>Break camp / Stop work</td><td>Ends the current job on the spot; the next queued order starts.</td><td>A boat already on the water cannot be stopped.</td><td>Team panel</td></tr>
+      <tr><td>Wait N hours</td><td>Hold on the spot without a fire (less Heat than a camp).</td><td>Plan step.</td><td>Planner steps</td></tr>
+      <tr><td>Fetch water (2h)</td><td>Fill every free container from the river or lake and carry it home.</td><td>Only on a land tile next to water; 1 kg a unit of cargo room.</td><td>Team panel; plan step</td></tr>
+      <tr><td>Repair vehicle (3h)</td><td>Roadside repair: +8% + 1.5% per Mechanics point.</td><td>1 part carried; a damaged vehicle with the team.</td><td>Team panel</td></tr>
+      <tr><td>Treat (1h)</td><td>Field treatment of one member with the team's carried meds (weaker than base care).</td><td>Meds carried; one wound treatment per patient a day; a bandage or surgical kit in the off hand helps.</td><td>Team panel member card; People tab Treat</td></tr>
+      <tr><td>Hunt 4h / 8h / 12h</td><td>Roll every hour for big game (deer 30 food, hog 16) and small game (2 food).</td><td>A hunting weapon; firearms use ammo and add 6 Heat a shot, and can turn hordes within 3 tiles. Knives only: set snares.</td><td>Team panel <i>Land</i> block; right-click <i>Go and hunt here · 8h</i></td></tr>
+      <tr><td>Fish 4h / 8h</td><td>0.6 food an hour a rod, 1.2 a net worked by two, by water and season.</td><td>A rod or net; a river or lake shore.</td><td>Team panel <i>Land</i> block; right-click <i>Go and fish here · 8h</i></td></tr>
+      <tr><td>Set snares (2h) / Check snares (1h) / Lift snares (1h)</td><td>A line of 8 snares, about a rabbit a day in good country; check within 2–3 days.</td><td>Snare wire (comes back when lifted) or 2 scrap of fence wire. Lines left 30 days are gone.</td><td>Team panel <i>Land</i> block; plan step</td></tr>
+      <tr><td>Field craft</td><td>Make simple things on the road from the team's supplies.</td><td>Recipes marked Field: pipe spear, spiked bat, padding, shin guards, bandage kit, boiled-rag dressings, noise maker, firecrackers, nail bat, Molotov, tripwire alarm, ghillie wrap, rag-wrapped boots, gore scent mask (each with its hours and skill minimum).</td><td>Team panel <i>Craft</i> block</td></tr>
+      <tr><td>Boat across (raft / leave vehicle)</td><td>Build a one-use boat and cross one water tile to the land straight across.</td><td>Scrap = 4 + 2 a person + 1 per 40 kg; +14 scrap and 2 parts to raft a pickup, +9 and 1 for a sedan, +1 for bikes. Build 2 h + 0.5 a person + 1 per 80 kg, cut 5% per Mechanics point (to 50%), then 1 h on the water (2 h rafting).</td><td>Team panel <i>Boat crossing</i>; right-click the far tile <i>Boat team across</i></td></tr>
+      <tr><td>Gather materials (3h)</td><td>Search the shore for driftwood and scrap for a boat.</td><td>Only on a shore with a crossing; about 10 scrap a shore, 1 back every 3 days.</td><td>Team panel; plan step</td></tr>
+      <tr><td>Mission orders on the tile</td><td>Trade visit, Rescue, Assault, Build outpost, Recover bodies, Recover vehicle (or <i>Take the cargo left in the vehicle</i>), Cull horde, Destroy hive, Burn the growth, Investigate find, Trade caravan stop.</td><td>Same requirements as from the hub; checked again when chosen.</td><td>Team panel order grid; orders card</td></tr>
+      <tr><td>Start queue / Resume queued orders / ✕ / Clear queue</td><td>Run, edit or drop the order queue. An interrupted trip goes back to the front of the queue.</td><td>Radio contact (or answering one of the team's cards).</td><td>Team panel <i>Queue</i>; orders card</td></tr>
+      <tr><td>Inventory</td><td>Move items between teammates and the team's cargo, fill pockets and packs, use treats.</td><td>Contact with the team.</td><td>Team panel member card</td></tr>
+      <tr><td>Retreat if it goes badly</td><td>The team's policy for fights resolved by the numbers: Never, When most are down, If losing, At first blood. Kept on the team.</td><td>—</td><td>Buttons on every card with a fight choice</td></tr>
+      <tr><td>Next waiting team</td><td>Centers on the next team waiting for orders and opens its panel.</td><td>—</td><td><kbd>Tab</kbd> or <kbd>N</kbd> (<kbd>Shift+Tab</kbd> back); alerts</td></tr>
+    </tbody>
+  </table>
+  <div class="gallery" data-sprites="party/player-walkers party/player-scouts party/player-raid party/player-truck party/player-sedan party/player-boat party/player-raft party/player-relief party/player-convoy party/player-supply party/player-cart party/player-supplycart"></div>
+
+  <h3>4. Cards a team raises in the field <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Card</th><th>Choices</th><th>Costs / odds</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Orders / Done</td><td>Resume queued orders; any mission possible here; Set up camp (8h); Build a boat and cross…; Move to another tile…; Return home; Team panel…; Hold here.</td><td>One orders card per team.</td><td>When a team finishes an order or stops</td></tr>
+      <tr><td>Plan report (horde 15+ in sight, rich site 55%+ in sight, food short of the way home)</td><td>Continue the plan; Search it next (rich site); Change the plan…; Come home.</td><td>Once each per trip.</td><td>While a plan runs</td></tr>
+      <tr><td>Coming home</td><td>Continue home; Resume the plan; Stop and wait for orders.</td><td>—</td><td>A come-home rule fired</td></tr>
+      <tr><td>Horde (Cull horde)</td><td>Set up a killzone and fire; Lure it away with a fire; Back off.</td><td>Killzone uses up to 15 ammo a person, someone may be hurt; a horde cut to 5 or fewer is broken. Lure: 3 fuel, pushes it away for 72 hours.</td><td>Cull horde on arrival</td></tr>
+      <tr><td>The hive (Destroy hive)</td><td>Storm the hive (tactical battle); Set fires around it; Firebomb it; Back off.</td><td>Fires: 6 fuel, burns 30% of its guard and 15 of its stores. Firebomb: 3 Molotovs, 40% of the guard and 20 stores. Stealth decides whether the brood notices (someone hurt 15–40).</td><td>Destroy hive on arrival</td></tr>
+      <tr><td>Hive growth (Burn the growth)</td><td>Fight its guard (tactical battle); Burn it (4 fuel); Firebomb it (2 Molotovs); Back off.</td><td>Guard: 6 + 1 per 40 in the hive's guard (at most 12). 4 fuel = 60 flesh; 2 Molotovs = 100.</td><td>Burn the growth on arrival</td></tr>
+      <tr><td>Wrecked car</td><td>Restore it (2 parts, 6 fuel); Strip it for parts and fuel; Leave it for later.</td><td>Restore: a Mechanics check (10–95%); success gives a sedan at 35% condition, failure wastes the 2 parts. Strip: 1–2 parts and 2–5 fuel.</td><td>Investigate a wreck</td></tr>
+      <tr><td>Rescue captives</td><td>Sneak in and get them out; Storm the base; Negotiate their release; Pay a ransom.</td><td>Odds and costs on each choice.</td><td>Rescue on arrival</td></tr>
+      <tr><td>Assault their base</td><td>Storm the base (tactical battle), with the odds shown; Back off.</td><td>Win: an outpost with land and part of its stores; the weakest fighter of 3+ stays to hold it.</td><td>Assault on arrival</td></tr>
+      <tr><td>Trade caravan stop</td><td>Trade here; unload (your outposts); stay a day; go on to the next destination; return home; Other orders….</td><td>ETA on each choice.</td><td>Your caravan at each stop</td></tr>
+      <tr><td>Road conflict, forced</td><td>Run, hide, talk, bribe or pay the toll, invoke a pact, surrender, or fight.</td><td>The approach panel shows who they are, estimated numbers, your team and odds for every option, plus an auto-resolve forecast under the team's retreat policy.</td><td>Ambush, roadblock, zealot patrol, checkpoint, challenge, contested site, surge of the dead</td></tr>
+      <tr><td>Road conflict, observed</td><td>Watch for intel, slip away, steal, ambush, talk, or take a side.</td><td>Watching gives exact numbers.</td><td>A camp, a robbery, two groups fighting, survivors swarmed, prisoners on the move</td></tr>
+      <tr><td>Travel events (about 18 kinds)</td><td>Choice cards with skill checks (hazards, the dead, raiders, traders, discoveries, crew drama).</td><td>One card per team per hour.</td><td>On the road</td></tr>
+      <tr><td>Outsider raiders meet a team</td><td>Fight; pay a toll (35% of the load, up to 3 × their strength); talk; run (30% + 2.5% per Scouting, +20% with a vehicle, +10% stealthy). Seen first: slip away, ambush, lie low.</td><td>—</td><td>Raider band within a tile</td></tr>
+      <tr><td>Downed aircraft / supply drop</td><td>Mark it on the map; Send a search team (up to 3 of the fittest on foot; 3 stay home). A team that finds the wreck: Search it now; Carry on; Come home.</td><td>Search circle of radius 4 (3 with a watchtower, 5 heard on the radio). The wreck burns out 7–10 days after it came down; other groups race for it.</td><td>Crash event (first on days 8–14, then every 10–20 days)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5. Map markers you act on</h3>
+  <div class="cards">
+    <article class="card" data-sprite="marker/death">
+      <h4>Death site <span class="status built">Built</span></h4>
+      <p>Where your people fell, with their gear. Scavengers strip it a piece a day, most valuable first (faster by roads, in a group's land and in towns). Action: <i>Recover bodies</i>.</p>
+    </article>
+    <article class="card" data-sprite="marker/vehicle-truck">
+      <h4>Abandoned vehicle <span class="status built">Built</span></h4>
+      <p>A red jerry can when it needs fuel, smoke when badly damaged. Passers-by siphon and strip it over time. Action: <i>Recover vehicle</i> (2 fuel to restart).</p>
+    </article>
+    <article class="card" data-sprite="marker/cache">
+      <h4>Supply cache <span class="status built">Built</span></h4>
+      <p>A hidden stash spotted by a team's perception roll (12% + 3% per Scouting point, Keen Eye and Spotter +15%, ×0.6 at night). Action: <i>Investigate find</i>.</p>
+    </article>
+    <article class="card" data-sprite="marker/car">
+      <h4>Wrecked car <span class="status built">Built</span></h4>
+      <p>Restore it into a sedan with parts and fuel, or strip it. Up on blocks once stripped.</p>
+    </article>
+    <article class="card" data-sprite="marker/camp">
+      <h4>Abandoned camp <span class="status built">Built</span></h4>
+      <p>Supplies and notes that put a group's bases or a nearby hive on your map. Collapsed once picked through.</p>
+    </article>
+  </div>
+  <div class="gallery" data-sprites="marker/death-empty marker/cache-emptied marker/car-emptied marker/camp-emptied marker/vehicle-truck-fuel marker/vehicle-truck-damaged marker/vehicle-sedan marker/vehicle-bike icon/alert icon/unknown icon/work icon/radio icon/siege"></div>
+  <p>Team status badges on the map: <b>!</b> waiting for orders (<code>icon/alert</code>), <b>?</b> an estimated position out of contact (<code>icon/unknown</code>), a wrench for work on the spot, a walkie-talkie for radio contact, crossed swords for a siege.</p>
+
+  <h3>6. Hub and outposts: the base screen <span class="status built">Built</span></h3>
+  <p>Open a base with <i>Manage</i> on the Bases tab (<kbd>B</kbd>), an alert, or a log link. The hub and outposts share one screen with thirteen tabs.</p>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Set a role</td><td>A work role (priorities) or a fixed job (Manual): Farm, Scavenge, Operate, Build, Guard, Rest, Medic, Craft, Teach, Hunt, Fish, Read.</td><td>People at the base.</td><td>Overview, Medical, Crafting, People tab, Roster, Work tab drop-down</td></tr>
+      <tr><td>Rename the base</td><td>Click the name and type.</td><td>—</td><td>Base screen title</td></tr>
+      <tr><td>Pin</td><td>No steward (nor the autopilot) changes this person's role, station or gear.</td><td>—</td><td>Overview people list (📌)</td></tr>
+      <tr><td>Hand to a steward / Take over</td><td>The governor's per-base logic runs the base in a style (Cautious / Balanced / Aggressive) for the areas ticked: Roles, Building, Crafting &amp; production orders, Medical, Farming &amp; food, Defence. One log line a day at 20:00.</td><td>Stewards never answer cards, plan trips, supply runs or trade.</td><td>Overview: steward card</td></tr>
+      <tr><td>Memorial wall / Hold a memorial service</td><td>Everyone +3 mood (+2 more in a chapel), the grieving +8 more and 2 days less grief.</td><td>1 food a person, once a week.</td><td>Overview: <i>Memorial wall</i></td></tr>
+      <tr><td>Work priorities</td><td>Priority 1–5 (blank = never) per person and work type: Doctor, Guard, Farm, Preserve, Workshop, Craft, Build, Repair, Teach, Study, Scavenge, Hunt, Fish. Left-click up, right-click down, Shift+click edits the role's default; 1–5 / 0 / R keys on the cell under the mouse.</td><td>People on a work role (not Manual).</td><td>Work tab</td></tr>
+      <tr><td>Roles: New role / New crew / Duplicate / Delete / Rename / Min skill / Schedule</td><td>Edit roles (Generalist, Farmer, Builder, Guard, Medic, Crafter, Night watch, Scavengers crew by default). Schedule strip: Work → Guard → Free → Sleep per hour; presets Anytime, Day shift (sleep 22–06), Night watch (guard 20–04), On guard all day.</td><td>Deleting a role puts its members on Manual.</td><td>Work tab role editor</td></tr>
+      <tr><td>Everyone here on priorities / Newcomers join</td><td>Gives everyone on Manual a role by what they do now; sets the role newcomers get.</td><td>—</td><td>Work tab bar</td></tr>
+      <tr><td>Crews: Pause / Send now / Handle everything / field priorities / limits / come-home rules</td><td>A crew role runs trips from the hub by itself: Scavenge sites, Recover our dead, Vehicles and wrecks, Trade visits, Supply runs to outposts, Survey for hidden places, Hunt, Fish.</td><td>Range 2–40 tiles, max hours out 4–96, team size 1–6, ammo each 0–40 (hub keeps 20), meds 0–6, rest days 0–7, stance, vehicle, style, retreat policy; come home when hurt / food / cargo full. Trips leave at 07:00.</td><td>Work tab <i>Crews</i></td></tr>
+      <tr><td>Plant / Harvest / Clear / next crop / Replant automatically</td><td>Work the crop plots by hand or pick the crop for a plot.</td><td>Planting costs seed food; nothing sown that would not ripen in its season.</td><td>Farming tab</td></tr>
+      <tr><td>Station operator</td><td>Assign someone to a workshop station (sets their role to Operate).</td><td>A station built at the base.</td><td>Workshops tab</td></tr>
+      <tr><td>Standing station order</td><td>Forever; Until stock reaches N (restarts below N − 10%); Keep at least N of an input; Off. Plus what the operator does while it holds (farm, scavenge, build, guard, craft, rest, medic, another station).</td><td>No Until on a generator.</td><td>Workshops tab <i>Order</i> column; drying racks card</td></tr>
+      <tr><td>Power switch</td><td>Switch a powered building off or on (cold store, radio station, floodlights, machine shop, preserving kitchen).</td><td>A generator with an operator (2 fuel a day for 6 power).</td><td>Workshops tab Power card</td></tr>
+      <tr><td>Build</td><td>Queue a building; builders burn the work-hours down.</td><td>Materials paid when queued; some need a skill (e.g. Mechanics 3+) or a studied manual ("Needs: … Look in: …"). No building or repairs while a base is on alert.</td><td>Construction tab; Medical <i>Upgrade path</i></td></tr>
+      <tr><td>Cancel build</td><td>Remove a queued building.</td><td>Half the materials back.</td><td>Construction tab</td></tr>
+      <tr><td>Equip / Unequip / Inventory</td><td>Hand armory gear to people, open the paper doll, see the skill-gap rule and the key ring.</td><td>Skill gap 1–3: −15%; 4–7: −35% and 5% damage a use; 8+: unusable.</td><td>Armory tab; survivor screen</td></tr>
+      <tr><td>Craft / Cancel craft / Add a crafter</td><td>Queue makeshift gear and supplies; crafters on the Craft role put in work-hours (1 + 3% per skill point).</td><td>Materials paid when queued (cancel: all back before work starts, half after). Workshop recipes need an ammo bench or machine shop at the base.</td><td>Crafting tab</td></tr>
+      <tr><td>Standing craft order</td><td>Keep N of an item in the armory at a minimum quality; queues one job an hour while short.</td><td>Only queued when someone here would make it at that quality. Pause or delete it.</td><td>Crafting tab</td></tr>
+      <tr><td>Refuel / Repair (1 part) / Patch up bikes</td><td>Fill a tank from base fuel; repair a car; patch the bikes.</td><td>Repair needs a garage or a Mechanics 4+ survivor and 1 part; bikes ½ scrap a bike.</td><td>Vehicles tab</td></tr>
+      <tr><td>Supply runs</td><td>New supply run (crew, vehicle, goods to deliver and bring back, stance, once or every X days, at the end: come back / hold there / disband); Dispatch now; Run again; Pause / Resume; Load up and come home; Disband here; Edit; Recreate convoy; Delete.</td><td>A second base. A missing or dry vehicle falls back to hand carts when the load fits.</td><td>Supply runs tab; Teams tab</td></tr>
+      <tr><td>Treat (N meds)</td><td>Treat an injured person with the base's meds.</td><td>Once a day per wound; takes a medic's time (3 + Medicine/4 treatments a day each; surgery takes 3).</td><td>Medical tab; People tab</td></tr>
+      <tr><td>Treat condition</td><td>Treat one illness (cut, sprain, fever, flu, dysentery, pneumonia).</td><td>One treatment per condition a day; costs meds.</td><td>Medical tab; survivor screen</td></tr>
+      <tr><td>Add a medic / admit line / meds reserve / automatic care</td><td>Staff the hospital; beds go to people below the line (30–100, default 70); keep N meds back; switch night care off.</td><td>Hospital tiers need 1 / 1 / 2 / 3 medics.</td><td>Medical tab</td></tr>
+      <tr><td>Repair / Jury-rig / Leave it / Repair all / Cancel</td><td>Fix broken fixtures and raid damage. Jury-rig takes about a third of the hours and half the scrap, wears 60% faster.</td><td>Materials paid when started (scrap short: 1 part for 4 scrap); the best free mechanic with the job's Mechanics; worked 08:00–20:00.</td><td>Repairs tab; breakdown and raid result cards</td></tr>
+      <tr><td>Prisoner actions</td><td>See section 9.</td><td>—</td><td>Prisoners tab</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7. People: survivor screen, roster and inventory <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Customize look</td><td>Edit build, skin, hair, facial hair, top, pants, accessory.</td><td>—</td><td>Survivor screen; new-run screen</td></tr>
+      <tr><td>Pick a perk</td><td>Spend a point from a skill milestone (5, 10, 15) on one of two perks (54 in all).</td><td>A waiting point (or the perk card's <i>Decide later</i>).</td><td>Survivor screen skill tree</td></tr>
+      <tr><td>Teach / Read</td><td>Put someone on the Teach role (one skill to up to 2 learners 4+ below) or the Read role (6 hours a day with a book or blueprint).</td><td>Teaching: learners keep their jobs. One reader per copy.</td><td>Survivor screen study buttons</td></tr>
+      <tr><td>Talk it out</td><td>The leader or best talker mediates between rivals.</td><td>Success +22 opinion, failure −4; once in 10 days per pair.</td><td>Survivor screen, People section</td></tr>
+      <tr><td>Shared meal</td><td>+14 opinion between two people.</td><td>3 food; once in 10 days per pair.</td><td>Survivor screen</td></tr>
+      <tr><td>Move items</td><td>Click an item, then a slot (or drag); click twice to send it across; a full slot swaps.</td><td>At a base: people and the armory; on a team: teammates and the cargo.</td><td>Inventory (paper doll)</td></tr>
+      <tr><td>Use</td><td>Use up a treat: chocolate +6 mood, instant coffee +4 and 10% more work for the day, cigarettes +5 and −2 health, cheap vodka +10 then a hangover.</td><td>The item.</td><td>Inventory</td></tr>
+      <tr><td>Roster: sort, filter, set role for ticked rows</td><td>Everyone in one table; change roles for many at once.</td><td>People away keep their role.</td><td>Roster (<kbd>R</kbd> or 👥 Roster)</td></tr>
+      <tr><td>Pick a new leader</td><td>From the six best free people by Leadership.</td><td>When the leader dies.</td><td>Leader card</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8. Tactical battles and raids <span class="status built">Built</span></h3>
+  <p>Battles open on an 18 × 13 grid built from the tile; raids on a 28 × 18 map built from the site; base defence on an 18 × 13 wall map and a 26 × 16 yard map. Each unit has 2 actions a turn.</p>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Key / where</th></tr></thead>
+    <tbody>
+      <tr><td>Select unit</td><td>Pick who acts.</td><td>—</td><td>Click; <kbd>Tab</kbd> (next with actions); <kbd>1</kbd>–<kbd>9</kbd></td></tr>
+      <tr><td>Move / Dash</td><td>Blue tile: move (1 action). Yellow tile: dash (2 actions).</td><td>Survivors and human enemies 5 tiles an action; the dead 3 (strong ones 4), runners 6, Wallbreaker and Broodmother 2.</td><td>Click a tile</td></tr>
+      <tr><td>Shoot</td><td>Fire at a visible enemy; hover for the hit chance. Ends the unit's turn.</td><td>A usable gun and ammo (1 a shot, assault-rifle bursts 2). Cover: −20 half, −40 full; flanked targets lose cover.</td><td><kbd>F</kbd>; click an enemy; <i>Enemies in sight</i> list</td></tr>
+      <tr><td>Melee</td><td>Strike an adjacent enemy. Silent. Ends the turn.</td><td>An adjacent enemy.</td><td><kbd>E</kbd></td></tr>
+      <tr><td>Overwatch</td><td>Reaction shot at the first enemy that moves in sight (−15 aim). Ends the turn.</td><td>Ammo.</td><td><kbd>O</kbd></td></tr>
+      <tr><td>Hunker down</td><td>+20 defence on top of cover until your next turn. Ends the turn.</td><td>Only helps in cover.</td><td><kbd>H</kbd></td></tr>
+      <tr><td>Use meds</td><td>Heal yourself or an adjacent teammate, or stabilize someone who is down (the downed bleed out in 3 turns).</td><td>1 action and 1 meds.</td><td><kbd>M</kbd></td></tr>
+      <tr><td>Subdue</td><td>Takedown on the unaware (or anyone at 30% health or less): knocks out instead of killing. On the aware, a non-lethal blow.</td><td>30% + 2.5% per Stealth; club +20, blade +10, from behind +15, from cover +10, Assassin +20, soldiers −15 (5–95%). Ends the turn.</td><td><kbd>C</kbd></td></tr>
+      <tr><td>Tie up</td><td>Someone knocked out stays out and becomes a prisoner after a won fight.</td><td>1 action (none with handcuffs).</td><td><kbd>T</kbd></td></tr>
+      <tr><td>Drag</td><td>Move a body, someone knocked out or a downed teammate.</td><td>1 action, up to 3 tiles.</td><td><kbd>D</kbd></td></tr>
+      <tr><td>Throw</td><td>Bottle (range 7, pulls guards within 6), noise maker (7, radius 8, rings 3 turns), firecrackers (8, radius 13, Heat +6), road flare (8, lights 5 tiles at night), pipe bomb (6, 22–34 to everyone within a tile), Molotov (6, 12–18 and burning ground 3 turns), smoke grenade (7, −30 to shots through it); deer call (blown where you stand, not used up).</td><td>1 action; carried item.</td><td><kbd>G</kbd>, then a tile</td></tr>
+      <tr><td>Retreat (one unit)</td><td>Leaves the battle from the green evac strip; a downed teammate lying on the strip goes with the last one out.</td><td>On the strip. In a raid, R explains Extract instead.</td><td><kbd>R</kbd></td></tr>
+      <tr><td>Sound the retreat</td><td>Everyone runs for the strip at once; a confirm shows each unit's odds, who carries whom, and <i>Leave</i> / <i>Carry</i> per downed teammate.</td><td>Your turn, a battle with an evac strip, not a raid. Escape: 100 − 3 a tile − 25 per enemy adjacent − shooters and chasers (at most 35) − 30 × health lost − 2 per armor + Scouting + 10 at night (5–95%).</td><td><kbd>Shift+R</kbd>; <i>Sound the retreat</i>; <kbd>Enter</kbd> confirms</td></tr>
+      <tr><td>Fall back to the yard</td><td>Everyone leaves the wall map for the yard and buildings map; the attackers move next.</td><td>Base defence on the wall map.</td><td><kbd>Shift+R</kbd> on the wall map; button</td></tr>
+      <tr><td>End turn</td><td>Units with actions left do nothing. With the confirm on, Space asks once while units still have actions.</td><td>—</td><td><kbd>Enter</kbd>, <kbd>Space</kbd>, <i>End turn</i></td></tr>
+      <tr><td>Auto-resolve</td><td>Skip the battle and resolve it by the numbers (with the team's retreat policy).</td><td>Only before acting on turn 1; not in raids.</td><td>Battle panel</td></tr>
+      <tr><td>Cancel</td><td>Back to move mode; closes the retreat or end-turn confirm.</td><td>—</td><td><kbd>Esc</kbd> or right-click</td></tr>
+      <tr><td>Menu</td><td>Save the battle as it stands, load, options.</td><td>—</td><td>⚙ Menu in the battle panel</td></tr>
+    </tbody>
+  </table>
+  <div class="gallery" data-sprites="item/bottle item/noisemaker item/firecracker item/flare item/pipebomb item/molotov item/smokegren item/gamecall"></div>
+
+  <h4>Raid extras</h4>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Key / where</th></tr></thead>
+    <tbody>
+      <tr><td>Search</td><td>Search the container next to the unit; loot from the area's table, scaled by how picked over the site is and by Scavenging. What does not fit stays inside.</td><td>1 action (both actions at night without a light).</td><td><kbd>S</kbd></td></tr>
+      <tr><td>Extract / Extract (vehicle)</td><td>Leave the raid from a green extraction zone. Extracting at the vehicle's zone keeps the vehicle; elsewhere it is left at the site.</td><td>Standing in a zone. Anyone still on the map when the last person leaves is lost.</td><td><kbd>X</kbd></td></tr>
+      <tr><td>Key</td><td>Open any lock or locked room at its site.</td><td>A key for the site on the key ring. Sure, 1 action, silent.</td><td>Lock panel next to a padlock or brown door</td></tr>
+      <tr><td>Pick</td><td>Pick the lock.</td><td>Crowbar and lockpicks on that person: 55% + 4% per Stealth − 15% per difficulty step above 1, +10% Quiet Hands (5–95%). 1 action, Heat +1, wears the picks.</td><td>Lock panel</td></tr>
+      <tr><td>Force</td><td>Force it with a crowbar.</td><td>85% + 1.5% per Mechanics − 20% per step. 1 action, Heat +6, wakes everything within 8 tiles. A safe cannot be forced.</td><td>Lock panel</td></tr>
+      <tr><td>Smash</td><td>Break a light lock without tools.</td><td>Difficulty 1–2 only: 50% − 20% per step, both actions, Heat +10, wakes everything within 11.</td><td>Lock panel</td></tr>
+    </tbody>
+  </table>
+  <p>Heat rises every turn and with noise; each stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead. About 6 raid turns pass an hour on the map clock. Crews, the autopilot and headless tools use the older hour-by-hour search screen instead (approach Sneak ×0.7 loot / Normal / Loud ×1.4; <i>Search another hour</i> or <i>Extract now</i>).</p>
+
+  <h4>Before a break-in: the deploy step</h4>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Key / where</th></tr></thead>
+    <tbody>
+      <tr><td>Place a defender</td><td>Click a defender, then a green cell: the walkway (height 1, +5 aim, half cover), a tower (height 2, full cover, +10 aim), the gate or a breach (whoever stands there holds it), or inside.</td><td>No placing outside the walls.</td><td>Deploy panel; click</td></tr>
+      <tr><td>Hold the gate</td><td>Put the selected defender in the gate.</td><td>A walled base.</td><td>Deploy panel</td></tr>
+      <tr><td>Default positions</td><td>Toughest close fighter in the gate (two with 9+ defenders), best shots on the towers, the rest well back.</td><td>—</td><td>Deploy panel</td></tr>
+      <tr><td>Floodlight aim</td><td>Light a third of the approach: +12 to hit at night, +5 by day.</td><td>Floodlights built.</td><td>Deploy panel</td></tr>
+      <tr><td>Start the fight</td><td>Begin the battle.</td><td>—</td><td><kbd>Enter</kbd> (Space only reminds you)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>After a battle</h4>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Loot the bodies</td><td>Each body's paper doll beside your survivor and the cargo: take items one by one, supply stacks with a click, <i>Take all</i> per body or <i>Take everything</i>.</td><td>Carry space. What is left becomes a death site.</td><td>Result screen</td></tr>
+      <tr><td>Take all and continue / Leave the rest and continue</td><td>Close the result screen.</td><td>—</td><td>Result screen; <kbd>Enter</kbd> or <kbd>Space</kbd></td></tr>
+      <tr><td>Take them / Leave them</td><td>Bring the knocked-out home as prisoners, or leave them tied up.</td><td>Leaving them: +2 goodwill.</td><td>Result screen</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9. Prisoners <span class="status built">Built</span></h3>
+  <p>Held in <i>Holding cells</i> (3 each; the rest sit in a shed) and listed on the base's Prisoners tab. Each eats 1 food and 1 water a day. Escapes: 0.4% a day guarded, 3% unguarded, 8% in a shed, +4% unfed; six unfed days and they die.</p>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Question</td><td>Puts their group's bases, people, stock, parties out and the hives near them on your map.</td><td>Every 3 days. 45% + 3% per Speech (zealots −25%, soldiers −15%, hungry +10%). Sours them (−6).</td><td>Prisoners tab</td></tr>
+      <tr><td>Ask a ransom</td><td>Their group answers in 2–4 days.</td><td>Goods worth 15 + 4 × power. Paid: goodwill −4; refused: −3, and a rescue raid twice as likely for 10 days.</td><td>Prisoners tab</td></tr>
+      <tr><td>Trade back</td><td>Send them home unharmed.</td><td>Goodwill +10.</td><td>Prisoners tab</td></tr>
+      <tr><td>Win them over</td><td>They come round slowly; at 100 they ask to join (a recruit card).</td><td>About 1 a day × Speech, Leadership, the base's mood; zealots ×0.35. Months.</td><td>Prisoners tab</td></tr>
+      <tr><td>Release</td><td>Let them go.</td><td>Goodwill +4.</td><td>Prisoners tab</td></tr>
+      <tr><td>Execute</td><td>Click twice to confirm.</td><td>Mood −6 for everyone there (Brave or Tough −2); goodwill −20 with their group, −4 with every group you know.</td><td>Prisoners tab</td></tr>
+    </tbody>
+  </table>
+
+  <h3>10. Diplomacy, radio and trade <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Action</th><th>What it does</th><th>Requirements / cost</th><th>Where in the UI</th></tr></thead>
+    <tbody>
+      <tr><td>Scan the airwaves</td><td>Find groups in radio reach you have not met.</td><td>A radio station; once a day.</td><td>Groups tab radio header</td></tr>
+      <tr><td>Greet them / keep in touch</td><td>+2 goodwill; stops neutral groups drifting hostile.</td><td>In radio reach (coverage + 4 tiles); every 3 days.</td><td>Radio panel</td></tr>
+      <tr><td>Ask for news</td><td>A report of 2 / 3 / 4 tiles around their bases (neutral / friendly / allied) and the hordes near them.</td><td>Every 5 days; not hostile.</td><td>Radio panel</td></tr>
+      <tr><td>Ask them to send a trade caravan</td><td>Their caravan comes to your base with what they can spare and stays a day.</td><td>Every 4 days; neutral or better (aggressive types at goodwill 0+); one caravan out at a time.</td><td>Radio panel</td></tr>
+      <tr><td>Make a deal</td><td>"We want N of X, paying M of Y": accepted when fair at their prices and they can spare it; their caravan brings it.</td><td>The panel shows their lowest price.</td><td>Radio panel</td></tr>
+      <tr><td>Call for help</td><td>A raid on its way loses 30% of its strength, or 20–30 food if the hub is starving.</td><td>Friendly or a pact; every 10 days; costs 4 goodwill.</td><td>Radio panel</td></tr>
+      <tr><td>Propose a non-aggression pact</td><td>They stop treating you as a target.</td><td>Goodwill −10 or more (−15 for aggressive types); never with a hostile group.</td><td>Radio panel; trade window</td></tr>
+      <tr><td>Propose a trade pact</td><td>Opens trade routes.</td><td>Goodwill 20.</td><td>Radio panel; trade window</td></tr>
+      <tr><td>Trade window: offer / ask / Balance with / Trade / Gift</td><td>Two columns, every supply with −10 / − / + / +10 / All and every item one by one; a balance bar and why-lines (▲ wanted, ▼ little wanted, ✕ refused).</td><td>A deal goes through when it is fair for them. Goodwill from trading at most 4 a day per group; gifts up to 15.</td><td>Trade visit, caravan at your base, merchants</td></tr>
+      <tr><td>Buy intel / sell maps</td><td>A report of 3 / 6 / 10 tiles around them (only those tiles lose their fog), horde and hive sightings; or sell your maps.</td><td>0.4 a tile at their price; maps 0.15 a tile, up to 40, once in 10 days.</td><td>Trade window</td></tr>
+      <tr><td>Attack their caravan</td><td>A battle against its guards at your base; the goods are yours if you win.</td><td>The group turns hostile (−70), pact torn up, other non-aggressive groups −5, raids for 60 days.</td><td>Trade window (with a confirm)</td></tr>
+      <tr><td>Set up trade route / End route</td><td>Recurring convoys: send N of X, receive M of Y, every N days, with an escort.</td><td>A trade pact. Every 2 days at most. Escort Light (1 person), Standard (3), Heavy (5). Terms must be worth it at their prices.</td><td>Groups tab</td></tr>
+      <tr><td>New trade caravan</td><td>Your own caravan through an ordered list of destinations (group bases, your outposts).</td><td>Crew, on foot or a car, stance, goods, items from the hub's armory, supplies (Auto-fill). Starts from the hub only.</td><td>Groups tab <i>New trade caravan…</i></td></tr>
+      <tr><td>Jobs: Accept / Decline / Maybe later / Locate / Plan a trip… / Ask them to fetch it / Give up</td><td>Jobs for other groups: clear a horde, escort their caravan, deliver goods, rescue their people, storm a hive, scout a region, retrieve a package.</td><td>Declining or letting an offer expire −1; missing a deadline −2 (small) or −4.</td><td>Groups tab Jobs; Diplomacy window; offer card</td></tr>
+      <tr><td>Broker a ceasefire</td><td>End a war between two groups.</td><td>Both in radio reach, neither hostile, once a week: 20% + 3.5% per Speech + goodwill/400 + weariness/200. Success +8 with both; failure −3.</td><td>Diplomacy window → World affairs</td></tr>
+      <tr><td>Join a side / Leave the war</td><td>Fight beside a group: the enemy turns hostile (−60) and raids you; your side +10 and 25% stronger; a share of tribute or land if it wins.</td><td>Leaving costs 8 goodwill with your side.</td><td>World affairs; the card a friend sends</td></tr>
+      <tr><td>Invite to the coalition / Expel</td><td>Bring a group into the Calder Coalition (shared sightings, fighters against raids and hordes, allies at hive assaults).</td><td>In reach, goodwill 50+ (more after conquests), a pact and a job done, or the council's vote. Expel: −15 goodwill.</td><td>Groups tab; radio panel; Coalition tab</td></tr>
+      <tr><td>Market board</td><td>Every known group in reach, best to sell to or buy from for a good, with price arrows and a shortcut to their radio panel.</td><td>A radio station.</td><td>Diplomacy window</td></tr>
+      <tr><td>Outsiders: Locate / Trade / At the gate… / Invite to trade / Ask for news / Pay them to leave</td><td>Deal with raiders, merchants and travellers from beyond the state.</td><td>Pay to leave: 1.25 × the tribute, 2% less per Speech point (up to 30%).</td><td>Groups tab <i>Outsiders</i></td></tr>
+      <tr><td>Rob the merchants</td><td>Fight their guards for everything they carry.</td><td>Merchant reputation −45; known traders −15, communes and fortresses −8.</td><td>Trade window (merchants)</td></tr>
+      <tr><td>Answer a call for help</td><td>Send a squad (best 3 fighters at the hub); send 40 ammo (their attacker −20%, goodwill +6); ignore it.</td><td>Ignoring: −8 goodwill (−14 for friendly or allied groups).</td><td>Call-for-help card</td></tr>
+      <tr><td>A friend's war</td><td>Send 40 ammo (+5 with them, −2 with their foe); stay out (−2).</td><td>—</td><td>War card</td></tr>
+      <tr><td>Council requests</td><td>Send supplies for a member (+6 / +3 to the rest, refuse −4 with all); do a job (refuse −3); rule between two members (+6 / −8, or a compromise by Speech).</td><td>At the start of every season.</td><td>Council card</td></tr>
+    </tbody>
+  </table>
+
+  <h3>11. Defence and warning cards <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Card</th><th>Choices</th><th>Costs / effects</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td>Raiders heading for a base (a group)</td><td>Prepare defenses; Pay tribute (30% of the food, 30 ammo); Defend in person (tactical); Hold as you are; Retreat to another base (or <i>Abandon … and take to the road</i> from your last).</td><td>Prepare: non-guards count 1.3× instead of 0.8×, building stops. Tribute: +6 goodwill (fades 0.5 a day from aggressive groups). Held at 1.2× their strength, a break-in from 0.8×.</td><td>Lookouts spot a raid</td></tr>
+      <tr><td>Raiders from outside at a base</td><td>Prepare defenses; Pay them off (4 × their strength in goods); Talk them down (Speech: 10% + 3.5% a point, up to 75%, for half the price); Defend in person; Hold.</td><td>A break-in takes 20% of the stock (10% with a storehouse); overrun 50% and an outpost lost.</td><td>A band 4 tiles out, seen or heard</td></tr>
+      <tr><td>Horde heading for a base</td><td>Man the defences; Burn a decoy fire (6 fuel); Hold as you are.</td><td>The card shows the hold limit. Decoy: 25–80% by size, 15% with a Wallbreaker.</td><td>A horde within 6 tiles heading in</td></tr>
+      <tr><td>Rescue raid for prisoners</td><td>Defend in person (deploy battle); Man the walls (defence ×1.3); Hand them over (+3 goodwill).</td><td>Lost: they free their people and carry off a tenth of the stores.</td><td>10 hours ahead</td></tr>
+      <tr><td>Raid result</td><td>Start the repairs; Later.</td><td>Lists what was taken, who was hurt, what was wrecked and the bill.</td><td>After a raid</td></tr>
+      <tr><td>Something broke</td><td>Repair; Jury-rig; Leave it.</td><td>See the Repairs tab row above.</td><td>A fixture breaks</td></tr>
+      <tr><td>Summer water</td><td>A warning with the shortfall and what to build.</td><td>—</td><td>A week before summer</td></tr>
+    </tbody>
+  </table>
+
+  <h3>12. People cards <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Card</th><th>Choices</th><th>Costs / effects</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td>Someone asks to join (stranger, refugees, loner, people saved on the road, lost teenager, returning deserter)</td><td>Take them in; Take only X in; Send them to an outpost; Give them supplies and part ways; Turn them away. On the road: Take them along; Send them to a base; part ways; turn away.</td><td>Take in: 5 food each. Walking to a base: about 1 day per 8 tiles, 97% − 1.2% a tile to arrive (at least 60%). Parting: 3 food and 3 water each, +2 mood, +2 goodwill nearby.</td><td>Recruit card (portrait, skills, beds, food, water)</td></tr>
+      <tr><td>Talks about leaving / close to leaving</td><td>Talk to them; Give them 3 days' rest; A gift from the stores; Let them be.</td><td>Talk: 30% + 3.5% per Speech (to 95%), +25 mood (else +5). Gift: 4 food and 1 meds, +20 (+30 Greedy).</td><td>Mood below 30 / 20</td></tr>
+      <tr><td>A break</td><td>Talk to them; 2 days' rest; let them be.</td><td>—</td><td>A fight or a second break in 10 days</td></tr>
+      <tr><td>Outbreak</td><td>Quarantine for 10 days; treat everyone now; carry on.</td><td>—</td><td>Three or more contagious cases</td></tr>
+      <tr><td>Perk point</td><td>Pick one of two perks; Decide later.</td><td>—</td><td>A skill reaches 5, 10 or 15</td></tr>
+      <tr><td>Hub events</td><td>Fire, quarrel, peddler, lost teenager, wandering preacher, food missing, stray dog, storm damage, feast, personal errand, two survivors grown close, remembering the dead: each with two to four choices.</td><td>About one every 8 days at 4 people, 5 at 10, 4 at 20.</td><td>At the hub</td></tr>
+    </tbody>
+  </table>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned box select, control groups and direct "draft and command" of survivors at the hub. The prototype has no box select or control groups; defence is the deploy step plus the tactical battle, and hub work is given by roles and work priorities, not by clicking people around a map.</aside>
+</section>
+
+<section id="controls">
+  <h2>Controls and interface</h2>
+  <p class="lede">The game is mouse and keyboard first, with dense RimWorld-style panels around one State Map. Everything has a hover description, the panels fold away, big windows resize, and the menu holds saving, options and a built-in Help.</p>
+
+  <h3>Camera and map</h3>
+  <table class="data">
+    <thead><tr><th>Input</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>Left-click</td><td>Inspect a tile (a tile with one of your teams in contact opens its team panel)</td></tr>
+      <tr><td>Right-click</td><td>Actions for a tile, or move a waiting team there</td></tr>
+      <tr><td>Hover</td><td>Description of any button or option; tile tooltip on the map</td></tr>
+      <tr><td>Drag / wheel; <kbd>W A S D</kbd> or arrows</td><td>Pan / zoom; pan</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Pause / run (a new game starts paused, with a banner)</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Speed 0.5× / 1× / 2× / 3×: an in-game hour takes 40 / 20 / 10 / about 7 seconds (a day is 8 minutes at 1×)</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>I</kbd></td><td>Center on the hub / infection overlay</td></tr>
+      <tr><td><kbd>B</kbd> <kbd>P</kbd> <kbd>G</kbd> <kbd>T</kbd></td><td>Bases / People / Groups / Teams tab</td></tr>
+      <tr><td><kbd>Tab</kbd> or <kbd>N</kbd> (<kbd>Shift+Tab</kbd> back)</td><td>Next team waiting for orders</td></tr>
+      <tr><td><kbd>F1</kbd>–<kbd>F9</kbd></td><td>Jump to your bases (F1 the hub)</td></tr>
+      <tr><td><kbd>Ctrl+1</kbd>–<kbd>9</kbd> (or <kbd>Alt</kbd>) / <kbd>Shift+1</kbd>–<kbd>9</kbd></td><td>Save a camera spot / go back to it (kept for the run)</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>R</kbd></td><td>Diary / Roster (they also close each other)</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd> <kbd>L</kbd></td><td>Fold or show the left panel / right panel / log</td></tr>
+      <tr><td><kbd>Shift+[</kbd> / <kbd>Shift+]</kbd></td><td>Fold or show the running orders / the alerts</td></tr>
+      <tr><td><kbd>\</kbd> or ▣</td><td>Map only: fold every panel; again to put them back</td></tr>
+      <tr><td><kbd>`</kbd> or Dev</td><td>Dev tools</td></tr>
+      <tr><td><kbd>Shift+P</kbd></td><td>Autopilot on / off (dev)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close the top window, one layer per press; then move mode, then the team panel; with nothing open, the menu</td></tr>
+    </tbody>
+  </table>
+  <p>Map shortcuts do nothing while a window is open (a card, the planner, a base, Help) or on the new-run screen. The Work tab, battles and the timelapse have their own keys (see the actions reference and below).</p>
+
+  <h3>Windows and panels <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Panels</b> (<code>ui/layout.js</code> rules, <code>ui/windows.js</code> on the page): the left panel (Bases, People, Groups, Teams), the right panel (tile, site, base or team info), the log under the map, and three boxes over the map: the alerts, the running orders and the Layers box. Each folds to a slim bar or a button; drag the bar to resize (left and right 14–48 rem, log 4–40 rem).</li>
+    <li><b>Auto-open:</b> a folded panel opens by itself when you pick something it shows (a tile, team, alert or log link opens the right panel; a tab key the left one; a new urgent alert opens folded alerts). The log never opens for a new line. Switch off with <i>Auto-open panels on select</i>.</li>
+    <li><b>Resizable windows:</b> base screen and its Work tab, survivor, trade, radio, caravan, inventory and loot, planner, route, diplomacy, memorial, the menu, diary, roster and new run: drag edges and corners, move by the title, double-click the title for the usual size. Sizes are kept in rem (they follow the UI size), clamped to the screen, minimum 22 × 12 rem, and remembered per kind of window in the browser. Cards, results and the end screen stay fixed.</li>
+    <li><b>UI size</b> 75–200% in the top bar and the menu.</li>
+  </ul>
+
+  <h3>Alerts, log and diary <span class="status built">Built</span></h3>
+  <p>A stack of alerts on the right edge of the map lists what needs you now, worst first (<code>ui/alerts.js</code>): a break-in likely, out of food, out of water, someone about to desert, raiders from outside near a base, a horde within 6 tiles of a base, under 5 days of food or 3 of water, people sick and untreated for two days, a team waiting (or its plan finished), something broken, a station idle, a downed aircraft, cards waiting, and for a day a caravan arrived or a building finished. Click to go there; 💤 hides it for a day, ✕ until it clears; 8 shown, then "+N more".</p>
+  <p>The log under the map has filter chips (deaths, combat, hordes and hives, trade and groups, teams, base and people, medical, food and water, weather and world), a 🤖 toggle for the autopilot's notes, a base filter, and links on every person, base, group, team and place. The <b>Diary</b> (<kbd>J</kbd>) keeps every line of the run day by day with a summary per day, the leader's note, filters and a search.</p>
+
+  <h3>Help <span class="status built">Built</span></h3>
+  <p>The top bar's Help opens the menu's Help tab (<code>ui/help.js</code>): one topic at a time from a list, with ◂ / ▸ to step through. Topics are the paragraphs of the game's help text plus <i>Map layers</i> (every layer in full), <i>Map legend</i> (every symbol) and <i>Windows and panels</i>. Small ? buttons open it at their topic: the Layers box, the paused banner and the idle right panel.</p>
+
+  <h3>Map layers</h3>
+  <p>The Layers box toggles: Locations, Territory, Teams and convoys, Hordes and hives, Death sites, Vehicles, Spotted finds, Infection, Weather, Known area (off by default) and Coalition land (off by default, with the share held against the 50% goal). Map detail (Detailed / Flat) is an option, not a layer.</p>
+
+  <h3>Settings (⚙ Menu → Options) <span class="status built">Built</span></h3>
+  <table class="data">
+    <thead><tr><th>Setting</th><th>Values</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>Autosave</td><td>On / off (at dawn, when a hive assault starts, when the run ends; waits while a card needs an answer)</td><td>On</td></tr>
+      <tr><td>Autosave every</td><td>1, 2, 3, 5 or 7 days</td><td>1 day</td></tr>
+      <tr><td>Confirm before leaving a game</td><td>On / off (loading, exiting or a new campaign with unsaved progress)</td><td>On</td></tr>
+      <tr><td>Pause when the window loses focus</td><td>On / off</td><td>Off</td></tr>
+      <tr><td>Battles: ask before ending a turn with actions left</td><td>On / off</td><td>On</td></tr>
+      <tr><td>Base battles: skip the redeploy after falling back</td><td>On / off</td><td>Off</td></tr>
+      <tr><td>UI size</td><td>75, 90, 100, 115, 130, 150, 175, 200%</td><td>100%</td></tr>
+      <tr><td>Map detail</td><td>Detailed / Flat</td><td>Detailed</td></tr>
+      <tr><td>Zombie look…</td><td>Skin palette (Mixed, Rotten green, Ashen grey, Pale blue, Burnt); Gore (None, Some, Heavy); Variants (By strength, Random mix, Walkers only); Eyes (Glowing, Red, Dull); Clothes (Torn, Rags, Mostly intact)</td><td>Mixed, Some, By strength, Glowing, Torn</td></tr>
+      <tr><td>Auto-open panels on select</td><td>On / off</td><td>On</td></tr>
+      <tr><td>Reset window sizes</td><td>Button</td><td>—</td></tr>
+      <tr><td>Keys</td><td>A table of every key</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="gallery" data-sprites="zombie/walker zombie/walker-palette-rotten zombie/walker-palette-ashen zombie/walker-palette-pale zombie/walker-palette-burnt zombie/walker-gore-0 zombie/walker-gore-2 zombie/walker-eyes-red zombie/walker-eyes-dead zombie/walker-clothes-rags zombie/walker-clothes-intact"></div>
+
+  <h3>Saving and loading <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Game tab:</b> Save (to this game's slot), Save as new (named), Save to file…, Save and exit, Exit without saving, New campaign; in the desktop app Save and quit to desktop and Quit. On the new-run screen: <i>Continue</i> (latest save) and <i>Load game…</i>.</li>
+    <li><b>Slots:</b> up to 12 named saves plus the autosave in the browser's storage, gzip-compressed (a 365-day world is about 1.7 MB of JSON, about 280 KB stored), each with a map thumbnail; Load, Save here, Export (.bsave), Delete; Load from file adds a .bsave.</li>
+    <li><b>What is saved:</b> the whole world as a graph (shared objects written once), the seeded random generators and the id counter, so a loaded game plays on exactly like the original. Battles, raids, the deploy step, searches and trade windows are saved mid-turn. <b>An open event card cannot be saved</b>: answer it first. A save does not keep the interface (open windows, camera, camera spots).</li>
+    <li>Saves carry a format version (format 1); newer or unknown versions are refused with a reason.</li>
+  </ul>
+
+  <h3>Timelapse <span class="status built">Built</span></h3>
+  <p>The world is recorded from day 1 (about 0.25 ms a frame, roughly 300 KB a year). <i>Watch the timelapse</i> on the game-over or victory screen, or <i>Timelapse so far</i> in the dev tools. Keys: <kbd>Space</kbd> play / pause, <kbd>←</kbd> / <kbd>→</kbd> a day, <kbd>Home</kbd> / <kbd>End</kbd>, <kbd>1</kbd>–<kbd>4</kbd> speed (1 / 2 / 5 / 10 days a second), <kbd>I</kbd> infection, <kbd>T</kbd> territory, <kbd>F</kbd> fit the map, drag / wheel / <kbd>WASD</kbd> pan and zoom, click a caption to go there, <kbd>Esc</kbd> close. The overlay shows your people over time, hub stocks, the groups' land and population, horde, hive and hotzone counts and the captions; its two boxes resize from the corner.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned one continuous zoom from the State Map down to a room, with no separate mode screens. The prototype has a separate tactical screen for battles and raids, and the State Map zooms from the whole state (0.3) to 2.6.</aside>
+</section>
+
+<section id="presentation">
+  <h2>Art and presentation</h2>
+  <p class="lede">Everything is drawn in code: 2D top-down procedural pixel sprites with no image files. The State Map gained terrain decals (style B) and rippled water (style A) in October 2026, and a map chunk cache keeps the desktop app at about 120 fps on a 4K screen.</p>
+
+  <h3>Procedural pixel sprites <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Battle sprites</b> (<code>ui/sprites.js</code>): survivors built from their appearance (build, skin, hair style and color, facial hair, top, pants, accessory) plus worn armor and weapon; zombies as walkers, runners, bloated and brutes; enemy humans in raider / soldier / zealot kits in their group's color.</li>
+    <li><b>Map sprites</b> (<code>ui/mapsprites.js</code>): your teams (pickup, sedan, walkers with packs, scouts with binoculars, a relief squad behind a banner, a rowboat or raft with a wake, convoys with crates or drums), other groups' parties in their own look, about 40 site sprites on plates in their zone's color (faded when picked over, danger skulls up close), hordes as crowds of 2–7 figures, siege camps, ruins, markers and status icons.</li>
+    <li><b>Hive sprites</b> (<code>ui/hivesprites.js</code>): hives by level, build sites, growths, the Wallbreaker on the map and the two bosses for the battle map.</li>
+  </ul>
+  <div class="gallery" data-sprites="survivor/1 survivor/2 survivor/3 survivor/4 zombie/walker zombie/runner zombie/bloated zombie/brute boss/broodmother boss/wallbreaker"></div>
+  <div class="gallery" data-sprites="base/hub base/hub-full base/outpost camp/lit ruin/yours ruin/theirs siege/camp misc/bridge misc/wake misc/skull misc/redskull misc/smoke"></div>
+
+  <h3>State Map terrain: style B decals with style A water <span class="status built">Built</span></h3>
+  <p>Four tile styles were prototyped (<code>docs/tile-designs</code>): A pixel ground, B scattered decals, C painterly with edge blending, D tactical map. The user picked <b>B's decals with A's rippled water</b>, now in <code>ui/terraindeco.js</code>.</p>
+  <ul>
+    <li>Flat colors stay underneath; each tile gets a few small outline-free pixel sprites: forests 4–6 round trees and 2–3 pines (broadleaf trees turn gold and red in autumn and stand bare in winter), farmland crop rows, fences and hay bales near farms, hills mounds and rocks, mountains peaks, suburbs houses (about a third burnt out), city blocks, rubble and wrecks, cars beside roads, reeds on river banks.</li>
+    <li>Every decal has a snow-capped version; decals come pre-shaded for live, reported and unknown ground.</li>
+    <li>Placement is seeded per tile from the world's seed, never from the game's random numbers; decals keep off roads, bridges and the clear zone around sites, bases and hives.</li>
+    <li>Flat below zoom 0.6, fading in up to 0.75. Menu → Options → <i>Map detail: Flat</i> draws the old map at every zoom.</li>
+  </ul>
+  <div class="gallery" data-sprites="shot/final-normal-far shot/final-normal-mid shot/final-normal-close shot/final-huge-city-close shot/final-winter-city-close shot/comparison-sheet"></div>
+  <div class="gallery" data-sprites="terrain/tree-summer terrain/autumn-autumn terrain/autumn-winter terrain/pine-winter terrain/crops-summer terrain/hay-summer terrain/house-summer terrain/burnt-summer terrain/building-summer terrain/ruin-summer terrain/wreck-summer terrain/peak-winter terrain/reeds-summer terrain/water"></div>
+
+  <h3>Performance work <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Map chunk cache</b> (<code>ui/render.js</code>): the map is drawn into cached chunks per zoom level; a frame only copies chunks. Changed chunks are redrawn within a 3 ms budget a frame (<code>mapTuning.budgetMs</code>). Overlays (Known area, Coalition land) are baked into the chunks and worked out only when their data changes.</li>
+    <li><b>Decal cost:</b> the first full 4K screen at zoom 1 takes about 49 ms detailed against 33 ms flat; panning over cached chunks costs the same either way (0.2–0.6 ms of script a frame). Textures total about 1.7 MB; the atlas and water are ImageBitmaps (sub-images of a canvas cost about 30× more per draw in Chrome).</li>
+    <li><b>Panels:</b> above 3× the panels redraw about 4 times a second instead of every tick, and the top bar redraws each piece only when its text changes.</li>
+    <li><b>Simulation:</b> headless, a day takes about 15–20 ms on every world size with the autopilot; a Huge map is generated in about 120 ms.</li>
+  </ul>
+
+  <h3>Desktop app <span class="status built">Built</span></h3>
+  <p>An Electron window from <code>desktop/</code> (launcher <i>Play Broken State.cmd</i>). It always plays the current files in <code>prototype/</code> on the fixed origin <code>app://brokenstate/</code>, remembers its size, position, maximized and fullscreen state, and keeps saves in its own browser storage. Keys: <kbd>F11</kbd> fullscreen, <kbd>Ctrl+R</kbd> reload, <kbd>Ctrl+Shift+I</kbd> DevTools, <kbd>Ctrl+=</kbd> / <kbd>Ctrl+-</kbd> / <kbd>Ctrl+0</kbd> zoom. <code>npm run dist</code> makes a portable build (about 330 MB). <code>npm run perf</code> runs a new game on seed 42 with Reveal map and the autopilot at 200× for 60 s at 1920 × 1080 and maximized, and prints frame-time and memory JSON. After the map-cache work it runs at about 120 fps at 4K.</p>
+  <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned low-poly 3D with a tilted camera, dynamic lighting and audio. The engine decision of 2026-10-02 moved to the browser with 2D top-down art. There is no audio yet; lighting is gameplay only (night sight, flashlights, floodlights, flares).</aside>
+</section>
+
+<section id="dev-tools">
+  <h2>Developer tools and testing</h2>
+  <p class="lede">The simulation (<code>src/sim</code>) has no DOM, so over fifty headless Node tools play it without a browser: smoke tests, rule checks, determinism and save checks, and balance censuses that run hundreds of autopilot campaigns on worker threads. In the browser, the dev panel lifts the fog, fast-forwards and hands the holdout to an AI governor.</p>
+
+  <h3>Dev tools panel <span class="status built">Built</span></h3>
+  <ul>
+    <li><b>Open:</b> <kbd>`</kbd> or the Dev button (<code>ui/devtools.js</code>).</li>
+    <li><b>Reveal map</b> (no fog of war; display only, your intel is unchanged), <b>Infection overlay</b>, <b>Show FPS</b> (frame rate, frame time, script time and simulation ticks a second in the map's corner).</li>
+    <li><b>Fast forward</b> 60× / 300× / 1200× (1200× is a day in about 0.4 s); Space goes back to your last normal speed.</li>
+    <li><b>Autopilot</b> (<kbd>Shift+P</kbd>) with a style: Cautious, Balanced or Aggressive, and a 🤖 line saying what is short (hover for the reserve table).</li>
+    <li><b>Timelapse so far</b>, and a tracker: hotzone tiles, average infection, hives (resources, income, Wallbreakers waiting), hordes, hive build sites (dead gone in of 1,000, mass, score), the next build-site and border-horde days, the hive record, and each group's population, bases, land and strength, with the change over 7 days.</li>
+  </ul>
+
+  <h3>The autopilot <span class="status built">Built</span></h3>
+  <p>An AI governor (<code>sim/autopilot.js</code>) that uses only the same calls as the UI and what you know of the map. Every hour it sets roles; at 07:00 it plans buildings, crafts, trips, supply runs, outposts, trades and radio; it answers every card by rules or a score; it plans the winter food and the summer water; it keeps reserves (Cautious); it wages the war on the hives with a squad of six, and conquers bases by style. While it is on, battles resolve by the numbers, scavenging uses the hour-by-hour search and cards never stop the clock. The same per-base code runs the <b>stewards</b>, and crews use its judgement (<code>crewAI</code>).</p>
+
+  <h3>Headless test tools (<code>prototype/tools</code>)</h3>
+  <table class="data">
+    <thead><tr><th>Tool</th><th>What it checks</th></tr></thead>
+    <tbody>
+      <tr><td>simtest.js</td><td>Smoke run: N days on a seed with a simple auto-player; prints a summary (any world size).</td></tr>
+      <tr><td>autotest.js</td><td>The autopilot over 120 days on several seeds per style, plus a takeover check (switch on mid-raid, off again).</td></tr>
+      <tr><td>cardcount.js</td><td>Which event cards and hub events fire over five 90-day runs; recruit cards; desertion warnings.</td></tr>
+      <tr><td>pacing.js</td><td>Cards and decisions per day and per real minute, bursts, quiet stretches, crises stacking, one-answer cards.</td></tr>
+      <tr><td>combattest.js</td><td>Thousands of AI-vs-AI tactical battles: win rates per matchup, the special dead, weapon balance.</td></tr>
+      <tr><td>combattest_sweep.js</td><td>Power sweep: 3 survivors against 3 raiders at rising power, to calibrate battles against combat power.</td></tr>
+      <tr><td>raidtest.js</td><td>Interactive raids played by a bot per site type: extraction rate, deaths, loot, vehicles kept; stealth kit and night options.</td></tr>
+      <tr><td>retreattest.js</td><td>Sounding the retreat and the AI's retreat; retreat by the numbers and the four policies.</td></tr>
+      <tr><td>conflicttest.js / conflicttest_cover.js</td><td>Road conflicts over 120-day campaigns; coverage of every conflict type, option, rescue and a captive soak.</td></tr>
+      <tr><td>fighttest.js</td><td>Fight and living-world rules: humans only, merges, surrender, gear wear, raids on you, tribute, collapses.</td></tr>
+      <tr><td>loottest.js</td><td>Loot audit: every item has a source, themes fit the site, weights, values, packs, small finds.</td></tr>
+      <tr><td>supplytest.js</td><td>Supply runs: repeat / one-off / hold / disband / recreate jobs and blocked cases over 70 days.</td></tr>
+      <tr><td>medtest.js</td><td>Hospital tiers, medic staffing, treatment limits, automatic care, admit line, meds reserve.</td></tr>
+      <tr><td>basetest.js</td><td>Base and survivor rules: game over, leader card, hunger, lost and cut-off outposts, refunds.</td></tr>
+      <tr><td>crafttest.js</td><td>Hand crafting gates, craft queue, durability, field crafting, battles with makeshift weapons.</td></tr>
+      <tr><td>invtest.js</td><td>Inventory: equip and swap rules, pockets and packs, armor, carry limits, looting bodies.</td></tr>
+      <tr><td>etatest.js</td><td>Travel-time estimates against real trips (foot, truck, stances, fuel, boat crossings) to the hour.</td></tr>
+      <tr><td>loadtest.js</td><td>Weight and load bands, pace and rations, cars, bikes, and the autopilot's packing by style.</td></tr>
+      <tr><td>teamtest.js</td><td>Team rules: carry limit, wiped teams, cards that outlive their team, queues, boats, names.</td></tr>
+      <tr><td>fieldtest.js</td><td>Field rules: zombie speed, Heat for teams standing still, plans and presets, come-home conditions, the radio rule.</td></tr>
+      <tr><td>maptest.js</td><td>Map generation over many seeds and every world size: towns, roads, hidden sites, hives, groups, determinism.</td></tr>
+      <tr><td>timelapsetest.js</td><td>Timelapse recording: a frame a day, memory, captions, decoding, rendering with terrain detail.</td></tr>
+      <tr><td>weathertest.js</td><td>Seasons and weather: climate, forecast, arrival estimates under real and forced weather.</td></tr>
+      <tr><td>farmtest.js</td><td>Economy: crops, frost and rot, water, seasonal thirst, food storage and spoilage, preserving, illness, fuel.</td></tr>
+      <tr><td>peopletest.js</td><td>Recruit cards from every source, crowding, hub event weights, desertion warnings, deserters.</td></tr>
+      <tr><td>relationstest.js</td><td>Opinion drift, friends, rivals, partners, grief, the memorial, mood factors, breaks.</td></tr>
+      <tr><td>prodtest.js</td><td>Production orders, standing craft orders, power and generators, the still, stewards.</td></tr>
+      <tr><td>skilltest.js</td><td>XP curve, daily caps, decay, teaching, books, perks (all 54 effects).</td></tr>
+      <tr><td>exploretest.js</td><td>Locks and keys, locked rooms, blueprints, crash events, breakdowns and repairs.</td></tr>
+      <tr><td>tradetest.js</td><td>Item values, the price model, valuation by group kind and state, deals, relays, radio, caravans.</td></tr>
+      <tr><td>diplotest.js</td><td>Jobs, the relations matrix, wars, brokering, joining wars, the coalition and its victory.</td></tr>
+      <tr><td>conquertest.js</td><td>Taking group bases, infamy, late gangs, razing, losing and retaking bases, the exiles.</td></tr>
+      <tr><td>hivetest.js</td><td>Hives and hordes, build sites, hold limits, the hive tech tree, the special dead, calibration battles.</td></tr>
+      <tr><td>stealthtest.js</td><td>Takedowns, prisoners, throwables, the suppressor, night raids, bodies and the alarm, the deploy step.</td></tr>
+      <tr><td>defencetest.js</td><td>Base defence in three tiers on two maps, verticality, battle fog of war, the tiers by the numbers.</td></tr>
+      <tr><td>depletetest.js</td><td>Sites running dry, other groups' scavenging parties, stale loot knowledge, radio news.</td></tr>
+      <tr><td>visitortest.js</td><td>Outsiders: raiders, merchants and explorers, fog, warnings, trade, reputation.</td></tr>
+      <tr><td>worktest.js</td><td>Work priorities, emergencies, schedules, crews; governor roles against priorities over many seeds.</td></tr>
+      <tr><td>hunttest.js</td><td>Hunting, snares and fishing, overhunting, carcass weight and spoilage, the hunting cabin, lean-year autopilot.</td></tr>
+      <tr><td>discoverytest.js</td><td>Hidden sites: rules, every discovery route, save and load, how fast the autopilot finds them.</td></tr>
+      <tr><td>surveytest.js</td><td>The Survey mission's odds and route, rumours, optics, survey trips against the planner.</td></tr>
+      <tr><td>uitest.js</td><td>UI without a browser: diary, log, alerts, map keys, roster, Help, windows and panels, terrain detail, overlays.</td></tr>
+      <tr><td>savetest.js</td><td>Save and load round trips (mid-plan, mid-battle, every world size), storage layer, settings view.</td></tr>
+      <tr><td>dettest.js</td><td>Determinism across worlds in one process and a fresh process, by a full digest.</td></tr>
+      <tr><td>digest.js, sizearg.js</td><td>Helpers: the determinism digest; the world-size argument for the tools.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Balance census tools</h3>
+  <table class="data">
+    <thead><tr><th>Tool</th><th>What it measures</th></tr></thead>
+    <tbody>
+      <tr><td>balancesim.js</td><td>Up to 100 autopilot campaigns (seeds × styles) to 730 days on worker threads: outcomes, deaths by cause, pressure per 30 days, cards a day, overlap of crises, hives, raids, stocks. Findings in <code>review/balance-census.md</code>.</td></tr>
+      <tr><td>wintest.js</td><td>How long campaigns end (hive victory, coalition victory, fallen, still going), with timelines; <code>--force</code> rigged scenarios for each ending; <code>--tune</code> tries balance numbers.</td></tr>
+      <tr><td>raidcensus.js</td><td>Human raids: launched, warned, the autopilot's answers, outcomes, costs, damage; outsiders; rescue raids; who stays hostile.</td></tr>
+      <tr><td>hordecensus.js</td><td>Hive and horde pacing: hordes bought, attacks on bases per 30 days, horde size against hold limits, build-site timings.</td></tr>
+      <tr><td>pacing.js</td><td>Card pacing and decision quality (see above). Findings in <code>review/pacing.md</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Review reports (<code>review/</code>)</h3>
+  <ul>
+    <li><b>base.md</b>: base and survivor systems review (economy, buildings, crafting, medical, inventory); first finding was that the game never ended when the last person deserted.</li>
+    <li><b>combat.md</b>: combat and living-world review; for example zombies fighting on the side of commune and trader militias.</li>
+    <li><b>travel.md</b>: map, travel and teams review; for example an outpost across water emptying the hub's food every midnight.</li>
+    <li><b>ui.md</b>: UI layer review with a fake DOM driving the real listeners; for example the timelapse hidden behind the battle screen.</li>
+    <li><b>render.md</b>: drawing, dev tools, autopilot and timelapse review; panels unclickable at high speed, and the performance and desktop-build suggestion.</li>
+    <li><b>play.md</b>: playtest through the real UI with a human-like bot (scenarios 1–6).</li>
+    <li><b>browser-run.md</b>: a start-to-end run in the real browser (new-run screen, clock, dev tools, autopilot, base tabs, inventory).</li>
+    <li><b>balance-census.md</b>: the 100-campaign census and what it says about difficulty.</li>
+    <li><b>pacing.md</b>: 42 campaigns measured for cards per day (2.40 a day, a card every 30 s at 1×) and decision quality, with an options list.</li>
+  </ul>
+  <aside class="tip"><b>Design intent:</b> the user's rule is that every tool in <code>prototype/tools</code> passes before each checkpoint commit, and that balance claims come from census runs (20-game censuses when the machine is busy).</aside>
+</section>
+
+<section id="changes">
+  <h2>What changed since Draft 1</h2>
+  <p class="lede">Draft 1 (2026-10-01) was written before most of the prototype existed. This table compares its decisions and plans with what is built now, checked against the code.</p>
+  <table class="data">
+    <thead><tr><th>Draft 1 plan</th><th>Now</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Engine: Unity, then Godot; simulation in plain C#</td><td>Browser game in plain JavaScript with no dependencies (TypeScript not adopted yet); the simulation is kept in <code>src/sim</code> with no DOM so it could be ported to Godot C# almost one-to-one; packaged as an Electron desktop app.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Low-poly 3D, tilted camera, dynamic lighting, audio</td><td>2D top-down procedural pixel sprites; terrain decals; no audio.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>State Map about 400 × 300 km, several thousand hex tiles</td><td>Hex map by world size: Small 48 × 32, Normal 64 × 42 (2,688 tiles), Large 80 × 52, Huge 100 × 66 (6,600 tiles).</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Local tactical maps generated per tile, with persistent changes</td><td>Battle maps (18 × 13) and raid maps (28 × 18) generated per fight from the tile or site; base defence on a wall map and a yard map generated from the base's buildings. Maps do not persist; a site's loot is one finite stock that every search lowers.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>XCOM-style battles (2 actions, cover, flanking, overwatch, hunker, melee, meds, ambush, bleeding out in 3 turns)</td><td>As planned, plus stealth kit, throwables, verticality, battle fog of war, sounding the retreat and retreat by the numbers.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Extraction raids with Heat stages and extraction zones</td><td>Built as planned (Stirring 25, Swarming 50, Overrun 75; vehicle zone), plus locks, keys and locked rooms.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Real-time with pause, 0.5× / 1× / 2× / 3×, one shared clock</td><td>Built; a day is 8 minutes at 1×. Battles and raids pause the map clock and their time passes on it afterwards.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>12 skills (incl. Melee, Crafting, Construction, Cooking)</td><td>9 skills: Shooting, Stealth, Scavenging, Scouting, Medicine, Mechanics, Farming, Speech, Leadership; skills grow with use, teaching and books; 54 perks.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Health per body part, bleeding, scars</td><td>One health number, wounds (severe, infected) and named illnesses with severity.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Squads, role presets, auto-assign, base foremen, bulk orders, alerts by priority</td><td>Work roles and crews, <i>Everyone here on priorities</i>, stewards (the governor's code, not a survivor), the roster's set-role-for-ticked-rows, the alert stack.</td><td><span class="status built">Kept</span> (in changed form)</td></tr>
+      <tr><td>Building placed on a grid (walls, doors, rooms)</td><td>Buildings are a list per base with a construction queue; no placement.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Work tab priority grid and schedules</td><td>Work tab with priorities 1–5 per work type and an hour-by-hour schedule.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Production chains (crusher → smelter → press), workstation tiers, batches, tending, hauling</td><td>Single-step stations (ammo bench, med station, machine shop, preserving kitchen, ethanol still, generator) with operators and standing orders; no chains, tending or hauling.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Tech tiers 0–5</td><td>Replaced by manuals and blueprints found at fitting sites and studied on the Read role (11 of them unlock the upper buildings and recipes).</td><td><span class="status planned">Dropped</span></td></tr>
+      <tr><td>Reverse engineering</td><td>Not built; blueprints come from loot, traders and job rewards instead.</td><td><span class="status planned">Not built</span></td></tr>
+      <tr><td>Skill-gap rule (−15% / −35% and 5% damage / unusable)</td><td>Built exactly (<code>gearEffect</code>).</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Power grid (wires, batteries, solar, wind, hydro, brownouts, priority switches)</td><td>Per-base generators (2 fuel a day for 6 power, an operator) and powered buildings served in a fixed order with on / off switches; no wires, batteries or renewables.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Hub Heat drawing hordes; mufflers and sound walls</td><td>Base Heat = people + 3 per manned station + radio + hub + a running generator + hunters' shots; wandering hordes drift toward it. No mufflers or sound walls.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Trip planner with route choice and many transports (bicycle, car, truck, horse, boat)</td><td>Planner with plans, presets and exact estimates; on foot, bikes, pickup or sedan. No route choice (shortest path), no horses; boats only as one-use crossings.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Weight-based carrying</td><td>Built: load bands Light / Medium / Heavy / Overloaded set pace and rations.</td><td><span class="status built">Built</span></td></tr>
+      <tr><td>Vehicles with fuel and condition, abandoned and siphoned, wrecks restored</td><td>Built as planned.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Recon and fog of war; radio contact; relays; radio tiers and encryption</td><td>Recon, reports on return, radio stations (8 tiles) and chained relays (6). No radio item tiers, batteries or encryption; groups do not overhear you.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Events, conflicts on the road, team orders</td><td>Built as planned. Known routes and fast travel inside your land are not.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Storyteller with presets (Builder / Survivor / Holdout)</td><td>Not built. Pacing is measured with <code>tools/pacing.js</code>; hive and raid pressure scale with the day.</td><td><span class="status planned">Not built</span></td></tr>
+      <tr><td>Economy, barter prices from stock, trade routes, escort levels</td><td>Built and extended: hidden values, prices by group kind, state and holdings, a market board, radio deals, caravans. Escorts cannot be changed on a running route; an attacked convoy is auto-resolved.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Factions: 5–10 groups, 7 types, attitude drift, calls for help</td><td>Built; group count now follows world size (3–18). Groups expand, scavenge, wage wars, sign pacts and collapse.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Diplomatic actions (agreements, pacts, alliances, tribute, exchanges, intel, joint ops, war, sabotage, proxy wars)</td><td>Pacts, the coalition, tribute, prisoner trade and ransom, intel, jobs and allies at hive assaults, joining wars. No sabotage or proxy wars; you cannot declare war except by attacking.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Taking over a faction: force, shadow, economy, diplomacy</td><td>Force (Assault their base) and diplomacy (coalition membership). No shadow or economic takeover.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Satellites, supply lines, backup ETA, overrun bases retaken</td><td>Built; supply-line strength is shown on the base, not drawn on the map. Outposts cannot be abandoned by hand.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Zombie variant tiers (shamblers, crawlers, runners, screamers, bloaters, armored, stalkers, brutes, hive bosses)</td><td>The hive tech tree: runners, brutes, spitters, screamers, crawlers, Wallbreakers and elite dead, by tier over a 10–15 year game; bloated and brutes in battle; the Broodmother. No armored dead or stalkers.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Nests, hordes, culling, diverting, containment</td><td>Hives that build hordes and new hives; culling (killzone), luring and decoy fires, walls and defence buildings. No blown bridges.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Death sites stripped most valuable first; gear goes somewhere</td><td>Built; looted gear is listed on the group ("Seen carrying") but cannot be tracked down. No reanimated survivors.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>Captives and rescue missions</td><td>Built; plus your own prisoners, questioning, ransom and winning them over.</td><td><span class="status built">Kept</span></td></tr>
+      <tr><td>Secure pouch, budget kits, hub insurance</td><td>Only the autopilot's trip kit (<code>kit.js</code>).</td><td><span class="status planned">Not built</span></td></tr>
+      <tr><td>End goals: Confederation, Dominion, Endurance, ending slideshow</td><td>Two victories: destroy every hive, or the Calder Coalition (over half the land and every group still standing a member; groups that refuse can be broken by conquest). A victory screen with the timelapse and <i>Keep playing</i>.</td><td><span class="status partial">Changed</span></td></tr>
+      <tr><td>Legacy, run modifiers, difficulty sliders, survivor generations, restoration projects</td><td>Not built; world size and group count are the only campaign options.</td><td><span class="status planned">Not built</span></td></tr>
+      <tr><td>Saving</td><td>Built (Draft 1 listed it under "Not yet").</td><td><span class="status built">Built</span></td></tr>
+      <tr><td>Box select, control groups, context menus, tooltips, UI scale 75–200%, map overlays (incl. trade routes, supply lines, Heat, power)</td><td>Context menus, tooltips, UI scale, resizable windows and folding panels, overlays for territory, infection, weather, known area and coalition land. No box select, control groups, or trade-route / supply-line / Heat / power overlays.</td><td><span class="status partial">Partial</span></td></tr>
+      <tr><td>New since Draft 1 (not in it)</td><td>Weather and seasons, farming with crop plots, water and summer thirst, food storage and preserving, illness, hunting and fishing, hidden sites and the Survey mission, crash sites, breakdowns, prisoners and the stealth kit, three-tier base defence, outsiders from beyond the state, relationships and grief, the diary, the timelapse, the autopilot and stewards.</td><td><span class="status built">Built</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="roadmap">
+  <h2>Open work and roadmap</h2>
+  <p class="lede">What is still open: Draft 1 items not built, the current pick-list of suggestions (<code>docs/suggestions-3.md</code>), the README's known gaps, and Draft 1's open questions. The user picks from these lists by number; design changes are offered, not made.</p>
+
+  <h3>Draft 1 items not built <span class="status planned">Planned</span></h3>
+  <ul>
+    <li>Storyteller with presets and difficulty sliders; run modifiers (harsh winter, scarce ammo, fast mutation, military collapse); legacy between campaigns.</li>
+    <li>Reverse engineering; multi-step production chains, tending and batches; renewable power and a wired grid.</li>
+    <li>Radio items with tiers, batteries, encryption, and rivals overhearing your teams.</li>
+    <li>Shadow and economic takeovers, sabotage, proxy wars; rivals forming coalitions against you; a military campaign to retake regions.</li>
+    <li>Armored dead and stalkers; reanimated survivors wearing their gear.</li>
+    <li>Secure pouch and hub insurance; tracking down looted named gear.</li>
+    <li>Survivor ageing and generations; landmark restoration projects (dam, rail line, airport).</li>
+    <li>Box select and control groups; trade-route, supply-line, Heat and power overlays; audio.</li>
+  </ul>
+
+  <h3><code>docs/suggestions-3.md</code>: the open pick-list</h3>
+  <p>Collected after the 2026-10-04/05 balance pass. Its census: 20 autopilot games over 2 years, 2 fell (both Cautious), 1 coalition victory (Aggressive), 0 hive victories, 17 still going; deaths 36% field fights, 20% raids, 16% hordes at bases, 4% thirst.</p>
+  <table class="data">
+    <thead><tr><th>#</th><th>Suggestion</th><th>Status in the code</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>The autopilot now survives too easily (85% last 2 years): keep it, or grow late attack hordes with the day.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>2</td><td>Hive victory is rare (about 3.7 destroyed and 3.7 built in 2 years): new hives only from clusters of 2+, or clusters weaken when a neighbour dies.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>3</td><td>Outposts break in more than half the time a horde reaches them: a garrison-and-walls plan before expanding.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>4</td><td>Razing and late gangs feel harsh: lower raze odds (raiders 22%) or the settling rate (3% a day).</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>5</td><td>Cautious falls most: a "turtle" bonus for stronger walls when few people go out.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>6</td><td>Standing road orders: trips auto-answer storms, patrols and road hordes and report once at home.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>7</td><td>Perk points stop pausing the clock (a badge on the roster instead of a card).</td><td><span class="status planned">Open</span> (the perk card still pauses)</td></tr>
+      <tr><td>8</td><td>A card when the dead start a new hive, and a rumour when a site is picked.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>9</td><td>A card when a group turns hostile (envoy with a gift, ask allies, prepare).</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>10</td><td>A winter card: "The stores won't last the winter".</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>11</td><td>A pacing director: no small cards within 6 hours of a crisis, at most 2 road events per team a day.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>12</td><td>Fix the one-answer cards (storm shelter, stranded traders, Prepare defences vs Hold).</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>13</td><td>Retreat in auto-resolved fights.</td><td><span class="status built">Built</span> (<code>breakoff.js</code>: four policies)</td></tr>
+      <tr><td>14</td><td>Enemies throw Molotovs and pipe bombs too.</td><td><span class="status planned">Open</span> (only the AI playing your side throws)</td></tr>
+      <tr><td>15</td><td>Units move to the edge for a turn before the AI sounds the retreat.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>16</td><td>Groups use or issue the gear on their shelves so prices recover.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>17</td><td>Radio rumours of who wants what.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>18</td><td>Late-game scrap shortage: cheaper well repairs or parts-for-scrap filters.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>19</td><td>A "ration water" rule and water runs by truck.</td><td><span class="status planned">Open</span> (water is never rationed)</td></tr>
+      <tr><td>20</td><td>A Known area overlay; the autopilot surveys in quiet stretches only.</td><td><span class="status built">Built</span> (Known area layer)</td></tr>
+      <tr><td>21</td><td>Draw ruins on the map, and a coalition territory overlay.</td><td><span class="status built">Built</span></td></tr>
+      <tr><td>22</td><td>A dedicated bike sprite for teams riding on the map.</td><td><span class="status planned">Open</span> (only abandoned bikes have a sprite)</td></tr>
+      <tr><td>23</td><td>Stewards assign roles and tune priorities, not only Manual people.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>24</td><td>Crews leave from outposts, not only the hub.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>25</td><td>Animal threats (wolves, bears) on hunts; hides give scrap; fresh meat lifts mood.</td><td><span class="status planned">Open</span></td></tr>
+      <tr><td>26</td><td>A per-team loot limit ("stop picking up at Heavy"); heavy teams are noisier.</td><td><span class="status partial">Partial</span> (the autopilot keeps its hauls to a band; not for the player)</td></tr>
+    </tbody>
+  </table>
+
+  <h3><code>docs/feature-queue.md</code> <span class="status built">Done</span></h3>
+  <p>The user's 2026-10-03 requests are all built: weather and seasons (A), hives and hordes with resources, build sites, Wallbreakers and border hordes (B), the economy rework (scarce base scavenging, crops that take time, water, illness, rarer fuel) (C), radio relays, radio to groups, caravans and the trade window (D), and batch 3 (settings with save / load, skill growth and books, production orders with quality, the diary, manuals and blueprints, perks, the suggestions-2 items #3 #4 #5 #11–16 #22 #24 #25, wants and surplus, breakdowns, crash events, lock picking and stewards). Unpicked suggestions-2 ideas still open: a ledger of where goods come from (#18), landmark restoration projects (#19), early hub tasks that ask for a person (#20), a quest book of milestones (#21), and traits earned in play (#2).</p>
+
+  <h3>Known gaps (README)</h3>
+  <ul>
+    <li><b>Hives:</b> the autopilot rarely destroys hives and never culls a build site; base sprites do not show defence buildings; hives can overlap; a build site cannot be attacked directly; hordes do not march on camps.</li>
+    <li><b>Balance:</b> first pass; raid balance untested with real players.</li>
+    <li><b>Field:</b> the estimated position of an out-of-contact team follows the way out and back only; the autopilot launches no plans and does not camp; orders queued after a plan's Return home are dropped.</li>
+    <li><b>Saving:</b> no save while a card is open; saves live in browser storage (Export to keep them); the interface is not saved; no migrations yet (format 1).</li>
+    <li><b>Alerts, diary, roster:</b> categories from wording; links found by name; no alerts for teams short of food or water or vehicles out of fuel.</li>
+    <li><b>Retreat and base battles:</b> no sounding the retreat in raids or base defences without an evac strip; two maps rather than one continuous base; the dead batter only doors, windows, the gate and wall sections; night only in base battles and raids.</li>
+    <li><b>Outposts</b> cannot be abandoned by hand; <b>trade routes</b> cannot swap escorts; your caravans start from the hub only; groups do not trade gear with each other.</li>
+    <li><b>Captives</b> are not shown on the map; convoys get no conflict cards; held convoys do not help defend.</li>
+    <li><b>Timelapse:</b> parties only at frame times, straight lines; markers and battles not drawn.</li>
+    <li><b>Crafting:</b> no torches; makeshift gear is not traded. <b>Power:</b> per base, generators need an operator; the hospital and outposts' relays take no power.</li>
+    <li><b>Weather:</b> one sky for the whole state; estimates "know" more than the forecast.</li>
+    <li><b>People and mood:</b> hub events only at the hub; no children or families; opinion is one number per pair.</li>
+    <li><b>Economy:</b> no pests or crop rotation; water never rationed; illness gives no immunity.</li>
+    <li><b>Autopilot:</b> fights always by the numbers; no trade routes, boats or deliberate scouting; it overwrites hand-set roles.</li>
+    <li><b>Skills:</b> no XP from hub events or mediating; earned traits not in yet.</li>
+    <li><b>Exploration:</b> keys cannot be traded; no blowtorch or explosives for safes; locks only in raids and the hour-by-hour search; blueprints are global once studied.</li>
+    <li><b>Inventory:</b> sprites show weapon and body armor only; no picking things up during a battle.</li>
+    <li><b>Outsiders and diplomacy:</b> their raids on groups and wars are resolved by the numbers; joining a war adds abstract patrols; no peace treaty with a group you fought except through its war's end.</li>
+  </ul>
+
+  <h3>Draft 1 open questions</h3>
+  <table class="data">
+    <thead><tr><th>Question</th><th>Where it stands</th></tr></thead>
+    <tbody>
+      <tr><td>Can the simulation run 10 groups of up to 50 plus hordes on a full-size map, and hit the local-map target (50 survivors, 200+ zombies, 50 humans at 3×)?</td><td>Partly answered: headless a day takes 15–20 ms on every world size, Huge maps run 10–18 groups, and the desktop app holds about 120 fps at 4K. The large local-map stress test has not been run (battles use at most about 8 defenders and 20 of the dead).</td></tr>
+      <tr><td>How to package the browser game for sharing (Electron, Tauri, zipped folder)?</td><td>Answered: Electron, with a portable build.</td></tr>
+      <tr><td>Is "Broken State" free on Steam and as a trademark?</td><td>Still open (not checked; the game is for personal and family use).</td></tr>
+      <tr><td>Playtest raids and battles and tune lethality (the auto-player loses too many people).</td><td>Still open: the README lists raid balance as untested with real players.</td></tr>
+    </tbody>
+  </table>
+</section>
