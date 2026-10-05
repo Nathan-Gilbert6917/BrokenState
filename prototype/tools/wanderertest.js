@@ -341,6 +341,60 @@ section("The third side on the raid map: survivors hiding, a squad clearing the 
   check(cards === met, "every neutral group found (and alive) can be talked to after the raid");
 }
 
+section("Building interiors: a raid inside with survivors, a squad or squatters (buildingmaps.js → thirdside.js)");
+{
+  const TYPES = ["pharmacy", "police", "clinic", "gunstore", "grocery", "diner", "motel", "school", "hardware", "church", "autoshop", "apartments"];
+  const seen = { neutral: 0, military: 0, hostile: 0 };
+  let inside = 0, raids = 0, attackedYou = 0, turned = 0, soldierShots = 0, cards = 0, met = 0;
+  for (let i = 0; i < 18; i++) {
+    const s = createWorld({ seed: 900 + i, factionCount: 7 });
+    wanderers(s);
+    const h = hub(s);
+    const tile = s.tiles.find((t) => t.loc && t.loc.type === TYPES[i % TYPES.length] && t.id !== h.tile && !s.factions.some((f) => f.bases.includes(t.id)));
+    if (!tile) continue;
+    const mil = s.factions.find((f) => f.type === "military");
+    const side = ["neutral", mil ? "military" : "neutral", "hostile"][i % 3]; // no military group in this world: survivors
+    const kind = { ...WANDER.KIND }, S = WANDER.SITE, SM = WANDER.SITE_MAX;
+    Object.assign(WANDER.KIND, { neutral: side === "neutral" ? 1 : 0, hostile: side === "hostile" ? 1 : 0, military: side === "military" ? 1 : 0 });
+    WANDER.SITE = 100; WANDER.SITE_MAX = 1;
+    if (mil) { mil.bases = [s.grid.within(tile.id, 5).find((id) => id !== tile.id && s.tiles[id].terrain !== "water") ?? tile.id]; mil.goodwill = 20; }
+    const crew = atBase(s, h.id).slice(0, 3).map((x) => x.id);
+    const res = launchExpedition(s, { memberIds: crew, dest: tile.id, mission: "scavenge", stance: "normal", supplies: { food: 4, water: 4, ammo: 40, meds: 2 } });
+    const p = res.party;
+    p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+    const groups = raidEnemies(s, tile.id);
+    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "wtest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5 }, context: {} };
+    const b = createBattle(s, setup);
+    Object.assign(WANDER.KIND, kind);
+    WANDER.SITE = S; WANDER.SITE_MAX = SM;
+    if (!b.raid.plan) continue;
+    raids++;
+    const B = b.raid.plan.building;
+    const inB = (u) => u.x >= B.x0 && u.x < B.x0 + B.w && u.y >= B.y0 && u.y < B.y0 + B.h;
+    const third = b.units.filter((u) => u.side === "third");
+    const squat = b.units.filter((u) => u.occupant === "hostile");
+    if (side !== "hostile" && third.length && third.every(inB) && third.every((u) => u.team === side)) { inside++; seen[side]++; }
+    if (side === "hostile" && squat.length && !third.length) { inside++; seen.hostile++; }
+    const names3 = third.map((u) => u.name), mine = b.units.filter((u) => u.side === "player").map((u) => u.name);
+    play(s, b, 200);
+    for (const l of b.log) {
+      if (names3.some((n) => l.text.startsWith(`${n} shoots `) || l.text.startsWith(`${n} strikes `)) && mine.some((m) => l.text.includes(` ${m}`))) attackedYou++;
+      if (third.some((u) => u.team === "military" && (l.text.startsWith(`${u.name} shoots Zombie`) || l.text.startsWith(`${u.name} shoots Survivor`)))) soldierShots++;
+    }
+    const r = b.result.third || [];
+    if (r.some((x) => x.hostile)) turned++;
+    if (r.some((x) => x.team === "neutral" && x.met && x.alive)) met++;
+    s.cards.length = 0;
+    finishCombat(s, setup, b.result);
+    wanderersAfterRaid(s, p, b.result);
+    if (s.cards.some((c) => /Survivors in/.test(c.title))) cards++;
+  }
+  check(raids >= 12 && inside === raids, `${raids} raids inside a building: the people are there (${seen.neutral} with survivors in their room, ${seen.military} with a squad, ${seen.hostile} with squatters as guards)`);
+  check(attackedYou === 0 && turned === 0, "the survivors and soldiers never attack your people, and your AI never attacks them");
+  console.log(`  the soldiers shot at the dead or the squatters ${soldierShots} times; survivors found alive in ${met} raids, ${cards} talk cards after`);
+  check(cards === met, "survivors found alive inside can be talked to after the raid");
+}
+
 section("Building interiors: interiorOccupants");
 {
   const s = createWorld({ seed: 91, factionCount: 7 });

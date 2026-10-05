@@ -28,6 +28,8 @@ const at = (st, d) => { st.hour = (d - 1) * 24 + 6; return st; };
 const keep = (st) => {
   const h = hub(st);
   if (h) { h.stock.food = Math.max(h.stock.food || 0, 40); h.stock.water = Math.max(h.stock.water || 0, 40); }
+  // Before the first hub the three are on the road (hardcore-start.js): keep the team's food and water up too.
+  for (const p of st.parties) if (p.owner === "player" && p.supplies) { p.supplies.food = Math.max(p.supplies.food || 0, 10); p.supplies.water = Math.max(p.supplies.water || 0, 10); }
   for (const s of st.survivors) if (s.alive) { s.health = 100; s.mood = Math.max(s.mood, 60); }
   // No raids and no hive attacks on your camp (eras.js pace): the groups and the start are not under test here.
   const E = ensureEraState(st);

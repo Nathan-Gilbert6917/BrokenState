@@ -107,14 +107,17 @@ function setFrame(b, cw, ch) {
 }
 
 // ---------- the scene: buildings, heights, what each cell looks like ----------
-const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed"]);
-const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate", "loft", "stairs"]);
+const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed", "idoor", "odoor"]);
+const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate", "loft", "stairs", "rack", "table", "bed", "bars", "ladder"]);
+// Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
+// is drawn on a slab of the upper floor, raised with it.
+const FURNITURE = new Set(["counter", "cabinet", "shelf", "locker", "crate", "rack", "table", "bed", "hay", "bars"]);
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = c.f ? c.f.charCodeAt(0) + c.f.length : 0;
+    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0);
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
@@ -285,14 +288,22 @@ const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u
 function prims(k, o) {
   const v = o.v || 0;
   switch (k) {
-    case "wall": case "window": case "door": {
+    case "wall": case "window": case "door": case "idoor": {
       const top = o.stub ? STUB : o.top;
       const face = wallFace(o.mat ?? 0, o.dmg);
       const winFace = (axisFace) => (f, s, t, X, Y, sw) => {
         if (f === axisFace && !o.stub) {
           const w0 = 4, w1 = (sw || 16) - 4;
           if (k === "window" && s >= w0 && s < w1 && t >= 11 && t < 25) return s < w0 + 1 || s >= w1 - 1 || t < 12 || t >= 24 ? PAL.frame : mul(PAL.glass, 0.85 + (s - t) % 5 * 0.04 + (o.dmg ? -0.3 : 0));
-          if (k === "door" && s >= 4 && s < 12 && t < 25) return s < 5 || s >= 11 || t >= 24 ? PAL.frame : (s === 9 && t === 12 ? hex("#c9b048") : mul(o.vault ? PAL.metal : PAL.woodDk, 0.95 + n2(s, t, 1) * 0.1));
+          // A roller door (a garage bay, a loading dock): metal slats across the whole cell.
+          if (o.roll && t < 25) return t >= 24 ? PAL.frame : mul(PAL.metal, Math.floor(t) % 3 < 1 ? 0.7 : 0.92 + n2(s, t, 2) * 0.08);
+          // A locked door (sim/locks.js): dark wood or a steel vault door, a brass lock plate; a closed door: lighter.
+          if ((k === "door" || k === "idoor") && s >= 4 && s < 12 && t < 25) {
+            if (s < 5 || s >= 11 || t >= 24) return PAL.frame;
+            if (k === "door" && s >= 8 && s < 10 && t >= 11 && t < 15) return hex("#d9b23a");
+            if (k === "idoor" && s === 9 && t === 12) return hex("#a8a49a");
+            return mul(o.vault ? PAL.metal : k === "door" ? PAL.woodDk : PAL.wood, 0.95 + n2(s, t, 1) * 0.1);
+          }
         }
         return face(f, s, t, X, Y);
       };
@@ -300,16 +311,20 @@ function prims(k, o) {
       const m = (f, s, t, X, Y, sw, sh) => (f === "top" ? capFace(f, s, t, X, Y) : wf ? winFace(wf)(f, s, t, X, Y, sw, sh) : winFace("south")(f, s, t, X, Y, sw, sh) || winFace("east")(f, s, t, X, Y, sw, sh));
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: top, m }];
     }
-    case "bdoor": case "doorway": case "smashed": {
+    case "bdoor": case "doorway": case "smashed": case "odoor": {
       // An opening in a wall: a post at each end of the wall's run and a lintel; a barred door, a door hanging off
-      // its hinges or a broken window sill between them.
+      // its hinges, a door swung open (a roller door rolled up into its drum) or a broken window sill between them.
       const ax = o.n === "u" ? "v" : o.n === "v" ? "u" : along(o);
       const top = o.stub ? STUB : o.top, face = wallFace(o.mat ?? 0, 0), lin = top - 7;
       const back = [run(ax, 0, 1, 0, top, face, 0, 0.2)];
       const front = [run(ax, 0, 1, 0, top, face, 0.8, 1)];
       if (!o.stub) front.unshift(run(ax, 0, 1, lin, top, face, 0.2, 0.8));
       if (k === "bdoor") back.push(run(ax, 0.42, 0.58, 0, o.stub ? STUB : lin, (f, s, t) => (t > 9 && t < 12 ? PAL.metal : mul(PAL.wood, 0.85 + ((s | 0) % 3 === 0 ? -0.15 : 0.08))), 0.2, 0.8));
-      if (k === "doorway") back.push(ax === "u" ? { u0: 0.2, u1: 0.3, v0: 0.12, v1: 0.6, z0: 0, z1: Math.min(lin, 22), m: tex(PAL.woodDk, 0.15) } : { u0: 0.12, u1: 0.6, v0: 0.2, v1: 0.3, z0: 0, z1: Math.min(lin, 22), m: tex(PAL.woodDk, 0.15) });
+      if (k === "doorway" || (k === "odoor" && !o.roll)) {
+        const wood = k === "odoor" ? tex(PAL.wood, 0.12) : tex(PAL.woodDk, 0.15);
+        back.push(ax === "u" ? { u0: 0.2, u1: 0.28, v0: 0.1, v1: 0.62, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood } : { u0: 0.1, u1: 0.62, v0: 0.2, v1: 0.28, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood });
+      }
+      if (k === "odoor" && o.roll && !o.stub) front.unshift(run(ax, 0.3, 0.7, lin - 4, lin, tex(PAL.metal, 0.12), 0.2, 0.8));
       if (k === "smashed") back.push(run(ax, 0.2, 0.8, 0, 8, face, 0.2, 0.8));
       return o.part === "front" ? front : back;
     }
@@ -443,6 +458,32 @@ function prims(k, o) {
       { u0: 0.2, u1: 0.8, v0: 0.25, v1: 0.75, z0: 0, z1: 3, m: flatM(PAL.conc) },
       { u0: 0.32, u1: 0.68, v0: 0.36, v1: 0.64, z0: 3, z1: 22, m: (f, s, t) => (f !== "top" && t > 11 && t < 16 && s > 1.5 ? hex("#e6e2d8") : mul(PAL.red, 1.05)) },
     ];
+    case "rack": {
+      // Tall store shelving or a warehouse rack: uprights, boards, goods (they block sight: the aisles between).
+      const ax = along(o);
+      const goods = (f, s, t, X, Y) => (f === "top" ? PAL.metalDk : Math.floor(t) % 8 < 1 ? PAL.metalDk : n2(X, Y, 14) > 0.5 ? CAR_COLORS[Math.floor(n2(X, Y, 15) * 6)] : mul(PAL.wood, 0.6 + n2(X, Y, 16) * 0.3));
+      return [run(ax, 0.26, 0.74, 0, 30, goods, 0, 1), run(ax, 0.24, 0.3, 0, 31, flatM(PAL.metalDk), 0, 0.06), run(ax, 0.24, 0.3, 0, 31, flatM(PAL.metalDk), 0.94, 1)];
+    }
+    case "table": {
+      const top = (f) => (f === "top" ? mul(PAL.woodLt, 0.95) : PAL.wood);
+      return [
+        { u0: 0.2, u1: 0.26, v0: 0.2, v1: 0.26, z0: 0, z1: 9, m: flatM(PAL.woodDk) }, { u0: 0.74, u1: 0.8, v0: 0.2, v1: 0.26, z0: 0, z1: 9, m: flatM(PAL.woodDk) },
+        { u0: 0.2, u1: 0.26, v0: 0.74, v1: 0.8, z0: 0, z1: 9, m: flatM(PAL.woodDk) },
+        { u0: 0.14, u1: 0.86, v0: 0.14, v1: 0.86, z0: 9, z1: 11, m: top },
+        { u0: 0.74, u1: 0.8, v0: 0.74, v1: 0.8, z0: 0, z1: 9, m: flatM(PAL.woodDk) },
+      ];
+    }
+    case "bed": {
+      const ax = along(o), sheet = (f, s, t, X, Y) => (f === "top" ? mul(hex("#8a8678"), 0.9 + n2(X, Y, 18) * 0.15) : mul(PAL.woodDk, 1));
+      return [run(ax, 0.16, 0.84, 0, 4, flatM(PAL.woodDk), 0.02, 0.98), run(ax, 0.18, 0.82, 4, 8, sheet, 0.04, 0.96)];
+    }
+    case "bars": {
+      // Cell bars: upright steel bars along the line, a rail at the top.
+      const ax = along(o), top = o.stub ? STUB : 28, out = [];
+      for (let i = 0; i < 5; i++) out.push(ax === "u" ? { u0: 0.06 + i * 0.2, u1: 0.1 + i * 0.2, v0: 0.46, v1: 0.54, z0: 0, z1: top, m: flatM(PAL.metal) } : { u0: 0.46, u1: 0.54, v0: 0.06 + i * 0.2, v1: 0.1 + i * 0.2, z0: 0, z1: top, m: flatM(PAL.metal) });
+      out.push(run(ax, 0.44, 0.56, top - 2, top, flatM(PAL.metalDk)));
+      return out;
+    }
     case "shelf": case "locker": case "cabinet": case "counter": {
       const ax = along(o);
       if (k === "locker") return [run(ax, 0.3, 0.72, 0, 26, (f, s, t) => (f !== "top" && (Math.floor(s) % 5 < 1 || (t > 18 && t < 20 && Math.floor(s) % 2)) ? PAL.metalDk : PAL.metal), 0.12, 0.88)];
@@ -478,7 +519,7 @@ const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", 
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${fog ? 1 : 0}`;
+  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}`;
   let s = spriteCache.get(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -518,6 +559,8 @@ function roofSprite(mat, top, edges, fog) {
 const FLOORC = {
   grass: hex("#4a5834"), field: hex("#6a6238"), dirt: hex("#5c4f3e"), gravel: hex("#5c5a57"), road: hex("#37393d"),
   floor: hex("#5a4632"), rubble: hex("#4e4842"), roof: hex("#6a6a64"),
+  // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
+  tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
 };
 function floorColor(c, k, x, y, lx, ly, mud) {
   const tx = Math.min(15, Math.floor(lx * 16)), ty = Math.min(15, Math.floor(ly * 16));
@@ -538,7 +581,13 @@ function floorColor(c, k, x, y, lx, ly, mud) {
       if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#7a7254"); // faded paint
       break;
     }
-    case "floor": col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2); break;
+    case "floor":
+      if (c.fl === "tile") col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.tile, 0.72) : ((tx >> 3) + (ty >> 3)) % 2 ? mul(FLOORC.tile, 0.9 + q * 0.06) : mul(FLOORC.tile, 1.02 + q * 0.06);
+      else if (c.fl === "conc") col = q > 0.96 ? mul(FLOORC.conc, 0.75) : mul(FLOORC.conc, 0.9 + q * 0.12 + v * 0.04);
+      else if (c.fl === "carpet") col = mul(FLOORC.carpet, 0.86 + q * 0.22);
+      else if (c.fl === "dirt") col = q > 0.9 ? FLOORC.straw : mul(FLOORC.barn, 0.88 + q * 0.16);
+      else col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2);
+      break;
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
@@ -614,13 +663,17 @@ function fogFor(b, vis) {
 
 // ---------- per-cell looks ----------
 const JOINS = {
-  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH,
+  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH,
+  rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach"]), gate: new Set(["palisade", "gate", "breach"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
 };
-// What a cell looks like in this view: its kind and options (see prims), or null for open ground.
-function lookOf(b, scene, x, y, cut) {
+// What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
+// own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
+// mouse, enemies you see), so the rest of a big building keeps its walls standing.
+const CUT_R = 6;
+function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k;
   if (k === "open" || k === "water") return null;
   const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null };
@@ -645,7 +698,7 @@ function lookOf(b, scene, x, y, cut) {
       if (k === "shelf" || k === "locker" || k === "cabinet" || k === "counter") o.n = o.n === "u" ? "v" : o.n === "v" ? "u" : null; // furniture runs along the wall it stands by
     }
     // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs.
-    if (cut && cut.has(bid) && WALLISH.has(k)) {
+    if (cut && cut.has(bid) && (WALLISH.has(k) || k === "bars") && (!focus || focus.some(([fx, fy]) => Math.max(Math.abs(fx - x), Math.abs(fy - y)) <= CUT_R))) {
       const [u, v] = toView(x, y, r, b.w, b.h), [Wv, Hv] = viewDims(b, r);
       for (const [du, dv] of [[-1, 0], [0, -1], [-1, -1]]) {
         const nu = u + du, nv = v + dv;
@@ -659,6 +712,8 @@ function lookOf(b, scene, x, y, cut) {
   if (k === "gate") o.barred = barredCell(c);
   if (k === "palisade" && c.t === 1) o.top = PALISADE;
   if (k === "door" && b.raid) { const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); }
+  if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
+  if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = heightAt(b, x, y);
@@ -678,11 +733,15 @@ function lookOf(b, scene, x, y, cut) {
   }
   return { k, o };
 }
-const SPLIT = new Set(["bdoor", "doorway", "smashed", "gate", "tower"]); // drawn in two parts around who stands there
+const SPLIT = new Set(["bdoor", "doorway", "smashed", "gate", "tower", "odoor"]); // drawn in two parts around who stands there
 // How tall a cell's block stands (art px), for picking and fading.
 function blockTop(k, o) {
+  return blockTop0(k, o) + (o.raise || 0);
+}
+function blockTop0(k, o) {
   switch (k) {
-    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": return o.stub ? STUB : o.top;
+    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": case "idoor": case "odoor": return o.stub ? STUB : o.top;
+    case "rack": return 31; case "table": return 11; case "bed": return 8; case "bars": return o.stub ? STUB : 28;
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
     case "walkway": case "loft": case "roof": return LV;
@@ -701,13 +760,13 @@ function blockTop(k, o) {
 
 // Every cell's look for this view and cutaway, with its sprites (made the first time they are drawn), cached.
 const looksCache = {}; // by use: "draw" (this frame's cutaway), "pick" (none)
-function looksFor(b, scene, cut, slot = "draw") {
+function looksFor(b, scene, cut, slot = "draw", focus = null) {
   const ck = [...cut].sort((a, c) => a - c).join(",");
-  const key = `${scene.key}:${iso.rot}:${ck}`, lc = looksCache[slot];
+  const key = `${scene.key}:${iso.rot}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
   if (lc && lc.b === b && lc.key === key) return lc.list;
   const list = new Array(b.w * b.h);
   for (let i = 0; i < list.length; i++) {
-    const L = lookOf(b, scene, i % b.w, (i / b.w) | 0, cut);
+    const L = lookOf(b, scene, i % b.w, (i / b.w) | 0, cut, focus);
     list[i] = L ? { k: L.k, o: L.o, top: blockTop(L.k, L.o), spr: [undefined, undefined], fspr: [undefined, undefined] } : null;
   }
   looksCache[slot] = { b, key, list };
@@ -938,7 +997,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
   for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
   if (H.hover) cutAt(H.hover.x, H.hover.y);
-  const looks = looksFor(b, scene, cut);
+  // A building's own map (sim/buildingmaps.js): the walls are lowered around your people, the enemies you see and the
+  // mouse only (with Roofs off, everywhere).
+  let focus = null;
+  if (b.raid && b.raid.interior && iso.roofs) {
+    focus = [];
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
+    if (H.hover) focus.push([H.hover.x, H.hover.y]);
+  }
+  const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
 
@@ -1038,9 +1105,14 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const fog = !vis[i], faded = fade.has(i);
       if (L) {
         const spr = sprOf(L, fog);
+        const up = L.o.raise || 0; // furniture on an upper floor: the floor's slab under it, the piece raised
+        if (up) {
+          const slab = sprite("loft", { v: 0, j: 0, n: null, top: LV, mat: 0, dmg: 0, dir: null }, fog);
+          if (slab) ctx.drawImage(slab.cv, Math.round(sx + slab.ox * S), Math.round(sy + slab.oy * S), Math.ceil(slab.w * S), Math.ceil(slab.h * S));
+        }
         if (spr) {
           if (faded && L.top > 12) ctx.globalAlpha = 0.42;
-          ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+          ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + (spr.oy - up) * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
           ctx.globalAlpha = 1;
         }
         if (SPLIT.has(L.k)) fronts.push([L, x, y, sx, sy, fog, faded]);
@@ -1123,8 +1195,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (b.raid) {
     ctx.textAlign = "center";
     for (const a of b.raid.areas) {
-      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, a.outdoor ? 6 : WALL1 + 12);
-      tag(ctx, a.name, X, Y, "#e6d8b8", Math.max(10, 4.2 * S));
+      if (a.noLabel) continue; // halls and corridors (sim/buildingmaps.js)
+      // A room of a building whose roof is off: its name low over its floor; else over the roof.
+      const bid = a.outdoor ? -1 : scene.comp[(a.y0 + 1) * b.w + a.x0 + 1];
+      const low = !a.outdoor && b.raid.interior && bid >= 0 && cut.has(bid);
+      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12);
+      tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
     for (const c of b.raid.containers) {
       const L = looks[c.y * b.w + c.x], top = L ? L.top : 4;
@@ -1139,7 +1215,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     for (const z of b.raid.zones) {
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
-      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : "#6cc48a", Math.max(10, 4 * S));
+      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : "#6cc48a", Math.max(10, 4 * S));
     }
   }
   // The base's buildings by name; hit points of a battered wall, gate, door or window.

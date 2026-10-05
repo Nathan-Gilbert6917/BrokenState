@@ -36,7 +36,7 @@ import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, 
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { smokeAt, flareLit, fireStep, burnRound, SMOKE, FLARE } from "./throwables.js";
-import { battlePerks, battleXp, rollBook, fightXp } from "./skills.js";
+import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
@@ -50,6 +50,7 @@ import { ZTYPES } from "./hiveconst.js";
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
+import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -67,6 +68,18 @@ var layouts; // eslint-disable-line no-var
 export function registerBattleLayout(key, fn) {
   (layouts = layouts || new Map()).set(key, fn);
 }
+
+// People met inside a building (buildingmaps.js placeInterior, from wanderers.js interiorOccupants) by side. "hostile"
+// groups are placed as the raid's guards (enemy units). A side with no handler ("neutral" survivors, "military"
+// squads: TODO for the encounters work, which needs a side of their own that is neither yours nor the enemy's) is not
+// placed; the raid lists it in b.raid.occupants.waiting. fn(state, b, group, place): group { side, people: [{ kit,
+// weapon, power, name }], room, aware }, place { room (the raid area they hold), cells() (free cells there), pod() (a
+// new alert group number) }; it adds its own units to b.units.
+var occupantSides; // eslint-disable-line no-var
+export function registerOccupantSide(side, fn) {
+  (occupantSides = occupantSides || new Map()).set(side, fn);
+}
+export const occupantSide = (side) => (occupantSides ? occupantSides.get(side) || null : null);
 
 // Turns the battle being set up so the attack comes from `side` (deploy.js, a break-in): base layouts are built
 // with the attackers on the east edge; "west" mirrors the map, "north" / "south" turn it a quarter (13 wide × 18
@@ -340,6 +353,15 @@ export const CELL = {
   rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
   well:      { walk: false, cover: 1, los: false, name: "Well" },
   barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
+  // Building interiors (buildingmaps.js): a closed door blocks sight until someone walks through it (moveAlong opens
+  // it: odoor; a roller door is loud to haul up), tall shelving blocks sight (sneak down the aisles), tables, beds and
+  // cell bars are half cover you see over or through.
+  idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door" },
+  odoor:     { walk: true,  cover: 0, los: false, name: "Open door" },
+  rack:      { walk: false, cover: 2, los: true,  name: "Shelving" },
+  table:     { walk: false, cover: 1, los: false, name: "Table" },
+  bed:       { walk: false, cover: 1, los: false, name: "Bed" },
+  bars:      { walk: false, cover: 1, los: false, name: "Cell bars" },
 };
 
 // Verticality (base battles): a unit on higher ground sees SIGHT tiles further a level, aims AIM better a level at
@@ -1109,6 +1131,7 @@ export function moveAlong(b, u, path) {
     u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
+    if (b.cells[idx(x, y)].k === "idoor") openDoor(b, x, y, u); // a building's closed door swings open (buildingmaps.js)
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
@@ -1232,9 +1255,11 @@ export function combatAct(state, act) {
   bindDims(b);
   if (!b || b.over) return "";
   if (act.type === "end") {
+    if (b.raid && b.raid.choose) b.raid.choose = null; // the street it is (buildingmaps.js)
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
+  if (act.type === "building") return chooseBuilding(state, act.id);
   // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry. On a base's wall map that is
   // falling back to the yard and the buildings instead (interior.js), as is act "fallBack".
   if (act.type === "soundRetreat") return soundRetreat(state, { leave: act.leave || [] });
@@ -1325,6 +1350,29 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); the glass breaks
+      if (!b.raid) return "Nothing to climb.";
+      const opts = windowsNear(b, u);
+      const w = act.x != null ? opts.find((o) => o.x === act.x && o.y === act.y) : opts[0];
+      if (!w) return "Stand right next to a window (not diagonally) with room on the far side.";
+      if (u.ap < BMAP.CLIMB.ap) return "Not enough actions.";
+      const c = b.cells[idx(w.x, w.y)];
+      c.k = "smashed";
+      b.losCache.fill(0);
+      u.ap -= BMAP.CLIMB.ap;
+      u.hunker = false;
+      const from = [u.x, u.y];
+      u.face = [Math.sign(w.to[0] - u.x), Math.sign(w.to[1] - u.y)];
+      u.x = w.to[0]; u.y = w.to[1];
+      fx(b, { type: "move", unit: u.id, from, path: [[w.x, w.y], [u.x, u.y]] });
+      b.raid.heat = Math.min(100, b.raid.heat + BMAP.CLIMB.heat);
+      b.noise = (b.noise || 0) + 1;
+      say(b, `${u.name} smashes the window and climbs through (Heat +${BMAP.CLIMB.heat}).`, "info");
+      alertNear(b, w.x, w.y, BMAP.CLIMB.radius, "Breaking glass carries through the building.");
+      b.reach = flood(b.cells, u.x, u.y);
+      detect(b, u);
+      break;
+    }
     // stealth.js: Subdue (takedowns, knock-outs), Tie up, Throw (bottles, noise makers, firecrackers), Drag.
     case "subdue": case "tie": case "throw": case "drag": {
       const err = stealthAct(state, b, u, t, act);
@@ -1335,6 +1383,7 @@ export function combatAct(state, act) {
       return "Unknown action.";
   }
   b.acted = true;
+  if (b.raid && b.raid.choose) b.raid.choose = null; // acting on the street map: the street it is (buildingmaps.js)
   bump(b);
   checkEnd(state, b);
   if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && active(x) && x.ap > 0)) endPlayerTurn(state);
@@ -1652,6 +1701,30 @@ export function bash(b, u, x, y) {
   bump(b);
   return dmg;
 }
+// A closed door in a building (buildingmaps.js) opens when someone walks into it: it no longer blocks sight. A roller
+// door goes up whole (every cell of it) with a racket: Heat and noise in a raid (BMAP.ROLLER).
+export function openDoor(b, x, y, u = null) {
+  bindDims(b);
+  const c = b.cells[idx(x, y)];
+  if (!c || c.k !== "idoor") return false;
+  const list = [[x, y]];
+  if (c.roll) {
+    for (let i = 0; i < list.length; i++) for (const [dx, dy] of DIRS4) {
+      const nx = list[i][0] + dx, ny = list[i][1] + dy;
+      if (inside(nx, ny) && b.cells[idx(nx, ny)].k === "idoor" && b.cells[idx(nx, ny)].roll && !list.some(([px, py]) => px === nx && py === ny)) list.push([nx, ny]);
+    }
+  }
+  for (const [px, py] of list) { const d = b.cells[idx(px, py)]; d.k = "odoor"; delete d.t; }
+  b.losCache.fill(0);
+  if (c.roll && b.raid) {
+    b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
+    b.noise = (b.noise || 0) + 1;
+    if (u && u.side === "player") say(b, `${u.name} hauls a roller door up. It rattles loudly (Heat +${BMAP.ROLLER.heat}).`, "danger");
+    alertNear(b, x, y, BMAP.ROLLER.radius, "The rattle of the roller door carries.");
+  }
+  return true;
+}
+
 export function structureName(c) {
   return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" ? "Door" : c.k === "window" ? "Window" : CELL[c.k].name;
 }
@@ -1940,6 +2013,14 @@ export function autoPlayerTurn(state, opts = {}) {
   bindDims(b);
   if (b && !b.over && b.phase === "deploy") { endDeploy(b); return void afterDeploy(state, b); } // deploy.js: default positions, then fight
   if (!b || b.over || b.phase !== "player") return;
+  // A site with several buildings (buildingmaps.js): the AI picks one by its own dice (or the street), then plays it.
+  if (b.raid && b.raid.choose) {
+    const list = b.raid.choose;
+    const pick = list[Math.floor(hash01(state.seed, "autobuilding", b.tileId, state.hour) * list.length) % list.length];
+    chooseBuilding(state, pick.id);
+    if (state.combat !== b) return autoPlayerTurn(state, opts);
+    b.raid.choose = null;
+  }
   if (b.raid) return autoRaidTurn(state);
   // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them. On a base's
   // wall map: everyone falls back to the yard and the buildings instead (interior.js).
@@ -2336,14 +2417,26 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
 }
 
 export function createRaid(state, setup) {
-  W = RAID_W; H = RAID_H;
   const rng = state.rng;
   const tileId = tileIdOf(setup);
   const tile = state.tiles[tileId];
   const party = state.parties.find((x) => x.id === setup.partyId);
-  const types = rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
   const withVehicle = !!(party && party.vehicle);
-  const map = genRaidMap(rng, tile, types, withVehicle);
+  // A building's own map (buildingmaps.js): a single-building site, or the building picked at a site with several;
+  // else the street map as before (at a site with several, the panel offers the buildings first: R.choose).
+  const pick = raidBuilding(state, tile, setup);
+  let map;
+  if (pick) {
+    map = buildingMap(state, tileId, pick, withVehicle);
+    W = map.w; H = map.h;
+    const z = map.zones[0];
+    map.reach = flood(map.cells, z.x0 + 1, z.y0 + (withVehicle ? 0 : 1));
+    map.areas = map.rooms;
+  } else {
+    W = RAID_W; H = RAID_H;
+    const types = rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
+    map = genRaidMap(rng, tile, types, withVehicle);
+  }
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: tile ? (tile.loc ? tile.loc.name : tile.terrain[0].toUpperCase() + tile.terrain.slice(1)) : "Open ground",
@@ -2357,6 +2450,11 @@ export function createRaid(state, setup) {
       vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: 12,
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
+      interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
+      doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
+      // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
+      choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile) : null,
     },
   };
   b.reinfMax = 0;
@@ -2382,7 +2480,9 @@ export function createRaid(state, setup) {
   const groups = setup.enemy.groups || [{ kind: setup.enemy.kind, count: setup.enemy.count, power: setup.enemy.power }];
   let pod = 0, zn = 0, hn = 0;
   const buildings = map.areas.filter((a) => !a.outdoor);
-  for (const g of groups) {
+  // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
+  if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
+  for (const g of pick ? [] : groups) {
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0)));
     if (!count) continue;
     if (g.kind === "zombies") {
@@ -2415,10 +2515,34 @@ export function createRaid(state, setup) {
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
-  say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
+  if (pick) {
+    const rooms = map.areas.filter((a) => !a.outdoor).length;
+    say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms.`, "info");
+    say(b, interiorIntro(b), "info");
+  } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
+  if (b.raid.choose) say(b, `Several buildings stand here: pick one to explore from the panel (${b.raid.choose.filter((o) => o.id !== "street").map((o) => o.name).join(", ")}), or search the street.`, "good");
   say(b, "Search next to a container (S). Heat rises every turn and with gunfire; more of the dead arrive as it climbs. Reach a green zone and Extract (X).", "info");
   if (withVehicle) say(b, "Your vehicle waits in the entry zone. Extract there to keep it; leave from another zone and it stays behind.", "info");
   return b;
+}
+
+// Picks the building to explore at a site with several (the raid's opening choice, R.choose): its own map replaces the
+// street map (a new battle on the same setup); "street" keeps the street map. Only before anyone has acted.
+export function chooseBuilding(state, id) {
+  const b = state.combat;
+  if (!b || !b.raid || !b.raid.choose || b.over) return "Nothing to choose now.";
+  if (id === "street") {
+    b.raid.choose = null;
+    say(b, "You search the street.", "info");
+    bump(b);
+    return "";
+  }
+  const opt = b.raid.choose.find((o) => o.id === id);
+  if (!opt) return "No such building here.";
+  const setup = b.setup;
+  setup.raid = { ...(setup.raid || {}), building: id, choose: false };
+  state.combat = createRaid(state, setup);
+  return "";
 }
 
 // Unaware enemies wander: guards walk a beat around their building, the dead shuffle.

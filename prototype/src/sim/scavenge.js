@@ -96,7 +96,7 @@ export function startScavenge(state, p) {
     startCombat(state, {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
-      raid: { heat0: isNight(state) ? 0 : 5 },
+      raid: { heat0: isNight(state) ? 0 : 5, choose: true }, // choose: a site with several buildings offers them first (buildingmaps.js)
       context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
     });
     return true;

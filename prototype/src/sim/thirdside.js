@@ -10,7 +10,7 @@
 // Hooks in combat.js (all marked "thirdside.js"): who fights whom (foesOf), the turn queue, the AI's plan, a hit by
 // your people (damage), overwatch, placing them (createBattle setup.third, createRaid groups with a side) and the
 // result (result.third). A battle with no third side takes exactly the old paths.
-import { enemyUnit, active, los, WEAPONS, say } from "./combat.js";
+import { enemyUnit, active, los, WEAPONS, say, registerOccupantSide } from "./combat.js";
 
 export const THIRD = {
   THREAT_DEAD: 7,      // the dead this close (tiles) are a threat to neutrals
@@ -82,6 +82,26 @@ export function placeThird(b, groups, rng, pick, W) {
     }
   }
 }
+
+// A building's interior (buildingmaps.js placeOccupantGroups, from wanderers.js interiorOccupants): the neutral
+// survivors and the military squad inside, in their room, unaware, their own alert group. Registered as this module
+// loads (combat.js keeps the table on first use, so the circular imports do not matter).
+function placeOccupants(state, b, grp, place) {
+  const rng = state.rng;
+  const pod = place.pod();
+  const home = place.room ? [place.room.x0 + Math.floor(place.room.w / 2), place.room.y0 + Math.floor(place.room.h / 2)] : null;
+  (grp.people || []).slice(0, 12).forEach((p, k) => {
+    const u = enemyUnit(b, rng, p.kit || (grp.side === "military" ? "soldiers" : "survivors"), p.power || grp.power || 3, k + 1);
+    thirdSideUnit(b, u, grp, k);
+    u.pod = pod;
+    const c = rng.pick(place.cells());
+    if (!c) return;
+    u.x = c[0]; u.y = c[1]; u.home = home || [c[0], c[1]];
+    b.units.push(u);
+  });
+}
+registerOccupantSide("neutral", placeOccupants);
+registerOccupantSide("military", placeOccupants);
 
 // ---------- who fights whom ----------
 // What a third-side unit fights: soldiers the dead and armed people up and fighting; neutrals what threatens them now.

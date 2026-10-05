@@ -269,22 +269,21 @@ export function siteWanderers(state, tileId) {
 // Who is inside a building being explored (sim/buildingmaps.js asks when it builds the map). The same people as
 // siteWanderers for this tile and hour (place one or the other, not both).
 // tile: the State Map tile (or its id); plan: the generated building ({ type, rooms, exits, ... }).
-// Returns groups to place: [{ side: "neutral" | "hostile" | "military", people: [{ kit, weapon, name?, hp? }], room?,
-// aware, kind, count, power, name, factionId?, wid? }]. kind / power / name are what combat.js enemyUnit takes; a
-// neutral or military unit is made a third-side unit with thirdside.js thirdSideUnit(b, unit, group, k).
+// Returns groups to place: [{ side: "neutral" | "hostile" | "military", people: [{ kit, weapon, power, name?, hp? }],
+// room? (a plan room's id), aware, kind, count, power, name, factionId?, wid? }]. Hostile groups are the raid's guards
+// (buildingmaps.js); neutral and military ones are placed as a third side by thirdside.js (registerOccupantSide).
 export function interiorOccupants(state, tile, plan) {
   const tileId = typeof tile === "object" && tile ? tile.id : tile;
   if (tileId == null || !state.tiles[tileId]) return [];
-  const rooms = plan && Array.isArray(plan.rooms) ? plan.rooms.length : 0;
+  // A room away from the way in (not the entry, not locked) when the plan has one, by its id.
+  const rooms = plan && Array.isArray(plan.rooms) ? plan.rooms.filter((r) => !r.entry && !r.locked) : [];
   return siteWanderers(state, tileId).map((g, i) => {
     const kit = KITS[g.kind] || KITS.survivors;
     const rng = rngFor(state, "wander-inside", tileId, state.hour, i);
-    const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", name: x.name, hp: x.hp }))
-      : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: rng.pick(kit.weapons) }));
-    return {
-      ...g, side: g.side || "hostile", people, aware: false,
-      room: rooms ? Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * rooms) : undefined,
-    };
+    const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp }))
+      : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: rng.pick(kit.weapons), power: g.power }));
+    const room = rooms.length ? rooms[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * rooms.length)] : null;
+    return { ...g, side: g.side || "hostile", people, aware: false, room: room ? room.id : undefined };
   });
 }
 
