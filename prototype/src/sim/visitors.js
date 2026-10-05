@@ -99,6 +99,7 @@ import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
 import { knownLoc } from "./discovery.js";
 import { rumourFromNews } from "./survey.js";
+import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS } from "./eras.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -228,8 +229,9 @@ function makeVisitor(state, kind, tile, opts = {}) {
   if (kind === "raiders") {
     const R = O.raiders;
     v.name = rng.pick(RAIDER_NAMES.filter((n) => !taken.has(n)).concat(taken.size >= RAIDER_NAMES.length ? RAIDER_NAMES : []));
-    v.size = opts.size || raiderSize(d, rng.int(0, R.size.extra));
-    v.power = opts.power || raiderPower(d);
+    // Eras (eras.js): from year 3 the bands grow past their first-year ceiling (+1 person, +0.2 power a year).
+    v.size = opts.size || raiderSize(d, rng.int(0, R.size.extra)) + raiderSizeBonus(state);
+    v.power = opts.power || Math.round((raiderPower(d) + raiderPowerBonus(state)) * 10) / 10;
     v.type = "raider";
     v.goodwill = -80;
     v.until = state.hour + 24 * rng.int(R.stay[0], R.stay[1]);
@@ -391,7 +393,7 @@ export function visitorsDaily(state) {
   for (const kind of VISITOR_KINDS) {
     if (d < info.next[kind]) continue;
     const n = visitorsOf(state).filter((v) => v.kind === kind).length;
-    if (n < capFor(kind, d)) spawnVisitor(state, kind);
+    if (n < capFor(kind, d) + (kind === "raiders" && isLate(state) ? ERAS.LATE_RAIDER_BANDS : 0)) spawnVisitor(state, kind);
     info.next[kind] = d + gapDays(kind, d, info.rng);
   }
 }

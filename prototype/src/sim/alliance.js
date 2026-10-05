@@ -28,7 +28,8 @@
 // check of 25% + 4% a point + goodwill / 400; it works: +3 with both and +5 between them, it fails: −3 with both).
 //
 // Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members)
-// controls more than half of the state's land and every group still alive is a member. Groups you broke (conquest.js:
+// controls more than half of the state's land and every group still alive is a member, and keeps that up for a
+// year (the Calder Accord, eras.js: not before year 6, and the coalition must have stood 16 seasons). Groups you broke (conquest.js:
 // take their last base) or that collapsed do not count; with none left standing, you alone are the coalition.
 // Land: land tiles within reach of a base: your hub and every base you took from another group STRONGHOLD_RANGE (9),
 // an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale
@@ -47,6 +48,7 @@ import { reduceHorde } from "./hordes.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, relation, changeRelation, warsOf, enemyIn, warBetween, autoWarTrade } from "./diplomacy.js";
 import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDaily } from "./jobs.js";
+import { eraProgress, ERAS } from "./eras.js";
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -371,10 +373,20 @@ export function goalsProgress(state) {
       advice: !why ? "invite" : !f.known ? "find" : hostile ? "defeat" : "court", hostile, defenders: smallest };
   });
   return {
+    era: eraProgress(state), // eras.js: the year, the era, the Accord's and the containment's clocks
     hives: { destroyed: st.destroyed || 0, left: hivesLeft, building, sites, ok: hivesOk },
     alliance: { land, landOk, members: ms.length, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk,
       infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && allIn },
   };
+}
+// The Calder Accord's daily test (eras.js, world.js): over half the land, every group still standing a member, except
+// a gang that came from beyond the border (or a raider band that dug in: factions.js makeGang, f.arrived) less than
+// ERAS.ACCORD.GRACE days ago: the coalition has that long to break it or win it over before it counts against the Accord.
+export const newcomer = (state, f) => f.arrived != null && day(state) - f.arrived < ERAS.ACCORD.GRACE;
+export function accordHolds(state) {
+  if (!alive(state).length || !state.bases.length) return false;
+  if (!state.factions.every((f) => !f.alive || isMember(state, f) || newcomer(state, f))) return false;
+  return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
 }
 export function allianceVictory(state) {
   if (!alive(state).length || !state.bases.length) return false;

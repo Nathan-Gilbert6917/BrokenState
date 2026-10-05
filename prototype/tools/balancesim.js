@@ -6,17 +6,39 @@
 // as it would without it.
 //
 // Usage: node tools/balancesim.js [days] [--runs N] [--seeds 1-34|1,2,5] [--styles all|cautious,balanced] [--size huge]
-//                                 [--workers N] [--json path] [--quiet]
+//                                 [--workers N] [--json path] [--quiet] [--tune T]
+// Long runs (over 730 days, up to 15 years = 5475): the phase tables go by year and a "Year by year" table per style
+// adds hives (standing, built, destroyed), hordes, horde attacks and their size, raids, groups and aggressive groups
+// left, the coalition and the falls and victories of each year.
 // Defaults: 730 days, seeds 1-34 x the three styles trimmed to 100 runs, workers = CPU cores - 2 (max 12).
-import { Worker, isMainThread, parentPort } from "node:worker_threads";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import { createWorld, tickHour, day, alive, hub, setNextId } from "../src/sim/world.js";
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats } from "../src/sim/hives.js";
 import { allianceMembers, controlledLand } from "../src/sim/alliance.js";
 import { WORLD_SIZES, sizeDef } from "../src/sim/worldsize.js";
+import { isAggressiveType, attitude, RAIDS } from "../src/sim/factions.js";
+import { HIVE } from "../src/sim/hiveconst.js";
+import { HORDE_SIZES } from "../src/sim/hordes.js";
+import { ALLIANCE } from "../src/sim/alliance.js";
+import { ERAS, yearOfDay, yearStartDay } from "../src/sim/eras.js";
+
+// --tune: what-if balance numbers for these runs only (nothing in the game files changes), as wintest.js, e.g.
+// --tune HIVE.SITE_DAYS=60:120,ERAS.HORDE_GROW=0.1. Tables: HIVE, HORDE_SIZES, ALLIANCE, RAIDS, ERAS. a:b is a pair.
+const TABLES = { HIVE, HORDE_SIZES, ALLIANCE, RAIDS, ERAS };
+export function applyTune(spec) {
+  for (const part of (spec || "").split(",").filter(Boolean)) {
+    const [path, raw] = part.split("=");
+    const keys = path.split(".");
+    let obj = TABLES[keys.shift()];
+    while (obj && keys.length > 1) obj = obj[keys.shift()];
+    if (!obj || !(keys[0] in obj)) throw new Error(`--tune: unknown ${path}`);
+    obj[keys[0]] = raw.includes(":") ? raw.split(":").map(Number) : Number(raw);
+  }
+}
 
 const FACTIONS = 8; // on a Normal map; other sizes (--size) play with their default group count (sim/worldsize.js)
 const SAMPLE = 30; // days between samples
@@ -45,7 +67,8 @@ function deathBucket(m, baseNames) {
   return "fight / scavenging in the field";
 }
 
-export function runCampaign({ seed, style, days, size = "normal" }) {
+export function runCampaign({ seed, style, days, size = "normal", tune = "" }) {
+  applyTune(tune);
   setNextId(1); // every run starts from the ids a fresh process would hand out (same run in any order / worker)
   const state = createWorld({ seed, factionCount: size === "normal" ? FACTIONS : sizeDef(size).defGroups, size });
   state.started = true;
@@ -182,7 +205,12 @@ export function runCampaign({ seed, style, days, size = "normal" }) {
       coalition: allianceMembers(state).length, land: Math.round(land.pct * 1000) / 10,
       food: Math.round(sum("food") + sum("preserved")), water: Math.round(sum("water")), meds: Math.round(sum("meds")), ammo: Math.round(sum("ammo")),
       hubFood: h ? Math.round((h.stock.food || 0) + (h.stock.preserved || 0)) : 0,
-      hivesDestroyed: hs.destroyed, hivesBuilt: hs.built,
+      hivesDestroyed: hs.destroyed, hivesBuilt: hs.built, sites: (state.hiveSites || []).length,
+      // Aggressive groups (raiders, zealots, expansionists) still standing, and those hostile to you; new gangs so far.
+      agg: state.factions.filter((f) => f.alive && isAggressiveType(f)).length,
+      aggHostile: state.factions.filter((f) => f.alive && isAggressiveType(f) && attitude(f) === "Hostile").length,
+      newGangs: state.stats.newGangs || 0, bandsSettled: state.stats.bandsSettled || 0,
+      outposts: state.bases.filter((b) => b.type === "outpost").length,
     });
   };
 
@@ -226,7 +254,7 @@ export function runCampaign({ seed, style, days, size = "normal" }) {
       }
       const n = alive(state).length;
       if (n > r.peak) { r.peak = n; r.peakDay = d; }
-      if (state.hour % 24 === 0 && (d - 1) % SAMPLE === 0) sample();
+      if (state.hour % 24 === 0 && ((d - 1) % SAMPLE === 0 || (d > 1 && yearStartDay(yearOfDay(d)) === d))) sample();
       // Health checks (as autotest.js): cards left open, NaN, teams halted with nothing to resolve them.
       if (state.cards.length && !state.gameOver) r.problems.push(`day ${d}: ${state.cards.length} card(s) left open (${state.cards[0].title})`);
       if (state.hour % 24 === 0) {
@@ -264,6 +292,7 @@ export function runCampaign({ seed, style, days, size = "normal" }) {
   r.coalitionMax = Math.max(...r.samples.map((s) => s.coalition));
   r.gov = autopilotStats(state);
   r.visitors = state.visitorInfo ? { ...state.visitorInfo.stats } : null;
+  r.era = state.era ? { ...state.era } : null; // eras.js: when each victory's conditions first held, and the clocks' best
   // Only the days the run lasted.
   r.daily = Object.fromEntries(Object.entries(daily).map(([k, a]) => [k, a.slice(0, r.endDay + 1)]));
   return r;
@@ -317,6 +346,55 @@ function feel(r) {
   return { overlap, overlapDays, overlap3, quietCard, quietDecision, quietThreat };
 }
 
+// Long runs go by the game's calendar year (weather.js: four seasons of 28 days = 112 days; day 1 is mid-spring of
+// year 1, so year 1 is days 1–98, year 2 starts on day 99, year 5 on day 435, year 10 on 995, year 15 on 1555).
+// A sample is taken on the first day of every year as well as every 30 days.
+const yearMarks = (days) => { const m = [1]; for (let y = 2; yearStartDay(y) <= days; y++) m.push(yearStartDay(y)); return m; };
+
+// Long runs (over two years): one table per style with a row per year. Hives, hordes and groups are read from the
+// sample nearest the end of that year (runs still going then); events are counted over the year.
+function yearByYear(results, days, groups, say) {
+  const years = yearOfDay(days);
+  const at = (r, d) => { let best = null; for (const s of r.samples) if (s.day <= d) best = s; return best; };
+  say("## Year by year");
+  say();
+  say("When the victory conditions were first met (eras.js: the coalition holding over half the land with every group a member; every hive gone and none building), median day and runs; the victory then needs the Accord (a year held) or the containment (a season clear), and year 6:");
+  say();
+  say(table(["Style", "Coalition conditions first met", "Year", "Hives first all gone", "Year", "Victory (median day)", "Year"], groups.map(([s, L]) => {
+    const a = L.map((r) => r.era && r.era.accordFirst).filter((v) => v != null), c = L.map((r) => r.era && r.era.clearFirst).filter((v) => v != null);
+    const w = L.filter((r) => r.outcome === "hives" || r.outcome === "alliance").map((r) => r.endDay);
+    const yr = (v) => (Number.isFinite(v) ? yearOfDay(Math.round(v)) : "–");
+    return [s, `${f0(med(a))} (${a.length}/${L.length})`, yr(med(a)), `${f0(med(c))} (${c.length}/${L.length})`, yr(med(c)), `${f0(med(w))} (${w.length}/${L.length})`, yr(med(w))];
+  })));
+  say();
+
+  say("Runs = still going at the start of the year. Fell / Hive win / Coalition win = runs that ended that way during the year. Pop, hives, hordes, groups: medians at the end of the year (runs still going then); \"Runs with ...\" = share of those runs. Hives built / destroyed: mean per run that year. Events per 100 run-days; horde size = median at the walls.");
+  say();
+  for (const [s, L] of groups) {
+    say(`### ${s}`);
+    say();
+    const rows = [];
+    for (let y = 1; y <= years; y++) {
+      const a = yearStartDay(y), b = Math.min(days, yearStartDay(y + 1) - 1);
+      const live = L.filter((r) => r.endDay >= a);
+      const ended = (o) => L.filter((r) => r.outcome === o && r.endDay >= a && r.endDay <= b).length;
+      const still = L.filter((r) => r.endDay >= b);
+      let rd = 0, rg = 0, ro = 0, hh = 0, de = 0;
+      for (const r of live) for (let d = a; d <= Math.min(b, r.endDay); d++) { rd++; rg += r.daily.raidG[d]; ro += r.daily.raidO[d]; hh += r.daily.hordeHit[d]; de += r.daily.death[d]; }
+      const per = (v) => f1((100 * v) / Math.max(1, rd));
+      const end = still.map((r) => at(r, b + 1)).filter(Boolean);
+      const m = (k) => f0(med(end.map((x) => x[k]).filter(Number.isFinite)));
+      const share = (fn) => (end.length ? pct(end.filter(fn).length, end.length) : "–");
+      const diff = (k) => live.map((r) => { const e = at(r, b + 1), st = at(r, a); return e && st ? (e[k] || 0) - (st[k] || 0) : NaN; }).filter(Number.isFinite);
+      const sz = live.flatMap((r) => r.hordeAttacks.filter((x) => x.day >= a && x.day <= b && x.size != null).map((x) => x.size));
+      rows.push([`${y} (d${a})`, live.length, ended("fell"), ended("hives"), ended("alliance"), m("pop"), m("hives"), share((x) => x.hives > 0), f1(mean(diff("hivesBuilt"))), f1(mean(diff("hivesDestroyed"))),
+        m("hordes"), m("dead"), per(hh), f0(med(sz)), per(rg), per(ro), m("groups"), m("agg"), share((x) => x.agg > 0), share((x) => x.aggHostile > 0), m("coalition"), f1(med(end.map((x) => x.land))), per(de)]);
+    }
+    say(table(["Year", "Runs", "Fell", "Hive win", "Coalition win", "Pop", "Hives", "Runs with hives", "Hives built", "Hives destroyed", "Hordes", "Dead on map", "Horde attacks", "Horde size", "Group raids", "Outsider raids", "Groups", "Aggressive groups", "Runs with aggressive", "... hostile to you", "Coalition", "Land %", "Deaths"], rows));
+    say();
+  }
+}
+
 function report(results, days) {
   const out = [];
   const say = (s = "") => out.push(s);
@@ -338,11 +416,13 @@ function report(results, days) {
   ])));
   say();
   // Survival curve.
-  const marks = [60, 120, 180, 270, 365, 450, 545, 730].filter((m) => m <= days);
+  const marks = (days > 730 ? yearMarks(days).slice(1).map((d) => d - 1) : [60, 120, 180, 270, 365, 450, 545, 730]).filter((m) => m <= days);
   say("Share of runs still going (not fallen) at each day:");
   say();
   say(table(["Style", ...marks.map((m) => `d${m}`)], groups.map(([s, L]) => [s, ...marks.map((m) => pct(L.filter((r) => !(r.outcome === "fell" && r.endDay <= m)).length, L.length))])));
   say();
+
+  if (days > 730) yearByYear(results, days, groups, say);
 
   // Causes.
   say("## Deaths and desertions");
@@ -405,7 +485,7 @@ function report(results, days) {
   const pAt = (r, d) => { const s = r.samples.filter((x) => x.day <= d); return s.length && !(r.outcome === "fell" && r.endDay < d) ? s[s.length - 1].pop : NaN; };
   say("Median population at each sample (runs still going at that day):");
   say();
-  const pmarks = [1, 31, 61, 91, 121, 181, 271, 361, 451, 541, 631, 721].filter((m) => m <= days);
+  const pmarks = (days > 730 ? yearMarks(days) : [1, 31, 61, 91, 121, 181, 271, 361, 451, 541, 631, 721]).filter((m) => m <= days);
   say(table(["Style", ...pmarks.map((m) => `d${m}`)], groups.map(([s, L]) => [s, ...pmarks.map((m) => f0(med(L.map((r) => pAt(r, m)).filter(Number.isFinite))))])));
   say();
   if (fell.length) {
@@ -416,12 +496,14 @@ function report(results, days) {
   }
 
   // Pressure by phase.
-  say("## Pressure by 30-day phase");
+  const long = days > 730; // long runs: one row a game year
+  say(`## Pressure by ${long ? "game year" : "30-day phase"}`);
   say();
   say("Per 100 run-days (only runs still going count), all styles together unless named. Raids = warning cards (AI groups + outsiders); horde attacks = a horde reaching one of your bases; cards = every card the player would see; decisions = cards with two or more choices; overlap = days with 2+ crisis kinds within a 3-day window.");
   say();
   const buckets30 = [];
-  for (let s = 1; s <= days; s += 30) buckets30.push([s, Math.min(days, s + 29)]);
+  if (long) for (let y = 1; yearStartDay(y) <= days; y++) buckets30.push([yearStartDay(y), Math.min(days, yearStartDay(y + 1) - 1)]);
+  else for (let s = 1; s <= days; s += 30) buckets30.push([s, Math.min(days, s + 29)]);
   const phaseRows = (L) => buckets30.map(([a, b]) => {
     let rd = 0, raids = 0, out = 0, hh = 0, hw = 0, de = 0, ds = 0, cards = 0, dec = 0, team = 0, ov = 0, hu = 0, ill = 0, live = 0;
     for (const r of L) {
@@ -461,7 +543,7 @@ function report(results, days) {
   };
   say("Average days between big threats (a raid warning or a horde at the walls), per phase:");
   say();
-  const gp = [[1, 60], [61, 150], [151, 365], [366, 730]].filter(([a]) => a <= days);
+  const gp = (days > 730 ? [[1, 2], [3, 4], [5, 7], [8, 10], [11, 15], [16, 99]].map(([a, b]) => [yearStartDay(a), yearStartDay(b + 1) - 1]) : [[1, 60], [61, 150], [151, 365], [366, 730]]).filter(([a]) => a <= days);
   say(table(["Style", ...gp.map(([a, b]) => `d${a}–${Math.min(b, days)}`)], groups.map(([s, L]) => [s, ...gp.map(([a, b]) => gap(L, a, b))])));
   say();
   say(table(["Style", "Cards/day (mean)", "Cards/day (p90 day)", "Busiest day (max)", "Decisions/day", "Overlap days (2+ crises in 3 days)", "3+ crises", "Longest stretch with no card (median / max)", "No decision card", "No threat at all (median / max)"], groups.map(([s, L]) => {
@@ -511,7 +593,7 @@ function report(results, days) {
     return [s, f1(a / L.length), L.filter((r) => r.hiveAssaults.length).length, f0(med(L.map((r) => r.hiveAssaults[0]).filter((v) => v != null))), f1(k / L.length), a ? f1(k / a) : "–"];
   })));
   say();
-  const smarks = [1, 91, 181, 271, 361, 451, 541, 631, 721].filter((m) => m <= days);
+  const smarks = (days > 730 ? yearMarks(days) : [1, 91, 181, 271, 361, 451, 541, 631, 721]).filter((m) => m <= days);
   const sAt = (r, d, k) => { const s = r.samples.find((x) => x.day === d); return s ? s[k] : NaN; };
   const sampleTable = (title, k, fmt = f0) => {
     say(title);
@@ -576,7 +658,7 @@ function report(results, days) {
 // Main thread: run list, workers, report
 // ======================================================================================
 function parseArgs(argv) {
-  const o = { days: 730, runs: 100, size: "normal", seeds: null, styles: Object.keys(PERSONALITIES), workers: Math.max(1, Math.min(12, os.cpus().length - 2)), json: null, quiet: false };
+  const o = { days: 730, runs: 100, size: "normal", seeds: null, tune: "", styles: Object.keys(PERSONALITIES), workers: Math.max(1, Math.min(12, os.cpus().length - 2)), json: null, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--runs") o.runs = Number(argv[++i]);
@@ -588,6 +670,7 @@ function parseArgs(argv) {
     else if (a === "--workers") o.workers = Number(argv[++i]);
     else if (a === "--json") o.json = argv[++i];
     else if (a === "--quiet") o.quiet = true;
+    else if (a === "--tune") o.tune = argv[++i];
     else if (a === "--size" || /^(--)?size=/.test(a)) o.size = sizeDef(a.includes("=") ? a.split("=")[1] : argv[++i]).key;
     else if (WORLD_SIZES[a]) o.size = a;
     else if (/^\d+$/.test(a)) o.days = Number(a);
@@ -600,7 +683,7 @@ function parseArgs(argv) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  let specs = o.seeds.flatMap((seed) => o.styles.map((style) => ({ seed, style, days: o.days, size: o.size })));
+  let specs = o.seeds.flatMap((seed) => o.styles.map((style) => ({ seed, style, days: o.days, size: o.size, tune: o.tune })));
   if (!process.argv.includes("--seeds") || process.argv.includes("--runs")) specs = specs.slice(0, o.runs);
   console.log(`Balance census: ${specs.length} autopilot runs, up to ${o.days} days, seeds ${o.seeds[0]}–${o.seeds[o.seeds.length - 1]}, styles ${o.styles.join("/")}, ${o.workers} worker(s)${o.size !== "normal" ? `, ${sizeDef(o.size).label} map` : ""}.`);
   const t0 = performance.now();
@@ -611,7 +694,7 @@ async function main() {
     const n = Math.min(o.workers, specs.length);
     let live = n;
     for (let w = 0; w < n; w++) {
-      const worker = new Worker(fileURLToPath(import.meta.url));
+      const worker = new Worker(fileURLToPath(import.meta.url), { workerData: "balancesim" });
       const feed = () => { if (next < specs.length) { const i = next++; worker.postMessage({ i, spec: specs[i] }); } else { worker.terminate(); if (--live === 0) resolve(); } };
       worker.on("message", ({ i, r }) => { results[i] = r; done++; if (!o.quiet) console.log(`[${String(done).padStart(3)}/${specs.length}] ${line(r)}`); feed(); });
       worker.on("error", reject);
@@ -631,5 +714,7 @@ async function main() {
   if (problems.length) process.exitCode = 1;
 }
 
-if (isMainThread) main();
-else parentPort.on("message", ({ i, spec }) => parentPort.postMessage({ i, r: runCampaign(spec) }));
+// Run as a tool; another tool may import runCampaign without starting it.
+const asTool = () => { try { return realpathSync(process.argv[1] || "").toLowerCase() === realpathSync(fileURLToPath(import.meta.url)).toLowerCase(); } catch { return false; } };
+if (isMainThread && asTool()) main();
+else if (!isMainThread && workerData === "balancesim") parentPort.on("message", ({ i, spec }) => parentPort.postMessage({ i, r: runCampaign(spec) }));

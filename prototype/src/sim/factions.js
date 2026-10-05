@@ -56,6 +56,7 @@ import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE } from "./alliance.js";
+import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS } from "./eras.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -129,7 +130,8 @@ export function createFactions(state, count) {
   });
 }
 
-export const strength = (f) => f.pop * FACTION_TYPES[f.type].arms;
+// f.gear: the eras' better arms of an aggressive group (eras.js gangArms, set every day: 1 in the early game).
+export const strength = (f) => f.pop * FACTION_TYPES[f.type].arms * (f.gear || 1);
 export const isAggressiveType = (f) => FACTION_TYPES[f.type].attitude === "Aggressive";
 
 export function attitude(f) {
@@ -242,6 +244,8 @@ export function factionsDaily(state) {
   for (const f of state.factions) {
     if (!f.alive) continue;
     const def = FACTION_TYPES[f.type];
+    // Eras (eras.js): from year 3 the aggressive groups arm themselves better every year.
+    if (isAggressiveType(f)) f.gear = gangArms(state);
     // Food and growth.
     // Their fields and workshops: food a little short of what they eat for the less farming types (the rest from
     // the sites they strip, aiscav.js), and FACTION_MAKE of the old ammo, scrap, fuel and meds made from nothing.
@@ -249,7 +253,7 @@ export function factionsDaily(state) {
     f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) - f.pop;
     if (f.stock.food > f.pop * 4 && f.pop < 50 && rng.chance(0.25)) f.pop += 1;
     // Drifters, deserters and the desperate join the strong: an aggressive group with food on hand recruits.
-    else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
+    else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
     if (f.stock.food < 0) {
       f.stock.food = 0;
       if (rng.chance(0.35)) f.pop -= 1;
@@ -337,7 +341,8 @@ export function factionsDaily(state) {
 // from beyond the border settles a free site 12–30 tiles from your hub (2% a day): 12–18 people, hostile.
 function newGangs(state) {
   if (day(state) < RAIDS.NEW_GANG_FROM || state.noNewGangs) return; // noNewGangs: test switch
-  if (state.factions.filter((f) => f.alive && isAggressiveType(f) && attitude(f) === "Hostile").length >= RAIDS.MIN_AGG) return;
+  const minAgg = isLate(state) ? Math.max(RAIDS.MIN_AGG, ERAS.LATE_MIN_AGG) : RAIDS.MIN_AGG; // eras.js: one more in the late game
+  if (state.factions.filter((f) => f.alive && isAggressiveType(f) && attitude(f) === "Hostile").length >= minAgg) return;
   const rng = state.rng;
   if (!rng.chance(RAIDS.NEW_GANG)) return;
   const g = state.grid;
@@ -350,7 +355,7 @@ function newGangs(state) {
   if (!sites.length) return;
   const type = rng.pick(["raider", "raider", "zealot", "expansionist"]);
   const site = rng.pick(sites);
-  makeGang(state, site.id, { type, pop: rng.int(12, 18), rng });
+  makeGang(state, site.id, { type, pop: rng.int(12, 18) + gangPopBonus(state), rng }); // eras.js: bigger gangs in later years
   state.stats.newGangs = (state.stats.newGangs || 0) + 1;
   if (state.live.has(site.id)) log(state, `A new gang from beyond the border has moved into ${site.loc.name}.`, "danger");
   else log(state, `Travellers speak of a new gang settling somewhere ${dirFromHub(state, site.id)}.`, "danger");
@@ -369,7 +374,7 @@ export function makeGang(state, tile, opts = {}) {
     bases: [tile], pop, alive: true, known: !!opts.known,
     goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
     stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 },
-    lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state),
+    lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state), gear: isAggressiveType({ type }) ? gangArms(state) : 1,
   };
   for (const [k, q] of Object.entries(opts.stock || {})) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q;
   state.factions.push(f);

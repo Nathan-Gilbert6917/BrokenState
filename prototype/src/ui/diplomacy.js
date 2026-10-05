@@ -52,6 +52,11 @@ function goalsCard(state, g, compact) {
   const a = g.alliance, h = g.hives;
   const ok = (b) => (b ? `<span class="good">✓</span>` : `<span class="muted">✗</span>`);
   const hiveLine = `${ok(h.ok)} Hives: ${h.destroyed} destroyed, <b>${h.left}</b> left${h.building ? `, ${h.building} being built` : ""}${h.sites > h.building ? ` (${h.sites - h.building} site${h.sites - h.building === 1 ? "" : "s"} picked)` : ""}`;
+  // Eras (sim/eras.js): the year, and the clocks each victory has to run after its conditions are met.
+  const e = g.era;
+  const eraLine = `<div${tip(`${e.era.desc} Threats grow every year from year 3. Neither victory can come before year ${e.winFrom} (day ${e.winDay}).`)}>Year <b>${e.year}</b> · ${esc(e.era.name)}${e.winOpen ? "" : ` <span class="muted">(no victory before year ${e.winFrom})</span>`}</div>`;
+  const clearLine = h.ok ? `<div${tip("After the last hive falls the state has to stay clear of hives for a season: a hive that rises again sets this back to zero.")}>${ok(e.clear >= e.clearNeed)} Kept clear: <b>${e.clear}</b> of ${e.clearNeed} days</div>` : "";
+  const accordLine = `<div${tip(`The Calder Accord: once the coalition holds over half the land with every group standing a member, it has to keep it for a year. Every day that holds counts; a day it does not takes two back. The coalition must also have stood for ${e.seasonsNeed} seasons since it was founded.`)}>${ok(e.accord >= e.accordNeed && e.seasons >= e.seasonsNeed)} Accord held: <b>${e.accord}</b> of ${e.accordNeed} days · coalition age ${e.seasons} of ${e.seasonsNeed} seasons</div>`;
   const ADV = { invite: ["good", "invite them"], court: ["muted", "win them over"], defeat: ["danger", "defeat them"], find: ["muted", "find them first"] };
   const outRow = (o) => {
     const f = factionById(state, o.id);
@@ -62,13 +67,16 @@ function goalsCard(state, g, compact) {
     return `<div><span class="${cls}">● ${esc(o.name)}: ${word}</span>${compact ? "" : ` <span class="muted">(${esc(why)})</span>`} ${act}</div>`;
   };
   const lost = a.lost || [];
-  return `<div class="card small"${tip("Two ways to win, each its own path. Destroy every hive (none left standing or being built). Or win with the coalition: it holds more than half the land and every group still standing is a member (hives or not). Groups that will not join can be broken: take their bases (Assault their base); a group with no base left is gone and no longer counts.")}>
+  return `<div class="card small"${tip(`Two ways to win, each its own path, neither before year ${e.winFrom}. Destroy every hive (none left standing or being built) and keep the state clear for a season. Or win with the coalition: it holds more than half the land and every group still standing is a member (hives or not), and keeps that up for a year (the Calder Accord). Groups that will not join can be broken: take their bases (Assault their base); a group with no base left is gone and no longer counts.`)}>
     <div class="spread"><b>🏁 Goals</b>${compact ? `<a class="link" data-action="dp-open" data-tab="coalition">details</a>` : ""}</div>
+    ${eraLine}
     <div style="margin-top:0.2rem"><b>Destroy every hive</b></div>
     <div>${hiveLine}</div>
+    ${clearLine}
     <div style="margin-top:0.3rem"><b>${esc(ALLIANCE.NAME)}</b></div>
     <div class="row"><span style="width:12rem">${ok(a.landOk)} Land held: <b>${pct(a.land.pct)}</b> of ${pct(ALLIANCE.LAND_NEEDED)}+</span><div style="flex:1;min-width:5rem">${bar(a.land.pct * 100, a.landOk ? "var(--good)" : "var(--accent)")}</div></div>
     <div>${ok(a.allIn)} Members: <b>${a.members}</b> of ${a.groups} group${a.groups === 1 ? "" : "s"} still standing${a.outsiders.length ? `; outside:` : ""}</div>
+    ${accordLine}
     ${a.outsiders.length ? `<div style="margin-left:0.8rem">${a.outsiders.slice(0, compact ? 4 : 20).map(outRow).join("")}${compact && a.outsiders.length > 4 ? `<div class="muted">and ${a.outsiders.length - 4} more</div>` : ""}</div>` : ""}
     ${lost.length ? `<div class="danger" style="margin-top:0.2rem">Retake: ${lost.map((o) => `${esc(o.name)} <span class="muted">(${esc(nameOf(state, o.factionId))}, since day ${o.day})</span> <button class="mini" data-action="job-locate" data-tile="${o.tile}">Locate</button>`).join(" · ")}</div>` : ""}
     ${a.infamy >= 10 ? `<div${tip("Rises with every base you take (2 from a hostile raider-type group, 15 from anyone else, 10 more for finishing them), fades 0.1 a day. Above 20 peaceful groups slowly lose goodwill toward you, and they want more goodwill before they join the coalition.")}>Infamy: <b class="${a.infamy > 20 ? "danger" : ""}">${a.infamy}</b>${a.infamy > 20 ? " (peaceful groups are wary of you)" : ""}</div>` : ""}

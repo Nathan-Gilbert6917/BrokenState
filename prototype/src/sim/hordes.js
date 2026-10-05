@@ -12,6 +12,7 @@ import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedFactor } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
 import { hordeAttackBase, hordeWarnings } from "./defences.js";
+import { hordeGrowth } from "./eras.js";
 
 export const HOURS_PER_TILE = 12;  // at most 2 tiles a day
 export const HORDE_MAX_SIZE = 600; // merging stops here
@@ -30,9 +31,13 @@ const WANDER = new Set(["roam", "border", undefined, null]);
 export const hordeScore = (size) => Math.round((Math.max(0, size || 0) ** 0.8 / 3.4) * 10) / 10;
 export const hordeClass = (size) => (size < 40 ? "small" : size < 95 ? "medium" : size <= 220 ? "large" : "huge");
 
+// Eras (eras.js): from year 3 a new roaming, attacking or border horde comes bigger every year (+4% a year, at most
+// +40%). A part split off a horde (o.split) keeps its size.
+const GROWS = new Set(["roam", "attack", "border"]);
 export function makeHorde(state, o) {
+  const grow = !o.split && GROWS.has(o.role || "roam") ? hordeGrowth(state) : 1;
   const h = {
-    id: newId(), tile: o.tile, size: Math.round(o.size), target: o.target ?? null, move: 0,
+    id: newId(), tile: o.tile, size: Math.round(o.size * grow), target: o.target ?? null, move: 0,
     role: o.role || "roam", hive: o.hive ?? null, site: o.site ?? null, bosses: o.bosses || 0, goal: o.goal || null, born: state.hour,
   };
   state.hordes.push(h);
@@ -61,7 +66,7 @@ export function splitHorde(state, h, n) {
   n = Math.round(n);
   if (n < SPLIT_MIN || h.size - n < SPLIT_MIN) return null;
   h.size -= n;
-  const part = makeHorde(state, { tile: h.tile, size: n, role: h.role, hive: h.hive, site: h.site, goal: h.goal, target: h.target });
+  const part = makeHorde(state, { tile: h.tile, size: n, role: h.role, hive: h.hive, site: h.site, goal: h.goal, target: h.target, split: true });
   part.move = h.move;
   return part;
 }

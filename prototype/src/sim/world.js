@@ -37,13 +37,15 @@ import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
-import { allianceVictory, controlledLand } from "./alliance.js";
+import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour } from "./discovery.js";
 import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
+import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
+import { outbreakDaily } from "./outbreak.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -398,13 +400,13 @@ export function checkGameOver(state) {
   if (alive(state).length) {
     // Older saves: a hive victory kept playing before the flags existed; the old coalition victory included the hives.
     const hivesDone = state.hivesWon || (state.victoryKept && state.hivesWon === undefined && (state.victoryReason === "hives" || state.allianceWon));
-    if (!state.allianceWon && allianceVictory(state)) {
+    if (!state.allianceWon && (state.erasOff ? allianceVictory(state) : accordHolds(state) && accordReady(state))) {
       state.gameOver = true;
       state.victory = true;
-      state.hivesWon = !!(hivesDone || hivesSecured(state)); // both at once: one screen, the coalition's
+      state.hivesWon = !!(hivesDone || (hivesSecured(state) && (state.erasOff || containReady(state)))); // both at once: one screen, the coalition's
       return coalitionWins(state);
     }
-    if (!hivesDone && hivesSecured(state)) {
+    if (!hivesDone && hivesSecured(state) && (state.erasOff || containReady(state))) {
       state.gameOver = true;
       state.victory = true;
       state.hivesWon = true;
@@ -578,6 +580,7 @@ export function tickHour(state) {
     vehiclesDaily(state);
     factionsDaily(state);
     hordesDaily(state);
+    outbreakDaily(state); // outbreak.js: new hives from beyond the border while the outbreak there burns
     routesDaily(state);
     supplyDaily(state);
     deathSitesDaily(state);
@@ -589,6 +592,8 @@ export function tickHour(state) {
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     recomputeOwnership(state);
+    // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
+    if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
   }

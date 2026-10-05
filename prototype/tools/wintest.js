@@ -27,11 +27,12 @@ import { captureBase, ensureConquest } from "../src/sim/conquest.js";
 import { RAIDS } from "../src/sim/factions.js";
 import { DEFENCE } from "../src/sim/defences.js";
 import { HORDE_SIZES } from "../src/sim/hordes.js";
+import { ERAS } from "../src/sim/eras.js";
 
 // --tune: try a balance number for this run only (nothing in the game files changes), e.g.
 // --tune HIVE.SITE_DAYS=60:120,HIVE.BOSS_DAY=240. Tables: HIVE (hiveconst.js), DEFENCE (defences.js), ALLIANCE
-// (alliance.js), HORDE_SIZES (hordes.js, e.g. HORDE_SIZES.large.max=150). a:b is a pair.
-const TABLES = { HIVE, DEFENCE, ALLIANCE, HORDE_SIZES, RAIDS };
+// (alliance.js), HORDE_SIZES (hordes.js, e.g. HORDE_SIZES.large.max=150), ERAS (eras.js, e.g. ERAS.WIN_FROM_YEAR=5). a:b is a pair.
+const TABLES = { HIVE, DEFENCE, ALLIANCE, HORDE_SIZES, RAIDS, ERAS };
 function applyTune(spec) {
   for (const part of (spec || "").split(",").filter(Boolean)) {
     const [path, raw] = part.split("=");
@@ -177,6 +178,7 @@ function forcedStorm(state) {
 async function forceScenario(kind) {
   const state = createWorld({ seed: 1, factionCount: FACTIONS });
   state.started = true;
+  state.erasOff = true; // the eras' clocks (eras.js: no victory before year 6, the Accord, the containment) are skipped here: this checks the path, not the pacing (tools/eratest.js checks those)
   setAutopilot(state, true, "balanced");
   while (day(state) < 30 && !state.gameOver) tickHour(state);
   const notes = [];

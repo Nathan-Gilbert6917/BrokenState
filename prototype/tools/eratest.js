@@ -1,0 +1,151 @@
+// Eras (src/sim/eras.js, outbreak.js): the calendar (game years of 112 days, as weather.js), the threats growing by
+// year (hordes, the aggressive groups' arms, recruits and new gangs, outsider raider bands), the victories' clocks
+// (no victory before year 6, the Calder Accord held for a year, the hive victory only once the outbreak beyond the
+// border has burned out and the state has been kept clear for a season), new hives rising near the border while
+// it burns, and then a short long-run check: autopilot campaigns (one per style) to the end of year 6 — no victory
+// before year 6, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
+// Usage: node tools/eratest.js [days=658] (the long-run part; 658 = the last day of year 6)
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { fileURLToPath } from "node:url";
+import { createWorld, tickHour, day, checkGameOver } from "../src/sim/world.js";
+import { seasonOfDay, YEAR_DAYS as WEATHER_YEAR } from "../src/sim/weather.js";
+import * as E from "../src/sim/eras.js";
+import { ensureAlliance, controlledLand, landCentres, ALLIANCE, allianceVictory, goalsProgress } from "../src/sim/alliance.js";
+import { destroyHive, hivesSecured } from "../src/sim/hives.js";
+import { strength, makeGang, factionsDaily } from "../src/sim/factions.js";
+import { makeHorde } from "../src/sim/hordes.js";
+import { setAutopilot } from "../src/sim/autopilot.js";
+import { FACTION_TYPES } from "../src/sim/data.js";
+import { runCampaign } from "./balancesim.js";
+
+if (!isMainThread && workerData === "eratest") {
+  parentPort.on("message", (spec) => parentPort.postMessage(runCampaign(spec)));
+} else if (isMainThread) await main();
+
+async function main() {
+  const DAYS = Number(process.argv[2] || 658);
+  let pass = 0, fail = 0;
+  const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
+  const world = (seed = 42) => { const st = createWorld({ seed, factionCount: 8 }); st.started = true; return st; };
+  const at = (st, d) => { st.hour = (d - 1) * 24 + 6; return st; };
+  const t0 = Date.now();
+
+  console.log("Calendar");
+  {
+    check(E.YEAR_DAYS === WEATHER_YEAR, `a year is ${E.YEAR_DAYS} days, as weather.js`);
+    const ok = [1, 98, 99, 210, 211, 434, 435, 546, 547, 995, 1555, 1666, 1667].every((d) => E.yearOfDay(d) === seasonOfDay(d - 1).year);
+    check(ok, "yearOfDay matches the season display's year on days 1, 98, 99, 435, 547, 995, 1555, 1667 ...");
+    check([2, 5, 6, 10, 15].every((y) => E.yearOfDay(E.yearStartDay(y)) === y && E.yearOfDay(E.yearStartDay(y) - 1) === y - 1), `years start on days ${[2, 5, 6, 10, 15].map(E.yearStartDay).join(", ")} (years 2, 5, 6, 10, 15)`);
+    const st = world();
+    check(E.eraOf(at(st, 50)).key === "early" && E.eraOf(at(st, E.yearStartDay(3))).key === "mid" && E.eraOf(at(st, E.yearStartDay(8))).key === "late", "eras: early in years 1–2, mid from year 3, late from year 8");
+  }
+
+  console.log("Threats grow by year");
+  {
+    const st = world();
+    const g = (d) => { at(st, d); return { h: E.hordeGrowth(st), a: E.gangArms(st), r: E.raiderSizeBonus(st), p: E.raiderPowerBonus(st), gp: E.gangPopBonus(st), rc: E.recruitBonus(st) }; };
+    const y2 = g(E.yearStartDay(3) - 1), y3 = g(E.yearStartDay(3)), y5 = g(E.yearStartDay(5)), y30 = g(E.yearStartDay(30));
+    check(y2.h === 1 && y2.a === 1 && y2.r === 0 && y2.p === 0 && y2.gp === 0 && y2.rc === 0, "nothing grows in the early game (years 1–2)");
+    check(y3.h > 1 && y5.h > y3.h && y5.a > y3.a && y5.r > y3.r && y5.p > y3.p, `year 3 → 5: hordes ×${y3.h.toFixed(2)} → ×${y5.h.toFixed(2)}, gang arms ×${y3.a.toFixed(2)} → ×${y5.a.toFixed(2)}, raider bands +${y3.r} → +${y5.r} people, +${y3.p.toFixed(1)} → +${y5.p.toFixed(1)} power`);
+    check(y30.h === 1 + E.ERAS.GROW.hordeMax && y30.a === 1 + E.ERAS.GROW.gangArmsMax && y30.r === E.ERAS.GROW.raiderSizeMax, "the growth stops at its caps");
+    // A new roaming horde in year 6 is bigger, a split part is not.
+    at(st, E.yearStartDay(6));
+    const tile = st.tiles.find((t) => t.terrain !== "water").id;
+    const h = makeHorde(st, { tile, size: 100, role: "roam" }), gd = makeHorde(st, { tile, size: 100, role: "guard" }), sp = makeHorde(st, { tile, size: 100, role: "roam", split: true });
+    check(h.size === Math.round(100 * E.hordeGrowth(st)) && gd.size === 100 && sp.size === 100, `year 6: a new roaming horde of 100 comes as ${h.size}; a hive's guard and a split part keep their size`);
+    st.hordes.length = 0;
+    // Aggressive groups arm themselves; a peaceful group does not.
+    const agg = st.factions.find((f) => ["raider", "zealot", "expansionist"].includes(f.type) && f.alive);
+    const calm = st.factions.find((f) => ["traders", "commune", "military", "fortress"].includes(f.type) && f.alive);
+    factionsDaily(st);
+    check(agg.gear === E.gangArms(st) && Math.abs(strength(agg) - agg.pop * FACTION_TYPES[agg.type].arms * E.gangArms(st)) < 1e-9 && strength(calm) === calm.pop * FACTION_TYPES[calm.type].arms,
+      `year 6: an aggressive group's strength ×${agg.gear.toFixed(2)}; a ${calm.type} group's unchanged`);
+    const gang = makeGang(st, st.tiles.find((t) => t.loc && t.owner == null && !t.hive).id, { type: "raider", pop: 15 });
+    check(gang.gear === E.gangArms(st), "a new gang arrives with the year's arms");
+  }
+
+  console.log("Victory clocks");
+  {
+    // The coalition: every group in and over half the land on day 30 is not a victory; the Accord has to run.
+    const st = world(1);
+    while (day(st) < 30) tickHour(st);
+    const A = ensureAlliance(st);
+    for (const f of st.factions) if (f.alive) { f.known = true; f.pact = "trade"; f.goodwill = 80; if (!A.members.includes(f.id)) A.members.push(f.id); }
+    A.founded = 1;
+    let n = 0;
+    const g = st.grid;
+    while (controlledLand(st).pct <= ALLIANCE.LAND_NEEDED && n < 40) {
+      const held = new Uint8Array(st.tiles.length);
+      for (const c of landCentres(st)) for (const id of g.within(c.tile, c.r)) held[id] = 1;
+      const t = st.tiles.find((x) => x.terrain !== "water" && !held[x.id] && !x.hive && !st.bases.some((b) => b.tile === x.id) && st.factions.every((f) => !f.bases.includes(x.id)));
+      if (!t) break;
+      st.bases.push({ id: 900000 + n, tile: t.id, type: "outpost", name: `Test ${n}`, stock: { food: 0, water: 0 }, buildings: [], construction: [], armory: [] });
+      n++;
+    }
+    check(allianceVictory(st), `the coalition's conditions hold on day 30 (${n} outposts, ${(controlledLand(st).pct * 100).toFixed(0)}% land)`);
+    check(!checkGameOver(st), "but no victory: it is year 1 and the Accord has not been held");
+    E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, false, false);
+    check(st.era.accord === 0 && st.era.accordFirst != null, "the Accord counts a day it holds and loses two for a day it does not");
+    at(st, E.yearStartDay(E.ERAS.WIN_FROM_YEAR) - 1);
+    st.era.accord = E.ERAS.ACCORD.DAYS;
+    check(!checkGameOver(st), `a full Accord in year ${E.ERAS.WIN_FROM_YEAR - 1}: still no victory (none before year ${E.ERAS.WIN_FROM_YEAR})`);
+    at(st, E.yearStartDay(E.ERAS.WIN_FROM_YEAR));
+    st.era.accord = E.ERAS.ACCORD.DAYS - 1;
+    check(!checkGameOver(st), `year ${E.ERAS.WIN_FROM_YEAR}, the Accord one day short: no victory`);
+    st.era.accord = E.ERAS.ACCORD.DAYS;
+    A.founded = day(st) - 28 * E.ERAS.ACCORD.SEASONS + 28;
+    check(!checkGameOver(st), `the Accord held but the coalition only ${E.coalitionSeasons(st)} seasons old: no victory`);
+    A.founded = 1;
+    check(checkGameOver(st) && st.victory && st.victoryReason === "alliance", `year ${E.ERAS.WIN_FROM_YEAR}, the Accord held ${E.ERAS.ACCORD.DAYS} days, the coalition ${E.coalitionSeasons(st)} seasons old: the coalition's victory`);
+    const gp = goalsProgress(st);
+    check(gp.era && gp.era.year === E.ERAS.WIN_FROM_YEAR && gp.era.accordNeed === E.ERAS.ACCORD.DAYS, "the Goals panel's numbers (goalsProgress.era)");
+
+    // The hives: every one destroyed in year 1: new ones rise near the border, and no hive victory.
+    const s2 = world(3);
+    setAutopilot(s2, true, "balanced");
+    while (day(s2) < 20) tickHour(s2);
+    for (const h of [...s2.hives]) destroyHive(s2, h, "test");
+    let border = null, secured = 0;
+    while (day(s2) < 90 && !s2.gameOver) { tickHour(s2); if (s2.hour % 24 === 0 && hivesSecured(s2)) secured++; if (!border) border = s2.hiveSites.find((x) => x.border) || null; }
+    check(!!border && border.started != null, `a mass of the dead comes over the border and starts a hive (${border ? `day ${Math.floor(border.chosen / 24) + 1}` : "none"})`);
+    check(!s2.victory, `no hive victory (${secured} days with no hive standing or being built, before the outbreak burned out)`);
+    check(s2.hives.length + s2.hiveSites.filter((x) => x.started != null).length >= 1 && s2.log.some((l) => /pouring over the/.test(l.text)), `hives in the state again on day 90 (${s2.hives.length} standing, ${s2.hiveSites.length} sites); the log says so`);
+    // After the burn-out and a season clear: the hive victory.
+    const s3 = world(5);
+    s3.hives.length = 0; s3.hiveSites.length = 0;
+    for (const t of s3.tiles) t.hive = false;
+    at(s3, E.yearStartDay(E.burnoutYear(s3)) - 1);
+    check(E.hiveFloor(s3) >= 1 && !checkGameOver(s3), `year ${E.burnoutYear(s3) - 1}: the outbreak beyond the border still burns (it keeps ${E.hiveFloor(s3)} hive(s)): no hive victory`);
+    at(s3, E.yearStartDay(E.burnoutYear(s3)));
+    check(E.hiveFloor(s3) === 0 && E.burnedOut(s3), `year ${E.burnoutYear(s3)}: it has burned out (this world's year, ${E.ERAS.OUTBREAK.BURNOUT.join("–")})`);
+    E.ensureEraState(s3).clear = E.ERAS.CONTAIN.DAYS - 1;
+    check(!checkGameOver(s3), "a day short of a season clear: no victory");
+    s3.era.clear = E.ERAS.CONTAIN.DAYS;
+    check(checkGameOver(s3) && s3.victory && s3.victoryReason === "hives", "a season clear: the hive victory");
+    E.ensureEraState(s2);
+    E.erasVictoryDaily(s2, false, true); E.erasVictoryDaily(s2, false, false);
+    check(s2.era.clear === 0, "a hive rising again (or a site starting) sets the count back to zero");
+  }
+
+  console.log(`Long runs: one autopilot campaign per style to day ${DAYS} (end of year ${E.yearOfDay(DAYS)})`);
+  {
+    const specs = ["cautious", "balanced", "aggressive"].map((style, i) => ({ seed: 11 + i, style, days: DAYS }));
+    const results = await Promise.all(specs.map((spec) => new Promise((resolve, reject) => {
+      const w = new Worker(fileURLToPath(import.meta.url), { workerData: "eratest" });
+      w.on("message", (r) => { w.terminate(); resolve(r); });
+      w.on("error", reject);
+      w.postMessage(spec);
+    })));
+    const y5 = E.yearStartDay(5), win = E.yearStartDay(E.ERAS.WIN_FROM_YEAR);
+    for (const r of results) {
+      const s5 = r.samples.find((s) => s.day === y5);
+      const won = r.outcome === "hives" || r.outcome === "alliance";
+      check(r.outcome !== "crash" && !r.problems.length, `${r.style} seed ${r.seed}: ${r.outcome} on day ${r.endDay} (year ${E.yearOfDay(r.endDay)}), no crash, NaN or stuck team${r.problems.length ? `: ${r.problems[0]}` : ""}`);
+      check(!won || r.endDay >= win, `${r.style}: no victory before year ${E.ERAS.WIN_FROM_YEAR} (day ${win})`);
+      if (s5) check(s5.hives + s5.building > 0 && s5.agg > 0, `${r.style}: start of year 5: ${s5.hives} hives (+${s5.building} building), ${s5.agg} aggressive groups, ${s5.hordes} hordes, ${s5.pop} people`);
+      else if (DAYS >= y5) check(r.outcome === "fell" && r.endDay < y5, `${r.style}: fell before year 5 (day ${r.endDay}), so nothing to check there`);
+    }
+  }
+  console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+  process.exit(fail ? 1 : 0);
+}
