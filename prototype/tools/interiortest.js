@@ -11,7 +11,7 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
-  createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, AREAS, AREA_SETS, los, active, registerOccupantSide, chooseBuilding,
+  createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, AREAS, AREA_SETS, los, active, registerOccupantSide, occupantSide, chooseBuilding,
 } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
@@ -192,6 +192,7 @@ console.log("Occupants");
   const b = r.b;
   const before = b.units.filter((u) => u.side === "enemy").length;
   const calls = [];
+  const realNeutral = occupantSide("neutral"); // thirdside.js registers the real one; this test swaps it for a probe
   registerOccupantSide("neutral", (st, bb, grp, place) => { calls.push(grp.side); for (const p of grp.people) { const c = place.cells()[0]; if (c) bb.units.push({ id: bb.nextId++, side: "neutral", kind: "human", name: p.name || "Survivor", x: c[0], y: c[1], hp: 50, maxHp: 50 }); } });
   placeOccupantGroups(r.st, b, [
     { side: "hostile", people: [{ kit: "raiders", weapon: "shotgun", name: "Mags Doyle" }, { kit: "raiders" }], room: "stock" },
@@ -203,9 +204,10 @@ console.log("Occupants");
   check(hostile.length === 2 && hostile.some((u) => u.name === "Mags Doyle" && u.weapon === "shotgun") && hostile.every((u) => u.side === "enemy" && !u.aware), `hostile occupants are placed as unaware guards (${hostile.map((u) => `${u.name} at ${u.x},${u.y}`).join(", ")})`);
   check(!stock || hostile.every((u) => u.x > stock.x0 && u.x < stock.x0 + stock.w - 1 && u.y > stock.y0 && u.y < stock.y0 + stock.h - 1), "in the room they asked for (the stockroom)");
   check(calls.includes("neutral") && b.units.some((u) => u.side === "neutral"), "a side with a registered handler (neutral) is handed to it");
-  check(b.raid.occupants.waiting.some((w) => w.side === "military" && w.count === 2), "a side with no handler (military) waits (TODO for the encounters work)");
+  check(b.units.filter((u) => u.side === "third" && u.team === "military").length === 2 && !b.raid.occupants.waiting.length, "the military squad is placed as a third side (thirdside.js)");
   check(b.units.filter((u) => u.side === "enemy").length === before + 2, "only the hostile ones joined the enemy");
   b.units = b.units.filter((u) => u.side !== "neutral");
+  if (realNeutral) registerOccupantSide("neutral", realNeutral);
 }
 
 console.log("A site with several buildings: the choice");

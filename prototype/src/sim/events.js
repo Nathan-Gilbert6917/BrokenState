@@ -8,6 +8,7 @@ import {
 import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
+import { rollWanderer } from "./wanderers.js";
 import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { growthsOf } from "./hivetech.js";
 import { GROWTHS } from "./hiveconst.js";
@@ -379,6 +380,11 @@ export function rollTravelEvent(state, p, tileId) {
   // Conflicts with other people (or a surge of the dead): see conflicts.js. Roadblocks and ambushes live there.
   const conflict = rollConflict(state, p, tileId);
   if (conflict) return conflict;
+  // People on the move (wanderers.js): survivors, armed strangers, a military squad. Its own dice (hash01): with
+  // nobody met the rest of this roll is unchanged. A hostile squad's checkpoint card is added by conflicts.js.
+  const met = rollWanderer(state, p, tileId);
+  if (met) return guarded(state, p, met, tileId);
+  if (p.eventHour === state.hour) return null;
   if (!state.rng.chance(chance)) return null;
   const options = EVENTS.filter((e) => e.when(state, p, t));
   if (!options.length) return null;

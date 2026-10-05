@@ -7,10 +7,13 @@
 //   will become; the military sends a strike force against the first hive (in a city) that fails and is cut off,
 //   while a hive rises by its thinned base and overruns it, and what is left splits into groups of their own; no
 //   raiders at first (hardcore-groups.js).
+// - The loot: the buildings are only half picked over (twice a normal start's loot), the surplus wearing off by the
+//   normal start (hardcore-loot.js). More people are on the move in the first weeks (wanderers.js).
 // Everything here only runs when state.mode === "hardcore"; a normal game never touches it.
 import { setupHardcoreStart, hardcoreStartDaily } from "./hardcore-start.js";
 import { setupHardcoreGroups, hardcoreGroupsDaily, hardcoreGroupsHour, hardcoreGroupsAfterOutbreak } from "./hardcore-groups.js";
 import { setupHardcoreOutbreak, hardcoreOutbreakDaily } from "./hardcore-outbreak.js";
+import { setupHardcoreLoot, hardcoreLootDaily } from "./hardcore-loot.js";
 
 export const MODES = {
   normal: { label: "Normal", tip: "6–12 months after the outbreak: you start with a hub, six survivors and supplies" },
@@ -30,6 +33,7 @@ export function hardcoreCreate(state, { factionCount, crew }) {
 export function hardcoreAfterHives(state) {
   setupHardcoreOutbreak(state);
   hardcoreGroupsAfterOutbreak(state); // the raiders' day, from the outbreak's era offset
+  setupHardcoreLoot(state); // hardcore-loot.js: the buildings are only half picked over (twice a normal start's loot)
 }
 
 // world.js tickHour, every hour (after the parties, hordes and outsiders move): the bands on the road.
@@ -44,4 +48,5 @@ export function hardcoreDaily(state) {
   hardcoreOutbreakDaily(state);
   hardcoreGroupsDaily(state);
   hardcoreStartDaily(state);
+  hardcoreLootDaily(state); // hardcore-loot.js: the surplus loot wears off toward a normal start's
 }

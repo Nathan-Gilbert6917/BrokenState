@@ -17,6 +17,7 @@ import { itemLoad, newItem } from "./inventory.js";
 import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
+import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -56,6 +57,9 @@ export function raidEnemies(state, tileId) {
   } else if (rng.chance(0.15)) {
     groups.push({ kind: "raiders", count: 2, power: 3.5, name: "rival scavengers", guard: true });
   }
+  // People on the move (wanderers.js, its own dice): armed survivors squatting here (enemies), survivors hiding and a
+  // military squad clearing the place (side "neutral" / "military": a third side on the raid map, thirdside.js).
+  groups.push(...siteWanderers(state, tileId));
   return groups;
 }
 
@@ -86,13 +90,14 @@ export function startScavenge(state, p) {
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
     const groups = raidEnemies(state, p.dest);
-    const total = groups.reduce((a, g) => a + g.count, 0);
-    const names = groups.map((g) => g.name).join(" and ");
+    const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
+    const total = foes.reduce((a, g) => a + g.count, 0);
+    const names = foes.map((g) => g.name).join(" and ");
     startCombat(state, {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
-      enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
+      enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
       raid: { heat0: isNight(state) ? 0 : 5, choose: true }, // choose: a site with several buildings offers them first (buildingmaps.js)
-      context: { factionIds: groups.filter((g) => g.factionId).map((g) => g.factionId) },
+      context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
     });
     return true;
   }
@@ -105,6 +110,7 @@ export function startScavenge(state, p) {
     guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
   };
   if (state.engagement.guarded) state.engagement.log.push(`${owner.name} hold this place. Expect armed guards.`);
+  siteEncounter(state, p, p.dest); // wanderers.js: survivors hiding here, squatters, a squad clearing it (its own dice)
   return true;
 }
 
@@ -132,6 +138,7 @@ export function afterRaid(state, result, setup) {
   }
   // Cuts and fevers from the hours spent searching (health.js), as in the hour-by-hour search.
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
+  wanderersAfterRaid(state, p, result, setup.tile); // wanderers.js: the survivors you found there can be talked to; the soldiers remember
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
   if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);
