@@ -47,6 +47,11 @@ export const DEPLOY = {
   // and its ladders (column 10, these rows).
   WALL_HP: 40, WALL_HP_PER: 12, GATE_HP: 100, GATE_HP_REINFORCED: 80, LADDER_ROWS: [2, 4, 8, 10], WORN: 0.002, WORN_MAX: 0.85,
 };
+// The attack's front on a long wall (a big base: sim/battlesize.js): whatever the wall's length, the attackers come at
+// the FRONT rows either side of the gate (the old 13-row wall), the breaches are cut there and the watchtower's two
+// towers and the walkway's ladders stand by it; the rest of the wall is there to fall back along.
+export const FRONT = { HALF: 6, TOWER: 5, LADDERS: [-4, -2, 2, 4] };
+export const inFront = (H, y) => Math.abs(y - Math.floor(H / 2)) <= FRONT.HALF;
 export const SIDE_NAMES = { east: "east", west: "west", north: "north", south: "south" };
 export const LIT_ZONES = { left: "Left", center: "Center", right: "Right" };
 // Rows of each lit zone on the east-facing layout, as fractions of the map's height: the defenders face east, so
@@ -103,7 +108,7 @@ export function deployMap(b, ctx, base, c) {
   const through = c.through || 0;
   const people = b.setup.enemy.kind !== "zombies";
   const want = people || c.raidId != null || c.rescue ? 1 : (c.bosses || 0) + (through >= 120 ? 1 : 0) + (through >= 250 ? 1 : 0);
-  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2)));
+  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2) && inFront(H, y)));
   const breaches = [];
   for (const y of rows) {
     if (breaches.length >= Math.min(DEPLOY.MAX_BREACH, want)) break;
@@ -125,22 +130,24 @@ export function deployMap(b, ctx, base, c) {
     else { ctx.put(X - 1, y, "walkway"); ctx.cellAt(X - 1, y).h = 1; walkway.push([X - 1, y]); }
   }
   const towers = [];
-  if (count(base, "watchtower")) for (const y of [1, H - 2]) if (!breaches.some((o) => Math.abs(o - y) < 2)) { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
+  if (count(base, "watchtower")) for (const y of [Math.max(1, mid - FRONT.TOWER), Math.min(H - 2, mid + FRONT.TOWER)]) if (!breaches.some((o) => Math.abs(o - y) < 2)) { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
   // Ladders up to the walkway (and the towers, which have their own).
   const ladders = [];
-  for (const y0 of DEPLOY.LADDER_ROWS) {
-    const y = Math.round((y0 * (H - 1)) / 12); // the rows for 13; a longer wall (a bigger base) spreads them out
-    if (y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 2, y, "ladder"); ladders.push([X - 2, y]); }
+  // By the front (the rows of the old 13-row wall: DEPLOY.LADDER_ROWS), then every 6 rows along a longer wall.
+  const ladderRows = [...FRONT.LADDERS.map((o) => mid + o)];
+  for (let o = FRONT.HALF + 4; mid - o >= 1 || mid + o <= H - 2; o += 6) ladderRows.push(mid - o, mid + o);
+  for (const y of ladderRows) {
+    if (y >= 0 && y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 2, y, "ladder"); ladders.push([X - 2, y]); }
   }
   // Barricades: a second line behind the wall.
   const k = count(base, "barricades");
   for (let i = 0; i < k * 3 + (count(base, "gate") ? 2 : 0); i++) {
-    for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.BARRICADE_X[0], DEPLOY.BARRICADE_X[1] - 1), y = rng.int(1, H - 2); if (ctx.free(x, y)) { ctx.put(x, y, "barricade"); break; } }
+    for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.BARRICADE_X[0], DEPLOY.BARRICADE_X[1] - 1), y = rng.int(Math.max(1, mid - FRONT.HALF), Math.min(H - 2, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "barricade"); break; } }
   }
   // The trench, then the spike pits (used this attack), in front of the wall.
   if (count(base, "trench")) for (let y = 0; y < H; y++) if (ctx.free(DEPLOY.TRENCH_X, y) && y % 4 !== 2) ctx.put(DEPLOY.TRENCH_X, y, "trench");
   for (let i = 0; i < (c.pits || 0) * 5; i++) {
-    for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.SPIKE_X[0], DEPLOY.SPIKE_X[1]), y = rng.int(0, H - 1); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
+    for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.SPIKE_X[0], DEPLOY.SPIKE_X[1]), y = rng.int(Math.max(0, mid - FRONT.HALF), Math.min(H - 1, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
   }
   layKit(ctx, rng, c.kit || armoryDefence(base), { wireX: [X + 1, X + 1], trapX: DEPLOY.SPIKE_X, bagX: [DEPLOY.BARRICADE_X[0], DEPLOY.BARRICADE_X[1] - 1] });
   // A lane through the gate from the back of the yard to the far edge: whatever the barricades, the kit and the
@@ -185,7 +192,7 @@ export function deployUnits(b, ctx, base, c) {
   enemies.forEach((u, i) => {
     const minX = i < inside ? DEPLOY.LINE_X - 1 : DEPLOY.ENEMY_X;
     const cells = [];
-    for (let y = 0; y < H0; y++) for (let x = minX; x < W0; x++) if (okCell(x, y) && (i >= inside || x >= DEPLOY.WALL_X - 1)) cells.push([x, y]);
+    for (let y = 0; y < H0; y++) for (let x = minX; x < W0; x++) if (okCell(x, y) && inFront(H0, y) && (i >= inside || x >= DEPLOY.WALL_X - 1)) cells.push([x, y]);
     if (!cells.length) for (let y = 0; y < H0; y++) for (let x = DEPLOY.WALL_X + 1; x < W0; x++) if (okCell(x, y)) cells.push([x, y]);
     if (!cells.length) return;
     let c0;

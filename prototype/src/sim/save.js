@@ -103,7 +103,7 @@ export function deserializeState(save) {
   if (!state || !Array.isArray(state.tiles) || !state.grid || !Array.isArray(state.bases)) throw new SaveError("The save is damaged and cannot be loaded (no map or bases).", "damaged");
   setNextId(Number(s.nextId));
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
-  if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state);
+  if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   return state;

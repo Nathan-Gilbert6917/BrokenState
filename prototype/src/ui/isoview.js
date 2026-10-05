@@ -23,6 +23,7 @@
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
+import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
@@ -783,22 +784,70 @@ function sprOf(L, fog, front = false) {
 }
 
 // ---------- the camera ----------
-// A new battle: the zoom that shows the whole map (at least 1.5 CSS px an art pixel), centered on your people.
+// A new battle: the whole map if it fits at 1.5 CSS px an art pixel or more; else (the bigger maps: sim/battlesize.js)
+// the action: your people (the deploy area in a base battle) and the ground toward the enemy, at the zoom that shows it
+// (1.5–2.5; a raid 1.5–2), centered there.
+const mapKey = (b) => `${b.w}x${b.h}:${b.tier ? b.tier.map : ""}`;
 function newBattleCamera(b, cw, ch) {
   iso.battle = b;
+  iso.mapKey = mapKey(b);
   iso.rot = 0;
   const [Wv, Hv] = viewDims(b, 0);
   const fit = Math.min(cw / ((Wv + Hv) * HW + 40), ch / ((Wv + Hv) * HH + 90));
-  let z = 0;
-  for (let i = 0; i < ISO_ZOOMS.length; i++) if (ISO_ZOOMS[i] <= Math.max(fit, 1.5)) z = i;
-  iso.zoom = z;
-  const mine = b.units.filter((u) => u.side === "player" && !u.dead);
-  const fitsAll = ISO_ZOOMS[z] <= fit * 1.02;
-  if (!fitsAll && mine.length) {
-    const cx = mine.reduce((a, u) => a + u.x + 0.5, 0) / mine.length, cy = mine.reduce((a, u) => a + u.y + 0.5, 0) / mine.length;
-    centerAt(b, cx, cy, 0);
+  const zoomFor = (f) => { let z = 0; for (let i = 0; i < ISO_ZOOMS.length; i++) if (ISO_ZOOMS[i] <= f) z = i; return z; };
+  iso.zoom = zoomFor(Math.max(fit, 1.5));
+  const box = ISO_ZOOMS[iso.zoom] <= fit * 1.02 ? null : actionBox(b);
+  if (box) {
+    // The box's corners in view space: the zoom that fits it, its middle centered.
+    const pts = [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]].map(([x, y]) => ptView(x, y, 0, b.w, b.h));
+    const X = pts.map(([u, v]) => (u - v) * HW), Y = pts.map(([u, v]) => (u + v) * HH);
+    const bw = Math.max(...X) - Math.min(...X) + 60, bh = Math.max(...Y) - Math.min(...Y) + UNIT_H + 90;
+    iso.zoom = zoomFor(Math.min(b.raid ? 2 : 2.5, Math.max(1.5, Math.min(cw / bw, ch / bh)))); // a raid: more of the building
+    centerAt(b, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, UNIT_H / 2);
   } else centerAt(b, b.w / 2, b.h / 2, 0);
+  clampCam(b);
   iso.target = null;
+}
+// The part of the map a battle opens on (world tiles x0, y0, x1, y1): your people on the map (in a base battle's deploy
+// step, its deploy area), and two thirds of the way from them toward the enemy's middle, with 3 tiles around.
+export function actionBox(b) {
+  const mine = b.units.filter((u) => u.side === "player" && !u.dead && !u.left && u.x >= 0 && u.y >= 0);
+  const pts = mine.map((u) => [u.x + 0.5, u.y + 0.5]);
+  if (b.phase === "deploy" && b.deploy && b.deploy.zone) {
+    let n = 0, sx = 0, sy = 0;
+    for (let i = 0; i < b.w * b.h; i++) if (b.deploy.zone[i]) { n++; sx += (i % b.w) + 0.5; sy += ((i / b.w) | 0) + 0.5; }
+    if (n) pts.push([sx / n, sy / n]);
+  }
+  if (!pts.length) return [0, 0, b.w, b.h];
+  const mid = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]);
+  const foes = b.units.filter((u) => u.side === "enemy" && !u.dead && !u.off && !u.fled && u.x >= 0);
+  if (foes.length) {
+    const e = foes.reduce((a, u) => [a[0] + (u.x + 0.5) / foes.length, a[1] + (u.y + 0.5) / foes.length], [0, 0]);
+    pts.push([mid[0] + (e[0] - mid[0]) * 0.67, mid[1] + (e[1] - mid[1]) * 0.67]);
+  }
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  return [Math.max(0, Math.min(...xs) - 3), Math.max(0, Math.min(...ys) - 3), Math.min(b.w, Math.max(...xs) + 3), Math.min(b.h, Math.max(...ys) + 3)];
+}
+// Off-screen enemies on a big map: a small red marker at the edge of the view pointing at each enemy your people see
+// (or last saw: a ghost), so nobody is lost off the side of the screen.
+function drawEdgeMarkers(ctx, b, cw, ch, v) {
+  if (b.over) return;
+  const m = 22, cx = cw / 2, cy = ch / 2;
+  const spots = [];
+  for (const t of b.units) if (t.side === "enemy" && active(t) && v.seen.has(t.id)) spots.push([t.x, t.y, 1]);
+  for (const q of v.ghosts || []) spots.push([q.x, q.y, 0.45]);
+  for (const [x, y, a] of spots) {
+    const [X, Y] = project(x + 0.5, y + 0.5, standZ(b, x, y) + UNIT_H / 2);
+    if (X >= m && Y >= m && X <= cw - m && Y <= ch - m) continue;
+    const dx = X - cx, dy = Y - cy;
+    const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (ch / 2 - m) / Math.max(1e-6, Math.abs(dy)));
+    ctx.save();
+    ctx.translate(cx + dx * k, cy + dy * k); ctx.rotate(Math.atan2(dy, dx));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#e2685f"; ctx.strokeStyle = "rgba(15,17,20,0.85)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-6, -7); ctx.lineTo(-3, 0); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
 }
 function centerAt(b, wx, wy, z) {
   const [u, v] = ptView(wx, wy, iso.rot, b.w, b.h);
@@ -982,7 +1031,7 @@ function tag(ctx, text, x, y, col, size) {
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
-  if (iso.battle !== b) newBattleCamera(b, cw, ch);
+  if (iso.battle !== b || iso.mapKey !== mapKey(b)) newBattleCamera(b, cw, ch); // a new battle, or its map swapped (the fall back to the yard)
   iso.cw = cw; iso.ch = ch;
   stepCamera(b, now);
   setFrame(b, cw, ch);
@@ -1075,6 +1124,21 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const c of OV.fires) {
     ctx.fillStyle = `rgba(255,${110 + Math.round(60 * Math.sin((ph + c.x * 0.13 + c.y * 0.07) * Math.PI * 2))},40,0.42)`;
     ctx.beginPath(); diamond(ctx, c.x, c.y, tileTop(b, c.x, c.y)); ctx.fill();
+  }
+  // A spitter's acid (sim/acid.js): a green puddle a cell with bubbles rising and popping, fading as it dries up.
+  const phA = ((now || 0) % 1600) / 1600;
+  for (const c of OV.acid) {
+    const z0 = tileTop(b, c.x, c.y), a = c.fade;
+    ctx.fillStyle = `rgba(100,180,40,${0.22 * a})`;
+    ctx.beginPath(); diamond(ctx, c.x, c.y, z0); ctx.fill();
+    ctx.fillStyle = `rgba(150,222,60,${0.48 * a})`;
+    ctx.beginPath(); diamond(ctx, c.x, c.y, z0, 3); ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const t = (phA + k / 3 + c.x * 0.37 + c.y * 0.21) % 1;
+      const [X, Y] = project(c.x + 0.25 + ((k * 0.31 + c.x * 0.13) % 0.5), c.y + 0.3 + ((k * 0.23 + c.y * 0.17) % 0.45), z0);
+      ctx.strokeStyle = `rgba(215,255,130,${(1 - t) * 0.85 * a})`; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(X, Y - t * 2 * S, (1 + t * 2.5) * S, (0.6 + t * 1.5) * S, 0, 0, Math.PI * 2); ctx.stroke();
+    }
   }
   // A Shepherd's aura (sim/decoys.js): the dead inside ignore decoys and fire.
   for (const a of OV.auras) {
@@ -1269,12 +1333,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const L = looks[c.y * b.w + c.x], top = L ? L.top : 4;
       const [X, Y] = project(c.x + 0.5, c.y + 0.5, top + 4);
       const s = Math.max(7, 3.2 * S);
-      ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.partial ? "#e08a4f" : "#ffd166";
+      // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
+      ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? "#7fb8e6" : c.partial ? "#e08a4f" : "#ffd166";
       ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
       rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();
       ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
-      ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : "?", X, Y - s * 0.45);
+      ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
     }
     for (const z of b.raid.zones) {
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
@@ -1318,7 +1383,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   if (h && v.reach && u && H.mode === "move" && !H.unitAt(h.x, h.y) && isFinite(v.reach.dist[h.y * b.w + h.x])) {
     const path = H.pathTo(v.reach, h.x, h.y);
-    ctx.strokeStyle = v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166";
+    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
     ctx.lineWidth = Math.max(2, 0.8 * S);
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
@@ -1370,6 +1435,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
   }
+  drawEdgeMarkers(ctx, b, cw, ch, v);
   drawCompass(ctx, cw, ch);
   iso.frames++;
   if (t0) iso.frameMs = performance.now() - t0;
@@ -1613,7 +1679,7 @@ function drawFxIso(ctx, b, now, H) {
     const text = f.text ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(Math.max(12, (f.crit ? 5.4 : 4.6) * S))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`; ctx.lineWidth = 3;
     const y = ty - UNIT_H * 0.7 * S - (el / 1400) * 14 * S;
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);

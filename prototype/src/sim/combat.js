@@ -49,12 +49,15 @@ import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES } from "./hiveconst.js";
+import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
+import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -114,6 +117,7 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   b.w = w; b.h = h; b.cells = cells;
   b.losCache = new Int8Array(W * H * W * H);
   b.reach = flood(cells, rx, ry);
+  b.acid = []; // acid pools (acid.js) stay on the old map
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
@@ -289,9 +293,10 @@ const tileIdOf = (setup) => (setup.tile && typeof setup.tile === "object" ? setu
 // ======================================================================================
 
 export const MAP_W = 18, MAP_H = 13; // a base's wall map (deploy.js), and the scale the field layouts were drawn at
-// Battle map sizes: an encounter in the field (genMap scales its layout from 18 × 13 to this), a hive assault. A
-// layout can set its own (registerBattleSize: a base's wall map, sized to its buildings).
-export const FIELD_W = 26, FIELD_H = 18, HIVE_W = 32, HIVE_H = 22;
+// Battle map sizes (battlesize.js SIZES, by context): an encounter in the field is Medium (FIELD_W × FIELD_H) growing to
+// Large with the people and the dead on it (genMap scales its layout from 18 × 13 to the map), a hive assault Large
+// (HIVE_W × HIVE_H). A layout can set its own (registerBattleSize: a base's wall map, sized to its buildings).
+export const FIELD_W = 32, FIELD_H = 24, HIVE_W = 40, HIVE_H = 30; // battlesize.js SIZE_CLASSES Medium and Large
 var sizes; // eslint-disable-line no-var
 export function registerBattleSize(key, fn) {
   (sizes = sizes || new Map()).set(key, fn);
@@ -299,7 +304,7 @@ export function registerBattleSize(key, fn) {
 export function battleSize(state, setup) {
   const fn = setup && setup.layout && sizes ? sizes.get(setup.layout) : null;
   const s = fn ? fn(state, setup) : null;
-  return s && s[0] > 0 && s[1] > 0 ? s : [FIELD_W, FIELD_H];
+  return s && s[0] > 0 && s[1] > 0 ? s : fieldDims(state, setup || {});
 }
 // Current battle size. Only one battle runs at a time; createBattle / createRaid set these.
 let W = MAP_W, H = MAP_H;
@@ -513,7 +518,7 @@ export const medsLeft = (b) => pool(b, "meds");
 // The field map. Its layouts were drawn for 18 × 13 and are scaled to the battle's size (FIELD_W × FIELD_H): fixed
 // columns and rows by the width and height, how many things are scattered by the area, and on a bigger map a few
 // more buildings where there are buildings.
-function genMap(rng, tile) {
+function genMap(rng, tile, opts = {}) {
   const t = tile || { terrain: "plains" };
   const floor = { plains: "grass", forest: "grass", hills: "dirt", mountain: "gravel", suburb: "grass", city: "rubble", water: "grass" }[t.terrain] || "grass";
   const cells = Array.from({ length: W * H }, () => ({ k: "open", f: floor }));
@@ -601,15 +606,18 @@ function genMap(rng, tile) {
   // A bigger map has room for a few more buildings around a site that has them (a shed, a house, an outbuilding).
   const sited = built;
   for (let i = 0; i < Math.round(sited * (area - 1) * 0.5); i++) building(rng.int(4, 5), rng.int(3, 4));
+  const blocks = fieldBlocks(area); // a bigger map: more blocks of houses in a suburb or a city
   switch (t.terrain) {
     case "forest": scatter("tree", 30); scatter("rock", 5); edgeCover("tree", 3); break;
     case "hills": scatter("rock", 14); scatter("boulder", 5); edgeCover("rock", 3); break;
     case "mountain": scatter("boulder", 12); scatter("rock", 10); edgeCover("boulder", 2); break;
-    case "suburb": building(5, 4); building(4, 3); if (area > 1.6) building(5, 4); fenceLine(rx(), rng.int(0, H - 1), X(5), rng.chance(0.5)); scatter("car", 3); scatter("tree", 5); edgeCover("car", 1); edgeCover("tree", 2); break;
-    case "city": building(6, 4); building(5, 4); building(4, 3); if (area > 1.6) { building(6, 5); building(4, 4); } scatter("car", 4); scatter("truck", 2); scatter("crate", 4); edgeCover("crate", 2); break;
+    case "suburb": for (let i = 0; i < blocks; i++) { building(5, 4); building(4, 3); if (area > 1.6) building(5, 4); fenceLine(rx(), rng.int(0, H - 1), X(5), rng.chance(0.5)); } scatter("car", 3); scatter("tree", 5); edgeCover("car", 1); edgeCover("tree", 2); break;
+    case "city": for (let i = 0; i < blocks; i++) { building(6, 4); building(5, 4); building(4, 3); if (area > 1.6) { building(6, 5); building(4, 4); } } scatter("car", 4); scatter("truck", 2); scatter("crate", 4); edgeCover("crate", 2); break;
     default: scatter("rock", 5); scatter("tree", 6); edgeCover("rock", 2); edgeCover("tree", 1); break;
   }
   if (type === "farm" || type === "ranch") for (const c of cells) if (c.f === "grass") c.f = "field";
+  // Most open ground with cover within a few tiles, whatever the map's size (battlesize.js densify).
+  if (opts.densify !== false) densify(cells, W, H, rng, { target: coverTarget(t.terrain) }); // not on a base's wall map (its own ground)
 
   // Every open cell must connect to both deployment zones; carve a lane if not.
   const mid = Math.floor(H / 2);
@@ -620,6 +628,9 @@ function genMap(rng, tile) {
   }
   return { cells, reach: flood(cells, 0, mid) };
 }
+
+// Blocks of houses in a suburb or a city: one on the old 26 × 18 map (area 2 at the 18 × 13 scale), more on bigger ones.
+const fieldBlocks = (area) => Math.max(1, Math.round(area / 2.2));
 
 function flood(cells, sx, sy) {
   const seen = new Uint8Array(W * H);
@@ -739,15 +750,21 @@ function climbCost(b, x, y, nx, ny, diag, per, h = hAt) {
 // or stairs (climbCost); the attackers cannot walk through a barred door or a closed gate (they batter it: siegeTarget and bash).
 // opts.manual: a move ordered by hand (it may walk through fire); otherwise people and the Shepherd keep out of the
 // flames (throwables.js): burning cells are closed to them (they can still step out of one).
+// A spitter's acid pool (acid.js) is not closed, only dearer for people: the path is the cheapest by that weight
+// (ACID.cost a pool cell; an order by hand ACID.manual, or ACID.cost with opts.wary), within maxCost real steps; dist
+// is what the steps of that path really cost.
 export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
   const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
+  const aw = acidWeights(b, u, opts.manual && !opts.wary);
   const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
+  const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
   const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
   const start = idx(u.x, u.y);
   d[start] = 0;
+  real[start] = 0;
   const open = [start];
   while (open.length) {
     let bi = 0;
@@ -767,16 +784,18 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const nd = d[cur] + (diag ? 1.5 : 1) + climb;
-      if (nd <= maxCost + 1e-6 && nd < d[j]) {
+      const step = (diag ? 1.5 : 1) + climb;
+      const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
+      if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
         d[j] = nd;
+        if (aw) real[j] = nr;
         prev[j] = cur;
       }
     }
   }
   // Downed bodies can be stepped over but not stood on.
-  const stop = d.slice();
+  const stop = real.slice();
   for (let j = 0; j < W * H; j++) if (occ[j] === 2) stop[j] = Infinity;
   return { dist: stop, prev };
 }
@@ -797,21 +816,29 @@ export function pathTo(r, x, y) {
 // battering it down (SIEGE: 2 + 0.4 a hit point), so the dead pile onto the weakest point when no opening is nearer.
 export function distField(b, sources, walker = null) {
   bindDims(b);
-  const d = new Float32Array(W * H).fill(Infinity);
   const siege = !!walker && walker.side !== (b.holders || "player");
   const per = siegeRule(walker).climb;
   const burning = walker && b.fires && b.fires.length && (walker.kind === "human" || walker.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
+  // The same field asked again with the map unchanged (every one of the dead in a turn heads for the same people):
+  // the one worked out before (fieldCache). Callers only read it.
+  const key = `${siege ? 1 : 0}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const cache = fieldCache(b);
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const d = new Float32Array(W * H).fill(Infinity);
+  if (cache.size >= 8) cache.delete(cache.keys().next().value);
+  cache.set(key, d);
   const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c))) && !(burning && burning.has(idx(x, y))); };
+  const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
-  const open = [];
-  for (const [x, y] of sources) { d[idx(x, y)] = 0; open.push(idx(x, y)); }
-  while (open.length) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
-    const cur = open[bi];
-    open[bi] = open[open.length - 1];
-    open.pop();
+  // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
+  // in a fraction of the time on the bigger maps (battlesize.js).
+  const heap = new MinHeap();
+  for (const [x, y] of sources) { d[idx(x, y)] = 0; heap.push(0, idx(x, y)); }
+  while (heap.size) {
+    const key = heap.topKey(), cur = heap.pop();
+    if (key > d[cur]) continue;
     const x = cur % W, y = (cur / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
@@ -822,11 +849,55 @@ export function distField(b, sources, walker = null) {
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
       const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
-      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash;
-      if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; }
+      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash + (aw ? aw[j] : 0); // aw: acid.js
+      if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
   }
   return d;
+}
+// distField's cache for a battle: emptied whenever any cell's kind, hit points, height or bar changed (a door broken,
+// a wall breached, a lock opened, the map turned or swapped), checked against a copy of those on every call.
+function fieldCache(b) {
+  let fc = b._fields;
+  const cells = b.cells, n = cells.length;
+  let same = !!fc && fc.cells === cells && fc.k.length === n;
+  if (same) {
+    const k = fc.k, hp = fc.hp, h = fc.h, bar = fc.bar;
+    for (let i = 0; i < n; i++) { const c = cells[i]; if (c.k !== k[i] || c.hp !== hp[i] || c.h !== h[i] || c.bar !== bar[i]) { same = false; break; } }
+  }
+  if (!same) {
+    fc = { cells, k: cells.map((c) => c.k), hp: cells.map((c) => c.hp), h: cells.map((c) => c.h), bar: cells.map((c) => c.bar), map: new Map() };
+    Object.defineProperty(b, "_fields", { value: fc, writable: true, configurable: true, enumerable: false }); // not saved with the battle
+  }
+  return fc.map;
+}
+// A binary min-heap of numbers (keys) with an int payload each (distField).
+class MinHeap {
+  constructor() { this.k = []; this.v = []; }
+  get size() { return this.k.length; }
+  topKey() { return this.k[0]; }
+  push(key, val) {
+    const k = this.k, v = this.v;
+    let i = k.length;
+    k.push(key); v.push(val);
+    while (i > 0) { const p = (i - 1) >> 1; if (k[p] <= key) break; k[i] = k[p]; v[i] = v[p]; i = p; }
+    k[i] = key; v[i] = val;
+  }
+  pop() {
+    const k = this.k, v = this.v, top = v[0], lk = k.pop(), lv = v.pop(), n = k.length;
+    if (n) {
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= n) break;
+        if (c + 1 < n && k[c + 1] < k[c]) c++;
+        if (k[c] >= lk) break;
+        k[i] = k[c]; v[i] = v[c]; i = c;
+      }
+      k[i] = lk; v[i] = lv;
+    }
+    return top;
+  }
 }
 
 // ---------- odds ----------
@@ -1004,7 +1075,7 @@ export function createBattle(state, setup) {
   const tile = state.tiles[tileId];
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
-  const map = genMap(rng, tile);
+  const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence" });
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: tile ? (tile.loc ? tile.loc.name : (tile.terrain[0].toUpperCase() + tile.terrain.slice(1))) : "Open ground",
@@ -1040,8 +1111,10 @@ export function createBattle(state, setup) {
   // Player side.
   const people = combatants(state, setup).slice().sort((a, c) => combatPower(c) - combatPower(a)).slice(0, MAX_PLAYERS);
   const mid = H / 2;
-  const sc = (x) => Math.round((x * W) / MAP_W); // deploy columns, drawn for an 18-wide map, scaled to this one
-  const pcells = pickCells(people.length, (x) => x <= sc(3), (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
+  // Where each side starts (battlesize.js spawnRules): your people by the west edge, the enemy a set distance off
+  // whatever the map's size, so the shooting starts in a turn or two.
+  let rules = spawnRules([2, mid]);
+  const pcells = pickCells(people.length, rules.player, (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
   people.forEach((s, i) => {
     const u = playerUnit(b, s);
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
@@ -1056,11 +1129,12 @@ export function createBattle(state, setup) {
   const kinds = [];
   for (let i = 0; i < count; i++) kinds.push(e.kind === "mixed" ? (i % 2 ? "zombies" : "raiders") : e.kind);
   const pc = b.units.reduce((a, u) => [a[0] + u.x / b.units.length, a[1] + u.y / b.units.length], [0, 0]);
+  rules = spawnRules(pc);
   let pods = [];
   if (setup.ambush === "player") {
     // Unaware and clustered around a couple of spots.
     const nPods = Math.max(1, Math.min(3, Math.ceil(count / 4)));
-    pods = pickCells(nPods, (x) => x >= sc(9) && x <= W - 4, () => rng.next() * 3);
+    pods = pickCells(nPods, (x, y) => rules.pod(x, y) && x <= W - 3, () => rng.next() * 3);
   }
   const flankTop = pc[1] >= mid; // flankers come from the side farther from your people
   let zn = 0, hn = 0;
@@ -1079,12 +1153,13 @@ export function createBattle(state, setup) {
       c = pickCells(1, (x, y) => dist(x, y, pod[0], pod[1]) <= 3.2, (x, y) => -dist(x, y, pod[0], pod[1]) + coverScore(x, y) * 0.5)[0];
     } else if (setup.ambush === "enemy") {
       if (u.kind === "zombie") c = pickCells(1, (x, y) => { const d = dist(x, y, pc[0], pc[1]); return d >= 3.5 && d <= 7 && x > 1; }, () => 0)[0];
-      else if (i % 2) c = pickCells(1, (x, y) => x >= sc(4) && x <= sc(9) && (flankTop ? y <= 2 : y >= H - 3), (x, y) => coverScore(x, y))[0];
-      else c = pickCells(1, (x) => x >= sc(12), (x, y) => coverScore(x, y))[0];
+      else if (i % 2) c = pickCells(1, rules.flank(flankTop), (x, y) => coverScore(x, y))[0];
+      else c = pickCells(1, rules.ambushFront, (x, y) => coverScore(x, y))[0];
     } else {
-      c = pickCells(1, (x) => x >= W - sc(5), (x, y) => (u.kind === "zombie" ? 0 : coverScore(x, y)))[0];
+      c = pickCells(1, rules.front(u.kind === "zombie"), (x, y) => (u.kind === "zombie" ? 0 : coverScore(x, y)))[0];
     }
-    c = c || pickCells(1, (x) => x >= sc(6), (x) => x)[0];
+    // No room where they belong: the nearest free cell to the usual distance, ahead of your people.
+    c = c || pickCells(1, (x) => x >= pc[0] + 6, (x, y) => -Math.abs(dist(x, y, pc[0], pc[1]) - CONTACT.HUMANS[0]))[0] || pickCells(1, (x) => x >= pc[0] + 3, (x) => x)[0];
     if (!c) return;
     u.x = c[0]; u.y = c[1];
     if (e.factionId != null && u.kind === "human") u.factionId = e.factionId; // prisoners.js: whose people they are
@@ -1126,10 +1201,11 @@ function foesOf(b, u) {
 // ---------- actions ----------
 // nonLethal (Subdue, stealth.js): a person brought to 0 is knocked out, not killed.
 // hit: { how: "shot" | "melee" | "bash" | "fire" | "blast", crit, sneak } for the armoured dead (deadsoldiers.js
-// armorVs: their armour by the weapon that struck); everyone else takes raw × their armor.
+// armorVs: their armour by the weapon that struck); everyone else takes raw × their armor ("acid": half of it, acid.js).
+// A spitter that dies bursts (acid.js spitterBurst).
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * (t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
+  const eff = raw * (hit && hit.how === "acid" ? acidArmor(t) : t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) return eff;
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
@@ -1148,6 +1224,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway).
     else if (b.raid && t.kind === "zombie" && !t.boss) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
     say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
+    if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
   }
   return eff;
 }
@@ -1215,6 +1292,7 @@ export function moveAlong(b, u, path) {
       if (!active(u) || trap !== "spikes") break;
     }
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
+    if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
       if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
@@ -1337,6 +1415,7 @@ export function combatAct(state, act) {
   // falling back to the yard and the buildings instead (interior.js), as is act "fallBack".
   if (act.type === "soundRetreat") return soundRetreat(state, { leave: act.leave || [] });
   if (act.type === "fallBack") return fallBack(state, { by: "player" });
+  if (act.type === "callClear") return callClear(state, b);
   if (b.phase === "deploy") { // deploy.js: placing the defenders before a break-in (or after falling back, interior.js)
     const err = deployAct(state, b, act);
     if (!err) { afterDeploy(state, b); bump(b); }
@@ -1349,7 +1428,7 @@ export function combatAct(state, act) {
   switch (act.type) {
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
-      const r = reachable(b, u, u.mob * u.ap, { manual: true });
+      const r = reachable(b, u, u.mob * u.ap, { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
       u.ap -= c <= u.mob ? 1 : 2;
@@ -1399,12 +1478,21 @@ export function combatAct(state, act) {
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
       if (!box || !nearBox(u, box) || (box.searched && !(act.open && box.contents))) return "Move next to something to search first.";
       if (box.lock && !box.lock.open) return lockedMsg(box); // locks.js
+      // quick: a rummage (search.js): no action, a share of what is inside, noise. Else a full search: 1 action
+      // (by day or in the dark), everything shows, a rummaged container's hidden rest too.
+      if (act.quick) {
+        const why = quickRefusal(b, u, box);
+        if (why) return why;
+        searchBox(state, b, u, box, !!act.open, true);
+        break;
+      }
       // open: the player's search window (ui/inventory.js) moves things by hand. A container already gone through
-      // opens again for free; the first look costs the action (both in the dark without a light, stealth.js).
-      if (act.open && box.contents) return "";
+      // opens again for free.
+      const fresh = !box.contents || box.quick;
+      if (act.open && !fresh) return "";
       // Bots and tests: a container already opened is a free look; what they take costs hauling time (raidloot.js).
-      if (!box.contents) {
-        if (u.ap < searchCost(b, u)) return "Too dark: searching without a flashlight takes both actions.";
+      if (fresh) {
+        if (u.ap < searchCost(b, u)) return "No actions left this turn.";
         u.ap -= searchCost(b, u);
       }
       searchBox(state, b, u, box, !!act.open);
@@ -1497,6 +1585,7 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
+  acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
   else reinforcements(b);
@@ -1534,6 +1623,7 @@ function startPlayerTurn(state, b) {
   b.turn++;
   b.phase = "player";
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
+  acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
@@ -1550,6 +1640,26 @@ function startPlayerTurn(state, b) {
   }
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
+  offerClear(b);
+}
+
+// ---------- the area is clear enough (battlesize.js clearEnough) ----------
+// Only a couple of enemies left, far off and unaware (or running): the player is told once and may end the fight
+// there (act "callClear", the panel's button) or hunt them down; the battle AI ends it.
+function offerClear(b) {
+  if (b.over || b.clearOffered || !clearEnough(b)) return;
+  b.clearOffered = b.turn;
+  const n = b.units.filter((u) => u.side === "enemy" && active(u)).length;
+  say(b, `Only ${n === 1 ? "one straggler is" : `${n} stragglers are`} left, far off and unaware. The area is clear enough: finish the fight (Shift+C), or hunt ${n === 1 ? "it" : "them"} down.`, "good");
+}
+export function callClear(state, b = state.combat) {
+  if (!b || b.over) return "The battle is over.";
+  if (!clearEnough(b)) return "There are still enemies close by.";
+  bindDims(b);
+  b.clearedEarly = true;
+  say(b, "You call it: the area is clear enough.", "good");
+  endBattle(state, b, "victory");
+  return "";
 }
 
 // Gunfire on infected ground draws more of the dead from the map edge.
@@ -1560,11 +1670,14 @@ function reinforcements(b) {
   if (b.infection < 0.1 || !noise || b.reinf >= b.reinfMax) return;
   if (!rng.chance(Math.min(0.5, (b.infection * noise) / 18))) return;
   const edge = rng.pick(["north", "south", "east"]);
-  const cells = [];
+  let cells = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const on = edge === "north" ? y === 0 && x >= 5 : edge === "south" ? y === H - 1 && x >= 5 : x === W - 1;
     if (on && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y)) cells.push([x, y]);
   }
+  // On a big map they come in where the fight is, not across an empty field (battlesize.js CONTACT.NEAR).
+  const near = spawnRules([0, 0], b.units.filter((u) => u.side === "player" && active(u))).near;
+  if (cells.some(([x, y]) => near(x, y))) cells = cells.filter(([x, y]) => near(x, y));
   rng.shuffle(cells);
   const n = Math.min(b.reinfMax - b.reinf, 1 + rng.int(0, Math.round(b.infection)), cells.length);
   if (n <= 0) return;
@@ -1625,6 +1738,7 @@ function scoreCell(b, u, x, y, foes, cost, field) {
   }
   s += best * 0.3;
   if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
+  if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
   if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;
   return s;
@@ -1637,9 +1751,9 @@ function outsideBase(b, u, i) {
   return u.side === "player" && !!b.tier && !!b.tier.interior && !b.tier.interior[i] && !WALL_LINE.has(b.cells[i].k);
 }
 
-function bestMove(b, u, foes) {
+function bestMove(b, u, foes, field = null) {
   const r = reachable(b, u, u.mob);
-  const field = distField(b, foes.map((f) => [f.x, f.y]), u);
+  field = field || distField(b, foes.map((f) => [f.x, f.y]), u);
   let best = null;
   for (let i = 0; i < W * H; i++) {
     if (!isFinite(r.dist[i]) || r.dist[i] === 0 || outsideBase(b, u, i)) continue;
@@ -1686,9 +1800,10 @@ function aiUnit(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     const shot = bestShot(b, u, foes);
-    const here = scoreCell(b, u, u.x, u.y, foes, 0, distField(b, foes.map((f) => [f.x, f.y]), u));
+    const field = distField(b, foes.map((f) => [f.x, f.y]), u);
+    const here = scoreCell(b, u, u.x, u.y, foes, 0, field);
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
-    const mv = bestMove(b, u, foes);
+    const mv = bestMove(b, u, foes, field);
     if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); continue; }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
@@ -1752,7 +1867,7 @@ function aiMelee(b, u) {
       if (!isFinite(r.dist[i]) || (r.dist[i] > 0 && outsideBase(b, u, i))) continue;
       const x = i % W, y = (i / W) | 0;
       const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)])));
-      const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05;
+      const sc = (nextTo ? -100 : field[i]) + r.dist[i] * 0.05 + (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y) ? ACID.stand / 3 : 0); // people: not into a spitter's acid (acid.js)
       if (!best || sc < best.sc) best = { x, y, sc, cost: r.dist[i], nextTo };
     }
     if (!best || best.cost === 0) {
@@ -1882,6 +1997,8 @@ function shouldFlee(b) {
 const exitEdge = (b, x, y) => (b.side === "west" ? x === 0 : b.side === "north" ? y === 0 : b.side === "south" ? y === H - 1 : x === W - 1);
 function flee(b, u) {
   if (exitEdge(b, u.x, u.y)) { u.fled = true; u.ap = 0; say(b, `${u.name} runs off.`, "good"); return; }
+  // Out of everyone's sight and well clear of them: gone, not a long run to the map's edge (battlesize.js).
+  if (u.fleeing && fledFarEnough(b, u)) { u.fled = true; u.ap = 0; say(b, `${u.name} gets away.`, "good"); return; }
   const r = reachable(b, u, u.mob * u.ap);
   const exits = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (exitEdge(b, x, y) && cellAt(b, x, y).walk) exits.push([x, y]);
@@ -2143,6 +2260,7 @@ export function autoPlayerTurn(state, opts = {}) {
     b.raid.choose = null;
   }
   if (b.raid) return autoRaidTurn(state);
+  if (clearEnough(b)) return void callClear(state, b); // battlesize.js: a couple of far-off stragglers left
   // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them. On a base's
   // wall map: everyone falls back to the yard and the buildings instead (interior.js).
   const giveUp = opts.retreat === false || state.autoRetreat === false ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
@@ -2309,7 +2427,9 @@ export function closeCombat(state, { take = true } = {}) {
 // zones. A vehicle you bring is parked in its own zone: extract there to keep it.
 // ======================================================================================
 
-export const RAID_W = 34, RAID_H = 22; // was 28 × 18 (the terrain scattered over it scales with the area)
+// A raid map's size is the site's (battlesize.js raidDims: Small–Medium for a gas station up to Large for a hospital);
+// RAID_W × RAID_H is the Medium one (the terrain scattered over it scales with the area).
+export const RAID_W = 32, RAID_H = 24;
 export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
 
 // Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
@@ -2465,8 +2585,9 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
     }
     // A building with doors, windows and containers against the inside walls.
     let built = false;
+    const big = W * H > 900 ? 2 : W * H > 700 ? 1 : 0; // bigger rooms on a bigger map (battlesize.js)
     for (let tries = 0; tries < 40 && !built; tries++) {
-      const w = rng.int(5, 8), h = rng.int(4, 6);
+      const w = rng.int(5, 8 + big), h = rng.int(4, 6 + Math.min(1, big));
       const x0 = rng.int(4, W - 5 - w), y0 = rng.int(1, H - 1 - h);
       if (!rectFree(x0, y0, w, h)) continue;
       const edge = [];
@@ -2488,7 +2609,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
         if (byWall && !byDoor) spots.push([x, y]);
       }
       rng.shuffle(spots);
-      const n = Math.min(spots.length, rng.int(2, 4));
+      const n = Math.min(spots.length, 5, roomBoxes(rng, w, h)); // a bigger room holds more (battlesize.js)
       for (let i = 0; i < n; i++) {
         const [x, y] = spots[i];
         const kind = rng.pick(def.boxes);
@@ -2513,6 +2634,8 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
     default: scatter("tree", 14); scatter("rock", 10); scatter("fence", 6); break;
   }
   if (t.loc && (t.loc.type === "farm" || t.loc.type === "ranch")) { scatter("hay", 10); for (const c of cells) if (c.f === "grass") c.f = "field"; }
+  // Cover over the open ground between the buildings, whatever the map's size (battlesize.js densify).
+  densify(cells, W, H, rng, { target: coverTarget(t.terrain), keep: (x, y) => !!reserved[idx(x, y)] || cells[idx(x, y)].f === "floor" });
 
   // Make sure every zone and every container can be reached from the entry zone.
   const entry = zones[0];
@@ -2556,9 +2679,9 @@ export function createRaid(state, setup) {
     map.reach = flood(map.cells, z.x0 + 1, z.y0 + (withVehicle ? 0 : 1));
     map.areas = map.rooms;
   } else {
-    W = RAID_W; H = RAID_H;
+    [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
-    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile), W, H); // more rooms and areas on a bigger map
     map = genRaidMap(rng, tile, types, withVehicle);
   }
   const b = {
@@ -2571,7 +2694,7 @@ export function createRaid(state, setup) {
     losCache: new Int8Array(W * H * W * H), rng,
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
-      vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: 12,
+      vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)),
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? tile.loot : 0.5) * 1.3)),
       reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
@@ -2611,7 +2734,8 @@ export function createRaid(state, setup) {
   // thirdside.js: the people on the move (wanderers.js groups with a side, or its armed survivors) come into a building through interiorOccupants instead.
   if (pick) placeInterior(state, b, map, groups.filter((g) => !g.side && !g.wanderer).map((g) => ({ ...g, count: Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0))) }))); // buildingmaps.js: in the rooms
   for (const g of pick ? [] : groups) {
-    const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round(g.count || 0)));
+    // The dead scale with the street map's size (battlesize.js raidDeadScale: more of them over a city center).
+    const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
       const zl = mixList(g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js)
@@ -2765,7 +2889,8 @@ function spawnWave(b, n) {
 }
 
 // open: the player looks inside (the search window does the taking); else what fits is taken at once (bots, tests).
-function searchBox(state, b, u, box, open = false) {
+// quick: a rummage (search.js): part of what is inside shows, the rest stays hidden, and it is heard.
+function searchBox(state, b, u, box, open = false, quick = false) {
   const rng = state.rng;
   const R = b.raid;
   const s = survivorById(state, u.sid);
@@ -2817,19 +2942,29 @@ function searchBox(state, b, u, box, open = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     box.contents = { sup, gear };
   }
+  // search.js: a rummage hides part of it (and is heard); a full search brings out what a rummage missed.
+  const name = box.kind === "body" ? box.label : box.label.toLowerCase();
+  let more = 0;
+  if (quick) {
+    hideSome(rng, box);
+    const came = quickNoise(b, u, box);
+    say(b, `${u.name} rummages through the ${name} in a hurry (Heat +${SEARCH.quick.heat})${came ? `: ${came} nearby hear${came === 1 ? "s" : ""} it` : ""}.`, came ? "danger" : "info");
+  } else if (box.hidden || box.quick) more = revealHidden(box);
   if (open) {
     const n = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
-    if (!n) { box.searched = true; box.partial = false; }
-    say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${n ? `${n} thing${n === 1 ? "" : "s"} inside` : "nothing useful"}.`, n ? "good" : "info");
-    if (!n) fx(b, { type: "loot", to: [box.x, box.y], text: "empty" });
+    if (!n && !box.quick) { box.searched = true; box.partial = false; }
+    if (quick) say(b, `${n ? `${n} thing${n === 1 ? "" : "s"} turn${n === 1 ? "s" : ""} up` : "Nothing turns up"}; a full search may find more.`, n ? "good" : "info");
+    else say(b, `${u.name} searches the ${name}: ${n ? `${n} thing${n === 1 ? "" : "s"} inside${more ? ` (${more} the rummage missed)` : ""}` : "nothing useful"}.`, n ? "good" : "info");
+    if (!n) fx(b, { type: "loot", to: [box.x, box.y], text: quick ? "nothing yet" : "empty" });
     return;
   }
-  // raidloot.js: onto the survivor (pockets, pack, carried) as far as they can carry.
-  const r = party ? autoTake(state, b, u, box) : { got: [], left: box.contents.gear.length };
+  // raidloot.js: onto the survivor (pockets, pack, carried) as far as they can carry. After a rummage the bot takes
+  // only what the free hauling allows (it rummaged to save its actions).
+  const r = party ? (quick ? takeFree(u, () => autoTake(state, b, u, box)) : autoTake(state, b, u, box)) : { got: [], left: box.contents.gear.length };
   const got = r.got;
   const what = got.length ? got.join(", ") : "nothing useful";
-  say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${what}.${r.left ? (r.outOfTime ? " Out of time for the rest this turn." : " No room for the rest (left inside).") : ""}`, got.length ? "good" : "info");
-  if (r.left && !r.outOfTime && !(box.skipBy || []).includes(u.id)) (box.skipBy || (box.skipBy = [])).push(u.id); // bots: the rest does not fit on them
+  say(b, `${u.name} ${quick ? "grabs" : `searches the ${name}:`} ${what}.${r.left ? (r.outOfTime || quick ? " Out of time for the rest this turn." : " No room for the rest (left inside).") : ""}`, got.length ? "good" : "info");
+  if (r.left && !r.outOfTime && !quick && !(box.skipBy || []).includes(u.id)) (box.skipBy || (box.skipBy = [])).push(u.id); // bots: the rest does not fit on them
   fx(b, { type: "loot", to: [box.x, box.y], text: got.length ? `+${got.length > 1 ? got.length + " items" : got[0]}` : "empty" });
 }
 
@@ -2935,7 +3070,17 @@ function autoRaidTurn(state) {
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
       const lockAct = !leave ? autoLock(state, b, u) : null; // locks.js: key, picks or force, by the odds and the Heat
       if (lockAct && !combatAct(state, lockAct)) continue;
-      const nearBoxes = searchableNear(b, u).filter(todo);
+      // search.js: pressed for time (Heat up, an aware enemy close, on the way out), rummage through what is right
+      // here (no action, loud, part of it), grab what is free to haul and move on; else search in full.
+      const pressed = botPressed(b, u, leave);
+      if (pressed && !full && !unload && u.quickTurn !== b.turn) {
+        const q = quickable(searchableNear(b, u).filter(todo))[0];
+        if (q && !combatAct(state, { type: "search", unit: u.id, box: q.id, quick: true })) continue;
+      }
+      // Pressed: leave the rummaged ones for a calmer moment (a full search there costs the action it saved), unless
+      // nothing else is left to go to.
+      const skipQuick = pressed && R.containers.some((c) => todo(c) && !c.quick);
+      const nearBoxes = searchableNear(b, u).filter(todo).filter((c) => !skipQuick || !c.quick);
       if (!leave && !unload && nearBoxes.length && (nearBoxes[0].contents || u.ap >= searchCost(b, u))) {
         if (combatAct(state, { type: "search", unit: u.id, box: nearBoxes[0].id })) u.ap = 0;
         continue;
@@ -2951,16 +3096,19 @@ function autoRaidTurn(state) {
         for (const zz of zs) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
       } else {
         targets = [];
-        for (const c of R.containers) if (todo(c)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
+        for (const c of R.containers) if (todo(c) && !(skipQuick && c.quick)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
         targets.push(...lockTargets(b)); // locks.js: the doors of a locked room
       }
       if (!targets.length) { u.ap = 0; break; }
       const field = distField(b, targets);
       const r = reachable(b, u, u.mob * u.ap);
+      // A spitter's acid (acid.js): not to stop in, and the way there goes round it when it can.
+      const pools = b.acid && b.acid.length ? (i) => (acidAt(b, i % W, (i / W) | 0) ? ACID.cost : 0) : null;
+      const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];
       let best = null;
-      for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || field[i] < field[best])) best = i;
+      for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || score(i) < score(best))) best = i;
       if (best == null || field[best] >= field[idx(u.x, u.y)]) { u.ap = 0; break; }
-      const err = combatAct(state, { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
+      const err = combatAct(state, pools ? { type: "move", unit: u.id, x: best % W, y: (best / W) | 0, wary: true } : { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
       if (err) { u.ap = 0; break; }
     }
   }

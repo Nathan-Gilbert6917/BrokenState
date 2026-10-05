@@ -2,7 +2,9 @@
 // key line in the raid header, the hover text, and the doors and padlocks drawn on the raid map. ui/combat.js calls
 // these; the "lk-open" handler is registered in main.js (LOCK_ACTIONS).
 import { combatAct } from "../sim/combat.js";
-import { LOCKS, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
+import { LOCKS, PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
+import { survivorById, skill } from "../sim/world.js";
+import { hasPerk } from "../sim/skills.js";
 import { cui } from "./combat.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -25,10 +27,14 @@ export function lockPanel(state, b, u) {
       return `<button class="mini" data-action="lk-open" data-u="${u.id}" data-t="${t.ref}" data-m="${m}" ${ok ? "" : "disabled"} data-tip="${esc(x.ok ? tipText : x.why)}">${label}</button>`;
     };
     const force = o.force.label === "Smash" ? `Smash ${pct(o.force.chance)} (2 actions, loud)` : `Force ${pct(o.force.chance)} (loud)`;
+    // How the pick odds come about (sim/locks.js PICK): the picker's Stealth against the lock's difficulty.
+    const s = survivorById(state, u.sid);
+    const st = s ? skill(s, "stealth") : 0, quiet = !!(u.quiet || (s && hasPerk(s, "quiethands")));
+    const why = `${pct(PICK.base)} + ${pct(PICK.perStealth)} a Stealth point (Stealth ${st}: +${pct(PICK.perStealth * st)})${def.diff > 1 ? ` − ${pct(PICK.perDiff)} a difficulty step above 1 (−${pct(PICK.perDiff * (def.diff - 1))})` : ""}${quiet ? ` + ${pct(PICK.quiet)} Quiet Hands` : ""}, 5–95%`;
     return `<div class="small" style="margin-top:0.3rem">🔒 <b>${esc(t.name)}</b> <span class="muted">difficulty ${def.diff}${t.lock.tries ? ` · ${t.lock.tries} tr${t.lock.tries === 1 ? "y" : "ies"}` : ""}${t.door ? " · a locked room behind it" : ""}</span>
       <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">
         ${button("key", hasKey(state, b.tileId) ? "Key ✓" : "Key ✗", `Unlock it with the ${keyName(state, b.tileId)} (1 action, silent).`)}
-        ${button("pick", `Pick ${pct(o.pick.chance)}`, `Pick the lock (1 action a try, Heat +1, the lockpicks lose a use; Stealth helps, Stealth XP). ${pct(o.pick.chance)} a try.`)}
+        ${button("pick", `Pick ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock: 1 action a try, ${pct(o.pick.chance)} each try (${why}). Heat +1 a try, the lockpicks lose a use, Stealth XP. Once it is open, searching it takes 1 action.`)}
         ${button("force", force, o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, Heat +10, wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, Heat +6, wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
       </div></div>`;
   }).join("");

@@ -432,17 +432,19 @@ export function bodyEmpty(state, body) {
 }
 
 // Takes a supply stack from a body: into the team's cargo (as much as fits) or the base stock.
-export function takeSupply(state, bi, key) {
+// want: at most that many of the stack (1 to all; the loot screen's 1 / half buttons).
+export function takeSupply(state, bi, key, want = Infinity) {
   const b = state.combat;
   const body = battleBodies(state)[bi];
   const qty = body ? Math.floor(body.supplies[key] || 0) : 0;
   if (!qty) return "";
   const st = storageFor(state, battlePlace(b));
   if (!st) return "";
-  let n = qty;
+  let n = Math.min(qty, Number.isFinite(want) ? Math.max(1, Math.floor(want)) : qty);
+  const asked = n;
   if (st.o === "cargo") {
     const p = st.party;
-    n = Math.min(qty, unitsThatFit(cargoRoom(state, p), key));
+    n = Math.min(asked, unitsThatFit(cargoRoom(state, p), key));
     if (n > 0) p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + n;
   } else {
     const base = baseById(state, st.id);
@@ -452,7 +454,7 @@ export function takeSupply(state, bi, key) {
   body.supplies[key] -= n;
   if (body.supplies[key] <= 0) delete body.supplies[key];
   if (b.result) b.result.loot.supplies[key] = (b.result.loot.supplies[key] || 0) + n;
-  return `Took ${n} ${SUPPLIES[key].name.toLowerCase()}${n < qty ? ` (${qty - n} did not fit)` : ""}.`;
+  return `Took ${n} ${SUPPLIES[key].name.toLowerCase()}${n < asked ? ` (${asked - n} did not fit)` : n < qty ? ` (${qty - n} left)` : ""}.`;
 }
 
 // Takes everything that fits from one body: supplies first, then items, most valuable first.

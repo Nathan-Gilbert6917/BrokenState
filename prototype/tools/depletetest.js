@@ -132,7 +132,7 @@ section("AI scavenging parties: need, the site, the haul home");
   const taken = loot0 - t.loot;
   check(!st.parties.includes(q) && aiScav(st).stats.home === home0 + 1, `the party came home (${h} hours)`);
   check(searchHours >= 1 && searchHours <= AISCAV.searchHours + 1, `it searched up to ${AISCAV.searchHours} hours (${searchHours})`);
-  const crew = Math.max(0.5, Math.min(1.5, q.scav.str0 / 3));
+  const crew = Math.max(0.5, Math.min(AISCAV.crewMax, q.scav.str0 / 3));
   const land = t.owner === f.id ? loot0 * AISCAV.landRate * Math.ceil(h / 24) : 0; // a site in their own land is also stripped by the day
   check(taken > 0.02 && taken <= AISCAV.take * crew * AISCAV.searchHours + land + 1e-9, `the site lost ${r2(taken)} loot (${r2(loot0)} → ${r2(t.loot)}; at most ${AISCAV.take} × crew ${r2(crew)} an hour for ${AISCAV.searchHours} hours)`);
   check(aiScav(st).stats.goods > goods0 && (f.stock[key] || 0) > key0, `the haul went into their stock (${aiScav(st).stats.goods - goods0} units; ${key} ${Math.round(key0)} → ${Math.round(f.stock[key])})`);

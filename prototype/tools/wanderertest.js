@@ -305,7 +305,7 @@ section("The third side on a field map: a robbery, the travellers defend themsel
 
 section("The third side on the raid map: survivors hiding, a squad clearing the place");
 {
-  let met = 0, cards = 0, hostile = 0, raids = 0, squadMet = 0;
+  let met = 0, metAlive = 0, cards = 0, hostile = 0, raids = 0, squadMet = 0;
   for (let i = 0; i < 8; i++) {
     const s = createWorld({ seed: 800 + i, factionCount: 7 });
     wanderers(s);
@@ -334,11 +334,13 @@ section("The third side on the raid map: survivors hiding, a squad clearing the 
     finishCombat(s, setup, b.result);
     wanderersAfterRaid(s, p, b.result);
     if (s.cards.some((c) => /Survivors in/.test(c.title))) cards++;
+    // Found, and still someone to talk to: some of the group alive and the team still out (the raid can kill either).
+    if (r.some((x) => x.team === "neutral" && x.met && !x.hostile && (groupById(s, x.wid)?.people.length || 0) > 0) && s.parties.includes(p) && partyMembers(s, p).length) metAlive++;
   }
   check(raids >= 6, `${raids} raids with a third side on the map`);
   check(hostile === 0, "your raid AI never fires on them");
-  console.log(`  neutrals found in ${met} raids (a card to talk to them after ${cards}); squads met in ${squadMet}`);
-  check(cards === met, "every neutral group found (and alive) can be talked to after the raid");
+  console.log(`  neutrals found in ${met} raids (${metAlive} with them and the team still alive; a card to talk to them after ${cards}); squads met in ${squadMet}`);
+  check(cards === metAlive && met > 0, "every neutral group found (and alive) can be talked to after the raid");
 }
 
 section("Building interiors: a raid inside with survivors, a squad or squatters (buildingmaps.js → thirdside.js)");

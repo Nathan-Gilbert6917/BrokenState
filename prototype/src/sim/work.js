@@ -149,12 +149,18 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A water filter the governor or a steward queued waits while the tanks are three-quarters full (it clogs up day by day, needed or not); the jobs behind it go first.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full (it clogs up day by day, needed or not); the jobs behind it go first.",
     open(ctx) {
       const jobs = openCrafts(ctx);
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough" : "the queued crafts need a workshop") : "nothing in the craft queue" };
       const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
       return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
+    },
+    // The governor's rule (autopilot.js planRoles 1b): a queued water filter gets its crafter first while the water
+    // is running short (thirst kills in days; a hungry base still has its stock).
+    emergency(ctx) {
+      if (ctx.used.craft > 0 || !openCrafts(ctx).some((j) => j.recipe === "waterfilter") || !waterRunningShort(ctx.state, ctx.base)) return null;
+      return { slots: 1, why: "the water is running short and a water filter is queued" };
     },
     can(ctx, s) {
       const ok = openCrafts(ctx).some((j) => {
@@ -723,6 +729,32 @@ export function planBase(state, base) {
       if (was && !ctx.free.has(s)) ctx.used[was.t]--;
       ctx.free.add(s);
       give(s, "build", prio(state, s, "build"), "emerg", `${WORK_TYPES.build.ing}: one hand stays on the queued build${was && was.t ? ` (${WORK_TYPES[was.t].name} took everyone else)` : ""}`);
+    }
+  }
+  // Likewise a craft queue with work keeps one hand (the governor's step 8: one crafter once the farm has its crew).
+  // Taken from scavenging or from farmers beyond the governor's crew for the plots: 0.6 a plot while food is
+  // comfortable, 1.2 a plot below that (autopilot.js planRoles step 6). The farm here takes up to 1.6 × 1.2 a plot
+  // while food is short of the season's goal, and Farm sits above Craft for most roles, so without this the queue sat
+  // all season on many maps (the summer's water filters, dressings for short meds, a weapon for the unarmed): over
+  // worktest's 10 seeds × 8 rolls priorities finished a fifth fewer crafts than the governor (373 vs 462; with this
+  // 451, food and buildings unchanged).
+  // Never from a build, a station, a lesson, a repair or the walls.
+  const co = ctx.open("craft");
+  if (co.cap > 0 && ctx.used.craft === 0) {
+    const fw = farmersWanted(state, base);
+    const farmSpare = ctx.used.farm - (ctx.foodDays >= Math.max(15, foodGoal(state) / 1.5) ? fw.need : fw.ideal);
+    const cands = managed.filter((s) => {
+      if (prio(state, s, "craft") <= 0 || !minOk(state, s, "craft") || WORK_TYPES.craft.can(ctx, s)) return false;
+      if (ctx.free.has(s)) return true;
+      const a = out.get(s.id);
+      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0));
+    }).sort((a, b) => prio(state, a, "craft") - prio(state, b, "craft") || rankOf(ctx, b, "craft") - rankOf(ctx, a, "craft") || a.id - b.id);
+    const s = cands[0];
+    if (s) {
+      const was = out.get(s.id);
+      if (was && !ctx.free.has(s)) ctx.used[was.t]--;
+      ctx.free.add(s);
+      give(s, "craft", prio(state, s, "craft"), "emerg", `${WORK_TYPES.craft.ing}: one hand stays on the craft queue${was && was.t ? ` (${WORK_TYPES[was.t].name} has hands to spare)` : ""}`);
     }
   }
   for (const s of ctx.free) {

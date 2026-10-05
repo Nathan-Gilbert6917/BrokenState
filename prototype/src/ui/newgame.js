@@ -3,7 +3,7 @@
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
-import { WORLD_SIZES, SIZE_KEYS, sizeDef } from "../sim/worldsize.js";
+import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
@@ -105,14 +105,37 @@ function worldSizeSelect(ui) {
   const opts = SIZE_KEYS.map((k) => {
     const d = WORLD_SIZES[k];
     return `<option value="${k}" ${k === ui.worldSize ? "selected" : ""}>${d.label} (${d.w}×${d.h})</option>`;
-  }).join("");
-  return `<label${tip(`Map size in hexes. ${SIZE_TIPS[sizeDef(ui.worldSize).key]}. Changing it builds a new map on the same seed`)}>World size <select data-action="worldsize">${opts}</select></label>`;
+  }).join("") + `<option value="custom" ${isCustom(ui.worldSize) ? "selected" : ""}>Custom… (experimental)</option>`;
+  const what = isCustom(ui.worldSize) ? "Any width × height you set (experimental)" : SIZE_TIPS[sizeDef(ui.worldSize).key];
+  return `<label${tip(`Map size in hexes. ${what}. Changing it builds a new map on the same seed`)}>World size <select data-action="worldsize">${opts}</select></label>`;
 }
-function groupOptions(ui) {
-  const [lo, hi] = sizeDef(ui.worldSize).groups;
-  const out = [];
-  for (let v = lo; v <= hi; v++) out.push(`<option ${v === ui.factionCount ? "selected" : ""}>${v}</option>`);
-  return out.join("");
+// The size the screen is set to: a preset, or the custom width × height (sim/worldsize.js customDef).
+const uiSizeDef = (ui) => (isCustom(ui.worldSize) ? customDef(ui.customW, ui.customH) : sizeDef(ui.worldSize));
+// Custom size: width and height, with the warning that goes with it.
+function customSizeRow(state, ui) {
+  if (!isCustom(ui.worldSize)) return "";
+  const tiles = state.grid.width * state.grid.height, huge = WORLD_SIZES.huge.w * WORLD_SIZES.huge.h;
+  return `<div class="row" style="margin-bottom:0.5rem">
+      <label${tip(`Map width in hexes (${CUSTOM.MIN_W}–${CUSTOM.MAX_W}). Normal is ${WORLD_SIZES.normal.w}, Huge ${WORLD_SIZES.huge.w}`)}>Width <input type="number" min="${CUSTOM.MIN_W}" max="${CUSTOM.MAX_W}" step="1" style="width:5rem" data-action="customw" value="${state.grid.width}"></label>
+      <label${tip(`Map height in hexes (${CUSTOM.MIN_H}–${CUSTOM.MAX_H}). Normal is ${WORLD_SIZES.normal.h}, Huge ${WORLD_SIZES.huge.h}`)}>Height <input type="number" min="${CUSTOM.MIN_H}" max="${CUSTOM.MAX_H}" step="1" style="width:5rem" data-action="customh" value="${state.grid.height}"></label>
+      <span class="small ${tiles > huge ? "danger" : "muted"}">⚠ Experimental: custom sizes are not balanced or tested like the presets, and maps bigger than Huge (${WORLD_SIZES.huge.w}×${WORLD_SIZES.huge.h}) may run slowly.${tiles > huge ? ` This one is ${(tiles / huge).toFixed(1)}× Huge.` : ""}</span>
+    </div>`;
+}
+// AI groups: 0–50 on any size; the size suggests a range.
+function groupInput(state, ui) {
+  const d = uiSizeDef(ui);
+  const hard = isHardcore(state);
+  const t = `How many other survivor groups share the state, 0–${GROUPS_MAX} (${d.groups.join("–")} suits a ${d.label} map; many groups on a small map may not all find room, and many groups slow the game)${hard ? ". Hardcore always has the National Guard" : ""}`;
+  return `<label${tip(t)}>AI groups <input type="number" min="0" max="${GROUPS_MAX}" step="1" style="width:4rem" data-action="factioncount" value="${ui.factionCount}"></label>`;
+}
+// Starting hives: what the map makes (Default), or 0–10.
+function hiveSelect(state, ui) {
+  const made = isHardcore(state) ? state.hardcore?.outbreak?.normalHives ?? (state.hives || []).length : (state.hives || []).length;
+  const cur = ui.hiveCount == null ? "default" : String(ui.hiveCount);
+  const opts = [`<option value="default" ${cur === "default" ? "selected" : ""}>Default${ui.hiveCount == null ? ` (${made})` : ""}</option>`];
+  for (let v = 0; v <= HIVES_MAX; v++) opts.push(`<option value="${v}" ${cur === String(v) ? "selected" : ""}>${v}</option>`);
+  const t = `How many hives the outbreak starts with (Default: what this map makes on its own). More hives mean more hordes from the start; with none, new hives still rise near the border.${isHardcore(state) ? " In Hardcore the outbreak still begins with one hive: this is how many the first year grows to." : ""}`;
+  return `<label${tip(t)}>Starting hives <select data-action="hivecount">${opts.join("")}</select></label>`;
 }
 
 // Normal or Hardcore (sim/hardcore.js MODES): the mode the world on this screen was built with.
@@ -135,11 +158,14 @@ export function newRunScreen(state, ui) {
       ${modeSelect(state)}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(ui)}
-      <label${tip(`How many other survivor groups share the state (${sizeDef(ui.worldSize).groups.join("–")} on a ${sizeDef(ui.worldSize).label} map)`)}>AI groups <select data-action="factioncount">${groupOptions(ui)}</select></label>
+      ${groupInput(state, ui)}
+      ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
       <button data-action="nr-allcrew"${tip("Randomize every colonist's name, skills and look (skill totals stay the same)")}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
+    ${customSizeRow(state, ui)}
+    ${!hard && state.factions.length < ui.factionCount ? `<div class="small muted" style="margin-bottom:0.5rem">Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).</div>` : ""}
     ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
     <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button class="primary" data-action="begin">Start</button></div>

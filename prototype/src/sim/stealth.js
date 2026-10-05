@@ -18,8 +18,8 @@
 //   suppressor: carried by the shooter (anywhere on them), it fits a pistol, hunting rifle or assault rifle: shots
 //     make half the noise (half the Heat, half the earshot) and each shot wears it (12 shots).
 //   night raids: enemy sight 7 (the dead 5), detection range ×0.6 (at least 2); your people see 7 too, 9 with a
-//     flashlight in the off hand (noticed from 3 tiles further) and normally with night vision goggles; searching in
-//     the dark without either takes both actions.
+//     flashlight in the off hand (noticed from 3 tiles further) and normally with night vision goggles; a quick
+//     rummage in the dark without either is heard 2 tiles further (search.js; a full search is 1 action either way).
 import { GEAR } from "./data.js";
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
@@ -35,7 +35,7 @@ import { battleOptic } from "./optics.js";
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3,
-  DARK_SEARCH_AP: 2, BODY_SIGHT: 5, BODY_SIGHT_NIGHT: 3, BODY_HEAT: 6, DRAG: 3, SUPPRESS: 0.5,
+  BODY_SIGHT: 5, BODY_SIGHT_NIGHT: 3, BODY_HEAT: 6, DRAG: 3, SUPPRESS: 0.5,
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
@@ -177,8 +177,9 @@ export function detectRange(b, e, mover, perks = true) {
   return r;
 }
 
-// Searching in the dark without a flashlight or night vision takes both actions.
-export const searchCost = (b, u) => (b.night && !u.light && !u.nvg ? STEALTH.DARK_SEARCH_AP : 1);
+// A full search takes 1 action, by day or in the dark (search.js). The dark now shows in the quick rummage instead:
+// without a flashlight or night vision it is heard further (search.js quickRadius).
+export const searchCost = () => 1;
 
 // Noise of one shot. A suppressor halves it and loses a shot of wear; worn out, it is gone.
 export function shotNoise(b, a, w) {

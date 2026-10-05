@@ -12,9 +12,12 @@
 //     base, a hive, a crash site, a tile with a horde, land held by you or another group, a site with loot below
 //     AISCAV.minLoot or one another of their parties is working.
 //     At the site it searches AISCAV.searchHours hours, taking AISCAV.take of the loot an hour (× its strength / 3,
-//     0.5–1.5) down to AISCAV.floor; per point of loot taken it finds what one of your teams would (the hour-by-hour
-//     search: 6.5 × loot left per 0.05, ammo × 6, scrap × 2.5, fuel × 0.7, jars × 2) × AISCAV.eff, split by the
-//     site's loot table. Then it walks home and the haul goes into the group's stock.
+//     0.5–AISCAV.crewMax) down to AISCAV.floor; per point of loot taken it finds what one of your teams would (the
+//     hour-by-hour search: 6.5 × loot left per 0.05, ammo × 6, scrap × 2.5, fuel × 0.7, jars × 2) × AISCAV.eff, split
+//     by the site's loot table. A big group's party (strength 4–6, up to 1.5 × a party of 3) crowds one site: it strips
+//     it no faster than a party of 3 but picks it cleaner (its haul × hands / 1, as before). When it stripped faster,
+//     the worlds where the groups thrive and grow were picked down to a quarter of the map's loot within a year (1 in
+//     20 below it). Then it walks home and the haul goes into the group's stock.
 //     Losses: a horde on its way (or at the site) costs it a quarter of its strength and a quarter of what it
 //     carries; raiders near their own base may ambush it on the way home (12% a tile) and take the haul; a party
 //     brought below strength 1 is gone with its haul.
@@ -43,7 +46,7 @@ import { ZONE_RICHNESS } from "./mapgen.js";
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
-  searchHours: 8, take: 0.03, floor: 0.03, minLoot: 0.12, eff: 0.8, perLoot: 130,
+  searchHours: 8, take: 0.03, floor: 0.03, minLoot: 0.12, eff: 0.8, perLoot: 130, crewMax: 1,
   landRate: 0.003, landEff: 0.5, newsTake: 0.12, newsRange: 15, newsGap: 10,
 };
 // Share of the old production from nothing a group keeps (factions.js factionsDaily): ammo, scrap, fuel, meds.
@@ -215,10 +218,11 @@ export function scavSearchHour(state, p) {
   // Your team searching here: they wait it out (and challenge it when it is done).
   const busy = contest(state, p);
   if (!busy) {
-    const crew = Math.max(0.5, Math.min(1.5, p.strength / 3));
+    const hands = Math.max(0.5, Math.min(1.5, p.strength / 3));
+    const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
-      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff));
+      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew));
       t.loot -= take;
       p.scav.taken += take;
       aiScav(state).stats.taken += take;

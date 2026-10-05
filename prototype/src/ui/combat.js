@@ -8,16 +8,20 @@ import {
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
+import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
+import { SEARCH, quickable, quickRefusal, quickRadius } from "../sim/search.js";
+export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
@@ -235,12 +239,16 @@ export function combatClick(state, px, py) {
 
 // Search: the first look costs the action and rolls what is inside (sim/combat.js searchBox); then the search window
 // (ui/inventory.js) opens over the battle to take things by hand. Nothing inside: no window, the log says so.
-function openSearch(state, b, u, box) {
-  box = box || searchableNear(b, u)[0];
-  if (!box) { cui.msg = "Stand next to an unsearched container (yellow box marker) to search it."; return; }
-  if (!box.contents && !act(state, { type: "search", unit: u.id, box: box.id, open: true })) return;
+// full: S or the Search button also does the full search (1 action) of one only rummaged through (sim/search.js);
+// a click on the map opens a rummaged one for free (its window has the full-search button). quick: the rummage.
+function openSearch(state, b, u, box, { full = false, quick = false } = {}) {
+  const near = searchableNear(b, u);
+  box = box || (quick ? quickable(near)[0] : near.find((c) => !c.contents || c.quick) || near[0]);
+  if (!box) { cui.msg = quick ? "Stand next to something nobody has opened yet (yellow ? marker) to rummage through it." : "Stand next to an unsearched container (yellow box marker) to search it."; return; }
+  if (quick) { if (!act(state, { type: "search", unit: u.id, box: box.id, open: true, quick: true })) return; }
+  else if ((!box.contents || (full && box.quick)) && !act(state, { type: "search", unit: u.id, box: box.id, open: true })) return;
   const n = box.contents ? box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length : 0;
-  if (n || atVehicle(b, u) || box.partial) cui.lootReq = { uid: u.id, box: box.id };
+  if (n || atVehicle(b, u) || box.partial || box.quick) cui.lootReq = { uid: u.id, box: box.id };
   else cui.msg = `Nothing useful in the ${box.kind === "body" ? box.label : box.label.toLowerCase()}.`;
 }
 
@@ -422,6 +430,8 @@ export function combatKey(state, e) {
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
+  if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
+  if (e.code === "KeyS" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; } // a quick rummage (sim/search.js)
   const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
@@ -471,6 +481,8 @@ export function combatAction(state, key, d) {
     return;
   }
   if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; follow(b); return; }
+  // Only a couple of far-off stragglers left (sim/battlesize.js clearEnough): call the fight won.
+  if (key === "cb-clear") { if (clearEnough(b)) act(state, { type: "callClear" }); else cui.msg = "There are still enemies close by or coming."; return; }
   // A base's wall map (sim/interior.js): everyone off the walls, into the yard and the buildings.
   if (key === "cb-fallback") {
     if (d.v === "ask") { cui.fallAsk = fallAskOpen(b) ? null : { turn: b.turn, rev: b.rev }; cui.msg = ""; return; }
@@ -498,7 +510,8 @@ export function combatAction(state, key, d) {
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
-  if (v === "search" && b.raid) return void openSearch(state, b, u, null);
+  if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
+  if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
   if (v === "vehicle" && b.raid) {
     if (b.raid.vehicleZone < 0) { cui.msg = "You came on foot: there is no vehicle here."; return; }
     if (!atVehicle(b, u)) { cui.msg = "Walk to the vehicle (its zone, or next to it) to load or unload it."; return; }
@@ -671,6 +684,7 @@ export function renderCombatPanel(state) {
   html += `<div class="cbfoot">
     ${wallMap ? `<button class="${fallAskOpen(b) ? "active" : ""}" data-action="cb-fallback" data-v="ask" ${retreatRefusal(b) ? "disabled" : ""} data-tip="${esc(retreatRefusal(b) || "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings. (Shift+R)")}">Fall back to the yard</button>` : ""}
     ${noRetreat != null ? `<button class="${retreatAskOpen(b) ? "active" : ""}" data-action="cb-retreat" data-v="ask" ${noRetreat ? "disabled" : ""} data-tip="${esc(noRetreat || "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried. (Shift+R)")}">Sound the retreat</button>` : ""}
+    ${b.phase === "player" && clearEnough(b) ? `<button class="primary" data-action="cb-clear" data-tip="Only a couple of the enemy are left, far off and unaware (or running): the area is clear enough. End the fight as a win and leave them be; or keep playing to hunt them down. (Shift+C)">Area clear: finish</button>` : ""}
     <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
     ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
   </div>
@@ -722,7 +736,7 @@ function raidHead(state, b, phase) {
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
     ${R.vehicleZone >= 0 ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map.">Your vehicle is in the entry zone. Extract there to keep it.</div>` : ""}
-    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. Searching without a light takes both actions.">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
+    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
@@ -731,12 +745,18 @@ function raidButtons(b, u, btn) {
   const near = searchableNear(b, u);
   const z = zoneAt(b, u.x, u.y);
   const zone = z >= 0 ? b.raid.zones[z] : null;
-  const searchTip = near.length ? `Search ${near[0].label.toLowerCase()} (1 action${near[0].contents ? "; already opened: free" : ""}) and pick what to take. ${near[0].kind === "body" ? "" : areaHint(b.raid.areas[near[0].area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
+  // sim/search.js: the full search (1 action, everything shows) and the quick rummage (no action, part of it, loud).
+  const sb = near.find((c) => !c.contents || c.quick) || near[0];
+  const searchTip = sb ? `Search ${sb.label.toLowerCase()} (${!sb.contents || sb.quick ? `${SEARCH.ap} action` : "already searched: free"}${sb.quick ? ": it was only rummaged through, a full search turns up the rest" : ""}). Everything inside shows, quietly; pick what to take. ${sb.kind === "body" ? "" : areaHint(b.raid.areas[sb.area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
+  const qb = quickable(near)[0];
+  const Q = SEARCH.quick;
+  const qWhy = quickRefusal(b, u, qb || near[0]);
+  const quickTip = `Rummage in a hurry: no action (needs one left; once a turn), so it fits between two moves. Only ${Math.round(Q.reveal[0] * 100)}–${Math.round(Q.reveal[1] * 100)}% of what is inside turns up; a full search there later finds the rest. Loud: Heat +${Q.heat}, and the unaware dead and guards within ${quickRadius(b, u)} tiles come to look${b.raid.interior ? " (walls and closed doors muffle it)" : ""}${quickRadius(b, u) > Q.radius ? "; fumbling in the dark without a light carries further" : ""}.${qWhy ? ` ${qWhy}` : ""}`;
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   const veh = b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
-  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧S")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];
@@ -1024,7 +1044,11 @@ function previewHtml(b) {
         : box.ztype === "spitter" ? "What was on them, if you mind the acid still dripping from the sac."
         : "What they had on them when they turned: small things, now and then a pistol.";
       const near = u && nearBox(u, box);
-      return `<b>${esc(box.label)}</b> · ${box.searched ? "searched" : box.partial ? "something left inside (no room last time)" : "not searched"}<br><span class="muted">${hint}</span>${box.searched ? "" : `<br>${near ? "Click or press S to search (1 action)." : "Move next to it to search."}`}`;
+      // sim/search.js: rummaged through (more may be hidden) is its own state.
+      const where = box.searched ? "searched" : box.quick ? "rummaged through in a hurry: a full search may turn up more" : box.partial ? "something left inside (no room last time)" : "not searched";
+      const how = box.quick ? (near ? `Click to open what turned up (free); S searches it in full (${SEARCH.ap} action).` : "Move next to it to search it in full.")
+        : near ? `Click or press S to search (${SEARCH.ap} action, quiet, everything shows). Shift+S: a quick rummage (no action, ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of it, heard ${quickRadius(b, u)} tiles off, Heat +${SEARCH.quick.heat}).` : "Move next to it to search.";
+      return `<b>${esc(box.label)}</b> · ${where}<br><span class="muted">${hint}</span>${box.searched ? "" : `<br>${how}`}`;
     }
     const z = zoneAt(b, h.x, h.y);
     if (z >= 0) return `<b>${b.raid.zones[z].vehicle ? "Vehicle extraction zone" : "Extraction zone"}</b><br><span class="muted">Stand here and press X to leave the raid.${b.raid.zones[z].vehicle ? " Leaving here keeps your vehicle." : b.raid.vehicleZone >= 0 ? " Leaving here without anyone taking the vehicle leaves it behind." : ""}</span>`;
@@ -1051,7 +1075,12 @@ function previewHtml(b) {
   if (v.reach && u) {
     const d = v.reach.dist[h.y * W + h.x];
     if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
+    // A spitter's acid (sim/acid.js) on the way there.
+    if (isFinite(d) && d > 0 && !acidAt(b, h.x, h.y) && pathTo(v.reach, h.x, h.y).some(([x, y]) => acidAt(b, x, y)) && u.acidT !== b.turn) s += ` <span class="danger">The way there crosses acid: ${ACID.pool[0]}–${ACID.pool[1]} damage.</span>`;
   }
+  // A spitter's acid pool (sim/acid.js).
+  const pool = acidAt(b, h.x, h.y);
+  if (pool) s = `<b class="danger">Acid</b> <span class="muted">(${pool.turns} turn${pool.turns === 1 ? "" : "s"} left)</span>: ${ACID.pool[0]}–${ACID.pool[1]} damage to the living who step in or start their turn in it (once a turn; armour stops only half as much). The dead walk through it unharmed.${u && u.acidT === b.turn ? " <span class=\"muted\">Already burned this turn.</span>" : ""} ${s}`;
   if (evacAt(b, h.x, h.y)) s += b.tier ? (b.tier.map === "wall" ? " The back gate: one person can slip away from here (the team falls back to the yard instead: Shift+R)." : " The back gate: leaving from here abandons the base.") : " Evac zone: you can retreat from here (a downed teammate dragged here goes with the last one out).";
   const hh = heightAt(b, h.x, h.y);
   if (hh) s += ` ${"▲".repeat(hh)} ${cell.name}, height ${hh}: +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.`;
@@ -1202,7 +1231,7 @@ export function drawCombat(state, now) {
     }
     if (v.reach && u && cui.mode === "move" && !unitAt(b, h.x, h.y) && isFinite(v.reach.dist[h.y * W + h.x])) {
       const path = pathTo(v.reach, h.x, h.y);
-      ctx.strokeStyle = v.reach.dist[h.y * W + h.x] <= u.mob ? "#8fc1ff" : "#ffd166";
+      ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * W + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
       ctx.lineWidth = 2.5;
       ctx.setLineDash([5, 4]);
       ctx.beginPath();
@@ -1362,13 +1391,14 @@ function drawRaidOverlay(b, cs) {
       roundRect(px + cs * 0.22, py + cs * 0.55, cs * 0.56, cs * 0.3, 4); ctx.fill();
     }
     const s = cs * 0.24;
-    ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.partial ? "#e08a4f" : "#ffd166";
+    // Searched ✓ grey · rummaged through, more may be hidden … blue (sim/search.js) · things left orange · not yet ? yellow.
+    ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? QUICK_MARK : c.partial ? "#e08a4f" : "#ffd166";
     ctx.strokeStyle = "#1a1a1a";
     ctx.lineWidth = 1;
     roundRect(px + cs - s - 2, py + 2, s, s, 3); ctx.fill(); ctx.stroke();
     ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
     ctx.font = `700 ${Math.max(8, Math.round(s * 0.8))}px Segoe UI, sans-serif`;
-    ctx.fillText(c.searched ? "✓" : "?", px + cs - s / 2 - 2, py + 2 + s * 0.8);
+    ctx.fillText(c.searched ? "✓" : c.quick ? "…" : "?", px + cs - s / 2 - 2, py + 2 + s * 0.8);
   }
   drawLocks(ctx, b, ox, oy, cs); // ui/locks.js: locked doors and padlocks
 }
@@ -1499,6 +1529,21 @@ function drawLures(b, cs, now) {
   const disc = (c, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs, cs * (c.r + 0.5), 0, Math.PI * 2); ctx.fill(); };
   const OV = battleOverlays(b);
   for (const c of OV.flares) disc(c, "rgba(255,90,70,0.10)");
+  // A spitter's acid (sim/acid.js): a bubbling green puddle a cell, fading as it dries up.
+  const ph3 = ((now || 0) % 1600) / 1600;
+  for (const c of OV.acid) {
+    const px = ox + c.x * cs, py = oy + c.y * cs, a = c.fade;
+    ctx.fillStyle = `rgba(100,180,40,${0.2 * a})`;
+    ctx.fillRect(px, py, cs, cs);
+    ctx.fillStyle = `rgba(150,222,60,${0.5 * a})`;
+    ctx.beginPath(); ctx.ellipse(px + cs * 0.5, py + cs * 0.52, cs * 0.44, cs * 0.34, ((c.x * 0.7 + c.y * 0.3) % 1) * Math.PI, 0, Math.PI * 2); ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const t = (ph3 + k / 3 + c.x * 0.37 + c.y * 0.21) % 1;
+      const bx = px + cs * (0.25 + ((k * 0.31 + c.x * 0.13) % 0.5)), by = py + cs * (0.3 + ((k * 0.23 + c.y * 0.17) % 0.45));
+      ctx.strokeStyle = `rgba(215,255,130,${(1 - t) * 0.85 * a})`; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(bx, by, cs * (0.03 + t * 0.07), 0, Math.PI * 2); ctx.stroke();
+    }
+  }
   // Burning cells (one each, sim/throwables.js): the cell glows, tongues of flame flicker in it.
   for (const c of OV.fires) {
     const px = ox + c.x * cs, py = oy + c.y * cs;
@@ -2074,7 +2119,7 @@ function drawFx(b, now, cs) {
     const text = f.text ? f.text : f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(cs * (f.crit ? 0.36 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`;
     ctx.lineWidth = 3;
     const y = ty - cs * 0.5 - (el / 1400) * cs * 0.6;

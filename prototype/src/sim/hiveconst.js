@@ -119,9 +119,9 @@ export const ZTYPES = {
   brute:    { name: "Brute",    short: "B", hp: 2.4, dmg: 1.5, aim: 5, mob: 2.5, armor: 0.75, share: 0.08, wall: 2.5, weight: 2.2, smash: 0.6, smashEvery: 12, senses: ["noise"], burn: 0.6,
               special: "Huge and slow, shrugs off a quarter of every hit and smashes barricades and walls in its way; every dozen in a horde smashes a defence like a Wallbreaker. Follows noise; fire hurts it less.",
               counter: "Armor against its blows, heavy guns at range, spike pits and trenches." },
-  spitter:  { name: "Spitter",  short: "S", hp: 0.9, dmg: 1.0, aim: 0, mob: 3, armor: 1, share: 0.08, wall: 1.4, weight: 1.5, spitAim: 50, priority: 1.6, keep: 4, cooldown: 2, pierce: 1, senses: ["noise", "light"],
-              special: "Spits acid up to 6 tiles away every other turn; cover counts one step less against it.",
-              counter: "Smoke, shooting it first from range, rushing it." },
+  spitter:  { name: "Spitter",  short: "S", hp: 0.9, dmg: 1.0, aim: 0, mob: 3, armor: 1, share: 0.08, wall: 1.4, weight: 1.6, spitAim: 50, priority: 1.6, keep: 4, cooldown: 2, pierce: 1, senses: ["noise", "light"], // weight: its acid burst too (acid.js)
+              special: "Spits acid up to 6 tiles away every other turn; cover counts one step less against it. When it dies its sac bursts: acid splashes everyone living within a tile and pools there for 3 turns.",
+              counter: "Smoke, shooting it first from range; kill it away from your people, not in their midst." },
   screamer: { name: "Screamer", short: "Sc", hp: 0.8, dmg: 0.6, aim: 0, mob: 3, armor: 1, share: 0.03, wall: 1.2, weight: 2.0, priority: 2.5, keep: 5, every: 2, calls: [1, 2], callMax: 6, pull: 3, pullOdds: 0.3, senses: [],
               special: "Hangs back and shrieks every other turn, calling more of the dead in from the edge (up to 6 a battle); on the map its horde pulls wandering dead in. Ignores decoys.",
               counter: "Kill it first: the calling stops when it dies." },

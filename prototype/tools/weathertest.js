@@ -177,6 +177,7 @@ for (const mode of ["winter", "flip"]) {
   for (let c = 0; c < 12; c++) {
     const state = createWorld({ seed: 900 + c * 13, factionCount: 4 });
     state.started = true;
+    state.noWanderers = true; // timing a queue: people met on the road (wanderers.js) would add their own delays
     if (mode === "winter") { state.hour = (75 + c) * 24 + 6; W.weatherDaily(state); } // real weather, deep in winter
     else forceFlip(state, 12); // only 12 days set; later days are rolled on demand during the trip
     const h = hub(state);
