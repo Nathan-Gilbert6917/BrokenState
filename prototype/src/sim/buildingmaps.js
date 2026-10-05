@@ -30,7 +30,9 @@
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { interiorOccupants } from "./wanderers.js";
-import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide } from "./combat.js";
+import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod } from "./combat.js";
+import { siteDanger } from "./data.js";
+import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -45,7 +47,27 @@ export const BMAP = {
   OUTSIDE_DEAD: 0.25,  // share of the dead outside the building
   LOCKED_DEAD: 0.15,   // chance one of the dead is shut in a locked room (one a room)
   CUT_R: 6,            // the isometric cutaway: walls lowered within this many tiles of your people
+  // Doors' hit points (the dead batter a closed door: a claw blow does about 10–16; people open it unless it is braced
+  // or locked, then they kick or shoot it in): an inner door, an outer one, a roller door, a cell door, a locked
+  // door, a steel security door.
+  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 55, vault: 90 },
+  BRACE: 0.5,          // a door braced from the other side takes this share of each blow (Brace: the rest of the turn)
+  DOOR_NOISE: { radius: 7, noise: 0.5 }, // each blow on a door: earshot (the dead and guards come to look) and noise (Heat)
+  // Peeking through a door (free, once a turn a unit): see from the far side of it, this far; an unaware guard who
+  // faces it and would notice you there catches you NOTICE − PER_STEALTH a Stealth point (at least MIN); the dead
+  // within DEAD_NEAR tiles DEAD_NOTICE.
+  PEEK: { range: 8, notice: 0.35, perStealth: 0.025, min: 0.05, deadNotice: 0.2, deadNear: 2 },
+  WALL_DAMP: 3,        // inside, each wall or closed door between a noise and a listener counts as this many tiles more
+  DIVERT_NEAR: 3,      // the dead after you turn to a thrown noise unless one of your people is this close and in sight
 };
+// Risk pays (raids on the map: what containers hold × this): by the site's danger (data.js siteDanger: the
+// countryside 0, small towns 1, city blocks 2, hospitals, prisons and bases 3); open land with no site WILDS.
+export const REWARD = { byDanger: [0.6, 0.9, 1.3, 1.5], wilds: 0.55 };
+export function rewardMult(tile) {
+  if (!tile) return 1;
+  if (!tile.loc) return REWARD.wilds;
+  return REWARD.byDanger[siteDanger(tile.loc)] ?? 1;
+}
 
 // ---------- room roles ----------
 // name, type (combat.js AREAS: what its containers hold; null: nothing to search), furnish (FURNISH), hub (rooms open
@@ -1030,6 +1052,17 @@ export function assemble(rng, spec, opts = {}) {
     default: scatter("car", rng.int(1, 3), inStreet); scatter("tree", rng.int(2, 4), (x, y) => !inStreet(x, y)); scatter("fence", rng.int(2, 4), behind); scatter("crate", rng.int(1, 2), behind);
   }
 
+  // ---------- doors' strength (the dead batter closed doors: BMAP.DOOR) ----------
+  const D = BMAP.DOOR;
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (c.k !== "idoor" && c.k !== "odoor" && c.k !== "door") continue;
+    const x = i % W, y = (i / W) | 0;
+    const lockedOne = c.k === "door" ? lockedDoors.find((d) => d.x === x && d.y === y) : null;
+    const hp = lockedOne ? (lockedOne.kind === "vault" ? D.vault : D.locked) : c.roll ? D.roller : rid[i] >= 0 ? D.cell : (x === bx0 || x === bx1 || y === by0 || y === by1) ? D.outer : D.inner;
+    c.hp = c.mhp = hp;
+  }
+
   // ---------- the result ----------
   const areas = rooms.map((r) => ({
     id: r.id, type: r.type && AREAS[r.type] ? r.type : null, role: r.role, name: r.name + (r.up ? " (upstairs)" : ""),
@@ -1361,6 +1394,190 @@ export function windowsNear(b, u) {
   return out;
 }
 
+// ======================================================================================
+// Doors in play (combat.js combatAct "close" / "brace" / "peek", bash, breakCell, moveAlong)
+// ======================================================================================
+const NEXT4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const cellOf = (b, x, y) => (x >= 0 && y >= 0 && x < b.w && y < b.h ? b.cells[y * b.w + x] : null);
+const unitOn = (b, x, y) => b.units.some((o) => !o.dead && !o.left && !o.fled && !o.off && o.x === x && o.y === y);
+// Open doors next to a unit (not diagonally) with nobody standing in them: they can be closed.
+export function closeOptions(b, u) {
+  return NEXT4.map(([dx, dy]) => [u.x + dx, u.y + dy]).filter(([x, y]) => { const c = cellOf(b, x, y); return c && c.k === "odoor" && !unitOn(b, x, y); }).map(([x, y]) => ({ x, y }));
+}
+// Closed or locked doors next to a unit with strength left: they can be braced.
+export function braceOptions(b, u) {
+  return NEXT4.map(([dx, dy]) => [u.x + dx, u.y + dy]).filter(([x, y]) => { const c = cellOf(b, x, y); return c && (c.k === "idoor" || c.k === "door") && c.hp > 0; }).map(([x, y]) => ({ x, y }));
+}
+// Doors and doorways next to a unit to peek through: { x, y (the door), fx, fy (the cell beyond it, where the look is
+// taken from) }.
+const PEEKABLE = new Set(["idoor", "odoor", "door", "doorway", "smashed"]);
+export function peekOptions(b, u) {
+  const out = [];
+  for (const [dx, dy] of NEXT4) {
+    const x = u.x + dx, y = u.y + dy, c = cellOf(b, x, y), far = cellOf(b, x + dx, y + dy);
+    if (!c || !PEEKABLE.has(c.k) || !far || (CELL[far.k].los && !CELL[far.k].walk)) continue;
+    out.push({ x, y, fx: x + dx, fy: y + dy });
+  }
+  return out;
+}
+// Cells seen through this turn's peeks (combat.js playerVision, playerSees).
+export function peekSees(b, x, y) {
+  for (const p of b.peeks || []) {
+    if (p.turn !== b.turn) continue;
+    if ((x === p.x && y === p.y) || (x === p.dx && y === p.dy)) return true;
+    if (Math.hypot(x - p.x, y - p.y) <= p.r && los(b, p.x, p.y, x, y)) return true;
+  }
+  return false;
+}
+// Closing a door (1 action; quiet, a roller door loud), bracing one (the rest of the turn: it holds against people
+// and takes half of each blow until you step away), peeking through one (free, once a turn). H: { say, alertNear, fx }.
+export function doorAct(state, b, u, act, H) {
+  const pickOf = (list) => (act.x != null ? list.find((o) => o.x === Number(act.x) && o.y === Number(act.y)) : list[0]);
+  if (act.type === "close") {
+    const o = pickOf(closeOptions(b, u));
+    if (!o) return "Stand next to an open door (not diagonally) with nobody in the doorway.";
+    const c = cellOf(b, o.x, o.y);
+    const list = [[o.x, o.y]];
+    if (c.roll) for (let i = 0; i < list.length; i++) for (const [dx, dy] of NEXT4) {
+      const nx = list[i][0] + dx, ny = list[i][1] + dy, n = cellOf(b, nx, ny);
+      if (n && n.k === "odoor" && n.roll && !unitOn(b, nx, ny) && !list.some(([px, py]) => px === nx && py === ny)) list.push([nx, ny]);
+    }
+    for (const [x, y] of list) {
+      const d = cellOf(b, x, y);
+      d.k = "idoor";
+      if (d.tOpen) d.t = d.tOpen;
+      if (!(d.hp > 0)) d.hp = d.mhp = d.roll ? BMAP.DOOR.roller : BMAP.DOOR.inner;
+    }
+    b.losCache.fill(0);
+    u.ap -= 1;
+    u.face = [Math.sign(o.x - u.x), Math.sign(o.y - u.y)];
+    if (c.roll) {
+      b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
+      b.noise = (b.noise || 0) + 1;
+      H.say(b, `${u.name} hauls the roller door down. It clangs shut (Heat +${BMAP.ROLLER.heat}).`, "info");
+      H.alertNear(b, o.x, o.y, BMAP.ROLLER.radius, "The clang of the roller door carries.");
+    } else H.say(b, `${u.name} eases the door shut.`, "info");
+    return "";
+  }
+  if (act.type === "brace") {
+    const o = pickOf(braceOptions(b, u));
+    if (!o) return "Stand next to a closed door (not diagonally) to brace it.";
+    const c = cellOf(b, o.x, o.y);
+    u.brace = [o.x, o.y];
+    c.held = u.id;
+    u.ap = 0;
+    u.hunker = false;
+    u.face = [Math.sign(o.x - u.x), Math.sign(o.y - u.y)];
+    H.say(b, `${u.name} braces the door with a shoulder: people cannot open it, and it takes half of every blow until ${u.name.split(" ")[0]} lets go.`, "good");
+    return "";
+  }
+  // Peek.
+  const o = pickOf(peekOptions(b, u));
+  if (!o) return "Stand right next to a door or a doorway (not diagonally) to peek through it.";
+  if (u.peekTurn === b.turn) return `${u.name} has already peeked this turn.`;
+  u.peekTurn = b.turn;
+  b.peeks = (b.peeks || []).filter((p) => p.turn === b.turn);
+  b.peeks.push({ turn: b.turn, unit: u.id, x: o.fx, y: o.fy, dx: o.x, dy: o.y, r: Math.min(BMAP.PEEK.range, u.sight || BMAP.PEEK.range) });
+  u.face = [Math.sign(o.x - u.x), Math.sign(o.y - u.y)];
+  // Someone on the other side may catch the movement.
+  const P = BMAP.PEEK;
+  const eye = { ...u, x: o.fx, y: o.fy };
+  let caught = null;
+  for (const e of b.units) {
+    if (e.side !== "enemy" || e.aware || !active(e) || caught) continue;
+    const d = Math.hypot(e.x - o.fx, e.y - o.fy);
+    if (!los(b, e.x, e.y, o.fx, o.fy)) continue;
+    let p = 0;
+    if (e.kind === "human") { if (d <= detectRange(b, e, eye, true) && !isBehind(eye, e)) p = Math.max(P.min, P.notice - P.perStealth * (u.stealth || 0)); }
+    else if (d <= P.deadNear) p = P.deadNotice;
+    if (p && b.rng.chance(p)) caught = e;
+  }
+  const seen = b.units.filter((e) => e.side === "enemy" && active(e) && peekSees(b, e.x, e.y)).length;
+  H.say(b, `${u.name} peeks through the ${cellOf(b, o.x, o.y).k === "idoor" ? "door" : "doorway"}: ${seen ? `${seen} ${seen === 1 ? "figure" : "figures"} beyond` : "nothing moving"}.`, "info");
+  if (caught) alertPod(b, caught.pod, `${caught.name} ${caught.kind === "zombie" ? "lurches toward the door" : "catches the movement at the door"}!`);
+  return "";
+}
+// Each blow on a closed door (combat.js bash): noise, and the unaware nearby come to look.
+export function doorNoise(b, x, y) {
+  b.noise = (b.noise || 0) + BMAP.DOOR_NOISE.noise;
+  noiseAt(b, x, y, BMAP.DOOR_NOISE.radius, "door");
+}
+// A door battered down (combat.js breakCell): it stays broken; a locked one counts as opened.
+export function doorBroken(b, x, y) {
+  const c = cellOf(b, x, y);
+  c.k = "doorway";
+  delete c.held; delete c.t; delete c.tOpen;
+  const d = b.raid && (b.raid.doors || []).find((q) => q.x === x && q.y === y);
+  if (d && !d.lock.open) { d.lock.open = true; d.lock.how = "broken"; }
+}
+// Where a thrown thing lands inside a building: through open doorways, not through walls, closed doors, tall
+// shelving or glass (it drops in the last free cell before). Null when there is no room at all.
+const throwBlocks = (c) => (CELL[c.k].los && !CELL[c.k].walk) || c.k === "window" || c.k === "idoor" || c.k === "door";
+export function throwLanding(b, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
+  let last = null;
+  for (let i = 1; i <= n; i++) {
+    const px = x0 + 0.5 + (dx * i) / n, py = y0 + 0.5 + (dy * i) / n;
+    const cx = Math.floor(px), cy = Math.floor(py);
+    if (cx === x0 && cy === y0) continue;
+    const c = cellOf(b, cx, cy);
+    if (!c) break;
+    const fx = px - cx, fy = py - cy;
+    const graze = !(fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88);
+    if (throwBlocks(c)) { if (graze) continue; return last; }
+    if (CELL[c.k].walk) last = [cx, cy];
+  }
+  return last && last[0] === x1 && last[1] === y1 ? [x1, y1] : last;
+}
+// How much walls and closed doors muffle a noise inside: BMAP.WALL_DAMP tiles for each between.
+export function noiseDamp(b, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
+  const seen = new Set();
+  for (let i = 1; i < n; i++) {
+    const px = x0 + 0.5 + (dx * i) / n, py = y0 + 0.5 + (dy * i) / n;
+    const cx = Math.floor(px), cy = Math.floor(py);
+    if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+    const c = cellOf(b, cx, cy);
+    if (!c || !CELL[c.k].los || CELL[c.k].walk && c.k !== "idoor") continue;
+    const fx = px - cx, fy = py - cy;
+    if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) seen.add(cy * b.w + cx);
+  }
+  return seen.size * BMAP.WALL_DAMP;
+}
+
+// ---------- the raid bot (combat.js autoRaidTurn) ----------
+// On the way out: shut an open door between it and the dead (or hostile people) coming after it, or throw a lure
+// away from its way out to pull off the dead that cannot see it close up. Returns an action or null.
+export function botEscape(state, b, u, targets) {
+  if (u.ap < 1) return null;
+  const foes = b.units.filter((e) => e.side === "enemy" && active(e) && e.aware);
+  if (!foes.length) return null;
+  for (const o of closeOptions(b, u)) {
+    const far = [o.x * 2 - u.x, o.y * 2 - u.y];
+    if (foes.some((e) => Math.hypot(e.x - o.x, e.y - o.y) <= 6 && Math.hypot(e.x - far[0], e.y - far[1]) < Math.hypot(e.x - u.x, e.y - u.y))) return { type: "close", unit: u.id, x: o.x, y: o.y };
+  }
+  if (b.botEscapeTurn === b.turn) return null;
+  const have = throwablesOf(state, b, u);
+  const key = ["noisemaker", "firecracker", "bottle"].find((k) => have[k]);
+  if (!key) return null;
+  const chasers = foes.filter((e) => e.kind === "zombie" && Math.hypot(e.x - u.x, e.y - u.y) <= 8 && Math.hypot(e.x - u.x, e.y - u.y) > BMAP.DIVERT_NEAR);
+  if (chasers.length < 2) return null;
+  const T = THROWABLES[key];
+  const nearExit = (x, y) => Math.min(...targets.map(([tx, ty]) => Math.hypot(tx - x, ty - y)));
+  let best = null;
+  for (let y = Math.max(0, u.y - T.range); y <= Math.min(b.h - 1, u.y + T.range); y++) for (let x = Math.max(0, u.x - T.range); x <= Math.min(b.w - 1, u.x + T.range); x++) {
+    const d = Math.hypot(x - u.x, y - u.y);
+    if (d < 4 || d > T.range || !CELL[b.cells[y * b.w + x].k].walk) continue;
+    const land = throwLanding(b, u.x, u.y, x, y);
+    if (!land || land[0] !== x || land[1] !== y) continue;
+    const sc = nearExit(x, y) + chasers.filter((e) => Math.hypot(e.x - x, e.y - y) <= T.radius).length * 3;
+    if (!best || sc > best.sc) best = { x, y, sc };
+  }
+  if (!best) return null;
+  b.botEscapeTurn = b.turn;
+  return { type: "throw", unit: u.id, item: key, x: best.x, y: best.y };
+}
+
 // The building's name and its exits, for the raid's opening lines.
 export function interiorIntro(b) {
   const R = b.raid;
@@ -1368,5 +1585,5 @@ export function interiorIntro(b) {
   const ex = (R.plan.exits || []).filter((e) => e.zone >= 0);
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}. Rooms and walls block sight: move room to room to stay unseen. Closed doors open as you walk through; windows can be climbed (loud).`;
+  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}. Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Q): the dead have to batter them down. Windows can be climbed (loud).`;
 }

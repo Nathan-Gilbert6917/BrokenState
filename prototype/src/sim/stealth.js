@@ -25,10 +25,12 @@ import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
   CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
-  say, fx, moveAlong, alertPod, notice, distField, damage,
+  say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, BLAST, FRAG, FIRE } from "./throwables.js";
 import { sensesAny } from "./decoys.js";
+// Inside a building (buildingmaps.js): where a throw stops at a wall or a closed door, and how walls muffle a noise.
+import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps.js";
 import { battleOptic } from "./optics.js";
 
 export const STEALTH = {
@@ -290,17 +292,27 @@ export function stealthAct(state, b, u, t, act) {
       const key = act.item && have[act.item] ? act.item : THROW_KEYS.find((k) => have[k]);
       if (!key) return "Nothing to throw.";
       const T = THROWABLES[key];
-      const x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
+      let x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
       if (!(x >= 0 && y >= 0 && x < b.w && y < b.h)) return "Throw it where?";
+      // Inside a building (buildingmaps.js) a throw goes through open doorways but not through walls or closed doors:
+      // it drops where it hits.
+      let short = false;
+      if (!T.self && b.raid && b.raid.interior) {
+        const land = interiorLanding(b, u.x, u.y, x, y);
+        if (!land) return "No room to throw it that way: a wall or a closed door is right in front.";
+        short = land[0] !== x || land[1] !== y;
+        [x, y] = land;
+      }
       const d = dist(u.x, u.y, x, y);
       if (!T.self && d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
-      if (!T.self && d < 2) return "Throw it further away.";
+      if (!T.self && d < 2 && !short) return "Throw it further away.";
       // Over a wall: something with fx needs no line of sight, only a cell someone on your side sees (throwables.js).
       const blind = T.fx && !T.self ? throwBlind(b, u, x, y) : false;
       if (blind === null) return "Nobody can see there: a throw over a wall lands only where you or a teammate has eyes (or where an enemy was last seen).";
       if (!T.keep && !takeThrowable(state, b, u, key)) return "Nothing to throw.";
       u.ap -= 1;
       u.hunker = false;
+      if (short) say(b, `${u.name}'s throw hits a wall and drops short.`, "info");
       throwAt(b, u, key, x, y, blind);
       return "";
     }
@@ -379,12 +391,18 @@ export function stealthTurn(b) {
 // from (a decoy: they are not fooled), or not at all (silent heat); the dead only if they sense it (decoys.js: noise,
 // light, heat by their kind; nothing for a Shepherd's pack). Returns how many turned toward it; first: the throw
 // itself, which also counts the aware dead a decoy pulls off (decoys.js lureTurn moves them).
+// Inside a building (buildingmaps.js) walls and closed doors muffle the noise (each one between counts as
+// BMAP.WALL_DAMP tiles more), and the dead already after you turn to the noise too unless one of your people is close
+// and in their sight (BMAP.DIVERT_NEAR): break off, shut a door and throw something, and they go.
 function pull(b, lure, first = false) {
   const T = THROWABLES[lure.key] || {};
   let n = 0;
+  const inside = !!(b.raid && b.raid.interior);
   for (const e of b.units) {
-    if (e.side === lure.side || e.side === "player" || !active(e) || e.reinforcement) continue;
-    if (dist(e.x, e.y, lure.x, lure.y) > lure.radius) continue;
+    if (e.side === lure.side || e.side === "player" || !active(e)) continue;
+    if (e.reinforcement && !inside) continue;
+    const d = dist(e.x, e.y, lure.x, lure.y) + (inside ? noiseDamp(b, e.x, e.y, lure.x, lure.y) : 0);
+    if (d > lure.radius) continue;
     if (e.kind === "human") {
       if (e.aware || T.people === "none") continue;
       const [tx, ty] = T.people === "thrower" && lure.from ? lure.from : [lure.x, lure.y];
@@ -393,12 +411,22 @@ function pull(b, lure, first = false) {
       continue;
     }
     if (!sensesAny(b, e, lure.sense || T.sense || ["noise"])) continue;
-    if (e.aware) { if (first && lure.decoy) n++; continue; }
+    if (e.aware) {
+      // Indoors the dead chasing you break off for a noise (not for a door being battered: divert false).
+      if (inside && lure.divert !== false && divertable(b, e)) { e.aware = false; e.diverted = true; }
+      else { if (first && lure.decoy) n++; continue; }
+    }
     e.investigate = { x: lure.x, y: lure.y, turns: STEALTH.INVESTIGATE_TURNS, key: lure.key };
     n++;
   }
   return n;
 }
+// A sound somewhere (a door being battered, buildingmaps.js): the unaware within earshot come to look (the dead already
+// after someone keep at it).
+export function noiseAt(b, x, y, radius, key = "noise") {
+  return pull(b, { x, y, radius, key, turns: 1, divert: false });
+}
+const divertable = (b, e) => !b.units.some((p) => p.side === "player" && active(p) && dist(p.x, p.y, e.x, e.y) <= BMAP.DIVERT_NEAR && los(b, e.x, e.y, p.x, p.y));
 
 // The AI of an unaware enemy (combat.js aiUnit): bodies first, then an investigation. Returns true when the turn
 // was used up; false lets the usual behaviour run (it may have just become aware).
@@ -417,7 +445,9 @@ function investigate(b, u) {
     if (inv.turns <= 0) { delete u.investigate; u.wp = null; }
   } else {
     const r = reachable(b, u, u.kind === "zombie" ? 3 : u.mob);
-    const field = distField(b, [[inv.x, inv.y]]);
+    // Inside a building the dead find their way round the walls and batter the closed doors on it (buildingmaps.js).
+    const inside = !!(b.raid && b.raid.interior);
+    const field = distField(b, [[inv.x, inv.y]], inside && u.kind === "zombie" ? u : null);
     let best = -1;
     for (let i = 0; i < b.w * b.h; i++) {
       if (!isFinite(r.dist[i]) || !isFinite(field[i])) continue;
@@ -425,6 +455,7 @@ function investigate(b, u) {
     }
     if (best < 0 || !isFinite(field[best])) delete u.investigate;
     else if (r.dist[best] > 0) moveAlong(b, u, pathTo(r, best % b.w, (best / b.w) | 0));
+    else if (inside && u.kind === "zombie") { const door = siegeTarget(b, u, field); if (door) bash(b, u, door[0], door[1]); }
     u.face = [sign(inv.x - u.x), sign(inv.y - u.y)];
   }
   notice(b, u);

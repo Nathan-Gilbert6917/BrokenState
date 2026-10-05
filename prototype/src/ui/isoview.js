@@ -998,6 +998,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
   for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
   if (H.hover) cutAt(H.hover.x, H.hover.y);
+  const peeks = (b.peeks || []).filter((p) => p.turn === b.turn); // a peek through a door (sim/buildingmaps.js) lifts the roof too
+  for (const p of peeks) cutAt(p.x, p.y);
   // A building's own map (sim/buildingmaps.js): the walls are lowered around your people, the enemies you see and the
   // mouse only (with Roofs off, everywhere).
   let focus = null;
@@ -1005,6 +1007,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     focus = [];
     for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
     if (H.hover) focus.push([H.hover.x, H.hover.y]);
+    for (const p of peeks) focus.push([p.x, p.y]);
   }
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
@@ -1019,6 +1022,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
 
   // Highlights on the ground: the floodlit area, the evac strip, a raid's zones, the deploy cells, the move range.
   const N = b.w * b.h;
+  // Seen only through a peek this turn (sim/buildingmaps.js): a warm tint and a dashed edge.
+  if (vis.some((q) => q === 2)) {
+    fillCells(ctx, b, (i) => vis[i] === 2, "rgba(255,214,120,0.12)");
+    ctx.setLineDash([5, 4]);
+    outlineCells(ctx, b, (i) => vis[i] === 2, "rgba(255,214,120,0.75)", 1.5);
+    ctx.setLineDash([]);
+  }
   if (b.lit && b.floodAim) fillCells(ctx, b, (i) => b.lit[i], "rgba(255,236,150,0.13)");
   if (b.evacCols) {
     const ev = (i) => evacAt(b, i % b.w, (i / b.w) | 0);
