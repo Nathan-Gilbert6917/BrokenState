@@ -36,11 +36,12 @@ import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, 
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { smokeAt, flareLit, fireStep, burnRound, SMOKE, FLARE } from "./throwables.js";
-import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
+import { battlePerks, battleXp, rollBook } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
+import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -146,7 +147,6 @@ export function battlePending(state, partyId) {
 
 // Quick statistical resolution, used headless and as a fallback.
 export function autoResolveCombat(state, setup) {
-  const rng = state.rng;
   const people = combatants(state, setup);
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((b) => b.id === setup.baseId) : null;
@@ -169,24 +169,10 @@ export function autoResolveCombat(state, setup) {
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
   const ratio = mine / Math.max(0.1, theirs);
-  const win = rng.chance(Math.max(0.05, Math.min(0.95, 0.5 + (ratio - 1) * 0.6)));
   const tile = party ? partyTile(party) : tileIdOf(setup);
-  const hurtIds = [], deadIds = [];
-  const hits = win ? rng.int(0, Math.ceil(people.length / 2)) : rng.int(1, people.length);
-  for (let i = 0; i < hits && people.length; i++) {
-    const s = rng.pick(people);
-    if (!s.alive) continue;
-    hurt(state, s, rng.int(win ? 10 : 25, win ? 40 : 75), tile, `in a fight with ${setup.enemy.name || setup.enemy.kind}`);
-    (s.alive ? hurtIds : deadIds).push(s.id);
-  }
-  const killed = win ? setup.enemy.count : Math.floor(setup.enemy.count * rng.range(0.1, 0.5));
-  fightXp(state, people, win); // skills.js: Shooting XP for everyone who fought
-  return {
-    outcome: win ? "victory" : "defeat",
-    enemiesKilled: killed, enemiesLeft: setup.enemy.count - killed,
-    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed,
-    loot: { supplies: {}, gear: [] },
-  };
+  // breakoff.js: the fight plays out in rounds, and a team in the field breaks it off by its retreat policy.
+  const refund = (n) => { if (pools[0]) pools[0].ammo = (pools[0].ammo || 0) + n; };
+  return fightByNumbers(state, setup, people, { win: Math.max(0.05, Math.min(0.95, 0.5 + (ratio - 1) * 0.6)), ammoUsed, refund, tile });
 }
 
 const tileIdOf = (setup) => (setup.tile && typeof setup.tile === "object" ? setup.tile.id : setup.tile);
@@ -1416,7 +1402,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
 }
 
 // Chance that n blows of BLOW[0]..BLOW[1] each add up to at least hp.
-function downChance(n, hp) {
+export function downChance(n, hp) {
   const [lo, hi] = RETREAT.BLOW;
   let sums = new Map([[0, 1]]);
   for (let i = 0; i < n; i++) {

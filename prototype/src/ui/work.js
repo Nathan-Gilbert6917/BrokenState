@@ -11,6 +11,7 @@ import { assignStations } from "../sim/buildings.js";
 import { STANCES } from "../sim/parties.js";
 import { vehiclesAtBase } from "../sim/vehicles.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
+import { RETREAT_POLICIES, POLICY_ORDER, STYLE_POLICY } from "../sim/breakoff.js";
 import {
   WORK_TYPES, WORK_KEYS, PRIO_MAX, SCHED, SCHED_PRESETS, DEFAULT_ROLES, workState, roleById, roleOf, isManaged, cellOf,
   setCell, clearCell, setRoleCell, setRoleMin, setSched, schedAt, schedText, assignRole, toManual, createRole, duplicateRole,
@@ -197,6 +198,7 @@ function crewCard(state, role, h) {
       <label class="wcf"${tip("Pace on the road")}>Stance <select data-action="wcrew-set" data-role="${role.id}" data-f="stance">${Object.entries(STANCES).map(([k, s]) => `<option value="${k}" ${c.stance === k ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
       <label class="wcf"${tip("Which vehicle the team takes")}>Vehicle <select data-action="wcrew-set" data-role="${role.id}" data-f="vehicle">${vOpts.map(([v, l]) => `<option value="${esc(v)}" ${String(c.vehicle) === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
       <label class="wcf"${tip("The governor's judgement it uses for sites, searches and road cards")}>Style <select data-action="wcrew-set" data-role="${role.id}" data-f="style">${Object.entries(PERSONALITIES).map(([k, p]) => `<option value="${k}" ${c.style === k ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <label class="wcf"${tip("Retreat if it goes badly: when the crew's fights are resolved by the numbers, it breaks them off by this rule (by its style: Cautious and Balanced if losing, Aggressive when most are down)")}>Retreat <select data-action="wcrew-set" data-role="${role.id}" data-f="retreat"><option value="" ${!RETREAT_POLICIES[c.retreat] ? "selected" : ""}>By style (${esc(RETREAT_POLICIES[STYLE_POLICY[c.style || "balanced"] || "losing"].name.toLowerCase())})</option>${POLICY_ORDER.map((k) => `<option value="${k}" ${c.retreat === k ? "selected" : ""}>${esc(RETREAT_POLICIES[k].name)}</option>`).join("")}</select></label>
     </div>
     <div class="row wcrewset small"><b>Come home when</b>
       ${num(role, ["anyone is below (health)", "rules.hurt"], r.hurt || 0, 0, 90, 5, "0 = never for this reason")}
@@ -280,6 +282,7 @@ export const WORK_CHANGE = {
     if (f === "stance") { if (STANCES[el.value]) c.stance = el.value; return; }
     if (f === "vehicle") { c.vehicle = el.value || "auto"; return; }
     if (f === "style") { if (PERSONALITIES[el.value]) c.style = el.value; return; }
+    if (f === "retreat") { c.retreat = RETREAT_POLICIES[el.value] ? el.value : null; return; } // breakoff.js
     if (!Number.isFinite(n)) return;
     const lim = { range: [2, 40], maxHours: [4, 96], size: [1, 6], ammo: [0, 40], meds: [0, 6], rest: [0, 7], "rules.hurt": [0, 90], "rules.food": [0, 10] }[f];
     if (!lim) return;

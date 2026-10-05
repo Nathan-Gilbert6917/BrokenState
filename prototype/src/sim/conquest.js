@@ -174,7 +174,7 @@ function assaultCard(state, p, f) {
     text: `${occ ? `${f.name} hold ${occ.name}, the base they took from you on day ${occ.day}` : `${f.name} (${attitude(f).toLowerCase()}) hold this base`}: about ${force.people} people, ${force.count} of them on ${wallText} (defence ×${force.fortified}). ` +
       `${last ? `It is their last base: take it and ${f.name} is finished.` : `They hold ${f.bases.length} bases.`}${occ ? ` ${occupiedText(state, occ)}` : ""}${warn ? ` ${warn}` : ""}`,
     choices: [
-      { label: "Storm the base (tactical battle)", hint: `About ${Math.round(odds * 100)}% to win against ${force.count} defenders behind ${wallText}. Win and the base is yours: an outpost with its land and part of its stores. You can fall back from the left edge`,
+      { label: "Storm the base (tactical battle)", fight: { odds, enemy: force, ambush: null }, hint: `About ${Math.round(odds * 100)}% to win against ${force.count} defenders behind ${wallText}. Win and the base is yours: an outpost with its land and part of its stores. You can fall back from the left edge`,
         resolve: (st) => startAssault(st, p, f) },
       { label: "Back off", hint: "No fight", resolve: (st) => { awaitOrders(st, p, `The team pulled back from ${tileLabel(st, tile)}.`); return "The team pulls back."; } },
     ],

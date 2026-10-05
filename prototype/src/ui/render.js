@@ -1,7 +1,7 @@
 // Canvas renderer for the State Map. Reads the simulation; never changes it.
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE } from "../sim/world.js";
-import { partyTile, plannedTile } from "../sim/parties.js";
+import { partyTile, plannedTile, outpostScrap } from "../sim/parties.js";
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
@@ -16,8 +16,9 @@ import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
-import { siteKnown, hiddenSites } from "../sim/discovery.js";
-import { outsiderPartyCanvas, OUTSIDER_COLORS } from "./mapsprites.js";
+import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
+import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
+import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
@@ -181,6 +182,13 @@ function geometry(state) {
     // Terrain detail (ui/terraindeco.js): decal placements (made the first time they are drawn), and the tiles whose
     // clear zone is in use (a site, base, hive or hive build site is drawn there), as a flag and a list.
     deco: null, clr: new Uint8Array(n), clrAt: new Int32Array(n), clrGen: 0, clrList: new Int32Array(n), nClr: 0, clrNew: new Int32Array(n),
+    // The overlays worked out only when their data changes (see updateKnown, updateCoalition): the six neighbours of
+    // each tile (-1 off the map), how each tile shows on the Known area layer (0 not searched, 1 long ago, 2 lately),
+    // its coalition owner (0 none, 1 you, 2+ a member) and whether it is within the coalition's reach (water too).
+    nb: new Int32Array(n * 6).fill(-1), srch: new Uint8Array(n), srchSig: null, nSrch: 0,
+    coal: new Uint8Array(n), coalIn: new Uint8Array(n), coalSig: null, coalColors: [], nCoal: 0,
+    // Ruins you know of (shown 1, yours 2) and the list of them this frame.
+    ruin: new Uint8Array(n), ruinT: new Int32Array(n), nRuin: 0,
   };
   for (let i = 0; i < n; i++) {
     const t = tiles[i];
@@ -188,6 +196,7 @@ function geometry(state) {
     [G.q[i], G.r[i]] = g.cube(t.id);
     G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
     G.water[i] = t.terrain === "water" ? 1 : 0;
+    g.neighbors(t.id).forEach((m, j) => (G.nb[i * 6 + j] = m));
     if (t.loc && !t.loc.crash) G.sites.push(i); // crash sites come and go: drawn on their own (sim/crashes.js)
     if (t.bridge) {
       const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
@@ -278,7 +287,7 @@ function tilesIn(G, x0, y0, x1, y1, out) {
 // This frame's switches for the cached layers.
 // deco: how much terrain detail shows (0 flat .. 1, ui/terraindeco.js decoAlpha), dsc its atlas scale, snow: the
 // snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare.
-const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
+const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
 const WATER_RGB = [1, 3, 5].map((k) => parseInt(TERRAIN.water.color.slice(k, k + 2), 16));
 const DECO_REACH = 35; // a tile's decals reach at most this far from its center (terraindeco.js MAX_REACH + 1)
 // The current world's decal placement (ui/terraindeco.js placeDecor), for the headless tools.
@@ -286,16 +295,131 @@ export const mapDecor = () => (geo ? geo.deco : null);
 const reach = () => (F.deco > 0 ? Math.max(REACH, geo && geo.deco ? geo.deco.reach : DECO_REACH) : REACH);
 const ownerColor = new Map(), fbAt = new Map(), factionIdx = new Map(), besiegedFb = new Set();
 
+// ---------- overlays worked out only when their data changes ----------
+// Known area (sim/discovery.js state.searched): searched within the last KNOWN_RECENT days shows stronger. Worked
+// out again when a report adds searched tiles (searchedVersion), another world or save is loaded, or a day passes;
+// the chunks of tiles whose shading changed are drawn again. Counts for the tools in overlayStats.
+export const KNOWN_RECENT = 30;
+export const overlayStats = { known: 0, coalition: 0 };
+// What the last drawn frame holds on the overlays, for the headless tools: ruins drawn (tile ids), tiles shaded as
+// searched (1 long ago, 2 lately) and coalition owners per tile.
+export const mapOverlay = () => (geo ? { ruins: Array.from(geo.ruinT.subarray(0, geo.nRuin)), srch: geo.srch, coal: geo.coal, nSrch: geo.nSrch, nCoal: geo.nCoal } : null);
+function updateKnown(state) {
+  const G = geo, s = state.searched || null, d = day(state);
+  const sig = G.srchSig;
+  if (sig && sig.arr === s && sig.rev === searchedVersion() && sig.day === d) return;
+  G.srchSig = { arr: s, rev: searchedVersion(), day: d };
+  overlayStats.known++;
+  let n = 0;
+  for (let i = 0; i < G.n; i++) {
+    const v = s && i < s.length ? s[i] : 0, lvl = !v ? 0 : d - v < KNOWN_RECENT ? 2 : 1;
+    if (lvl) n++;
+    if (lvl !== G.srch[i]) { G.srch[i] = lvl; markDirty(G.x[i] - REACH, G.y[i] - REACH, G.x[i] + REACH, G.y[i] + REACH); }
+  }
+  G.nSrch = n;
+}
+
+// Coalition land (sim/alliance.js controlledLand): the same land tiles, each given to the nearest centre's owner
+// (you first on a tie, then the members in order), memoized by the centres and the members' colors so a frame only
+// builds a short key. owner: 0 none, 1 you, 2 + i member i; within: 1 for every tile in reach (water too: it closes
+// the outer border over rivers and lakes).
+let coalMemo = null;
+function coalitionCentres(state) {
+  const ms = allianceMembers(state);
+  const out = state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b), o: 1 }));
+  ms.forEach((f, i) => { for (const t of f.bases) out.push({ tile: t, r: controlRadius(state, "outpost"), o: 2 + i }); });
+  return { out, ms };
+}
+export function coalitionLand(state) {
+  const { out, ms } = coalitionCentres(state);
+  const key = `${state.tiles.length}|${out.map((c) => `${c.tile}:${c.r}:${c.o}`).join(",")}|${ms.map((f) => `${f.id}${f.color}`).join(",")}`;
+  if (coalMemo && coalMemo.key === key && coalMemo.tiles === state.tiles) return coalMemo;
+  overlayStats.coalition++;
+  const g = state.grid, n = state.tiles.length;
+  const owner = new Uint8Array(n), within = new Uint8Array(n), best = new Int32Array(n).fill(1 << 30);
+  for (const c of out) for (const id of g.within(c.tile, c.r)) {
+    const dd = g.distance(c.tile, id);
+    within[id] = 1;
+    if (dd < best[id] || (dd === best[id] && c.o < owner[id])) { best[id] = dd; owner[id] = c.o; }
+  }
+  let land = 0, held = 0;
+  for (let i = 0; i < n; i++) {
+    if (state.tiles[i].terrain === "water") { owner[i] = 0; continue; }
+    land++;
+    if (owner[i]) held++;
+  }
+  const owners = [null, { name: "You", color: PLAYER_COLOR }, ...ms.map((f) => ({ name: f.name, color: f.color, id: f.id }))];
+  coalMemo = { key, tiles: state.tiles, owner, within, held, land, pct: land ? held / land : 0, goal: ALLIANCE.LAND_NEEDED, owners };
+  return coalMemo;
+}
+function updateCoalition(state) {
+  const G = geo, C = coalitionLand(state);
+  if (G.coalSig === C) return;
+  G.coalSig = C;
+  G.coalColors = C.owners.map((o) => (o ? o.color : null));
+  let n = 0;
+  const R = REACH + HEX; // a border runs along the edge it shares with a neighbour: redraw a little wider
+  for (let i = 0; i < G.n; i++) {
+    if (C.owner[i]) n++;
+    if (C.owner[i] !== G.coal[i] || C.within[i] !== G.coalIn[i]) {
+      G.coal[i] = C.owner[i];
+      G.coalIn[i] = C.within[i];
+      markDirty(G.x[i] - R, G.y[i] - R, G.x[i] + R, G.y[i] + R);
+    }
+  }
+  G.nCoal = n;
+}
+
+// Ruins (sim/conquest.js, factions.js tile.ruin): a ruin you can see, or one burned before your last look at the
+// tile (a report from before it burned still shows what stood there). The timelapse shows its frame's ruins.
+export function ruinKnown(state, id, live = liveSet(state)) {
+  const t = state.tiles[id];
+  if (!t || !t.ruin) return false;
+  if (live.has(id)) return true;
+  const snap = state.knowledge && state.knowledge[id];
+  return !!snap && (t.ruin.day == null || snap.hour >= (t.ruin.day - 1) * 24);
+}
+// "Ruins of Oak Hill Outpost"; open ground keeps its name out of it ("Ruins of a burned base").
+export function ruinTitle(ruin) {
+  const name = ruin && ruin.name ? String(ruin.name) : "";
+  return !name || /\(\d+,\d+\)$/.test(name) ? "Ruins of a burned base" : `Ruins of ${name}`;
+}
+// What the tile panel and tooltip say about a ruin you know of: its title, who burned it and when, the danger (the
+// site's, at least 3 on a known hive's land, as the map's skulls), the salvage left as you know it and what an
+// outpost there costs (sim/parties.js outpostScrap: 5 scrap on the ruins).
+export function ruinInfo(state, id) {
+  const t = state.tiles[id], live = liveSet(state);
+  if (!ruinKnown(state, id, live)) return null;
+  const isLive = live.has(id), snap = state.knowledge && state.knowledge[id];
+  const loot = isLive ? t.loot : snap ? snap.loot : null;
+  const G = geo && geo.tiles === state.tiles ? geo : null;
+  const inHive = G && G.nHives > 0 && G.dist[id] <= HIVE.TERRITORY;
+  const danger = Math.max(siteDanger(mapLoc(state, id)), inHive ? 3 : 0);
+  const r = t.ruin;
+  return {
+    title: ruinTitle(r), by: r.by || "raiders", day: r.day, yours: !!r.yours, from: r.from && r.from !== "you" ? r.from : "",
+    danger, dangerName: DANGER_NAMES[danger], salvage: LOOT_BANDS[lootBand(t, loot)], salvageLive: isLive, scrap: outpostScrap(state, id),
+  };
+}
+
 // The per-frame pass: what every tile shows as far as you know (never more: `live` decides), the hives, hordes and
 // hive build sites you know about, and the look of every site. Marks what changed.
 function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   const G = geo, tiles = state.tiles, n = G.n;
   ownerColor.clear();
   for (const f of state.factions) if (!ownerColor.has(f.id)) ownerColor.set(f.id, f.color);
-  let nh = 0, nhz = 0, nbs = 0;
+  let nh = 0, nhz = 0, nbs = 0, nr = 0;
   for (let i = 0; i < n; i++) {
     const t = tiles[i], isLive = live.has(i), snap = isLive ? null : k[i];
     let key = isLive ? 0 : snap ? 1 : 2, inf = -1;
+    // A ruin you know of (ruinKnown, inlined): drawn with the sites (Locations layer) in place of whatever stood there.
+    const ru = F.poisOn && t.ruin && key < 2 && !ownBase.has(i) && (isLive || t.ruin.day == null || snap.hour >= (t.ruin.day - 1) * 24) ? (t.ruin.yours ? 2 : 1) : 0;
+    if (ru) G.ruinT[nr++] = i;
+    if (ru !== G.ruin[i]) {
+      if (G.ruin[i]) markSite(G.x[i], G.y[i]);
+      G.ruin[i] = ru;
+      if (ru) markSite(G.x[i], G.y[i]);
+    }
     if (key < 2) {
       if (F.infOn) inf = isLive ? t.infection : snap.infection;
       if (F.terrOn) {
@@ -312,7 +436,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
     G.nkey[i] = key;
     G.ninf[i] = inf;
   }
-  G.nHives = nh; G.nHorde = nhz; G.nBuild = nbs;
+  G.nHives = nh; G.nHorde = nhz; G.nBuild = nbs; G.nRuin = nr;
   // Distance to the nearest known hive, worked out again only when the hives you know about change.
   let same = nh === G.nOld;
   for (let a = 0; same && a < nh; a++) same = G.hives[a] === G.oldHives[a];
@@ -354,7 +478,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
     let code = 0, fb = null;
     // A hidden site nobody has found (sim/discovery.js) is not drawn at all; found, its code changes and the chunks
     // around it are drawn again.
-    if (!ownBase.has(id) && (live.has(id) || siteKnown(state, id))) {
+    if (!ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
       const isLive = live.has(id), snap = isLive ? null : k[id];
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
       if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0);
@@ -382,6 +506,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   for (const id of ownBase) keep(id);
   for (let a = 0; a < nh; a++) keep(G.hives[a]);
   for (let a = 0; a < nbs; a++) keep(G.buildT[a]);
+  for (let a = 0; a < nr; a++) keep(G.ruinT[a]);
   for (let a = 0; a < nn; a++) { const i = G.clrNew[a]; if (!G.clr[i]) { G.clr[i] = 1; markClear(i); } }
   for (let a = 0; a < G.nClr; a++) { const i = G.clrList[a]; if (G.clrAt[i] !== gen) { G.clr[i] = 0; markClear(i); } }
   const t = G.clrList; G.clrList = G.clrNew; G.clrNew = t; G.nClr = nn;
@@ -427,12 +552,39 @@ function drawDirect(state, S, ox, oy, cw, chh) {
   for (let a = 0; a < m; a++) if (state.tiles[G.roads[a]].road) G.roads[nr++] = G.roads[a];
   ctx.setTransform(S, 0, 0, S, -ox, -oy);
   ctx.lineCap = "round";
-  drawGround(state, n, nr);
+  drawGround(state, n, nr, x0, y0, x1, y1);
   const pad = 80 * zoomBoost();
   for (const id of G.sites) {
     const d = G.siteDesc[id];
     if (d && !d.dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) paintSite(d, G.x[id], G.y[id]);
   }
+  paintRuins(x0, y0, x1, y1, pad, true);
+}
+
+// The ruins (G.ruinT) whose sprites reach into a world rectangle: drawn when draw is set; returns how many.
+function paintRuins(x0, y0, x1, y1, pad, draw) {
+  const G = geo;
+  let k = 0;
+  for (let a = 0; a < G.nRuin; a++) {
+    const id = G.ruinT[a], px = G.x[id], py = G.y[id];
+    if (px <= x0 - pad || px >= x1 + pad || py <= y0 - pad || py >= y1 + pad) continue;
+    k++;
+    if (draw) paintRuin(px, py, G.ruin[id] === 2);
+  }
+  return k;
+}
+// A ruin: the burned-out compound on a scorched plate with a smouldering rim (yours: a torn blue rag on a pole).
+const RUIN_W = 32, RUIN_RIM = "#a0603a", RUIN_LABEL = "#d2b39a";
+function paintRuin(px, py, yours) {
+  const s = zoomBoost(), cv = ruinSpriteCanvas(yours), w = RUIN_W * s, h = spriteH(cv, w), foot = py + 7 * s;
+  ctx.beginPath();
+  ctx.ellipse(px, foot, Math.max(9 * s, w * 0.46), 4.5 * s, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fill();
+  ctx.strokeStyle = RUIN_RIM;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  sprite(cv, px, foot - h / 2 + 0.6 * s, w);
 }
 
 // Draws one chunk: the ground of every tile that reaches into it, then the sites, in the same order as a full frame.
@@ -446,8 +598,9 @@ function paintChunk(state, L, ch, i, j) {
   let ns = 0;
   const pad = 80 * Math.max(1, Math.sqrt(0.9 / L.zoom));
   for (const id of G.sites) if (G.siteDesc[id] && !G.siteDesc[id].dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) ns++;
+  const nru = paintRuins(x0, y0, x1, y1, pad, false);
   ch.dirty = false;
-  if (!n && !ns && !nr) {
+  if (!n && !ns && !nr && !nru) {
     ch.empty = true;
     if (ch.cv) { pool.push(ch.cv); ch.cv = null; }
     return;
@@ -468,18 +621,20 @@ function paintChunk(state, L, ch, i, j) {
     ctx.fillRect(0, 0, C, C);
     ctx.setTransform(S, 0, 0, S, -i * C, -j * C);
     ctx.lineCap = "round";
-    drawGround(state, n, nr);
+    drawGround(state, n, nr, x0, y0, x1, y1);
     if (ns) for (const id of G.sites) {
       const d = G.siteDesc[id];
       if (d && !d.dyn && G.x[id] > x0 - pad && G.x[id] < x1 + pad && G.y[id] > y0 - pad && G.y[id] < y1 + pad) paintSite(d, G.x[id], G.y[id]);
     }
+    if (nru) paintRuins(x0, y0, x1, y1, pad, true);
   } finally {
     ctx = main;
   }
 }
 
-// The ground of the tiles in geo.list (and the roads of those in geo.roads), into the current context.
-function drawGround(state, n, nr) {
+// The ground of the tiles in geo.list (and the roads of those in geo.roads), into the current context; x0..y1: the
+// world rectangle being drawn (the Known area's hatching is laid across it).
+function drawGround(state, n, nr, x0, y0, x1, y1) {
   const G = geo, list = G.list, X = G.x, Y = G.y;
   // Terrain. Geography is known from pre-war maps; current conditions are not. Batched by color (one fill each).
   for (const b of G.buckets) b.length = 0;
@@ -556,6 +711,8 @@ function drawGround(state, n, nr) {
       ctx.stroke();
     }
   }
+  if (F.knownOn && G.nSrch) drawKnown(n, x0, y0, x1, y1);
+  if (F.coalOn && G.nCoal) drawCoalition(n);
   // Roads.
   ctx.strokeStyle = "#cdbb8a";
   ctx.lineWidth = 2.6;
@@ -594,6 +751,99 @@ function drawGround(state, n, nr) {
   }
 }
 
+// The edge tile a shares with its neighbour b, pulled in toward a's centre by inset world pixels (added to the path).
+const SQ3 = Math.sqrt(3);
+function edgeTo(a, b, inset) {
+  const ax = geo.x[a], ay = geo.y[a], dx = geo.x[b] - ax, dy = geo.y[b] - ay;
+  const k = 0.5 - inset / (HEX * SQ3), mx = ax + dx * k, my = ay + dy * k, ex = -dy / (2 * SQ3), ey = dx / (2 * SQ3);
+  ctx.moveTo(mx + ex, my + ey);
+  ctx.lineTo(mx - ex, my - ey);
+}
+
+// Known area (the layer of that name): tiles your people looked hard at, hatched in teal (fainter when it was more
+// than KNOWN_RECENT days ago; a faint teal wash on the recent ones) with a thin line around the searched area, so the
+// unhatched ground is where nobody has looked for hidden places yet. The hatching follows world coordinates, so it
+// runs on unbroken from chunk to chunk; it opens out when zoomed out (about 5 screen pixels apart).
+const KNOWN_WASH = "rgba(110,215,205,0.10)", KNOWN_HATCH = [null, "rgba(150,228,218,0.2)", "rgba(165,240,230,0.42)"], KNOWN_EDGE = "rgba(140,225,215,0.6)";
+function drawKnown(n, x0, y0, x1, y1) {
+  const G = geo, list = G.list, X = G.x, Y = G.y;
+  let k = 0;
+  ctx.beginPath();
+  for (let a = 0; a < n; a++) { const id = list[a]; if (G.srch[id] === 2) { hexSub(X[id], Y[id], HEX + 0.5); k++; } }
+  if (k) { ctx.fillStyle = KNOWN_WASH; ctx.fill(); }
+  const sp = Math.max(6, 5 / curS), lw = Math.max(1, 0.9 / curS);
+  for (const lvl of [1, 2]) {
+    k = 0;
+    ctx.save();
+    ctx.beginPath();
+    for (let a = 0; a < n; a++) { const id = list[a]; if (G.srch[id] === lvl) { hexSub(X[id], Y[id], HEX + 0.5); k++; } }
+    if (k) {
+      ctx.clip();
+      ctx.beginPath();
+      const ya = y0 - 2 * HEX, yb = y1 + 2 * HEX, c1 = x1 + yb + 2 * HEX;
+      for (let c = Math.floor((x0 + ya - 2 * HEX) / sp) * sp; c <= c1; c += sp) { ctx.moveTo(c - ya, ya); ctx.lineTo(c - yb, yb); }
+      ctx.strokeStyle = KNOWN_HATCH[lvl];
+      ctx.lineWidth = lw;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.beginPath();
+  for (let a = 0; a < n; a++) {
+    const id = list[a];
+    if (!G.srch[id]) continue;
+    for (let j = 0; j < 6; j++) { const m = G.nb[id * 6 + j]; if (m >= 0 && !G.srch[m]) edgeTo(id, m, 0.8); }
+  }
+  ctx.strokeStyle = KNOWN_EDGE;
+  ctx.lineWidth = lw * 1.2;
+  ctx.stroke();
+}
+
+// Coalition land (the layer of that name): each owner's land (you, each member) washed in its color with a border
+// in that color where another owner's land begins, and a thin gold line with a dark edge around the coalition's land
+// as a whole (water in reach counts as inside there, so rivers and lakes do not cut it up).
+const COAL_EDGE = "#f3d27a", COAL_EDGE_DARK = "rgba(13,15,18,0.6)";
+function drawCoalition(n) {
+  const G = geo, list = G.list, X = G.x, Y = G.y, cols = G.coalColors;
+  const by = new Map();
+  for (let a = 0; a < n; a++) {
+    const id = list[a], o = G.coal[id];
+    if (!o) continue;
+    let l = by.get(o);
+    if (!l) by.set(o, (l = []));
+    l.push(id);
+  }
+  for (const [o, l] of by) {
+    ctx.beginPath();
+    for (const id of l) hexSub(X[id], Y[id], HEX + 0.5);
+    ctx.fillStyle = cols[o] + "26";
+    ctx.fill();
+  }
+  for (const [o, l] of by) {
+    let k = 0;
+    ctx.beginPath();
+    for (const id of l) for (let j = 0; j < 6; j++) { const m = G.nb[id * 6 + j]; if (m >= 0 && G.coal[m] && G.coal[m] !== o) { edgeTo(id, m, 2.2); k++; } }
+    if (!k) continue;
+    ctx.strokeStyle = cols[o] + "e0";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  let k = 0;
+  ctx.beginPath();
+  for (let a = 0; a < n; a++) {
+    const id = list[a];
+    if (!G.coalIn[id]) continue;
+    for (let j = 0; j < 6; j++) { const m = G.nb[id * 6 + j]; if (m >= 0 && !G.coalIn[m]) { edgeTo(id, m, 0); k++; } }
+  }
+  if (!k) return;
+  ctx.strokeStyle = COAL_EDGE_DARK;
+  ctx.lineWidth = Math.max(3.2, 2.4 / curS);
+  ctx.stroke();
+  ctx.strokeStyle = COAL_EDGE;
+  ctx.lineWidth = Math.max(1.4, 1.1 / curS);
+  ctx.stroke();
+}
+
 // ---------- frame check: skip a frame when nothing on the map changed ----------
 const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false };
 let forceDraw = true;
@@ -606,6 +856,8 @@ function moverHash(state) {
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
+  // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
+  h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0)) % 2147483647;
   return h;
 }
 function unchanged(state, now) {
@@ -645,7 +897,9 @@ export function render(state) {
   F.terrOn = on("territory");
   F.hordesOn = on("hordes");
   F.poisOn = on("pois");
-  F.tint = on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
+  F.knownOn = on("known") && !state.timelapse;
+  F.coalOn = on("coalition") && !state.timelapse;
+  F.tint =on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
   F.ringSkulls = zoom > SKULL_ZOOM * 0.7;
   // Terrain detail: none zoomed out or with the Flat option; snow caps while the snow-cover wash is on (weather.js).
   F.deco = decoAlpha(zoom);
@@ -653,10 +907,13 @@ export function render(state) {
   F.snow = !!F.tint && F.tint.startsWith("rgba(235,240,248,");
   F.season = season(state).key;
   if (F.deco > 0 && (!G.deco || G.deco.tiles !== state.tiles)) G.deco = placeDecor(state, HEX);
-  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}`;
+  const key = `${F.tint}|${F.infOn}|${F.terrOn}|${F.hordesOn}|${F.poisOn}|${F.knownOn}|${F.coalOn}|${!!state.timelapse}|${state.factions.length}|${deco.detail}|${F.season}`;
   if (dpr !== cacheDpr) { cacheDpr = dpr; dropCache(); }
   else if (key !== cacheKey) dirtyAll();
   cacheKey = key;
+  // The overlays, worked out again only when their data changed (the chunks they touch are drawn again).
+  if (F.knownOn) updateKnown(state);
+  if (F.coalOn) updateCoalition(state);
 
   const ownBase = new Set(state.bases.map((b) => b.tile));
   const busy = busyTiles(state, live);
@@ -760,6 +1017,13 @@ export function render(state) {
     if (named || skulls) {
       labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
     }
+  }
+  // Ruins (drawn in the cached chunks): their names, "Ruins of Oak Hill Outpost", the same size as a town's.
+  for (let a = 0; a < G.nRuin; a++) {
+    const id = G.ruinT[a];
+    if (!inView(id)) continue;
+    const s = zoomBoost();
+    labels.push({ text: ruinTitle(state.tiles[id].ruin), x: G.x[id], y: G.y[id] + 7 * s + 4.5 * s + 6, pri: 1, screen: true, color: RUIN_LABEL, size: 9 });
   }
   // Hives you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 420);
@@ -1468,6 +1732,10 @@ export function tileTooltip(state, id) {
   for (const line of surveyTip(state, id)) lines.push(`<span style="color:#f0c85a">${esc(line)}</span>`); // sim/survey.js: surveys and rumours
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
+  const ru = ownHere ? null : ruinInfo(state, id);
+  if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
+  const sd = searchedDay(state, id);
+  if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)
   return lines.join("<br>");
 }
 

@@ -41,7 +41,7 @@ import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
-import { noteFinds, discoveryHour } from "./discovery.js";
+import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
 import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
@@ -554,6 +554,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
     }
   }
   noteFinds(state, seen.keys(), who ? { party: who } : null);
+  if (who) mergeLooked(state, who); // discovery.js: where the team looked hard (the map's Known area layer)
 }
 
 // ---------- tick ----------

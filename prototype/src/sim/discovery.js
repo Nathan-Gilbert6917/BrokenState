@@ -146,3 +146,35 @@ function announce(state, ids, how) {
   if (ids.length === 1) log(state, `🧭 Word reached you of ${siteText(state, ids[0])}: ${names[0]}. It is on the map now.`, "good");
   else log(state, `🧭 Reports mapped ${ids.length} places nobody knew of: ${names.slice(0, 6).join(", ")}${ids.length > 6 ? ` and ${ids.length - 6} more` : ""}.`, "good");
 }
+
+// ---------- where your people have looked (the map's Known area layer, ui/render.js) ----------
+// state.searched: per tile the day (1-based) your people last looked hard at it, 0 never: the tiles a Look around
+// takes in, the spots a Survey covers hour by hour (the team's tile and its optics' reach), a site a team searched.
+// So the player sees where nobody has looked for hidden places and finds yet. A team's looks wait in p.looked
+// (Map tile -> day) until its report reaches the hub (world.js mergeKnowledge: radio contact or home), like the rest
+// of what it saw. A Uint16Array made with the first report (saved with the state); no random numbers.
+let searchedRev = 0;
+// Bumped whenever state.searched changes, so the map works its shading out again only then.
+export const searchedVersion = () => searchedRev;
+export const searchedDay = (state, id) => (state.searched ? state.searched[id] || 0 : 0);
+// Team p looked hard at these tiles this hour.
+export function noteLooked(state, p, ids) {
+  if (!p || p.owner !== "player") return;
+  const d = Math.floor(state.hour / 24) + 1;
+  if (!p.looked) p.looked = new Map();
+  for (const id of ids) p.looked.set(id, d);
+}
+// The team's looks reach the hub's map.
+export function mergeLooked(state, p) {
+  if (!p || !p.looked || !p.looked.size) return;
+  const n = state.tiles.length;
+  if (!state.searched || state.searched.length !== n) {
+    const old = state.searched;
+    state.searched = new Uint16Array(n);
+    if (old) state.searched.set(old.subarray(0, Math.min(n, old.length)));
+  }
+  const s = state.searched;
+  for (const [id, d] of p.looked) if (id >= 0 && id < n && s[id] < d) s[id] = d;
+  p.looked.clear();
+  searchedRev++;
+}

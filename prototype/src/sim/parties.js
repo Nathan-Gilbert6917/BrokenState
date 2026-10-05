@@ -39,7 +39,7 @@ import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
-import { siteKnown, siteNamed } from "./discovery.js";
+import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 
@@ -981,6 +981,7 @@ export function survey(state, p, bonus, debit = true) {
   const around = state.grid.within(tile, sightRadius(state, p) + 1 + opt.reach);
   for (const id of around) p.seen.set(id, snapshot(state, id));
   const found = perceive(state, p, members, around, bonus + (opt.look - 1) * 0.3);
+  noteLooked(state, p, around); // discovery.js: looked hard at (the map's Known area layer)
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);

@@ -28,9 +28,11 @@ import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehi
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
-import { ageText, liveSet, mapLoc } from "./render.js";
+import { ageText, liveSet, mapLoc, ruinInfo, coalitionLand } from "./render.js";
+import { searchedDay } from "../sim/discovery.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
-import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
+import { conflictView, captivesOf, isCaptive, fightOdds } from "../sim/conflicts.js";
+import { RETREAT_POLICIES, POLICY_ORDER, teamPolicy, policySource, fightForecast, forecastText } from "../sim/breakoff.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
 import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
 import { survivorURL, spriteImg } from "./sprites.js";
@@ -379,6 +381,8 @@ export function renderRight(state, ui) {
   const knownHives = state.tiles.filter((x) => (liveSet(state).has(x.id) ? x.hive : state.knowledge[x.id] && state.knowledge[x.id].hive)).map((x) => x.id);
   const hz = knownHives.length ? hiveDanger(state, id, knownHives) : { territory: false, red: false };
   const base = state.bases.find((b) => b.tile === id);
+  const ruin = ruinInfo(state, id); // ui/render.js: a ruin you know of (razed base), with its salvage and danger
+  const searched = searchedDay(state, id); // sim/discovery.js: the Known area layer
   const ownerF = info && typeof info.owner === "number" ? factionById(state, info.owner) : null;
   const walk = estimateTrip(state, { memberIds: [1], dest: id, vehicle: false, stance: "normal" });
   // Loot by band (aiscav.js: rich, some, little, picked clean, against what the site held untouched). Not in view: the
@@ -401,6 +405,7 @@ export function renderRight(state, ui) {
     <div class="card" style="margin-top:0.6rem">
       <div class="kv small">
         <div>Intel</div><div>${isLive ? `<span class="good">Live</span>` : snap ? `Last seen ${ageText(state, snap)} (day ${Math.floor(snap.hour / 24) + 1})` : `<span class="muted">None</span>`}</div>
+        ${searched ? `<div${tip("Your people looked hard here (a survey, a Look around or a search): the Known area layer hatches it. Hidden places and finds nearby are likelier found already.")}>Searched</div><div>day ${searched}</div>` : ""}
         ${info ? `
         <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
         <div${tip("Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
@@ -415,7 +420,8 @@ export function renderRight(state, ui) {
       ${walk || base ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
-    ${t.ruin && !base && (isLive || state.knowledge[id]) ? `<div class="card small"${tip("A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only 5 scrap: the rest is salvage.")}><b>Ruins: ${esc(t.ruin.name)}</b><div class="muted">Burned by ${esc(t.ruin.by)} on day ${t.ruin.day}${t.ruin.from && t.ruin.from !== "you" ? ` (${esc(t.ruin.from)}'s base)` : t.ruin.yours ? " (your base)" : ""}.</div></div>` : ""}
+    ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
+      <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
@@ -458,10 +464,14 @@ function landRows(state, id, teamsHere) {
 // One short line per layer (hover: a one-line description); what each layer and symbol means is in Help → Map
 // layers / Map legend (ui/help.js), behind the "?" button.
 const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
-export function renderLegend(view, ui) {
+// state: the Coalition land line shows the share held against the goal while that layer is on (ui/render.js
+// coalitionLand, the same land the alliance victory counts).
+export function renderLegend(view, ui, state = null) {
   if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
+  const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
   return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}</label>`).join("")}`;
+    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}`;
 }
 
 // ---------- log ----------
@@ -564,6 +574,7 @@ export function helpText() {
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("S")}). Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("E")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds, ${k("R")} retreat (one unit, from the green evac strip), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits.<br>
     <b>Sounding the retreat:</b> when a fight goes bad, <i>Sound the retreat</i> (${k("Shift+R")}) pulls everyone out at once. First it shows each person's chance to get away: safe on the strip; elsewhere 100% minus 3 a tile to the strip, 25 for each enemy next to them, 6 for each shooter that sees them and 4 for each of the dead close behind (at most 35), up to 30 for wounds and 2 a point of armor, plus Scouting and 10 at night (5–95%). A downed teammate next to someone is carried out (slower: the carrier's odds drop); you can leave them instead. The caught take a blow from each enemy next to them and get out hurt, unless it puts them down: then they are left behind. A downed teammate dragged onto the strip goes with the last one out. When the AI plays a battle on the map for you (the autopilot's hive assaults), it sounds the retreat itself once the fight is clearly lost.<br>
+    <b>Retreat by the numbers:</b> a fight that nobody plays on the map (${k("Auto-resolve")} on turn 1 of a battle, the autopilot, crews) is decided on the odds the card shows and plays out in three rounds; a fight being won takes its knocks early, one being lost keeps taking them. A card with a fight on it has a <i>Retreat if it goes badly</i> row, kept for the team: <i>Never</i> (fight it out), <i>When most are down</i> (more than half the team down or under 50 health), <i>If losing</i> (the fight turns against you, or anyone goes down), <i>At first blood</i> (anyone hurt). Under each fight choice it shows what that would likely bring ("If losing: about 64% to win; if it turns, most get away"). Breaking off: everyone standing runs, with the same escape check as <i>Sound the retreat</i> (distance, the enemy on them or shooting and chasing, wounds, armor, Scouting, night; by the numbers also +10 with the car close by, +5 bikes, +10 a stealthy team), the downed carried by the one with the best odds (they pull through half the time, more with a medic), the caught take blows and can be dragged down. The downed left behind are lost to the dead, or killed or taken prisoner by a group's people. The enemy keeps most of its people, nothing is looted, and the rounds not fought do not use their ammo. The autopilot breaks off <i>If losing</i> when Cautious or Balanced and <i>When most are down</i> when Aggressive; a crew follows its role's <i>Retreat</i> setting (by its style unless set). A horde fight on the road breaks off between wounds the same way. Base defences have no retreat by the numbers.<br>
     <b>Boats:</b> water blocks travel. A team on a shore can build a one-use boat and cross one water tile (team panel, or right-click the far shore). It costs scrap and hours; a vehicle needs a raft or is left on the shore.<br>
     <b>Supply runs and trade routes:</b> supply runs are convoy jobs between your own bases (a base's Supply runs tab): crew, vehicle, goods each way, once or on a schedule. Trade routes are repeating convoys to a group you have a trade pact with (Groups tab); the terms must be worth it to them at their prices.<br>
     <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
@@ -595,10 +606,35 @@ function cardModal(state, card) {
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
     <div class="text">${esc(card.text)}</div>
+    ${retreatPolicyRow(state, card)}
     <div class="choices">${card.choices.map((c, i) => {
       const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
-      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}${fightForecastHtml(state, card, c)}</button>`;
     }).join("")}</div></div>`;
+}
+
+// A card with a fight on it (a choice with .fight: { odds?, enemy, ambush }): the team's "Retreat if it goes badly"
+// policy for a fight resolved by the numbers (breakoff.js: Auto-resolve, the autopilot, crews), and on each fight
+// choice what that would likely bring. The forecast is cached on the card per policy and team health.
+const cardFightParty = (state, card) => (card && card.partyId != null && (card.choices || []).some((c) => c && c.fight) ? state.parties.find((x) => x.id === card.partyId) || null : null);
+export function retreatPolicyRow(state, card) {
+  const p = cardFightParty(state, card);
+  if (!p) return "";
+  const cur = teamPolicy(state, p);
+  const src = { crew: " (the crew's setting)", autopilot: " (the autopilot's style)" }[policySource(state, p)] || "";
+  return `<div class="row small retreat-policy" style="margin:0.2rem 0 0.4rem;flex-wrap:wrap;gap:0.3rem"><span class="muted"${tip("If the fight is resolved by the numbers (Auto-resolve on the battle screen, the autopilot, a crew), the team breaks it off by this rule: everyone still standing runs for it (an escape check each, like Sound the retreat), carrying the downed. Only a won fight is looted. Kept for this team.")}>Retreat if it goes badly${esc(src)}:</span>${POLICY_ORDER.map((k) => `<button data-action="retreat-policy" data-v="${k}" class="${cur === k ? "active" : ""}"${tip(RETREAT_POLICIES[k].desc)}>${esc(RETREAT_POLICIES[k].name)}</button>`).join("")}</div>`;
+}
+export function fightForecastHtml(state, card, ch) {
+  const p = ch && ch.fight && ch.fight.enemy ? cardFightParty(state, card) : null;
+  if (!p) return "";
+  const people = Parties.partyMembers(state, p);
+  if (!people.length) return "";
+  const f = ch.fight;
+  const odds = f.odds ?? fightOdds(state, p, f.enemy, f.ambush);
+  const policy = teamPolicy(state, p);
+  const key = `${policy}:${Math.round(odds * 100)}:${people.map((s) => `${s.id}/${Math.round(s.health)}`).join(",")}`;
+  ch.forecastCache = ch.forecastCache && ch.forecastCache.key === key ? ch.forecastCache : { key, text: forecastText(fightForecast(state, p, people, { odds, enemy: f.enemy, ambush: f.ambush }, policy)) };
+  return ch.forecastCache.text ? `<span class="hint">If auto-resolved: ${esc(ch.forecastCache.text)}</span>` : "";
 }
 
 // Conflict approach panel: who they are, how many, your team, and odds on every option.
@@ -637,10 +673,11 @@ function conflictModal(state, card) {
       <div><h3>Them</h3>${them}</div>
       <div><h3>Your team</h3>${you}</div>
     </div>
+    ${retreatPolicyRow(state, card)}
     <div class="row small" style="margin:0.2rem 0 0.6rem"${tip("Your strength against theirs. Ambushes, cover and luck can swing a fight either way.")}><span class="muted" style="width:6rem">Balance</span><div style="flex:1">${bar(share, share >= 55 ? "var(--good)" : share >= 40 ? "#e8a33d" : "var(--danger)")}</div><span style="width:5.5rem;text-align:right">you ${share}%</span></div>
     <div class="choices">${card.choices.map((ch, i) => {
       const dis = typeof ch.disabled === "function" ? ch.disabled(state) : ch.disabled;
-      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(ch.hint)}>${esc(ch.label)}${ch.hint ? `<span class="hint">${esc(ch.hint)}</span>` : ""}</button>`;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(ch.hint)}>${esc(ch.label)}${ch.hint ? `<span class="hint">${esc(ch.hint)}</span>` : ""}${fightForecastHtml(state, card, ch)}</button>`;
     }).join("")}</div></div>`;
 }
 

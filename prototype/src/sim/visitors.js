@@ -1543,7 +1543,7 @@ function stopCard(state, v, p) {
       ? `${v.size} raiders from ${v.home} step out across the road with ${gearText(v.power)}. They are nobody you know, and they want ${t0 ? planText(t0) : "everything you carry"} or they open fire. Your team's strength ${Math.round(teamPower(state, p))}, theirs about ${Math.round(vStrength(v))}.`
       : `The ${SUB_LABEL[v.sub] || "travellers"} from ${v.home} were not what they seemed: ${v.size} of them draw knives and pistols and demand ${t0 ? planText(t0) : "your packs"}.`,
     choices: [
-      { label: `Fight (${pct(odds)} by the numbers)`, hint: "A battle: they have the drop on you", ai: (st) => fightAi(st, odds), resolve: (st) => (ok(st) ? teamFight(st, v, p, "enemy") : done(st, "They are gone.")) },
+      { label: `Fight (${pct(odds)} by the numbers)`, hint: "A battle: they have the drop on you", fight: { odds, enemy, ambush: "enemy" }, ai: (st) => fightAi(st, odds), resolve: (st) => (ok(st) ? teamFight(st, v, p, "enemy") : done(st, "They are gone.")) },
       {
         label: `Pay the toll (${t0 ? planText(t0) : "not enough"})`, hint: "They take it and let you pass", disabled: (st) => !ok(st) || !toll(),
         ai: (st) => (toll() ? (style(st) === "cautious" ? 75 : 55) : -99),
@@ -1581,7 +1581,7 @@ function watchCard(state, v, p) {
     text: `Your team spots ${v.size} ${v.kind === "raiders" ? `raiders from ${v.home}` : "armed strangers"} ${v.act ? `(${v.act})` : ""} before they see you: ${gearText(v.power)}. Your strength ${Math.round(teamPower(state, p))}, theirs about ${Math.round(vStrength(v))}.`,
     choices: [
       { label: `Slip away (${pct(sc)})`, hint: "Stealth. If they notice you, they come for you", ai: () => sc * 70, resolve: (st) => (!ok(st) ? done(st, "They are gone.") : vrng(st).chance(sc) ? done(st, "You let them go by and slipped away.") : (st.cards.push(stopCard(st, v, p)), "They saw you.")) },
-      { label: `Ambush them (${pct(odds)} by the numbers)`, hint: "A battle with the drop on them. Win and what they carry is yours", ai: (st) => fightAi(st, odds) + (style(st) === "aggressive" ? 10 : 0), resolve: (st) => (ok(st) ? teamFight(st, v, p, "player") : done(st, "They are gone.")) },
+      { label: `Ambush them (${pct(odds)} by the numbers)`, hint: "A battle with the drop on them. Win and what they carry is yours", fight: { odds, enemy, ambush: "player" }, ai: (st) => fightAi(st, odds) + (style(st) === "aggressive" ? 10 : 0), resolve: (st) => (ok(st) ? teamFight(st, v, p, "player") : done(st, "They are gone.")) },
       { label: "Lie low and let them pass", hint: "You lose a little time", ai: () => 30, resolve: (st) => { p.progress = (p.progress || 0) - 1; return done(st, "They passed without seeing you."); } },
     ],
   };
@@ -1602,7 +1602,7 @@ function merchantRoadCard(state, v, p) {
         label: "Ask for news of the road", hint: "Free: the way they came, on your team's map, and news of other states", disabled: () => !!v.done.roadNews || hostile, ai: () => 70,
         resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const n = giveIntel(st, v, 1, p); return done(st, `"${rumor(st, v)}" They mark the way they came (${n} tiles).`); },
       },
-      { label: `Rob them (${pct(odds)} by the numbers)`, hint: "A fight with their guards. Every trading group hears of it, and merchants will shun you", ai: () => -50, resolve: (st) => (ok(st) ? attackMerchants(st, v, { partyId: p.id }) : done(st, "They are gone.")) },
+      { label: `Rob them (${pct(odds)} by the numbers)`, hint: "A fight with their guards. Every trading group hears of it, and merchants will shun you", fight: { odds, enemy: enemyOf(v), ambush: "player" }, ai: () => -50, resolve: (st) => (ok(st) ? attackMerchants(st, v, { partyId: p.id }) : done(st, "They are gone.")) },
       { label: "Move on", ai: () => 20, resolve: (st) => done(st, "") },
     ],
   };

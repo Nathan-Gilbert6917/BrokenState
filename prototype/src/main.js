@@ -43,6 +43,7 @@ import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
 import { PRISON_ACTIONS } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
+import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
@@ -330,7 +331,7 @@ function refresh(user = true) {
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
   refreshModal(user);
-  setHTML("legend", renderLegend(view, ui), user);
+  setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
@@ -745,6 +746,8 @@ const actions = {
     if (text) ui.cardResult = { title: card.title, text };
   },
   cardok: () => { ui.cardResult = null; },
+  // The card's "Retreat if it goes badly" buttons (breakoff.js): kept on the team for fights resolved by the numbers.
+  "retreat-policy": (d) => { const card = state.cards[0]; const p = card && card.partyId != null ? partyById(card.partyId) : null; if (p) setTeamPolicy(state, p, d.v); },
   approach: (d) => { state.engagement.approach = d.v; },
   search: () => { searchHour(state); tickHour(state); },
   extract: () => { extract(state); },

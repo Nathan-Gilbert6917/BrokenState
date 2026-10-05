@@ -41,7 +41,7 @@ import {
 } from "./parties.js";
 import { partyVehicle, wear, useFuel, tileFuel } from "./vehicles.js";
 import { perceive, MARKER_TYPES } from "./markers.js";
-import { hiddenSites, siteKnown, siteKnownTo } from "./discovery.js";
+import { hiddenSites, siteKnown, siteKnownTo, noteLooked } from "./discovery.js";
 import { weather } from "./weather.js";
 import { hash01, gainXpAll, USE, anyPerk } from "./skills.js";
 import { rollTravelEvent } from "./events.js";
@@ -261,8 +261,10 @@ export function sweepHour(state, p) {
   // Caches, wrecks and camps (tile.hidden): the look-around roll, a little better with optics, near the team.
   const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
   const bonus = SURVEY.finds + (opt.look - 1) * 0.3;
-  const found = perceive(state, p, members, state.grid.within(here, 1 + opt.reach), bonus);
+  const looked = state.grid.within(here, 1 + opt.reach);
+  const found = perceive(state, p, members, looked, bonus);
   for (const f of found) t.finds.push({ type: f.type, tile: f.tile });
+  noteLooked(state, p, looked); // discovery.js: the spot is searched (the map's Known area layer)
   // Hive land: the dead there notice a team that walks about (tougher dead, hives.js).
   hiveTrouble(state, p);
 }

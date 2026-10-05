@@ -13,6 +13,8 @@
 //   the ? buttons opening Help at a topic that exists
 // - windows and panels (ui/layout.js, ui/windows.js): folding, map only, auto-open, folded alerts, remembered
 //   layout and window sizes, drags clamped at several UI sizes, the menu's controls, keys in README and Help
+// - map overlays: Known area (searched tiles, saved), ruins (drawn, panel, gone when built over), Coalition land
+//   (the tiles controlledLand counts), worked out only when their data changes; every size and zoom, no NaN
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -972,6 +974,190 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
   check(T.deco.detail && loadOptions().mapDetail === true && frame(a, 1.5) > 0, "back to Detailed: decals again");
   delete globalThis.localStorage;
   T.setDecoCanvas(null);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, sim/discovery.js state.searched)");
+{
+  const R = await import("../src/ui/render.js");
+  const { renderLegend } = await import("../src/ui/ui.js");
+  const { helpTopics } = await import("../src/ui/help.js");
+  const { LAYERS } = await import("../src/sim/markers.js");
+  const Disc = await import("../src/sim/discovery.js");
+  const { mergeKnowledge } = await import("../src/sim/world.js");
+  const { ensureAlliance, controlledLand, landCentres, ALLIANCE } = await import("../src/sim/alliance.js");
+  const { razeGroupBase } = await import("../src/sim/factions.js");
+  const { serializeState, deserializeState } = await import("../src/sim/save.js");
+  const { WORLD_SIZES } = await import("../src/sim/worldsize.js");
+  const strip = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
+  window.devicePixelRatio = 1;
+  // A stub context that keeps a fingerprint of every call (name and rounded numbers) and counts NaN arguments.
+  let sig = 0, nCalls = 0, nan = 0;
+  const ctxStub = new Proxy({ measureText: (t) => ({ width: String(t).length * 5 }), getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) }, {
+    get: (o, k) => (k in o ? o[k] : (...a) => {
+      nCalls++;
+      let h = String(k).length * 131 + String(k).charCodeAt(0);
+      for (const v of a) if (typeof v === "number") { if (!Number.isFinite(v)) nan++; else h = (h * 31 + Math.round(v * 100)) | 0; }
+      sig = (sig * 1000003 + h) | 0;
+    }),
+    set: (o, k, v) => ((o[k] = v), true),
+  });
+  R.initRenderer({ getContext: () => ctxStub, getBoundingClientRect: () => ({ width: 1600, height: 900 }), width: 0, height: 0 });
+  const draw = (st, zoom = 1, tile = hub(st).tile) => { R.camera.zoom = zoom; R.centerOn(st, tile); R.redrawMap(true); sig = 0; nCalls = 0; R.render(st); return { sig, calls: nCalls }; };
+  const origLayers = R.view.layers;
+
+  // Layers box, Help, defaults.
+  check(LAYERS.known && LAYERS.coalition, "the Known area and Coalition land layers exist");
+  R.resetView();
+  check(!R.view.layers.has("known") && !R.view.layers.has("coalition") && R.view.layers.has("pois"), "both are off by default (Locations, with the ruins, on)");
+  const w = createWorld({ seed: seed + 11, factionCount: 6 });
+  const lgOff = renderLegend(R.view, { legendCollapsed: false }, w);
+  check(/data-k="known"/.test(lgOff) && /data-k="coalition"/.test(lgOff) && !/%\/50%/.test(lgOff), "the Layers box has a line for each, the share only while Coalition land is on");
+  R.view.layers = new Set([...R.view.layers, "coalition"]);
+  const lgOn = renderLegend(R.view, { legendCollapsed: false }, w);
+  const pctWant = Math.round(controlledLand(w).pct * 100);
+  check(new RegExp(`Coalition land <span class="muted"[^>]*>${pctWant}%/${Math.round(ALLIANCE.LAND_NEEDED * 100)}%</span>`).test(lgOn), `the Coalition land line shows the share held and the goal (${pctWant}%/50%)`);
+  htmlOk(lgOn, "Layers box with Coalition land on");
+  const topics = helpTopics();
+  const layersTxt = strip(topics.find((t) => t.id === "map-layers").html), legendTxt = strip(topics.find((t) => t.id === "map-legend").html);
+  check(/Known area/.test(layersTxt) && /hatching/.test(layersTxt) && /Coalition land/.test(layersTxt) && /50%/.test(layersTxt) && /Ruins of/.test(layersTxt), "Help → Map layers explains Known area, Coalition land and the ruins");
+  check(["Ruins", "Known area", "Coalition land"].every((s) => legendTxt.includes(s)), "Help → Map legend has Ruins, Known area and Coalition land");
+
+  // Searched tiles: a team's looks wait for its report, then go on the map; saved and loaded.
+  check(!!state.searched && state.searched.some((v) => v > 0), `the ${days}-day autopilot run searched some ground (${state.searched ? state.searched.filter((v) => v > 0).length : 0} tiles)`);
+  const h = hub(w), near = w.grid.within(h.tile, 4).filter((id) => w.grid.distance(h.tile, id) >= 3);
+  const team = { owner: "player", id: -5 };
+  Disc.noteLooked(w, team, near);
+  check(!w.searched || !w.searched.some((v) => v > 0), "a team's looks stay off the map until it reports");
+  const rev0 = Disc.searchedVersion();
+  mergeKnowledge(w, new Map(), null, team);
+  check(near.every((id) => Disc.searchedDay(w, id) === day(w)) && Disc.searchedVersion() > rev0 && team.looked.size === 0, `its report puts them on the map with the day (${near.length} tiles, day ${day(w)})`);
+  Disc.noteLooked(w, { owner: 3 }, [h.tile]);
+  const other = { owner: 3, looked: null };
+  mergeKnowledge(w, new Map(), null, other);
+  check(!Disc.searchedDay(w, h.tile), "another group's looks never mark your map");
+  const pend = { owner: "player", id: -6 };
+  Disc.noteLooked(w, pend, [h.tile]);
+  w.parties.push(pend);
+  const loaded = deserializeState(JSON.parse(JSON.stringify(serializeState(w))));
+  w.parties.pop();
+  check(loaded.searched instanceof Uint16Array && loaded.searched.length === w.tiles.length && loaded.searched.every((v, i) => v === w.searched[i]), "save/load keeps the searched tiles (a Uint16Array)");
+  const lp = loaded.parties.find((p) => p.id === -6);
+  check(lp && lp.looked instanceof Map && lp.looked.get(h.tile) === day(w), "a team's looks not yet reported survive save/load");
+  // The layer: hatched where searched, worked out again only when a report changes the map or a day passes.
+  R.view.layers = new Set(["pois", "territory", "known"]);
+  const k0 = R.overlayStats.known;
+  const a1 = draw(w);
+  let ov = R.mapOverlay();
+  check(R.overlayStats.known === k0 + 1 && ov.nSrch === near.length && near.every((id) => ov.srch[id] === 2), `the Known area layer shades the ${near.length} searched tiles (recent)`);
+  for (let i = 0; i < 40; i++) { R.camera.x += 37; R.render(w); }
+  check(R.overlayStats.known === k0 + 1, "panning 40 frames works nothing out again");
+  Disc.noteLooked(w, team, [h.tile]);
+  mergeKnowledge(w, new Map(), null, team);
+  R.render(w);
+  check(R.overlayStats.known === k0 + 2 && R.mapOverlay().srch[h.tile] === 2, "a new report is shaded at once");
+  const a2 = draw(w);
+  check(a1.sig !== a2.sig && draw(w).sig === a2.sig, "the shading changes the drawing; the same world draws the same");
+  R.view.layers = new Set(["pois", "territory"]);
+  const noKnown = draw(w);
+  check(noKnown.calls < a2.calls, `switched off, nothing of it is drawn (${a2.calls} calls on, ${noKnown.calls} off)`);
+  const old = loaded; // the loaded copy, 40 days on: searched long ago
+  old.hour += 40 * 24;
+  R.view.layers = new Set(["known"]);
+  draw(old);
+  check(R.mapOverlay().srch[near[0]] === 1, `searched more than ${R.KNOWN_RECENT} days ago: the fainter hatching`);
+  check(/Searched by your people on day/.test(R.tileTooltip(w, near[0])), "the tooltip says when a tile was searched");
+
+  // Ruins: drawn with their name, the tile panel's danger and salvage, gone when an outpost is founded there.
+  const { renderRight } = await import("../src/ui/ui.js");
+  const f = w.factions.find((x) => x.alive && x.bases.length);
+  const rt = w.grid.within(h.tile, 3).find((id) => id !== h.tile && w.tiles[id].terrain !== "water" && !w.tiles[id].loc && w.live.has(id));
+  razeGroupBase(w, f, rt, null);
+  R.view.layers = new Set(["pois", "territory", "teams", "hordes"]);
+  draw(w);
+  check(R.mapOverlay().ruins.includes(rt), "a razed base in view is drawn as ruins");
+  const panel = renderRight(w, { ...freshUi(), selected: rt });
+  check(/Ruins of /.test(panel) && /Salvage/.test(panel) && /Danger/.test(panel) && /5 scrap carried/.test(panel), "the tile panel names the ruins with salvage, danger and the 5 scrap an outpost needs");
+  htmlOk(panel, "tile panel on ruins");
+  const info = R.ruinInfo(w, rt);
+  check(info && Number.isFinite(info.danger) && info.dangerName && info.salvage && /^Ruins of /.test(info.title), `ruin info: ${info && `${info.title}, danger ${info.dangerName}, salvage ${info.salvage}`}`);
+  check(R.ruinTitle({ name: "Oak Hill Outpost" }) === "Ruins of Oak Hill Outpost" && R.ruinTitle({ name: "plains (3,4)" }) === "Ruins of a burned base", "ruin names: the base's, never a map coordinate");
+  // A ruin you have no report of since it burned is not shown; one out of view but reported after it burned is.
+  const far = w.tiles.find((t) => !w.live.has(t.id) && !w.knowledge[t.id] && t.terrain !== "water" && !t.loc);
+  far.ruin = { name: "Ghost Camp", day: day(w), by: "raiders", from: "" };
+  draw(w);
+  check(!R.mapOverlay().ruins.includes(far.id) && !R.ruinInfo(w, far.id), "a ruin you have not seen since it burned is not on your map");
+  delete far.ruin;
+  // Founded over: the ruin goes (parties.js deletes tile.ruin when the outpost stands).
+  w.bases.push({ id: 999001, tile: rt, type: "outpost", name: "Test Outpost", stock: {}, buildings: [], construction: [], armory: [], radio: false, watchtower: false });
+  draw(w);
+  check(!R.mapOverlay().ruins.includes(rt), "your base on the tile: no ruin drawn there");
+  delete w.tiles[rt].ruin;
+  w.bases.pop();
+  draw(w);
+  check(!R.mapOverlay().ruins.includes(rt) && !R.ruinInfo(w, rt), "re-founded (tile.ruin gone): the ruin is gone from the map and the panel");
+
+  // Coalition land: the same tiles controlledLand counts, each in its nearest owner's color.
+  const ms = w.factions.filter((x) => x.alive && x.bases.length).slice(0, 2);
+  ensureAlliance(w).members.push(...ms.map((x) => x.id));
+  R.view.layers = new Set(["pois", "territory", "coalition"]);
+  const c0 = R.overlayStats.coalition;
+  const coalDraw = draw(w);
+  const CL = controlledLand(w), C = R.coalitionLand(w);
+  ov = R.mapOverlay();
+  const centres = landCentres(w);
+  let wrongTile = 0, wrongOwner = 0;
+  for (const t of w.tiles) {
+    const inReach = centres.some((c) => w.grid.distance(c.tile, t.id) <= c.r);
+    const want = t.terrain !== "water" && inReach;
+    if (!!ov.coal[t.id] !== want) wrongTile++;
+    if (!ov.coal[t.id]) continue;
+    // Nearest centre wins (you first on a tie): the owner drawn has a centre at the nearest distance.
+    let best = Infinity;
+    for (const c of centres) { const d = w.grid.distance(c.tile, t.id); if (d <= c.r) best = Math.min(best, d); }
+    const o = ov.coal[t.id];
+    const mine = o === 1 ? w.bases.map((b) => b.tile) : ms[o - 2].bases;
+    if (!mine.some((b) => w.grid.distance(b, t.id) === best)) wrongOwner++;
+  }
+  check(C.held === CL.held && C.land === CL.land && ov.nCoal === CL.held && !wrongTile, `Coalition land matches controlledLand (${C.held} of ${C.land} land tiles, ${Math.round(C.pct * 100)}%; ${wrongTile} tiles differ)`);
+  check(!wrongOwner && ov.coal.some((o) => o === 1) && ov.coal.some((o) => o >= 2), `each tile goes to its nearest owner, you and the members (${wrongOwner} wrong)`);
+  check(draw(w).sig === coalDraw.sig, "the same world draws the same coalition borders");
+  for (let i = 0; i < 40; i++) { R.camera.y += 29; R.render(w); }
+  check(R.overlayStats.coalition === c0 + 1, `worked out once for 40+ frames (${R.overlayStats.coalition - c0})`);
+  w.alliance.members.pop();
+  R.render(w);
+  check(R.overlayStats.coalition === c0 + 2 && R.coalitionLand(w).held === controlledLand(w).held, "a member leaving: worked out again, still the same land");
+  check(!nan, `no NaN arguments in any of it (${nan})`);
+
+  // Every size and zoom with all three on; then a Huge map: the time a frame takes with them on and off.
+  let errs = 0;
+  for (const size of Object.keys(WORLD_SIZES)) {
+    const st = createWorld({ seed: seed + 5, factionCount: 6, size });
+    const hh = hub(st);
+    Disc.noteLooked(st, team, st.grid.within(hh.tile, 6));
+    mergeKnowledge(st, new Map(), null, team);
+    ensureAlliance(st).members.push(...st.factions.filter((x) => x.alive).slice(0, 3).map((x) => x.id));
+    st.tiles[st.grid.within(hh.tile, 2).find((id) => id !== hh.tile)].ruin = { name: "Old Mill", day: 1, by: "raiders", from: "" };
+    R.view.layers = new Set(["pois", "territory", "teams", "hordes", "known", "coalition", "infection"]);
+    for (const zoom of [0.3, 0.65, 1, 2.6]) { try { draw(st, zoom); } catch (e) { if (errs++ < 3) console.log(`  error (${size}, zoom ${zoom}): ${e.stack}`); } }
+    if (size !== "huge") continue;
+    const time = (layers) => {
+      R.view.layers = new Set(layers);
+      draw(st, 0.65);
+      const t0 = performance.now();
+      for (let i = 0; i < 30; i++) { R.camera.x += 11; R.render(st); }
+      return (performance.now() - t0) / 30;
+    };
+    const base = time(["pois", "territory", "teams", "hordes"]), withOv = time(["pois", "territory", "teams", "hordes", "known", "coalition"]);
+    const t1 = performance.now();
+    R.coalitionLand({ ...st, tiles: st.tiles.slice() }); // another tile list: the coalition worked out from scratch
+    const coalMs = performance.now() - t1;
+    console.log(`  Huge map (${st.tiles.length} tiles), headless, every frame drawn straight (no chunk cache): ${base.toFixed(2)} ms a frame without the overlays, ${withOv.toFixed(2)} ms with Known area and Coalition land; coalition land worked out in ${coalMs.toFixed(2)} ms when it changes`);
+    check(withOv < base * 2.5 + 4, `the overlays cost little a frame on a Huge map (${withOv.toFixed(2)} vs ${base.toFixed(2)} ms)`);
+  }
+  check(!errs && !nan, `every size and zoom draws all three overlays without errors (${errs}) or NaN (${nan})`);
+  R.view.layers = origLayers;
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

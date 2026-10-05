@@ -90,7 +90,7 @@ export function startChronicle(state) {
   const c = (state.chronicle = {
     v: 1, tiles: n,
     factions: [], facIndex: new Map(), facAlive: [], // groups: { id, name, color, type }, index = owner code - 2
-    frames: [],   // { h, d: Uint16Array (packed, see record), full: Uint8Array | null (keyframe), bases, fb, hives, sites }
+    frames: [],   // { h, d: Uint16Array (packed, see record), full: Uint8Array | null (keyframe), bases, fb, hives, sites, ruins }
     events: [],   // captions: { h, text, kind (death | danger | good | info | world), tile, color?, major? }
     own: new Uint8Array(n), inf: new Uint8Array(n), // last recorded values; deltas are taken against these
     keys: new WeakMap(), nextKey: 1, announced: new WeakSet(), sieges: [], hordeSize: new WeakMap(),
@@ -156,7 +156,7 @@ function record(state, c) {
   const key = c.frames.length % KEY_EVERY === 0;
   for (const f of state.factions) facIndex(c, f);
   // Tiles: owner and infection changes, land per owner code, hives.
-  const ownD = [], infD = [], land = [], hives = [];
+  const ownD = [], infD = [], land = [], hives = [], ruins = [];
   for (let i = 0; i < n; i++) {
     const t = tiles[i];
     const o = ownerCode(c, t.owner);
@@ -165,6 +165,7 @@ function record(state, c) {
     if (q !== c.inf[i]) { infD.push(i, q); c.inf[i] = q; }
     if (o) land[o] = (land[o] || 0) + 1;
     if (t.hive) hives.push(i);
+    if (t.ruin) ruins.push(i);
   }
   // Movers: hordes [key, tile, size | Wallbreakers << 14], parties [key, tile, look code, siege target tile].
   const hz = [], pt = [];
@@ -218,6 +219,9 @@ function record(state, c) {
   if (fbSig !== c.fbSig) { c.fbSig = fbSig; c.fb = fb; }
   const hiveSig = hives.join(",");
   if (hiveSig !== c.hiveSig) { c.hiveSig = hiveSig; c.hives = hives; }
+  // Ruins of razed bases (conquest.js, factions.js tile.ruin): [tile, name, yours].
+  const ruinSig = ruins.map((i) => `${i}:${tiles[i].ruin.name}`).join(",");
+  if (ruinSig !== c.ruinSig) { c.ruinSig = ruinSig; c.ruins = ruins.map((i) => [i, String(tiles[i].ruin.name || ""), tiles[i].ruin.yours ? 1 : 0]); }
   // Hive build sites: [tile, biomass (in steps of 50), started].
   const sites = (state.hiveSites || []).map((x) => [x.tile, Math.floor(x.biomass / 50) * 50, x.started != null ? 1 : 0]);
   const siteSig = sites.map((x) => x.join(":")).join(",");
@@ -234,7 +238,7 @@ function record(state, c) {
     else if (state.victory) caption(c, { h: state.hour, text: `Every hive is destroyed. ${hb2 ? hb2.name : "The holdout"} has won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
     else caption(c, { h: state.hour, text: `Every survivor is dead. ${hb2 ? hb2.name : "The holdout"} has fallen on day ${Math.floor(state.hour / 24) + 1}.`, kind: "death", tile: hb2 ? hb2.tile : -1, major: true });
   }
-  c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, hives: c.hives, sites: c.sites });
+  c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, hives: c.hives, sites: c.sites, ruins: c.ruins });
   c.lastHour = state.hour;
   c.pending = false;
   c.nBases = state.bases.length;
@@ -368,6 +372,7 @@ export function chronicleReader(state) {
   const c = state.chronicle;
   const n = c.tiles, g = state.grid, frames = c.frames;
   const tiles = state.tiles.map((t) => Object.create(t)); // terrain, roads and sites from the real tiles
+  for (const t of tiles) if (t.ruin) t.ruin = null; // ruins come from the frames (frameState), not from today's map
   const live = new Set(state.tiles.map((t) => t.id));
   const slots = [0, 1, 2].map(() => ({ k: -1, own: new Uint8Array(n), inf: new Uint8Array(n), used: 0 }));
   let clock = 0;
@@ -425,7 +430,7 @@ export function chronicleReader(state) {
   // Small per-frame caches (hordes / parties by key, overlay info): playback asks for the same two frames ~60
   // times a second.
   const memo = new Map();
-  const shown = { k: -1, k1: -1, fallen: null }; // the frames the tiles hold now (frameState)
+  const shown = { k: -1, k1: -1, fallen: null, ruins: [] }; // the frames the tiles hold now (frameState)
   const cached = (key, make) => {
     let v = memo.get(key);
     if (v === undefined) {
@@ -485,6 +490,10 @@ export function chronicleReader(state) {
         ft.hive = false;
       }
       for (const id of f0.hives) tiles[id].hive = true;
+      // The ruins standing in this frame, over the real tiles' (a ruin built over later is not one yet, or any more).
+      for (const id of shown.ruins) tiles[id].ruin = null;
+      shown.ruins = [];
+      for (const [id, name, yours] of f0.ruins || []) { tiles[id].ruin = { name, yours: !!yours }; shown.ruins.push(id); }
       Object.assign(shown, { k: A.k, k1: B.k, fallen: info.fallen });
     } else {
       const a = A.inf, b = B.inf;
