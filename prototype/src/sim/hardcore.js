@@ -4,8 +4,9 @@
 // - The outbreak: 1–2 hives at the start, infection 0% away from the outbreak areas, spreading through the first year
 //   (mostly in towns and cities) until the state looks like a normal game's start (hardcore-outbreak.js).
 // - The other groups: bands of survivors who must found their hubs too, with more to start with depending on what they
-//   will become; the military holds its base and fights the hives until a hive near it overruns it; no raiders at
-//   first (hardcore-groups.js).
+//   will become; the military sends a strike force against the first hive (in a city) that fails and is cut off,
+//   while a hive rises by its thinned base and overruns it, and what is left splits into groups of their own; no
+//   raiders at first (hardcore-groups.js).
 // Everything here only runs when state.mode === "hardcore"; a normal game never touches it.
 import { setupHardcoreStart, hardcoreStartDaily } from "./hardcore-start.js";
 import { setupHardcoreGroups, hardcoreGroupsDaily, hardcoreGroupsHour, hardcoreGroupsAfterOutbreak } from "./hardcore-groups.js";

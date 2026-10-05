@@ -1,8 +1,8 @@
 // Hardcore mode, your start (hardcore.js): the day Calder falls, three survivors on the road with whatever they grabbed
 // as they fled, very low supplies and no hub.
 //
-// - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin and the
-//   hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
+// - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin, the city
+//   where the first hive rises and the hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
 //   day or two's walk (somewhere to scavenge and to settle).
 // - What they grabbed: each survivor fled with a bag (a school backpack, a sling bag, now and then a hiking pack) and a
 //   few things in it, or with only their clothes and pockets (0–4 small things). Maybe a weapon from the house: a kitchen
@@ -19,13 +19,15 @@ import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, add
 import { newItem, packOf, POCKETS } from "./inventory.js";
 import { sightRadius, partyMembers, partyTile, carried, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
+import { hcOutbreakCity } from "./hardcore-outbreak.js";
 
 export const HC_START = {
   CREW: 3,
   // Spawn: tiles from the outbreak origin, the hives, a city centre, a military site and a group's base (strict, then
   // relaxed if no tile qualifies); the share of the map kept clear of the edges; a town (or SITES_NEAR sites) within
   // TOWN_REACH tiles.
-  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35 },
+  // outbreakCity: from the centre of the city where the first hive rises (hardcore-outbreak.js hcOutbreakCity).
+  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35 },
   // What they grabbed. PACK: the chance someone fled with a bag; which bag (weights); how many things in it.
   PACK: 0.5,
   PACKS: { backpack: 5, slingbag: 3, hikingpack: 1 },
@@ -124,6 +126,7 @@ function spawnTile(state) {
   const groupBases = state.factions.flatMap((f) => f.bases || []);
   const within = (id, list, d) => list.some((x) => x != null && g.distance(id, x) <= d);
   const towns = state.tiles.filter((t) => t.loc && t.loc.type === "town").map((t) => t.id);
+  const outbreakCity = hcOutbreakCity(state); // the first hive rises there (set up after the start)
   const sitesOk = (id) => {
     if (towns.some((x) => g.distance(id, x) <= S.townReach)) return true;
     return state.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(id, t.id) <= S.siteReach).length >= S.sitesNear;
@@ -134,6 +137,7 @@ function spawnTile(state) {
     const e = S.edge[i];
     if (t.x < W * e || t.x >= W * (1 - e) || t.y < H * e || t.y >= H * (1 - e)) return false;
     if (g.distance(t.id, state.originId) < S.origin[i] || within(t.id, hives, S.hive[i])) return false;
+    if (outbreakCity != null && g.distance(t.id, outbreakCity) < S.outbreakCity[i]) return false;
     if (within(t.id, state.cityIds || [], S.city[i]) || g.neighbors(t.id).some((n) => state.tiles[n].terrain === "city")) return false;
     if (within(t.id, state.militaryIds || [], S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
     if ((t.infection || 0) > S.maxInfection * (strict ? 1 : 1.5)) return false;
