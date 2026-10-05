@@ -829,6 +829,7 @@ export function actionBox(b) {
 // Off-screen enemies on a big map: a small red marker at the edge of the view pointing at each enemy your people see
 // (or last saw: a ghost), so nobody is lost off the side of the screen.
 function drawEdgeMarkers(ctx, b, cw, ch, v) {
+  if (b.over) return;
   const m = 22, cx = cw / 2, cy = ch / 2;
   const spots = [];
   for (const t of b.units) if (t.side === "enemy" && active(t) && v.seen.has(t.id)) spots.push([t.x, t.y, 1]);
