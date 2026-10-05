@@ -16,7 +16,7 @@ import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
-import { bandsOf, bandTipLines } from "../sim/hardcore-groups.js";
+import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
@@ -854,7 +854,7 @@ function moverHash(state) {
   for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
-  for (const b of bandsOf(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands (sim/hardcore-groups.js)
+  for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
@@ -1247,11 +1247,11 @@ export function render(state) {
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
-  // you can see them.
-  if (on("teams")) for (const b of bandsOf(state)) {
+  // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
+  if (on("teams")) for (const b of hcMapBands(state)) {
     if (!live.has(b.tile)) continue;
     const [px, py] = g.toPixel(b.tile, HEX);
-    const cv = groupPartyCanvas(b.type, "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
+    const cv = groupPartyCanvas(b.type, b.convoy ? "convoy" : "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
     const w = gridW(cv) * 1.1 * s;
     const next = b.path && b.path[b.idx + 1];
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
