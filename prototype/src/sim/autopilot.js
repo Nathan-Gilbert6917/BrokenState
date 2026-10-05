@@ -451,6 +451,7 @@ function pickChoice(state, card, opts, p) {
 
 // Beds for k more people: built, queued, or one more bunkhouse a base can still get (plus the style's slack).
 function roomFor(state, k) {
+  if (!hub(state)) return false; // no base left (conquest.js exiles): no room for anyone
   const people = alive(state).filter((s) => s.location.kind !== "captive").length;
   let beds = 0;
   for (const b of state.bases) {

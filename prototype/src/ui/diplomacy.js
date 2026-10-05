@@ -18,7 +18,6 @@ import {
 import {
   ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
-import { RAIDS } from "../sim/factions.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -73,7 +72,7 @@ function goalsCard(state, g, compact) {
     ${a.outsiders.length ? `<div style="margin-left:0.8rem">${a.outsiders.slice(0, compact ? 4 : 20).map(outRow).join("")}${compact && a.outsiders.length > 4 ? `<div class="muted">and ${a.outsiders.length - 4} more</div>` : ""}</div>` : ""}
     ${lost.length ? `<div class="danger" style="margin-top:0.2rem">Retake: ${lost.map((o) => `${esc(o.name)} <span class="muted">(${esc(nameOf(state, o.factionId))}, since day ${o.day})</span> <button class="mini" data-action="job-locate" data-tile="${o.tile}">Locate</button>`).join(" · ")}</div>` : ""}
     ${a.infamy >= 10 ? `<div${tip("Rises with every base you take (2 from a hostile raider-type group, 15 from anyone else, 10 more for finishing them), fades 0.1 a day. Above 20 peaceful groups slowly lose goodwill toward you, and they want more goodwill before they join the coalition.")}>Infamy: <b class="${a.infamy > 20 ? "danger" : ""}">${a.infamy}</b>${a.infamy > 20 ? " (peaceful groups are wary of you)" : ""}</div>` : ""}
-    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${controlRadius(state, "stronghold")} of your hub or a base you took from a group, ${controlRadius(state, "outpost")} of an outpost (${controlRadius(state, "outpost", true)} with walls) or a member's base (${a.land.held} of ${a.land.land}). No new gang settles once the coalition holds ${pct(RAIDS.NEW_GANG_LAND)}.</div>`}
+    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${controlRadius(state, "stronghold")} of your hub or a base you took from a group, ${controlRadius(state, "outpost")} of an outpost (${controlRadius(state, "outpost", true)} with walls) or a member's base (${a.land.held} of ${a.land.land}).</div>`}
   </div>`;
 }
 

@@ -102,7 +102,11 @@ function runOne({ seed, style, days, keep, logN, tune }) {
     end: { pop: alive(state).length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building, sites: gp.hives.sites,
       members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 1000) / 10, outside, outposts: state.bases.filter((b) => b.type === "outpost").length,
       hiveTrips: events.filter((x) => /\(hive\) to/.test(x.text)).length, built: hiveStats(state).built, reason: state.victoryReason || null, screen: !!(state.gameOver && state.victory),
-      conquest: { ...ensureConquest(state).stats } },
+      conquest: { ...ensureConquest(state).stats },
+      // The world's groups: collapsed (all causes), new gangs from the border, raider bands that settled, bases razed
+      // (yours / between groups).
+      world: { collapsed: state.factions.filter((f) => !f.alive).length, newGangs: state.stats.newGangs || 0, settled: state.stats.bandsSettled || 0,
+        razedYours: state.stats.razedYours || 0, razedGroups: state.stats.razedGroups || 0 } },
     log: logN ? state.log.slice(0, logN).reverse().map((l) => `d${Math.floor(l.hour / 24) + 1} ${l.text}`) : null,
   };
   return res;
@@ -286,6 +290,8 @@ async function main() {
     const hubRuns = list.filter((r) => r.end && r.end.conquest && r.end.conquest.hubsLost > 0).length;
     console.log(`    conquest per run: ${cq("assaults")} assaults, ${cq("taken")} bases taken (${cq("retaken")} of them yours back), ${cq("defeated")} groups broken; ` +
       `lost to raids: ${cq("basesLost")} bases (in ${lostRuns} of ${list.length} runs), the hub in ${hubRuns} runs, ${cq("retreats")} retreats, ${cq("exiles")} times with no base left`);
+    const wq = (k) => (list.reduce((a, r) => a + ((r.end && r.end.world && r.end.world[k]) || 0), 0) / Math.max(1, list.length)).toFixed(1);
+    console.log(`    world per run: ${wq("collapsed")} groups collapsed, ${wq("newGangs")} new gangs, ${wq("settled")} raider bands settled, bases razed: ${wq("razedYours")} yours, ${wq("razedGroups")} between groups`);
     const dt = {};
     for (const r of list) for (const [k, v] of Object.entries(r.deaths || {})) dt[k] = (dt[k] || 0) + v;
     console.log(`    deaths per run by cause: ${Object.entries(dt).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / list.length).toFixed(1)}`).join(", ")}`);

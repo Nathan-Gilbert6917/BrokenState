@@ -25,7 +25,7 @@ import {
 } from "./parties.js";
 import * as Parties from "./parties.js";
 import { partyFuel, useFuel, partyVehicle } from "./vehicles.js";
-import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance } from "./markers.js";
 import { registerCombatHandler, startCombat, battlePending } from "./combat.js";
@@ -1050,7 +1050,7 @@ function onConflictCombat(state, result, setup) {
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
     wipeParty(state, p);
     log(state, `The whole team was lost fighting ${c.enemy.name}.`, "death");
-    if (f && f.pop <= 2) collapseFaction(state, f);
+    if (f && groupBroken(f)) collapseFaction(state, f);
     return;
   }
   if (!p || !state.parties.includes(p)) return;
@@ -1074,7 +1074,7 @@ function onConflictCombat(state, result, setup) {
     }
   }
   if (dead.length) lines.push(`Dead: ${dead.map((s) => s.name).join(", ")}.`);
-  if (f && f.pop <= 2) collapseFaction(state, f);
+  if (f && groupBroken(f)) collapseFaction(state, f);
   if (endIfEmpty(state, p, f)) {
     log(state, `${lines.join(" ")} Nobody from the team is free.`, "death");
     return;
@@ -1313,7 +1313,7 @@ function onRescueCombat(state, result, setup) {
       text += ` ${s.name} was caught.`;
     }
   }
-  if (f && f.pop <= 2) collapseFaction(state, f);
+  if (f && groupBroken(f)) collapseFaction(state, f);
   if (endIfEmpty(state, p, f)) return;
   delete p.conflictResume;
   awaitOrders(state, p, text);
@@ -1448,7 +1448,7 @@ function onRaidDefenseCombat(state, result, setup) {
     resolveRaidOnPlayer(state, raid);
     removeParty(state, raid);
     text = `Your people pulled out of ${base.name} and left it to ${f.name}.${state.bases.includes(base) ? "" : " They are on their way to another base."}`;
-    if (f.pop <= 2) collapseFaction(state, f);
+    if (groupBroken(f)) collapseFaction(state, f);
     addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });
     return;
   }
@@ -1478,7 +1478,7 @@ function onRaidDefenseCombat(state, result, setup) {
       : `The defenders were beaten, but the raiders were too badly mauled to hold ${name}. They grabbed what they could carry and left.`;
     if (res && res.dmg) text += ` ${res.dmg.text}`;
   }
-  if (f && f.pop <= 2) collapseFaction(state, f);
+  if (f && groupBroken(f)) collapseFaction(state, f);
   addCard(state, { title: "Raid defense", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
 

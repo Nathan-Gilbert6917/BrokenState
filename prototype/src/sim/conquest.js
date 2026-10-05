@@ -20,7 +20,7 @@
 //   group's other bases (none if it was the last); of those who give up a quarter ask to join you (a recruit card,
 //   at most 3) and a fifth are taken prisoner (at most 3, at the new outpost); the rest scatter. Your people they
 //   held there walk free. Their main base (bases[0], not their last): the leaders fall with it, half of the people
-//   left scatter, and a group down to MAIN_BREAK (8) breaks up. A group that loses its last base (or is down to 2
+//   left scatter. A group that loses its last base (or is down to 3, factions.js GROUP_BREAK
 //   people) is broken: factions.js collapseFaction (its parties go, its land is nobody's, refugees may come).
 // - Fallout: groups with a pact with the victim lose 8 goodwill toward you (15 when you finish it off), its
 //   friends (relations 28+) 4 (8); its enemies (−42 or worse) gain 2 (4). Infamy: +2 a base taken from a hostile
@@ -50,9 +50,12 @@
 //   The tile panel shows who holds it, since when, what is broken and the garrison; the Goals panel lists your
 //   lost bases to retake.
 // - If the group holding it is broken and nobody takes the tile, the ruins come back to you, empty.
+// - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
+//   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
+//   outpost there needs 5 scrap). The hub razed is the hub lost.
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot } from "./world.js";
-import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts } from "./factions.js";
+import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts, groupBroken, GROUP_BREAK } from "./factions.js";
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
@@ -72,7 +75,7 @@ export const CONQUEST = {
   STOCK_SHARE: 0.5, FLEE: 0.4, JOIN: 0.25, JOIN_MAX: 3, PRISON: 0.2, PRISON_MAX: 3, ATTACK_GW: -30, MEMBER_GW: -5,
   FALLOUT: { pact: -8, pactDefeat: -15, friend: -4, friendDefeat: -8, enemy: 2, enemyDefeat: 4, friendRel: 28, enemyRel: -42 },
   INFAMY: { hostile: 2, other: 15, defeatHostile: 0, defeatOther: 10, fade: 0.1, max: 100, wary: 20, drift: 1 / 200, inviteDiv: 2, inviteMax: 90 },
-  MAIN_SCATTER: 0.5, MAIN_BREAK: 8, GARRISON: 0.6, GARRISON_MIN: 2, GARRISON_GROW: 0.2, REPAIR: 0.05, REPAIR_WEAR: 40, WEAR_FALL: 1, BREAKIN_KEEP: 0.35,
+  MAIN_SCATTER: 0.5, GARRISON: 0.6, RUIN_SCRAP: 10, GARRISON_MIN: 2, GARRISON_GROW: 0.2, REPAIR: 0.05, REPAIR_WEAR: 40, WEAR_FALL: 1, BREAKIN_KEEP: 0.35,
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const first = (s) => s.name.split(" ")[0];
@@ -211,7 +214,7 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
     wipeIfEmpty(state, p);
     log(state, `The assault team died at ${tileLabel(state, c.tile)}.`, "death");
     if (f && result.enemiesKilled) f.pop = Math.max(0, f.pop - Math.ceil(result.enemiesKilled * 0.6));
-    if (f && f.alive && f.pop <= 2) collapseFaction(state, f);
+    if (f && f.alive && groupBroken(f)) collapseFaction(state, f);
     return;
   }
   if (result.outcome === "victory" && f && f.alive && f.bases.includes(c.tile)) {
@@ -228,7 +231,7 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
     if (m.length > 1 && state.rng.chance(0.3)) { const s = state.rng.pick(m); takeCaptive(state, s, f, p); text += ` ${s.name} was caught.`; }
   }
   if (result.outcome !== "victory") log(state, `${text} (${tileLabel(state, c.tile)}${f ? `, ${f.name}` : ""})`, "danger");
-  if (f && f.alive && f.pop <= 2) collapseFaction(state, f);
+  if (f && f.alive && groupBroken(f)) collapseFaction(state, f);
   if (p && state.parties.includes(p) && !wipeIfEmpty(state, p)) awaitOrders(state, p, text);
 });
 
@@ -346,14 +349,14 @@ export function captureBase(state, f, tile, p, info = {}) {
   C.stats.taken++;
   if (occ) C.stats.retaken++;
   state.stats.basesTaken = (state.stats.basesTaken || 0) + 1;
-  // Their main base: the leaders fall with it. Half of those left scatter, and a group down to MAIN_BREAK people
+  // Their main base: the leaders fall with it. Half of those left scatter, and a group down to GROUP_BREAK (3) people
   // breaks up.
   if (wasMain && f.bases.length) {
     const gone = Math.floor(f.pop * CONQUEST.MAIN_SCATTER);
     f.pop -= gone;
     if (gone) bits0.push(`Their leaders fell with it: ${gone} of ${f.name} scattered.`);
   }
-  const defeated = !f.bases.length || f.pop <= 2 || (wasMain && f.pop <= CONQUEST.MAIN_BREAK);
+  const defeated = !f.bases.length || groupBroken(f);
   fallout(state, f, defeated);
   const where = occ ? `${base.name} is yours again` : `${f.name}'s base at ${tileLabel(state, tile)} is yours`;
   const bits = [`${where}${base.type === "hub" ? " (your new hub)" : ""}.`];
@@ -539,6 +542,45 @@ export function promoteHub(state, nearTile) {
   assignStations(state, b);
   log(state, `${b.name} is your hub now.`, "info");
   return b;
+}
+
+// A group burns a base of yours to the ground (factions.js baseFate "raze"): the people there walk to your nearest
+// base (or take to the road), every building goes, the stock is carried off or burned, parked vehicles burn, and the
+// tile is a ruin: a little to scavenge, and a new outpost there needs only 5 scrap (10 salvaged from the ruins).
+// The hub razed: the nearest base becomes the hub, as when it is taken.
+export function razePlayerBase(state, base, f) {
+  const C = ensureConquest(state);
+  const i = state.bases.indexOf(base);
+  if (i < 0) return false;
+  const wasHub = base.type === "hub";
+  evacuate(state, base, f, f ? `${f.name} burned it` : "it burned");
+  for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f ? f.id : null, tile: base.tile, since: state.hour };
+  for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
+  const burned = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id);
+  for (const v of burned) state.vehicles.splice(state.vehicles.indexOf(v), 1);
+  for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was burned down`; }
+  if (f) for (const k of Object.keys(base.stock)) if (k !== "water" && SUPPLIES[k]) f.stock[k] = (f.stock[k] || 0) + Math.floor((base.stock[k] || 0) * 0.6);
+  const nBuild = base.buildings.length;
+  state.bases.splice(i, 1);
+  const t = state.tiles[base.tile];
+  t.ruin = { name: base.name, day: day(state), by: f ? f.name : "raiders", from: "you", yours: true };
+  t.loot = Math.max(t.loot || 0, 0.25);
+  state.stats.razedYours = (state.stats.razedYours || 0) + 1;
+  C.stats.razed = (C.stats.razed || 0) + 1;
+  if (wasHub) C.stats.hubsLost++;
+  history(state, `${f ? f.name : "Raiders"} burned ${base.name} down.`);
+  let newHub = null;
+  if (wasHub) newHub = promoteHub(state, base.tile);
+  for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = hub(state) ? hub(state).id : null;
+  if (!state.bases.length) for (let j = state.cards.length - 1; j >= 0; j--) if (state.cards[j].partyId == null) state.cards.splice(j, 1);
+  recomputeOwnership(state);
+  clearStaleAlerts(state);
+  state.knowledge[base.tile] = snapshot(state, base.tile);
+  const text = `${f ? f.name : "Raiders"} burned ${base.name} to the ground: ${nBuild ? `all ${nBuild} building${nBuild === 1 ? "" : "s"}` : "everything"} and its stores${burned.length ? `, and the ${burned.map((v) => v.name).join(" and ")}` : ""}. Only ruins are left: a new outpost there needs just 5 scrap (the rest is salvage).` +
+    `${newHub ? ` ${newHub.name} is your hub now.` : wasHub && !hub(state) ? " You have no base left." : ""}`;
+  log(state, text, "death");
+  addCard(state, { title: `${base.name} burned`, text, choices: [{ label: "OK", resolve: () => "" }] });
+  return true;
 }
 
 // Retreat from a base before a raid gets there (the raid warning card): everyone leaves, the raid takes it.

@@ -62,6 +62,13 @@
 //   for 3 days (1 food and 1 water each a day, mood +3 at the base; afterwards half the time a gift, a third of the
 //   time someone asks to stay), or send them on.
 //
+// Raider bands that settle (settleBands, daily, at any time of the run): a band of SETTLE.people+ (8) that carries goods
+// worth SETTLE.goods+ (what it looted: enough to start a base) may dig in (SETTLE.chance a day) at a site or a ruin
+// within SETTLE.reach tiles of where it is, not within 6 tiles of your bases or 8 of a group's base, not on a hive's
+// ground: it becomes one of the map's groups (a raider gang, hostile, its people and its loot as its start). The log
+// says so when you can see or hear it, else travellers speak of it. Gangs from beyond the border (factions.js
+// newGangs) still come when hostile groups are few.
+//
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
 import { Rng } from "./rng.js";
@@ -75,7 +82,7 @@ import {
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText } from "./factions.js";
+import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -373,11 +380,38 @@ export function visitorsDaily(state) {
   if (info.rep < 0) info.rep = Math.min(0, info.rep + O.rep.recover);
   for (const v of [...visitorsOf(state)]) if (v.phase === "sheltered") shelterDay(state, v);
   if (state.visitorsOff) return; // tools: a world without outsiders (the comparison runs)
+  settleBands(state);
   for (const kind of VISITOR_KINDS) {
     if (d < info.next[kind]) continue;
     const n = visitorsOf(state).filter((v) => v.kind === kind).length;
     if (n < capFor(kind, d)) spawnVisitor(state, kind);
     info.next[kind] = d + gapDays(kind, d, info.rng);
+  }
+}
+
+// ---------- raider bands that settle ----------
+export const SETTLE = { people: 8, goods: 250, chance: 0.03, reach: 6 };
+function settleBands(state) {
+  const info = visitorInfo(state);
+  const g = state.grid;
+  for (const v of [...visitorsOf(state)]) {
+    if (v.kind !== "raiders" || v.paid || v.phase === "battle" || v.phase === "siege" || v.size < SETTLE.people) continue;
+    if (supplyValue(v.stock) < SETTLE.goods || !info.rng.chance(SETTLE.chance)) continue;
+    const sites = g.within(v.tile, SETTLE.reach).map((id) => state.tiles[id]).filter((t) => (t.loc || t.ruin) && t.terrain !== "water" && !t.hive &&
+      (t.owner == null || t.owner === undefined) && !(t.loc && (t.loc.type === "city" || t.loc.zone === "urban")) &&
+      state.bases.every((b) => g.distance(b.tile, t.id) >= 6) && state.factions.every((f) => !f.alive || f.bases.every((b) => g.distance(b, t.id) >= 8)));
+    if (!sites.length) continue;
+    const site = sites.sort((a, b) => (b.ruin ? 1 : 0) - (a.ruin ? 1 : 0) || g.distance(v.tile, a.id) - g.distance(v.tile, b.id) || a.id - b.id)[0];
+    const name = cap1(v.name.replace(/^the /i, ""));
+    const f = makeGang(state, site.id, { type: "raider", pop: v.size, name, stock: v.stock, known: !!v.known, rng: info.rng });
+    state.stats.bandsSettled = (state.stats.bandsSettled || 0) + 1;
+    const place = site.ruin ? `the ruins of ${site.ruin.name}` : tileLabel(state, site.id);
+    if (state.live.has(site.id) || inCoverage(state, site.id)) log(state, `${cap1(v.name)} have dug in at ${place}: a new gang in the state (${f.name}, ${v.size} people).`, "danger");
+    else log(state, `Travellers speak of raiders from beyond the border digging in somewhere ${sideOf(state, site.id) ? `to the ${sideOf(state, site.id)}` : "out in the state"}.`, "danger");
+    chronicleNote(state, `${cap1(v.name)} settled at ${tileLabel(state, site.id)}.`, "danger", site.id);
+    const i = state.visitors.indexOf(v);
+    if (i >= 0) state.visitors.splice(i, 1);
+    if (state.trade && state.trade.visitorId === v.id) state.trade = null;
   }
 }
 

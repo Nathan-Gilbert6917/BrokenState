@@ -228,32 +228,156 @@ section("The coalition victory: only members left, more than half the land, hive
   check(checkGameOver(st2) && st2.victoryReason === "hives", "destroying every hive is still the hive victory");
 }
 
-section("No new gang blocks a coalition close to winning");
+section("Late gangs: raider bands that settle, at any time; the coalition win is instant");
 {
+  const V = await import("../src/sim/visitors.js");
   const st = world();
-  st.noNewGangs = false;
-  st.hour = 24 * 100;
-  for (const f of st.factions) f.alive = false, f.bases = [];
-  // Over 40% of the land: outposts.
-  const g = st.grid;
-  let n = 0;
-  while (A.controlledLand(st).pct < RAIDS.NEW_GANG_LAND && n < 40) {
-    const held = new Uint8Array(st.tiles.length);
-    for (const c of A.landCentres(st)) for (const id of g.within(c.tile, c.r)) held[id] = 1;
-    const t = st.tiles.find((x) => x.terrain !== "water" && !held[x.id] && free(st, x.id));
-    if (!t) break;
-    outpost(st, t.id, 1);
-    n++;
+  tick(st, 24 * 30);
+  st.cards.length = 0;
+  // A band with people and loot in the middle of the map.
+  const n0 = st.factions.length;
+  const v = V.spawnVisitor(st, "raiders", { size: 9, power: 3 });
+  check(!!v, "a raider band crosses the border");
+  if (v) {
+    const g = st.grid;
+    const spot = st.tiles.find((t) => t.loc && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
+    v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
+    for (const k of Object.keys(v.stock)) v.stock[k] = 0;
+    v.stock.food = 30; v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
+    for (let d = 0; d < 30; d++) V.visitorsDaily(st);
+    check(st.factions.length === n0, `a band without the goods to start a base does not settle`);
+    if (!st.visitors.includes(v)) st.visitors.push(v);
+    v.stock.food = 200; v.stock.scrap = 60; v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
+    for (let d = 0; d < 120 && st.factions.length === n0; d++) V.visitorsDaily(st);
+    const gang = st.factions[st.factions.length - 1];
+    check(st.factions.length === n0 + 1 && gang.alive && gang.pop === 9 && attitude(gang) === "Hostile", `with people and loot it digs in: ${gang.name}, ${gang.pop} people, hostile`);
+    check(!st.visitors.includes(v) && (gang.stock.food || 0) >= 200, "the band is gone from the outsiders, its loot is the gang's stores");
+    check(st.log.some((l) => /dug in at|digging in/.test(l.text)), "the log says so");
+    check((st.stats.bandsSettled || 0) === 1, "counted");
   }
-  let spawned = 0;
-  for (let i = 0; i < 400; i++) { const k = st.factions.length; factionsDaily(st); if (st.factions.length > k) spawned++; }
-  check(spawned === 0, `no new gang in 400 days at ${(A.controlledLand(st).pct * 100).toFixed(0)}% land (${spawned})`);
+  // Late: even with the coalition at 50% land, gangs from the border still come (no cap).
   const st2 = world();
-  st2.noNewGangs = false; st2.hour = 24 * 100;
+  st2.noNewGangs = false; st2.hour = 24 * 400;
   for (const f of st2.factions) f.alive = false, f.bases = [];
   let s2 = 0;
   for (let i = 0; i < 1500; i++) { const k = st2.factions.length; factionsDaily(st2); if (st2.factions.length > k) { s2++; for (const f of st2.factions) if (f.alive) { f.alive = false; f.bases = []; } } }
-  check(s2 >= 1 && s2 <= RAIDS.NEW_GANG_MAX, `with little land, new gangs still come, at most ${RAIDS.NEW_GANG_MAX} a run (${s2})`);
+  check(s2 >= 4, `new gangs keep coming at any time, with no cap (${s2} in 1500 days)`);
+  // The victory is instant: all in and over half the land at one moment wins, a gang arriving later does not matter.
+  const st3 = world();
+  for (const f of st3.factions.filter((x) => x.alive)) { while (f.bases.length > 1) f.bases.pop(); C.captureBase(st3, f, f.bases[0], null, {}); }
+  const g3 = st3.grid;
+  for (let k = 0; k < 40 && !A.goalsProgress(st3).alliance.landOk; k++) {
+    const held = new Uint8Array(st3.tiles.length);
+    for (const c of A.landCentres(st3)) for (const id of g3.within(c.tile, c.r)) held[id] = 1;
+    const t = st3.tiles.find((x) => x.terrain !== "water" && !held[x.id] && free(st3, x.id));
+    if (!t) break;
+    outpost(st3, t.id, 1);
+  }
+  const { makeGang } = await import("../src/sim/factions.js");
+  const far = st3.tiles.find((t) => t.loc && free(st3, t.id) && st3.bases.every((b) => g3.distance(b.tile, t.id) >= 8));
+  const late = makeGang(st3, far.id, { pop: 10 });
+  check(!A.allianceVictory(st3), "a gang that settles first has to be beaten or invited");
+  while (late.bases.length) C.captureBase(st3, late, late.bases[0], null, {});
+  check(!late.alive && A.allianceVictory(st3) && checkGameOver(st3) && st3.victoryReason === "alliance", "beaten: the coalition wins at that moment");
+}
+
+section("A group breaks at 3 people");
+{
+  const st = world();
+  const f = st.factions.find((x) => x.alive);
+  f.pop = 4;
+  factionsDaily(st);
+  check(f.alive, "4 people: still a group");
+  f.pop = 3; f.stock.food = 5; // no food to spare: nobody new joins today
+  factionsDaily(st);
+  check(!f.alive, "3 people: it collapses (factions.js GROUP_BREAK)");
+  // A war grinds a group all the way down (no floor at 8 any more).
+  const st2 = world();
+  const [a, b] = st2.factions.filter((x) => x.alive);
+  D.ensureDiplo(st2);
+  const w = { id: 77, a: a.id, b: b.id, start: 1, score: {}, exh: {}, captives: {}, raids: 0, reason: "land" };
+  st2.diplo.wars.push(w);
+  b.pop = 6;
+  let raids = 0;
+  while (b.alive && raids < 200) { raids++; resolveRaidOnFaction(st2, { owner: a.id, strength: 400, warId: 77, target: { kind: "faction", factionId: b.id, tile: b.bases[0] } }, []); }
+  check(!b.alive, `war raids ground ${b.name} down to 3 and it collapsed (${raids} raids)`);
+}
+
+section("Razing: aggressive raiders may burn a base instead of keeping it");
+{
+  const { razeChance, baseFate, RAIDS: R } = await import("../src/sim/factions.js");
+  const st = world();
+  const fs = st.factions.filter((x) => x.alive);
+  const raider = fs[0], peaceful = fs[1];
+  raider.type = "raider"; peaceful.type = "commune";
+  const t = nearFree(st, raider.bases[0], 2, 5);
+  check(razeChance(st, peaceful, t) === 0, "peaceful types never raze");
+  const near = razeChance(st, raider, t);
+  raider.grudge = 4;
+  const angry = razeChance(st, raider, t);
+  const farT = st.tiles.find((x) => free(st, x.id) && st.grid.distance(x.id, raider.bases[0]) >= 25);
+  const far = farT ? razeChance(st, raider, farT.id) : angry;
+  check(near > 0 && angry > near && far >= angry, `raiders: ${(near * 100).toFixed(0)}% next door, ${(angry * 100).toFixed(0)}% with a grudge, ${(far * 100).toFixed(0)}% far from their bases`);
+  raider.grudge = 0;
+  let fates = { raze: 0, keep: 0, leave: 0 };
+  for (let i = 0; i < 400; i++) fates[baseFate(st, raider, t)]++;
+  check(fates.raze > 0 && fates.keep > 0 && fates.leave > 0, `fates over 400 rolls: ${JSON.stringify(fates)}`);
+  // Your outpost razed.
+  let razed = 0, first = null;
+  for (let i = 0; i < 16 && !first; i++) {
+    const s = world(seed + 40 + i);
+    const f = s.factions.find((x) => x.alive);
+    f.type = "raider"; f.pop = 40; f.goodwill = -90; f.grudge = 8;
+    const tt = s.tiles.find((x) => free(s, x.id) && s.grid.distance(x.id, f.bases[0]) >= 20 && s.grid.distance(x.id, hub(s).tile) <= 12 && planPath(s, hub(s).tile, x.id, false));
+    if (!tt) continue;
+    const o = outpost(s, tt.id, 2);
+    for (let k = 0; k < 3; k++) addBuilding(o, k ? "bunkhouse" : "walls");
+    const raid = { id: newId(), owner: f.id, kind: "raid", path: [tt.id], idx: 0, strength: 300, siegeHours: 8, target: { kind: "player", baseId: o.id, tile: tt.id } };
+    s.parties.push(raid);
+    const r = resolveRaidOnPlayer(s, raid);
+    if (r && r.outcome === "razed") { razed++; first = { s, o, tt, f }; }
+  }
+  check(!!first, `an outpost overrun by angry raiders far from home is razed (${razed} in the tries)`);
+  if (first) {
+    const { s, o, tt } = first;
+    check(!s.bases.includes(o) && !C.occupiedAt(s, tt.id) && !s.factions.some((x) => x.bases.includes(tt.id)), "the base is gone: not yours, not theirs");
+    check(!!s.tiles[tt.id].ruin && s.tiles[tt.id].loot > 0.1, "the tile is a ruin with a little to scavenge");
+    check(s.parties.some((p) => p.owner === "player" && p.teamMission === "retreat"), "its people walk to the hub");
+    check(s.cards.some((c) => / burned$/.test(c.title)), "a card says it burned");
+    const { outpostScrap } = await import("../src/sim/parties.js");
+    check(outpostScrap(s, tt.id) === 5, "a new outpost on the ruins needs 5 scrap");
+    const UI = await import("../src/ui/ui.js");
+    check(/Ruins: /.test(UI.renderRight(s, { started: true, selected: tt.id, tab: "bases" })), "the tile panel shows the ruins");
+    const l = deserializeState(JSON.parse(JSON.stringify(serializeState(s, { dropCards: true }))));
+    check(!!l.tiles[tt.id].ruin, "save/load keeps the ruin");
+  }
+  // The hub razed: the nearest base becomes the hub.
+  const s2 = world();
+  const h2 = hub(s2);
+  const o2 = outpost(s2, nearFree(s2, h2.tile, 4, 8), 2);
+  C.razePlayerBase(s2, h2, s2.factions.find((x) => x.alive));
+  check(hub(s2) === o2 && !!s2.tiles[h2.tile].ruin, `the hub burned: ${o2.name} is the hub, the old one a ruin`);
+  // Between groups: a raid that razes leaves a ruin nobody holds.
+  const s3 = world();
+  const [a3, b3] = s3.factions.filter((x) => x.alive);
+  a3.type = "raider"; a3.pop = 60; a3.grudge = 8;
+  const extra = nearFree(s3, b3.bases[0], 2, 5);
+  b3.bases.push(extra);
+  for (let i = 0; i < 60 && b3.bases.includes(extra); i++) { b3.pop = 20; resolveRaidOnFaction(s3, { owner: a3.id, strength: 300, target: { kind: "faction", factionId: b3.id, tile: extra } }, []); }
+  check(!b3.bases.includes(extra), "a crushing raid takes the base from them");
+  check((s3.stats.razedGroups || 0) + (a3.bases.includes(extra) ? 1 : 0) + (s3.stats.abandonedBases || 0) >= 1, `kept, razed or abandoned (razed ${s3.stats.razedGroups || 0})`);
+  // The warning card names the risk.
+  const s4 = world();
+  const f4 = s4.factions.find((x) => x.alive);
+  f4.type = "raider"; f4.grudge = 8; f4.goodwill = -90;
+  const t4 = nearFree(s4, hub(s4).tile, 4, 8);
+  const o4 = outpost(s4, t4, 2);
+  const r4 = { id: newId(), owner: f4.id, kind: "raid", path: [t4], idx: 0, strength: 40, target: { kind: "player", baseId: o4.id, tile: t4 } };
+  s4.parties.push(r4);
+  const { raidWarning } = await import("../src/sim/factions.js");
+  raidWarning(s4, r4);
+  const wc = s4.cards.find((c) => /^Raiders heading for/.test(c.title));
+  check(wc && /burn what they cannot hold/.test(wc.text), "the raid warning says this gang burns what it cannot hold");
 }
 
 section("Raids that keep bases: between groups, and yours");

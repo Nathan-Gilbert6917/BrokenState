@@ -374,6 +374,8 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 // ---------- launching player expeditions ----------
 // Missions after which the team waits at the destination (or stays for good): no way back is planned.
 export const STAY_MISSIONS = ["move", "recon", "outpost"];
+// Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
+export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
@@ -810,7 +812,8 @@ export function orderOptions(state, p) {
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
   if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
-    add("outpost", scrap < 15 ? `Needs 15 scrap carried (have ${Math.floor(scrap)})` : null);
+    const need = outpostScrap(state, tile);
+    add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
   }
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
@@ -996,9 +999,10 @@ function arrive(state, p) {
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
-      if (t.terrain === "water" || blocked || scrap < 15) {
+      const need = outpostScrap(state, p.dest);
+      if (t.terrain === "water" || blocked || scrap < need) {
         awaitOrders(state, p, t.terrain === "water" ? "An outpost cannot be built on water or on a bridge." : mine ? "You already have a base here." :
-          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : `The team does not have the 15 scrap needed to build (it carries ${Math.floor(scrap)}).`, { failed: true });
+          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).`, { failed: true });
         return "";
       }
       const base = {
@@ -1006,7 +1010,8 @@ function arrive(state, p) {
         stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
         radio: false, watchtower: false, buildings: [], construction: [], armory: [],
       };
-      takeSupply(p, "scrap", 15);
+      takeSupply(p, "scrap", need);
+      if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       addStock(base, p.supplies);
       addStock(base, p.cargo.supplies);
       base.armory.push(...p.cargo.gear);
