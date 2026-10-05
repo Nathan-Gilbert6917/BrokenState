@@ -341,6 +341,21 @@ UI scale (75–200%) is in the top-right. Map shortcuts do nothing while a windo
 
 Windows and panels (`src/ui/layout.js` rules, `src/ui/windows.js` on the page): a folded panel gives the map its room (the canvas is measured again and the camera kept on the same land; one redraw). A folded panel opens by itself when you pick something it shows: a tile, site, base or team on the map, a team or tile from a list, an alert or a log link open the right panel; a tab key (B P G T) the left one; a new urgent (red) alert opens folded alerts, except in map-only mode. The log never opens for a new line. *Auto-open panels on select* in Options switches this off. Folded panels, panel widths and each kind of window's size and place are remembered in this browser (Options → *Reset window sizes* puts them back); window sizes are kept in rem, so they follow the UI size, and are clamped to the screen. Help → *Windows and panels* lists all of this.
 
+## Hardcore mode
+
+Chosen on the new-run screen (**Mode**: Normal or Hardcore; `src/sim/hardcore.js`, which dispatches to one module per part). A normal game is unchanged: the same seed builds the same world and plays the same run. A save remembers its mode (the save list and the menu's *This game* line say which); a save without one is Normal.
+
+- **The timeline:** Hardcore day 1 is the day the State of Calder falls; the normal game begins 6–12 months later, when people have built their hubs.
+- **You** (`src/sim/hardcore-start.js`, numbers in `HC_START`): three survivors on the road, no hub, no vehicle. They spawn on open land (no site on the tile), away from the outbreak's origin and hives (14+ and 8+ tiles), the cities (6+ from a centre, never next to a city tile), the military sites and the other groups, out of the map's outer fifth, with a town within 8 tiles or 3+ sites within 6 (relaxed a step when no tile qualifies). New-run crew edits apply to the three (the leader too; a leader picked from the normal crew's last three falls back to the first). What each grabbed as they fled is rolled: half fled with a bag (a school backpack, a sling bag, now and then a hiking pack) holding 2–5 things (a flashlight, a bandage kit, chocolate, a novel, toilet paper, batteries, a bottle, now and then binoculars or a water filter); the others with only their clothes and 0–4 small things in their pockets (a phone, lighters, family photos, a flashlight, candy, cigarettes). A weapon from the house for about 65% with a bag and 40% without (mostly a kitchen knife or a bat; a crowbar, a pistol, a machete, now and then a revolver or a hunting rifle), a gun with a few rounds (3–12). Food and water: 1–3 days for the three (3–9 of each), a bag holds more; maybe a bottle of pills; no fuel, scrap or parts. The run opens on the team's orders card, which says what each grabbed. You are with the team: it always takes orders and you see live around it (as if in radio contact), and the map centres on it. People met on the road can join it.
+- **The first hub:** *Build outpost* becomes **Found your hub here**, which needs **25 scrap, 3 parts, 10 food and 10 water** carried by the team (the scrap and parts are used up; the food, the water and everything else the team carries become its stores). The order is always offered on land; until the team has it all it is greyed out with what is still missing. The base it founds is the hub ("… Holdout"), bare: no buildings, no truck, starting jobs by skill as a normal start. A card marks the day. Losing that hub later is the normal game's exile (any new base takes the usual 15 scrap). Before the hub exists the top bar shows the team's food, water, scrap, parts, ammo and meds and what the hub still needs; the Bases tab has a *Your first hub* card (a checklist, days of food and water, the best spots within 4 tiles: water beside or near, sites around, few of the dead); the Goals card starts with *First: found your hub*; the alerts warn when the team's water or food runs under a day and a half and keep the hub's missing materials up; the tile panel measures the walk from the team and rates the tile as a hub site; the planner says there is no hub to send from.
+- **Autopilot** (`src/sim/autopilot.js` hcRoadAct): on the road it searches the best known sites nearby for what it lacks (water and food first when under two days, then scrap and parts), fetches water at a river or lake when short, rests when someone is badly hurt, leaves behind what it does not need, takes in people it meets while its food lasts, and founds the hub at the best spot within 4 tiles once it carries everything (plus 2 food each if it can). While the hub has four or fewer people one person minds it, the leader goes out too, and a trip leaves the hub a day of food each and takes the rest. A 20-game sample (Balanced, seeds 1000–1133) founded a hub in 19 games, by day 2–11 (median day 3); 19 of 20 still had people alive on day 35.
+- **The outbreak** (`src/sim/hardcore-outbreak.js`):
+  - TODO (coordinator): one or two hives at the start, infection 0% away from the outbreak areas, the spread through the first year (towns and cities first), the era offset.
+- **The other groups** (`src/sim/hardcore-groups.js`):
+  - TODO (coordinator): bands that found their hubs, what each kind starts with, the military's stand and its fall, when raiders appear (`state.hardcore.raidersFrom`).
+
+`node tools/hcstarttest.js [games]` checks the start: the spawn rules on 12 seeds, the gear rolls (bags and pockets, valid items in valid places, varied), the low supplies, founding refused without the materials and the hub it makes, the hubless views (top bar, the four tabs, tile panel, team panel, cards, planner, diary, roster, alerts, settings, the new-run screen in both modes) clean before and after two weeks on the road, saves before and after founding, and the autopilot founding a hub (default 8 games). `node tools/hardcoresmoke.js` creates a normal and a hardcore world and runs five days.
+
 ## What is in it
 
 - **Procedural State of Calder** (64 × 42 hexes on a Normal map, `src/sim/mapgen.js`): terrain, 3–4 rivers, roads, an outbreak origin with infestation hives (plus a second hot spot in the other city), and about 185 sites in four zones. New map per seed.
@@ -502,14 +517,17 @@ src/sim/   pure simulation, no DOM (world, mapgen, parties, supply, factions, ho
            survey = the Survey mission (routes, odds, the planner's word) and rumours, optics = binoculars, scopes and the telescope,
            breakoff = fights by the numbers in rounds and the "Retreat if it goes badly" policies (escape by the numbers),
            deploy = a base battle's wall map and the deploy step, interior = its yard and buildings map (the second and third tiers),
-           save = the world to a JSON-safe save and back, versions and migrations)
+           save = the world to a JSON-safe save and back, versions and migrations,
+           hardcore = Hardcore mode's dispatch, hardcore-start = its start on the road and the first hub,
+           hardcore-outbreak = its outbreak, hardcore-groups = its groups)
 src/ui/    map renderer, DOM panels/modals, combat screen, timelapse viewer, diary + log panel, alerts + map keys, roster,
            explore = Repairs tab, blueprints and key ring, locks = the raid panel's Open buttons and padlocks,
            diplomacy = Goals card, Jobs list and the Diplomacy window (jobs, market board, world affairs, coalition),
            settings = the menu (save, load, options) and the autosave, saves = save slots in browser storage, compression, files,
            visitors = the Groups tab's Outsiders section, their alerts and the trade window's merchant buttons,
            work = the Work tab (priority grid, role editor, schedule, crews) and the role drop-down,
-           layout = folded panels, panel widths, window sizes and auto-open (rules), windows = their bars, grips and drags
+           layout = folded panels, panel widths, window sizes and auto-open (rules), windows = their bars, grips and drags,
+           hardcore = Hardcore's panels before the first hub (top bar, first-hub card, alerts, Goals line, tile row)
 src/main.js  game loop, input, action dispatcher
 tools/     headless balance scripts
 ```

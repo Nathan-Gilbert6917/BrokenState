@@ -17,7 +17,7 @@ import { log, day, hourOfDay, hub, alive, atBase, skill, combatPower, gearEffect
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
-  STANCES, paceOpts, modeSpeed, partyPace,
+  STANCES, paceOpts, modeSpeed, partyPace, poolLoad, missionProblem, carried, takeSupply, weighTeam,
 } from "./parties.js";
 import { startOrder, resumeQueue, besideWater } from "./orders.js";
 import { estimatePlan } from "./plans.js";
@@ -41,7 +41,7 @@ import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
-import { ensureInv, armorMult } from "./inventory.js";
+import { ensureInv, armorMult, itemLoad } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST } from "./weather.js";
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
@@ -68,6 +68,8 @@ import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
+import { firstHubPending, foundMissing, foundProblem, hubSites, HC_START } from "./hardcore-start.js";
+import { isHardcore } from "./hardcore.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -181,7 +183,13 @@ export function autopilotHour(state) {
   if (g.busy) return; // a tick inside the governor's own work (a raid's hours, for example)
   if (!state.bases.length) { // no base left (conquest.js exiles): the team on the road founds or retakes one
     g.busy = true;
-    try { state.autoCombat = true; resolvePending(state); idleTeams(state); resolvePending(state); } catch (e) { fail(state, e); } finally { g.busy = false; }
+    try {
+      state.autoCombat = true;
+      resolvePending(state);
+      if (firstHubPending(state)) { engagementHour(state); resolvePending(state); } // hardcore: it searches on the way (hcRoadAct)
+      idleTeams(state);
+      resolvePending(state);
+    } catch (e) { fail(state, e); } finally { g.busy = false; }
     return;
   }
   g.busy = true;
@@ -387,6 +395,13 @@ function pickChoice(state, card, opts, p) {
   // by the score each choice carries.
   // Fighters who gave up a base you took (conquest.js): to the hub, not the base they lost.
   if (card.recruit && card.recruit.source === "conquest") { const h = hub(state); const n = card.recruit.candidates.filter((s) => s.pending).length || 1; return (h && roomFor(state, n) ? opts.find((c) => c.kind === "send" && c.sendTo === h.id) : null) || opts.find((c) => c.kind === "away") || null; }
+  // Hardcore, on the road to the first hub: anyone who asks comes along while the team's food and water would last
+  // everyone two more days and it is under six.
+  if (card.recruit && p && firstHubPending(state)) {
+    const k = card.recruit.candidates.filter((s) => s.pending).length || 1;
+    const take = opts.find((c) => c.kind === "take");
+    return (take && partyMembers(state, p).length + k <= 6 && carriedDays(state, p, k) >= 2 ? take : null) || opts.find((c) => c.kind === "away") || null;
+  }
   if (card.recruit) return autoRecruitPick(state, card, opts, (k) => roomFor(state, k));
   // A group asks you to storm a hive (jobs.js): yes when the war on the hives would take it on.
   if (card.jobId != null) {
@@ -689,7 +704,7 @@ function teamAct(state, p) {
   if (!state.parties.includes(p) || p.phase !== "waiting") return;
   const P = persona(state);
   const home = state.bases.find((b) => b.id === p.homeBaseId) || hub(state);
-  if (!home) return exileAct(state, p);
+  if (!home) return firstHubPending(state) ? hcRoadAct(state, p) : exileAct(state, p); // hardcore: the road to the first hub
   if (p.apCutOff && !planPath(state, partyTile(p), home.tile, false)) return; // across water: waits for you
   // Waiting at a site another team was searching (only one search runs at a time).
   if (p.apResume === "scavenge") {
@@ -1770,8 +1785,11 @@ function planTrip(state) {
   const hz = P.reserves ? hordeThreat(state, h) : null;
   if (hz && hz.size && !holdCheck(state, h, hz.size, hz.bosses, hz.mix).holds) return;
   const hordeNear = hz && (hz.size > 0 || (h.hordeAlert && state.hour < h.hordeAlert));
-  const keep = Math.max(2, Math.ceil(home.length * P.homeFrac), hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9));
+  // Hardcore, a hub of four or fewer (the first weeks after founding, hardcore-start.js): one person minds it and the
+  // leader goes out too, or nobody brings food in.
+  const small = smallHub(state, home);
+  const keep = Math.max(small ? 1 : 2, Math.ceil(home.length * (small ? 0.25 : P.homeFrac)), hordeNear ? Math.min(home.length, P.homeHorde) : 0);
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small));
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);
@@ -2302,6 +2320,157 @@ function exileAct(state, p) {
   p.apExileWait = (p.apExileWait || 0) + 1; // nothing it can do yet: it holds (supplies drain)
 }
 
+// ---------- hardcore: the road before the first hub (hardcore-start.js) ----------
+// The team scavenges what it lacks nearby (water and food first when they run low, then what the first hub takes),
+// fetches water at a river when it is short and one is close, rests when someone is badly hurt, and once it carries
+// everything founds the hub at the best spot within a few tiles (hubSites: water, sites around, few of the dead).
+// ROAD: reach = tiles it looks for sites in (wider when nothing is near); low = days of food or water that make
+// them urgent; heal = health under which it camps; fetch = water it fills up to at a river (beyond the hub's 10).
+const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8 };
+const roadDays = (state, p, k) => {
+  const n = Math.max(1, partyMembers(state, p).length);
+  const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
+  return k === "water" ? have("water") / (n * thirstAt(state)) : (have("food") + have("preserved")) / n;
+};
+// Food it brings to the new hub: what founding takes plus two days each, so there is time to send the first trips.
+const roadFoodGoal = (state, p) => HC_START.FOUND.food + 2 * partyMembers(state, p).length;
+const roadFood = (p) => (p.supplies.food || 0) + (p.supplies.preserved || 0) + ((p.cargo && (p.cargo.supplies.food || 0) + (p.cargo.supplies.preserved || 0)) || 0);
+function roadNeeds(state, p) {
+  const miss = Object.fromEntries(foundMissing(state, p).map((m) => [m.key, m.short]));
+  if (roadFood(p) < roadFoodGoal(state, p)) miss.food = roadFoodGoal(state, p) - roadFood(p);
+  const wLow = roadDays(state, p, "water") < ROAD.low, fLow = roadDays(state, p, "food") < ROAD.low;
+  return {
+    water: wLow ? 3 : miss.water ? 1.4 : 0.25, food: fLow ? 3 : miss.food ? 1.4 : 0.3, preserved: fLow ? 3 : miss.food ? 1.4 : 0.3,
+    scrap: miss.scrap ? (wLow || fLow ? 0.8 : 2) : 0.1, parts: miss.parts ? (wLow || fLow ? 1 : 2.6) : 0.2,
+    meds: 0.6, ammo: 0.5, fuel: 0.05, jars: 0,
+  };
+}
+function hcRoadAct(state, p) {
+  const P = persona(state);
+  const g = state.grid;
+  const here = partyTile(p);
+  const members = partyMembers(state, p);
+  if (!members.length) return;
+  delete p.haulCap; // a water run's limit (below) ends with it
+  roadKit(state, p);
+  // Everything carried: found the hub, here or at the best spot close by.
+  // The food beyond what founding takes is a wish: after three more tries, or with someone hurt, it settles anyway.
+  const canFound = !foundMissing(state, p).length;
+  p.apRoadExtra = canFound ? (p.apRoadExtra || 0) + 1 : 0;
+  if (canFound && (roadFood(p) >= roadFoodGoal(state, p) || p.apRoadExtra > 3 || members.some((s) => s.health < 70))) {
+    const sites = hubSites(state, here, ROAD.foundReach).filter((s) => s.id === here || planPath(state, here, s.id, false));
+    const best = sites[0];
+    const atHere = sites.find((s) => s.id === here);
+    if (!best || (atHere && atHere.sc >= best.sc - 0.5)) {
+      if (!foundProblem(state, p, here)) { say(state, `${teamName(state, p)} has what the first hub takes: it settles at ${tileLabel(state, here)}.`, "good"); giveOrder(state, p, "outpost"); return; }
+    } else {
+      orderMove(state, p, best.id);
+      p.orders = [{ type: "mission", mission: "outpost" }];
+      say(state, `${teamName(state, p)} has what the first hub takes: it heads for ${tileLabel(state, best.id)} to settle there.`, "good");
+      return;
+    }
+  }
+  const wDays = roadDays(state, p, "water"), fDays = roadDays(state, p, "food");
+  // Badly hurt and fed: rest a while.
+  if (members.some((s) => s.health < ROAD.heal) && wDays >= 1 && fDays >= 1) {
+    startOrder(state, p, { type: "camp", hours: ROAD.campHours });
+    return;
+  }
+  // Short of water beside a river or lake: fill up (to the hub's need plus a few days, not a crushing load).
+  const n = members.length;
+  const wantWater = Math.ceil(HC_START.FOUND.water + n * ROAD.low * thirstAt(state) + (foundMissing(state, p).length ? ROAD.fetchExtra : 0));
+  const haveWater = (p.supplies.water || 0) + (p.cargo.supplies.water || 0);
+  if (besideWater(state, here) && (wDays < ROAD.low + 1 || haveWater < HC_START.FOUND.water) && haveWater < wantWater - 3) {
+    p.haulCap = Math.max(0, poolLoad(p)) + (wantWater - haveWater) * SUPPLIES.water.weight;
+    startOrder(state, p, { type: "water" });
+    return;
+  }
+  // The best site to search: what the team lacks, by what it knows, nearer is better; wider when nothing is close.
+  const need = roadNeeds(state, p);
+  const urgentWater = wDays < ROAD.low;
+  let best = null;
+  for (const reach of [ROAD.reach, ROAD.wide]) {
+    for (const id of g.within(here, reach)) {
+      const t = state.tiles[id];
+      if (t.hive || g.within(id, 1).some((x) => state.tiles[x].hive)) continue;
+      let value = 0;
+      const s = siteScore(state, id, need, P);
+      if (s && orderable(state, id)) value = s.value;
+      // A riverbank when water is short: a sure refill.
+      if (urgentWater && besideWater(state, id)) value = Math.max(value, wDays < 1 ? 3 : 1.8);
+      if (value <= 0.05) continue;
+      const res = id === here ? { cost: 0 } : planPath(state, here, id, false);
+      if (!res) continue;
+      const score = value / (1 + res.cost / 8);
+      if (!best || score > best.score) best = { id, score, value, water: urgentWater && besideWater(state, id) && (!s || s.value < value) };
+    }
+    if (best) break;
+  }
+  if (!best) {
+    // Nothing known worth it: look farther around (a survey finds hidden places), or rest a night.
+    if (!p.apRoadSurvey || state.hour - p.apRoadSurvey > 48) { p.apRoadSurvey = state.hour; startOrder(state, p, { type: "sweep", radius: 3, hours: 12 }); return; }
+    startOrder(state, p, { type: "camp", hours: ROAD.campHours });
+    return;
+  }
+  if (best.id === here) {
+    if (best.water) { p.haulCap = poolLoad(p) + Math.max(4, wantWater - haveWater) * SUPPLIES.water.weight; startOrder(state, p, { type: "water" }); return; }
+    if (state.engagement) { startOrder(state, p, { type: "wait", hours: 2 }); return; }
+    if (!orderOptions(state, p).some((o) => o.mission === "scavenge" && !o.disabled)) {
+      // Picked clean (the team sees it now): remembered, and the next best site is chosen.
+      gov(state).visited[here] = { day: day(state), hour: state.hour, loot: 0 };
+      if ((p.apRoadRetry = (p.apRoadRetry || 0) + 1) <= 3) return hcRoadAct(state, p);
+      p.apRoadRetry = 0;
+      startOrder(state, p, { type: "camp", hours: 4 });
+      return;
+    }
+    p.apRoadRetry = 0;
+    startOrder(state, p, { type: "mission", mission: "scavenge" });
+    return;
+  }
+  const msg = orderMove(state, p, best.id);
+  if (p.phase !== "out") { say(state, `${teamName(state, p)}: ${msg}`); startOrder(state, p, { type: "camp", hours: 4 }); return; }
+  p.orders = [best.water ? { type: "water" } : { type: "mission", mission: "scavenge" }];
+  if (best.water) p.haulCap = poolLoad(p) + Math.max(4, wantWater - haveWater) * SUPPLIES.water.weight; // fill only what it needs
+}
+// Before each decision on the road: found packs and weapons go on whoever has none (a pack carries more), and what
+// the team carries beyond the hub's needs is left behind (spare parts, scrap, ammo, fuel and heavy oddments), so there
+// is room for what it still lacks. Supplies only: found items it keeps unless they are heavy and cheap.
+const ROAD_KEEP = { parts: 2, scrap: 6, ammo: 80, fuel: 2, jars: 0 };
+function roadKit(state, p) {
+  const members = partyMembers(state, p);
+  for (const it of [...p.cargo.gear]) {
+    const slot = slotOf(it.key);
+    const who = (slot === "backpack" || slot === "weapon") && members.find((s) => !s.gear[slot] && (slot !== "weapon" || gearEffect(s, it).usable));
+    if (!who) continue;
+    who.gear[slot] = it;
+    p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
+  }
+  const need = HC_START.FOUND;
+  const left = [];
+  for (const [k, extra] of Object.entries(ROAD_KEEP)) {
+    const keep = (need[k] || 0) + extra;
+    const over = Math.floor(carried(p, k) - keep);
+    if (over <= 0) continue;
+    const took = takeSupply(p, k, over);
+    if (took >= 1) left.push(`${took} ${k}`);
+  }
+  const room = partyCapacity(state, p);
+  if (poolLoad(p) > room * 0.7) {
+    for (const it of [...p.cargo.gear].sort((a, b) => (GEAR[a.key]?.value || 0) / itemLoad(a) - (GEAR[b.key]?.value || 0) / itemLoad(b))) {
+      if (poolLoad(p) <= room * 0.7) break;
+      if (itemLoad(it) < 1.5 || (GEAR[it.key]?.value || 0) / itemLoad(it) >= 8) continue;
+      p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
+      left.push(it.name.toLowerCase());
+    }
+  }
+  if (left.length) say(state, `${teamName(state, p)} leaves behind what it does not need on the road: ${left.join(", ")}.`);
+  weighTeam(state, p);
+}
+// Hardcore's first hub while it is small (four or fewer at home): trips take more of it (planTrip, launchTrip).
+const smallHub = (state, home) => isHardcore(state) && home.length <= 4;
+// A site the team can be ordered to search (not water, not a place a group holds).
+const orderable = (state, id) => !missionProblem(state, id, "scavenge");
+
 const captivesAt = (state, factionId) => allCaptives(state).filter((s) => s.location.factionId === factionId).length;
 
 function needText(need, t) {
@@ -2479,7 +2648,11 @@ function launchTrip(state, c, pool, spareHands) {
     if ((c.reach || 1) > 1) { sup.food = Math.ceil(sup.food * 1.25); sup.water = Math.ceil(sup.water * 1.25); }
     sup.ammo = Math.min(sup.ammo, Math.max(6 * n, stock("ammo") - reserveStatus(state, h).ammo.target));
   }
-  if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
+  if (smallHub(state, atBase(state, h.id))) {
+    // Hardcore's small first hub: a day for each left home, the team takes the rest and lives off what it finds (a
+    // hungry hub that sends nobody out starves before its first harvest).
+    for (const k of ["food", "water"]) sup[k] = Math.max(0, Math.min(sup[k], stock(k) - Math.max(0, homeLeft)));
+  } else if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
   const cap = carryCapacity(state, crew, plannedV);

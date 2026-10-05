@@ -43,6 +43,7 @@ import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
 import { PRISON_ACTIONS } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
+import { playerTile } from "./sim/hardcore-start.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
@@ -82,7 +83,7 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, crewEdited: false, ...freshUi() };
+const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, mode: "normal", crewEdited: false, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -132,7 +133,7 @@ if (typeof ResizeObserver !== "undefined") {
     if (Math.round(r.width * d) !== canvas.width || Math.round(r.height * d) !== canvas.height) resize();
   }).observe(canvas);
 }
-centerOn(state, hub(state).tile);
+centerOn(state, playerTile(state));
 
 // ---------- loop ----------
 let last = performance.now();
@@ -460,6 +461,7 @@ function armDiff(before) {
 // ---------- actions ----------
 function autofill(pl) {
   const h = hub(state);
+  if (!h) return; // no base to send a team from (the planner says so): exiles, hardcore before its first hub
   const ids = [...pl.crew];
   const v = plannerVehicle(state, pl);
   // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
@@ -769,8 +771,9 @@ const actions = {
     ui.nrMsg = "";
     state.started = true;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
-    centerOn(state, hub(state).tile);
-    log(state, `${state.survivors.find((s) => s.leader).name} leads the group.`, "info");
+    centerOn(state, playerTile(state));
+    const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
+    if (lead) log(state, `${lead.name} leads the group.`, "info");
   },
   restart: () => newWorld(randomSeed()),
   // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
@@ -912,6 +915,8 @@ const changeActions = {
   factioncount: (el) => { ui.factionCount = clampGroups(ui.worldSize, el.value); newWorld(state.seed, true); },
   // A new world size: the same seed on the new map, with that size's usual number of groups (sim/worldsize.js).
   worldsize: (el) => { ui.worldSize = sizeDef(el.value).key; ui.factionCount = sizeDef(ui.worldSize).defGroups; newWorld(state.seed, true); },
+  // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore).
+  gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -949,14 +954,14 @@ function newWorld(seed, keepCrew = false) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, mode: ui.mode });
   resetView();
   hideCtx();
   hideTip();
   $("tooltip").classList.add("hidden");
   acc = 0;
   fpsLog.length = 0;
-  centerOn(state, hub(state).tile);
+  centerOn(state, playerTile(state));
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -965,6 +970,8 @@ function adopt(st, entry) {
   Object.assign(ui, freshUi());
   ui.crewEdited = false;
   state = st;
+  if (!state.mode) state.mode = "normal"; // saves from before the modes
+  ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.started = true;
   ui.speed = 0;
   ui.slot = entry ? entry.id : null;
@@ -975,8 +982,7 @@ function adopt(st, entry) {
   $("tooltip").classList.add("hidden");
   acc = 0;
   fpsLog.length = 0;
-  const h = hub(state);
-  centerOn(state, h ? h.tile : state.bases[0].tile);
+  centerOn(state, playerTile(state)); // the hub, else the team on the road (hardcore before its first hub)
   dirtyNow = true;
 }
 
@@ -1384,7 +1390,7 @@ window.addEventListener("keydown", (e) => {
   } else if (["Digit1", "Digit2", "Digit3", "Digit4"].includes(e.code)) {
     ui.speed = [0.5, 1, 2, 3][Number(e.code.slice(5)) - 1];
     ui.lastSpeed = ui.speed;
-  } else if (e.code === "KeyH") centerOn(state, hub(state).tile);
+  } else if (e.code === "KeyH") centerOn(state, playerTile(state));
   else if (e.code === "Backquote") ui.dev = !ui.dev;
   else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {

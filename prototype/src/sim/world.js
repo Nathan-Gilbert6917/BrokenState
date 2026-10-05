@@ -226,6 +226,7 @@ export function applyCrew(state, crew) {
 const START_ROLES = [["farm", "farming"], ["farm", "farming"], ["scavenge", "scavenging"], ["guard", "shooting"], ["build", "mechanics"]];
 export function assignStartingRoles(state) {
   const h = hub(state);
+  if (!h) return; // hardcore: no hub yet (hardcore-start.js), the survivors are a team on the road
   const pool = atBase(state, h.id);
   for (const s of pool) { s.role = "farm"; s.station = null; }
   for (const [role, key] of START_ROLES) {

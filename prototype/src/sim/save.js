@@ -60,6 +60,7 @@ export function saveMeta(state) {
     day: day(state), hour: state.hour % 24, hub: h ? h.name : "", survivors: alive(state).length,
     seed: state.seed, groups: (state.factions || []).length, gameOver: !!state.gameOver, victory: !!state.victory,
     autopilot: !!state.autopilot, world: worldSizeOf(state), // "world", not "size": the save list keeps the byte size under that key (ui/saves.js)
+    mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
   };
 }
 
@@ -103,6 +104,7 @@ export function deserializeState(save) {
   setNextId(Number(s.nextId));
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state);
+  if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   return state;
 }
