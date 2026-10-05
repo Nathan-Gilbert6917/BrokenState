@@ -57,6 +57,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
+import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -1477,12 +1478,21 @@ export function combatAct(state, act) {
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
       if (!box || !nearBox(u, box) || (box.searched && !(act.open && box.contents))) return "Move next to something to search first.";
       if (box.lock && !box.lock.open) return lockedMsg(box); // locks.js
+      // quick: a rummage (search.js): no action, a share of what is inside, noise. Else a full search: 1 action
+      // (by day or in the dark), everything shows, a rummaged container's hidden rest too.
+      if (act.quick) {
+        const why = quickRefusal(b, u, box);
+        if (why) return why;
+        searchBox(state, b, u, box, !!act.open, true);
+        break;
+      }
       // open: the player's search window (ui/inventory.js) moves things by hand. A container already gone through
-      // opens again for free; the first look costs the action (both in the dark without a light, stealth.js).
-      if (act.open && box.contents) return "";
+      // opens again for free.
+      const fresh = !box.contents || box.quick;
+      if (act.open && !fresh) return "";
       // Bots and tests: a container already opened is a free look; what they take costs hauling time (raidloot.js).
-      if (!box.contents) {
-        if (u.ap < searchCost(b, u)) return "Too dark: searching without a flashlight takes both actions.";
+      if (fresh) {
+        if (u.ap < searchCost(b, u)) return "No actions left this turn.";
         u.ap -= searchCost(b, u);
       }
       searchBox(state, b, u, box, !!act.open);
@@ -2879,7 +2889,8 @@ function spawnWave(b, n) {
 }
 
 // open: the player looks inside (the search window does the taking); else what fits is taken at once (bots, tests).
-function searchBox(state, b, u, box, open = false) {
+// quick: a rummage (search.js): part of what is inside shows, the rest stays hidden, and it is heard.
+function searchBox(state, b, u, box, open = false, quick = false) {
   const rng = state.rng;
   const R = b.raid;
   const s = survivorById(state, u.sid);
@@ -2931,19 +2942,29 @@ function searchBox(state, b, u, box, open = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     box.contents = { sup, gear };
   }
+  // search.js: a rummage hides part of it (and is heard); a full search brings out what a rummage missed.
+  const name = box.kind === "body" ? box.label : box.label.toLowerCase();
+  let more = 0;
+  if (quick) {
+    hideSome(rng, box);
+    const came = quickNoise(b, u, box);
+    say(b, `${u.name} rummages through the ${name} in a hurry (Heat +${SEARCH.quick.heat})${came ? `: ${came} nearby hear${came === 1 ? "s" : ""} it` : ""}.`, came ? "danger" : "info");
+  } else if (box.hidden || box.quick) more = revealHidden(box);
   if (open) {
     const n = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
-    if (!n) { box.searched = true; box.partial = false; }
-    say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${n ? `${n} thing${n === 1 ? "" : "s"} inside` : "nothing useful"}.`, n ? "good" : "info");
-    if (!n) fx(b, { type: "loot", to: [box.x, box.y], text: "empty" });
+    if (!n && !box.quick) { box.searched = true; box.partial = false; }
+    if (quick) say(b, `${n ? `${n} thing${n === 1 ? "" : "s"} turn${n === 1 ? "s" : ""} up` : "Nothing turns up"}; a full search may find more.`, n ? "good" : "info");
+    else say(b, `${u.name} searches the ${name}: ${n ? `${n} thing${n === 1 ? "" : "s"} inside${more ? ` (${more} the rummage missed)` : ""}` : "nothing useful"}.`, n ? "good" : "info");
+    if (!n) fx(b, { type: "loot", to: [box.x, box.y], text: quick ? "nothing yet" : "empty" });
     return;
   }
-  // raidloot.js: onto the survivor (pockets, pack, carried) as far as they can carry.
-  const r = party ? autoTake(state, b, u, box) : { got: [], left: box.contents.gear.length };
+  // raidloot.js: onto the survivor (pockets, pack, carried) as far as they can carry. After a rummage the bot takes
+  // only what the free hauling allows (it rummaged to save its actions).
+  const r = party ? (quick ? takeFree(u, () => autoTake(state, b, u, box)) : autoTake(state, b, u, box)) : { got: [], left: box.contents.gear.length };
   const got = r.got;
   const what = got.length ? got.join(", ") : "nothing useful";
-  say(b, `${u.name} searches the ${box.kind === "body" ? box.label : box.label.toLowerCase()}: ${what}.${r.left ? (r.outOfTime ? " Out of time for the rest this turn." : " No room for the rest (left inside).") : ""}`, got.length ? "good" : "info");
-  if (r.left && !r.outOfTime && !(box.skipBy || []).includes(u.id)) (box.skipBy || (box.skipBy = [])).push(u.id); // bots: the rest does not fit on them
+  say(b, `${u.name} ${quick ? "grabs" : `searches the ${name}:`} ${what}.${r.left ? (r.outOfTime || quick ? " Out of time for the rest this turn." : " No room for the rest (left inside).") : ""}`, got.length ? "good" : "info");
+  if (r.left && !r.outOfTime && !quick && !(box.skipBy || []).includes(u.id)) (box.skipBy || (box.skipBy = [])).push(u.id); // bots: the rest does not fit on them
   fx(b, { type: "loot", to: [box.x, box.y], text: got.length ? `+${got.length > 1 ? got.length + " items" : got[0]}` : "empty" });
 }
 
@@ -3049,7 +3070,17 @@ function autoRaidTurn(state) {
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
       const lockAct = !leave ? autoLock(state, b, u) : null; // locks.js: key, picks or force, by the odds and the Heat
       if (lockAct && !combatAct(state, lockAct)) continue;
-      const nearBoxes = searchableNear(b, u).filter(todo);
+      // search.js: pressed for time (Heat up, an aware enemy close, on the way out), rummage through what is right
+      // here (no action, loud, part of it), grab what is free to haul and move on; else search in full.
+      const pressed = botPressed(b, u, leave);
+      if (pressed && !full && !unload && u.quickTurn !== b.turn) {
+        const q = quickable(searchableNear(b, u).filter(todo))[0];
+        if (q && !combatAct(state, { type: "search", unit: u.id, box: q.id, quick: true })) continue;
+      }
+      // Pressed: leave the rummaged ones for a calmer moment (a full search there costs the action it saved), unless
+      // nothing else is left to go to.
+      const skipQuick = pressed && R.containers.some((c) => todo(c) && !c.quick);
+      const nearBoxes = searchableNear(b, u).filter(todo).filter((c) => !skipQuick || !c.quick);
       if (!leave && !unload && nearBoxes.length && (nearBoxes[0].contents || u.ap >= searchCost(b, u))) {
         if (combatAct(state, { type: "search", unit: u.id, box: nearBoxes[0].id })) u.ap = 0;
         continue;
@@ -3065,7 +3096,7 @@ function autoRaidTurn(state) {
         for (const zz of zs) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
       } else {
         targets = [];
-        for (const c of R.containers) if (todo(c)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
+        for (const c of R.containers) if (todo(c) && !(skipQuick && c.quick)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
         targets.push(...lockTargets(b)); // locks.js: the doors of a locked room
       }
       if (!targets.length) { u.ap = 0; break; }

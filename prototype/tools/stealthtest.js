@@ -17,6 +17,7 @@ import { newItem, stow } from "../src/sim/inventory.js";
 import {
   STEALTH, TAKEDOWN, THROWABLES, subdueOdds, detectRange, throwablesOf, stealthTurn, spotBodies, searchCost,
 } from "../src/sim/stealth.js";
+import { SEARCH, quickRadius } from "../src/sim/search.js";
 import {
   PRISON, prisonersAt, prisonersWith, capturePrisoners, captiveRecords, questionPrisoner, questionOdds, askRansom, tradeBack,
   releasePrisoner, setMode, executePrisoner, recruitRate, prisonersDaily, prisonersHour, rescueChance, startRescue,
@@ -424,7 +425,9 @@ function prisonWorld(s, n = 2, cells = 1) {
   const rd = detectRange(day0, { ...front }, mover(day0)), rn = detectRange(nite, front, mover(nite)), rl = detectRange(lit, front, mover(lit));
   check(rn < rd && rl === rn + STEALTH.LIGHT_DETECT, `noticed from ${rd} tiles by day, ${rn} at night, ${rl} with a lit flashlight`);
   check(detectRange(day0, { ...front, face: [-1, 0] }, mover(day0)) === Math.ceil(rd * STEALTH.BEHIND_DETECT), `from behind a guard only hears you (${Math.ceil(rd * STEALTH.BEHIND_DETECT)} tiles)`);
-  check(searchCost(nite, me(nite)) === 2 && searchCost(lit, me(lit)) === 1 && searchCost(day0, me(day0)) === 1, "searching in the dark takes both actions; with a flashlight one");
+  // search.js: a full search is 1 action by day or in the dark; the dark makes a quick rummage carry further.
+  check(searchCost(nite, me(nite)) === 1 && searchCost(lit, me(lit)) === 1 && searchCost(day0, me(day0)) === 1, "a full search takes 1 action, in the dark too");
+  check(quickRadius(nite, me(nite)) === SEARCH.quick.radius + SEARCH.quick.dark && quickRadius(lit, me(lit)) === SEARCH.quick.radius && quickRadius(day0, me(day0)) === SEARCH.quick.radius, `a quick rummage is heard ${SEARCH.quick.radius} tiles off, ${SEARCH.quick.radius + SEARCH.quick.dark} fumbling in the dark without a light`);
 }
 
 // 12. Bodies raise the alarm; dragging them out of sight.
