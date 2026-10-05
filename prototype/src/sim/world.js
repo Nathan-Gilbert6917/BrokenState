@@ -48,6 +48,7 @@ import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
+import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily } from "./hardcore.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -64,12 +65,13 @@ export function setNextId(n) {
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map).
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE }) {
+// mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal" }) {
   const rng = new Rng(seed);
   const worldSize = sizeDef(size).key;
   const map = generateMap(rng, worldSize);
   const state = {
-    seed, rng, worldSize,
+    seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -80,6 +82,16 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     gameOver: false, started: false,
     stats: { peopleSaved: 0, raidsRepelled: 0 },
   };
+
+  if (state.mode === "hardcore") {
+    hardcoreCreate(state, { factionCount, crew });
+    ensureHives(state);
+    hardcoreAfterHives(state);
+    updateVision(state);
+    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length} other groups are out there somewhere.`, "info");
+    startChronicle(state);
+    return state;
+  }
 
   // Player hub: a small town far from the outbreak origin, the cities and the National Guard bases, but not off in a
   // corner of the state: within 30 tiles of a city and a few tiles from the map edge.
@@ -586,6 +598,7 @@ export function tickHour(state) {
     factionsDaily(state);
     hordesDaily(state);
     outbreakDaily(state); // outbreak.js: new hives from beyond the border while the outbreak there burns
+    hardcoreDaily(state); // hardcore.js: the first year after the fall (hardcore mode only)
     routesDaily(state);
     supplyDaily(state);
     deathSitesDaily(state);
