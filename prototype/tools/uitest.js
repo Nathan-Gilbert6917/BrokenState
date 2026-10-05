@@ -1160,5 +1160,168 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   R.view.layers = origLayers;
 }
 
+section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, the battle map sizes");
+{
+  const { battles } = await import("./isobattles.js");
+  const ISO = await import("../src/ui/isoview.js");
+  const UI = await import("../src/ui/combat.js");
+  const C = await import("../src/sim/combat.js");
+  const { INTERIOR, interiorSize, wallMapRows } = await import("../src/sim/interior.js");
+  // Stub canvases: every sprite and the ground get a silent context; the battle canvas records its calls (method and
+  // numbers, for the determinism check) and counts NaN / Infinity arguments and property values.
+  let nan = 0, log = [];
+  const silent = () => new Proxy({ createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, {
+    get: (o, k) => (k in o ? o[k] : (...a) => { if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++; }),
+    set: (o, k, v) => { if (typeof v === "number" && !Number.isFinite(v)) nan++; o[k] = v; return true; },
+  });
+  const rec = new Proxy({ measureText: (t) => ({ width: String(t).length * 6 }) }, {
+    get: (o, k) => (k in o ? o[k] : (...a) => {
+      if (a.some((v) => typeof v === "number" && !Number.isFinite(v))) nan++;
+      log.push(`${String(k)}(${a.map((v) => (typeof v === "number" ? Math.round(v * 10) / 10 : typeof v === "string" ? v : "o")).join(",")})`);
+    }),
+    set: (o, k, v) => { if (typeof v === "number" && !Number.isFinite(v)) nan++; o[k] = v; return true; },
+  });
+  const cvs = (w, h) => ({ width: w, height: h, getContext: () => silent(), toDataURL: () => "data:," });
+  const prevDoc = globalThis.document;
+  globalThis.document = { createElement: () => cvs(0, 0), getElementById: () => null };
+  globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
+  window.devicePixelRatio = 1;
+  ISO.setIsoCanvas(cvs);
+  const screen = { clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => rec };
+  UI.initCombatUI(screen);
+  UI.setBattleView("iso");
+  const NOW = 1e9;
+  try {
+    // Every layout: a field encounter (town, forest, city), a raid, a hive assault and a growth, an assault on a walled
+    // base, a base defence on the wall map at night and on the yard map after the fall back, a base without walls.
+    const list = battles(seed);
+    const sizes = Object.fromEntries(list.map(({ name, b }) => [name, `${b.w}×${b.h}`]));
+    check(list.length === 10 && ["field-town", "raid", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
+    check(sizes["field-town"] === `${C.FIELD_W}×${C.FIELD_H}` && C.FIELD_W === 26 && C.FIELD_H === 18 && sizes.hive === "32×22" && sizes.raid === `${C.RAID_W}×${C.RAID_H}` && C.RAID_W === 34, "bigger maps: a field fight 26×18 (was 18×13), a hive assault 32×22, a raid 34×22 (was 28×18)");
+    const wall = list.find((x) => x.name === "base-wall-night"), yard = list.find((x) => x.name === "base-yard");
+    const hb = wall.st.bases[0];
+    check(wall.b.tier.map === "wall" && yard.b.tier.map === "interior" && wall.b.h === yard.b.tier.h0 - INTERIOR.WALL_ROWS && hb && wall.b.h === wallMapRows(hb), `a base with many buildings: the yard map grows to ${yard.b.tier.w0}×${yard.b.tier.h0} to hold them and the wall map is as long (${wall.b.w}×${wall.b.h})`);
+    check(INTERIOR.H_STEPS.includes(interiorSize(null).H) && interiorSize(null).H === INTERIOR.H, "a base with few buildings keeps the usual 26×16 yard and 18×13 wall map");
+    let errs = 0, frames = 0, drawn = 0;
+    for (const { name, st, b } of list) {
+      for (const [rot, zoom] of [[0, 4], [1, 2], [2, 6], [3, 8]]) {
+        try {
+          ISO.iso.battle = null; // a new camera for this battle, then the rotation and zoom to test
+          UI.drawCombat(st, NOW);
+          ISO.iso.rot = rot; ISO.iso.zoom = zoom; ISO.iso.target = null;
+          log = [];
+          UI.drawCombat(st, NOW);
+          frames++;
+          drawn += log.filter((l) => l.startsWith("drawImage")).length >= 2 ? 1 : 0;
+        } catch (e) { if (errs++ < 3) console.log(`  error drawing ${name} (rotation ${rot}, zoom ${zoom}): ${e.stack}`); }
+      }
+    }
+    check(!errs && !nan && frames === list.length * 4 && drawn === frames, `every layout draws at four rotations and zooms without errors (${errs}) or NaN (${nan}), the ground and the blocks drawn (${drawn}/${frames} frames)`);
+    // Deterministic: the same battle made twice (same seed) draws the same calls.
+    const sig = (pair) => { const { st } = pair; ISO.iso.battle = null; UI.drawCombat(st, NOW); log = []; UI.drawCombat(st, NOW); return log.join("|"); };
+    const again = battles(seed);
+    const same = list.filter((x, i) => sig(x) === sig(again[i])).length;
+    check(same === list.length, `the same battle draws the same frame every time (${same}/${list.length})`);
+    // Picking: a tile's top (its standing height) projected to the screen picks it back, in every rotation, at every
+    // height (ground, walkway and roofs 1, towers 2); where something nearer the camera covers that point, the pick is
+    // that nearer cell (never one behind it).
+    let total = 0, exact = 0, wrong = 0, raised = 0, raisedOk = 0;
+    for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid"].includes(x.name))) {
+      for (let rot = 0; rot < 4; rot++) for (const zoom of [2, 6]) {
+        ISO.iso.battle = null; UI.drawCombat(st, NOW);
+        ISO.iso.rot = rot; ISO.iso.zoom = zoom; ISO.iso.target = null;
+        ISO.iso.cx = 0; ISO.iso.cy = (b.w + b.h) * 4; // the middle of the map
+        UI.drawCombat(st, NOW);
+        for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+          if (!C.CELL[b.cells[y * b.w + x].k].walk) continue;
+          const z = C.heightAt(b, x, y) * ISO.LV;
+          const [px, py] = ISO.project(x + 0.5, y + 0.5, z);
+          if (px < 0 || py < 0 || px > 1600 || py > 900) continue;
+          const p = ISO.isoPick(b, px, py, { noUnits: true });
+          total++;
+          if (z) raised++;
+          if (p && p.x === x && p.y === y) { exact++; if (z) raisedOk++; continue; }
+          const [u0, v0] = ISO.toView(x, y, rot, b.w, b.h), [u1, v1] = p ? ISO.toView(p.x, p.y, rot, b.w, b.h) : [-1, -1];
+          if (!p || u1 + v1 <= u0 + v0) { if (wrong++ < 3) console.log(`    ${name} rot ${rot}: (${x},${y}) h${z} picked ${p ? `${p.x},${p.y}` : "nothing"}`); }
+        }
+      }
+    }
+    check(total > 3000 && !wrong && exact / total > 0.8, `screen ↔ tile round trip: ${exact} of ${total} tile tops pick their own tile, the rest a nearer cell in front (${wrong} wrong), 4 rotations × 2 zooms`);
+    check(raised > 50 && raisedOk / raised > 0.8, `raised floors (walkways, towers, roofs, upper floors) pick at their height (${raisedOk}/${raised})`);
+    // A unit's sprite is clickable where it stands up above its tile.
+    const ft = list.find((x) => x.name === "field-town");
+    ISO.iso.battle = null; UI.drawCombat(ft.st, NOW);
+    const me = ft.b.units.find((u) => u.side === "player" && C.active(u));
+    const [mx, my] = ISO.project(me.x + 0.5, me.y + 0.5, C.heightAt(ft.b, me.x, me.y) * ISO.LV + 22);
+    const hit = ISO.isoPick(ft.b, mx, my);
+    check(hit && hit.x === me.x && hit.y === me.y && hit.unit === me.id, "clicking a unit's body picks its tile");
+    // Rotating keeps the middle of the screen where it is; zoom steps stay in range.
+    ISO.iso.zoom = 4;
+    const mid = (b) => ISO.isoPick(b, 800, 450, { noUnits: true });
+    const m0 = mid(ft.b);
+    ISO.isoRotate(ft.b, 1); UI.drawCombat(ft.st, NOW);
+    const m1 = mid(ft.b);
+    ISO.isoRotate(ft.b, -1); UI.drawCombat(ft.st, NOW);
+    check(m0 && m1 && Math.abs(m0.x - m1.x) + Math.abs(m0.y - m1.y) <= 2 && ISO.iso.rot === 0, `turning the view keeps the middle of the screen (${m0 && `${m0.x},${m0.y}`} → ${m1 && `${m1.x},${m1.y}`})`);
+    for (let i = 0; i < 20; i++) ISO.isoZoom(ft.b, 1);
+    const zmax = ISO.iso.zoom;
+    for (let i = 0; i < 20; i++) ISO.isoZoom(ft.b, -1);
+    check(zmax === ISO.ISO_ZOOMS.length - 1 && ISO.iso.zoom === 0 && ISO.ISO_ZOOMS.length >= 7, `${ISO.ISO_ZOOMS.length} zoom steps, clamped at both ends`);
+    // The cutaway: a building with one of your people inside loses its roof and its near walls drop to stubs.
+    const yb = yard.b, inside = yb.units.filter((u) => u.side === "player" && C.active(u) && yb.tier.indoor[u.y * yb.w + u.x]);
+    check(inside.length > 0, `on the yard map after the fall back, ${inside.length} of your people are inside the buildings (the roofs over them cut away)`);
+    // The view toggle: Options, I, the panel's view bar; the top-down view draws as before; the keys are handled.
+    const isoFrames = ISO.iso.frames;
+    UI.setBattleView("top");
+    UI.drawCombat(ft.st, NOW);
+    check(UI.cui.view === "top" && ISO.iso.frames === isoFrames, "Battle view: Top-down draws the flat grid (the isometric renderer is not used)");
+    const key = (code, extra = {}) => UI.combatKey(ft.st, { code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...extra });
+    check(key("KeyI") && UI.cui.view === "iso" && key("KeyI") && UI.cui.view === "top" && key("KeyI") && UI.cui.view === "iso", "I switches isometric / top-down in a battle");
+    const r0 = ISO.iso.rot, z0 = ISO.iso.zoom, roofs0 = ISO.iso.roofs;
+    check(key("Period") && ISO.iso.rot === (r0 + 1) % 4 && key("Comma") && ISO.iso.rot === r0 && key("Equal") && ISO.iso.zoom === Math.min(ISO.ISO_ZOOMS.length - 1, z0 + 1) && key("Minus") && key("KeyB") && ISO.iso.roofs === !roofs0 && key("KeyB") && ISO.iso.roofs === roofs0 && key("KeyV"), ", . turn the view, + − zoom, B roofs, V centers on the selected unit");
+    check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
+    const bar = UI.viewBar();
+    { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    check(["top", "rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: top-down, turn, zoom, center, roofs (main.js handles cb-view)");
+    for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs", "top", "iso"]) UI.combatAction(ft.st, "cb-view", { v });
+    check(UI.cui.view === "iso" && ISO.iso.rot === r0, "the view bar's buttons work");
+    // Mouse: a press that moves pans (no click), one that does not clicks on release; the wheel zooms.
+    ISO.iso.zoom = 4; UI.drawCombat(ft.st, NOW);
+    const cx0 = ISO.iso.cx;
+    UI.combatPress(ft.st, 500, 400, 0); UI.combatMouse(ft.st, 560, 400);
+    const dragged = UI.combatRelease(ft.st, 560, 400);
+    UI.combatPress(ft.st, 500, 400, 0);
+    const clicked = UI.combatRelease(ft.st, 501, 401);
+    const zb = ISO.iso.zoom;
+    UI.combatWheel(ft.st, 800, 450, -100);
+    check(dragged === "drag" && ISO.iso.cx < cx0 && clicked === "click" && ISO.iso.zoom === zb + 1, "drag pans the view, a still press clicks, the wheel zooms");
+    const { settingsModal, openSettings, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
+    const { DEFAULT_OPTIONS } = await import("../src/ui/saves.js");
+    const u5 = { started: true, scale: 1, speed: 0, slot: null, settings: null };
+    openSettings(u5, "options");
+    const sh = settingsModal(ft.st, u5, { options: { ...DEFAULT_OPTIONS }, desktop: false, autosaveInfo: () => ({}) });
+    SETTINGS_CHANGE["set-battleview"](ft.st, u5, { value: "top" });
+    const wasTop = UI.cui.view;
+    SETTINGS_CHANGE["set-battleview"](ft.st, u5, { value: "iso" });
+    check(/data-action="set-battleview"/.test(sh) && /<option value="iso" selected>Isometric/.test(sh) && wasTop === "top" && UI.cui.view === "iso", "Options → Display → Battle view: Isometric (the default) / Top-down");
+    const topic = (await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view");
+    check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>I</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    check(/Battle view/.test(readme) && /isoview\.js/.test(readme), "the README describes the battle view");
+    // Speed (headless, a stub canvas: the script's share of a frame) on the biggest maps.
+    const t = [];
+    for (const name of ["hive", "raid", "base-yard"]) {
+      const x = list.find((q) => q.name === name);
+      ISO.iso.battle = null; UI.drawCombat(x.st, NOW);
+      const a = performance.now();
+      for (let i = 0; i < 30; i++) UI.drawCombat(x.st, NOW + i * 8);
+      t.push(`${name} ${x.b.w}×${x.b.h} ${((performance.now() - a) / 30).toFixed(2)} ms`);
+    }
+    console.log(`  a frame's script time (stub canvas): ${t.join(", ")}`);
+  } finally {
+    if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
+  }
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

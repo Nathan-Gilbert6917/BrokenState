@@ -12,7 +12,7 @@ import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedFactor } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
 import { hordeAttackBase, hordeWarnings } from "./defences.js";
-import { hordeGrowth } from "./eras.js";
+import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
@@ -257,7 +257,7 @@ export function hordesDaily(state) {
       }
     }
     // The pull of people grows over the year: 15% of days at the start, 45% from about day 180.
-    if (best && rng.chance(Math.min(0.45, 0.15 + day(state) / 600))) h.target = best.tile;
+    if (best && rng.chance(Math.min(0.45, 0.15 + rampDay(state) / 600))) h.target = best.tile; // eras.js rampDay: hardcore counts from the normal start
     else h.target = wanderTarget(state, h);
     // Very big wandering hordes break apart now and then.
     if (h.size > 300 && rng.chance(0.1)) splitHorde(state, h, Math.floor(h.size / 2));

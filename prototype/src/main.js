@@ -27,7 +27,7 @@ import { orderSweepAt, sweepOpts } from "./sim/survey.js";
 import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
-import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatAction, cui } from "./ui/combat.js";
+import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups } from "./sim/worldsize.js";
 import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
@@ -780,7 +780,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -1297,15 +1297,27 @@ setInterval(() => { if (state.combat && !ui.settings && combatTick(state, perfor
 const cbCanvas = $("combatmap");
 const cbPos = (e) => { const r = cbCanvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 cbCanvas.addEventListener("mousemove", (e) => { if (state.combat) combatMouse(state, ...cbPos(e)); });
-cbCanvas.addEventListener("mouseleave", () => { if (state.combat) cui.hover = null; });
+cbCanvas.addEventListener("mouseleave", () => { if (state.combat) combatLeave(); });
+// The isometric view (ui/isoview.js): a press that moves pans the map, one that does not is the click (on release);
+// the top-down view clicks on the press, as it always did. Right click cancels the current action.
+const cancelAction = () => { if (state.combat) { cui.mode = "move"; cui.msg = ""; refresh(); } };
 cbCanvas.addEventListener("mousedown", (e) => {
-  if (!state.combat || e.button !== 0) return;
+  if (!state.combat) return;
+  if (e.button === 1) e.preventDefault();
+  if (!combatPress(state, ...cbPos(e), e.button)) return;
   combatClick(state, ...cbPos(e));
   refresh();
 });
+window.addEventListener("mouseup", (e) => {
+  if (!state.combat) return;
+  const what = combatRelease(state, ...cbPos(e));
+  if (what === "click") { combatClick(state, ...cbPos(e)); refresh(); }
+  else if (what === "cancel") cancelAction();
+});
+cbCanvas.addEventListener("wheel", (e) => { if (state.combat && combatWheel(state, ...cbPos(e), e.deltaY)) e.preventDefault(); }, { passive: false });
 cbCanvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  if (state.combat) { cui.mode = "move"; cui.msg = ""; refresh(); }
+  if (state.combat && cui.view === "top") cancelAction(); // the isometric view cancels on the release (a drag does not)
 });
 
 // ---------- keyboard ----------
@@ -1407,6 +1419,7 @@ window.addEventListener("keydown", (e) => {
 });
 // Space let go on a focused button or checkbox must not press it as well.
 window.addEventListener("keyup", (e) => {
+  if (state.combat) combatKeyUp(state, e); // the battle view's held pan keys
   const t = e.target || {};
   if (e.code === "Space" && (t.tagName === "BUTTON" || (t.tagName === "INPUT" && t.type === "checkbox"))) e.preventDefault();
 });

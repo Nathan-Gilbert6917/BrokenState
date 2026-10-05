@@ -45,7 +45,14 @@ const START_OFFSET = 14; // weather.js START_OFFSET
 export const yearOfDay = (d) => Math.floor((Math.max(1, d) - 1 + START_OFFSET) / YEAR_DAYS) + 1;
 export const yearStartDay = (y) => (y <= 1 ? 1 : YEAR_DAYS * (y - 1) - START_OFFSET + 1);
 const dayOf = (state) => Math.floor(state.hour / 24) + 1;
-export const yearOf = (state) => yearOfDay(dayOf(state));
+// Hardcore mode (hardcore-outbreak.js): the run starts on the day Calder falls, state.hardcore.eraOffset days before
+// a normal game's day 1. Every ramp keyed to the year or the game day counts from that normal start: a hardcore
+// run's day N ramps like a normal run's day N − offset (never below day 1). In a normal game this is the day itself.
+export const eraOffsetOf = (state) => (state.mode === "hardcore" && state.hardcore && state.hardcore.eraOffset) || 0;
+export const rampDay = (state) => { const d = dayOf(state), o = eraOffsetOf(state); return o ? Math.max(1, d - o) : d; };
+// Hardcore: still before the normal start (the outbreak is spreading through its first year).
+export const beforeFall = (state) => { const o = eraOffsetOf(state); return o > 0 && dayOf(state) <= o; };
+export const yearOf = (state) => yearOfDay(rampDay(state));
 
 export const ERAS = {
   LIST: [
@@ -155,7 +162,7 @@ export function burnoutYear(state) {
 export const burnedOut = (state) => yearOf(state) >= burnoutYear(state);
 // The fewest hives (standing or being built) the outbreak beyond the border keeps in the state this year.
 export function hiveFloor(state) {
-  if (burnedOut(state)) return 0;
+  if (burnedOut(state) || beforeFall(state)) return 0; // hardcore: the border floor starts with the normal start
   const y = yearOf(state);
   return ERAS.OUTBREAK.FLOOR.reduce((n, [from, k]) => (y >= from ? k : n), 0);
 }
@@ -184,8 +191,11 @@ export const containReady = (state) => winOpen(state) && burnedOut(state) && ens
 export function eraProgress(state) {
   const E = ensureEraState(state);
   const y = yearOf(state);
+  const off = eraOffsetOf(state);
   return {
-    year: y, era: eraOf(state), winFrom: ERAS.WIN_FROM_YEAR, winOpen: winOpen(state), winDay: yearStartDay(ERAS.WIN_FROM_YEAR),
+    year: y, era: eraOf(state), winFrom: ERAS.WIN_FROM_YEAR, winOpen: winOpen(state), winDay: yearStartDay(ERAS.WIN_FROM_YEAR) + off,
+    // Hardcore: the first year after the fall (the years count from the normal start, day offset + 1).
+    fall: off ? { offset: off, before: beforeFall(state), normalStart: off + 1, left: Math.max(0, off + 1 - dayOf(state)) } : null,
     accord: E.accord, accordNeed: ERAS.ACCORD.DAYS, seasons: coalitionSeasons(state), seasonsNeed: ERAS.ACCORD.SEASONS,
     clear: E.clear, clearNeed: ERAS.CONTAIN.DAYS, burnout: burnoutYear(state), burnedOut: burnedOut(state), floor: hiveFloor(state),
     threat: { horde: hordeGrowth(state), gangArms: gangArms(state), raiderSize: raiderSizeBonus(state), raiderPower: raiderPowerBonus(state), gangPop: gangPopBonus(state) },
