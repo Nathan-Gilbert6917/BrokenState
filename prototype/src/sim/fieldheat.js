@@ -39,8 +39,8 @@ export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
 export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
-const ACTIVITY = { waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, cross: 1.8, camp: 2 };
-const ACT_NAME = { waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", cross: "building a boat", camp: "camp fire and cooking" };
+const ACTIVITY = { sweep: 0.5, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, cross: 1.8, camp: 2 };
+const ACT_NAME = { sweep: "surveying (on the move about the area)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {

@@ -125,7 +125,7 @@ export function stealthSetup(state, b) {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
       u.light = !!(tool && tool.key === "flashlight");
-      u.nvg = !!(tool && tool.key === "nvg");
+      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")); // a thermal monocular sees in the dark like night vision (optics.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       const sup = s && SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;

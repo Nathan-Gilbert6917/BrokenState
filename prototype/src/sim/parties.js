@@ -38,6 +38,8 @@ import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { siteKnown, siteNamed } from "./discovery.js";
+import { startSweep, sweepOpts, sweeping } from "./survey.js";
+import { opticsFor } from "./optics.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -57,6 +59,7 @@ export const MISSIONS = {
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running." },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak them out, storm the base, negotiate or pay a ransom." },
+  sweep:       { name: "Survey",           desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
   survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
@@ -170,7 +173,10 @@ export function sightRadius(state, p) {
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
   if (m.some((s) => hasPerk(s, "lookout"))) r += 1; // Lookout (skills.js)
-  return Math.max(1, r + travelEffects(state).sight); // fog and blizzards cut sight by a tile (weather.js)
+  const fx = travelEffects(state);
+  // Binoculars a tile more by day; a thermal at night and in fog (optics.js). A spotting scope only while it stays put.
+  r += opticsFor(m, p.cargo, { still: !onTheMove(p), night: state.hour % 24 < 6 || state.hour % 24 >= 20, fog: fx.sight < 0 }).sight;
+  return Math.max(1, r + fx.sight); // fog and blizzards cut sight by a tile (weather.js)
 }
 
 function hasMilRadio(state, p) {
@@ -440,6 +446,7 @@ export function launchExpedition(state, opts) {
     seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false,
     departed: state.hour, plannedHours: est.hours, eventsSeen: 0,
     orders: [], orderStart: state.hour, // queued orders (orders.js) and when the current one began
+    ...(mission === "sweep" ? { sweepPlan: sweepOpts(opts.sweep || {}) } : {}), // the Survey mission's radius and hours (survey.js)
     // What the hub knows of the plan, for the estimated "?" position while out of contact (plannedTile).
     // etaBack null: a one-way trip (the team arrives and waits there, or stays for good).
     planPath: [...est.path], planStart: state.hour, planVehicle: travelMode(v), planFuel: isCar(v) ? v.fuel + (supplies.fuel || 0) : 0, etaOut: est.hoursOut, etaBack: stays ? null : est.hoursBack,
@@ -634,10 +641,10 @@ function playerPartyHour(state, p) {
 // True while the team is on its way somewhere (not resting, working or waiting).
 export const onTheMove = (p) => (p.phase === "out" || p.phase === "back") && Array.isArray(p.path) && p.idx < p.path.length - 1;
 // Food and water the team eats an hour (each): one ration a person a day, more on the move under a load (load.js).
-export const rationsPerHour = (state, p, members = partyMembers(state, p)) => rationRate(p.burden, members, p.vehicle, onTheMove(p)) / 24;
+export const rationsPerHour = (state, p, members = partyMembers(state, p)) => rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)) / 24;
 
 function consume(state, p, members) {
-  const n = rationRate(p.burden, members, p.vehicle, onTheMove(p)); // rations a day at this hour's rate
+  const n = rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)); // rations a day at this hour's rate (a survey walks about: survey.js)
   const s = p.supplies;
   s.food = (s.food || 0) - n / 24;
   s.water = (s.water || 0) - n / 24;
@@ -795,6 +802,7 @@ export function orderOptions(state, p) {
   const out = [];
   const add = (m, why) => out.push({ mission: m, label: MISSIONS[m].name, desc: MISSIONS[m].desc, disabled: why || null });
   add("survey");
+  if (t.terrain !== "water") add("sweep");
   if (t.loot > 0.05) add("scavenge");
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
@@ -837,7 +845,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
     choices: [
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
       ...opts.map((o) => ({
-        label: o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey",
+        label: o.mission === "sweep" ? `Survey ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep",
         resolve: (st) => {
           // Checked again now: the card may have been open while things changed.
           const now = orderOptions(st, p).find((x) => x.mission === o.mission);
@@ -931,9 +939,10 @@ export function orderMove(state, p, tile) {
 export function survey(state, p, bonus, debit = true) {
   const tile = partyTile(p);
   const members = partyMembers(state, p);
-  const around = state.grid.within(tile, sightRadius(state, p) + 1);
+  const opt = opticsFor(members, p.cargo, { still: true, night: state.hour % 24 < 6 || state.hour % 24 >= 20 }); // optics.js
+  const around = state.grid.within(tile, sightRadius(state, p) + 1 + opt.reach);
   for (const id of around) p.seen.set(id, snapshot(state, id));
-  const found = perceive(state, p, members, around, bonus);
+  const found = perceive(state, p, members, around, bonus + (opt.look - 1) * 0.3);
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);
@@ -956,6 +965,8 @@ function arrive(state, p) {
     case "survey":
       startTask(state, p, { type: "survey", hours: 2 });
       return "The team spends two hours looking around.";
+    case "sweep":
+      return startSweep(state, p, p.sweepPlan || {}); // survey.js
     case "scavenge":
       if (t.terrain === "water") {
         awaitOrders(state, p, "There is nothing to search on the water.", { failed: true });

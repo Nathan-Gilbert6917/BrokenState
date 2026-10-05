@@ -54,6 +54,7 @@ import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
+import { surveyCandidate, surveySent } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
@@ -1636,7 +1637,7 @@ function planTrip(state) {
   const h = hub(state);
   if (!h) return;
   const today = day(state);
-  const out = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy");
+  const out = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && p.teamMission !== "sweep"); // a survey team goes on top (below)
   // Cautious: something below its reserve (reserveStatus) means trips come sooner, may go farther for it (trade
   // visits twice as far) and may take people 10 health below the style's minimum.
   const short = reserveShort(state, h);
@@ -1761,8 +1762,15 @@ function planTrip(state) {
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
     if (c.envoy) { (g.lastEnvoy = g.lastEnvoy || {})[c.envoy] = today; res.apEnvoy = c.envoy; }
     if (c.mission === "hive") g.lastHive = today;
-    return;
+    break;
   }
+  // A survey (survey.js) with the hands still spare: unexplored ground near home or a rumour's circle, on top of the
+  // day's trip (it does not count toward the style's teams out).
+  const home2 = atBase(state, h.id);
+  const pool2 = pool.filter((s) => home2.includes(s));
+  const spare2 = Math.min(pool2.length, home2.length - Math.max(2, Math.ceil(home2.length * P.homeFrac)));
+  const sv = surveyCandidate(state, spare2);
+  if (sv) launchTrip(state, sv, pool2, spare2);
 }
 
 // ---------- envoys (alliance.js) ----------
@@ -2036,7 +2044,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (size < (c.mission === "rescue" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : 1)) return null;
   const fit = c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
-    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
+    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
   const crew = friendlyCrew(state, [...pool].sort((a, b) => fit(b) - fit(a)), size, fit); // near-equal picks: friends together, rivals apart (relations.js)
   const ids = crew.map((s) => s.id);
   const dist = state.grid.distance(h.tile, c.tile);
@@ -2054,7 +2062,7 @@ function launchTrip(state, c, pool, spareHands) {
     return null;
   };
   const n = ids.length;
-  if (cand && dist >= 3 && c.mission !== "outpost" && c.mission !== "rescue") {
+  if (cand && dist >= 3 && c.mission !== "outpost" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4)) v = cand;
@@ -2066,7 +2074,7 @@ function launchTrip(state, c, pool, spareHands) {
     if (stack && stack.condition >= 25) v = stack;
   }
   const plannedV = isBike(v) ? { ...v, count: n } : v;
-  const onSite = c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  const onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
@@ -2135,11 +2143,12 @@ function launchTrip(state, c, pool, spareHands) {
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
   const kit = packTripKit(state, h, crew, c.mission); // kit.js: camp kit against Heat, a comfort, throwables
-  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup });
+  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep });
   if (res.error) return off();
   if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);
   if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
+  if (c.survey) surveySent(state);
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
   if (c.mission === "hive") g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1;

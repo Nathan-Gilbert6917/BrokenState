@@ -6,6 +6,9 @@ import { PRESETS, STEP_KINDS, CONDITIONS, estimatePlan, stepLabel, nearbySites, 
 import { activeCrashes } from "../sim/crashes.js";
 import { heatPreview } from "../sim/fieldheat.js";
 import { jobTargets } from "./diplomacy.js";
+import { sweepPreview, sweepOpts, rumoursOf, SURVEY } from "../sim/survey.js";
+import { survivorById } from "../sim/world.js";
+import { travelMode } from "../sim/vehicles.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -15,10 +18,12 @@ const MAX_STEPS = 10;
 // The plan a fresh planner starts with: missions that go somewhere and come back get "return home" after them.
 export function defaultPlan(mission) {
   const back = !STAY_MISSIONS.includes(mission) || mission === "recon";
-  const preset = mission === "recon" ? "recon" : mission === "scavenge" ? "scavenge" : "custom";
-  return { preset, steps: back ? [{ kind: "home" }] : [], days: 1, cond: { hurt: null, food: null, cargo: false }, add: { camp: 24, wait: 6, radius: 3, count: 2, move: null } };
+  const preset = mission === "recon" ? "recon" : mission === "scavenge" ? "scavenge" : mission === "sweep" ? "survey" : "custom";
+  return { preset, steps: back ? [{ kind: "home" }] : [], days: 1, cond: { hurt: null, food: null, cargo: false }, add: { camp: 24, wait: 6, radius: 3, count: 2, move: null, sradius: 3, shours: 12 } };
 }
 const ensure = (pl) => (pl.plan = pl.plan || defaultPlan(pl.mission));
+// The Survey mission's radius and hours (sim/survey.js), kept with the planner.
+export const ensureSweep = (pl) => (pl.sweep = sweepOpts(pl.sweep || {}));
 
 // Estimate for the whole plan (null without a route). ids/v: the planner's crew and vehicle.
 export function planEstimate(state, pl) {
@@ -27,11 +32,11 @@ export function planEstimate(state, pl) {
   const v = v0 && v0.type === "bike" ? { ...v0, count: Math.max(1, pl.crew.size || 0) } : v0; // one bike each
   return estimatePlan(state, {
     memberIds: [...pl.crew].length ? [...pl.crew] : [0], dest: pl.dest, vehicle: !v ? false : v.type === "bike" ? "bike" : true, v, stance: pl.stance,
-    fuel: v && v.type !== "bike" ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps, supplies: pl.supplies,
+    fuel: v && v.type !== "bike" ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps, supplies: pl.supplies, sweep: ensureSweep(pl),
   });
 }
 // For main.js autofill: the plan's needs when it has steps, else null (the plain round-trip estimate is used).
-export const planAutofill = (state, pl) => (ensure(pl).steps.length ? planEstimate(state, pl) : null);
+export const planAutofill = (state, pl) => (ensure(pl).steps.length || pl.mission === "sweep" ? planEstimate(state, pl) : null);
 export const planLaunchOpts = (pl) => {
   const plan = ensure(pl);
   return { preset: plan.preset, steps: plan.steps.map((s) => ({ ...s })), conditions: { ...plan.cond } };
@@ -72,7 +77,7 @@ export function planSection(state, pl, est) {
   };
   const legs = est ? est.legs : [];
   const first = legs[0] ? `${legs[0].hours}h` : "no route";
-  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : ""}</span>
+  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : s.kind === "sweep" ? ` <span class="muted">~${hrs(sweepOpts(s).hours)}</span>` : ""}</span>
       <button class="mini" data-action="pl-step" data-op="up" data-i="${i}" ${i ? "" : "disabled"}${tip("Earlier")}>▲</button><button class="mini" data-action="pl-step" data-op="down" data-i="${i}" ${i < plan.steps.length - 1 ? "" : "disabled"}${tip("Later")}>▼</button><button class="mini" data-action="pl-step" data-op="del" data-i="${i}"${tip("Remove this step")}>✕</button></li>`).join("");
   const add = plan.add;
   const full = plan.steps.length >= MAX_STEPS || plan.steps.some((s) => s.kind === "home");
@@ -88,16 +93,17 @@ export function planSection(state, pl, est) {
   const whole = est ? `<div class="small" style="margin-top:0.35rem"${tip("Every leg stepped hour by hour like the real trip (weather included); searches count 6 hours, Look around 2. Food and water: one each per person per day for the whole plan, plus the way home if the plan does not end there.")}>Whole plan: <b>~${(est.total / 24).toFixed(1)} days</b> (${est.hours}h${est.backHours ? ` + ${est.backHours}h home` : ""}) · needs ${est.food} food · ${est.water} water${est.fuel ? ` · ${est.fuel} fuel` : ""}${est.returns ? "" : ` · <span class="warn">${est.open ? "a step has no route" : "ends away from home: it waits for orders there"}</span>`}</div>` : "";
   const notes = est ? heatNote(state, pl, est) : [];
   return `<h3${tip("What the team does after reaching the target, in order. Out of radio contact the team follows this plan; it reports in with a card on important finds (a horde in sight, a rich site, supplies running short) and when the plan ends. In radio range you can change its orders any time.")}>Plan</h3>
-    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "explore", "camp", "custom"].map(presetBtn).join("")}
+    ${surveyBox(state, pl, est)}
+    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "survey", "explore", "camp", "custom"].map(presetBtn).join("")}
       <span class="small muted">days <input type="number" class="tiny" style="width:3.2rem" data-action="pl-days" min="1" max="10" value="${plan.days}"></span></div>
     <div class="small muted" style="margin:0.2rem 0">${esc(preset.desc)}</div>
     <ol class="xpqueue small">
-      <li><span>${esc(`Travel to ${tileLabel(state, pl.dest)}: ${MISSIONS[pl.mission]?.name || pl.mission}`)} <span class="muted">~${first}</span></span></li>
+      <li><span>${esc(`Travel to ${tileLabel(state, pl.dest)}: ${pl.mission === "sweep" ? `Survey ${ensureSweep(pl).radius} tiles around for ${ensureSweep(pl).hours}h` : MISSIONS[pl.mission]?.name || pl.mission}`)} <span class="muted">~${first}${pl.mission === "sweep" ? ` + ${hrs(ensureSweep(pl).hours)}` : ""}</span></span></li>
       ${steps}
       ${plan.steps.some((s) => s.kind === "home") ? "" : `<li><span class="muted">Then wait there for orders</span></li>`}
     </ol>
     <div class="row small" style="flex-wrap:wrap;gap:0.3rem">Add:
-      ${addBtn("survey", "Look around")}${addBtn("scavenge", "Scavenge here")}
+      ${addBtn("survey", "Look around")}${addBtn("sweep", `Survey ${add.shours ?? 12}h`)} r${num("sradius", add.sradius ?? 3, SURVEY.radius.min, SURVEY.radius.max)} ${num("shours", add.shours ?? 12, SURVEY.hours.min, SURVEY.hours.max)}h${addBtn("scavenge", "Scavenge here")}
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
@@ -124,6 +130,7 @@ function setPreset(pl, k) {
 
 export const PLAN_ACTIONS = {
   "pl-preset": (state, ui, d) => setPreset(ui.planner, d.v),
+  "pl-sweep-r": (state, ui, d) => { ensureSweep(ui.planner).radius = sweepOpts({ radius: d.v }).radius; },
   "pl-step": (state, ui, d) => {
     const plan = ensure(ui.planner), i = Number(d.i), s = plan.steps;
     if (!(i >= 0 && i < s.length)) return;
@@ -139,6 +146,7 @@ export const PLAN_ACTIONS = {
     if (d.k === "camp") step.hours = a.camp;
     if (d.k === "wait") step.hours = a.wait;
     if (d.k === "nearby") { step.radius = a.radius; step.count = a.count; }
+    if (d.k === "sweep") Object.assign(step, sweepOpts({ radius: a.sradius ?? 3, hours: a.shours ?? 12 }));
     if (d.k === "move") return;
     plan.steps.push(step);
     plan.preset = "custom";
@@ -152,6 +160,7 @@ export const PLAN_ACTIONS = {
 };
 
 export const PLAN_CHANGE = {
+  "pl-sweep-h": (state, ui, el) => { ensureSweep(ui.planner).hours = sweepOpts({ hours: el.value }).hours; },
   "pl-days": (state, ui, el) => {
     const plan = ensure(ui.planner);
     plan.days = clampN(el.value, 1, 10, 1);
@@ -159,7 +168,7 @@ export const PLAN_CHANGE = {
   },
   "pl-addv": (state, ui, el) => {
     const a = ensure(ui.planner).add, k = el.dataset.k;
-    const lim = { camp: [1, 240, 24], wait: [1, 72, 6], radius: [1, 6, 3], count: [1, 4, 2] }[k];
+    const lim = { camp: [1, 240, 24], wait: [1, 72, 6], radius: [1, 6, 3], count: [1, 4, 2], sradius: [SURVEY.radius.min, SURVEY.radius.max, 3], shours: [SURVEY.hours.min, SURVEY.hours.max, 12] }[k];
     if (lim) a[k] = Math.round(clampN(el.value, lim[0], lim[1], lim[2]));
   },
   "pl-condv": (state, ui, el) => {
@@ -175,3 +184,23 @@ export const PLAN_CHANGE = {
     plan.preset = "custom";
   },
 };
+
+// The Survey mission's settings and its odds (sim/survey.js sweepPreview): radius, hours, a word with the reasons.
+function surveyBox(state, pl, est) {
+  if (pl.mission !== "sweep") return "";
+  const sw = ensureSweep(pl);
+  const members = [...pl.crew].map((id) => survivorById(state, id)).filter(Boolean);
+  const v0 = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
+  const leg = est && est.legs.find((l) => l.sweep);
+  const pv = members.length ? sweepPreview(state, { members, center: pl.dest, radius: sw.radius, hours: sw.hours, mode: travelMode(v0), stance: pl.stance, startHour: leg ? leg.start : state.hour }) : null;
+  const rBtn = (r) => `<button class="mini ${sw.radius === r ? "active" : ""}" data-action="pl-sweep-r" data-v="${r}"${tip(`Sweep ${r} tiles around the target (${r === 2 ? "19" : r === 3 ? "37" : "61"} tiles): wider covers more ground, but each spot gets fewer hours.`)}>${r} tiles</button>`;
+  const cls = pv ? (pv.word === "good" ? "good" : pv.word === "fair" ? "warn" : "danger") : "muted";
+  const rum = rumoursOf(state).filter((r) => state.grid.distance(r.center, pl.dest) <= r.radius);
+  return `<div class="card small" style="margin:0.3rem 0"${tip("The team sweeps the land around the target hour by hour, moving from spot to spot inside the circle, and ends back at the centre. Each hour it may spot hidden places (farms, cabins, lodges, camps off the roads) and finds (caches, wrecks, camps). Food and water at the moving rate; Heat builds at half the rate of standing still; every tile it walks into can bring an encounter, as on the road.")}>
+    <b>Survey</b> ${[2, 3, 4].map(rBtn).join("")} · <input type="number" class="tiny" style="width:3.6rem" data-action="pl-sweep-h" min="${SURVEY.hours.min}" max="${SURVEY.hours.max}" value="${sw.hours}"> hours
+    ${pv ? `<div style="margin-top:0.25rem"${tip(pv.reasons.join(" · "))}>Odds: <b class="${cls}">${pv.word}</b> <span class="muted">(~${Math.round(pv.chance * 100)}% for a place hidden somewhere in the circle; ${pv.moves} moves, ${pv.seenTiles} of ${pv.tiles} tiles seen up close)</span></div>
+      <div class="muted">${esc(pv.reasons.slice(0, 5).join(" · "))}</div>
+      ${pv.hive ? `<div class="danger">Hive land in the circle: the dead there are tougher, and walking about draws them.</div>` : ""}` : `<div class="muted" style="margin-top:0.25rem">Pick a crew to see the odds.</div>`}
+    ${rum.length ? `<div class="good">${rum.map((r) => `Inside the rumour of ${esc(r.what)} ${esc(r.where)}: ×${SURVEY.rumour} odds for it.`).join(" ")}</div>` : ""}
+  </div>`;
+}

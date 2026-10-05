@@ -38,6 +38,7 @@ import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { marketOf } from "./trade.js";
 import { diplomacyDaily } from "./diplomacy.js";
+import { rumourFromNews, RUMOUR } from "./survey.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -185,7 +186,8 @@ export function radioNews(state, f) {
     if (!cur || cur.hour <= state.hour) state.knowledge[id] = snapshot(state, id);
   }
   f.lastDiplomacy = day(state);
-  return note(state, f, `${f.name} pass on what they see: ${tiles.size} tiles around their land${hordes ? `, ${hordes} horde${hordes === 1 ? "" : "s"} on the move near them` : ", no hordes near them"}. It is on your map.`);
+  const rumour = rumourFromNews(state, f.name, "radio", RUMOUR.groupNews); // survey.js: now and then word of a hidden place
+  return note(state, f, `${f.name} pass on what they see: ${tiles.size} tiles around their land${hordes ? `, ${hordes} horde${hordes === 1 ? "" : "s"} on the move near them` : ", no hordes near them"}. It is on your map.${rumour}`);
 }
 
 // Ask them to send a caravan of their goods. Rolls once (uses the world's random numbers).
