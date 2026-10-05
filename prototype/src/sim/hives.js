@@ -30,7 +30,7 @@ import { log, day, addCard, snapshot, combatPower, checkGameOver, hurt } from ".
 import { makeHorde, hordeScore, HORDE_SIZES, reduceHorde } from "./hordes.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./parties.js";
 import { partyFuel, useFuel } from "./vehicles.js";
-import { registerCombatHandler, registerBattleLayout } from "./combat.js";
+import { registerCombatHandler, registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { tacticalStyleFor } from "./breakoff.js";
 import { HIVE, BOSS_NAMES, GROWTHS } from "./hiveconst.js";
@@ -614,15 +614,19 @@ export function assaultHive(state, p, hive) {
   });
 }
 
+// A hive assault is fought on a bigger map than a field encounter (combat.js HIVE_W × HIVE_H).
+registerBattleSize("hive", () => [HIVE_W, HIVE_H]);
 registerBattleLayout("hive", (b, ctx) => {
   if (ctx.phase === "map") {
-    // The hive itself: a mound of flesh on the right, with gaps the brood comes through.
-    const cx = ctx.W - 3, cy = Math.floor(ctx.H / 2);
-    for (let y = cy - 3; y <= cy + 3; y++) for (let x = cx - 1; x <= cx + 1; x++) {
-      if (Math.abs(y - cy) === 1 && x === cx - 1) continue; // openings
-      if (Math.abs(x - cx) + Math.abs(y - cy) <= 3 && ctx.inside(x, y)) ctx.put(x, y, "hivewall");
+    // The hive itself: a mound of flesh on the right, with gaps the brood comes through. Drawn for 18 × 13: the
+    // mound and the lumps of flesh around it grow with the map.
+    const r = Math.max(3, Math.round((3 * ctx.H) / 13)), half = r > 3 ? 2 : 1, cx = ctx.W - 2 - half, cy = Math.floor(ctx.H / 2);
+    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - half; x <= cx + half; x++) {
+      if (Math.abs(y - cy) === 1 && x < cx) continue; // openings
+      if (Math.abs(x - cx) * (r / (half + 1)) + Math.abs(y - cy) <= r && ctx.inside(x, y)) ctx.put(x, y, "hivewall");
     }
-    for (let i = 0; i < 4; i++) { const x = ctx.rng.int(8, ctx.W - 6), y = ctx.rng.int(0, ctx.H - 1); if (ctx.free(x, y)) ctx.put(x, y, "hivewall"); }
+    const lumps = Math.round((4 * ctx.W * ctx.H) / (18 * 13));
+    for (let i = 0; i < lumps; i++) { const x = ctx.rng.int(8, ctx.W - 6), y = ctx.rng.int(0, ctx.H - 1); if (ctx.free(x, y)) ctx.put(x, y, "hivewall"); }
     return;
   }
   // Units: the Broodmother deep in the hive.
