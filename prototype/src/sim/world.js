@@ -49,6 +49,7 @@ import { surveyDaily } from "./survey.js";
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { stagingHour } from "./staging.js";
 import { wanderersDaily } from "./wanderers.js";
 
 export const HUB_VISION = 3;
@@ -582,6 +583,7 @@ export function tickHour(state) {
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   movePartiesHour(state);
+  stagingHour(state); // staging.js: the staging camp with no base (work, stores, looters; done: the hub)
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state

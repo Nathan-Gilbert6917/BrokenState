@@ -10,16 +10,18 @@
 //   what they carried: 1–3 days' worth for three. Almost no ammo, no fuel, no vehicle.
 // - The team is on the road (a state.parties entry, like the exiles in conquest.js): no base, no home to return to.
 //   You are with them, so they always report and take orders (radio contact without a radio).
-// - The first hub: Build outpost becomes "Found your hub here", which needs FOUND carried (scrap and parts are used;
-//   the food and water become its first stock). The base it founds is the hub, empty: no buildings, no truck. Losing
-//   that hub later is the normal game's exile (conquest.js): any later base takes the usual 15 scrap.
+// - The first hub: Build outpost becomes Establish base, a staging camp the team brings materials to and then builds
+//   up over a few days (staging.js STAGING.HARDCORE). It becomes the hub, empty: no buildings, no truck. Losing that
+//   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
+//   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
 import { GEAR, SUPPLY_KEYS } from "./data.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS } from "./inventory.js";
-import { sightRadius, partyMembers, partyTile, carried, awaitOrders, weighTeam } from "./parties.js";
+import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
+import { STAGING, ESTABLISH_LABEL, needText } from "./staging.js";
 
 export const HC_START = {
   CREW: 3,
@@ -45,9 +47,7 @@ export const HC_START = {
   WATER: { pack: [1, 3], pockets: [0, 1] },
   TEAM_MIN: 3, TEAM_MAX: 9,
   MEDS: { pack: 0.35 }, // a bottle of pills in the bag
-  // The first hub: what the team must carry to found it. Scrap and parts are used up; food and water become its stock.
-  FOUND: { scrap: 25, parts: 3, food: 10, water: 10 },
-  FOUND_USED: ["scrap", "parts"],
+  // The first hub: a staging camp (staging.js STAGING.HARDCORE: what it takes and the days of work).
 };
 
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -77,34 +77,10 @@ export function roadTeam(state) {
 export const withYou = (state, p) => firstHubPending(state) && !!p && p.owner === "player" && p.kind !== "convoy";
 
 // ---------- founding the first hub ----------
-// What the team still lacks to found the hub: [{ key, need, have, short }] (empty: it can).
-export function foundMissing(state, p) {
-  const out = [];
-  for (const [k, need] of Object.entries(HC_START.FOUND)) {
-    const have = p ? Math.floor(carried(p, k) + (k === "food" ? carried(p, "preserved") : 0)) : 0;
-    if (have < need) out.push({ key: k, need, have, short: need - have });
-  }
-  return out;
-}
-export const foundNeedText = () => Object.entries(HC_START.FOUND).map(([k, q]) => `${q} ${k}`).join(", ");
-export const missingText = (miss) => miss.map((m) => `${m.short} ${m.key}`).join(", ");
-// Why the team cannot found its hub here (null: it can). For the orders card, the team panel and arriving.
-export function foundProblem(state, p, tile = partyTile(p)) {
-  const t = state.tiles[tile];
-  if (!t || t.terrain === "water") return "A hub cannot be built on water or on a bridge.";
-  const miss = foundMissing(state, p);
-  if (miss.length) return `Needs ${foundNeedText()} carried. Still missing: ${missingText(miss)}.`;
-  return null;
-}
-// The order's label and description (parties.js orderOptions).
-export const FOUND_LABEL = "Found your hub here";
-export const foundDesc = () => `Settle here for good: the team builds your first hub on this tile and stays as its people. Needs ${foundNeedText()} carried: the scrap and parts go into the first shelters and the barricade, the food and water become its stores, and so does everything else the team carries. Pick a place with water nearby, buildings to scavenge and few of the dead.`;
-// Uses up what founding takes (parties.js arrive, before the base takes the rest of the team's supplies).
-export function payFounding(state, p, takeSupply) {
-  for (const k of HC_START.FOUND_USED) takeSupply(p, k, HC_START.FOUND[k]);
-}
-// After parties.js has made the base (type "hub": there is none) and moved the people in.
-export function hubFounded(state, base) {
+// The first hub is a staging camp built up over days (staging.js: Establish base, the materials, the work). When it
+// is done, staging.js has made the base (type "hub": there is none) and moved the people in; this marks the day.
+// when: how long the camp took ("4 days after the camp went up").
+export function hubFounded(state, base, when = "") {
   const hc = state.hardcore.start;
   hc.foundedDay = day(state);
   hc.foundedHour = state.hour;
@@ -113,7 +89,7 @@ export function hubFounded(state, base) {
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
-  const text = `Day ${day(state)}: ${base.name} is founded, your first hub. It is bare: no buildings yet, a barricade of scrap and whatever the team carried in. Build farm plots, a well and beds before the cold.`;
+  const text = `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
@@ -256,10 +232,10 @@ export function setupHardcoreStart(state, crew) {
   for (const s of people) { s.location = { kind: "party", partyId: p.id }; s.role = "scavenge"; s.station = null; }
   state.parties.push(p);
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
-  state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, need: { ...HC_START.FOUND } };
+  state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines };
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} Between you: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}. Find food and water first, then gather ${foundNeedText()} and found your hub (Found your hub here).`;
+  const intro = `Calder is falling. ${lines.join(" ")} Between you: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
   awaitOrders(state, p, intro, { title: "The day Calder fell" });
   return p;
 }
@@ -271,19 +247,6 @@ export function hardcoreStartDaily(state) {
   const p = roadTeam(state);
   if (p) hc.lastTile = partyTile(p);
   hc.daysOnRoad = day(state) - 1;
-}
-
-// For the panels: where the first hub stands, as one object (null when it is not pending or nobody is left on the road).
-export function foundingView(state) {
-  if (!firstHubPending(state)) return null;
-  const p = roadTeam(state);
-  if (!p) return null;
-  const miss = foundMissing(state, p);
-  const rows = Object.entries(HC_START.FOUND).map(([k, need]) => {
-    const have = Math.floor(carried(p, k) + (k === "food" ? carried(p, "preserved") : 0));
-    return { key: k, need, have, ok: have >= need };
-  });
-  return { p, miss, rows, ready: !miss.length, day: day(state), people: partyMembers(state, p).length, tile: partyTile(p) };
 }
 
 // Tiles near the team worth founding on (the autopilot and the tile panel hint): open or a farm, not owned, not a hive,

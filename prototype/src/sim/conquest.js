@@ -43,7 +43,8 @@
 //   retreat (conflicts.js raidDefense).
 // - The hub: if it falls and you hold another base, the nearest one becomes the hub (its type changes; the
 //   buildings stay where they are). With no other base the survivors take to the road as one team (exiles): they
-//   can found a new base (Build outpost: it becomes the hub) or retake the old one (Assault their base); the run
+//   can found a new base (Establish base: a staging camp built up into the hub, staging.js) or retake the old one
+//   (Assault their base; a staging camp still standing is then struck, its stores left as a cache); the run
 //   ends only when nobody is left.
 // - The occupier patches the base up: each broken building has a 5% chance a day to be repaired (wear back to
 //   40) and the wear on the rest falls by 1 a day; the garrison grows back by 0.2 a day toward its full size.
@@ -499,7 +500,7 @@ export function evacuate(state, base, f = null, why = "") {
     const tile = fallbackTile(state, base, f);
     if (tile !== base.tile) orderMove(state, p, tile);
     else awaitOrders(state, p, "There is no base left to go to.");
-    log(state, `${names(people)} took to the road from ${base.name}${why ? ` (${why})` : ""}: you have no base left. Found a new one (Build outpost: it becomes your hub) or take ${base.name} back.`, "death");
+    log(state, `${names(people)} took to the road from ${base.name}${why ? ` (${why})` : ""}: you have no base left. Found a new one (Establish base: a staging camp you build up into your hub) or take ${base.name} back.`, "death"); // staging.js
   }
   return p;
 }

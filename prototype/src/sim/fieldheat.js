@@ -8,7 +8,7 @@
 //   gain  = activity × place × hive land × team size × night × stance
 //     activity: fishing 0.7, setting or checking snares 0.8, waiting / holding / look around / treating 1.0,
 //               hunting 1.2 (and +6 a gunshot, hunting.js), gathering / crafting / repairs 1.5,
-//               building a boat 1.8 (hammering), camp 2.0 (fire, cooking smells)
+//               building the staging camp 1.6 (staging.js), building a boat 1.8 (hammering), camp 2.0 (fire, cooking smells)
 //     place:    countryside 1.0, suburbs 1.4, city 1.8, then × (1 + 0.6 × infection)
 //     hive land ×1.4, the red ring around a hive ×2
 //     team size 0.7 + 0.1 a person (3 people 1.0, 6 people 1.3)
@@ -40,8 +40,9 @@ export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
 export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
-const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, cross: 1.8, camp: 2 };
-const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", cross: "building a boat", camp: "camp fire and cooking" };
+// stage: building the staging camp (staging.js), hammering by day and a fire at night.
+const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, stage: 1.6, cross: 1.8, camp: 2 };
+const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {

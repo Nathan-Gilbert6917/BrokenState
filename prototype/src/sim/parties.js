@@ -45,7 +45,8 @@ import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
-import { firstHubPending, withYou, foundProblem, foundDesc, payFounding, hubFounded, FOUND_LABEL } from "./hardcore-start.js";
+import { withYou } from "./hardcore-start.js";
+import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -73,6 +74,9 @@ export const MISSIONS = {
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
+  // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
+  establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into your hub: bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
+  strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
@@ -857,9 +861,12 @@ export function orderOptions(state, p) {
   if (fb && captivesOf(state, fb.id).length) add("rescue");
   if (fb) add("assault");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
-  if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water" && firstHubPending(state)) {
-    // Hardcore: the first hub takes what the team has gathered (hardcore-start.js).
-    out.push({ mission: "outpost", label: FOUND_LABEL, desc: foundDesc(), disabled: foundProblem(state, p, tile) });
+  if (!state.bases.length) {
+    // No base at all (hardcore's first hub, the exiles): Establish base, a staging camp built up into the hub (staging.js).
+    const est = establishOption(state, p, tile);
+    if (est) out.push(est);
+    const strike = strikeOption(state, p, tile);
+    if (strike) out.push(strike);
   } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
@@ -1051,41 +1058,33 @@ function arrive(state, p) {
       }
       return "";
     }
+    case "establish": // no base at all: pitch or work on the staging camp (staging.js)
+      return establishArrive(state, p);
+    case "strikecamp":
+      return strikeArrive(state, p);
     case "outpost": {
+      // No base left (an order queued before every base was lost): the staging camp instead (staging.js).
+      if (!state.bases.length) { p.mission = "establish"; return establishArrive(state, p); }
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
-      const first = firstHubPending(state); // hardcore: the first hub (hardcore-start.js)
       const need = outpostScrap(state, p.dest);
-      const short = first ? foundProblem(state, p, p.dest) : scrap < need ? `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).` : null;
+      const short = scrap < need ? `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).` : null;
       if (t.terrain === "water" || blocked || short) {
         awaitOrders(state, p, t.terrain === "water" ? "An outpost cannot be built on water or on a bridge." : mine ? "You already have a base here." :
           blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : short, { failed: true });
         return "";
       }
       const base = {
-        id: newId(), tile: p.dest, type: hub(state) ? "outpost" : "hub", name: outpostName(state, p.dest), // no hub left (conquest.js exiles): this is the new one
+        id: newId(), tile: p.dest, type: hub(state) ? "outpost" : "hub", name: outpostName(state, p.dest),
         stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
         radio: false, watchtower: false, buildings: [], construction: [], armory: [],
       };
-      if (first) payFounding(state, p, takeSupply);
-      else takeSupply(p, "scrap", need);
+      takeSupply(p, "scrap", need);
       if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
-      addStock(base, p.supplies);
-      unloadGame(base, p.cargo);
-      addStock(base, p.cargo.supplies);
-      base.armory.push(...p.cargo.gear);
-      const v = partyVehicle(state, p);
-      if (v) v.loc = { kind: "base", baseId: base.id };
       state.bases.push(base);
-      for (const m of members) {
-        m.location = { kind: "base", baseId: base.id };
-        m.role = "scavenge";
-      }
-      mergeKnowledge(state, p.seen, p.spotted, p);
-      removeParty(state, p);
+      settleInto(state, p, base);
       recomputeOwnership(state);
-      if (first) { hubFounded(state, base); return `${base.name} founded.`; }
       log(state, `${base.name} founded with ${members.length} staff.`, "good");
       return `${base.name} founded.`;
     }
@@ -1388,7 +1387,7 @@ export function startReturn(state, p) {
   const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
-    if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Build outpost) or take one back (Assault their base).", { failed: true, hold: true });
+    if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a staging camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });
     return "There is no base to go home to.";
   }
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands."; // lands first
@@ -1429,6 +1428,24 @@ function addStock(base, supplies) {
     if (!Number.isFinite(v) || v < 1) continue;
     base.stock[k] = (Number.isFinite(base.stock[k]) ? base.stock[k] : 0) + Math.floor(v);
   }
+}
+
+// A team that founds a base moves in for good: what it carries goes into the stores and the armory, its vehicle is
+// parked there, its people live there (Build outpost; the staging camp becoming the hub, staging.js).
+export function settleInto(state, p, base) {
+  const members = partyMembers(state, p);
+  addStock(base, p.supplies);
+  unloadGame(base, p.cargo);
+  addStock(base, p.cargo.supplies);
+  base.armory.push(...p.cargo.gear);
+  const v = partyVehicle(state, p);
+  if (v) v.loc = { kind: "base", baseId: base.id };
+  for (const m of members) {
+    m.location = { kind: "base", baseId: base.id };
+    m.role = "scavenge";
+  }
+  mergeKnowledge(state, p.seen, p.spotted, p);
+  removeParty(state, p);
 }
 
 function returnHome(state, p) {
