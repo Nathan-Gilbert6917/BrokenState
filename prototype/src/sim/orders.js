@@ -5,8 +5,9 @@
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom,
 } from "./parties.js";
+import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyFuel } from "./vehicles.js";
 import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
 import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_HOURS } from "./crossing.js";
@@ -15,6 +16,7 @@ import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
+export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
 export const SURVEY_HOURS = 2;   // Look around
 export const CAMP_HOURS = [8, 24, null]; // camp choices offered in the team panel (null: until you break it)
 
@@ -30,6 +32,7 @@ export function describeOrder(state, o) {
     case "home": return "Return home";
     case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
     case "gather": return "Gather boat materials";
+    case "water": return "Fetch water";
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
@@ -110,6 +113,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "gather") hours = GATHER_HOURS;
+    else if (o.type === "water") hours = FETCH_WATER_HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
     else if (o.type === "nearby") {
@@ -184,7 +188,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "water"]; // order types tied to the tile they were queued for
 
 // Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
 export function startOrder(state, p, o) {
@@ -261,6 +265,12 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "gather", hours: GATHER_HOURS });
       return `The team searches the shore for boat materials (${GATHER_HOURS}h).`;
     }
+    case "water": {
+      // Only on a tile next to a river or lake: every free container is filled (cargo room, by weight).
+      if (!besideWater(state, partyTile(p))) return fail("Fetch water: only on a tile next to a river or lake.");
+      startTask(state, p, { type: "water", hours: FETCH_WATER_HOURS });
+      return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
+    }
     case "cross": {
       const from = partyTile(p);
       const plan = boatPlan(state, p, from, o.tile, o.mode);
@@ -279,6 +289,16 @@ export function startOrder(state, p, o) {
     }
   }
   return "";
+}
+
+// Fetch water: on a land tile next to a river or lake, the team fills what it can carry (its cargo room, water
+// weighs 1 kg; a haul limit set for the team counts) and brings it home like any find. Rivers and lakes do not run dry.
+export const besideWater = (state, tile) => state.tiles[tile] && state.tiles[tile].terrain !== "water" && state.grid.neighbors(tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
+export function fetchWater(state, p) {
+  const units = Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight);
+  if (units < 1) return "No room left to carry any water.";
+  p.cargo.supplies.water = (p.cargo.supplies.water || 0) + units;
+  return `Filled the containers: ${units} water to carry home.`;
 }
 
 // Work on the spot: the team stays on its tile until the task is done (or you stop it).
@@ -325,6 +345,7 @@ function finishTask(state, p) {
   else if (t.type === "repair") text = fieldRepair(state, p);
   else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);
   else if (t.type === "gather") text = gatherMaterials(state, p, partyTile(p));
+  else if (t.type === "water") text = fetchWater(state, p);
   else if (t.type === "craft") text = fieldCraft(state, p, t.recipe);
   else if (t.type === "wait") text = `Waited ${t.done} hour${t.done === 1 ? "" : "s"}.`;
   else if (t.type === "cross") text = landBoat(state, p);

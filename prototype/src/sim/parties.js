@@ -32,7 +32,7 @@ import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelEffects, travelHazard } from "./weather.js";
+import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead } from "./weather.js";
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
@@ -323,6 +323,14 @@ export function plannedVehicle(state, vehicle, v, n = 1) {
 }
 // Food and water for travelling `hours` (rideHours of them in the vehicle) and resting `rest` hours (load.js).
 export const rationsFor = (pace, hours, rideHours, rest, n) => (pace.eatMove * rideHours + pace.eatFoot * (hours - rideHours) + n * rest) / 24;
+// Water for stretches of a trip, one after the other from startHour: segs = [[hours, rations a day], ...]. Each hour
+// is drunk at that day's thirst (weather.js thirstFactor: the season, a hot day), the hour after the clock moves on,
+// as consume does. With no season or heat it equals the food rations.
+export function waterForHours(state, startHour, segs) {
+  let h = startHour, w = 0;
+  for (const [hours, rate] of segs) for (let i = 0; i < hours; i++) { h += 1; w += (rate / 24) * thirstAt(state, h); }
+  return w;
+}
 
 // fuel: what the vehicle can burn (tank + cans); leave it out to assume enough. supplies: what the team packs (its
 // load sets its pace and rations, load.js); v: the vehicle (object or id) when there is one.
@@ -350,6 +358,11 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const fairBack = backPlan ? travelHours(state, backPlan.path, { ...backOpts, weather: false }).hours : fairOut;
   // Rations: more on the move while loaded (load.js), the 6 hours on site at the plain rate.
   const eat = members.length ? rationsFor(pace, hoursOut + hoursBack, go.rideHours + back.rideHours, 6, n) : (n * hours) / 24;
+  // Water: the same rations hour by hour (riding first, then on foot if the tank runs dry; 6 hours on site), each at
+  // its day's thirst (summer, a heat wave), as the team will drink it.
+  const drink = members.length
+    ? waterForHours(state, state.hour, [[go.rideHours, pace.eatMove], [hoursOut - go.rideHours, pace.eatFoot], [6, n], [back.rideHours, pace.eatMove], [hoursBack - back.rideHours, pace.eatFoot]])
+    : waterForHours(state, state.hour, [[hours, n]]);
   return {
     path: out.path,
     hoursOut, hoursBack, hours,
@@ -358,7 +371,7 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
     dryAt: go.dryAt,
     days: hours / 24,
     food: Math.ceil(eat - 1e-9),
-    water: Math.ceil(eat - 1e-9),
+    water: Math.ceil(drink - 1e-9), waterExact: drink,
     fuel: mode === true ? Math.ceil(fuelForPath(state, out.path, pace.fuelMult) * 2 - 1e-9) : 0,
     fuelOut: mode === true ? fuelForPath(state, out.path, pace.fuelMult) : 0,
     fuelMult: pace.fuelMult,
@@ -466,7 +479,7 @@ export function sendHelpSquad(state, raidParty, target) {
   // Two days of food and water each (a short, rushed trip), within what the squad can carry.
   const n = fighters.length;
   const have = (k) => Math.max(0, Math.floor(h.stock[k] || 0));
-  const supplies = { food: Math.min(have("food"), 2 * n), water: Math.min(have("water"), 2 * n), meds: Math.min(have("meds"), Math.min(2, n)), ammo: Math.min(have("ammo"), 10 * n) };
+  const supplies = { food: Math.min(have("food"), 2 * n), water: Math.min(have("water"), Math.ceil(2 * n * thirstAhead(state, 2))), meds: Math.min(have("meds"), Math.min(2, n)), ammo: Math.min(have("ammo"), 10 * n) };
   const res = launchExpedition(state, { memberIds: fighters.map((s) => s.id), dest: raidParty.target.tile, mission: "help", stance: "rushed", supplies });
   if (res.error) return res.error;
   res.party.helpFor = raidParty.id;
@@ -633,14 +646,16 @@ function playerPartyHour(state, p) {
 
 // True while the team is on its way somewhere (not resting, working or waiting).
 export const onTheMove = (p) => (p.phase === "out" || p.phase === "back") && Array.isArray(p.path) && p.idx < p.path.length - 1;
-// Food and water the team eats an hour (each): one ration a person a day, more on the move under a load (load.js).
+// Food the team eats an hour: one ration a person a day, more on the move under a load (load.js). Water is the
+// same times the day's thirst (weather.js: the season, a hot day): waterPerHour.
 export const rationsPerHour = (state, p, members = partyMembers(state, p)) => rationRate(p.burden, members, p.vehicle, onTheMove(p)) / 24;
+export const waterPerHour = (state, p, members = partyMembers(state, p), hour = state.hour) => rationsPerHour(state, p, members) * thirstAt(state, hour);
 
 function consume(state, p, members) {
   const n = rationRate(p.burden, members, p.vehicle, onTheMove(p)); // rations a day at this hour's rate
   const s = p.supplies;
   s.food = (s.food || 0) - n / 24;
-  s.water = (s.water || 0) - n / 24;
+  s.water = (s.water || 0) - (n / 24) * thirstAt(state); // more in summer and on a hot day (weather.js)
   // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
   // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
   // preserved food.
@@ -1454,7 +1469,8 @@ export function dispatchConvoy(state, route) {
   if (h.stock.food < food) return log(state, `Not enough food to supply the convoy to ${f.name}.`, "danger");
   h.stock[route.sendKey] -= route.sendQty;
   h.stock.food -= food;
-  const water = Math.min(h.stock.water || 0, food);
+  const wantWater = Math.ceil(food * thirstAhead(state, hours / 24)); // more in summer and a heat wave (weather.js)
+  const water = Math.min(h.stock.water || 0, wantWater);
   h.stock.water -= water;
   if (useTruck) {
     const top = Math.max(0, need - v.fuel);
@@ -1464,7 +1480,7 @@ export function dispatchConvoy(state, route) {
   const p = {
     id: newId(), owner: "player", kind: "convoy", mission: "route", routeId: route.id, dest: f.bases[0], homeBaseId: h.id,
     members: escorts.map((s) => s.id), stance: "normal", vehicle: useTruck, vehicleId: useTruck ? v.id : null,
-    supplies: { food, water: Math.max(water, food), fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
+    supplies: { food, water: Math.max(water, wantWater), fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
     cargo: { supplies: { [route.sendKey]: route.sendQty }, gear: [] },
     path: res.path, idx: 0, progress: 0, phase: "out", seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false,
     departed: state.hour, plannedHours: hours, eventsSeen: 0,

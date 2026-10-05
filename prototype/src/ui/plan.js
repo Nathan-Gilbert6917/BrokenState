@@ -85,7 +85,7 @@ export function planSection(state, pl, est) {
     const on = k === "cargo" ? !!cond.cargo : cond[k] != null;
     return `<label class="small"${tip(`Checked hourly while the plan runs: the team turns for home by itself and reports why (a card lets you undo it).`)}><input type="checkbox" data-action="pl-cond" data-k="${k}" ${on ? "checked" : ""}> ${d.label}${k === "cargo" ? "" : ` <input type="number" class="tiny" style="width:3.6rem" data-action="pl-condv" data-k="${k}" min="${d.min}" max="${d.max}" step="${d.step}" value="${cond[k] ?? d.def}"> ${d.unit}`}</label>`;
   };
-  const whole = est ? `<div class="small" style="margin-top:0.35rem"${tip("Every leg stepped hour by hour like the real trip (weather included); searches count 6 hours, Look around 2. Food and water: one each per person per day for the whole plan, plus the way home if the plan does not end there.")}>Whole plan: <b>~${(est.total / 24).toFixed(1)} days</b> (${est.hours}h${est.backHours ? ` + ${est.backHours}h home` : ""}) · needs ${est.food} food · ${est.water} water${est.fuel ? ` · ${est.fuel} fuel` : ""}${est.returns ? "" : ` · <span class="warn">${est.open ? "a step has no route" : "ends away from home: it waits for orders there"}</span>`}</div>` : "";
+  const whole = est ? `<div class="small" style="margin-top:0.35rem"${tip("Every leg stepped hour by hour like the real trip (weather included); searches count 6 hours, Look around 2. Food and water: one each per person per day for the whole plan (more on the move under a load; water times each day's thirst: 1.3 in summer, at least 1.6 on a hot day, 0.9 in winter), plus the way home if the plan does not end there.")}>Whole plan: <b>~${(est.total / 24).toFixed(1)} days</b> (${est.hours}h${est.backHours ? ` + ${est.backHours}h home` : ""}) · needs ${est.food} food · ${est.water} water${est.fuel ? ` · ${est.fuel} fuel` : ""}${est.returns ? "" : ` · <span class="warn">${est.open ? "a step has no route" : "ends away from home: it waits for orders there"}</span>`}</div>` : "";
   const notes = est ? heatNote(state, pl, est) : [];
   return `<h3${tip("What the team does after reaching the target, in order. Out of radio contact the team follows this plan; it reports in with a card on important finds (a horde in sight, a rich site, supplies running short) and when the plan ends. In radio range you can change its orders any time.")}>Plan</h3>
     <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "explore", "camp", "custom"].map(presetBtn).join("")}
@@ -101,7 +101,7 @@ export function planSection(state, pl, est) {
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
-      ${addBtn("gather", "Gather")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
+      ${addBtn("gather", "Gather")}${addBtn("water", "Fetch water")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
       <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles${t.job ? "" : `, loot ~${Math.round((knownLoot(state, t.tile) || 0) * 100)}%`})</option>`).join("")}</select>
       ${addBtn("home", "Return home")}
     </div>

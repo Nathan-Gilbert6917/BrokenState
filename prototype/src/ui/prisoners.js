@@ -3,6 +3,7 @@
 import { SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import { atBase, day } from "../sim/world.js";
 import { teamName } from "../sim/parties.js";
+import { thirstAt } from "../sim/weather.js";
 import {
   PRISON, prisonersAt, cellCap, guarded, prisonerView, questionPrisoner, askRansom, tradeBack, releasePrisoner,
   setMode, executePrisoner,
@@ -22,7 +23,7 @@ export function prisonTab(state, base, ui) {
   let html = `<h3>Prisoners at ${esc(base.name)}</h3>
     <div class="small muted">Holding cells: ${list.length - shed} of ${cap} used${shed ? `, <span class="warn">${shed} in a shed (${pctTxt(PRISON.ESCAPE.shed)} a day to escape)</span>` : ""}${cap ? "" : " (build Holding cells: 3 prisoners each)"}.
       On guard: ${guard ? esc(guard.name) : `<span class="warn">nobody</span> (escapes ${pctTxt(PRISON.ESCAPE.unguarded)} a day instead of ${pctTxt(PRISON.ESCAPE.guarded)}; set someone's role to Guard)`}.
-      ${list.length ? `Feeding them: ${list.length * PRISON.FOOD} food and ${list.length * PRISON.WATER} water a day.` : ""}</div>`;
+      ${list.length ? `Feeding them: ${list.length * PRISON.FOOD} food and ${Math.round(list.length * PRISON.WATER * thirstAt(state) * 10) / 10} water a day${thirstAt(state) !== 1 ? " (water by the season's thirst)" : ""}.` : ""}</div>`;
   if (out.length) html += `<div class="small" style="margin-top:0.3rem">On the way here: ${esc(out.map((p) => `${p.name} (with ${teamName(state, state.parties.find((x) => x.id === p.at.partyId))})`).join(", "))}.</div>`;
   if (!list.length) return html + `<div class="card small muted" style="margin-top:0.5rem">Nobody is held here. In battle, Subdue (C) knocks an enemy out instead of killing them (a takedown from behind on the unaware is best); after a won fight the knocked out come home as prisoners.</div>`;
   for (const p of list) html += prisonerCard(state, p, ui);

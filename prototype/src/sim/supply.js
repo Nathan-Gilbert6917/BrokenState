@@ -8,8 +8,9 @@ import { SUPPLIES } from "./data.js";
 import { newId, log, day, hub, baseById, survivorById, hurt, mergeKnowledge } from "./world.js";
 import {
   STANCES, planPath, fuelForPath, carryCapacity, supplyLoad, unitsThatFit, partyCapacity, cargoLoad, cargoRoom,
-  partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty,
+  partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty, waterForHours,
 } from "./parties.js";
+import { thirstAt } from "./weather.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
 import { assignStations } from "./buildings.js";
 import { isCaptive } from "./conflicts.js";
@@ -111,6 +112,9 @@ export function planSupplyRun(state, o) {
     path: res.path, tiles: res.path.length - 1, hoursOut, hours,
     need: n ? Math.ceil((n * (hoursOut + SITE_HOURS)) / 24) : 0, // food and water for the way out
     want: n ? Math.ceil((n * hours) / 24) + 1 : 0,               // the whole trip plus a spare day
+    // Water the same, hour by hour at each day's thirst (weather.js: more in summer and a heat wave).
+    needWater: n ? Math.ceil(waterForHours(state, state.hour, [[hoursOut + SITE_HOURS, n]]) - 1e-9) : 0,
+    wantWater: n ? Math.ceil(waterForHours(state, state.hour, [[hours, n]]) - 1e-9) + 1 : 0,
     fuelOut: useVehicle ? fuelOut : 0, fuelWant: useVehicle ? fuelWant : 0,
     capacity: carryCapacity(state, crew, useVehicle ? v : null), load: supplyLoad(deliver),
   };
@@ -131,7 +135,8 @@ export function supplyEstimate(state, f) {
   }
   for (const k of ["food", "water"]) {
     const left = Math.floor(origin.stock[k] || 0) - (deliver[k] || 0);
-    if (left < plan.need) warnings.push(`Not enough ${k} left at ${origin.name} for the road (needs ${plan.need} after the delivery).`);
+    const need = k === "water" ? plan.needWater : plan.need;
+    if (left < need) warnings.push(`Not enough ${k} left at ${origin.name} for the road (needs ${need} after the delivery).`);
   }
   if (plan.load > plan.capacity) warnings.push(`The delivery weighs ${Math.ceil(plan.load)}, more than the crew${plan.useVehicle ? " and vehicle" : ""} can carry (${plan.capacity}).`);
   if (f.atDest !== "disband") {
@@ -181,9 +186,10 @@ export function dispatchSupplyRun(state, job, manual = false) {
   // Road supplies come from what is left after the delivery.
   const left = (k) => Math.floor(origin.stock[k] || 0) - (deliver[k] || 0);
   for (const k of ["food", "water"]) {
-    if (left(k) < plan.need) return blockRun(state, job, `not enough ${k} at ${origin.name} for the road (needs ${plan.need} after the delivery, has ${Math.max(0, left(k))})`, manual);
+    const need = k === "water" ? plan.needWater : plan.need;
+    if (left(k) < need) return blockRun(state, job, `not enough ${k} at ${origin.name} for the road (needs ${need} after the delivery, has ${Math.max(0, left(k))})`, manual);
   }
-  const supplies = { food: Math.min(plan.want, left("food")), water: Math.min(plan.want, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
+  const supplies = { food: Math.min(plan.want, left("food")), water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
   for (const [k, q] of Object.entries(deliver)) origin.stock[k] -= q;
   for (const k of ["food", "water", "ammo"]) origin.stock[k] -= supplies[k];
   const v = plan.useVehicle ? plan.v : null;
@@ -500,10 +506,12 @@ function holdUpkeep(state, p, job) {
     headHome(state, p, job);
     return;
   }
-  // One food and one water per person a day, from the base first, then from what the convoy carries.
+  // One food and one water per person a day (water times the day's thirst, weather.js), from the base first, then
+  // from what the convoy carries.
   const draw = (k) => {
-    if ((dest.stock[k] || 0) >= 1) dest.stock[k] -= 1;
-    else if ((p.supplies[k] || 0) >= 1) p.supplies[k] -= 1;
+    const q = k === "water" ? thirstAt(state) : 1;
+    if ((dest.stock[k] || 0) >= q) dest.stock[k] -= q;
+    else if ((p.supplies[k] || 0) >= q) p.supplies[k] -= q;
     else return false;
     return true;
   };

@@ -15,7 +15,7 @@ import {
 } from "../src/sim/storage.js";
 import {
   basesDaily, waterProduction, waterNeed, waterCapacity, waterOutlook, WATER, thirstDamage, spoilRate, foodSpoilage,
-  scavengeOutput, scavChance, foodOutlook, eatPerDay,
+  scavengeOutput, scavChance, foodOutlook, eatPerDay, summerWater, summerWaterOk, summerFixText, summerWarningDaily, SUMMER_WARN_DAYS,
 } from "../src/sim/economy.js";
 import {
   CONDITIONS, addCondition, treatCondition, treatConditionInfo, workFactor, healthDaily, conditionsOf, isSick,
@@ -23,7 +23,7 @@ import {
 import { addBuilding, buildRate, stationOperator, stations, stationStatus, runStations, RECIPES, BUILDINGS } from "../src/sim/buildings.js";
 import { medicalHour, patients } from "../src/sim/medical.js";
 import { LOCATIONS, SUPPLY_KEYS } from "../src/sim/data.js";
-import { setAutopilot, foodTarget } from "../src/sim/autopilot.js";
+import { setAutopilot, foodTarget, waterPlan, droughtWater } from "../src/sim/autopilot.js";
 import { makeItem } from "../src/sim/crafting.js";
 import * as Weather from "../src/sim/weather.js";
 
@@ -152,7 +152,7 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   atBase(st, h.id).forEach((s) => { s.role = "rest"; s.conditions = []; });
   const n = residents(st, h.id).length;
   const need = waterNeed(st, h);
-  check(need.people === n * (need.hot ? WATER.hotDrink : WATER.drink), `everyone drinks (${need.people} for ${n} people${need.hot ? ", hot day" : ""})`);
+  check(need.people === Math.round(n * Weather.thirstFactor(st) * 10) / 10 && need.rate === 1, `everyone drinks 1 a day in spring (${need.people} for ${n} people)`);
   const prod = waterProduction(st, h);
   check(prod.own > 0 && prod.total >= prod.own, `the hub's well gives water (${prod.total} a day)`);
   h.stock.water = 30;
@@ -210,6 +210,153 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(alive(st2).length < ppl.length, `thirst kills (first death after ${days} days without water)`);
   check(days <= 9, `faster than hunger (${days} days)`);
   check(thirstDamage(1) < thirstDamage(2) && thirstDamage(3) < thirstDamage(5), "thirst damage grows day by day");
+}
+
+// 3b. Seasonal water: everyone drinks by the season (spring and autumn 1, summer 1.3, winter 0.9, at least 1.6 on a
+// hot day), crops need a fifth more on a summer dry day, water above the capacity evaporates a little in summer, the
+// summer outlook and its warning a week before summer, and the governor's summer plan on a big hub.
+{
+  console.log("Seasonal water");
+  const T = Weather.THIRST;
+  check(T.spring === 1 && T.summer === 1.3 && T.autumn === 1 && T.winter === 0.9 && T.heat === 1.6, `thirst: spring ${T.spring}, summer ${T.summer}, autumn ${T.autumn}, winter ${T.winter}, a hot day at least ${T.heat}`);
+  const st = W();
+  const h = hub(st);
+  atBase(st, h.id).forEach((s) => { s.role = "rest"; s.conditions = []; });
+  const n = residents(st, h.id).length;
+  // Days by kind: a plain day of each season, a hot summer day.
+  const find = (pred) => { for (let d = 0; d < 112 * 3; d++) if (pred(d)) return d; return null; };
+  const hot = (d) => { const w = Weather.weatherOnDay(st, d + 1); return w.key === "heat" || w.hi >= 30; };
+  const plainDay = { spring: null, summer: null, autumn: null, winter: null };
+  for (const k of Object.keys(plainDay)) plainDay[k] = find((d) => Weather.seasonOfDay(d).key === k && !hot(d) && Weather.weatherOnDay(st, d + 1).key !== "drought");
+  const hotDay = find((d) => hot(d));
+  for (const [k, d] of Object.entries(plainDay)) {
+    setDay(st, d);
+    const need = waterNeed(st, h);
+    check(Weather.thirstFactor(st) === T[k] && need.rate === T[k] && Math.abs(need.people - n * T[k]) < 0.06, `${k}: everyone drinks ${T[k]} (${need.people} for ${n})`);
+  }
+  check(hotDay != null, "test setup: a hot day in three years");
+  setDay(st, hotDay);
+  check(Weather.thirstFactor(st) >= T.heat && waterNeed(st, h).hot, `a hot day (${Weather.weather(st).name}, ${Math.round(Weather.weather(st).hi)} °C): at least ${T.heat} each (${Weather.thirstFactor(st)})`);
+  // The day's drinking at the base follows the rate (summer).
+  setDay(st, plainDay.summer);
+  bareFarm(st, h);
+  h.stock.water = 30;
+  const prodS = waterProduction(st, h);
+  basesDaily(st);
+  st.cards.length = 0;
+  const expectS = Math.min(waterCapacity(h), 30 + prodS.total) - n * T.summer;
+  check(Math.abs(h.stock.water - expectS) < 0.11, `summer: the base drinks ${T.summer} a head (${h.stock.water}, expected ${expectS.toFixed(1)})`);
+  // Prisoners in the cells drink like anyone: counted in the outlook.
+  st.prisoners = [{ id: 1, at: { kind: "base", baseId: h.id } }];
+  check(Math.abs(waterNeed(st, h).prisoners - T.summer) < 0.01, `a prisoner in the cells drinks ${T.summer} in summer too`);
+  st.prisoners = [];
+  // Crops: a fifth more on a summer dry day than in spring (the same plots), half again when hot (as before).
+  const f = bareFarm(st, h);
+  setDay(st, plainDay.spring);
+  atBase(st, h.id)[0].role = "farm";
+  h.stock.food = Math.max(h.stock.food || 0, 50);
+  plantPlot(st, h, f.plots[0].id, "potato");
+  plantPlot(st, h, f.plots[1].id, "beans");
+  const springCrops = cropWaterNeed(st, h, { dry: true });
+  setDay(st, plainDay.summer);
+  const summerCrops = cropWaterNeed(st, h, { dry: true });
+  check(springCrops > 0 && Math.abs(summerCrops - springCrops * 1.2) < 0.11, `crops need a fifth more on a summer dry day (${springCrops} → ${summerCrops})`);
+  setDay(st, hotDay);
+  check(Math.abs(cropWaterNeed(st, h, { dry: true }) - springCrops * 1.5) < 0.11, `and half again on a hot day (${cropWaterNeed(st, h, { dry: true })})`);
+  // Evaporation: in summer, water kept above the capacity loses 5% of the overflow a day; not in spring.
+  setDay(st, plainDay.summer);
+  const cap = waterCapacity(h);
+  h.stock.water = cap + 100;
+  const nd = waterNeed(st, h);
+  basesDaily(st); st.cards.length = 0;
+  check(Math.abs(h.stock.water - (cap + 100 - 100 * WATER.evaporate - nd.people - nd.crops)) < 0.2, `summer: ${Math.round(WATER.evaporate * 100)}% of the water above the capacity evaporates (${h.stock.water.toFixed(1)} of ${cap + 100})`);
+  setDay(st, plainDay.spring);
+  h.stock.water = cap + 100;
+  const ns = waterNeed(st, h);
+  basesDaily(st); st.cards.length = 0;
+  check(Math.abs(h.stock.water - (cap + 100 - ns.people - ns.crops)) < 0.2, "spring: no evaporation");
+  // The summer outlook: a crowd at the hub with the starting well falls short, and the outlook says what to build.
+  const big = W();
+  const hb = hub(big);
+  for (let i = 0; i < 30; i++) addPerson(big, hb, "rest");
+  const sw = summerWater(big, hb);
+  const nb = residents(big, hb.id).length;
+  check(sw.n === nb && Math.abs(sw.need - (nb * T.summer + sw.crops)) < 0.11, `summer outlook: ${nb} people at ${T.summer} plus the crops (${sw.need} a day)`);
+  check(sw.net < 0 && sw.heatNet < sw.net && sw.fix.some((x) => x.type === "well") && sw.fix.some((x) => x.type === "waterfilter"), `a crowd outgrows the well: ${sw.short} a day short (${-sw.heatNet} in a heat wave); fix: ${summerFixText(sw.fix)}`);
+  check(!summerWaterOk(sw), "the crowd's summer water does not hold");
+  const small = W();
+  const hs = hub(small);
+  const sws = summerWater(small, hs);
+  check(summerWaterOk(sws) || sws.net >= 0, `the starting hub's own well carries its people (${sws.net >= 0 ? "+" : ""}${sws.net} a day)`);
+  // The warning a week before summer: a log line per base that falls short and one card; once a year; none for a
+  // base whose summer water holds.
+  const warnDay = find((d) => Weather.seasonOfDay(d).key === "spring" && Weather.seasonOfDay(d).daysLeft === SUMMER_WARN_DAYS && d > 20);
+  big.cards.length = 0;
+  setDay(big, warnDay);
+  const log0 = big.log.length;
+  summerWarningDaily(big);
+  const lines = big.log.slice(0, big.log.length - log0).filter((l) => /Summer in 7 days/.test(l.text));
+  const card = big.cards.find((c) => c.summerWater);
+  check(lines.length === 1 && /short/.test(lines[0].text) && /Build/.test(lines[0].text), `end of spring: a warning line with the shortfall and what to build ("${lines[0] ? lines[0].text.slice(0, 140) : ""}…")`);
+  check(card && /drinks 30% more/.test(card.text) && /60% more in a heat wave/.test(card.text) && card.choices.length, "and a Summer water card (30% more, 60% in a heat wave)");
+  big.cards.length = 0;
+  summerWarningDaily(big);
+  check(!big.cards.some((c) => c.summerWater), "once a year");
+  setDay(big, warnDay - 1);
+  hb.summerWarned = null;
+  summerWarningDaily(big);
+  check(!big.cards.some((c) => c.summerWater), "only on its day (a week before summer)");
+  small.cards.length = 0;
+  setDay(small, warnDay);
+  summerWarningDaily(small);
+  check(!small.cards.some((c) => c.summerWater), "no warning for a base whose summer water holds");
+  // The governor's summer plan on a big hub (autopilot.js waterPlan): it wants filters for the heat-wave gap, holds
+  // scrap for them and for a broken well, plans a summer stock, builds wells and cisterns before summer, crafts
+  // the filters, and takes in no newcomers its summer water cannot carry.
+  const ap = W(seed + 5);
+  const ha = hub(ap);
+  for (let i = 0; i < 34; i++) { const s = addPerson(ap, ha, "rest"); s.skills.mechanics = 4; }
+  setAutopilot(ap, true, "balanced");
+  const wd = find((d) => Weather.seasonOfDay(d).key === "spring" && Weather.seasonOfDay(d).daysLeft === 18 && d > 20);
+  setDay(ap, wd);
+  ap.hour = wd * 24;
+  Object.assign(ha.stock, { scrap: 400, parts: 30, food: 3000, water: 60 });
+  const wp = waterPlan(ap, ha);
+  check(wp.near && wp.short && wp.filters >= 8 && wp.reserve > 0, `a hub of ${residents(ap, ha.id).length} in late spring: summer is near and short; it wants ${wp.filters} filters and ${wp.reserve} water in store`);
+  check(wp.hold.scrap >= 4, `scrap held back for water (${wp.hold.scrap})`);
+  const nA = atBase(ap, ha.id).length;
+  check(!droughtWater(ap, ha, nA + 1), "no newcomers the summer water cannot carry");
+  ha.buildings.push({ type: "well", id: newId(), wear: 100, broken: { day: 1, cause: "test" }, built: 1 });
+  const wp2 = waterPlan(ap, ha);
+  ap.hour += 1; // a new hour: a fresh plan
+  check(waterPlan(ap, ha).hold.parts >= 1 && waterPlan(ap, ha).hold.scrap >= wp2.hold.scrap, "a broken well holds a part and scrap for its repair");
+  ha.buildings.pop();
+  const filtersOf = () => ha.armory.filter((it) => it.key === "waterfilter").length;
+  const f0w = filtersOf();
+  let thirsty = 0;
+  for (let i = 0; i < 24 * 40; i++) {
+    tickHour(ap);
+    if (ap.hour % 24 === 0) { ha.stock.food = 3000; ha.stock.scrap = Math.max(ha.stock.scrap, 60); if (ha.thirstDays) thirsty++; }
+    if (ap.gameOver) break;
+  }
+  const wells = ha.buildings.filter((b) => b.type === "well").length + ha.construction.filter((c) => c.type === "well").length;
+  const cis = ha.buildings.filter((b) => b.type === "cistern").length + ha.construction.filter((c) => c.type === "cistern").length;
+  console.log(`  big hub after 40 days (into summer): wells ${wells}, cisterns ${cis}, filters ${f0w} → ${filtersOf()}, water ${Math.round(ha.stock.water)}, days without water ${thirsty}`);
+  check(wells >= 2, `the governor builds the wells before summer (${wells})`);
+  check(filtersOf() >= 6, `and crafts water filters for the summer (${filtersOf()})`);
+  check(thirsty === 0, `nobody goes thirsty in the first weeks of summer (${thirsty} dry days)`);
+  // Determinism: the same big hub twice.
+  const runBig = () => {
+    const s2 = W(seed + 5);
+    const h2 = hub(s2);
+    for (let i = 0; i < 34; i++) { const s = addPerson(s2, h2, "rest"); s.skills.mechanics = 4; }
+    setAutopilot(s2, true, "balanced");
+    s2.hour = wd * 24;
+    Object.assign(h2.stock, { scrap: 400, parts: 30, food: 3000, water: 60 });
+    for (let i = 0; i < 24 * 20; i++) tickHour(s2);
+    return JSON.stringify([h2.stock, h2.buildings.map((b) => b.type), h2.armory.map((x) => x.key), s2.log.slice(0, 40).map((l) => l.text)]);
+  };
+  check(runBig() === runBig(), "the summer planning plays out the same twice");
 }
 
 // 4. Food storage (storage.js): room for fresh food, slow spoilage inside, fast outside; preserved food; eating

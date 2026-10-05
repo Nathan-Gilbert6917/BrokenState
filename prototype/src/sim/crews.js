@@ -29,7 +29,7 @@ import { searchHour, extract } from "./scavenge.js";
 import { vehiclesAtBase, vehicleById, refuel } from "./vehicles.js";
 import { saveSupplyRun, dispatchSupplyRun, deleteSupplyRun, supplyRunById } from "./supply.js";
 import { attitude, isAggressiveType } from "./factions.js";
-import { weather, severeSoon } from "./weather.js";
+import { weather, severeSoon, thirstAhead } from "./weather.js";
 import { crewAI } from "./autopilot.js";
 import { siteKnown } from "./discovery.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
@@ -206,7 +206,7 @@ function launchTeam(ctx, c) {
   const homeLeft = Math.max(0, atBase(state, base.id).length - n);
   const sup = {
     food: Math.ceil(n * days * (crew.spare || 1.3)) + 1,
-    water: Math.ceil(n * days * (crew.spare || 1.3)) + 1,
+    water: Math.ceil(n * days * (crew.spare || 1.3) * thirstAhead(state, days)) + 1, // more in summer and a heat wave
     ammo: Math.min(Math.max(0, stock("ammo") - 20), (crew.ammo ?? 10) * n),
     meds: stock("meds") >= 4 ? Math.min(crew.meds ?? 2, stock("meds") - 2) : 0,
     fuel: 0,
