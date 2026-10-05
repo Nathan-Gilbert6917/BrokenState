@@ -2,7 +2,7 @@
 // Pure simulation: no DOM or canvas code lives here.
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
-import { DEFAULT_SIZE, sizeDef } from "./worldsize.js";
+import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { appearanceFor } from "./appearance.js";
 export { radioBasesInRange };
@@ -65,12 +65,15 @@ export function setNextId(n) {
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
-// size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map).
+// size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
+// "custom" with customW × customH hexes (experimental: worldsize.js customDef).
+// hives (optional): how many hives the map starts with, 0–10 (null: what the size makes; mapgen.js).
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal" }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null }) {
   const rng = new Rng(seed);
-  const worldSize = sizeDef(size).key;
-  const map = generateMap(rng, worldSize);
+  const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
+  const worldSize = sdef.key;
+  const map = generateMap(rng, sdef, { hives: clampHives(hives) });
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
@@ -104,7 +107,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const central = (t) => t.x >= 4 && t.y >= 3 && t.x < g.width - 4 && t.y < g.height - 3 && state.cityIds.some((c) => g.distance(t.id, c) <= 30);
   // Large and Huge maps (worldsize.js hiveClear): farther from the hives at first, so the early game is no harsher
   // than a Normal map's.
-  const clear = sizeDef(worldSize).hiveClear;
+  const clear = sdef.hiveClear;
   const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
   const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));

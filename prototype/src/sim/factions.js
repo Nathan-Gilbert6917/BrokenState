@@ -53,7 +53,7 @@ import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou
 import { allianceRaidHelp } from "./alliance.js";
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
-import { worldScale, sizeDef, worldSizeOf } from "./worldsize.js";
+import { worldScale, stateSizeDef } from "./worldsize.js";
 import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
@@ -103,6 +103,7 @@ export function createFactions(state, count) {
   const types =["raider", rng.pick(["military", "fortress"]), rng.pick(["traders", "commune"])];
   const all = Object.keys(FACTION_TYPES);
   while (types.length < count) types.push(rng.pick(all));
+  types.length = Math.min(types.length, Math.max(0, count)); // fewer than three (the new-run screen allows none)
   rng.shuffle(types);
   const usedNames = new Set();
   types.forEach((type, i) => {
@@ -114,7 +115,7 @@ export function createFactions(state, count) {
     if (!sites.length) return;
     // Large and Huge maps (worldsize.js nearGroups): only the first few start within raid reach of the hub; the
     // rest settle beyond it and come into reach as they expand.
-    const nearCap = sizeDef(worldSizeOf(state)).nearGroups;
+    const nearCap = stateSizeDef(state).nearGroups;
     const far = nearCap != null && i >= nearCap ? sites.filter((t) => g.distance(t.id, hubTile) > RAIDS.REACH + 2) : [];
     const reach = sites.filter((t) => g.distance(t.id, hubTile) <= (nearCap != null && i < nearCap ? RAIDS.REACH : Math.round(30 * Math.sqrt(worldScale(state)))));
     const pool = far.length ? far : reach.length ? reach : sites;

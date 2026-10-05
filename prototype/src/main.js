@@ -29,7 +29,7 @@ import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
-import { DEFAULT_SIZE, sizeDef, clampGroups } from "./sim/worldsize.js";
+import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -85,7 +85,7 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, mode: "normal", crewEdited: false, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
+const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", crewEdited: false, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -918,7 +918,16 @@ const changeActions = {
   seed: (el) => newWorld(cleanSeed(el.value), true),
   factioncount: (el) => { ui.factionCount = clampGroups(ui.worldSize, el.value); newWorld(state.seed, true); },
   // A new world size: the same seed on the new map, with that size's usual number of groups (sim/worldsize.js).
-  worldsize: (el) => { ui.worldSize = sizeDef(el.value).key; ui.factionCount = sizeDef(ui.worldSize).defGroups; newWorld(state.seed, true); },
+  // Custom (experimental): the width × height below the row, starting from the map on screen.
+  worldsize: (el) => {
+    if (el.value === "custom") { ui.worldSize = "custom"; ui.customW = state.grid.width; ui.customH = state.grid.height; }
+    else ui.worldSize = sizeDef(el.value).key;
+    ui.factionCount = (ui.worldSize === "custom" ? customDef(ui.customW, ui.customH) : sizeDef(ui.worldSize)).defGroups;
+    newWorld(state.seed, true);
+  },
+  customw: (el) => { ui.customW = clampCustomW(el.value); newWorld(state.seed, true); },
+  customh: (el) => { ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
+  hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
   // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore).
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
   rename: (el) => {
@@ -958,7 +967,7 @@ function newWorld(seed, keepCrew = false) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, mode: ui.mode });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode });
   resetView();
   hideCtx();
   hideTip();

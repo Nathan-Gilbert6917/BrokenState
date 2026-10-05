@@ -96,9 +96,11 @@ function makeNoise(rng, w, h, cell) {
   };
 }
 
-// size: a worldsize.js key (Normal when left out). Counts of towns, sites and landmarks scale with the map's area;
-// on a Normal map every count and every random draw is the original one, so old seeds build the same map.
-export function generateMap(rng, size = "normal") {
+// size: a worldsize.js key (Normal when left out) or a size definition (worldsize.js customDef). Counts of towns,
+// sites and landmarks scale with the map's area; on a Normal map every count and every random draw is the original
+// one, so old seeds build the same map. hives (optional, the new-run screen): how many hives the map starts with in
+// place of what its size makes (0–10), see below.
+export function generateMap(rng, size = "normal", { hives = null } = {}) {
   const def = sizeDef(size);
   const MAP_W = def.w, MAP_H = def.h;
   const A = areaScale(def); // land relative to Normal
@@ -484,10 +486,18 @@ export function generateMap(rng, size = "normal") {
   // The extra hot spots of Large and Huge maps hold a small cluster each (worldsize.js spotHives): hive income
   // grows with the cluster (hives.js hiveIncome), so this keeps the dead per tile of land near a Normal map's.
   const originHives = def.key === "normal" ? HIVE.START_ORIGIN : def.originHives;
+  const want = seeds.map((s, i) => (!i ? originHives : spotIds.includes(s.id) ? def.spotHives || HIVE.START_SPOT : HIVE.START_SPOT));
+  // A set hive count (the new-run screen): fewer than the map makes are taken from the outbreak origin outward (the
+  // origin keeps its cluster first, the lone hot spots go); more are added one per hot spot in turn, origin first.
+  if (hives != null) {
+    const total = want.reduce((a, b) => a + b, 0);
+    let left = Math.max(0, Math.round(hives));
+    if (left <= total) for (let i = 0; i < want.length; i++) { want[i] = Math.min(want[i], left); left -= want[i]; }
+    else for (let i = 0, extra = left - total; extra > 0; i = (i + 1) % want.length, extra--) want[i]++;
+  }
   for (const [i, s] of seeds.entries()) {
     const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.hive));
-    const n = !i ? originHives : spotIds.includes(s.id) ? def.spotHives || HIVE.START_SPOT : HIVE.START_SPOT;
-    for (const t of spots.slice(0, n)) t.hive = true;
+    for (const t of spots.slice(0, want[i])) t.hive = true;
   }
 
   return {

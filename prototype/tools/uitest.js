@@ -573,14 +573,22 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     const html = newRunScreen(w, ui);
     htmlOk(html, `new-run screen (${d.label})`);
     const sizeSel = /<select data-action="worldsize">([\s\S]*?)<\/select>/.exec(html);
-    check(sizeSel && (sizeSel[1].match(/<option/g) || []).length === SIZE_KEYS.length && new RegExp(`value="${k}" selected`).test(sizeSel[1]), `${d.label}: the size list has every size, this one selected`);
-    const groupSel = /<select data-action="factioncount">([\s\S]*?)<\/select>/.exec(html);
-    const opts = groupSel ? [...groupSel[1].matchAll(/<option[^>]*>(\d+)</g)].map((m) => Number(m[1])) : [];
-    check(opts[0] === d.groups[0] && opts[opts.length - 1] === d.groups[1] && opts.length === d.groups[1] - d.groups[0] + 1, `${d.label}: AI groups ${d.groups.join("–")} (got ${opts.join(",")})`);
-    check(new RegExp(`<option selected>${d.defGroups}<`).test(groupSel ? groupSel[1] : ""), `${d.label}: ${d.defGroups} groups selected`);
+    check(sizeSel && (sizeSel[1].match(/<option/g) || []).length === SIZE_KEYS.length + 1 && new RegExp(`value="${k}" selected`).test(sizeSel[1]) && /value="custom"/.test(sizeSel[1]), `${d.label}: the size list has every size and Custom, this one selected`);
+    const groupIn = /<input[^>]*data-action="factioncount"[^>]*>/.exec(html);
+    check(groupIn && /min="0"/.test(groupIn[0]) && /max="50"/.test(groupIn[0]) && new RegExp(`value="${d.defGroups}"`).test(groupIn[0]), `${d.label}: AI groups 0–50, ${d.defGroups} set (got ${groupIn && groupIn[0]})`);
+    const hiveSel = /<select data-action="hivecount">([\s\S]*?)<\/select>/.exec(html);
+    check(hiveSel && (hiveSel[1].match(/<option/g) || []).length === 12 && hiveSel[1].includes(`value="default" selected>Default (${w.hives.length})`), `${d.label}: starting hives Default (${w.hives.length}) and 0–10`);
+    check(!html.includes("Experimental"), `${d.label}: no custom-size warning on a preset`);
     check(html.includes(`${w.factions.length} other groups`), `${d.label}: the text counts the groups`);
-    check(clampGroups(k, 99) === d.groups[1] && clampGroups(k, 0) === d.groups[0], `${d.label}: group count clamped to its range`);
+    check(clampGroups(k, 99) === 50 && clampGroups(k, -1) === 0, `${d.label}: group count clamped to 0–50`);
   }
+  {
+    const w = createWorld({ seed: seed + 9, factionCount: 9, size: "custom", customW: 120, customH: 80 });
+    const html = newRunScreen(w, { worldSize: "custom", customW: 120, customH: 80, factionCount: 9, hiveCount: null, nrMsg: "" });
+    htmlOk(html, "new-run screen (Custom)");
+    check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
+  }
+  check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
   check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
   console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);
 }
