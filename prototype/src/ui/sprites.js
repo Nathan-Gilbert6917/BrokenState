@@ -10,7 +10,7 @@
 import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
-import { bossBattleCanvas } from "./hivesprites.js";
+import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
 const UP = 4;             // pre-upscale factor for the cached canvas
@@ -487,6 +487,9 @@ export function unitCanvas(state, b, t, salt = 0) {
   }
   if (t.boss) return bossBattleCanvas(t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js)
   const seed = (t.id * 131 + salt) | 0;
+  // A hive's special dead (sim/zombietypes.js): runners and brutes are the zombie variants, the rest their own.
+  if (t.ztype === "runner" || t.ztype === "brute") return zombieCanvas(t.ztype, seed);
+  if (t.ztype) return ztypeBattleCanvas(t.ztype);
   if (t.kind === "zombie") {
     const vk = `${seed}:${zlook.variants}`;
     let v = variants.get(t);

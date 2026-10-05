@@ -15,6 +15,8 @@ import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js
 import { movePartiesHour } from "./parties.js";
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
+import { growthAt, growthInfo } from "./hivetech.js";
+import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily } from "./vehicles.js";
@@ -506,6 +508,8 @@ export function snapshot(state, tileId) {
     factionBase: factionBase ? factionBase.id : null,
     hordeSize,
     hordeBoss: here.reduce((s, h) => s + (h.bosses || 0), 0),
+    hordeMix: here.reduce((m, h) => ({ mix: mergeMix(m.mix, m.n, h.mix, h.size), n: m.n + h.size }), { mix: null, n: 0 }).mix, // a hive's special dead (zombietypes.js)
+    growth: growthInfo(state, growthAt(state, tileId)), // a hive growth here (hivetech.js)
     infection: t.infection,
     loot: t.loot,
     hive: !!t.hive,

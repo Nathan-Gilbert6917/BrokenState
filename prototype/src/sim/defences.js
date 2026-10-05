@@ -23,9 +23,24 @@ import {
 } from "./combat.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { ensureHives, zombieToughness } from "./hives.js";
-import { BOSS_NAMES } from "./hiveconst.js";
+import { BOSS_NAMES, ZTYPES } from "./hiveconst.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { raidDamage } from "./breakdowns.js";
+import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
+
+// A hive's special dead at the walls (hivetech.js, numbers in hiveconst.js ZTYPES): each one presses the walls by
+// its kind's `wall` weight (brutes 2.5, spitters picking off the defenders 1.4, screamers 1.2, runners 0.9,
+// crawlers 0.5), so a horde holds as its size × the mix's weight against the hold limit; every ZTYPES.brute.smashEvery
+// brutes smash a defence like a Wallbreaker (at most 2); and crawlers slip past the walls even when the horde is
+// held: ZTYPES.crawler.slip of them, less half with a watchtower and half with lit floodlights (a quarter if the
+// defences are manned), and 4 or more that get in are a small battle inside (handler "crawlerSlip").
+export const wallWeight = (h) => mixWeight(h && h.mix, "wall");
+export function crawlerSlip(state, base, h, floodlit) {
+  const share = (h.mix && h.mix.crawler) || 0;
+  if (!share) return 0;
+  const seen = Math.min(1, (base.watchtower ? 0.5 : 0) + (floodlit ? 0.5 : 0) + (manned(state, base) ? 0.25 : 0));
+  return Math.round(h.size * share * ZTYPES.crawler.slip * (1 - seen));
+}
 
 export const DEFENCE = {
   WALL_BASE: 15, WALL_PER: 18, GUARD_PER_POWER: 2, ALERT_WEIGHT: 0.8,
@@ -93,16 +108,19 @@ export const spikeKill = (base, n) => {
 };
 
 // "Can this base hold against a horde of N?"
-export function holdCheck(state, base, size, bosses = 0) {
+// mix: the horde's special dead (h.mix): they press the walls by their weight (wallWeight).
+export function holdCheck(state, base, size, bosses = 0, mix = null) {
   const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size));
   const limit = holdLimit(state, base, bosses);
-  return { size, after, limit, holds: after <= limit, margin: limit - after };
+  const wm = mixWeight(mix, "wall");
+  return { size, after, limit, holds: after * wm <= limit, margin: Math.round(limit - after * wm), weight: wm };
 }
-export function holdText(state, base, size, bosses = 0) {
-  const c = holdCheck(state, base, size, bosses);
+export function holdText(state, base, size, bosses = 0, mix = null) {
+  const c = holdCheck(state, base, size, bosses, mix);
   const boss = bosses ? ` with a ${BOSS_NAMES.horde}` : "";
-  return c.holds ? `${base.name} holds against ${size}${boss}: its defences stop up to about ${c.limit}.`
-    : `${base.name} cannot hold ${size}${boss}: its defences stop about ${c.limit}, so about ${Math.max(1, Math.round(c.after - c.limit * DEFENCE.HELD_BACK))} would break in.`;
+  const press = Math.abs(c.weight - 1) >= 0.02 ? ` (its special dead press like ${Math.round(c.after * c.weight)})` : "";
+  return c.holds ? `${base.name} holds against ${size}${boss}${press}: its defences stop up to about ${c.limit}.`
+    : `${base.name} cannot hold ${size}${boss}${press}: its defences stop about ${c.limit}, so about ${Math.max(1, Math.round(c.after - (c.limit * DEFENCE.HELD_BACK) / c.weight))} would break in.`;
 }
 // One line for the base panel.
 export function holdSummary(state, base) {
@@ -137,40 +155,74 @@ export function hordeAttackBase(state, h, base) {
   if (worn) notes.push(worn);
   if (caught && reduceHorde(state, h, caught)) { log(state, `The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return; }
   if (floodlit && !poweredType(base, "floodlights")) base.stock.fuel -= DEFENCE.FLOOD_FUEL;
-  const smashed = bosses ? smash(state, base, bosses) : [];
-  if (smashed.length) notes.push(`${bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
+  // Brutes batter the defences too: every smashEvery of them smash one, like a Wallbreaker (at most 2).
+  const brutes = Math.min(2, Math.floor((h.size * ((h.mix && h.mix.brute) || 0)) / ZTYPES.brute.smashEvery));
+  const smashed = bosses + brutes ? smash(state, base, bosses + brutes) : [];
+  const smasher = bosses ? (bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`) + (brutes ? " and the brutes" : "") : "The brutes";
+  if (smashed.length) notes.push(`${smasher} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
+  if (h.mix) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
   base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
-  if (h.size <= limit) {
+  // The special dead press the walls by their weight: the limit in plain dead is the hold limit / the weight.
+  const wm = wallWeight(h);
+  const lim = limit / wm;
+  if (h.size <= lim) {
     stats.held++;
     const killed = Math.min(h.size, Math.round(8 + guardHold(state, base) * 0.8 + h.size * 0.12));
     log(state, `A horde of ${h.size} hit ${base.name}. The defences held (they stop about ${limit}) and about ${killed} of the dead were cut down.${notes.length ? ` ${notes.join(" ")}` : ""}`, "good");
-    if (people.length && h.size > limit * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
+    if (people.length && h.size > lim * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
+    const slip = crawlerSlip(state, base, h, floodlit); // crawlers that got past the walls anyway
     if (!reduceHorde(state, h, killed)) retreat(state, h, base);
+    if (slip >= 4 && people.length) crawlersInside(state, base, h, slip);
     return;
   }
   // Break-in.
   stats.breakIns++;
-  const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - limit * DEFENCE.HELD_BACK)));
+  const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
   log(state, `A horde of ${h.size}${bosses ? ` led by a ${BOSS_NAMES.horde}` : ""} broke through the defences of ${base.name} (they stop about ${limit}). About ${through} of the dead are inside.${notes.length ? ` ${notes.join(" ")}` : ""}`, "death");
   if (!people.length && base.type === "outpost") return wreckEmpty(state, base, h, through);
   if (!people.length) return overrun(state, base, h, through, "Nobody was there to stop them.");
-  const force = breakInForce(state, base, through, bosses);
+  const force = breakInForce(state, base, through, bosses, h);
   h.busy = true; // held in place until the fight is over
   h.target = base.tile;
   fightNow(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "zombies", count: force.count, power: force.power, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
+    enemy: { kind: "zombies", count: force.count, power: force.power, types: force.types, elite: force.elite, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
     ambush: null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
     context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit },
   });
 }
 
 // The dead that broke in as a battle: up to 20 on the map, each tougher the more there are (and on a hive's land).
-export function breakInForce(state, base, through, bosses = 0) {
+// h: the horde, whose special dead (h.mix) come in among them in their share.
+export function breakInForce(state, base, through, bosses = 0, h = null) {
   const n = Math.max(6, Math.min(20, Math.round(through / 7)));
   const power = Math.max(1.5, Math.min(6, DEFENCE.BREAK_BASE + through / (n * DEFENCE.BREAK_DIV) + zombieToughness(state, base.tile) * 0.5));
-  return { count: n, power: Math.round(power * 10) / 10, bosses };
+  return { count: n, power: Math.round(power * 10) / 10, bosses, types: h ? battleTypes(h.mix, n) : null, elite: !!(h && h.elite) };
 }
+
+// Crawlers that slipped past the walls of a base that held (crawlerSlip): a small fight inside, where they catch
+// your people unawares. Losing it costs a little of the stores; the people they caught are hurt in the battle.
+function crawlersInside(state, base, h, slip) {
+  const n = Math.max(2, Math.min(8, Math.round(slip / 3)));
+  const power = breakInForce(state, base, slip).power;
+  log(state, `About ${slip} crawlers slipped past the walls of ${base.name} while the horde was held.`, "danger");
+  fightNow(state, {
+    tile: base.tile, baseId: base.id,
+    enemy: { kind: "zombies", count: n, power, types: { crawler: n }, elite: !!h.elite, name: "the crawlers inside the walls" },
+    ambush: "enemy", canRetreat: true, handler: "crawlerSlip", downedLive: 0.4,
+    context: { hordeId: h.id, baseId: base.id, slip },
+  });
+}
+registerCombatHandler("crawlerSlip", (state, result, setup) => {
+  const c = setup.context;
+  const h = state.hordes.find((x) => x.id === c.hordeId) || null;
+  const base = state.bases.find((b) => b.id === c.baseId) || null;
+  if (h) reduceHorde(state, h, Math.round((c.slip * (result.enemiesKilled || 0)) / Math.max(1, setup.enemy.count)));
+  if (!base) return;
+  if (result.outcome === "victory") { log(state, `The crawlers inside ${base.name} were hunted down.`, "good"); return; }
+  for (const k of ["food", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.85);
+  log(state, `The crawlers inside ${base.name} were not stopped: they tore through the stores before they slunk off (food and meds spoiled). Watchtowers and floodlights see them coming.`, "danger");
+});
 
 // The horde backs off after a fight: it falls back RETREAT_TILES from the base (on its own side) for
 // RETREAT_HOURS, and is not drawn back to that base for SHUN_DAYS (hordes.js hordesDaily).
@@ -299,7 +351,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way. ${holdText(state, base, h.size, bosses)}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}`,
     choices: [
       {
         label: "Man the defences",
@@ -391,17 +443,17 @@ registerBattleLayout("baseDefence", (b, ctx) => {
 // or this base was attacked before).
 export function hordeThreat(state, base) {
   const g = state.grid;
-  let size = 0, bosses = 0;
+  let size = 0, bosses = 0, mix = null;
   for (const h of state.hordes) {
     if (!state.live.has(h.tile) || g.distance(h.tile, base.tile) > 8) continue;
-    if (h.size > size) { size = h.size; bosses = h.bosses || 0; }
+    if (h.size > size) { size = h.size; bosses = h.bosses || 0; mix = h.mix || null; }
   }
   let hiveNear = false;
   for (const id of g.within(base.tile, 20)) {
     const k = state.knowledge[id];
     if (k && k.hive) { hiveNear = true; break; }
   }
-  return { size, bosses, any: size > 0 || hiveNear || (base.hordeHits || 0) > 0 };
+  return { size, bosses, mix, any: size > 0 || hiveNear || (base.hordeHits || 0) > 0 };
 }
 // Defence buildings worth queuing at a base, most useful first (autopilot.js buildWishes).
 export function defenceWishes(state, base, threat) {

@@ -373,8 +373,8 @@ export const HUB_EVENTS = {
             ai: () => (s.mood < 50 && c.n >= 6 ? 6 : 2),
             resolve: (s2) => {
               if (!here(s, c.base)) return `${s.name} is no longer here.`;
-              c.base.stock.food -= ERRAND.food;
-              c.base.stock.water -= ERRAND.water;
+              c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - ERRAND.food); // never below zero, even taken when it was short
+              c.base.stock.water = Math.max(0, (c.base.stock.water || 0) - ERRAND.water);
               s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + s2.rng.int(ERRAND.minDays, ERRAND.maxDays) };
               s.station = null;
               return `${firstName(s)} sets off at dawn.`;

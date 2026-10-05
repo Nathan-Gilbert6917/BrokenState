@@ -9,6 +9,9 @@ import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./veh
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { growthsOf } from "./hivetech.js";
+import { GROWTHS } from "./hiveconst.js";
+import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
@@ -165,9 +168,14 @@ const EVENTS = [
     card: (st, p, t) => {
       const hiveTile = st.grid.within(t.id, 2).find((id) => st.tiles[id].hive);
       p.seen.set(hiveTile, snapshot(st, hiveTile)); // they saw it: it goes on the map when the team reports
+      // What has grown around it (hivetech.js): the team sees those too.
+      const hv0 = hiveAt(st, hiveTile);
+      const grown = hv0 ? growthsOf(st, hv0, false) : [];
+      for (const g of grown) p.seen.set(g.tile, snapshot(st, g.tile));
+      const names = grown.map((g) => GROWTHS[g.kind].name.toLowerCase());
       return {
         title: "A hive",
-        text: "The team comes upon an infestation hive: a mound of fused bodies, warm and pulsing, the dead packed around it. Hordes are born here. Destroying it takes a real assault (the Destroy hive mission).",
+        text: `The team comes upon an infestation hive: a mound of fused bodies, warm and pulsing, the dead packed around it. Hordes are born here. Destroying it takes a real assault (the Destroy hive mission).${names.length ? ` The dead have grown things around it: ${names.join(", ")}. They go on the map when the team reports (the Burn the growth mission).` : ""}`,
         choices: [
           burns(st, p, 5, { label: "Set fires at its edge (5 fuel)", hint: `${hint(st, p, "stealth", 10)}. Burns part of its guard and its stores; it does not destroy the hive`, resolve: (s) => {
             const hv = hiveAt(s, hiveTile);
@@ -428,11 +436,12 @@ function breakdownCard(state, p, v) {
 function hordeCard(state, p, horde) {
   const drive = () => p.vehicle === true && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything (bikes cannot)
   const score = hordeScore(horde.size);
-  const tough = 1 + zombieToughness(state, horde.tile) * 0.35;
+  const land = 1 + zombieToughness(state, horde.tile) * 0.35;
+  const tough = land * mixWeight(horde.mix, "weight", horde.elite); // a hive's special dead among them (zombietypes.js)
   const dc = 5 + Math.round(score / 3);
   return {
     title: `Horde of ${horde.size}`,
-    text: `A horde of about ${horde.size} (score ${score}${horde.bosses ? `, a ${BOSS_NAMES.horde} lumbering at its head` : ""}) is moving across ${tileLabel(state, horde.tile)}, right in your path.${tough > 2 ? " This close to a hive the dead are much tougher." : ""}`,
+    text: `A horde of about ${horde.size} (score ${score}${horde.bosses ? `, a ${BOSS_NAMES.horde} lumbering at its head` : ""}) is moving across ${tileLabel(state, horde.tile)}, right in your path.${land > 2 ? " This close to a hive the dead are much tougher." : ""}${horde.mix ? ` Among them: ${mixText(horde.mix, horde.size)}.` : ""}`,
     partyId: p.id,
     choices: [
       { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", dc), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", dc).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },

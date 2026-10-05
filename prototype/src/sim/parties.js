@@ -22,6 +22,8 @@ import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDea
 import { rescueArrive, captivesOf } from "./conflicts.js";
 import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { growthAt, growthArrive } from "./hivetech.js";
+import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText } from "./orders.js";
@@ -58,6 +60,7 @@ export const MISSIONS = {
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
+  growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running." },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak them out, storm the base, negotiate or pay a ransom." },
@@ -855,6 +858,8 @@ export function orderOptions(state, p) {
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
   if (hiveAt(state, tile)) add("hive");
+  const gr = growthAt(state, tile);
+  if (gr && gr.withered == null) add("growth"); // hivetech.js
   if (t.hidden && !t.hidden.taken && (t.hidden.known || p.spotted?.has(`${t.hidden.type}:${tile}`))) add("investigate");
   const v = state.vehicles.find((x) => x.loc.kind === "abandoned" && x.loc.tile === tile);
   if (v && !p.vehicle) {
@@ -1105,6 +1110,8 @@ function arrive(state, p) {
     }
     case "hive":
       return hiveArrive(state, p); // hives.js: the hive card and its battle
+    case "growth":
+      return growthArrive(state, p); // hivetech.js: burn a hive's growth or fight its guard
     case "cull": {
       const horde = state.hordes.find((h) => h.tile === p.dest) || state.hordes.find((h) => state.grid.distance(h.tile, p.dest) <= 1);
       if (!horde) {
@@ -1315,7 +1322,7 @@ function cullCard(state, p, horde) {
   const moved = (st) => { awaitOrders(st, p, "The horde had moved on before the team was set.", { failed: true }); return "The horde is no longer there."; };
   return {
     title: `A horde of ${horde.size}`,
-    text: `The team has found the horde near ${tileLabel(state, horde.tile)} (score ${hordeScore(horde.size)}${horde.bosses ? `, a ${BOSS_NAMES.horde} among them` : ""}${zombieToughness(state, horde.tile) >= 3 ? "; this is red-skull ground by a hive, and the dead here are much tougher" : ""}). Your squad's combat power is ${Math.round(power0)}.`,
+    text: `The team has found the horde near ${tileLabel(state, horde.tile)} (score ${hordeScore(horde.size)}${horde.bosses ? `, a ${BOSS_NAMES.horde} among them` : ""}${zombieToughness(state, horde.tile) >= 3 ? "; this is red-skull ground by a hive, and the dead here are much tougher" : ""}).${horde.mix ? ` Among them: ${mixText(horde.mix, horde.size)}${horde.elite ? " (elite)" : ""}.` : ""} Your squad's combat power is ${Math.round(power0)}.`,
     partyId: p.id,
     choices: [
       {
@@ -1327,7 +1334,7 @@ function cullCard(state, p, horde) {
           const power = members.reduce((s, m) => s + combatPower(m), 0);
           const ammoUse = takeSupply(p, "ammo", members.length * 15);
           // Tougher dead (a hive's land, red-skull ground) fall slower; a bigger horde (its score) presses closer.
-          const tough = 1 + zombieToughness(st, horde.tile) * 0.35;
+          const tough = (1 + zombieToughness(st, horde.tile) * 0.35) * mixWeight(horde.mix, "weight", horde.elite); // special dead (zombietypes.js)
           const kill = Math.min(horde.size, Math.round((power * (ammoUse > members.length * 8 ? 3 : 1.5) * st.rng.range(0.7, 1.3)) / tough));
           horde.size -= kill;
           const risk = Math.min(0.9, 0.25 + hordeScore(horde.size + kill) / 40 + (horde.bosses ? 0.2 : 0) + (tough - 1) * 0.3);

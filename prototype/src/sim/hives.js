@@ -5,9 +5,11 @@
 // A Normal map starts with 5–6 hives (four around the outbreak origin, one at each other hot spot: mapgen.js; other
 // world sizes keep about the same hives per tile, worldsize.js), each
 // with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15:
-// hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (from day 200, then at most one every 90 days per hive):
-// a hive boss that joins a horde and smashes defences when it attacks a base (defences.js). Inside every hive
-// waits the Broodmother, the boss a team fights when it storms the hive.
+// hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (only with a Wallbreaker den grown, from day 200, then at
+// most one every 90 days per hive): a hive boss that joins a horde and smashes defences when it attacks a base
+// (defences.js). Inside every hive waits the Broodmother, the boss a team fights when it storms the hive.
+// Hives also spend on growths around them (hivetech.js, the tech tree): more income, a bigger guard, and the
+// special dead their hordes carry (runners, brutes, spitters, screamers, crawlers: zombietypes.js).
 //
 // Each hive keeps a guard horde at home. Every 120–180 days a site for a new hive is picked near the current ones;
 // hives within 10 tiles of it send hordes there, the rest defend: they send hordes out to roam and to attack
@@ -30,9 +32,14 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./
 import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
-import { HIVE, BOSS_NAMES } from "./hiveconst.js";
+import { HIVE, BOSS_NAMES, GROWTHS } from "./hiveconst.js";
 import { worldScale } from "./worldsize.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
+import {
+  growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths,
+  savingFor, growthsOf, growthCounts,
+} from "./hivetech.js"; // the hives' tech tree: growths around a hive and the special dead they breed
+import { battleTypes } from "./zombietypes.js";
 
 // Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
 // (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
@@ -108,10 +115,12 @@ export function hivesDaily(state) {
   const info = state.hiveInfo;
   for (const hive of [...state.hives]) {
     const n = clusterSize(state, hive);
-    hive.income = hiveIncome(n);
+    hive.income = growthIncome(state, hive, hiveIncome(n)); // biomass pits, feeding grounds (hivetech.js)
     hive.res = Math.min(HIVE.RES_CAP, hive.res + hive.income);
+    growthStep(state, hive); // its guard first, then a growth it wants (or saves for)
     produce(state, hive, n, d);
   }
+  growthsDaily(state); // growths finishing, regrowing, rotting at dead hives; a screamer spire calling the dead
   for (const site of [...state.hiveSites]) siteDaily(state, site);
   if (d >= info.nextSiteDay) {
     pickSite(state);
@@ -132,7 +141,8 @@ function buy(state, hive, kind, o) {
   const stats = state.hiveInfo.stats;
   stats.hordes++;
   stats.zombies += size;
-  return makeHorde(state, { size, hive: hive.id, ...o });
+  const { mix, elite } = hiveMix(state, hive); // the special dead its growths breed (hivetech.js)
+  return makeHorde(state, { size, hive: hive.id, mix, elite, ...o });
 }
 const biggest = (res) => (res >= HORDE_SIZES.large.cost ? "large" : res >= HORDE_SIZES.medium.cost ? "medium" : "small");
 // Hordes leave from the edge of the hive, so they do not merge with its guard on the way out.
@@ -146,7 +156,7 @@ function produce(state, hive, n, d) {
   const owned = ownedBy(state, hive);
   // 1. Defend the hive: a guard horde at home.
   const guard = owned.find((h) => h.role === "guard");
-  if (!guard || guard.size < HIVE.GUARD_MIN) buy(state, hive, hive.res >= HORDE_SIZES.medium.cost ? "medium" : "small", { tile: hive.tile, role: "guard", target: hive.tile });
+  if (!guard || guard.size < guardMin(state, hive)) buy(state, hive, hive.res >= HORDE_SIZES.medium.cost ? "medium" : "small", { tile: hive.tile, role: "guard", target: hive.tile });
   // 2. Support a new hive within reach.
   const site = supportSite(state, hive);
   if (site) {
@@ -163,19 +173,22 @@ function produce(state, hive, n, d) {
     // Not while the land around is already crawling with free dead (over 600 within 10 tiles), nor while the
     // whole state holds more free dead than the hives can drive (FREE_BUDGET).
     const out = owned.filter((h) => h.role === "roam" || h.role === "attack");
-    if (out.length < roamCap(n) && hive.res >= HORDE_SIZES.medium.cost && !(hive.res < BOSS_SAVE && hive.saving) && freeNear(state, hive.tile) < FREE_MAX && freeAll(state) < freeBudget(state)) {
+    // A brood chamber lets one more out; a growth being saved for keeps new ones home (hivetech.js).
+    if (out.length < roamCap(n) + extraOut(state, hive) && hive.res >= HORDE_SIZES.medium.cost && !(hive.res < BOSS_SAVE && hive.saving) && !(hive.res < savingFor(state, hive)) && freeNear(state, hive.tile) < FREE_MAX && freeAll(state) < freeBudget(state)) {
       // Large ones only from LARGE_DAY: the first hordes at your gates are ones the starting walls can hold.
       const h = buy(state, hive, rng.chance(0.55) && d >= HIVE.LARGE_DAY ? biggest(hive.res) : "medium", { tile: outside(state, hive), role: "roam" });
       // Attacks grow more likely over the first two months: 20% of new hordes at the start, 65% from about day 70 (HIVE.ATTACK_*).
       if (h && (hive.bossReady || rng.chance(Math.min(HIVE.ATTACK_MAX, HIVE.ATTACK_START + d / HIVE.ATTACK_RAMP)))) sendAttack(state, hive, h);
     }
   }
-  // 4. A Wallbreaker for 40, once there is something to break (one at a time per hive, BOSS_GAP days apart).
+  // 4. A Wallbreaker for 40, once there is something to break (one at a time per hive, BOSS_GAP days apart), and
+  // only from a hive with a Wallbreaker den (hivetech.js, HIVE.BOSS_DEN).
   const bossOut = hive.bossHorde != null && state.hordes.some((h) => h.id === hive.bossHorde && h.bosses > 0);
   if (!bossOut) hive.bossHorde = null;
   const due = Math.max(HIVE.BOSS_DAY, (hive.bossDay ?? -Infinity) + HIVE.BOSS_GAP);
-  hive.saving = !hive.bossReady && !bossOut && d >= due - 10;
-  if (!hive.bossReady && !bossOut && d >= due && hive.res >= HIVE.BOSS_COST) {
+  const den = canRaiseBoss(state, hive);
+  hive.saving = den && !hive.bossReady && !bossOut && d >= due - 10;
+  if (den && !hive.bossReady && !bossOut && d >= due && hive.res >= HIVE.BOSS_COST) {
     hive.res -= HIVE.BOSS_COST;
     hive.bossReady = true;
     hive.bossDay = d;
@@ -194,9 +207,10 @@ const BOSS_SAVE = 48; // a Wallbreaker plus a medium horde
 function attackTarget(state, hive) {
   const g = state.grid;
   const cands = [];
+  const range = attackRange(state, hive); // farther with a screamer spire (hivetech.js)
   for (const b of state.bases) {
     const dist = g.distance(hive.tile, b.tile);
-    if (dist > HIVE.ATTACK_RANGE) continue;
+    if (dist > range) continue;
     const people = state.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === b.id).length;
     cands.push({ tile: b.tile, baseId: b.id, w: (HIVE.PLAYER_PULL * (people * 0.5 + 3 + (b.type === "hub" ? 3 : 0))) / (1 + dist / 6) });
   }
@@ -351,7 +365,8 @@ function borderSpawn(state) {
   const kind = r < 0.5 ? "small" : r < 0.85 ? "medium" : "large";
   const k = HORDE_SIZES[kind];
   const grow = 1 + Math.min(0.5, day(state) / 730); // a little bigger as the year goes on
-  const h = makeHorde(state, { tile: t.id, size: Math.round(rng.int(k.min, k.max) * grow), role: "border" });
+  // Late in the game they carry the special dead of the era (hivetech.js borderMix, from TECH.BORDER_DAY).
+  const h = makeHorde(state, { tile: t.id, size: Math.round(rng.int(k.min, k.max) * grow), role: "border", mix: borderMix(state) });
   state.hiveInfo.stats.border++;
   return h;
 }
@@ -405,6 +420,7 @@ export function hiveTracker(state) {
     hives: state.hives.length, res: state.hives.reduce((a, h) => a + h.res, 0), income: state.hives.reduce((a, h) => a + (h.income || 0), 0),
     bossesReady: state.hives.filter((h) => h.bossReady).length, sites: site, nextSiteDay: state.hiveInfo.nextSiteDay, nextBorderDay: state.hiveInfo.nextBorderDay,
     stats: { ...state.hiveInfo.stats },
+    growths: growthCounts(state), // hivetech.js
   };
 }
 
@@ -426,6 +442,7 @@ export function destroyHive(state, hive, how = "") {
     if (h.role === "guard") state.hordes.splice(state.hordes.indexOf(h), 1);
     else { h.hive = null; if (h.role !== "attack") h.role = "roam"; }
   }
+  witherGrowths(state, hive); // its growths wither and rot away (hivetech.js)
   state.hiveInfo.stats.destroyed++;
   const left = state.hives.length;
   log(state, `${hive.name[0].toUpperCase() + hive.name.slice(1)} was destroyed${how ? ` ${how}` : ""}. ${left ? `${left} hive${left === 1 ? "" : "s"} still stand${left === 1 ? "s" : ""} in the state.` : "No hive is left standing."}`, "good");
@@ -440,11 +457,15 @@ export function hivesSecured(state) {
 
 // ---------- the Destroy hive mission (parties.js arrive) ----------
 const guardOf = (state, hive) => state.hordes.find((h) => h.role === "guard" && h.hive === hive.id) || null;
+export const hiveGuard = guardOf;
 
-// The fight inside a hive: the guard's dead (tougher on red-skull ground) and the Broodmother.
+// The fight inside a hive: the guard's dead (tougher on red-skull ground), the special dead among them (its
+// growths, hivetech.js) and the Broodmother.
 export function hiveForce(state, hive) {
   const guard = guardOf(state, hive);
-  return broodForce(guard ? guard.size : 0);
+  const f = broodForce(guard ? guard.size : 0);
+  if (guard && guard.mix) { f.mix = guard.mix; f.types = battleTypes(guard.mix, f.count); f.elite = !!guard.elite; }
+  return f;
 }
 // The brood a hive with a guard of this size fields (also the autopilot's estimate from a guard it has seen).
 // It fights on red-skull ground: power 1 + 3 (zombieToughness), plus a little for a big guard.
@@ -478,7 +499,8 @@ function hiveCard(state, p, hive) {
     partyId: p.id,
     text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. Deep inside waits the ${BOSS_NAMES.hive}. ` +
       `Your squad's combat power is ${power}. Storming it means fighting about ${force.count} of the hive's brood, tougher than any dead outside, and the ${BOSS_NAMES.hive} herself. Bring five or six well-armed fighters, armor and meds.` +
-      alliesText(state, hive, force.count), // alliance.js: fighters from coalition members and job givers
+      alliesText(state, hive, force.count) + // alliance.js: fighters from coalition members and job givers
+      growthsText(state, hive, force), // hivetech.js: what has grown around it, the special dead in its brood
     choices: [
       {
         label: "Storm the hive (tactical battle)",
@@ -497,6 +519,7 @@ function hiveCard(state, p, hive) {
           if (gone(st)) return moved(st);
           if (partyFuel(st, p) < 6) { awaitOrders(st, p, "Not enough fuel for the fires.", { failed: true }); return "The team has less than 6 fuel."; }
           useFuel(st, p, 6);
+          markThreat(st, hive); // hivetech.js: it builds for defence
           const guard = guardOf(st, hive);
           if (guard) reduceHorde(st, guard, Math.round(guard.size * 0.3));
           hive.res = Math.max(0, hive.res - 15);
@@ -521,6 +544,7 @@ function hiveCard(state, p, hive) {
           const bombs = molotovsOf(st, p);
           if (bombs.length < FIREBOMB.molotovs) { awaitOrders(st, p, "Not enough Molotovs.", { failed: true }); return `The team has fewer than ${FIREBOMB.molotovs} Molotovs.`; }
           for (const b of bombs.slice(0, FIREBOMB.molotovs)) b.take();
+          markThreat(st, hive);
           const guard = guardOf(st, hive);
           if (guard) reduceHorde(st, guard, Math.round(guard.size * FIREBOMB.guard));
           hive.res = Math.max(0, hive.res - FIREBOMB.res);
@@ -542,7 +566,7 @@ function hiveCard(state, p, hive) {
 // Firebombing a hive: Molotovs instead of 6 fuel, a bigger fire (40% of its guard, 20 stores) from farther away.
 export const FIREBOMB = { molotovs: 3, guard: 0.4, res: 20 };
 // The Molotovs a team has: on its people (pockets, hands, packs) and in its cargo. [{ item, take() }]
-function molotovsOf(state, p) {
+export function molotovsOf(state, p) {
   const out = [];
   for (const s of partyMembers(state, p)) {
     (s.pockets || []).forEach((it, i) => { if (it && it.key === "molotov") out.push({ item: it, take: () => { s.pockets[i] = null; } }); });
@@ -552,6 +576,14 @@ function molotovsOf(state, p) {
   const cargo = (p.cargo && p.cargo.gear) || [];
   for (const it of cargo) if (it && it.key === "molotov") out.push({ item: it, take: () => { const i = cargo.indexOf(it); if (i >= 0) cargo.splice(i, 1); } });
   return out;
+}
+
+// The growths around the hive (hivetech.js) and the special dead in its brood, for the hive card.
+function growthsText(state, hive, force) {
+  const grown = growthsOf(state, hive, false).map((g) => `${GROWTHS[g.kind].name.toLowerCase()}${state.hour < g.ready ? " (still growing)" : ""}`);
+  const kinds = force.types ? Object.entries(force.types).map(([k, n]) => `${n} ${k}${n > 1 ? "s" : ""}`).join(", ") : "";
+  return (grown.length ? ` Around it the dead have grown: ${grown.join(", ")} (burn them with the Burn the growth mission).` : "") +
+    (kinds ? ` Among the brood: ${kinds}${force.elite ? ", elite" : ""}.` : "");
 }
 
 // Allied fighters at the mound (alliance.js hiveAllies): each keeps one of the brood off your squad.
@@ -567,7 +599,7 @@ export function assaultHive(state, p, hive) {
   if (allies.fighters) log(state, `Fighters from ${allies.names.join(", ")} storm ${hive.name} beside your squad.`, "good");
   return fightNow(state, {
     tile: hive.tile, partyId: p.id,
-    enemy: { kind: "zombies", count, power: force.power, name: `the brood of ${hive.name}` },
+    enemy: { kind: "zombies", count, power: force.power, types: battleTypes(force.mix, count), elite: !!force.elite, name: `the brood of ${hive.name}` },
     ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hive",
     context: { hiveId: hive.id, partyId: p.id },
   });
@@ -602,6 +634,7 @@ registerCombatHandler("hiveAssault", (state, result, setup) => {
     if (p && state.parties.includes(p)) p.seen.set(hive.tile, snapshot(state, hive.tile));
   } else if (result.outcome === "retreat") text = "The team fell back from the hive. The brood is still there.";
   else text = "The hive's brood drove the team off.";
+  if (result.outcome !== "victory") markThreat(state, hive); // hivetech.js: it builds for defence
   if (!p || !state.parties.includes(p)) return;
   if (wipeIfEmpty(state, p)) { log(state, "The whole team was lost storming a hive.", "death"); return; }
   if (result.outcome !== "victory") log(state, `${text} (${tileLabel(state, partyTile(p))})`, "danger");

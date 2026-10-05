@@ -51,7 +51,10 @@ import { POWER, powerWanted } from "./power.js";
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius } from "./alliance.js";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
-import { hiveAt, hiveForce, broodForce } from "./hives.js";
+import { hiveAt, hiveForce, broodForce, hiveById, zombieToughness } from "./hives.js";
+import { growthAt, ensureGrowths, growthForce } from "./hivetech.js";
+import { GROWTHS, TECH } from "./hiveconst.js";
+import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
 import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
@@ -436,6 +439,7 @@ function pickChoice(state, card, opts, p) {
   if (/^A hive/.test(t)) return find(/^Mark it/) || opts[opts.length - 1];
   // Storming a hive: only with the squad it was sent with (most of it still standing and healthy), by the odds.
   if (/^The hive: /.test(t)) return hiveChoice(state, card, opts, p, find);
+  if (/^Hive growth: /.test(t)) return growthChoice(state, card, opts, p, find); // hivetech.js
   // Assaulting a group's base (conquest.js): storm when the odds the card shows are good enough for the style.
   if (card.assault) return assaultChoice(state, card, opts, p, find);
   // A horde coming for a base (defences.js): a decoy fire when the defences would not hold and no Wallbreaker
@@ -703,6 +707,7 @@ function teamAct(state, p) {
   }
   // A hive set on fire (hiveChoice): storm it now, or set the next fire.
   if (hiveAgain(state, p)) return;
+  if (growthAgain(state, p)) return; // a growth that took one fire: the next one
   // The badly hurt get carried meds before a long walk home.
   const back = planPath(state, partyTile(p), home.tile, p.vehicle);
   const hoursHome = back ? travelHours(state, back.path, { vehicle: p.vehicle, ...paceOpts(p) }).hours : 0;
@@ -1004,7 +1009,7 @@ function reserveNeeds(state, h, out) {
 export function reserveThreat(state, base) {
   const hz = hordeThreat(state, base);
   let t = 0;
-  if (hz.size) t += holdCheck(state, base, hz.size, hz.bosses).holds ? 1 : 2;
+  if (hz.size) t += holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds ? 1 : 2;
   const warned = state.hordes.some((h) => h.warned && state.live.has(h.tile) && ((h.goal && h.goal.baseId === base.id) || h.target === base.tile));
   if (warned || (base.hordeAlert && state.hour < base.hordeAlert)) t++;
   if (state.grid.within(base.tile, 12).some((id) => { const k = state.knowledge[id]; return k && (k.hive || k.site); })) t++;
@@ -1461,7 +1466,7 @@ function buildWishes(state, base) {
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
-  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
+  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
   // A radio relay (radio.js) at an outpost within reach of the network, when it would bring a group you know into
   // radio reach: greetings, pacts and the coalition need it.
@@ -1760,7 +1765,7 @@ function planTrip(state) {
   // Cautious: no trip while a horde in sight would break in, and P.homeHorde people stay home while one is in
   // sight or the defences are manned (a break-in is fought by whoever is there).
   const hz = P.reserves ? hordeThreat(state, h) : null;
-  if (hz && hz.size && !holdCheck(state, h, hz.size, hz.bosses).holds) return;
+  if (hz && hz.size && !holdCheck(state, h, hz.size, hz.bosses, hz.mix).holds) return;
   const hordeNear = hz && (hz.size > 0 || (h.hordeAlert && state.hour < h.hordeAlert));
   const keep = Math.max(2, Math.ceil(home.length * P.homeFrac), hordeNear ? Math.min(home.length, P.homeHorde) : 0);
   const pool = home.filter((s) => s.health >= P.minHealth - (short.length ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9));
@@ -1826,6 +1831,9 @@ function planTrip(state) {
   if (!out.some((p) => p.mission === "hive" || p.mission === "assault")) {
     const hc = hiveCandidate(state, home, pool);
     if (hc) cands.push(hc);
+    // No hive it can storm yet: the most dangerous hive growth it knows of, burned or fought (growthCandidate).
+    const gc = !hc && !out.some((p) => p.mission === "growth") ? growthCandidate(state, home, pool) : null;
+    if (gc) cands.push(gc);
     // Conquest (conquest.js): take back a base of yours they hold, or a hostile group's base, with a squad that
     // has the style's odds (conquestCandidate).
     const cc = conquestCandidate(state, home, pool);
@@ -1879,6 +1887,7 @@ function planTrip(state) {
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
     if (c.envoy) { (g.lastEnvoy = g.lastEnvoy || {})[c.envoy] = today; res.apEnvoy = c.envoy; }
     if (c.mission === "hive") g.lastHive = today;
+    if (c.mission === "growth") g.lastGrowth = today;
     if (c.mission === "assault") { g.lastAssault = today; const fx = state.factions.find((x) => x.alive && x.bases.includes(c.tile)); if (fx) g.conquestFocus = fx.id; }
     break; // then a survey with the hands still spare (below)
   }
@@ -2074,6 +2083,85 @@ function hiveJobOk(state, job) {
   const base = broodForce(Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))));
   const count = broodAfterAllies(base.count, hiveAllies(state, hive).fighters + extra);
   return squadPower(squad) / (count * (base.power / 5.2)) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
+}
+
+// ---------- hive growths (hivetech.js) ----------
+// While no hive can be stormed yet: the most dangerous growth it knows of (GROWTHS danger, at least GROWTH_DANGER: the
+// spawners, the Wallbreaker den and the vat; the den, the crawler burrow and the vat first; one within 12 tiles of a base of yours ahead, nearer ahead), with the
+// fuel for two fires (TECH.FIRE_FUEL each) or a crew of GROWTH_CREW that beats its guard by the style's hiveOdds
+// (combat power against the guard it expects, with a margin for the special dead). At the growth (growthChoice):
+// Molotovs, else a fire, else the fight when the odds are there, else back off; a fire that leaves it standing is
+// followed by the next one (growthAgain).
+const GROWTH_CREW = 4;
+const GROWTH_DANGER = 2.5; // only growths at least this dangerous (GROWTHS danger: the spawners, the den, the vat; not pits and brood chambers)
+function knownGrowth(state, id) {
+  if (state.live.has(id)) { const g = growthAt(state, id); return g && g.withered == null ? { kind: g.kind } : null; }
+  const k = state.knowledge[id];
+  return k && k.growth && !k.growth.withered ? k.growth : null;
+}
+// The guard it expects at a growth, on the scale of stormValue (count × power / 5.2 as for a hive storm, × 1.2 for
+// the special dead).
+function growthGuardEstimate(state, tile, hiveTile) {
+  const guard = hiveTile != null ? knownGuard(state, hiveTile) : HIVE_GUESS;
+  const count = Math.min(TECH.GUARD_MAX, TECH.GUARD_BASE + Math.floor(guard / TECH.GUARD_PER));
+  return count * ((2 + zombieToughness(state, tile) * 0.6) / 5.2) * 1.2;
+}
+const growthCrew = (pool) => [...pool].filter((s) => s.health >= 70 && !s.woundInfected).sort((a, b) => stormValue(b) - stormValue(a)).slice(0, GROWTH_CREW);
+function growthCandidate(state, home, pool) {
+  const P = persona(state);
+  const g = gov(state);
+  const h = hub(state);
+  const today = day(state);
+  if (!h || today < Math.min(P.hiveFrom, 120) || today - (g.lastGrowth ?? -99) < P.hiveRest) return null;
+  if (home.length - GROWTH_CREW < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac))) return null;
+  const crew = growthCrew(pool);
+  if (crew.length < 3) return null;
+  const power = squadPower(crew);
+  const fires = Math.floor(((h.stock.fuel || 0) - 6) / TECH.FIRE_FUEL) >= 2;
+  let best = null;
+  for (const gr of ensureGrowths(state)) {
+    const kg = knownGrowth(state, gr.tile); // the governor plays by what you know
+    if (!kg || !GROWTHS[kg.kind] || GROWTHS[kg.kind].danger < GROWTH_DANGER) continue;
+    const d = state.grid.distance(h.tile, gr.tile);
+    if (d > 40) continue;
+    const hv = hiveById(state, gr.hive);
+    const fight = power / growthGuardEstimate(state, gr.tile, hv ? hv.tile : null) >= P.hiveOdds;
+    if (!fires && !fight) continue;
+    const nearBase = state.bases.some((b) => state.grid.distance(b.tile, gr.tile) <= 12);
+    const score = GROWTHS[kg.kind].danger + (nearBase ? 1.5 : 0) - d / 10;
+    if (!best || score > best.score) best = { gr, kg, score, hv };
+  }
+  if (!best) return null;
+  return { mission: "growth", tile: best.gr.tile, score: 3.5 + best.score * 0.5, crew: GROWTH_CREW, growth: true,
+    why: `burn the ${GROWTHS[best.kg.kind].name.toLowerCase()} at ${best.hv ? best.hv.name : "a hive"}`,
+    supplies: { ammo: 50, meds: 3, fuel: fires ? TECH.FIRE_FUEL * 2 : 0 } };
+}
+function growthChoice(state, card, opts, p, find) {
+  const P = persona(state);
+  const g = p ? growthAt(state, partyTile(p)) : null;
+  if (!g || g.withered != null) return find(/^Back off/);
+  const bomb = find(/^Firebomb/);
+  const fire = find(/^Burn it/);
+  const fuelHome = p.vehicle ? p.apFuelHome || 0 : 0;
+  const again = () => { p.apGrowthAgain = true; };
+  if (bomb && !isDisabled(state, bomb)) { if (g.hp > TECH.BOMB_DMG) again(); return bomb; }
+  if (fire && !isDisabled(state, fire) && partyFuelOf(state, p) - TECH.FIRE_FUEL >= fuelHome) { if (g.hp > TECH.FIRE_DMG) again(); return fire; }
+  const fit = partyMembers(state, p).filter((s) => s.health >= 60);
+  const f = growthForce(state, g); // the card shows the guard
+  const ratio = squadPower(fit) / (f.count * (f.power / 5.2) * typeStrength({ count: f.count, types: f.types, elite: f.elite }));
+  const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
+  if (fit.length >= 3 && ammo >= fit.length * 8 && ratio >= P.hiveOdds) return find(/^Fight its guard/);
+  return find(/^Back off/);
+}
+// After a fire that left the growth standing: the next fire (or the fight) while the team is still fit for it.
+function growthAgain(state, p) {
+  if (!p.apGrowthAgain) return false;
+  delete p.apGrowthAgain;
+  const g = growthAt(state, partyTile(p));
+  if (!g || g.withered != null || partyMembers(state, p).filter((s) => s.health >= 50).length < 2) return false;
+  if (!orderOptions(state, p).some((o) => o.mission === "growth" && !o.disabled)) return false;
+  startOrder(state, p, { type: "mission", mission: "growth" });
+  return true;
 }
 
 // ---------- conquest (conquest.js) ----------
@@ -2297,7 +2385,7 @@ function launchTrip(state, c, pool, spareHands) {
   const h = hub(state);
   const g = gov(state);
   const size = Math.min(c.crew, spareHands);
-  if (size < (c.mission === "rescue" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : 1)) return null;
+  if (size < (c.mission === "rescue" || c.mission === "growth" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : 1)) return null;
   const fit = c.fit ? c.fit : c.mission === "assault" ? (s) => (s.health >= (c.minHealth || ASSAULT_HEALTH) && !s.woundInfected ? combatPower(s) : -99) : c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
     (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 - (s.role === "build" || (s.task && (s.task.t === "build" || s.task.t === "craft")) ? 4 : 0) : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
@@ -2334,7 +2422,7 @@ function launchTrip(state, c, pool, spareHands) {
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
-  if (!est || est.hoursOut > (c.mission === "hive" || c.mission === "assault" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
+  if (!est || est.hoursOut > (c.mission === "hive" || c.mission === "assault" || c.mission === "growth" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.

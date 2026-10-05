@@ -52,6 +52,7 @@ const LEGEND = [
   [`<i class="sw" style="background:#8f2a2a"></i>`, "Hordes", "A crowd of the dead, its size on the badge; a faded \"N?\" is where one was last seen. A grey brute with a concrete fist at its head is a Wallbreaker."],
   [`<i class="sw" style="background:#c0392b"></i>`, "Hives", "A red glowing mound. Its land is tinted dark red (sites there show at least 3 skulls); the ring around it is brighter, with red skulls: much tougher dead."],
   [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000."],
+  [`<i class="sw" style="background:#7a3a3a"></i>`, "Hive growths", "Small structures of flesh and bone beside a hive: a bubbling pit, amber egg sacs, a field of bones, a warren with red eyes, a grey brute in a pit, green acid bladders, a shrieking tower, a burrow with grasping hands, an arch of ribs (the Wallbreaker den), a glowing magenta vat. Faint while growing, grey once their hive is gone. Burn the growth to take it away from the hive."],
   [`<i class="sw" style="background:#c8ccd2">✝</i>`, "Markers", "On a ring: a grave = death site, your vehicle (red can = needs fuel, smoke = damaged), a wreck, a cache, a camp. Dots when zoomed out."],
   [`<i class="sw" style="background:#c8ccd2">▲</i>`, "Siege", "Tents and a banner by a base."],
   [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles: a station reaches 8 tiles, a linked relay 6. Red = a relay not linked or off the air."],

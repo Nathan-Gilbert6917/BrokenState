@@ -49,7 +49,11 @@ function resolveCards(state) {
     const opts = c.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     // Newcomers are turned away: this test is about supply runs, and a crowded hub loses people (morale.js).
     const ch = (c.recruit && opts.find((x) => x.kind === "away")) || opts.find((x) => !/fight|attack|storm|ambush|killzone/i.test(x.label)) || opts[0];
+    // A hub fire that burns a bunkhouse is put right at once: crowding (morale.js) would drive the crews away, and
+    // this test is about the supply runs, not about which seed draws a summer fire.
+    const bunks = state.bases.map((b) => [b, b.buildings.filter((x) => x.type === "bunkhouse").length]);
     if (ch) ch.resolve(state);
+    for (const [b, k] of bunks) for (let i = b.buildings.filter((x) => x.type === "bunkhouse").length; i < k; i++) addBuilding(b, "bunkhouse");
   }
 }
 
