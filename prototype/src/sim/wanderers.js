@@ -19,7 +19,7 @@
 // Every roll here uses hash01 or a generator seeded from it, never the world's random numbers, so a normal game where
 // nobody is met plays exactly as before; the cards' own choices use the world's dice like any card.
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
-import { log, addCard, day, skill, isNight, factionById, combatPower, snapshot } from "./world.js";
+import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo,
 } from "./parties.js";
@@ -53,7 +53,7 @@ export const WANDER = {
   // Neutral groups: sizes [n, weight]; moods (weight, talk chance before skill).
   NEUTRAL_SIZE: [[1, 45], [2, 30], [3, 15], [4, 10]], NEUTRAL_POWER: 2.2,
   MOODS: { wary: { w: 0.4, talk: 0.2 }, friendly: { w: 0.35, talk: 0.45 }, desperate: { w: 0.25, talk: 0.35 } },
-  TALK_SKILL: 0.025, GIFT_BONUS: 0.3, AGAIN_BONUS: 0.15, GIFT: { food: 2, water: 2 },
+  TALK_SKILL: 0.025, GIFT_BONUS: 0.3, AGAIN_BONUS: 0.15, GIFT: { food: 2, water: 2 }, AI_FOOD: 4,
   // Aggressive survivors: 2–4 (one more in a city; never more than HOSTILE_OVER over the team met), power per head; what they take when you hand it over; the talk DC;
   // the chance one of them asks to come along after a good talk; a share seen robbing others (observed).
   HOSTILE_SIZE: [2, 4], HOSTILE_POWER: 2.6, HOSTILE_OVER: 1, ROB_SHARE: 0.3, TALK_DC: 10, JOIN_AFTER_TALK: 0.15, ROBBERY: 0.4,
@@ -111,8 +111,8 @@ export const siteChance = (state, tileId) => Math.min(W.SITE_MAX, W.SITE * wande
 
 // The groups that send squads out: any living military group with a base (hardcore: the original one until its base
 // falls, then whatever military groups come out of it), and fortress groups that came out of the military
-// (f.fromMilitary / f.militaryDescended, set by whoever makes the splinters).
-const militaries = (state) => state.factions.filter((f) => f.alive && f.bases.length && (f.type === "military" || (f.type === "fortress" && (f.fromMilitary || f.militaryDescended))));
+// (hardcore-groups.js marks a founded splinter f.hcSplinter; one that turned raider sends no squads).
+const militaries = (state) => state.factions.filter((f) => f.alive && f.bases.length && (f.type === "military" || (f.type === "fortress" && (f.hcSplinter || f.fromMilitary))));
 function squadSource(state, tileId) {
   let best = null;
   for (const f of militaries(state)) {
@@ -367,7 +367,9 @@ export function neutralCard(state, p, g, opts = {}) {
   const choices = [
     {
       label: "Talk to them", hint: `${pct(talk)} they trust you enough to ask to join (your best talker's Speech or Leadership; they are ${g.mood})${g.talked ? "; you have talked before" : ""}. Otherwise they keep their distance`,
-      ai: () => 1,
+      // The autopilot talks to everyone, except with no hub yet (hardcore's road team) and under AI_FOOD days of food a
+      // head for them all: a bare first hub cannot feed many more mouths.
+      ai: (st) => (hub(st) || (carried(p, "food") + carried(p, "preserved")) / Math.max(1, team + n) >= W.AI_FOOD ? 1 : 0),
       resolve: (st) => {
         if (st.rng.chance(talk)) return win(st, false);
         gainXp(st, talker(st, p), "speech", USE.talk);
