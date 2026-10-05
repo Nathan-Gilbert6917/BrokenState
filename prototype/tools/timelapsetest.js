@@ -224,6 +224,35 @@ check(errors === 0, "every frame state renders without errors");
 check(fallenSeen, "the last frame shows the fallen holdout");
 console.log(`  ${built} frame states built and rendered (${lastDay} mid-day + ${c.frames.length} frame hours), ${(ms / built).toFixed(2)} ms each (JS only), ${draws} draw calls; up to ${maxHordes} hordes and ${maxParties} parties on screen`);
 
+// Terrain detail (ui/terraindeco.js) in the timelapse: zoomed in, every 10th day with decals and rippled water, the
+// same decals as the game's map (the frame state carries the world's seed), none with the Flat option.
+{
+  const T = await import("../src/ui/terraindeco.js");
+  let atlas = new Set(), decals = 0, errs = 0;
+  const dctx = new Proxy(ctx, { get: (o, k) => (k === "drawImage" ? (cv) => { draws++; if (atlas.has(cv)) decals++; } : o[k]) });
+  T.setDecoCanvas((w, h) => ({ width: w, height: h, getContext: () => dctx }));
+  R.initRenderer({ getContext: () => dctx, getBoundingClientRect: () => ({ width: 1600, height: 900 }), width: 0, height: 0 });
+  for (const r of [1, 2]) atlas.add(T.decoAtlas(r).cv);
+  R.camera.zoom = 1.2;
+  const run2 = (detail) => {
+    T.setMapDetail(detail);
+    decals = 0;
+    const t0 = performance.now();
+    let k = 0;
+    for (let d = 1; d <= lastDay; d += 10) {
+      try { const fs = reader.frameState((d - 1) * 24 + 12); R.centerOn(fs, hub(state)?.tile ?? fs.bases[0]?.tile ?? 0); R.render(fs); k++; } catch (err) { if (errs++ < 3) console.log(`  error (day ${d}): ${err.stack}`); }
+    }
+    return { k, ms: (performance.now() - t0) / Math.max(1, k), decals };
+  };
+  const det = run2(true), flat = run2(false);
+  T.setMapDetail(true);
+  T.setDecoCanvas(null);
+  check(!errs && det.decals > 0 && flat.decals === 0, "zoomed in, the timelapse draws the terrain detail (none with Flat)");
+  const rows = (D) => T.decorRows(D).map((r) => r.join(",")).join(";");
+  check(rows(T.placeDecor(reader.frameState(12), R.HEX)) === rows(T.placeDecor(state, R.HEX)), "the timelapse places the same decals as the game's map");
+  console.log(`  zoom 1.2, every 10th day: ${det.k} frames, ${det.decals} decals, ${det.ms.toFixed(2)} ms a frame detailed vs ${flat.ms.toFixed(2)} ms flat (JS only)`);
+}
+
 // ---------- viewer overlay (pure HTML builders) ----------
 const TL = await import("../src/ui/timelapse.js");
 const s = TL.tlSession(state, "end");
