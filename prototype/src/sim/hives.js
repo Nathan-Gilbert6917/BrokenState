@@ -34,7 +34,7 @@ import { registerCombatHandler, registerBattleLayout, registerBattleSize, HIVE_W
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { tacticalStyleFor } from "./breakoff.js";
 import { HIVE, BOSS_NAMES, GROWTHS } from "./hiveconst.js";
-import { broodGrowth, hiveCap, hordePaceOpen, noteHorde } from "./eras.js";
+import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay } from "./eras.js";
 import { worldScale } from "./worldsize.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
 import {
@@ -86,7 +86,7 @@ export function ensureHives(state) {
 }
 export const hiveStats = (state) => (ensureHives(state), state.hiveInfo.stats);
 
-function newHive(state, tile, res) {
+export function newHive(state, tile, res) {
   state.tiles[tile].hive = true;
   return { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, res, born: state.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(state, tile) };
 }
@@ -114,13 +114,14 @@ const needsDead = (site) => site.biomass < HIVE.SITE_BIOMASS;
 export function hivesDaily(state) {
   ensureHives(state);
   const d = day(state);
+  const rd = rampDay(state); // the day the ramps below count by (eras.js: hardcore counts from the normal start)
   const info = state.hiveInfo;
   for (const hive of [...state.hives]) {
     const n = clusterSize(state, hive);
     hive.income = growthIncome(state, hive, hiveIncome(n)); // biomass pits, feeding grounds (hivetech.js)
     hive.res = Math.min(HIVE.RES_CAP, hive.res + hive.income);
     growthStep(state, hive); // its guard first, then a growth it wants (or saves for)
-    produce(state, hive, n, d);
+    produce(state, hive, n, rd);
   }
   growthsDaily(state); // growths finishing, regrowing, rotting at dead hives; a screamer spire calling the dead
   for (const site of [...state.hiveSites]) siteDaily(state, site);
@@ -370,7 +371,7 @@ function borderSpawn(state) {
   const r = rng.next();
   const kind = r < 0.5 ? "small" : r < 0.85 ? "medium" : "large";
   const k = HORDE_SIZES[kind];
-  const grow = 1 + Math.min(0.5, day(state) / 730); // a little bigger as the year goes on
+  const grow = 1 + Math.min(0.5, rampDay(state) / 730); // a little bigger as the year goes on
   // Late in the game they carry the special dead of the era (hivetech.js borderMix, from TECH.BORDER_DAY).
   const h = makeHorde(state, { tile: t.id, size: Math.round(rng.int(k.min, k.max) * grow), role: "border", mix: borderMix(state) });
   state.hiveInfo.stats.border++;
@@ -442,6 +443,7 @@ export function destroyHive(state, hive, how = "") {
   for (const id of state.grid.within(hive.tile, 7)) {
     const t = state.tiles[id];
     t.infBase = Math.min(t.infBase ?? t.infection, 0.06 + 0.07 * state.grid.distance(hive.tile, id));
+    if (t.infGoal != null) t.infGoal = Math.min(t.infGoal, t.infBase); // hardcore-outbreak.js: the level the first year spreads toward
   }
   for (const h of [...state.hordes]) {
     if (h.hive !== hive.id) continue;
