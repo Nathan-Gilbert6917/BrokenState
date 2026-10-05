@@ -83,6 +83,7 @@ import {
 } from "./parties.js";
 import * as Parties from "./parties.js";
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
+import { raidTier } from "./defences.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -824,7 +825,9 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   const people = beaten ? [] : atBase(state, base.id);
   const def = baseDefense(state, base);
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
-  const ratio = beaten ? (beaten === "broken" ? 1 : 0) : def / Math.max(1, vStrength(v));
+  // The walls, the yard and the buildings count (defences.js raidTier), with the same thresholds as a group's raid.
+  const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8);
+  const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const store = count(base, "storehouse") > 0;
   const att = vStrength(v);
   const hours = beaten ? 8 : Math.max(1, v.siegeHours || O.raiders.siegeYou);
@@ -841,7 +844,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     v.spared = [...(v.spared || []), base.id];
   } else if (ratio >= 0.8) {
     outcome = "broken";
-    head = `${cap1(v.name)} broke into ${base.name} before being pushed out.`;
+    head = rt && rt.tier === "buildings" ? `${cap1(v.name)} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${cap1(v.name)} broke into ${base.name} before being pushed out.`;
     log(state, `${cap1(v.name)} broke into ${base.name} before being pushed out. Supplies were stolen.`, "danger");
     steal(base, store ? 0.1 : 0.2, v.stock);
     for (let i = 0; i < 2 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(15, 45), base.tile, `defending ${base.name}`);
