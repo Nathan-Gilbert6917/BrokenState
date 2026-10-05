@@ -30,6 +30,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./
 import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
+import { tacticalStyleFor } from "./breakoff.js";
 import { HIVE, BOSS_NAMES } from "./hiveconst.js";
 import { worldScale } from "./worldsize.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
@@ -569,6 +570,7 @@ export function assaultHive(state, p, hive) {
     tile: hive.tile, partyId: p.id,
     enemy: { kind: "zombies", count, power: force.power, name: `the brood of ${hive.name}` },
     ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hive",
+    aiStyle: tacticalStyleFor(state, p), // played headless: the team's retreat policy as the AI's style (breakoff.js)
     context: { hiveId: hive.id, partyId: p.id },
   });
 }

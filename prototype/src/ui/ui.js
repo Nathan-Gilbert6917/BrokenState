@@ -30,7 +30,8 @@ import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadvie
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
 import { ageText, liveSet, mapLoc } from "./render.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
-import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
+import { conflictView, captivesOf, isCaptive, fightOdds } from "../sim/conflicts.js";
+import { RETREAT_POLICIES, POLICY_ORDER, teamPolicy, policySource, fightForecast, forecastText } from "../sim/breakoff.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
 import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
 import { survivorURL, spriteImg } from "./sprites.js";
@@ -564,6 +565,7 @@ export function helpText() {
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("S")}). Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("E")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds, ${k("R")} retreat (one unit, from the green evac strip), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits.<br>
     <b>Sounding the retreat:</b> when a fight goes bad, <i>Sound the retreat</i> (${k("Shift+R")}) pulls everyone out at once. First it shows each person's chance to get away: safe on the strip; elsewhere 100% minus 3 a tile to the strip, 25 for each enemy next to them, 6 for each shooter that sees them and 4 for each of the dead close behind (at most 35), up to 30 for wounds and 2 a point of armor, plus Scouting and 10 at night (5–95%). A downed teammate next to someone is carried out (slower: the carrier's odds drop); you can leave them instead. The caught take a blow from each enemy next to them and get out hurt, unless it puts them down: then they are left behind. A downed teammate dragged onto the strip goes with the last one out. When the AI plays a battle on the map for you (the autopilot's hive assaults), it sounds the retreat itself once the fight is clearly lost.<br>
+    <b>Retreat by the numbers:</b> a fight that nobody plays on the map (${k("Auto-resolve")} on turn 1 of a battle, the autopilot, crews) is decided on the odds the card shows and plays out in three rounds; a fight being won takes its knocks early, one being lost keeps taking them. A card with a fight on it has a <i>Retreat if it goes badly</i> row, kept for the team: <i>Never</i> (fight it out), <i>When most are down</i> (more than half the team down or under 50 health), <i>If losing</i> (the fight turns against you, or anyone goes down), <i>At first blood</i> (anyone hurt). Under each fight choice it shows what that would likely bring ("If losing: about 64% to win; if it turns, most get away"). Breaking off: everyone standing runs, with the same escape check as <i>Sound the retreat</i> (distance, the enemy on them or shooting and chasing, wounds, armor, Scouting, night; by the numbers also +10 with the car close by, +5 bikes, +10 a stealthy team), the downed carried by the one with the best odds (they pull through half the time, more with a medic), the caught take blows and can be dragged down. The downed left behind are lost to the dead, or killed or taken prisoner by a group's people. The enemy keeps most of its people, nothing is looted, and the rounds not fought do not use their ammo. The autopilot breaks off <i>If losing</i> when Cautious or Balanced and <i>When most are down</i> when Aggressive; a crew follows its role's <i>Retreat</i> setting (by its style unless set). A horde fight on the road breaks off between wounds the same way. Base defences have no retreat by the numbers.<br>
     <b>Boats:</b> water blocks travel. A team on a shore can build a one-use boat and cross one water tile (team panel, or right-click the far shore). It costs scrap and hours; a vehicle needs a raft or is left on the shore.<br>
     <b>Supply runs and trade routes:</b> supply runs are convoy jobs between your own bases (a base's Supply runs tab): crew, vehicle, goods each way, once or on a schedule. Trade routes are repeating convoys to a group you have a trade pact with (Groups tab); the terms must be worth it to them at their prices.<br>
     <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
@@ -595,10 +597,35 @@ function cardModal(state, card) {
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
     <div class="text">${esc(card.text)}</div>
+    ${retreatPolicyRow(state, card)}
     <div class="choices">${card.choices.map((c, i) => {
       const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;
-      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}${fightForecastHtml(state, card, c)}</button>`;
     }).join("")}</div></div>`;
+}
+
+// A card with a fight on it (a choice with .fight: { odds?, enemy, ambush }): the team's "Retreat if it goes badly"
+// policy for a fight resolved by the numbers (breakoff.js: Auto-resolve, the autopilot, crews), and on each fight
+// choice what that would likely bring. The forecast is cached on the card per policy and team health.
+const cardFightParty = (state, card) => (card && card.partyId != null && (card.choices || []).some((c) => c && c.fight) ? state.parties.find((x) => x.id === card.partyId) || null : null);
+export function retreatPolicyRow(state, card) {
+  const p = cardFightParty(state, card);
+  if (!p) return "";
+  const cur = teamPolicy(state, p);
+  const src = { crew: " (the crew's setting)", autopilot: " (the autopilot's style)" }[policySource(state, p)] || "";
+  return `<div class="row small retreat-policy" style="margin:0.2rem 0 0.4rem;flex-wrap:wrap;gap:0.3rem"><span class="muted"${tip("If the fight is resolved by the numbers (Auto-resolve on the battle screen, the autopilot, a crew), the team breaks it off by this rule: everyone still standing runs for it (an escape check each, like Sound the retreat), carrying the downed. Only a won fight is looted. Kept for this team.")}>Retreat if it goes badly${esc(src)}:</span>${POLICY_ORDER.map((k) => `<button data-action="retreat-policy" data-v="${k}" class="${cur === k ? "active" : ""}"${tip(RETREAT_POLICIES[k].desc)}>${esc(RETREAT_POLICIES[k].name)}</button>`).join("")}</div>`;
+}
+export function fightForecastHtml(state, card, ch) {
+  const p = ch && ch.fight && ch.fight.enemy ? cardFightParty(state, card) : null;
+  if (!p) return "";
+  const people = Parties.partyMembers(state, p);
+  if (!people.length) return "";
+  const f = ch.fight;
+  const odds = f.odds ?? fightOdds(state, p, f.enemy, f.ambush);
+  const policy = teamPolicy(state, p);
+  const key = `${policy}:${Math.round(odds * 100)}:${people.map((s) => `${s.id}/${Math.round(s.health)}`).join(",")}`;
+  ch.forecastCache = ch.forecastCache && ch.forecastCache.key === key ? ch.forecastCache : { key, text: forecastText(fightForecast(state, p, people, { odds, enemy: f.enemy, ambush: f.ambush }, policy)) };
+  return ch.forecastCache.text ? `<span class="hint">If auto-resolved: ${esc(ch.forecastCache.text)}</span>` : "";
 }
 
 // Conflict approach panel: who they are, how many, your team, and odds on every option.
@@ -637,10 +664,11 @@ function conflictModal(state, card) {
       <div><h3>Them</h3>${them}</div>
       <div><h3>Your team</h3>${you}</div>
     </div>
+    ${retreatPolicyRow(state, card)}
     <div class="row small" style="margin:0.2rem 0 0.6rem"${tip("Your strength against theirs. Ambushes, cover and luck can swing a fight either way.")}><span class="muted" style="width:6rem">Balance</span><div style="flex:1">${bar(share, share >= 55 ? "var(--good)" : share >= 40 ? "#e8a33d" : "var(--danger)")}</div><span style="width:5.5rem;text-align:right">you ${share}%</span></div>
     <div class="choices">${card.choices.map((ch, i) => {
       const dis = typeof ch.disabled === "function" ? ch.disabled(state) : ch.disabled;
-      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(ch.hint)}>${esc(ch.label)}${ch.hint ? `<span class="hint">${esc(ch.hint)}</span>` : ""}</button>`;
+      return `<button data-action="choice" data-i="${i}" ${dis ? "disabled" : ""}${tip(ch.hint)}>${esc(ch.label)}${ch.hint ? `<span class="hint">${esc(ch.hint)}</span>` : ""}${fightForecastHtml(state, card, ch)}</button>`;
     }).join("")}</div></div>`;
 }
 

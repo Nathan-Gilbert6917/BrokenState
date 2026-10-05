@@ -674,7 +674,7 @@ function rescueCard(state, j, p, f, holder) {
     title: `Held at ${holder.known ? holder.name : tileLabel(state, partyTile(p))}`, partyId: p.id, rescueJob: j.id, where: tileLabel(state, partyTile(p)),
     text: `${plural(j.data.count, "of " + f.name + "'s people")} are held here. ${guards.count} guards stand between your team and them.`,
     choices: [
-      { label: "Storm the place (battle)", hint: `About ${guards.count} guards (power ${guards.power}). ${holder.name} turns against you (−15 goodwill)`,
+      { label: "Storm the place (battle)", fight: { enemy: guards, ambush: "player" }, hint: `About ${guards.count} guards (power ${guards.power}). ${holder.name} turns against you (−15 goodwill)`,
         ai: (st) => (members.reduce((a, s) => a + combatPower(s), 0) >= guards.count * guards.power * 1.3 ? 3 : -2),
         resolve: (st) => {
           if (gone(st)) return "Too late.";
