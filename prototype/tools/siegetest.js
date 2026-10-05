@@ -88,7 +88,10 @@ function openBattle(st, enemy = { kind: "zombies", count: 6, power: 3 }, n = 2) 
   return b;
 }
 const play = (st, n = 240) => { for (let i = 0; i < n && st.combat && !st.combat.over; i++) { const b = st.combat; if (b.phase === "player" || b.phase === "deploy") autoPlayerTurn(st); else runEnemyPhase(st); } };
-const wallRow = (b, ok = () => true) => { for (let y = 1; y < b.h - 1; y++) if (cellAt(b, DEPLOY.WALL_X, y).k === "palisade" && cellAt(b, DEPLOY.WALL_X - 1, y).k === "walkway" && ok(y)) return y; return -1; };
+// A wall row with the walkway behind it and the approach in front clear (rows y and y + 1, 4 columns out: on a long wall
+// the ground outside has trees and rocks here and there).
+const clearOut = (b, y) => [0, 1].every((dy) => [1, 2, 3, 4].every((dx) => cellAt(b, DEPLOY.WALL_X + dx, y + dy).k === "open"));
+const wallRow = (b, ok = () => true) => { for (let y = 1; y < b.h - 2; y++) if (cellAt(b, DEPLOY.WALL_X, y).k === "palisade" && cellAt(b, DEPLOY.WALL_X - 1, y).k === "walkway" && clearOut(b, y) && ok(y)) return y; return -1; };
 const park = (b, keep) => { let k = 0; for (const u of b.units) if (!keep.includes(u)) { u.x = 0; u.y = k++ % b.h; if (u.side === "enemy") u.dead = true; } };
 
 // ---------- 1. grenades over walls ----------

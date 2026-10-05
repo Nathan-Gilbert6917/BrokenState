@@ -616,13 +616,20 @@ export function assaultHive(state, p, hive) {
   });
 }
 
-// A hive assault is fought on a bigger map than a field encounter (combat.js HIVE_W × HIVE_H).
+// A hive assault is fought on a Large map (combat.js HIVE_W × HIVE_H, battlesize.js SIZES.HIVE).
 registerBattleSize("hive", () => [HIVE_W, HIVE_H]);
+// The mound: its middle at most HIVE_REACH columns in from the west edge (on a Large map the fight is not a walk:
+// there is more of the hive's land behind it), its height growing with the map's up to 13 rows.
+const HIVE_REACH = 28;
+function moundAt(ctx) {
+  const r = Math.max(3, Math.min(6, Math.round((3 * ctx.H) / 13))), half = r > 3 ? 2 : 1;
+  return { r, half, cx: Math.min(ctx.W - 2 - half, HIVE_REACH), cy: Math.floor(ctx.H / 2) };
+}
 registerBattleLayout("hive", (b, ctx) => {
+  const { r, half, cx, cy } = moundAt(ctx);
   if (ctx.phase === "map") {
     // The hive itself: a mound of flesh on the right, with gaps the brood comes through. Drawn for 18 × 13: the
     // mound and the lumps of flesh around it grow with the map.
-    const r = Math.max(3, Math.round((3 * ctx.H) / 13)), half = r > 3 ? 2 : 1, cx = ctx.W - 2 - half, cy = Math.floor(ctx.H / 2);
     for (let y = cy - r; y <= cy + r; y++) for (let x = cx - half; x <= cx + half; x++) {
       if (Math.abs(y - cy) === 1 && x < cx) continue; // openings
       if (Math.abs(x - cx) * (r / (half + 1)) + Math.abs(y - cy) <= r && ctx.inside(x, y)) ctx.put(x, y, "hivewall");
@@ -631,9 +638,9 @@ registerBattleLayout("hive", (b, ctx) => {
     for (let i = 0; i < lumps; i++) { const x = ctx.rng.int(8, ctx.W - 6), y = ctx.rng.int(0, ctx.H - 1); if (ctx.free(x, y)) ctx.put(x, y, "hivewall"); }
     return;
   }
-  // Units: the Broodmother deep in the hive.
+  // Units: the Broodmother deep in the hive, just behind the mound.
   const boss = bossUnit(b, "broodmother");
-  if (placeUnitRight(b, ctx, boss, ctx.W - 5)) b.units.push(boss);
+  if (placeUnitRight(b, ctx, boss, Math.min(ctx.W - 5, cx - 1), cx + half + 2)) b.units.push(boss);
 });
 
 registerCombatHandler("hiveAssault", (state, result, setup) => {

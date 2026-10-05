@@ -1197,11 +1197,14 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const list = battles(seed);
     const sizes = Object.fromEntries(list.map(({ name, b }) => [name, `${b.w}×${b.h}`]));
     check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
-    check(sizes["field-town"] === `${C.FIELD_W}×${C.FIELD_H}` && C.FIELD_W === 26 && C.FIELD_H === 18 && sizes.hive === "32×22" && sizes.raid === `${C.RAID_W}×${C.RAID_H}` && C.RAID_W === 34, "bigger maps: a field fight 26×18 (was 18×13), a hive assault 32×22, a raid 34×22 (was 28×18)");
+    const BS = await import("../src/sim/battlesize.js");
+    const cls = (n) => BS.sizeClass(...sizes[n].split("×").map(Number));
+    check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && cls("raid") === "M" && cls("base-yard") === "XL" && cls("base-open") === "L",
+      `map sizes by context (sim/battlesize.js): fights in the open Medium (${sizes["field-town"]}, ${sizes["field-forest"]}), a hive assault Large (${sizes.hive}), a town raid ${sizes.raid}, a fully built hub's yard Extra-large (${sizes["base-yard"]}), a smaller one without walls Large (${sizes["base-open"]})`);
     const wall = list.find((x) => x.name === "base-wall-night"), yard = list.find((x) => x.name === "base-yard");
     const hb = wall.st.bases[0];
     check(wall.b.tier.map === "wall" && yard.b.tier.map === "interior" && wall.b.h === yard.b.tier.h0 - INTERIOR.WALL_ROWS && hb && wall.b.h === wallMapRows(hb), `a base with many buildings: the yard map grows to ${yard.b.tier.w0}×${yard.b.tier.h0} to hold them and the wall map is as long (${wall.b.w}×${wall.b.h})`);
-    check(INTERIOR.H_STEPS.includes(interiorSize(null).H) && interiorSize(null).H === INTERIOR.H, "a base with few buildings keeps the usual 26×16 yard and 18×13 wall map");
+    check(interiorSize(null).W === 26 && interiorSize(null).H === INTERIOR.H && wallMapRows(null) === 13, "no base (the tools): the old 26×16 yard and 18×13 wall map");
     let errs = 0, frames = 0, drawn = 0;
     for (const { name, st, b } of list) {
       for (const [rot, zoom] of [[0, 4], [1, 2], [2, 6], [3, 8]]) {
@@ -1222,10 +1225,30 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const again = battles(seed);
     const same = list.filter((x, i) => sig(x) === sig(again[i])).length;
     check(same === list.length, `the same battle draws the same frame every time (${same}/${list.length})`);
+    // The camera on a new battle (sim/battlesize.js maps): a big map opens on your people (all on screen) at 1.5–2.5 CSS px
+    // an art pixel, the small ones whole; an enemy off screen gets an edge marker (a red arrow) without errors or NaN.
+    {
+      const bad = [], zooms = [];
+      for (const { name, st, b } of list) {
+        ISO.iso.battle = null;
+        UI.drawCombat(st, NOW);
+        const S = ISO.ISO_ZOOMS[ISO.iso.zoom];
+        zooms.push(`${name} ×${S}`);
+        const off = b.units.filter((u) => u.side === "player" && C.active(u) && !ISO.isoOnScreen(b, u.x, u.y, 0));
+        if (off.length || S < 1.5 - 1e-9 && ISO.actionBox(b)[2] - ISO.actionBox(b)[0] < b.w) bad.push(`${name}: ${off.length} of yours off screen at ×${S}`);
+      }
+      const big = list.find((x) => x.name === "base-yard");
+      ISO.iso.battle = null; UI.drawCombat(big.st, NOW);
+      ISO.iso.zoom = ISO.ISO_ZOOMS.length - 1; ISO.iso.cx = 0; ISO.iso.cy = 0; // far into a corner: everyone off screen
+      big.st.combat.units.filter((u) => u.side === "enemy").forEach((u) => { u.aware = true; });
+      const n0 = nan; log = [];
+      UI.drawCombat(big.st, NOW);
+      check(!bad.length && nan === n0, `a new battle opens on your people (${zooms.join(", ")})${bad.length ? `: ${bad.join("; ")}` : ""}, and edge markers draw cleanly`);
+    }
     // Picking: a tile's top (its standing height) projected to the screen picks it back, in every rotation, at every
     // height (ground, walkway and roofs 1, towers 2); where something nearer the camera covers that point, the pick is
     // that nearer cell (never one behind it).
-    let total = 0, exact = 0, wrong = 0, raised = 0, raisedOk = 0;
+    let total = 0, exact = 0, wrong = 0, raised = 0, raisedOk = 0, behindWall = 0;
     for (const { name, st, b } of list.filter((x) => ["base-wall-night", "base-yard", "field-city", "raid", "raid-building"].includes(x.name))) {
       for (let rot = 0; rot < 4; rot++) for (const zoom of [2, 6]) {
         ISO.iso.battle = null; UI.drawCombat(st, NOW);
@@ -1241,13 +1264,14 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
           total++;
           if (z) raised++;
           if (p && p.x === x && p.y === y) { exact++; if (z) raisedOk++; continue; }
+          if (z && p && b.cells[y * b.w + x].k === "walkway" && b.cells[p.y * b.w + p.x].k === "palisade") behindWall++; // the wall in front hides it
           const [u0, v0] = ISO.toView(x, y, rot, b.w, b.h), [u1, v1] = p ? ISO.toView(p.x, p.y, rot, b.w, b.h) : [-1, -1];
           if (!p || u1 + v1 <= u0 + v0) { if (wrong++ < 3) console.log(`    ${name} rot ${rot}: (${x},${y}) h${z} picked ${p ? `${p.x},${p.y}` : "nothing"}`); }
         }
       }
     }
     check(total > 3000 && !wrong && exact / total > 0.8, `screen ↔ tile round trip: ${exact} of ${total} tile tops pick their own tile, the rest a nearer cell in front (${wrong} wrong), 4 rotations × 2 zooms`);
-    check(raised > 50 && raisedOk / raised > 0.8, `raised floors (walkways, towers, roofs, upper floors) pick at their height (${raisedOk}/${raised})`);
+    check(raised > 50 && raisedOk / (raised - behindWall) > 0.8, `raised floors (walkways, towers, roofs, upper floors) pick at their height (${raisedOk}/${raised}; ${behindWall} walkway tops hidden behind the wall in front pick the wall)`);
     // A unit's sprite is clickable where it stands up above its tile.
     const ft = list.find((x) => x.name === "field-town");
     ISO.iso.battle = null; UI.drawCombat(ft.st, NOW);

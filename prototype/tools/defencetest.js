@@ -16,7 +16,8 @@ import {
 } from "../src/sim/combat.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { DEPLOY, deployProblems, wallHp, gateHp, sideUntf } from "../src/sim/deploy.js";
-import { INTERIOR, buildInterior, structuresOf, layoutSeed, tierAI, interiorSize, wallMapRows } from "../src/sim/interior.js";
+import { INTERIOR, buildInterior, structuresOf, layoutSeed, tierAI, interiorSize, wallMapRows, yardDims, yardGeom } from "../src/sim/interior.js";
+import { sizeClass } from "../src/sim/battlesize.js";
 import { fightNow, holdCheck, tierMults, raidTier, tierLimits } from "../src/sim/defences.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -83,9 +84,11 @@ section("The yard and buildings map: from the base's buildings, the same every t
   check(a.cells.filter((c) => c.k === "palisade").every((c) => c.hp === wallHp(h)) && a.cells.some((c) => c.k === "gate" && c.hp === gateHp(h)), `the wall line along the east edge with its hit points (${wallHp(h)} a section, gate ${gateHp(h)})`);
   // Reachable: from the back gate to every door's outside, the ladders and the wall.
   const b = { w: a.W, h: a.H, cells: a.cells, losCache: new Int8Array(1), units: [] };
-  const field = distField(b, [[0, 7]], { side: "player", kind: "human" });
+  const my = Math.floor(a.H / 2);
+  const field = distField(b, [[0, my]], { side: "player", kind: "human" });
   const doorsOk = a.doors.every(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isFinite(field[(y + dy) * a.W + x + dx]) && !a.indoor[(y + dy) * a.W + x + dx]));
-  check(doorsOk && isFinite(field[7 * a.W + INTERIOR.WALL_X - 1]), "every door and the wall can be reached from the back gate");
+  check(doorsOk && isFinite(field[my * a.W + a.G.WALL_X - 1]), "every door and the wall can be reached from the back gate");
+  check(sizeClass(a.W, a.H) === "L" || sizeClass(a.W, a.H) === "XL", `a hub's yard map is Large or Extra-large (${a.W}×${a.H}, sim/battlesize.js), its wall ${a.W - a.G.WALL_X} columns in from the east edge`);
   // A base with more buildings than fit in 16 rows: a taller yard map holds every one, and its wall map is as long.
   {
     const st3 = world();
@@ -93,7 +96,8 @@ section("The yard and buildings map: from the base's buildings, the same every t
     const big = buildInterior(h3, { walled: true });
     const want3 = structuresOf(h3).length;
     const b3 = baseBattle(st3, h3);
-    check(big.H > INTERIOR.H && INTERIOR.H_STEPS.includes(big.H) && !big.missed && big.buildings.length === want3 && interiorSize(h3).H === big.H, `a base with ${want3} buildings gets a ${big.W}×${big.H} yard map holding all of them (the usual one is ${INTERIOR.W}×${INTERIOR.H})`);
+    const [w0, h0] = yardDims(h3);
+    check(big.W === w0 && big.H >= h0 && (big.H - h0) % INTERIOR.H_GROW === 0 && w0 * h0 > yardDims(h).reduce((x, y) => x * y) && !big.missed && big.buildings.length === want3 && interiorSize(h3).H === big.H, `a base with ${want3} buildings gets a ${big.W}×${big.H} yard map holding all of them (one with ${structuresOf(h).length}: ${yardDims(h).join("×")}; no base: ${INTERIOR.W}×${INTERIOR.H})`);
     check(b3.tier.map === "wall" && Math.min(b3.w, b3.h) === 18 && Math.max(b3.w, b3.h) === big.H - INTERIOR.WALL_ROWS && b3.tier.h0 === wallMapRows(h3) && !deployProblems(b3).length, `and its wall map is as long: ${b3.tier.w0}×${b3.tier.h0}, the defenders on their posts`);
     st3.combat = null;
   }
@@ -162,11 +166,12 @@ section("Through the wall: the yard and buildings map (tier 2)");
   endPlayerTurn(st);
   for (const u of b.units) if (u.side === "enemy") u.ap = 0; // they stand still this turn: the breach is checked as your turn starts
   runEnemyPhase(st);
-  check(b.tier.map === "interior" && b.w * b.h === b.tier.w0 * b.tier.h0 && INTERIOR.H_STEPS.includes(Math.min(b.w, b.h)) && b.phase === "deploy", `${k} of the dead inside the wall: on to the yard map (${b.w}×${b.h}), a redeploy first`);
+  check(b.tier.map === "interior" && b.w * b.h === b.tier.w0 * b.tier.h0 && b.tier.w0 === interiorSize(st.bases.find((x) => x.id === b.setup.baseId)).W && b.phase === "deploy", `${k} of the dead inside the wall: on to the yard map (${b.w}×${b.h}), a redeploy first`);
   check(b.units.every((u) => ids.has(u.id)) && hurt.hp === 37 && downed.down && !downed.dead && h.stock.ammo === ammo0, "the same people carry over: health (37 stays 37), the downed still down, the base's ammo untouched");
   const unB = sideUntf(b.side, b.tier.w0, b.tier.h0);
   const [dx] = unB(downed.x, downed.y);
-  check(Math.abs(dx - (DEPLOY.LINE_X + INTERIOR.SHIFT_X)) <= 2, `the one down on the walkway lies just inside the wall on the yard map (column ${dx}, the wall at ${INTERIOR.WALL_X})`);
+  const G = yardGeom(b.tier.w0);
+  check(Math.abs(dx - (DEPLOY.LINE_X + G.SHIFT_X)) <= 2, `the one down on the walkway lies just inside the wall on the yard map (column ${dx}, the wall at ${G.WALL_X})`);
   const off = b.units.filter((u) => u.off);
   const inYard = zs.filter((u) => !u.off && !u.dead && b.tier.interior[u.y * b.w + u.x]);
   check(off.length === outside0 && inYard.length === k, `the ${k} inside came along, the ${off.length} outside wait to come in through the openings`);

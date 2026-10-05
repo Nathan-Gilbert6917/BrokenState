@@ -34,6 +34,7 @@ import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, lo
 import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, mixList } from "./zombietypes.js";
+import { fitMargins, buildingTarget, densifyOutside } from "./battlesize.js";
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -629,7 +630,13 @@ export function buildingMap(state, tileId, option, withVehicle) {
   const seed = Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
   const rng = new Rng(seed);
   const spec = BUILDINGS[option.key].make(rng);
-  return assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
+  // battlesize.js: at least the site's size class (more outside around a single-building site's plan), the new ground
+  // topped up with cover. The floor plan itself is the archetype's.
+  const tile = state.tiles[tileId], sb = siteBuildings(tile);
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single)));
+  const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
+  densifyOutside(map, rng, tile ? tile.terrain : "plains");
+  return map;
 }
 
 // ======================================================================================
