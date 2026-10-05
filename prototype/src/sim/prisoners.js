@@ -34,6 +34,7 @@ import {
 import { partyMembers, carried, takeSupply, tileLabel } from "./parties.js";
 import { count } from "./buildings.js";
 import { changeGoodwill, attitude, strength, isAggressiveType, baseDefense } from "./factions.js";
+import { raidTier } from "./defences.js";
 import { available } from "./trade.js";
 import { offerRecruits } from "./recruits.js";
 import { addMood } from "./relations.js";
@@ -542,18 +543,19 @@ export function prisonersHour(state) {
     if (!prisonersAt(state, base.id).some((p) => p.factionId === f.id)) { log(state, `${f.name} turn back: their people are no longer at ${base.name}.`, "info"); continue; }
     const def = baseDefense(state, base) * (r.manned ? PRISON.RESCUE.manned : 1);
     const att = r.strength * state.rng.range(0.8, 1.2);
+    const rt = raidTier(state, base, def, att, 1, 1); // defences.js: the walls, then the yard
     let text;
-    if (def >= att) {
+    if (rt.yard >= 1) {
       f.pop = Math.max(0, f.pop - state.rng.int(1, 2));
       changeGoodwill(state, f, -5, "you beat off their rescue");
-      text = `${base.name} drove off ${f.name}'s rescue at the walls.`;
+      text = `${base.name} drove off ${f.name}'s rescue ${rt.wall >= 1 ? "at the walls" : "in the yard"}.`;
     } else {
       const freed = rescueWon(state, f, base);
       const people = atBase(state, base.id);
       if (people.length) hurt(state, state.rng.pick(people), state.rng.int(15, 40), base.tile, `when ${f.name} came for their people`);
       text = `${f.name} got into ${base.name} and freed ${listNames(freed)}. They carried off a tenth of the stores.`;
     }
-    log(state, text, def >= att ? "good" : "death");
+    log(state, text, rt.yard >= 1 ? "good" : "death");
     addCard(state, { title: "The rescue", text, choices: [{ label: "OK", resolve: () => "" }] });
   }
 }

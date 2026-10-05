@@ -52,6 +52,18 @@ export function opticsFor(members, cargo = null, { still = false, night = false,
   return out;
 }
 
+// In battle: tiles of sight an optic adds to whoever carries it (anywhere on them). By day binoculars and a spotting
+// scope +3, a monocular or a thermal +2; at night only a thermal (+2; it also sees in the dark from the off hand).
+export const BATTLE_OPTICS = { binoculars: 3, spotscope: 3, monocular: 2, thermal: 2 };
+export function battleOptic(s, night = false) {
+  let best = 0;
+  for (const it of carriedAll(s)) {
+    const v = it && BATTLE_OPTICS[it.key];
+    if (v && (!night || GEAR[it.key].optics.night != null)) best = Math.max(best, v);
+  }
+  return best;
+}
+
 // A telescope in the base's armory: tiles added to its view.
 export function baseOpticsSight(base) {
   if (!base || !base.armory || !base.armory.length) return 0;

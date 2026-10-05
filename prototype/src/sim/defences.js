@@ -26,6 +26,7 @@ import { ensureHives, zombieToughness } from "./hives.js";
 import { BOSS_NAMES } from "./hiveconst.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { raidDamage } from "./breakdowns.js";
+import { defensibleCount } from "./interior.js";
 
 export const DEFENCE = {
   WALL_BASE: 15, WALL_PER: 18, GUARD_PER_POWER: 2, ALERT_WEIGHT: 0.8,
@@ -92,17 +93,85 @@ export const spikeKill = (base, n) => {
   return k ? Math.min(n, Math.round(n * DEFENCE.SPIKE_FRAC * k + DEFENCE.SPIKE_FLAT * k)) : 0;
 };
 
-// "Can this base hold against a horde of N?"
+// ---------- the three tiers (interior.js): wall, yard, buildings ----------
+// What each tier of a base's defence multiplies its defenders' strength by, in fights resolved by the numbers
+// (combat.js autoResolveCombat: a raid fought in person and auto-resolved, the autopilot's) and in the hold estimate
+// below. The wall: +5% a wall section (up to 3), a watchtower +5%, a reinforced gate +5%, the trench +3%, lit
+// floodlights at night +3%. The yard: +3% a barricade, +1.5% a sandbag bundle and a roll of wire in the armory, +2% a
+// spike pit. The buildings: +2% a building that can be held (interior.js defensibleCount, up to 5). A fight is held at
+// the wall when the defenders are worth HELD_AT_WALL × the attackers there, else in the yard when they match them
+// with the yard counted, else in the buildings (the last stand), else lost.
+export const TIERS = {
+  WALL: { per: 0.05, max: 3, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03 },
+  YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02 },
+  BUILDINGS: { per: 0.02, max: 5 },
+  HELD_AT_WALL: 1.15,
+};
+export function tierMults(state, base, night = false) {
+  if (!base) return { wall: 1, yard: 1, buildings: 1, walled: false, held: 0 };
+  const T = TIERS, walls = count(base, "walls"), kit = armoryDefence(base);
+  const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
+  const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
+    + (count(base, "trench") ? T.WALL.trench : 0) + (flood && night ? T.WALL.flood : 0) : 1;
+  const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits");
+  const held = defensibleCount(base);
+  const buildings = 1 + T.BUILDINGS.per * Math.min(T.BUILDINGS.max, held);
+  return { wall, yard, buildings, walled: walls > 0, held };
+}
+// The strength of the best 8 at a base (who would fight a break-in), with too little ammo counting 60%.
+export function defendersPower(state, base) {
+  const people = atBase(state, base.id).filter((s) => !s.inBed).sort((a, c) => combatPower(c) - combatPower(a)).slice(0, 8);
+  const p = people.reduce((a, s) => a + combatPower(s), 0);
+  return (base.stock.ammo || 0) >= people.length * 3 ? p : p * 0.6;
+}
+// The dead that broke in, as a strength on the same scale (breakInForce's count × power, a Wallbreaker 12).
+const BOSS_STRENGTH = 12;
+export const breakInStrength = (state, base, through, bosses = 0) => { const f = breakInForce(state, base, through, bosses); return f.count * f.power + bosses * BOSS_STRENGTH; };
+// How many of the dead that broke in each inner tier is expected to stop: the most `through` for which the defenders
+// still match them with the yard counted (yard), and with the buildings too (buildings). 0 when nobody is there.
+export function tierLimits(state, base, bosses = 0, night = false) {
+  const mine = defendersPower(state, base);
+  const m = tierMults(state, base, night);
+  const most = (mult) => {
+    if (mine * mult < breakInStrength(state, base, 1, bosses)) return 0;
+    let lo = 1, hi = 5000;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (mine * mult >= breakInStrength(state, base, mid, bosses)) lo = mid; else hi = mid; }
+    return lo;
+  };
+  return { yard: most(m.wall * m.yard), buildings: most(m.wall * m.yard * m.buildings), mine, mults: m };
+}
+
+// Raids by the numbers (factions.js resolveRaidOnPlayer, visitors.js resolveRaidOnYou, prisoners.js): the defence
+// against the attackers' strength through the tiers. hold / brk: the thresholds (factions.js RAIDS.HOLD, BREAK).
+// Held at the wall at hold × or better with the wall tier counted; else they break in and are pushed out of the yard
+// (brk × with the yard counted) or held off from the buildings (with the buildings too); else overrun. ratio: what
+// the old single thresholds read (held ≥ hold > broken ≥ brk > overrun).
+export function raidTier(state, base, def, att, hold, brk) {
+  const m = tierMults(state, base, isNight(state));
+  const wall = (def * m.wall) / Math.max(1, att), yard = wall * m.yard, last = yard * m.buildings;
+  const tier = wall >= hold ? "wall" : yard >= brk ? "yard" : last >= brk ? "buildings" : "overrun";
+  const ratio = tier === "wall" ? wall : tier === "overrun" ? last : Math.max(brk, Math.min(yard, hold - 0.001));
+  return { tier, ratio, wall, yard, last, mults: m };
+}
+
+// "Can this base hold against a horde of N?" The walls first (holds: at or under the limit); above it, how many break
+// in (through) and whether the yard or a last stand in the buildings is expected to stop them (tier: "wall" | "yard" |
+// "buildings" | "overrun").
 export function holdCheck(state, base, size, bosses = 0) {
   const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size));
   const limit = holdLimit(state, base, bosses);
-  return { size, after, limit, holds: after <= limit, margin: limit - after };
+  const holds = after <= limit;
+  const through = holds ? 0 : Math.min(after, Math.max(Math.round(after * 0.3), Math.round(after - limit * DEFENCE.HELD_BACK)));
+  const lim = holds ? null : tierLimits(state, base, bosses);
+  const tier = holds ? "wall" : through <= lim.yard ? "yard" : through <= lim.buildings ? "buildings" : "overrun";
+  return { size, after, limit, holds, margin: limit - after, through, tier, yardLimit: lim ? lim.yard : null, buildingsLimit: lim ? lim.buildings : null };
 }
 export function holdText(state, base, size, bosses = 0) {
   const c = holdCheck(state, base, size, bosses);
   const boss = bosses ? ` with a ${BOSS_NAMES.horde}` : "";
-  return c.holds ? `${base.name} holds against ${size}${boss}: its defences stop up to about ${c.limit}.`
-    : `${base.name} cannot hold ${size}${boss}: its defences stop about ${c.limit}, so about ${Math.max(1, Math.round(c.after - c.limit * DEFENCE.HELD_BACK))} would break in.`;
+  if (c.holds) return `${base.name} holds against ${size}${boss}: its defences stop up to about ${c.limit}.`;
+  const then = c.tier === "yard" ? `the yard should hold them (up to about ${c.yardLimit})` : c.tier === "buildings" ? `the yard would fall, a last stand in the buildings might hold (up to about ${c.buildingsLimit})` : "the yard and the buildings would likely fall";
+  return `${base.name} cannot hold ${size}${boss}: its defences stop about ${c.limit}, so about ${Math.max(1, c.through)} would break in; ${then}.`;
 }
 // One line for the base panel.
 export function holdSummary(state, base) {
@@ -231,6 +300,9 @@ function overrun(state, base, h, through, why = "") {
   }
 }
 
+// Where a won base battle was decided (combat.js result.tier), for the cards.
+export const TIER_WORDS = { wall: " at the walls", yard: " in the yard", buildings: " in a last stand in the buildings" };
+
 registerCombatHandler("hordeBreakIn", (state, result, setup) => {
   const c = setup.context;
   const h = state.hordes.find((x) => x.id === c.hordeId) || null;
@@ -240,7 +312,8 @@ registerCombatHandler("hordeBreakIn", (state, result, setup) => {
     state.hiveInfo.stats.repelled++;
     if (h) { h.bosses = 0; if (!reduceHorde(state, h, c.through)) retreat(state, h, base || { tile: h.tile }); }
     const wrecked = base && count(base, "barricades") ? (base.buildings.splice(base.buildings.findIndex((b) => b.type === "barricades"), 1), " One barricade was wrecked in the fight.") : "";
-    const text = `${base ? base.name : "The base"} held: the ${c.through} dead that broke in were cut down${c.bosses ? `, the ${BOSS_NAMES.horde} with them` : ""}.${wrecked}`;
+    const where = TIER_WORDS[result.tier] || "";
+    const text = `${base ? base.name : "The base"} held${where}: the ${c.through} dead that broke in were cut down${c.bosses ? `, the ${BOSS_NAMES.horde} with them` : ""}.${wrecked}`;
     log(state, text, "good");
     addCard(state, { title: "The horde is beaten", text, choices: [{ label: "OK", resolve: () => "" }] });
     return;
@@ -336,8 +409,10 @@ export function fightNow(state, setup) {
   const b = createBattle(state, setup);
   state.combat = b;
   endDeploy(b); // deploy.js: nobody to place them by hand, so the default positions
-  for (let i = 0; i < 160 && !b.over; i++) {
-    if (b.phase === "player") autoPlayerTurn(state);
+  // Two maps (the wall, then the yard and the buildings: interior.js) can take a while; the redeploy after falling
+  // back is a "deploy" phase the AI ends with the default posts.
+  for (let i = 0; i < 240 && !b.over; i++) {
+    if (b.phase === "player" || b.phase === "deploy") autoPlayerTurn(state);
     else runEnemyPhase(state);
   }
   if (!b.over) endBattleNow(state, setup.canRetreat ? "retreat" : "defeat");

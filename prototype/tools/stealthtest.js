@@ -529,9 +529,10 @@ function prisonWorld(s, n = 2, cells = 1) {
   const hd = makeHorde(hw, { tile: hhb.tile, size: 260, role: "attack" });
   fightNow(hw, { tile: hhb.tile, baseId: hhb.id, enemy: { kind: "zombies", count: 10, power: 2.5, name: "the horde" }, ambush: null, canRetreat: false, handler: "st", layout: "baseDefence", downedLive: 0.4, deploy: true, context: { hordeId: hd.id, through: 150 } });
   check(!hw.combat, "headless (and the autopilot) skip the deploy step with the default posts and fight it out");
-  // An unwalled base keeps the open layout.
+  // An unwalled base has no wall map: the battle opens on the yard and buildings map (interior.js), the defenders on
+  // their posts away from the attackers' edge.
   const { b: ob } = battle("east", 0, 0);
-  check(!ob.deploy.walled && ob.units.filter((x) => x.side === "player").every((p) => p.x <= 7), "no walls: the open yard, defenders behind the barricades");
+  check(!ob.deploy.walled && ob.tier.map === "interior" && deployProblems(ob).length === 0 && ob.units.filter((x) => x.side === "player").every((p) => p.x <= ob.w - 4), `no walls: the yard and buildings map (${ob.w}×${ob.h}), defenders in the buildings and behind the barricades (${deployProblems(ob).join("; ") || "no problems"})`);
 }
 
 // 14. Crafting and loot.

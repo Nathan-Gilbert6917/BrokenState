@@ -57,6 +57,7 @@ import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE } from "./alliance.js";
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS } from "./eras.js";
+import { raidTier } from "./defences.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -524,7 +525,10 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const att = party.strength;
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
-  const ratio = beaten ? (beaten === "broken" ? 1 : 0) : def / att;
+  // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
+  // yard or the buildings, or overrun.
+  const rt = beaten ? null : raidTier(state, base, def, att, RAIDS.HOLD, RAIDS.BREAK);
+  const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const hours = beaten ? RAIDS.SIEGE_HOURS : Math.max(1, party.siegeHours || RAIDS.SIEGE_HOURS);
   const before = { ...base.stock };
   const hurtWho = new Map();
@@ -541,10 +545,10 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     raidRepelled(state, f);
   } else if (ratio >= RAIDS.BREAK) {
     outcome = "broken";
-    head = `${f.name} broke into ${base.name} before being pushed out.`;
+    head = rt && rt.tier === "buildings" ? `${f.name} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${f.name} broke into ${base.name} before being pushed out.`;
     log(state, `${f.name} broke into ${base.name} before being pushed out. Supplies were stolen.`, "danger");
     steal(base.stock, count(base, "storehouse") ? 0.1 : 0.2, f.stock);
-    for (let i = 0; i < 2 && people.length; i++) wound(rng.pick(people), rng.int(15, 45), `defending ${base.name}`);
+    for (let i = 0; i < (rt && rt.tier === "buildings" ? 3 : 2) && people.length; i++) wound(rng.pick(people), rng.int(15, 45), `defending ${base.name}`);
     f.pop = Math.max(0, f.pop - 1);
     raidWon(state, f);
     // An outpost they broke into may be kept (a third as likely as after an overrun): the people there leave.
@@ -822,7 +826,7 @@ export function raidWarning(state, party) {
   const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength, a break-in from ${RAIDS.BREAK}×; the longer they stay at the walls, the more they smash.`,
+    text: `${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {

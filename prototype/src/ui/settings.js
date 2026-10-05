@@ -11,7 +11,7 @@ import {
 import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from "../sim/save.js";
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, worldSizeOf, sizeDef } from "../sim/worldsize.js";
-import { cui, setConfirmEnd } from "./combat.js";
+import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
 import { helpTab } from "./help.js";
 import { setMapDetail } from "./terraindeco.js";
 
@@ -137,7 +137,7 @@ const KEYS = [
   ["[ / ] / L", "Fold or show the left panel / right panel / log (or click the bar beside it; drag the bar to resize)"],
   ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
   ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
-  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone), Enter ends the turn"],
+  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Enter ends the turn"],
   ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
 ];
 
@@ -152,6 +152,7 @@ function optionsTab(state, ui, api) {
     <h3>Play</h3><div class="setrow">
       ${box("pauseOnBlur", o.pauseOnBlur, "Pause when the window loses focus", "Switching to another window or tab pauses the clock")}
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
+      ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
     </div>
     <h3>Display</h3><div class="setrow">
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
@@ -309,6 +310,7 @@ export const SETTINGS_ACTIONS = {
   "set-quitnosave": (state, ui, d, api) => guarded(state, ui, api, { text: "Quit without saving? Progress since your last save is lost.", yes: "Quit" }, () => api.quit()),
   "set-opt": (state, ui, d, api) => {
     if (d.k === "confirmEnd") { setConfirmEnd(!cui.confirmEnd); return; }
+    if (d.k === "autoRedeploy") { setAutoRedeploy(!cui.autoRedeploy); return; }
     if (!(d.k in api.options) || typeof api.options[d.k] !== "boolean") return;
     api.options[d.k] = !api.options[d.k];
     saveOptions(api.options);
