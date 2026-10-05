@@ -8,7 +8,7 @@
 //   first (hardcore-groups.js).
 // Everything here only runs when state.mode === "hardcore"; a normal game never touches it.
 import { setupHardcoreStart, hardcoreStartDaily } from "./hardcore-start.js";
-import { setupHardcoreGroups, hardcoreGroupsDaily } from "./hardcore-groups.js";
+import { setupHardcoreGroups, hardcoreGroupsDaily, hardcoreGroupsHour, hardcoreGroupsAfterOutbreak } from "./hardcore-groups.js";
 import { setupHardcoreOutbreak, hardcoreOutbreakDaily } from "./hardcore-outbreak.js";
 
 export const MODES = {
@@ -28,6 +28,13 @@ export function hardcoreCreate(state, { factionCount, crew }) {
 // createWorld, after mapgen's hives exist (hives.js ensureHives): trim them to the first outbreak and reset infection.
 export function hardcoreAfterHives(state) {
   setupHardcoreOutbreak(state);
+  hardcoreGroupsAfterOutbreak(state); // the raiders' day, from the outbreak's era offset
+}
+
+// world.js tickHour, every hour (after the parties, hordes and outsiders move): the bands on the road.
+export function hardcoreHour(state) {
+  if (!isHardcore(state)) return;
+  hardcoreGroupsHour(state);
 }
 
 // world.js tickHour, once a day.

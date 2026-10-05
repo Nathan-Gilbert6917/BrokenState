@@ -16,6 +16,7 @@ import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
+import { bandsOf, bandTipLines } from "../sim/hardcore-groups.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
@@ -853,6 +854,7 @@ function moverHash(state) {
   for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
+  for (const b of bandsOf(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands (sim/hardcore-groups.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
@@ -1242,6 +1244,20 @@ export function render(state) {
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
     sprite(cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
+    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+  }
+  // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
+  // you can see them.
+  if (on("teams")) for (const b of bandsOf(state)) {
+    if (!live.has(b.tile)) continue;
+    const [px, py] = g.toPixel(b.tile, HEX);
+    const cv = groupPartyCanvas(b.type, "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
+    const w = gridW(cv) * 1.1 * s;
+    const next = b.path && b.path[b.idx + 1];
+    const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
+    const [x, y, k2] = besideBase(b.tile, px, py);
+    groundRing(x, y, b.color, false, false);
+    sprite(cv, x, y - 3, w * k2, { facing });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Outsiders (sim/visitors.js): raiders from outside in dark red, merchants in gold, travellers in grey. Drawn where
@@ -1742,6 +1758,7 @@ export function tileTooltip(state, id) {
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
   for (const line of surveyTip(state, id)) lines.push(`<span style="color:#f0c85a">${esc(line)}</span>`); // sim/survey.js: surveys and rumours
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
+  for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   const ru = ownHere ? null : ruinInfo(state, id);
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);

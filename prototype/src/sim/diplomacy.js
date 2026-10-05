@@ -55,6 +55,7 @@ import { gainXp, USE } from "./skills.js";
 import { jobsDaily, jobsHour } from "./jobs.js";
 import { allianceDaily, isMember } from "./alliance.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
+import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -172,7 +173,7 @@ export function diplomacyDaily(state) {
     relationsDaily(state);
     pactsDaily(state);
     warsDaily(state);
-    declareWars(state);
+    if (!hcGroupRaidsQuiet(state)) declareWars(state); // hardcore-groups.js: no new wars while the bands found their hubs
   }
   jobsDaily(state);
   allianceDaily(state);

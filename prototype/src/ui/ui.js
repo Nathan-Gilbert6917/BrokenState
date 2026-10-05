@@ -60,7 +60,7 @@ import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
-import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote } from "./diplomacy.js";
+import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { occupiedAt, occupiedText, assaultWarning, assaultForce } from "../sim/conquest.js";
 import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
@@ -268,6 +268,7 @@ function renderGroups(state) {
       </div>`;
     }).join("") : `<div class="muted small">You have not found any other groups yet. Send recon teams out.</div>`}
     ${unknown ? `<div class="muted small" style="margin-top:0.5rem">${unknown} group${unknown === 1 ? " is" : "s are"} still out there, unknown.</div>` : ""}
+    ${bandsSection(state)}
     ${outsidersSection(state)}
     <h3>Trade routes</h3>
     ${routes.length ? routes.map((r) => {

@@ -18,6 +18,7 @@ import {
 import {
   ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
+import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -150,7 +151,9 @@ export function groupCardExtras(state, f) {
   const jobs = jobsOf(state, f);
   const member = isMember(state, f);
   const inv = member ? "" : inviteProblem(state, f);
+  const mil = militaryStatus(state, f); // hardcore mode: the Guard's stand against the hive (sim/hardcore-groups.js)
   return `<div class="small" style="margin-top:0.25rem">
+    ${mil ? `<div class="${mil.share > 0.55 ? "muted" : "danger"}"${tip("Hardcore: the Guard fights the hive near its base. Its hordes grind the soldiers down; sorties and shelling buy time, ammo and meds from you help, and destroying the hive saves them.")}>🪖 Against the hive: ${esc(mil.word)} (${pct(mil.share)} of its soldiers left)</div>` : ""}
     ${wars.length ? `<div class="danger">⚔ At war with ${wars.map((w) => esc(nameOf(state, enemyIn(w, f)))).join(", ")}${wars.some((w) => w.playerSide === f.id) ? " (you fight beside them)" : wars.some((w) => w.playerSide != null) ? " (you fight against them)" : ""}</div>` : ""}
     ${pactsOf(state, f).length ? `<div class="muted">Pacts with ${pactsOf(state, f).map((o) => esc(nameOf(state, o.id))).join(", ")}</div>` : ""}
     ${member ? `<div class="good">🤝 Member of ${esc(ALLIANCE.NAME)}</div>` : ""}
@@ -159,6 +162,24 @@ export function groupCardExtras(state, f) {
   </div>
   <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}</div>`;
 }
+// Hardcore mode (sim/hardcore-groups.js): bands on the road you have met or seen, and how many you have not.
+export function bandsSection(state) {
+  const all = bandsOf(state);
+  if (!all.length) return "";
+  const known = knownBands(state);
+  const unknown = all.length - known.length;
+  const cards = known.map((b) => {
+    const i = bandInfo(state, b);
+    return `<div class="card small">
+      <div class="spread"><b><span class="swatch" style="background:${b.color}"></span>${esc(b.name)}</b><span style="color:${attColor(i.attitude)}">${i.attitude}</span></div>
+      <div class="muted">${esc(i.label)} · about ${i.pop} people · no base yet</div>
+      <div>${esc(i.seen)}${i.dest ? ` · ${esc(i.dest)}` : ""}</div>
+      <div class="row" style="margin-top:0.25rem"><button class="mini" data-action="center" data-tile="${i.tile}"${tip("Center the map where they were last seen")}>Locate</button></div>
+    </div>`;
+  }).join("");
+  return `<h3${tip("Groups that have not founded their hub yet: they walk to a site their kind likes and settle within a few weeks. Meet one with a team to talk; what they think of you then carries over to the group.")}>On the road</h3>${cards}${unknown ? `<div class="muted small">${unknown} band${unknown === 1 ? " is" : "s are"} on the road somewhere, not yet met.</div>` : ""}`;
+}
+
 // Wants and surplus, one line each (this week's lists).
 function marketLine(m) {
   const w = m.wants.map((x) => `${x.qty} ${x.key} <span class="muted">(${p1(x.price)})</span>`).join(", ");

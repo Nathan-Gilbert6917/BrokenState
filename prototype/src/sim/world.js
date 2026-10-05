@@ -48,7 +48,7 @@ import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
-import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily } from "./hardcore.js";
+import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -88,7 +88,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     ensureHives(state);
     hardcoreAfterHives(state);
     updateVision(state);
-    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length} other groups are out there somewhere.`, "info");
+    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
     return state;
   }
@@ -583,6 +583,7 @@ export function tickHour(state) {
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
+  if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   constructionHour(state);
   craftingHour(state);
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders

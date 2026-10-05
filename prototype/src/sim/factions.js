@@ -58,6 +58,7 @@ import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUE
 import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
 import { raidTier } from "./defences.js";
+import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -83,7 +84,7 @@ export const GROUP_BREAK = 3;
 export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const PREFERRED_SITES = {
+export const PREFERRED_SITES = {
   raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
   expansionist: ["town", "airport", "factory", "police"],
   zealot: ["church", "school", "univ", "hospital", "town"],
@@ -253,7 +254,7 @@ export function factionsDaily(state) {
     // the sites they strip, aiscav.js), and FACTION_MAKE of the old ammo, scrap, fuel and meds made from nothing.
     const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
     f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) - f.pop;
-    if (f.stock.food > f.pop * 4 && f.pop < 50 && rng.chance(0.25)) f.pop += 1;
+    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25)) f.pop += 1; // hcNoGrow: hardcore's besieged military
     // Drifters, deserters and the desperate join the strong: an aggressive group with food on hand recruits.
     else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
     if (f.stock.food < 0) {
@@ -268,7 +269,7 @@ export function factionsDaily(state) {
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
-    if (f.bases.length < maxBases(f) && rng.chance((def.expand + (agg ? RAIDS.EXPAND_AGG : 0)) * (f.pop / 18))) {
+    if (!f.hcNoExpand && f.bases.length < maxBases(f) && rng.chance((def.expand + (agg ? RAIDS.EXPAND_AGG : 0)) * (f.pop / 18))) {
       const g = state.grid;
       const cands = [];
       const seen = new Set();
@@ -321,7 +322,8 @@ export function factionsDaily(state) {
     // Raids by aggressive groups (and by peaceful ones you provoked into hostility: only on you, and rarely).
     f.raidCooldown -= 1;
     const raidRate = def.raid > 0 ? def.raid : attitude(f) === "Hostile" ? RAIDS.PROVOKED[f.type] || 0 : 0;
-    if (raidRate > 0 && f.raidCooldown <= 0 && f.pop >= 8 && rng.chance(raidRate * 1.5)) {
+    // Hardcore (hardcore-groups.js): quiet while the bands are still founding their hubs.
+    if (raidRate > 0 && f.raidCooldown <= 0 && f.pop >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5)) {
       launchRaid(state, f);
       f.raidCooldown = rng.int(8, 16);
     }
@@ -346,6 +348,7 @@ export function factionsDaily(state) {
 // from beyond the border settles a free site 12–30 tiles from your hub (2% a day): 12–18 people, hostile.
 function newGangs(state) {
   if (day(state) < RAIDS.NEW_GANG_FROM || state.noNewGangs) return; // noNewGangs: test switch
+  if (hcNoRaiders(state)) return; // hardcore-groups.js: no gangs before the raiders appear
   const minAgg = isLate(state) ? Math.max(RAIDS.MIN_AGG, ERAS.LATE_MIN_AGG) : RAIDS.MIN_AGG; // eras.js: one more in the late game
   // A state the coalition governs (over half the land held) is closed to new gangs: its patrols turn them back.
   if (controlledLand(state).pct > ALLIANCE.LAND_NEEDED) return;
