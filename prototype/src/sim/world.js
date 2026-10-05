@@ -40,6 +40,7 @@ import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory } from "./alliance.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
+import { noteFinds, discoveryHour } from "./discovery.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -522,10 +523,13 @@ export function updateVision(state) {
     state.knowledge[id] = snapshot(state, id);
     for (const f of state.factions) if (f.bases.includes(id)) f.known = true;
   }
+  // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.
+  for (const b of state.bases) noteFinds(state, state.grid.within(b.tile, baseVision(b)), { base: b });
   updateLiveMarkers(state);
 }
 
-export function mergeKnowledge(state, seen, spotted) {
+// who: the team whose report it is (a hidden site it found gets a log line naming it, discovery.js).
+export function mergeKnowledge(state, seen, spotted, who = null) {
   if (spotted) mergeSpots(state, spotted);
   // seen: Map tileId -> snapshot recorded by a party. Keep the newest per tile.
   for (const [id, snap] of seen) {
@@ -537,6 +541,7 @@ export function mergeKnowledge(state, seen, spotted) {
       if (f) f.known = true;
     }
   }
+  noteFinds(state, seen.keys(), who ? { party: who } : null);
 }
 
 // ---------- tick ----------
@@ -579,6 +584,7 @@ export function tickHour(state) {
   for (const b of state.bases) for (const k of Object.keys(b.stock)) if (b.stock[k] < 0) b.stock[k] = 0;
   checkGameOver(state);
   updateVision(state);
+  discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)

@@ -75,7 +75,7 @@ function run(seed, style) {
       if (!style) simtestAutoplay(state, m);
       m.peak = Math.max(m.peak, alive(state).length);
       if (!style) continue;
-      if (state.cards.length) m.problems.push(`day ${day(state)}: ${state.cards.length} card(s) left open (${state.cards[0].title})`);
+      if (state.cards.length && !state.gameOver) m.problems.push(`day ${day(state)}: ${state.cards.length} card(s) left open (${state.cards[0].title})`); // a fallen holdout answers nothing more
       // Stuck: halted with nothing that could move it on.
       for (const p of state.parties) {
         if (p.owner !== "player" || p.phase !== "engaged") { engagedSince.delete(p.id); continue; }

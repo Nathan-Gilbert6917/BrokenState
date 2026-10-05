@@ -15,6 +15,7 @@ import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
+import { siteKnown, hiddenSites } from "../sim/discovery.js";
 import { outsiderPartyCanvas, OUTSIDER_COLORS } from "./mapsprites.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas } from "./hivesprites.js";
 import {
@@ -46,6 +47,12 @@ export const liveSet = (state) => {
   if (!view.devReveal) return state.live;
   if (!allLive || allLive.size !== state.tiles.length) allLive = new Set(state.tiles.map((t) => t.id));
   return allLive;
+};
+// The site on a tile as the player may see it (sim/discovery.js: a hidden site nobody has found is bare ground), or
+// null. Dev Reveal and the timelapse show every site.
+export const mapLoc = (state, id) => {
+  const t = state.tiles[id];
+  return t && t.loc && (siteKnown(state, id) || liveSet(state).has(id)) ? t.loc : null;
 };
 
 let canvas, ctx, W = 0, H = 0, dpr = 1;
@@ -332,7 +339,9 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   for (const id of G.sites) {
     const t = tiles[id];
     let code = 0, fb = null;
-    if (!ownBase.has(id)) {
+    // A hidden site nobody has found (sim/discovery.js) is not drawn at all; found, its code changes and the chunks
+    // around it are drawn again.
+    if (!ownBase.has(id) && (live.has(id) || siteKnown(state, id))) {
       const isLive = live.has(id), snap = isLive ? null : k[id];
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
       if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0);
@@ -534,7 +543,7 @@ function drawGround(state, n, nr) {
     ctx.stroke();
     if (F.ringSkulls) for (let a = 0; a < n; a++) {
       const id = list[a];
-      if (((G.key[id] >> 2) & 3) === 1 && !state.tiles[id].loc) sprite(redSkullCanvas(), X[id], Y[id] + 13, SKULL_W, { alpha: 0.9 });
+      if (((G.key[id] >> 2) & 3) === 1 && !mapLoc(state, id)) sprite(redSkullCanvas(), X[id], Y[id] + 13, SKULL_W, { alpha: 0.9 });
     }
   }
 }
@@ -549,6 +558,8 @@ function moverHash(state) {
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
+  // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
+  if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   return h;
 }
 function unchanged(state, now) {
@@ -787,7 +798,7 @@ export function render(state) {
     }
     // On a site or base: tucked into the tile's upper left; elsewhere centered, side by side when there are several.
     const s = zoomBoost(), w = (MARKER_W[m.type] || 14) * s;
-    const tucked = state.tiles[m.tile].loc || ownBase.has(m.tile);
+    const tucked = mapLoc(state, m.tile) || ownBase.has(m.tile);
     const x = tucked ? px + (-14 + n * 14) * s : px + (n - (perTile.get(m.tile) - 1) / 2) * 17 * s;
     const y = tucked ? py - 13 * s : py + 1 * s;
     const cv = markerSpriteCanvas(m.type, PLAYER_COLOR, markerLook(state, m));
@@ -1320,20 +1331,21 @@ export function tileTooltip(state, id) {
   const t = state.tiles[id];
   const isLive = liveSet(state).has(id);
   const snap = state.knowledge[id];
-  const lines = [`<b>${esc(t.loc ? t.loc.name : TERRAIN[t.terrain].name)}</b>`];
+  const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
+  const lines = [`<b>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</b>`];
   const ownHere = state.bases.find((b) => b.tile === id);
   if (ownHere) lines.push(`<span style="color:#cfe2f7">${esc(ownHere.name)}</span>`);
-  if (t.loc) {
-    const def = LOCATIONS[t.loc.type], zone = SITE_ZONES[t.loc.zone || def.cat];
+  if (loc) {
+    const def = LOCATIONS[loc.type], zone = SITE_ZONES[loc.zone || def.cat];
     lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
-    lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger(t.loc)].toLowerCase()}</span>`);
+    lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger(loc)].toLowerCase()}</span>`);
   }
   else lines.push(`<span class="muted">${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}</span>`);
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
   // Loot left as you know it (aiscav.js bands): the live value, else the last you saw or heard (it may be gone since).
-  if (t.loc && !ownHere && (isLive || snap)) lines.push(`<span class="muted">Loot: ${LOOT_BANDS[lootBand(t, isLive ? t.loot : snap.loot)].toLowerCase()}${isLive ? "" : " (then)"}</span>`);
+  if (loc && !ownHere && (isLive || snap)) lines.push(`<span class="muted">Loot: ${LOOT_BANDS[lootBand(t, isLive ? t.loot : snap.loot)].toLowerCase()}${isLive ? "" : " (then)"}</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
   for (const pin of jobPins(state)) if (pin.tile === id) lines.push(`<span style="color:#e0b84f">${pin.icon} Job: ${pin.label.replace(/[&<>"]/g, "")}</span>`); // ui/diplomacy.js

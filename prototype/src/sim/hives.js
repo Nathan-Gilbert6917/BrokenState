@@ -32,6 +32,7 @@ import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { HIVE, BOSS_NAMES } from "./hiveconst.js";
 import { worldScale } from "./worldsize.js";
+import { isPublicSite, knownLoc } from "./discovery.js";
 
 // Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
 // (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
@@ -81,12 +82,13 @@ function newHive(state, tile, res) {
   return { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, res, born: state.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(state, tile) };
 }
 
+// Named after a place everyone knows (discovery.js: not a hidden site, so the name gives nothing away).
 export function hiveName(state, tile) {
   const t = state.tiles[tile];
-  if (t.loc) return `the hive at ${t.loc.name}`;
+  if (t.loc && isPublicSite(state, tile)) return `the hive at ${t.loc.name}`;
   let best = null, bd = 99;
   for (const id of state.grid.within(tile, 5)) {
-    const loc = state.tiles[id].loc, d = state.grid.distance(tile, id);
+    const loc = isPublicSite(state, id) ? state.tiles[id].loc : null, d = state.grid.distance(tile, id);
     if (loc && d < bd) { best = loc; bd = d; }
   }
   return best ? `the hive near ${best.name}` : `the hive in the wilds (${t.x},${t.y})`;
@@ -264,7 +266,7 @@ function pickSite(state) {
   return site;
 }
 
-const placeOf = (state, tile) => (state.tiles[tile].loc ? `at ${state.tiles[tile].loc.name}` : `near ${tileLabel(state, tile)}`);
+const placeOf = (state, tile) => (knownLoc(state, tile) ? `at ${state.tiles[tile].loc.name}` : `near ${tileLabel(state, tile)}`);
 
 // A horde that reaches its build site joins the mass gathered there (hordes.js merges them).
 export function deliverToSite(state, h, site) {
@@ -509,9 +511,47 @@ function hiveCard(state, p, hive) {
           return text;
         },
       },
+      {
+        // Molotovs (data.js, throwables.js) thrown from cover: more of it burns, and from farther away.
+        label: `Firebomb it (${FIREBOMB.molotovs} Molotovs)`,
+        hint: `Burns more of its guard and stores than the fuel fires, thrown from a distance (the brood is less likely to notice). The team carries ${molotovsOf(state, p).length}`,
+        get disabled() { return molotovsOf(state, p).length < FIREBOMB.molotovs; },
+        resolve: (st) => {
+          if (gone(st)) return moved(st);
+          const bombs = molotovsOf(st, p);
+          if (bombs.length < FIREBOMB.molotovs) { awaitOrders(st, p, "Not enough Molotovs.", { failed: true }); return `The team has fewer than ${FIREBOMB.molotovs} Molotovs.`; }
+          for (const b of bombs.slice(0, FIREBOMB.molotovs)) b.take();
+          const guard = guardOf(st, hive);
+          if (guard) reduceHorde(st, guard, Math.round(guard.size * FIREBOMB.guard));
+          hive.res = Math.max(0, hive.res - FIREBOMB.res);
+          const best = Math.max(0, ...partyMembers(st, p).map((m) => m.skills.stealth || 0));
+          let text = "Bottles arc into the mound and burst. The flesh crackles; part of the brood burns and the hive's stores with it.";
+          if (!st.rng.chance(Math.min(0.95, 0.5 + best * 0.05))) {
+            const v = st.rng.pick(partyMembers(st, p));
+            if (v) { hurt(st, v, st.rng.int(10, 30), hive.tile, "firebombing a hive"); text += v.alive ? ` The brood came boiling out: ${v.name.split(" ")[0]} was hurt getting away.` : ` The brood came boiling out: ${v.name} was killed getting away.`; }
+          }
+          if (!wipeIfEmpty(st, p)) awaitOrders(st, p, text);
+          return text;
+        },
+      },
       { label: "Back off", hint: "No fight", resolve: (st) => { awaitOrders(st, p, "The team pulled back from the hive."); return "The team pulls back."; } },
     ],
   };
+}
+
+// Firebombing a hive: Molotovs instead of 6 fuel, a bigger fire (40% of its guard, 20 stores) from farther away.
+export const FIREBOMB = { molotovs: 3, guard: 0.4, res: 20 };
+// The Molotovs a team has: on its people (pockets, hands, packs) and in its cargo. [{ item, take() }]
+function molotovsOf(state, p) {
+  const out = [];
+  for (const s of partyMembers(state, p)) {
+    (s.pockets || []).forEach((it, i) => { if (it && it.key === "molotov") out.push({ item: it, take: () => { s.pockets[i] = null; } }); });
+    const pk = s.gear && s.gear.backpack && s.gear.backpack.contents;
+    (pk || []).forEach((it, i) => { if (it && it.key === "molotov") out.push({ item: it, take: () => { pk[i] = null; } }); });
+  }
+  const cargo = (p.cargo && p.cargo.gear) || [];
+  for (const it of cargo) if (it && it.key === "molotov") out.push({ item: it, take: () => { const i = cargo.indexOf(it); if (i >= 0) cargo.splice(i, 1); } });
+  return out;
 }
 
 // Allied fighters at the mound (alliance.js hiveAllies): each keeps one of the brood off your squad.

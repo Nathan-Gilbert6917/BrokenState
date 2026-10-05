@@ -31,6 +31,7 @@ import { saveSupplyRun, dispatchSupplyRun, deleteSupplyRun, supplyRunById } from
 import { attitude, isAggressiveType } from "./factions.js";
 import { weather, severeSoon } from "./weather.js";
 import { crewAI } from "./autopilot.js";
+import { siteKnown } from "./discovery.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
 import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT } from "./hunting.js";
 
@@ -49,7 +50,7 @@ export const FIELD_TYPES = {
       const out = [];
       for (const id of state.grid.within(base.tile, crew.range)) {
         const t = state.tiles[id];
-        if (!t.loc || id === base.tile || targeted(state, id)) continue;
+        if (!t.loc || id === base.tile || targeted(state, id) || !siteKnown(state, id)) continue;
         const s = crewAI.siteScore(state, id, need, style);
         if (!s || s.value <= 0.05) continue;
         out.push({ tile: id, mission: "scavenge", score: (s.value * 4) / (1 + state.grid.distance(id, base.tile) / 6), why: crewAI.needText(need, t), onSite: 8 });

@@ -38,6 +38,7 @@ import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
+import { siteKnown, siteNamed } from "./discovery.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -183,9 +184,10 @@ function hasMilRadio(state, p) {
 // A team is called after the mission it left with (later orders do not rename it).
 export const teamName = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} team (${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")})`;
 
+// A site the player has not found yet (discovery.js) goes by its ground.
 export function tileLabel(state, id) {
   const t = state.tiles[id];
-  return t.loc ? t.loc.name : `${TERRAIN[t.terrain].name.toLowerCase()} (${t.x},${t.y})`;
+  return t.loc && siteNamed(state, id) ? t.loc.name : `${TERRAIN[t.terrain].name.toLowerCase()} (${t.x},${t.y})`;
 }
 
 // A name for a new outpost: the site it stands on, else the nearest town, city or stand-alone site with the
@@ -197,7 +199,7 @@ export function outpostName(state, tile) {
   if (!place) {
     let best = null;
     for (const x of state.tiles) {
-      if (!x.loc || (x.loc.settlement != null && x.loc.settlement !== x.id)) continue; // a town's own shops go by the town
+      if (!x.loc || (x.loc.settlement != null && x.loc.settlement !== x.id) || !siteKnown(state, x.id)) continue; // a town's own shops go by the town
       const settled = x.loc.type === "town" || x.loc.type === "city";
       const score = g.distance(tile, x.id) - (settled ? 1.5 : 0); // the names people know count as a little nearer
       if (!best || score < best.score) best = { x, score };
@@ -562,7 +564,7 @@ export const partyTile = (p) => p.path[p.idx];
 function updateRadio(state, p) {
   p.radioLive = radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
   p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
-  if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted);
+  if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
 }
 
 // A team that lost people (dead, captured, gone home) may hold more found cargo than those left can carry:
@@ -1022,7 +1024,7 @@ function arrive(state, p) {
         m.location = { kind: "base", baseId: base.id };
         m.role = "scavenge";
       }
-      mergeKnowledge(state, p.seen, p.spotted);
+      mergeKnowledge(state, p.seen, p.spotted, p);
       removeParty(state, p);
       recomputeOwnership(state);
       log(state, `${base.name} founded with ${members.length} staff.`, "good");
@@ -1377,7 +1379,7 @@ function returnHome(state, p) {
   if (p.owner === "player") prisonersHome(state, p, home); // prisoners.js: prisoners taken on the trip go to the cells
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
-  mergeKnowledge(state, p.seen, p.spotted);
+  mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   const revealed = state.knowledge.filter(Boolean).length - before;
   const newMarkers = state.markers.length - markersBefore;
   const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${k}`);

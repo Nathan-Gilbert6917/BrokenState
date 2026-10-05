@@ -1,12 +1,14 @@
 // Map generation check over many seeds and every world size (sim/worldsize.js): site rules, counts per zone, roads,
 // hub placement, every AI group placed (the most the size allows), hive density, and determinism per seed + size
-// (a Normal map is also the same as one made without a size, as before sizes existed).
+// (a Normal map is also the same as one made without a size, as before sizes existed). Hidden sites (discovery.js):
+// every type has a known rule, how many sites are off the pre-war map per size, and how many the hub sees on day 1.
 // Usage: node tools/maptest.js [seeds] [firstSeed] [size=small|normal|large|huge|all]   (default: all sizes)
 import { createWorld, hub } from "../src/sim/world.js";
 import { LOCATIONS, GEAR, SITE_ZONES } from "../src/sim/data.js";
 import { raidAreasFor, AREAS } from "../src/sim/combat.js";
 import { WORLD_SIZES, SIZE_KEYS, areaScale } from "../src/sim/worldsize.js";
 import { takeSize } from "./sizearg.js";
+import { isPublicSite, hiddenSites, siteKnown, nearRoad } from "../src/sim/discovery.js";
 
 const which = takeSize("all");
 const seeds = Number(process.argv[2] || 30);
@@ -26,6 +28,8 @@ for (const [type, def] of Object.entries(LOCATIONS)) {
   check(set.every((a) => AREAS[a]), `${type}: unknown raid area in ${set}`);
   check(def.gear.every((g) => GEAR[g]), `${type}: unknown gear in ${def.gear}`);
   check(SITE_ZONES[def.cat] && def.danger >= 0 && def.danger <= 3 && def.glyph && def.richness > 0, `${type}: missing cat / danger / glyph / richness`);
+  check(["public", "road", "secret"].includes(def.known), `${type}: known must be public, road or secret (discovery.js)`);
+  check(!def.temp || def.known === "secret", `${type}: a temporary site must be secret`);
 }
 
 const summary = [];
@@ -40,6 +44,8 @@ function testSize(size) {
   let total = 0, minTotal = Infinity, maxTotal = 0, genMs = 0, milCount = 0, hubMilMin = Infinity, hubCityMin = Infinity, hubHiveMin = Infinity;
   let hives = 0, towns = 0, cities = 0, minHives = Infinity, maxHives = 0, factionGap = Infinity, factionFar = 0;
   const extras = [0, 0, 0, 0];
+  let hiddenTotal = 0, hiddenSeen = 0, hiddenNear = 0;
+  const hiddenTypes = {};
   for (let i = 0; i < seeds; i++) {
     const seed = first + i;
     const t0 = performance.now();
@@ -57,6 +63,21 @@ function testSize(size) {
       check(LOCATIONS[t.loc.type] && SITE_ZONES[t.loc.zone], `${size} seed ${seed}: bad site ${JSON.stringify(t.loc)}`);
     }
     total += sites.length;
+    // Hidden sites: the rule per type (public anywhere, road only within 1 tile of a road, secret never); nothing
+    // hidden is known on day 1 outside the hub's view, everything hidden inside it is.
+    const hidden = hiddenSites(s), hv = new Set(g.within(hub(s).tile, 3));
+    for (const t of sites) {
+      const k = LOCATIONS[t.loc.type].known, pub = isPublicSite(s, t.id);
+      check(pub === (k === "public" || (k === "road" && nearRoad(s, t.id))), `${size} seed ${seed}: ${t.loc.name} (${t.loc.type}) classified wrong`);
+      if (pub) continue;
+      hiddenTypes[t.loc.type] = (hiddenTypes[t.loc.type] || 0) + 1;
+      check(siteKnown(s, t.id) === hv.has(t.id), `${size} seed ${seed}: hidden ${t.loc.name} known ${siteKnown(s, t.id)} on day 1 (in the hub's view: ${hv.has(t.id)})`);
+    }
+    check(hidden.length === sites.filter((t) => !isPublicSite(s, t.id)).length, `${size} seed ${seed}: hiddenSites lists ${hidden.length}`);
+    check(!sites.some((t) => ["town", "city", "military", "mall", "hospital", "airport"].includes(t.loc.type) && hidden.includes(t.id)), `${size} seed ${seed}: a town, city or landmark is hidden`);
+    hiddenTotal += hidden.length;
+    hiddenSeen += hidden.filter((id) => siteKnown(s, id)).length;
+    hiddenNear += hidden.filter((id) => g.distance(id, hub(s).tile) <= 12).length;
     minTotal = Math.min(minTotal, sites.length);
     maxTotal = Math.max(maxTotal, sites.length);
 
@@ -155,8 +176,10 @@ function testSize(size) {
   console.log(`cities ${avg(cities)}, towns ${avg(towns)}, hives avg ${avg(hives)} (${minHives}–${maxHives}, ${density.toFixed(2)} per 1,000 tiles), closest hive to a hub ${hubHiveMin}`);
   console.log(`military bases avg ${avg(milCount)}, closest to a hub ${hubMilMin}; hub to nearest city min ${hubCityMin}; groups at least ${factionGap} apart, farthest ${factionFar} from the hub; towns with 0/1/2 extra shops: ${extras.slice(0, 3).join("/")}`);
   console.log(`types (avg per map): ${Object.entries(typeTotals).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${avg(n)}`).join(", ")}`);
+  const pct = Math.round((hiddenTotal / total) * 100);
+  console.log(`hidden sites (off the pre-war map) avg ${avg(hiddenTotal)} of ${avg(total)} (${pct}%), ${avg(hiddenNear)} within 12 tiles of the hub, ${avg(hiddenSeen)} in the hub's view on day 1; by type: ${Object.entries(hiddenTypes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${avg(n)}`).join(", ")}`);
   console.log(`createWorld avg ${(genMs / seeds).toFixed(0)} ms`);
-  summary.push(`${def.label.padEnd(6)} ${String(def.w).padStart(3)}×${String(def.h).padEnd(3)} ${String(tiles).padStart(5)} tiles · ${avg(total)} sites · ${avg(cities)} cities · ${avg(towns)} towns · ${avg(hives)} hives · ${groups} groups · ${(genMs / seeds).toFixed(0)} ms`);
+  summary.push(`${def.label.padEnd(6)} ${String(def.w).padStart(3)}×${String(def.h).padEnd(3)} ${String(tiles).padStart(5)} tiles · ${avg(total)} sites (${avg(hiddenTotal)} hidden, ${pct}%) · ${avg(cities)} cities · ${avg(towns)} towns · ${avg(hives)} hives · ${groups} groups · ${(genMs / seeds).toFixed(0)} ms`);
 }
 console.log(`\nSizes (${seeds} seeds each):\n  ${summary.join("\n  ")}`);
 console.log(fails ? `${fails} FAILED checks` : "All checks passed.");

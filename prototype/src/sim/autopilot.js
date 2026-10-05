@@ -56,6 +56,9 @@ import {
   HUNT, CABIN, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkCap,
   cabinProblem, gameLand, hasFishingGear,
 } from "./hunting.js";
+import { siteKnown } from "./discovery.js";
+import { packTripKit } from "./kit.js";
+import { autoTreats } from "./comforts.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -183,11 +186,13 @@ export function autopilotHour(state) {
 // Areas a steward can hand over; the autopilot runs them all. A wish or a role in an area that is off is left as
 // it is (the player's).
 export const GOVERN_AREAS = ["roles", "building", "production", "medical", "food", "defence"];
+const TREAT_HOUR = 19; // treats from the armory for the glum, once a day in the evening
 const ALL_AREAS = Object.fromEntries(GOVERN_AREAS.map((k) => [k, true]));
 // The per-base work of one hour: gear, treatment, construction, crafting and station orders.
 export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.production) equipFromArmory(state, base);
   if (areas.medical) planTreatment(state, base);
+  if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
   if (areas.production) { govOrders(state, base); planCrafts(state, base); }
 }
@@ -1491,6 +1496,11 @@ function planCrafts(state, base) {
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
+  // Field kit (kit.js packs it for trips): quiet boots and a ghillie wrap against Heat, Molotovs for the walls.
+  const have = (k) => base.armory.filter((it) => it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length;
+  if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
+  if (have("ghillie") < 1 && tryCraft(["ghillie"], "a ghillie wrap: less Heat in camp and on searches", 60)) return;
+  if ((st.fuel || 0) >= 20 && base.armory.some((it) => it.key === "bottle") && have("molotov") < 3 && hordeThreat(state, base).any && tryCraft(["molotov"], "Molotovs for when the dead come", 0)) return;
   if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
   if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
 }
@@ -1609,6 +1619,7 @@ export const EMPTY_SITES = 3, EMPTY_RING = 8, EMPTY_REACH = 1.6;
 function siteScore(state, id, need, P) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water" || state.bases.some((b) => b.tile === id)) return null;
+  if (t.loc && !siteKnown(state, id)) return null; // a hidden site nobody has found yet (discovery.js)
   const k = intel(state, id);
   if (k && k.factionBase) return null;
   if (knownGroupBases(state).has(id)) return null;
@@ -1730,7 +1741,7 @@ function planTrip(state) {
   const scan = (r, outer) => {
     for (const id of state.grid.within(h.tile, r)) {
       const t = state.tiles[id];
-      if (!t.loc || id === h.tile || (outer && state.grid.distance(id, h.tile) <= radius)) continue;
+      if (!t.loc || id === h.tile || (outer && state.grid.distance(id, h.tile) <= radius) || !siteKnown(state, id)) continue;
       if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
       const s = siteScore(state, id, need, P);
       if (!s || s.value <= 0.05 || (P.reserves && s.risk > 0.8)) continue;
@@ -1908,6 +1919,13 @@ function hiveChoice(state, card, opts, p, find) {
   const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
   if (ammo < fit.length * HIVE_AMMO) return find(/^Back off/);
   if (fit.length >= HIVE_SQUAD - 1 && stormRatio(state, hive, power, guard, 0) >= P.hiveOdds) return find(/^Storm the hive/);
+  // Molotovs (hives.js FIREBOMB) before fuel: a bigger fire, and the fuel stays for the drive.
+  const bomb = find(/^Firebomb/);
+  if (bomb && !isDisabled(state, bomb) && fired < P.hiveFires && fit.length >= HIVE_SQUAD - 1 && guard >= HIVE_GUARD_MIN) {
+    p.apFires = fired + 1;
+    p.apHiveAgain = true;
+    return bomb;
+  }
   const fire = find(/^Set fires/);
   const fuelHome = p.vehicle ? p.apFuelHome || 0 : 0;
   const canFire = fire && !isDisabled(state, fire) && partyFuelOf(state, p) - FIRE_FUEL >= fuelHome && fired < P.hiveFires;
@@ -2132,9 +2150,11 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
+  const kit = packTripKit(state, h, crew, c.mission); // kit.js: camp kit against Heat, a comfort, throwables
   const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup,
     plan: c.steps ? { preset: c.preset || "custom", steps: c.steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
+  if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);
   if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);

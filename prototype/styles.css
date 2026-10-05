@@ -115,9 +115,30 @@ table.t th { color: var(--muted); font-weight: 500; }
 #fps { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 6; pointer-events: none; background: rgba(13,15,18,0.85); border: 1px solid #7a5cff; border-radius: 6px; padding: 0.25rem 0.5rem; font: 0.75rem/1.35 ui-monospace, Consolas, "Courier New", monospace; color: #cfd6e0; white-space: pre; }
 #fps.fixed { position: fixed; z-index: 25; left: 0.6rem; right: auto; }
 body.tl-on #fps { top: 0.6rem; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); z-index: 8; }
-#legend { max-width: 17rem; }
-#legend .layer { display: block; color: var(--text); cursor: pointer; padding: 0.05rem 0; }
-#legend .layer input { vertical-align: middle; }
+/* The Layers box: one line per layer (what they mean is in Help → Map layers, the "?" button). */
+#legend { max-width: 16rem; }
+#legend .spread { gap: 0.8rem; margin-bottom: 0.15rem; }
+#legend .spread b { color: var(--text); }
+#legend .lgbtns { display: flex; gap: 0.25rem; }
+#legend .layer { display: flex; align-items: center; gap: 0.35rem; color: var(--text); cursor: pointer; padding: 0.05rem 0; white-space: nowrap; }
+#legend .layer input { margin: 0; width: 1.05em; height: 1.05em; flex: none; } /* grows with the UI size */
+/* A layer's color chip (ui/help.js swatch): the Layers box and Help. */
+.sw { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 0.85rem; height: 0.85rem; border-radius: 3px; font-style: normal; font-size: 0.6rem; line-height: 1; color: #111; vertical-align: middle; }
+.sw.none { background: none; }
+.sw.ring { border: 2px dashed #7fb3e6; border-radius: 50%; }
+#right .hints > div { margin: 0.15rem 0; }
+#right .hints button { margin-top: 0.4rem; }
+/* The menu's Help tab (ui/help.js): topics on the left, the one picked on the right. */
+.settings .helpwrap { display: grid; grid-template-columns: minmax(10rem, 14rem) 1fr; gap: 0.9rem; height: min(66vh, 46rem); }
+.settings .helpnav { display: flex; flex-direction: column; gap: 0.2rem; overflow-y: auto; padding-right: 0.3rem; border-right: 1px solid var(--line); }
+.settings .helpnav button { text-align: left; padding: 0.25rem 0.55rem; font-size: 0.88rem; }
+.settings .helpbody { overflow-y: auto; padding-right: 0.4rem; }
+.settings .helpbody h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
+.settings .helpbody .text { line-height: 1.6; }
+.settings .helptable { border-collapse: collapse; margin-top: 0.5rem; width: 100%; }
+.settings .helptable td { padding: 0.3rem 0.5rem 0.3rem 0; vertical-align: top; border-top: 1px solid var(--line); }
+.settings .helptable td:first-child { width: 1.2rem; padding-top: 0.45rem; }
+.settings .helptable td:nth-child(2) { white-space: nowrap; }
 button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 .warn { color: #ffd166; }
 .card.attn { border-color: #ffd166; }

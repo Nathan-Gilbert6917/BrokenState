@@ -16,6 +16,7 @@
 // (anyone hurt below N health, food below N days, cargo full) and say so on a card that can undo it.
 import { log, addCard, baseById, hub, snapshot, survivorById } from "./world.js";
 import { LOCATIONS, siteDanger } from "./data.js";
+import { siteKnownTo } from "./discovery.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, travelHours, partySpeed, startReturn, awaitOrders,
   ordersCard, partyCapacity, cargoRoom, carried, sightRadius, fuelForPath, STANCES, MISSIONS,
@@ -87,6 +88,7 @@ export function nearbySites(state, { center, from = center, radius = 3, p = null
   for (const id of state.grid.within(center, radius)) {
     const t = state.tiles[id];
     if (!t.loc || t.terrain === "water" || t.hive || exclude.includes(id)) continue;
+    if (!siteKnownTo(state, id, p)) continue; // a hidden site nobody has found yet (discovery.js)
     if (state.bases.some((b) => b.tile === id) || state.factions.some((f) => f.alive && f.bases.includes(id))) continue;
     const loot = knownLoot(state, id, p);
     if (loot < 0.2) continue;

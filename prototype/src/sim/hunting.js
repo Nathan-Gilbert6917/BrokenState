@@ -18,7 +18,8 @@
 //   season: spring 0.8, summer 0.9, autumn 1.25 (fat and moving), winter 0.95 (× 1.2 with snow on the ground: tracks)
 //   time of day: dawn and dusk (05–07, 17–19) × 1.3, day × 1, night (20–04) × 0.35; a storm or blizzard × 0.5
 //   team: the best three hunters count 1, ½ and ¼ (+0.08 a hand without a weapon, up to two, driving game):
-//     a hunter = their best hunting weapon (big / small game: hunting rifle 1 / 0.8, bow or crossbow 0.85 / 0.9,
+//     a hunter = their best hunting weapon (big / small game: hunting rifle 1 / 0.8, bows and crossbows 0.6 + 0.08 ×
+//     power for big game (scrap crossbow 0.8, compound bow 0.86, hunting crossbow 0.9) / 0.9,
 //     shotgun 0.45 / 1.2, automatic 0.7 / 0.6, pistol 0.3 / 0.6; melee: none) × the weapon's skill gap ×
 //     skill (0.55 + 0.09 × (0.5 Shooting + 0.35 Scouting + 0.15 Stealth)) × 1.25 with the Hunter perk.
 //     Firearms need ammo carried (1 a shot); bows and crossbows are silent and need none. Nobody with a hunting
@@ -152,8 +153,10 @@ export function carriedItems(s) {
 export function huntWeaponInfo(item) {
   const d = item && GEAR[item.key];
   if (!d || d.slot !== "weapon") return null;
-  const h = d.hunt || HUNT_CAT[d.cat];
+  let h = d.hunt || HUNT_CAT[d.cat];
   if (!h) return null;
+  // Bows by their draw: a scrap crossbow 0.8 for deer, a compound bow 0.86, a hunting crossbow 0.9.
+  if (!d.hunt && d.cat === "bow") h = { big: Math.min(0.95, 0.6 + 0.08 * (d.power || 2.5)), small: 0.9 };
   const noise = d.noise || 0;
   return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise, ammo: noise >= 1 };
 }

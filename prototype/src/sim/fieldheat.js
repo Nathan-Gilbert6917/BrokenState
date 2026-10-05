@@ -14,10 +14,15 @@
 //     team size 0.7 + 0.1 a person (3 people 1.0, 6 people 1.3)
 //     night:    a camp fire carries further (×1.3); otherwise darkness hides the team (×0.8)
 //     stance:   stealthy ×0.8
+//     camp kit the team carries (GEAR heat, each kind once, together at least ×0.35): camo netting ×0.75, a ghillie
+//               wrap ×0.85, rag-wrapped boots ×0.95, a smokeless stove ×0.6 while camping, a gore scent mask ×0.6
+//               (worn for 24 hours: one is used up when the team starts to gain Heat or starts a search)
+//   searching (scavenge.js searchHeatMult): ghillie ×0.9, boots ×0.85, a scent mask ×0.75, a hiking pack ×1.05
 //   decay = 8 an hour on the move (and gone at your own bases); Heat is capped at 100.
 //   trouble = 12% × (Heat / 100)^1.5 × danger, danger = 0.15 + 3 × the road's conflict chance here
 //             (groups near, AI parties, infected ground, hordes, traffic) + 0.3 city / 0.15 suburbs
-//             + 0.3 hive land / 0.8 hive ring + 0.2 a horde within 3 tiles (capped at 2).
+//             + 0.3 hive land / 0.8 hive ring + 0.2 a horde within 3 tiles (capped at 2); × 0.8 with a tripwire
+//             alarm carried (they hear it coming).
 //   After trouble the Heat halves (they found you; the rest lost interest), and nothing more for 6 hours (20 after a
 //   conflict card, the road's rule).
 // A quiet countryside camp for a night (10 hours) reaches Heat ~25 and has about a 1–2% chance of trouble;
@@ -26,8 +31,12 @@ import { partyMembers, partyTile, tileLabel } from "./parties.js";
 import { conflictChance, stationaryEncounter, COOLDOWN_HOURS } from "./conflicts.js";
 import { zombieToughness } from "./hives.js";
 import { heatMult } from "./skills.js";
+import { GEAR } from "./data.js";
+import { carriedAll } from "./comforts.js";
+import { log } from "./world.js";
 
 export const HEAT_MAX = 100;
+export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
 export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
@@ -73,8 +82,74 @@ export function heatGain(state, p, activity = stationaryActivity(p), hour = stat
   }
   if (p.stance === "stealthy") { g *= 0.8; parts.push("stealthy ×0.8"); }
   if (heatMult(state, p) !== 1) { g *= heatMult(state, p); parts.push(`Ranger ×${heatMult(state, p)}`); } // skills.js perk
+  const kit = kitMult(state, p, activity === "camp" ? ["stay", "camp"] : ["stay"], hour);
+  if (kit.mult !== 1) { g *= kit.mult; parts.push(...kit.parts); }
   return { gain: g, parts };
 }
+
+// ---------- camp kit (data.js GEAR heat) ----------
+// Everything the team has with it: carried by its people (pockets, hands, packs) and in its cargo.
+export function teamKit(state, p) {
+  if (!p) return [];
+  return [...partyMembers(state, p).flatMap(carriedAll), ...((p.cargo && p.cargo.gear) || [])];
+}
+const masked = (p, hour) => p.maskUntil != null && hour < p.maskUntil;
+// The kit's multiplier for some kinds of Heat (keys of GEAR heat: "stay", "camp", "search"): each item kind counts
+// once, a scent mask only while one is on (or one is carried and would be put on). { mult, parts }.
+export function kitMult(state, p, kinds, hour = state.hour) {
+  const seen = new Set();
+  let mult = 1;
+  const parts = [];
+  for (const it of teamKit(state, p)) {
+    const h = GEAR[it.key] && GEAR[it.key].heat;
+    if (!h || seen.has(it.key)) continue;
+    let m = 1;
+    for (const k of kinds) if (h[k]) m *= h[k];
+    if (m === 1) continue;
+    seen.add(it.key);
+    mult *= m;
+    parts.push(`${GEAR[it.key].name.toLowerCase()} ×${Math.round(m * 100) / 100}`);
+  }
+  // A scent mask still on with none left to carry.
+  if (masked(p, hour) && !seen.has("scentmask")) {
+    let m = 1;
+    for (const k of kinds) if (GEAR.scentmask.heat[k]) m *= GEAR.scentmask.heat[k];
+    if (m !== 1) { mult *= m; parts.push(`scent mask on ×${m}`); }
+  }
+  if (mult < KIT.floor) mult = KIT.floor;
+  return { mult, parts };
+}
+// Puts a scent mask on when the team starts to gain Heat or starts a search and none is on: one is used up (from
+// whoever carries it, else the cargo). Returns true when one was put on.
+export function useScentMask(state, p) {
+  if (!p || masked(p, state.hour)) return false;
+  for (const s of partyMembers(state, p)) {
+    for (const where of [s.pockets || [], (s.gear && s.gear.backpack && s.gear.backpack.contents) || []]) {
+      const i = where.findIndex((it) => it && it.key === "scentmask");
+      if (i >= 0) { where[i] = null; return putOn(state, p); }
+    }
+  }
+  const list = (p.cargo && p.cargo.gear) || [];
+  const i = list.findIndex((it) => it && it.key === "scentmask");
+  if (i >= 0) { list.splice(i, 1); return putOn(state, p); }
+  return false;
+}
+function putOn(state, p) {
+  p.maskUntil = state.hour + KIT.maskHours;
+  log(state, `${p.name || "The team"} smear on a gore scent mask: the dead will not smell them for a day.`, "info");
+  return true;
+}
+// A search's Heat (scavenge.js searchHour): puts on a scent mask if the team has one, then the multiplier.
+export function searchHeatMult(state, p) {
+  useScentMask(state, p);
+  const k = kitMult(state, p, ["search"]);
+  for (const s of partyMembers(state, p)) {
+    const pk = s.gear && s.gear.backpack;
+    if (pk && GEAR[pk.key] && GEAR[pk.key].searchHeat) { k.mult *= GEAR[pk.key].searchHeat; k.parts.push(`${GEAR[pk.key].name.toLowerCase()} ×${GEAR[pk.key].searchHeat}`); break; }
+  }
+  return k;
+}
+const hasTripwire = (state, p) => teamKit(state, p).some((it) => it && it.key === "tripwire");
 
 // How dangerous the tile is for a team that stays (0.15 quiet … 2 worst).
 export function tileDanger(state, p, tile = partyTile(p)) {
@@ -88,7 +163,9 @@ export function tileDanger(state, p, tile = partyTile(p)) {
   if (tough) { d += tough >= 3 ? 0.8 : 0.3; parts.push(tough >= 3 ? "next to a hive" : "hive land"); }
   const horde = state.hordes.find((h) => state.grid.distance(h.tile, tile) <= 3);
   if (horde) { d += 0.2; parts.push("a horde within 3 tiles"); }
-  return { danger: Math.min(2, d), parts, horde };
+  d = Math.min(2, d);
+  if (hasTripwire(state, p)) { d *= KIT.tripwire; parts.push(`a tripwire alarm ×${KIT.tripwire}`); }
+  return { danger: d, parts, horde };
 }
 
 export const troubleChance = (heat, danger) => HEAT_TROUBLE * Math.pow(Math.max(0, Math.min(HEAT_MAX, heat)) / 100, 1.5) * danger;
@@ -122,6 +199,7 @@ export function fieldHeatHour(state, p, addCard) {
     if (p.phase === "out" || p.phase === "back") p.heat = Math.max(0, (p.heat || 0) - HEAT_DECAY);
     return null;
   }
+  useScentMask(state, p); // a gore scent mask goes on when the team starts to gain Heat
   p.heat = Math.min(HEAT_MAX, (p.heat || 0) + heatGain(state, p, activity).gain);
   p.heatTile = tile;
   // One thing at a time: no trouble while the team has a card open, or right after the last trouble.
