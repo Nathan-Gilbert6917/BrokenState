@@ -41,7 +41,7 @@ import { planSection, planAutofill, planEstimate } from "./plan.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
-import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
+import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE, craftInText } from "../sim/crafting.js";
 import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton } from "./production.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal } from "./inventory.js";
@@ -57,6 +57,7 @@ import { occupiedAt, occupiedText, assaultWarning, assaultForce } from "../sim/c
 import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
+import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
@@ -357,14 +358,10 @@ export function renderRight(state, ui) {
   const id = ui.selected;
   if (id < 0) {
     return `<h2>State of Calder</h2>
-      <div class="small" style="line-height:1.55">
-      <b>Left-click</b> a tile to inspect it. <b>Right-click</b> for actions. <b>Drag</b> to pan, <b>wheel</b> to zoom. Hover anything for a description.<br><br>
-      <b>Space</b> pause / run · <b>1–4</b> speed · <b>W A S D</b> or arrows pan · <b>H</b> find hub · <b>I</b> infection overlay · <b>Esc</b> close the top window<br><br>
-      The game starts <b>paused</b>. Orders you give while paused start when you unpause.<br><br>
-      Bright tiles are live (around your bases, or near a team in radio range). Dim tiles show what your people last reported, with its age. Dark tiles have no current intel.<br><br>
-      The map shows the places everyone knew before the fall (towns, cities, roadside sites, landmarks). Farms, cabins, lodges and camps off the roads, and crash sites, appear only once your people find them or hear of them.<br><br>
-      Teams report only when they get home, unless you have a radio station and they are in range. When a team finishes a job it waits for your orders: act there, move anywhere, or come home.
-      </div>`;
+      <div class="small hints"><div><b>Click</b> a tile to inspect it · <b>right-click</b> for actions</div>
+      <div><b>Drag</b> or <b>W A S D</b> to pan · <b>wheel</b> to zoom · <b>Space</b> run / pause</div>
+      <div class="muted">Hover anything for a description.</div>
+      <button class="mini" data-action="help-open" data-sec="map"${tip("Help: the map, what the bright, dim and dark tiles mean, the keys")}>? How the map works</button></div>`;
   }
   const t = state.tiles[id];
   const isLive = liveSet(state).has(id); // dev Reveal map shows the true tile here too
@@ -421,11 +418,13 @@ export function renderRight(state, ui) {
 }
 
 // ---------- legend / map layers ----------
+// One short line per layer (hover: a one-line description); what each layer and symbol means is in Help → Map
+// layers / Map legend (ui/help.js), behind the "?" button.
+const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
 export function renderLegend(view, ui) {
-  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show map layers")}>Layers ▸</button>`;
-  return `<div class="spread"><b>Map layers</b><button data-action="legendtoggle" class="mini"${tip("Hide this panel")}>▾</button></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}> ${l.name}</label>`).join("")}
-    <div class="muted" style="margin-top:0.3rem">Blue walled town = your hub · blue cabin = outpost (walls and buildings show) · compounds in a group's color = their bases, their convoys and raids look like the group (bikers, humvees, robed zealots, caravans…), their scavengers carry a stuffed sack · sites = a building per type on a plate colored by zone (<span style="color:#e2826f">city</span>, <span style="color:#e2b85c">town</span>, <span style="color:#9cc46e">countryside</span>, <span style="color:#b79be6">landmark</span>; the more faded, the less loot left as you last saw it: rich, some, little, picked clean, skulls under the name = danger, shown up close; small sites are dots when zoomed out) · crowd of the dead = horde (size on the badge, faded "N?" = last seen; a grey brute with a concrete fist at its head = Wallbreaker) · red glowing mound = infestation hive, its land tinted dark red (sites there show at least 3 skulls) and the ring around it brighter with red skulls (much tougher dead) · a raw mound with bones and a red bar = a hive being built (the bar: dead gathered of 1,000) · markers on a ring: grave = death site, your vehicle (red can = needs fuel, smoke = damaged), wreck, cache, camp; dots when zoomed out · tents and a banner by a base = siege · dashed circles = radio coverage (station 8 tiles, linked relay 6; red = relay not linked or off the air) · a group's wagon or truck beside your base = their caravan · ! = waiting for orders · ? = estimated team position</div>`;
+  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
+    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}</label>`).join("")}`;
 }
 
 // ---------- log ----------
@@ -461,7 +460,6 @@ function pickModal(state, ui) {
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
   if (ui.roster) return ["roster", () => rosterModal(state, ui)]; // ui/roster.js (the survivor and base screens open over it)
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
-  if (ui.help) return ["help", () => helpModal()];
   return null;
 }
 // The planner's line for an assault: the defenders, and a strong warning when the group is not hostile.
@@ -509,13 +507,15 @@ function gameOverScreen(state) {
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
 }
 
-function helpModal() {
+// The game's help, one paragraph per topic, each starting with its bold title (the menu's Help tab splits it into
+// topics: ui/help.js).
+export function helpText() {
   const k = (t) => `<b>${t}</b>`;
-  return `<div class="box wide"><h1>How to play</h1><div class="text small" style="line-height:1.6">
+  return `
     <b>Goal:</b> keep your people alive, find the other groups, trade or fight, expand with outposts, and push back the hordes. You <b>win</b> one of two ways: destroy every infestation hive (and no new one being built), or make the <b>Calder Coalition</b> hold more than half the land with every group still standing in it (invite the willing, break the hostile by taking their bases). You lose when the last survivor is dead, gone or lost.<br><br>
     <b>Time:</b> the game starts <b>paused</b>; a banner at the top of the map says so. Press ${k("Space")} or pick a speed (${k("1–4")}) to run the clock. Orders you give while paused are queued and start when you unpause (the banner counts them). Cards and windows (planner, base, help) stop the clock while they are open.<br>
     <b>Seasons and weather:</b> a year is four seasons of 28 days (spring, summer, autumn, winter); a run starts in mid-spring. Next to the clock: season, day of the season, today's weather and the temperature; hover it for what the weather does and the forecast (3 days; 4 with a watchtower, 5 with a radio station; the further out, the less sure). Rain and melting snow leave mud that slows off-road travel (vehicles most); snow cover slows everything, off-road most; storms and blizzards slow everyone a lot, can hurt people on the road and make boat crossings riskier; fog cuts sight by a tile and makes ambushes likelier; heat waves slow walkers. Arrival times in the planner and panels already include the weather hour by hour (the planner shows how many hours it adds). Crops grow only in their seasons and best in mild, moist weather; frost, hard freezes, blizzards, drought, heat and storms can kill them, and wet weather rots ripe ones. Cold and heat can make people outdoors ill, the dead slow down in deep cold, and the map's <i>Weather</i> layer shows snow, rain, fog and heat as a wash over the land.<br>
-    <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. Toggle layers in the map's corner.<br>
+    <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. The map shows the places everyone knew before the fall (towns, cities, roadside sites, landmarks); farms, cabins, lodges and camps off the roads, and crash sites, appear only once your people find them or hear of them. Toggle layers in the map's corner.<br>
     <b>World size:</b> chosen on the new-run screen. Small (48×32) is tight and close: fewer towns, 3–6 groups, the hives a short walk away. Normal (64×42) is the standard state with 5–10 groups. Large (80×52) adds a third city and a second outbreak, 7–14 groups. Huge (100×66) has four cities, three outbreaks and 10–18 groups: trips are long (take vehicles, build outposts), the groups mostly keep to their own corner, but more hives are within reach of your walls. Every size has about the same towns, sites and hives per tile.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue, the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving kitchen</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
@@ -529,7 +529,8 @@ function helpModal() {
     <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
     <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. Makeshift gear wears out. Teams can make the simplest things in the field.<br>
     <b>Orders, power and stewards:</b> each workshop station (Workshops tab) takes a standing order: Forever, Until stock reaches N, Keep at least N of an input, or Off, and what its operator does while it waits. The Crafting tab keeps N of an item in the armory at a minimum quality. A generator (needs an operator and 2 fuel a day) powers the cold store, radio, floodlights, machine shop and preserving kitchen; an ethanol still makes fuel from surplus food. <i>Hand to a steward</i> (Overview tab) lets the governor run a base, area by area; pinned people are left alone, and Take over hands it back as it is.<br>
-    <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it).<br>
+    <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it). Treats (chocolate, coffee, cigarettes, vodka) are used up with <i>Use</i> for a mood boost at a price.<br>
+    <b>What you find:</b> sites hold what fits them (a hunting lodge rifles, bows and camo; a police station batons, riot gear and a carbine; a hardware store crowbars, sledgehammers and barbed wire; houses jewelry and keepsakes). Valuables (jewelry, smokes, liquor, gadgets, collectibles, household goods) are only for trade. Comforts lift the mood of everyone around them (cards, a harmonica, a guitar) or of whoever carries them (family photos). Camp kit (camo netting, a ghillie wrap, rag-wrapped boots, a scent mask, a smokeless stove) cuts a team's Heat while it camps or searches. Barbed wire, sandbags, bear traps and a tripwire alarm in a base's armory help hold off hordes. Pipe bombs, Molotovs, flares and smoke grenades are thrown in battle like bottles.<br>
     <b>Vehicles:</b> burn fuel, wear down, and break down more when worn. One left behind is marked on the map: bring fuel (and a part if it is badly damaged) to recover it.<br>
     <b>Groups:</b> neutral groups turn hostile if you crowd them. Radio contact, gifts and trade keep them steady; pacts stop raids and open trade routes. Hostile groups raid and take captives (rescue, ransom or goodwill gets them back). Aggressive groups grow: they push new bases out toward you and toward rich ground, take over the land of groups they break, a new gang moves in when the state runs short of hostile ones, and raider bands from outside that have looted enough may dig in and become a gang at any time. A group down to 3 people breaks up.<br>
     <b>Raids on your bases:</b> a hostile group within 30 tiles of one of its bases comes for you more often the richer you are, the more land you hold, the bigger it is and the more raids of its you have beaten (each one you beat makes its next raid 25% bigger, up to double). Its scouts size a raid to your defence with everyone at a post, so <i>Prepare defenses</i> usually holds, but not if your fighters are away when they arrive. Building and repairs stop while a base is on alert. A strong defence drives them off within hours; the longer they stay at the walls, and the worse it goes (a break-in, an overrun), the more they smash: walls and defences first, then the buildings inside. Broken buildings do nothing until repaired (the base's Repairs tab, or the card after the raid); damaged walls hold less. Tribute turns a raid back, but an aggressive group's goodwill from it fades again.<br>
@@ -544,8 +545,7 @@ function helpModal() {
     <b>Saving:</b> ${k("⚙ Menu")} in the top bar (or ${k("Esc")} with nothing open; ${k("⚙ Menu")} in a battle's panel) opens the menu: <i>Save</i>, <i>Load</i>, <i>Save and exit</i> (back to the new-run screen, where <i>Continue</i> picks the latest save up again), <i>New campaign</i>, save files (<i>Export</i>, <i>Save to file</i>, <i>Load from file</i>) and the options (autosave every day or few days at dawn, confirmations, pause when the window loses focus, UI size, the battle's end-turn question, zombie look, the keys). Saves are kept in this browser, compressed: up to 12 named saves plus the autosave, which also saves when a hive assault starts and when the run ends. A save holds everything, a battle under way included; a card waiting for an answer cannot be saved, so answer it first (the autosave waits for that too). Loading pauses the game.<br>
     <b>Dev tools</b> (${k("`")} key or the Dev button): reveal the map, infection overlay, autopilot (${k("Shift+P")}: an AI governor plays for you), fast forward 60× / 300× / 1200×, show FPS, and the timelapse so far.<br>
     <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–4")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("Shift+P")} autopilot (dev) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
-    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.</div>
-    <button class="primary" data-action="closehelp">Close</button></div>`;
+    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.`;
 }
 
 function cardModal(state, card) {
@@ -1159,7 +1159,7 @@ function baseCrafting(state, b) {
         const d = r.gear ? GEAR[r.gear] : null;
         return `<div class="card small"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
           <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs ? `<span class="chip"${tip("Needs an ammo bench or machine shop at this base")}>Workshop</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
-          <span class="muted">${Object.entries(r.in).map(([c, v]) => `${v} ${c}`).join(", ")} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+</span><br>
+          <span class="muted">${esc(craftInText(r))} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+</span><br>
           <span>→ ${esc(craftOutputText(k))}</span>${chk.ok ? "" : ` · <span class="danger">${esc(chk.reason)}</span>`}
           ${lockLine(state, b, "craft", k)}
         </div>`;

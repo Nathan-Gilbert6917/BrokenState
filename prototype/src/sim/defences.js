@@ -4,8 +4,9 @@
 // Hold limit: walls hold back a horde up to 15 + 18 × wall strength (buildings.js baseWalls: hub 69 / 123 / 177 /
 // 231 for 0–3 walls, outposts 33 / 87 / 141 / 195), plus 2 for every point of combat power on guard duty (everyone
 // counts at 0.8 while the defences are manned after a warning), times the defence buildings' bonuses (barricades
-// +12% each, trench +25%, reinforced gate +20%, floodlights +10% with 2 fuel to burn). Spike pits thin the horde
-// first (7% + 4 per pit, used up). A Wallbreaker (hives.js) cuts the limit to 60% (two: 35%) and smashes a
+// +12% each, trench +25%, reinforced gate +20%, floodlights +10% with 2 fuel to burn; from the armory, barbed wire
+// +5% a roll and sandbags +4% a bundle, armoryDefence). Spike pits thin the horde first (7% + 4 per pit, used up),
+// then bear traps from the armory (3 each); a tripwire alarm there has everyone count half on the walls unwarned. A Wallbreaker (hives.js) cuts the limit to 60% (two: 35%) and smashes a
 // defence every time it attacks (a barricade, the reinforced gate, else a wall section 40% of the time).
 // A horde at or under the limit is beaten off at the walls. Above it, the dead break in: the part the walls
 // still held back stays outside (the limit × 0.5) and the rest is fought on the base's battle map, with the
@@ -14,6 +15,7 @@
 // odds match. Losing it overruns the base: people hurt (and killed), stores spoiled, an outpost lost. A hub with
 // nobody left alive ends the game.
 import { log, addCard, atBase, hurt, combatPower, removeBase, isNight } from "./world.js";
+import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
 import {
@@ -38,20 +40,46 @@ export const wallTier = (base) => count(base, "walls");
 export const wallHold = (base) => DEFENCE.WALL_BASE + DEFENCE.WALL_PER * baseWalls(base);
 export const manned = (state, base) => !!base.hordeAlert && state.hour < base.hordeAlert;
 
+// Defence kit kept in the base's armory (data.js GEAR defence): barbed wire +5% hold a roll (up to 3, one torn up
+// by every horde attack), sandbags +4% a bundle (up to 4), bear traps catch 3 of the dead each before the walls (up
+// to 4, a quarter break each time), a tripwire alarm (one is enough) has everyone count half on the walls without a
+// warning. On the break-in map: wire that stops the dead for the turn, traps that hurt and hold, sandbag cover.
+export function armoryDefence(base) {
+  const n = (k) => (base && base.armory ? base.armory.filter((it) => it && it.key === k).length : 0);
+  const cap = (k) => Math.min(GEAR[k].defence.max || 99, n(k));
+  const wire = cap("barbedwire"), bags = cap("sandbags"), traps = cap("beartrap");
+  const alarm = n("tripwire") > 0 ? GEAR.tripwire.defence.alarm : 0;
+  return { wire, bags, traps, alarm, hold: wire * GEAR.barbedwire.defence.hold + bags * GEAR.sandbags.defence.hold };
+}
+
 export function guardHold(state, base) {
   let p = 0;
   const all = manned(state, base);
+  const alarm = all ? 0 : armoryDefence(base).alarm; // a tripwire alarm: everyone half, warned or not
   for (const s of atBase(state, base.id)) {
     if (s.inBed) continue;
     if (s.role === "guard") p += combatPower(s);
     else if (all) p += combatPower(s) * DEFENCE.ALERT_WEIGHT;
+    else if (alarm) p += combatPower(s) * alarm;
   }
   return p * DEFENCE.GUARD_PER_POWER;
 }
 
 export function defenceMult(state, base) {
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
-  return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * count(base, "trench") + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0);
+  return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * count(base, "trench") + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0) + armoryDefence(base).hold;
+}
+// Bear traps: the dead caught before they reach the walls.
+export const trapKill = (base, n) => Math.min(n, armoryDefence(base).traps * GEAR.beartrap.defence.kill);
+// After a horde attack: a roll of wire torn up, each bear trap a quarter chance to break. Returns the note.
+function wearDefenceKit(state, base) {
+  const out = [];
+  const take = (k) => { const i = base.armory.findIndex((it) => it && it.key === k); if (i >= 0) base.armory.splice(i, 1); return i >= 0; };
+  if (armoryDefence(base).wire && take("barbedwire")) out.push("a roll of barbed wire was torn up");
+  let broke = 0;
+  for (let i = armoryDefence(base).traps; i > 0; i--) if (state.rng.chance(GEAR.beartrap.defence.breaks) && take("beartrap")) broke++;
+  if (broke) out.push(`${broke} bear trap${broke > 1 ? "s" : ""} broke`);
+  return out.length ? `${out.join(" and ")[0].toUpperCase()}${out.join(" and ").slice(1)}.` : "";
 }
 
 export function holdLimit(state, base, bosses = 0) {
@@ -66,7 +94,7 @@ export const spikeKill = (base, n) => {
 
 // "Can this base hold against a horde of N?"
 export function holdCheck(state, base, size, bosses = 0) {
-  const after = size - spikeKill(base, size);
+  const after = Math.max(0, size - spikeKill(base, size) - trapKill(base, size));
   const limit = holdLimit(state, base, bosses);
   return { size, after, limit, holds: after <= limit, margin: limit - after };
 }
@@ -97,9 +125,17 @@ export function hordeAttackBase(state, h, base) {
     notes.push(`The spike pits took about ${k}.`);
     if (reduceHorde(state, h, k)) { log(state, `A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return; }
   }
+  // The defence kit in the armory: bear traps catch a few; the wire and traps count for this attack (and the map),
+  // then wear (a roll of wire torn up, some traps broken).
+  const kit = armoryDefence(base);
+  const caught = trapKill(base, h.size);
+  if (caught) notes.push(`The bear traps caught ${caught}.`);
   const floodlit = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
   const bosses = Math.min(2, h.bosses || 0);
   const limit = holdLimit(state, base, bosses);
+  const worn = kit.wire || kit.traps ? wearDefenceKit(state, base) : "";
+  if (worn) notes.push(worn);
+  if (caught && reduceHorde(state, h, caught)) { log(state, `The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return; }
   if (floodlit && !poweredType(base, "floodlights")) base.stock.fuel -= DEFENCE.FLOOD_FUEL;
   const smashed = bosses ? smash(state, base, bosses) : [];
   if (smashed.length) notes.push(`${bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
@@ -125,7 +161,7 @@ export function hordeAttackBase(state, h, base) {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "zombies", count: force.count, power: force.power, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
     ambush: null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
-    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null },
+    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit },
   });
 }
 

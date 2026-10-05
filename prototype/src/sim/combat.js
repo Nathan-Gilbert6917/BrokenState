@@ -32,10 +32,13 @@ import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect,
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem } from "./inventory.js";
+import { rollAreaFind } from "./loot.js";
+import { buzzAim } from "./comforts.js";
+import { smokeAt, flareLit, fireStep, burnRound, SMOKE, FLARE } from "./throwables.js";
 import { battlePerks, battleXp, fightXp, rollBook } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
-import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth } from "./stealth.js";
+import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
@@ -232,6 +235,10 @@ export const CELL = {
   barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
   spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" },
   trench:    { walk: true,  cover: 0, los: false, name: "Trench", trap: "trench" },
+  // From the armory's defence kit (defences.js armoryDefence): wire stops the dead like the trench, a bear trap
+  // hurts and holds the first one to step in (then it is sprung).
+  wire:      { walk: true,  cover: 0, los: false, name: "Barbed wire", trap: "wire" },
+  beartrap:  { walk: true,  cover: 0, los: false, name: "Bear trap", trap: "beartrap" },
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh" },
   // A locked door in a raid (locks.js): blocks movement and sight until it is opened (then it is open floor).
   door:      { walk: false, cover: 2, los: true,  name: "Locked door" },
@@ -259,18 +266,39 @@ export const WEAPONS = {
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8 },
+  // Found weapons with a role each: clubs for takedowns (stealth.js CLUB), the heavy hitters, quiet bows that need no
+  // ammo, a loud hard-hitting revolver, a handy ranch rifle, the police carbine. meleeAim: to hit in melee (sledge).
+  bat:        { name: "Baseball bat",      melee: true, dmg: [15, 24] },
+  nailbat:    { name: "Nail bat",          melee: true, dmg: [20, 31] },
+  prybar:     { name: "Crowbar",           melee: true, dmg: [16, 25] },
+  fireaxe:    { name: "Fire axe",          melee: true, dmg: [21, 32] },
+  sledge:     { name: "Sledgehammer",      melee: true, dmg: [25, 38], meleeAim: -10 },
+  baton:      { name: "Police baton",      melee: true, dmg: [12, 19] },
+  compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, noise: 0, close: -5 },
+  xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, noise: 0, close: -5 },
+  revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3 },
+  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3 },
+  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3 },
 };
 const BASH = [8, 12]; // hitting someone with a gun
+export const BODY_FINDS = 0.2; // a person's body: the chance of one small thing in their pockets (KITS finds)
 
-// loot = spare gear a body may carry; pack = [pack key, chance] a body wears one (inventory.js enemyBody).
-const KITS = {
-  raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards"], pack: ["backpack", 0.15] },
-  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet"], pack: ["assaultpack", 0.3] },
-  zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "machete", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife"], fearless: true },
+// loot = spare gear a body may carry; pack = [pack key, chance] a body wears one; finds = the small things in their
+// pockets (valuables, smokes, a throwable; 20% a body) (inventory.js enemyBody).
+export const KITS = {
+  raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete", "revolver"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards", "revolver", "nailbat", "slingbag", "molotov", "pipebomb"], pack: ["backpack", 0.15],
+              finds: ["cigarettes", "cigarettes", "smokes", "smokes", "vodka", "whiskey", "goldchain", "goldring", "watch", "lighters", "molotov", "tobacco"] },
+  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "rucksack", "camonet"], pack: ["assaultpack", 0.3],
+              finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "batteries", "cards", "photos"] },
+  zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "fireaxe", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife", "fireaxe", "molotov", "compbow"], fearless: true,
+              finds: ["candles", "candles", "molotov", "photos", "tea", "honey"] },
   // People of the other group types (conflicts.js KIND_OF). All human: "mixed" is only for humans plus the dead.
-  fighters: { label: "Fighter", aim: 3, hp: 5,  weapons: ["pistol", "shotgun", "huntrifle", "huntrifle", "machete"], strong: ["ar", "shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "huntrifle", "machete", "vest", "kneeguards"], pack: ["backpack", 0.15] },
-  guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet"], pack: ["backpack", 0.3] },
-  militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding"] },
+  fighters: { label: "Fighter", aim: 3, hp: 5,  weapons: ["pistol", "shotgun", "huntrifle", "huntrifle", "machete", "leverrifle"], strong: ["ar", "shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "huntrifle", "machete", "vest", "kneeguards", "leverrifle", "prybar", "hikingpack"], pack: ["backpack", 0.15],
+              finds: ["smokes", "chocolate", "batteries", "lighters", "photos", "cards", "flare"] },
+  guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "revolver"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet", "baton", "cuffs", "riotarms"], pack: ["backpack", 0.3],
+              finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
+  militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
+              finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey"] },
 };
 
 const idx = (x, y) => y * W + x;
@@ -453,7 +481,8 @@ export function los(b, x0, y0, x1, y1) {
   return clear;
 }
 
-export const canSee = (b, a, t) => dist(a.x, a.y, t.x, t.y) <= a.sight && los(b, a.x, a.y, t.x, t.y);
+// A flare's light (throwables.js) shows your people what stands in it, however dark, up to the normal sight range.
+export const canSee = (b, a, t) => (dist(a.x, a.y, t.x, t.y) <= a.sight || (b.flares && b.flares.length && a.side === "player" && dist(a.x, a.y, t.x, t.y) <= SIGHT && flareLit(b, t.x, t.y))) && los(b, a.x, a.y, t.x, t.y);
 
 // Cover a unit at (x, y) has against an attacker at (ax, ay). Cover sits on the 4 sides; it only
 // counts when the attacker is roughly in front of it. Some cover nearby but none facing = flanked.
@@ -568,6 +597,9 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (opts.volley) aim += 15; // caught before they could take cover
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
   if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
+  // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
+  if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
+  if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
   if (inside(ax, ay) && cellAt(b, ax, ay).perch) aim += 5;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
@@ -577,7 +609,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
 export function meleeOdds(b, a, t) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim - (t.hunker ? 10 : 0))));
+  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0))));
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
   return { chance, crit: 10, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
@@ -618,7 +650,7 @@ function playerUnit(b, s) {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
-    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0), // friends alongside, rivals, revenge (relations.js)
+    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js)
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
@@ -830,6 +862,7 @@ export function moveAlong(b, u, path) {
   if (!path.length) return;
   const from = [u.x, u.y];
   const walked = [];
+  let burned = false;
   for (const [x, y] of path) {
     const there = unitAt(b, x, y);
     if (there && (active(there) || (x === path[path.length - 1][0] && y === path[path.length - 1][1]))) break;
@@ -840,9 +873,15 @@ export function moveAlong(b, u, path) {
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
       if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(18, 28), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
-      else { u.ap = 0; say(b, `${u.name} flounders in the trench.`, "good"); }
-      if (!active(u) || trap === "trench") break;
+      else if (trap === "beartrap") {
+        const eff = Math.round(damage(b, u, b.rng.int(14, 22), null));
+        u.ap = 0;
+        b.cells[idx(x, y)].k = "open"; // sprung
+        say(b, `${u.name} is caught in a bear trap (${eff}).`, "good");
+      } else { u.ap = 0; say(b, trap === "wire" ? `${u.name} is snagged on the barbed wire.` : `${u.name} flounders in the trench.`, "good"); }
+      if (!active(u) || trap !== "spikes") break;
     }
+    if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
       if (!o.ow || o.side === u.side || !active(o) || !active(u)) continue;
@@ -1095,6 +1134,7 @@ export function runEnemyPhase(state) {
 function startPlayerTurn(b) {
   b.turn++;
   b.phase = "player";
+  burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
@@ -1366,6 +1406,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   add("armor worn", -RETREAT.ARMOR * (u.load || 0));
   add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
   add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
+  add("smoke cover", b.smoke && b.smoke.length && smokeAt(b, u.x, u.y, SMOKE.near) ? SMOKE.retreat : 0); // a smoke grenade (throwables.js)
   add(carrying ? `carrying ${carrying.name}` : "", carrying ? -RETREAT.CARRY : 0);
   const safe = !pinned && (onStrip ? !carrying : !threat && !carrying);
   const chance = safe ? 100 : Math.max(RETREAT.MIN, Math.min(RETREAT.MAX, 100 + parts.reduce((a, p) => a + p[1], 0)));
@@ -1536,9 +1577,13 @@ export function autoPlayerTurn(state, opts = {}) {
   if (b.raid) return autoRaidTurn(state);
   // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them.
   const giveUp = opts.retreat === false || state.autoRetreat === false ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
-  if (giveUp) return void soundRetreat(state, { by: "ai", why: giveUp.why });
+  if (giveUp) {
+    botRetreatSmoke(state, b, inEvac); // stealth.js: a smoke grenade over the team first, if anyone has one
+    return void soundRetreat(state, { by: "ai", why: giveUp.why });
+  }
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
+    if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a pipe bomb or Molotov on a crowd
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
   }
@@ -1682,41 +1727,42 @@ export function closeCombat(state, { take = true } = {}) {
 export const RAID_W = 28, RAID_H = 18;
 export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
 
-// Loot per area type: supplies [chance, min, max] and gear [key, chance].
+// Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
+// container). The small finds per container (valuables, comforts, throwables) are in loot.js AREA_FINDS.
 export const AREAS = {
-  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.25, 1, 2], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03]] },
-  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], ammo: [0.25, 4, 12], meds: [0.15, 1, 2] }, gear: [["huntrifle", 0.06], ["machete", 0.05]] },
-  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.2, 1, 2] }, gear: [["firecracker", 0.05], ["flashlight", 0.03]] },
+  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.25, 1, 2], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03]] },
+  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], ammo: [0.25, 4, 12], meds: [0.15, 1, 2] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02]] },
+  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.2, 1, 2] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01]] },
   kitchen:   { name: "Kitchen",        boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.85, 4, 12], water: [0.6, 3, 6] }, gear: [["knife", 0.08], ["bottle", 0.12]] },
-  pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.85, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05]] },
-  clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.75, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08]] },
-  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03], ["flashlight", 0.05]] },
-  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [] },
-  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [] },
-  office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.15, 1, 1], water: [0.3, 1, 3] }, gear: [] },
-  armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04]] },
-  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.3, 1, 3] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06]] },
-  motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [] },
-  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05]] },
-  lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.5, 1, 4], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["milradio", 0.03]] },
-  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.2, 1, 2] }, gear: [["huntrifle", 0.08], ["machete", 0.06]] },
-  hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [] },
-  cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08]] },
-  control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [] },
-  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04]] },
-  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03]], alarm: 0.15 },
+  pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.85, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.05]] },
+  clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.75, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08], ["bandagekit", 0.06]] },
+  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03], ["flashlight", 0.05], ["prybar", 0.05], ["sledge", 0.03]] },
+  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [["prybar", 0.05], ["sledge", 0.04], ["crowbar", 0.03], ["kneeguards", 0.02]] },
+  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [["prybar", 0.03], ["sandbags", 0.03], ["barbedwire", 0.02]] },
+  office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.15, 1, 1], water: [0.3, 1, 3] }, gear: [["fireaxe", 0.03], ["slingbag", 0.03]] },
+  armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04], ["carbine", 0.05], ["baton", 0.06], ["riotarms", 0.04], ["riotlegs", 0.04], ["revolver", 0.03]] },
+  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.3, 1, 3] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03]] },
+  motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [["prybar", 0.04], ["sandbags", 0.04], ["barbedwire", 0.03]] },
+  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02]] },
+  lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.5, 1, 4], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.03]] },
+  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.2, 1, 2] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02]] },
+  hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [["prybar", 0.03], ["hikingpack", 0.02]] },
+  cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08], ["baton", 0.03]] },
+  control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [["flashlight", 0.04]] },
+  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02]] },
+  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
-  gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05]] },
-  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.25, 1, 2], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04]] },
+  gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03]] },
+  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.25, 1, 2], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1]] },
   chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.2, 1, 2] }, gear: [["bandagekit", 0.05]] },
   // Crash sites (crashes.js): wreckage and cargo cases in the open (locks.js names them and locks some cases).
-  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.4, 1, 4], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05]] },
+  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.4, 1, 4], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05], ["carbine", 0.03], ["rucksack", 0.04], ["camonet", 0.04]] },
   medwreck:  { name: "Medevac wreck",    outdoor: true, boxes: ["crate", "crate", "car"], loot: { meds: [0.85, 2, 6], water: [0.4, 1, 4], scrap: [0.4, 1, 4] }, gear: [["surgkit", 0.08], ["bandagekit", 0.12]] },
-  newswreck: { name: "News chopper wreck", outdoor: true, boxes: ["crate", "car"], loot: { parts: [0.6, 1, 3], scrap: [0.7, 2, 6], water: [0.3, 1, 3] }, gear: [["milradio", 0.04], ["backpack", 0.06]] },
-  fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.35, 1, 3], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05]] },
-  cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.4, 1, 3], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05]] },
+  newswreck: { name: "News chopper wreck", outdoor: true, boxes: ["crate", "car"], loot: { parts: [0.6, 1, 3], scrap: [0.7, 2, 6], water: [0.3, 1, 3] }, gear: [["hikingpack", 0.04], ["slingbag", 0.06]] },
+  fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.35, 1, 3], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05], ["hikingpack", 0.04], ["slingbag", 0.04]] },
+  cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.4, 1, 3], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
-const AREA_SETS = {
+export const AREA_SETS = {
   town: ["house", "house", "store", "garage", "pharmacy", "wreck"], city: ["store", "pharmacy", "office", "house", "warehouse", "wreck"],
   farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "pharmacy", "kitchen", "warehouse"],
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
@@ -2094,18 +2140,21 @@ function searchBox(state, b, u, box) {
       sup.ammo = rng.int(3, 10);
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(0.15)) sup.meds = 1;
+      const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
-        const kit = KITS[box.kit] || KITS.raiders;
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
-        gear.push({ key, name: GEAR[key].name, quality: rng.pick([0.7, 0.85, 1]) });
+        gear.push(newItem(key, rng.pick([0.7, 0.85, 1])));
       }
+      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1)); // what was in their pockets
     } else {
       const def = AREAS[R.areas[box.area].type];
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push({ key, name: GEAR[key].name, quality: 1 });
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(newItem(key, 1));
+      const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
+      if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);
       if (book) gear.push(book);

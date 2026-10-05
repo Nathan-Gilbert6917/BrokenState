@@ -450,6 +450,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.throw) check(!/power|armor/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
     else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
     else if (d.slot === "cargo") check(!/power|armor/.test(text) && /bike/.test(text), `${key}: a bicycle says it is a bike for the base (${text})`); // sim/vehicles.js
+    // Camp kit against Heat (fieldheat.js) and a base's defence kit (defences.js): carried or kept, not worn.
+    else if (d.heat) check(!/power|armor/.test(text) && /Heat ×/.test(text), `${key}: camp kit says how much less Heat (${text})`);
+    else if (d.defence) check(!/power|armor/.test(text) && /alarm/.test(text), `${key}: an alarm says what it does (${text})`);
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

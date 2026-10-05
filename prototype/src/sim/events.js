@@ -13,6 +13,11 @@ import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
+import { newItem } from "./inventory.js";
+
+// Things a road card can turn up (tools/loottest.js counts them as sources).
+export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren"];
+export const HIKER_STUFF = ["stove", "flare", "chocolate", "instcoffee", "harmonica", "cards", "ragboots", "novel", "bandagekit", "flashlight", "lighters", "photos", "waterfilter"];
 
 // ---------- helpers ----------
 function check(state, p, key, dc) {
@@ -250,14 +255,35 @@ const EVENTS = [
         {
           label: "Search it", hint: hint(st, p, "stealth", 11), resolve: (s) => {
             const ok = check(s, p, "stealth", 11).ok;
-            const g = s.rng.pick(["ar", "plate", "nvg", "milradio"]);
+            const g = s.rng.pick(HUMVEE_GEAR);
             // The find needs carry space like anything else; with none it stays in the wreck.
-            const fits = addGearToCargo(s, p, { key: g, name: GEAR[g].name, quality: 1 });
+            const fits = addGearToCargo(s, p, newItem(g, 1));
             const found = fits ? GEAR[g].name : `${GEAR[g].name} (no room to carry it: left there)`;
             return ok ? `Found: ${found}, ${addCargo(s, p, "ammo", 30)}.` : `Found ${found}, but ${injureRandom(s, p, 20, 50, "at a crashed Humvee")}`;
           },
         },
         { label: "Leave it", resolve: () => "Too many of them." },
+      ],
+    }),
+  },
+  {
+    // A pack on a dead hiker (or a soldier's rucksack): one of the ways to find a big pack, with things inside.
+    id: "hiker", weight: 1.5, when: (st, p, t) => !t.loc && ["forest", "hills", "mountain", "plains"].includes(t.terrain),
+    card: (st, p) => ({
+      title: "A dead hiker",
+      text: "Slumped against a trail marker, a hiker in a rain jacket. The dead did not get the pack, and they did not get the hiker either: a bite on the arm and a pistol with one round fired.",
+      choices: [
+        {
+          label: "Take the pack", hint: "It may have been a while. Heavy, but a big pack is worth it",
+          resolve: (s) => {
+            const pack = newItem(s.rng.chance(0.25) ? "rucksack" : "hikingpack", Math.round(s.rng.range(0.6, 0.95) * 100) / 100);
+            const n = s.rng.int(1, 3);
+            for (let i = 0; i < n; i++) pack.contents[i] = newItem(s.rng.pick(HIKER_STUFF), 1);
+            const inside = pack.contents.filter(Boolean).map((it) => it.name.toLowerCase()).join(", ");
+            return addGearToCargo(s, p, pack) ? `A ${pack.name.toLowerCase()} with ${inside} inside. It goes in the cargo; anyone can wear it.` : `A ${pack.name.toLowerCase()}, but nobody has room to carry it: it stays on the hiker.`;
+          },
+        },
+        { label: "Leave them be", resolve: () => "The team walks on." },
       ],
     }),
   },

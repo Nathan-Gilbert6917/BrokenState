@@ -8,7 +8,7 @@ import { GEAR, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
-import { ARMOR_SLOTS, SLOT_NAMES, ensurePack } from "./inventory.js";
+import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "./inventory.js";
 import { workFactor } from "./health.js";
 import { hasPerk } from "./skills.js";
 import { craftLock } from "./blueprints.js";
@@ -38,6 +38,16 @@ export const CRAFTS = {
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
   // A bicycle built from frames and wheels (vehicles.js): it joins the base's bikes.
   bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
+  // gearIn = items used up (from the base armory; in the field from the team's cargo or someone's pockets and pack).
+  nailbat:     { gear: "nailbat",     gearIn: { bat: 1 }, in: { scrap: 1 }, hours: 2, skill: "mechanics", min: 0, field: true },
+  molotov:     { gear: "molotov",     gearIn: { bottle: 1 }, in: { fuel: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  pipebomb:    { gear: "pipebomb",    in: { scrap: 2, parts: 1, ammo: 15 }, hours: 6, skill: "mechanics", min: 5, needs: "workshop" },
+  tripwire:    { gear: "tripwire",    in: { scrap: 1 },           hours: 2,  skill: "mechanics", min: 0, field: true },
+  slingbag:    { gear: "slingbag",    in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0 },
+  // Camp kit against Heat (fieldheat.js): made by whoever knows how to keep quiet.
+  ghillie:     { gear: "ghillie",     in: { scrap: 2 },           hours: 6,  skill: "stealth",   min: 2, field: true },
+  ragboots:    { gear: "ragboots",    in: { scrap: 1 },           hours: 2,  skill: "stealth",   min: 0, field: true },
+  scentmask:   { gear: "scentmask",   in: { scrap: 1, water: 1 }, hours: 2,  skill: "stealth",   min: 1, field: true },
 };
 
 export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
@@ -73,10 +83,12 @@ export function craftOutputText(key) {
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
     if (d.water) fx.push(`+${d.water} water a day at its base`);
     // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
-    if (d.throw) fx.push("thrown in battle to pull unaware guards and the dead to a spot, one use");
+    if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets the ground on fire for 3 turns, one use" : d.throw === "pipebomb" ? "thrown in battle, blows up everyone within a tile, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
     if (d.suppressor) fx.push("halves the noise of a pistol or rifle shot");
     if (r.gear === "flashlight") fx.push("lets your people search at night, but the light is seen");
-    bits.push(`${d.throw || d.suppressor ? "kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
+    if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
+    if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
+    bits.push(`${d.throw || d.suppressor ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
   if (d.dur) bits.push(`lasts ${d.dur} ${durUnit(r.gear)}`);
@@ -115,9 +127,15 @@ export function canCraft(state, base, key) {
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
   if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
   for (const [k, v] of Object.entries(r.in)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(base.stock[k] || 0)})` };
+  for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
+}
+
+// What a recipe uses, for the screens: "1 scrap, 1 fuel, a Empty bottle".
+export function craftInText(r) {
+  return [...Object.entries(r.in).map(([k, v]) => `${v} ${k}`), ...Object.entries(r.gearIn || {}).map(([k, v]) => `${v > 1 ? `${v} × ` : ""}${GEAR[k].name.toLowerCase()}`)].join(", ");
 }
 
 export function queueCraft(state, base, key) {
@@ -125,18 +143,22 @@ export function queueCraft(state, base, key) {
   if (!chk.ok) return chk.reason;
   const r = CRAFTS[key];
   for (const [k, v] of Object.entries(r.in)) base.stock[k] -= v;
-  craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours });
+  const taken = [];
+  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) taken.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
+  craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}) });
   const note = crafters(state, base).length ? "" : " Nobody is on the Craft role yet.";
   return `${craftName(key)} queued at ${base.name}.${note}`;
 }
 
 // Cancelling an untouched job refunds everything; a started one gives half back, rounded up (like construction).
+// Items it was to use (gearIn) always go back to the armory.
 export function cancelCraft(state, base, id) {
   const q = craftQueue(base);
   const job = q.find((c) => c.id === id);
   if (!job) return "That job is gone.";
   const full = job.progress <= 0;
   for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
+  if (job.gearTaken) base.armory.push(...job.gearTaken);
   q.splice(q.indexOf(job), 1);
   return `Cancelled ${craftName(job.recipe)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
@@ -291,9 +313,25 @@ export function fieldCraftOptions(state, party) {
     else {
       const miss = Object.entries(r.in).find(([k, v]) => partyHas(party, k) < v);
       if (miss) reason = `Needs ${miss[1]} ${miss[0]}; the team carries ${Math.floor(partyHas(party, miss[0]))}`;
+      const missG = Object.entries(r.gearIn || {}).find(([k, v]) => partyItems(state, party).filter((x) => x.it.key === k).length < v);
+      if (!reason && missG) reason = `Needs ${missG[1] > 1 ? `${missG[1]} × ` : "a "}${GEAR[missG[0]].name.toLowerCase()} with the team`;
     }
-    return { key, name: craftName(key), ok: !reason, reason, in: { ...r.in }, hours: r.hours, skill: r.skill, min: r.min, out: craftOutputText(key) };
+    return { key, name: craftName(key), ok: !reason, reason, in: { ...r.in }, gearIn: { ...(r.gearIn || {}) }, inText: craftInText(r), hours: r.hours, skill: r.skill, min: r.min, out: craftOutputText(key) };
   });
+}
+
+// Items a team has: in its cargo and on its people (pockets, hands, pack). [{ it, take() }]
+function partyItems(state, party) {
+  const out = [];
+  const cargo = (party.cargo && party.cargo.gear) || [];
+  for (const it of cargo) out.push({ it, take: () => cargo.splice(cargo.indexOf(it), 1) });
+  for (const s of partyMembers(state, party)) {
+    for (const [k, it] of Object.entries(s.gear || {})) if (it) out.push({ it, take: () => { s.gear[k] = null; } });
+    (s.pockets || []).forEach((it, i) => { if (it) out.push({ it, take: () => { s.pockets[i] = null; } }); });
+    const pk = s.gear && s.gear.backpack && s.gear.backpack.contents;
+    (pk || []).forEach((it, i) => { if (it) out.push({ it, take: () => { pk[i] = null; } }); });
+  }
+  return out;
 }
 
 // Makes one field recipe from the team's supplies. Gear goes to a member with that slot free, else into the cargo.
@@ -303,12 +341,15 @@ export function fieldCraft(state, party, recipeKey) {
   if (!opt.ok) return opt.reason;
   const r = CRAFTS[recipeKey];
   // An item nobody can wear needs room in the cargo (parties.js addGearToCargo); checked before materials are used.
-  if (!r.supplies && !partyMembers(state, party).some((s) => !s.gear[GEAR[r.gear].slot])) {
+  const worn = !r.supplies && EQUIP_SLOTS.includes(GEAR[r.gear].slot);
+  const roomOn = (s) => (worn ? !s.gear[GEAR[r.gear].slot] : (GEAR[r.gear].small && (s.pockets || []).includes(null)) || (!GEAR[r.gear].bulky && (packOf(s) || []).includes(null)));
+  if (!r.supplies && !partyMembers(state, party).some(roomOn)) {
     const probe = makeItem(r.gear, 1);
     if (!addGearToCargo(state, party, probe)) return `No free ${SLOT_NAMES[GEAR[r.gear].slot] || "slot"} on anyone and no room in the cargo for a ${probe.name}: not made.`;
     party.cargo.gear.splice(party.cargo.gear.indexOf(probe), 1);
   }
   for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
+  for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const x = partyItems(state, party).find((y) => y.it.key === k); if (x) x.take(); }
   const members = partyMembers(state, party);
   const maker = members.reduce((a, s) => (skill(s, r.skill) > skill(a, r.skill) ? s : a), members[0]);
   const who = maker.name.split(" ")[0];
@@ -318,7 +359,14 @@ export function fieldCraft(state, party, recipeKey) {
   }
   const item = makeItem(r.gear, craftQuality(skill(maker, r.skill), r, true));
   const slot = GEAR[r.gear].slot;
-  const taker = members.find((s) => !s.gear[slot]);
+  // Worn kit to a free slot; small things (throwables, camp kit) to a pocket or a pack (they are not worn).
+  if (!EQUIP_SLOTS.includes(slot)) {
+    for (const s of members) {
+      const at = stow(s, item);
+      if (at) return `${who} makes a ${item.name} in about ${r.hours} hours; ${s.name.split(" ")[0]} keeps it (${at.includes(":pocket:") ? "pocket" : "pack"}).`;
+    }
+  }
+  const taker = EQUIP_SLOTS.includes(slot) ? members.find((s) => !s.gear[slot]) : null;
   if (taker) {
     taker.gear[slot] = item;
     return `${who} makes a ${item.name} in about ${r.hours} hours; ${taker.name.split(" ")[0]} takes it (${slot}).`;

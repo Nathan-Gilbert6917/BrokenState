@@ -146,7 +146,11 @@ const RUMORS = [
   "The roads out of {home} are mined in places. Watch for cars parked across a bridge.",
 ];
 // Good gear merchants bring (data.js GEAR keys), and the books (skills.js WARE_BOOKS: traders).
-const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultpack", "riothelmet", "vest", "huntrifle", "waterfilter", "suppressor", "flashlight", "shotgun"];
+export const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultpack", "riothelmet", "vest", "huntrifle", "waterfilter", "suppressor", "flashlight", "shotgun",
+  "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar"];
+// What a band of explorers or refugees may carry to trade (and the valuables merchants bring to sell on).
+export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos"];
+export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "coffee", "cigarettes", "coins", "camera", "diamond", "tea"];
 const RARE_BOOKS = ["medbook", "surgerybook", "enginebook", "gardenbook", "gunbook", "armymanual", "survivalbook", "talkbook", "lockbook", "leadbook", "scavbook"];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -265,7 +269,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.stock.water = rng.int(2, 5) * v.size;
     v.stock.ammo = v.sub === "scouts" ? rng.int(20, 40) : rng.int(0, 12);
     v.stock.meds = v.sub === "scouts" ? rng.int(1, 3) : 0;
-    if (rng.chance(0.4)) v.wares.push(newItem(rng.pick(["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight"]), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+    if (rng.chance(0.4)) v.wares.push(newItem(rng.pick(TRAVEL_GEAR), Math.round(rng.range(0.5, 0.9) * 100) / 100));
   }
   v.size0 = v.size;
   return v;
@@ -288,6 +292,8 @@ function merchantGoods(state, v, rng) {
     if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.6, 1)));
     v.wares.push(it);
   }
+  // A few valuables to sell on (they also buy them: TRADE_PREFS merchants).
+  for (const k of rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2))) v.wares.push(newItem(k, 1));
 }
 
 // A new party at the border (kind: "raiders" | "merchants" | "explorers"). opts: { tile, size, power, sub, hostile,

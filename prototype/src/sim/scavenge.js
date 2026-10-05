@@ -12,7 +12,9 @@ import { tickHour } from "./world.js";
 import { searchHazards } from "./health.js";
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
-import { itemLoad } from "./inventory.js";
+import { itemLoad, newItem } from "./inventory.js";
+import { rollFind } from "./loot.js";
+import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 
 export const APPROACHES = {
@@ -173,12 +175,15 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
-    e.found.gear.push({ key: g, name: GEAR[g].name, quality: 1 });
+    e.found.gear.push(newItem(g, 1));
     finds.push(GEAR[g].name);
   }
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
   const book = rollBook(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`);
   if (book) { e.found.gear.push(book); finds.push(book.name); }
+  // A small find: a valuable, a comfort, smokes, a throwable (loot.js SITE_FINDS; its own dice too).
+  const small = rollFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`);
+  if (small) { e.found.gear.push(small); finds.push(small.name); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
   const locked = lockedSearchHour(state, e, p, members);
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
@@ -187,7 +192,9 @@ export function searchHour(state) {
   let heat = ap.heat * (0.6 + 0.6 * t.infection);
   if (e.approach === "sneak") heat -= bestSkill(state, p, "stealth") * 0.3;
   if (isNight(state)) heat -= 2;
-  e.heat = Math.min(100, e.heat + (perk("quiethands") ? Math.max(1, heat * 0.5) : Math.max(2, heat))); // Quiet Hands: half the Heat
+  const kit = searchHeatMult(state, p); // fieldheat.js: ghillie wrap, rag-wrapped boots, a scent mask, a hiking pack
+  if (kit.mult !== 1) heat *= kit.mult;
+  e.heat = Math.min(100, e.heat + (perk("quiethands") ? Math.max(1, heat * 0.5) : Math.max(2 * Math.min(1, kit.mult), heat))); // Quiet Hands: half the Heat
   const stage = heatStage(e.heat);
 
   // Encounters.
@@ -272,10 +279,12 @@ export function extract(state) {
     return;
   }
   // Load what fits; the cheapest goods are left behind first. Found items need carry space too
-  // (the most valuable go in first); what does not fit is left at the site.
+  // (the most valuable go in first); what does not fit is left at the site. Heavy, cheap things (under 2 a kg:
+  // sandbags, barbed wire, bear traps) only go in after the supplies.
   const left = [];
+  const perKg = (g) => (GEAR[g.key]?.value || 0) / Math.max(0.1, itemLoad(g));
   const gear = [...e.found.gear].sort((a, b) => (GEAR[b.key]?.value || 0) - (GEAR[a.key]?.value || 0));
-  for (const g of gear) if (!addGearToCargo(state, p, g)) left.push(g.name);
+  for (const g of gear) if (perKg(g) >= 2 && !addGearToCargo(state, p, g)) left.push(g.name);
   let room = cargoRoom(state, p);
   // Best value per unit of carry space goes in first.
   const keys = Object.keys(e.found.supplies).sort((a, b) => SUPPLIES[b].value / SUPPLIES[b].weight - SUPPLIES[a].value / SUPPLIES[a].weight);
@@ -285,6 +294,7 @@ export function extract(state) {
     room -= take * SUPPLIES[k].weight;
     if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${k}`);
   }
+  for (const g of gear) if (perKg(g) < 2 && !addGearToCargo(state, p, g)) left.push(g.name);
   if (left.length) log(state, `No room to carry ${left.join(", ")}. It was left behind.`, "info");
   log(state, `Scavenging team extracted from ${tileLabel(state, e.tile)} after ${e.hours} hours.`, "info");
   noteSearch(state, alive); // relations.js: sites searched (service record)

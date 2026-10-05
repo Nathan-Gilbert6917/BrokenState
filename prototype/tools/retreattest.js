@@ -340,10 +340,12 @@ function measure(style) {
       const snap = structuredClone(people);
       const power = m.power === "match" ? 4 : m.power;
       const rngAt = rng.state;
+      const armoryAt = [...base.armory]; // the same armory for both runs (the battle AI throws Molotovs and pipe bombs from it)
       const play = (crew, retreat) => {
         state.survivors.push(...crew);
         state.tiles[tile.id] = fake;
         base.stock.ammo = 200; base.stock.meds = 3;
+        base.armory = [...armoryAt];
         rng.state = rngAt;
         const setup = { tile: tile.id, baseId: base.id, fighterIds: crew.map((s) => s.id), enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: true, handler: "rt", layout: m.layout, context: {} };
         const b = (state.combat = createBattle(state, setup));
