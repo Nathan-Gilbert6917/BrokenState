@@ -728,6 +728,7 @@ function fightChoice(state, p, c, ambush, goodwillHit) {
   return {
     label: ambush === "enemy" ? "Fight back" : "Open fire",
     hint: `About ${pct(odds)} to win${ambush === "enemy" ? ", but they have the drop on you" : ""}. Uses ammo; people will get hurt.${f ? ` ${goodwillHit >= 5 ? "Big" : "Small"} goodwill loss with ${f.name}` : ""}`,
+    fight: { odds, enemy: c.enemy, ambush }, // the card's retreat policy and forecast (breakoff.js, ui.js)
     resolve: (st) => startFight(st, p, c, ambush, goodwillHit, ""),
   };
 }
@@ -860,6 +861,7 @@ function ambushChoice(state, p, c, label, goodwillHit) {
   return {
     label,
     hint: `You strike first: about ${pct(odds)} to win. ${gains}.${f && goodwillHit ? ` Large goodwill loss with ${f.name}` : ""}`,
+    fight: { odds, enemy, ambush: "player" },
     resolve: (st) => startFight(st, p, c, "player", goodwillHit, "", { enemy }),
   };
 }
@@ -870,6 +872,7 @@ function helpSideChoice(state, p, c, helped, hit, enemy) {
   return {
     label: `Help ${helped.name}`,
     hint: `Hit ${hit.name} from the flank while they are busy: about ${pct(odds)} to win. Goodwill +15 with ${helped.name}, -15 with ${hit.name}`,
+    fight: { odds, enemy: half, ambush: "player" },
     resolve: (st) => startFight(st, p, { ...c, factionId: hit.id, helpedId: helped.id }, "player", 15, "", { enemy: half, factionId: hit.id, helpedId: helped.id }),
   };
 }
@@ -1061,6 +1064,7 @@ function onConflictCombat(state, result, setup) {
     lines.push(...victoryRewards(state, p, c, result));
   } else if (result.outcome === "retreat") {
     const lost = cargoLoad(p.cargo) > 0 ? rob(state, p, 0.25, f, false, true) : "";
+    if (result.summary) lines.push(result.summary); // broken off by the numbers (breakoff.js): who got out, carried, taken
     lines.push(`You pulled back.${lost ? ` Some of the load was dropped: ${lost}.` : ""}`);
   } else {
     lines.push(`You lost the fight and scattered.`);
@@ -1228,6 +1232,7 @@ function rescueCard(state, p, f, held) {
       {
         label: "Storm the base",
         hint: `About ${pct(assault)} to win against ${guards.count} guards. Victory frees everyone held here. Goodwill with ${f.name} collapses`,
+        fight: { odds: assault, enemy: guards, ambush: null },
         resolve: (st) => startRescueFight(st, p, f, guards, null, "assault"),
       },
       {
@@ -1307,7 +1312,7 @@ function onRescueCombat(state, result, setup) {
     text = `The guards are beaten. ${held.length ? `${names(held)} ${held.length === 1 ? "is" : "are"} free.` : "But the prisoners had been moved."}`;
     log(state, `Your team broke into ${f.name}'s base${held.length ? ` and freed ${names(held)}` : ""}.`, "good");
   } else {
-    text = result.outcome === "retreat" ? "You pulled back from the walls." : "The attack failed.";
+    text = result.outcome === "retreat" ? `${result.summary ? `${result.summary} ` : ""}You pulled back from the walls.` : "The attack failed.";
     const members = partyMembers(state, p);
     if (f && result.outcome === "defeat" && members.length && state.rng.chance(0.3)) {
       const s = state.rng.pick(members);

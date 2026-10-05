@@ -14,6 +14,7 @@ import { travelEffects } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
 import { newItem } from "./inventory.js";
+import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren"];
@@ -425,7 +426,7 @@ function breakdownCard(state, p, v) {
 
 // The horde's score (hordes.js hordeScore) sets how hard it is to hide from and how badly a fight goes; on a
 // hive's land the dead are tougher still (hives.js zombieToughness).
-function hordeCard(state, p, horde) {
+export function hordeCard(state, p, horde) {
   const drive = () => p.vehicle === true && partyFuel(state, p) >= 4; // a vehicle needs fuel in it to outrun anything (bikes cannot)
   const score = hordeScore(horde.size);
   const tough = 1 + zombieToughness(state, horde.tile) * 0.35;
@@ -446,16 +447,37 @@ function hordeCard(state, p, horde) {
         },
       },
       {
-        label: "Fight", hint: "Very dangerous", resolve: (s) => {
-          const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0);
-          horde.size = Math.max(0, horde.size - Math.round((power * 2) / tough));
-          // Too few left to be a horde: it is gone from the map.
-          if (horde.size < 5 && s.hordes.includes(horde)) s.hordes.splice(s.hordes.indexOf(horde), 1);
+        label: "Fight",
+        // The team's "Retreat if it goes badly" policy (breakoff.js) is shown on the card and decides when it breaks off.
+        fight: { horde: true },
+        get hint() { const pol = teamPolicy(state, p); return `Very dangerous.${pol === "never" ? " The team fights it out" : ` Retreat ${RETREAT_POLICIES[pol].short}: the team breaks off between wounds, the horde only partly thinned, and runs for it`}`; },
+        resolve: (s) => {
+          const members0 = partyMembers(s, p);
+          const n = members0.length;
+          const power = members0.reduce((a, m) => a + combatPower(m), 0);
+          const cut = Math.round((power * 2) / tough);
           takeSupply(p, "ammo", 40);
           // One wound for a small horde, two for a medium one, three for a large one (and one more for a Wallbreaker).
+          // Each wound is a round of the fight; between rounds the team may break off by its policy.
           const hits = Math.min(4, 1 + (score >= 6 ? 1 : 0) + (score >= 13 ? 1 : 0) + (horde.bosses ? 1 : 0));
+          const policy = teamPolicy(s, p);
           const out = [];
-          for (let i = 0; i < hits && partyMembers(s, p).length; i++) out.push(injureRandom(s, p, i ? 20 : 30, (i ? 60 : 80) * Math.min(1.5, tough), "fighting a horde"));
+          let rounds = hits;
+          for (let i = 0; i < hits && s.parties.includes(p) && partyMembers(s, p).length; i++) {
+            out.push(injureRandom(s, p, i ? 20 : 30, (i ? 60 : 80) * Math.min(1.5, tough), "fighting a horde"));
+            const now = s.parties.includes(p) ? partyMembers(s, p) : [];
+            const look = { turning: cut < horde.size, n, hit: i + 1, down: n - now.length, badly: now.filter((m) => m.health < 50).length };
+            if (i < hits - 1 && now.length && wantsOut(policy, look)) { rounds = i + 1; break; }
+          }
+          horde.size = Math.max(0, horde.size - Math.round((cut * rounds) / hits));
+          // Too few left to be a horde: it is gone from the map.
+          if (horde.size < 5 && s.hordes.includes(horde)) s.hordes.splice(s.hordes.indexOf(horde), 1);
+          if (rounds < hits && s.parties.includes(p)) {
+            // Broken off: everyone runs for it with the dead on their heels (the tactical escape check).
+            const run = breakOff(s, partyMembers(s, p), { enemy: { kind: "zombies", count: Math.min(12, Math.max(1, Math.round(horde.size / 4))) }, tiles: [3, 6], tile: partyTile(p), cause: "running from a horde", vehicle: p.vehicle, stealthy: p.stance === "stealthy", party: p });
+            out.push(`The team broke off (${RETREAT_POLICIES[policy].short}) after ${rounds} of ${hits} rounds and ran for it: ${run.lines.join(" ")}`);
+            wipeIfEmpty(s, p);
+          }
           return out.join(" ").trim();
         },
       },

@@ -9,6 +9,7 @@ import { executeTrade, endTrade } from "../src/sim/trade.js";
 import { allCaptives } from "../src/sim/conflicts.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
 import { Rng } from "../src/sim/rng.js";
+import { POLICY_ORDER, RETREAT_POLICIES, teamPolicy } from "../src/sim/breakoff.js";
 
 const days = Number(process.argv[2] || 120);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [1, 2, 3, 4, 5, 6];
@@ -18,6 +19,10 @@ const tripHist = {}; // conflicts per trip (trips of 3-5 days)
 const allTripHist = {};
 const byLen = {};
 let trips = 0, problems = 0, conflictCards = 0, rescueLaunches = 0;
+// Retreat by the numbers (breakoff.js): every team goes out with a random "Retreat if it goes badly" policy; fight
+// choices carry their fight for the card's policy row and forecast; broken-off fights are counted by policy.
+const policyFights = Object.fromEntries(POLICY_ORDER.map((k) => [k, { fights: 0, retreats: 0 }]));
+let fightChoices = 0, badFight = 0;
 
 function addInto(a, b) {
   for (const [k, v] of Object.entries(b)) {
@@ -41,10 +46,15 @@ for (const seed of seeds) {
         const c = state.cards.shift();
         if (c.kind === "conflict") conflictCards++;
         const opts = c.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
+        for (const x of c.choices) if (x.fight && x.fight.enemy) { fightChoices++; if (!(x.fight.enemy.count > 0) || (x.fight.odds != null && !(x.fight.odds >= 0 && x.fight.odds <= 1))) badFight++; }
         if (!opts.length) continue;
         // Mostly random, but keep the after-fight teams moving rather than idling.
         const ch = pick.pick(opts);
+        const fp = ch.fight && c.partyId != null ? state.parties.find((x) => x.id === c.partyId) : null;
+        const pol = fp ? teamPolicy(state, fp) : null;
+        const r0 = (state.stats.conflicts && state.stats.conflicts.outcomes["combat-retreat"]) || 0;
         ch.resolve(state);
+        if (pol && ch.fight.enemy) { policyFights[pol].fights++; if (((state.stats.conflicts && state.stats.conflicts.outcomes["combat-retreat"]) || 0) > r0) policyFights[pol].retreats++; }
       }
       if (state.engagement) {
         if (!state.engagement.approach) state.engagement.approach = "normal";
@@ -112,6 +122,7 @@ for (const seed of seeds) {
             };
             const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest, mission, stance, vehicleId: truck ? truck.id : null, supplies: sup });
             if (res.error && !/route/.test(res.error)) console.log(`seed ${seed}: launch error: ${res.error}`);
+            else if (res.party) res.party.retreatPolicy = POLICY_ORDER[(res.party.id + seed) % POLICY_ORDER.length]; // as if set on its first card
           }
         }
       }
@@ -136,5 +147,10 @@ console.log("Captive events:", total.captiveEvents);
 console.log(`Trips: ${trips}. Conflicts per trip (all):`, allTripHist);
 console.log("Conflicts per trip (3-5 day trips):", tripHist);
 console.log("Mean conflicts per trip by trip length:", Object.fromEntries(Object.entries(byLen).map(([k, v]) => [k, `${v.trips} trips, ${(v.conflicts / v.trips).toFixed(2)}`])));
+console.log(`Fight choices: ${fightChoices} (${badFight} without a usable fight for the card's forecast). Fights by the team's retreat policy: ${POLICY_ORDER.map((k) => `${RETREAT_POLICIES[k].name} ${policyFights[k].retreats}/${policyFights[k].fights} broken off`).join(", ")}`);
+if (badFight) { console.log("PROBLEM: a fight choice without a usable fight"); problems++; }
+if (policyFights.never.retreats) { console.log("PROBLEM: a team set to Never broke off a fight by the numbers"); problems++; }
+const tried = POLICY_ORDER.filter((k) => k !== "never").reduce((a, k) => a + policyFights[k].fights, 0);
+if (tried >= 10 && !POLICY_ORDER.some((k) => k !== "never" && policyFights[k].retreats)) { console.log("PROBLEM: no team ever broke off a fight by its policy"); problems++; }
 console.log(`Conflict cards shown: ${conflictCards}. Problems: ${problems}`);
 if (problems) process.exitCode = 1;

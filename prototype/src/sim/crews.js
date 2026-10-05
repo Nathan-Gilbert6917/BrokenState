@@ -11,7 +11,8 @@
 //   field: { type: 1..5 }        field priorities (FIELD_TYPES: scavenge, recover, vehicle, trade, supply …)
 //   range (tiles), maxHours (one way), size, stance, vehicle ("auto" | "foot" | a vehicle id), ammo (a head),
 //   meds, spare (rations × for the trip), rules: { hurt, food, cargo } (come home when …), rest (days at home
-//   between trips), paused, handleAll, style (the governor's style for its judgement),
+//   between trips), paused, handleAll, style (the governor's style for its judgement), retreat (its fights by the
+//   numbers: breakoff.js RETREAT_POLICIES key; empty = by its style, STYLE_POLICY),
 //   out: the trip under way { partyId, kind: "team" | "convoy", jobId, mission, tile, why, left, cargo }, log: the
 //   last trips, lastTrip (day it came home) }
 // Trips leave from the hub (launchExpedition); crew members at an outpost only work it.
