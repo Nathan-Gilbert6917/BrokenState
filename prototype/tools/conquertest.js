@@ -347,7 +347,7 @@ section("Razing: aggressive raiders may burn a base instead of keeping it");
     const { outpostScrap } = await import("../src/sim/parties.js");
     check(outpostScrap(s, tt.id) === 5, "a new outpost on the ruins needs 5 scrap");
     const UI = await import("../src/ui/ui.js");
-    check(/Ruins: /.test(UI.renderRight(s, { started: true, selected: tt.id, tab: "bases" })), "the tile panel shows the ruins");
+    check(/Ruins of /.test(UI.renderRight(s, { started: true, selected: tt.id, tab: "bases" })), "the tile panel shows the ruins");
     const l = deserializeState(JSON.parse(JSON.stringify(serializeState(s, { dropCards: true }))));
     check(!!l.tiles[tt.id].ruin, "save/load keeps the ruin");
   }

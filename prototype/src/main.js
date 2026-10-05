@@ -330,7 +330,7 @@ function refresh(user = true) {
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
   refreshModal(user);
-  setHTML("legend", renderLegend(view, ui), user);
+  setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);

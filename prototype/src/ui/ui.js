@@ -28,7 +28,8 @@ import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehi
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
-import { ageText, liveSet, mapLoc } from "./render.js";
+import { ageText, liveSet, mapLoc, ruinInfo, coalitionLand } from "./render.js";
+import { searchedDay } from "../sim/discovery.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { conflictView, captivesOf, isCaptive } from "../sim/conflicts.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
@@ -379,6 +380,8 @@ export function renderRight(state, ui) {
   const knownHives = state.tiles.filter((x) => (liveSet(state).has(x.id) ? x.hive : state.knowledge[x.id] && state.knowledge[x.id].hive)).map((x) => x.id);
   const hz = knownHives.length ? hiveDanger(state, id, knownHives) : { territory: false, red: false };
   const base = state.bases.find((b) => b.tile === id);
+  const ruin = ruinInfo(state, id); // ui/render.js: a ruin you know of (razed base), with its salvage and danger
+  const searched = searchedDay(state, id); // sim/discovery.js: the Known area layer
   const ownerF = info && typeof info.owner === "number" ? factionById(state, info.owner) : null;
   const walk = estimateTrip(state, { memberIds: [1], dest: id, vehicle: false, stance: "normal" });
   // Loot by band (aiscav.js: rich, some, little, picked clean, against what the site held untouched). Not in view: the
@@ -401,6 +404,7 @@ export function renderRight(state, ui) {
     <div class="card" style="margin-top:0.6rem">
       <div class="kv small">
         <div>Intel</div><div>${isLive ? `<span class="good">Live</span>` : snap ? `Last seen ${ageText(state, snap)} (day ${Math.floor(snap.hour / 24) + 1})` : `<span class="muted">None</span>`}</div>
+        ${searched ? `<div${tip("Your people looked hard here (a survey, a Look around or a search): the Known area layer hatches it. Hidden places and finds nearby are likelier found already.")}>Searched</div><div>day ${searched}</div>` : ""}
         ${info ? `
         <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
         <div${tip("Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
@@ -415,7 +419,8 @@ export function renderRight(state, ui) {
       ${walk || base ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
-    ${t.ruin && !base && (isLive || state.knowledge[id]) ? `<div class="card small"${tip("A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only 5 scrap: the rest is salvage.")}><b>Ruins: ${esc(t.ruin.name)}</b><div class="muted">Burned by ${esc(t.ruin.by)} on day ${t.ruin.day}${t.ruin.from && t.ruin.from !== "you" ? ` (${esc(t.ruin.from)}'s base)` : t.ruin.yours ? " (your base)" : ""}.</div></div>` : ""}
+    ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
+      <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
@@ -458,10 +463,14 @@ function landRows(state, id, teamsHere) {
 // One short line per layer (hover: a one-line description); what each layer and symbol means is in Help → Map
 // layers / Map legend (ui/help.js), behind the "?" button.
 const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
-export function renderLegend(view, ui) {
+// state: the Coalition land line shows the share held against the goal while that layer is on (ui/render.js
+// coalitionLand, the same land the alliance victory counts).
+export function renderLegend(view, ui, state = null) {
   if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
+  const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
   return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}</label>`).join("")}`;
+    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}`;
 }
 
 // ---------- log ----------

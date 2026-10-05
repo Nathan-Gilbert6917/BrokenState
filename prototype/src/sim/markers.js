@@ -22,6 +22,8 @@ export const LAYERS = {
   finds:     { name: "Spotted finds",    desc: "Caches, wrecks and camps your teams noticed" },
   infection: { name: "Infection",        desc: "Red overlay showing infection level" },
   weather:   { name: "Weather",          desc: "Season and weather wash over the land: snow, rain, fog, heat" },
+  known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
+  coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
 };
 export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds" };
 

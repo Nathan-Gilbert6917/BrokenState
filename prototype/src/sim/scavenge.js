@@ -6,6 +6,7 @@ import {
   wipeIfEmpty, leaveVehicle, addGearToCargo,
 } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
+import { noteLooked } from "./discovery.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
@@ -156,6 +157,7 @@ export function searchHour(state) {
     return;
   }
   e.hours += 1; // the caller advances the shared clock by one hour per search
+  noteLooked(state, p, [e.tile]); // discovery.js: the site is searched (the map's Known area layer)
 
   // Loot.
   const scav = bestSkill(state, p, "scavenging");

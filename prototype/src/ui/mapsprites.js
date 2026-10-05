@@ -2114,6 +2114,54 @@ export function campSpriteCanvas(color, lit = true) {
   return cached(`camp:${color}:${+lit}`, () => paintCamp(color, lit));
 }
 
+// The ruins of a razed base (render.js; sim/conquest.js and factions.js tile.ruin): scorched yard, two charred
+// wall stubs with a gap where the gate was, fallen beams, rubble, a blackened chimney and a last wisp of smoke.
+// yours: a torn blue rag on a bent pole (one of your bases burned there).
+const ASH = "#3b3733", CHAR = "#26231f", EMBER = "#c4562a", SOOT = "#4d4741", BURNT_WOOD = "#4a3424";
+function paintRuin(yours) {
+  const p = painter(28, 18);
+  const yb = 16;
+  p.rect(1, 12, 26, yb, ASH);                                     // scorched yard
+  for (const [x, y] of [[3, 13], [8, 15], [14, 14], [20, 15], [24, 13], [11, 12]]) p.set(x, y, shade(ASH, 0.25));
+  // Left wall stub: jagged top, a burned-out window.
+  const wall = "#6d655b";
+  for (let x = 3; x <= 10; x++) {
+    const top = 6 + [0, 2, 1, 3, 0, 4, 2, 5][x - 3];
+    p.rect(x, top, x, 12, (x + top) % 3 ? wall : shade(wall, -0.3));
+    p.set(x, top, shade(wall, 0.2));
+  }
+  p.rect(5, 8, 6, 10, CHAR);
+  for (let x = 3; x <= 10; x++) p.set(x, 12 - ((x * 7) % 3 === 0 ? 1 : 0), SOOT); // soot up the base of the wall
+  // Right wall stub, lower.
+  for (let x = 17; x <= 24; x++) {
+    const top = 8 + [3, 1, 0, 2, 4, 1, 3, 5][x - 17];
+    p.rect(x, top, x, 12, (x + top) % 4 ? shade(wall, -0.1) : shade(wall, -0.35));
+    p.set(x, top, shade(wall, 0.15));
+  }
+  p.rect(20, 10, 21, 11, CHAR);
+  // Chimney standing alone, blackened, smoke drifting off it.
+  p.rect(13, 3, 14, 12, shade(STONE, -0.45));
+  p.set(13, 3, shade(STONE, -0.2));
+  p.set(14, 1, SMOKE_FAINT); p.set(15, 0, SMOKE_FAINT); p.set(13, 2, SMOKE);
+  // Fallen beams across the gap and a heap of rubble with a few embers.
+  for (let i = 0; i < 7; i++) p.set(9 + i, 11 + (i >> 2), BURNT_WOOD);
+  for (let i = 0; i < 6; i++) p.set(16 + i, 14 - (i >> 1), shade(BURNT_WOOD, 0.15));
+  p.rect(10, 13, 17, 14, SOOT);
+  for (const [x, y] of [[11, 12], [12, 13], [15, 12], [16, 13], [18, 14], [9, 14], [13, 14]]) p.set(x, y, shade(STONE, -0.15));
+  for (const [x, y] of [[12, 14], [16, 14], [22, 15]]) p.set(x, y, EMBER);
+  // Broken fence posts at the corners.
+  for (const x of [1, 26]) p.rect(x, 13, x, yb, CHAR);
+  p.set(2, 14, CHAR);
+  if (yours) {                                                     // a bent pole with a torn blue rag
+    p.rect(25, 4, 25, 12, "#9a9a9a");
+    p.set(24, 4, "#9a9a9a");
+    p.rect(21, 4, 23, 5, "#3f6fa8");
+    p.set(22, 6, "#3f6fa8");
+  }
+  return p;
+}
+export const ruinSpriteCanvas = (yours = false) => cached(`ruin:${+!!yours}`, () => paintRuin(yours));
+
 // Map marker sprites: "death" | "cache" | "car" | "camp" | "vehicle" | "hive". opt: { emptied } for finds (stripped
 // wreck, emptied cache, picked-through camp), { empty } for a death site with nothing left, { vehicle: "truck" |
 // "sedan", needsFuel, damaged } for an abandoned vehicle (in `color`).

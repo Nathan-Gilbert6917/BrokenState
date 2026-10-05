@@ -63,6 +63,7 @@ function sample(state) {
     inf: state.tiles.map((t) => Math.round((t.infection || 0) * INF_Q)),
     hordes: state.hordes.map((h) => `${h.tile}:${h.size}`).sort().join(" "),
     pop: alive(state).length,
+    ruins: state.tiles.filter((t) => t.ruin).map((t) => `${t.id}:${t.ruin.name}`).join(","),
   };
 }
 
@@ -169,7 +170,7 @@ const sums = c.frames.map((_, k) => sum(seq.decode(k)));
 const rnd = chronicleReader(state);
 const order = c.frames.map((_, k) => k).sort((a, b) => ((a * 7919) % 101) - ((b * 7919) % 101));
 check(order.every((k) => sum(rnd.decode(k)) === sums[k]), "random-access decode matches sequential decode");
-let truthOk = 0;
+let truthOk = 0, ruinSamples = 0;
 for (const tr of run.truth) {
   const fs = seq.frameState(tr.hour);
   const k = fs.frame;
@@ -178,8 +179,11 @@ for (const tr of run.truth) {
   const infOk = fs.tiles.every((t, i) => Math.round(t.infection * INF_Q) === tr.inf[i]);
   const hordesOk = fs.hordes.map((h) => `${h.tile}:${h.size}`).sort().join(" ") === tr.hordes;
   const popOk = fs.info.pop === tr.pop && c.frames[k].h === tr.hour;
-  if (check(ownOk && infOk && hordesOk && popOk, `frame at day ${Math.floor(tr.hour / 24) + 1} matches the live world (owners ${ownOk}, infection ${infOk}, hordes ${hordesOk}, people ${popOk})`)) truthOk++;
+  const ruinsOk = fs.tiles.filter((t) => t.ruin).map((t) => `${t.id}:${t.ruin.name}`).join(",") === tr.ruins;
+  if (tr.ruins) ruinSamples++;
+  if (check(ownOk && infOk && hordesOk && popOk && ruinsOk, `frame at day ${Math.floor(tr.hour / 24) + 1} matches the live world (owners ${ownOk}, infection ${infOk}, hordes ${hordesOk}, people ${popOk}, ruins ${ruinsOk})`)) truthOk++;
 }
+console.log(`  ruins of razed bases in ${ruinSamples} of the weekly samples (each frame's ruins match the live world's)`);
 console.log(`  ${c.frames.length} frames decoded both ways; ${truthOk}/${run.truth.length} weekly samples match the live world exactly`);
 
 // ---------- the recorder does not change the game ----------
@@ -223,6 +227,35 @@ const ms = performance.now() - t1;
 check(errors === 0, "every frame state renders without errors");
 check(fallenSeen, "the last frame shows the fallen holdout");
 console.log(`  ${built} frame states built and rendered (${lastDay} mid-day + ${c.frames.length} frame hours), ${(ms / built).toFixed(2)} ms each (JS only), ${draws} draw calls; up to ${maxHordes} hordes and ${maxParties} parties on screen`);
+
+// Ruins in the timelapse: a ruin appears in the frames from the day the base burned, with its name, is drawn by the
+// renderer, and is gone from the frames after an outpost was founded on it; frames from before it burned never show
+// it (the replay's tiles take their ruins from the frames, not from today's map).
+{
+  const w = createWorld({ seed: seed + 1, factionCount: 4, size: mapSize });
+  const h = hub(w);
+  const rt = w.grid.within(h.tile, 3).find((id) => id !== h.tile && w.tiles[id].terrain !== "water");
+  const step = (n) => { for (let i = 0; i < n; i++) tickHour(w); };
+  step(4 * 24);
+  w.tiles[rt].ruin = { name: "Oak Hill Outpost", day: day(w), by: "raiders", from: "you", yours: true };
+  step(4 * 24);
+  delete w.tiles[rt].ruin; // an outpost founded on the ruins (parties.js deletes tile.ruin)
+  step(4 * 24);
+  w.tiles[rt].ruin = { name: "Oak Hill Outpost", day: day(w), by: "raiders", from: "you", yours: true }; // burned again: today's map has it
+  const rd = chronicleReader(w);
+  const at = (d) => rd.frameState((d - 1) * 24 + 12).tiles[rt].ruin;
+  const before = at(3), during = at(6), after = at(10);
+  check(!before && during && during.name === "Oak Hill Outpost" && during.yours && !after, `the replay shows the ruins only while they stood (day 3 ${!!before}, day 6 ${!!during}, day 10 ${!!after})`);
+  R.view.layers = new Set(["pois", "territory", "teams", "hordes"]);
+  R.camera.zoom = 1;
+  const fs6 = rd.frameState(5 * 24 + 12);
+  R.centerOn(fs6, rt);
+  R.render(fs6);
+  const drawn6 = R.mapOverlay().ruins.includes(rt);
+  const fs10 = rd.frameState(9 * 24 + 12);
+  R.render(fs10);
+  check(drawn6 && !R.mapOverlay().ruins.includes(rt), "the renderer draws the ruins in the frames that have them, and not after the outpost was founded");
+}
 
 // Terrain detail (ui/terraindeco.js) in the timelapse: zoomed in, every 10th day with decals and rippled water, the
 // same decals as the game's map (the frame state carries the world's seed), none with the Flat option.
