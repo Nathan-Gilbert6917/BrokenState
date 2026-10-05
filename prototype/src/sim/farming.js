@@ -18,6 +18,7 @@ import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
 import { hasPerk, seedCost } from "./skills.js";
+import { prisonersAt } from "./upkeep.js";
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
@@ -635,7 +636,9 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const today = todayIdx(state);
   const gap = hungryGap(state, today);
   const pool = [base, ...also.filter((b) => b && b !== base)];
-  const people = pool.reduce((a, b) => a + residents(state, b.id).length, 0) + extra;
+  // Everyone fed from these stores for the long haul: the people living there and the prisoners in the cells
+  // (upkeep.js; guests and a holding convoy are passing through).
+  const people = pool.reduce((a, b) => a + residents(state, b.id).length + prisonersAt(state, b), 0) + extra;
   const events = new Map();
   const add = (i, food, key) => { const e = events.get(i) || { food: 0, preserved: 0 }; e[key] += food; events.set(i, e); };
   let crops = 0, plots = 0;

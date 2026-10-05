@@ -11,6 +11,8 @@ import {
   partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty, waterForHours,
 } from "./parties.js";
 import { thirstAt } from "./weather.js";
+import { UPKEEP, coldFactor } from "./upkeep.js";
+import { edibleFood, eatFromStore } from "./storage.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
 import { assignStations } from "./buildings.js";
 import { isCaptive } from "./conflicts.js";
@@ -506,11 +508,12 @@ function holdUpkeep(state, p, job) {
     headHome(state, p, job);
     return;
   }
-  // One food and one water per person a day (water times the day's thirst, weather.js), from the base first, then
-  // from what the convoy carries.
+  // One food and one water per person a day, as anyone at the base (upkeep.js: food times the cold, water times the
+  // day's thirst), from the base first (fresh food, then preserved), then from what the convoy carries.
   const draw = (k) => {
-    const q = k === "water" ? thirstAt(state) : 1;
-    if ((dest.stock[k] || 0) >= q) dest.stock[k] -= q;
+    const q = k === "water" ? thirstAt(state) : UPKEEP.crew * coldFactor(state);
+    if (k === "food" && edibleFood(dest) >= q) eatFromStore(dest, q);
+    else if (k === "water" && (dest.stock[k] || 0) >= q) dest.stock[k] -= q;
     else if ((p.supplies[k] || 0) >= q) p.supplies[k] -= q;
     else return false;
     return true;
