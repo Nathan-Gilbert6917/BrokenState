@@ -246,7 +246,7 @@ export function supplyArrive(state, p) {
   p.cargo.supplies = {};
   dest.armory.push(...p.cargo.gear);
   p.cargo.gear = [];
-  mergeKnowledge(state, p.seen, p.spotted);
+  mergeKnowledge(state, p.seen, p.spotted, p);
   const delivered = got.join(", ") || "nothing";
   if (job) job.lastResult = `Day ${day(state)}: delivered ${delivered} to ${dest.name}`;
   // What this convoy left with (not the job as edited since); a deleted job's convoy comes home.
@@ -316,7 +316,7 @@ function disbandAt(state, p, dest, job, what) {
   const v = partyVehicle(state, p);
   if (v) v.loc = { kind: "base", baseId: dest.id };
   for (const m of members) m.location = { kind: "base", baseId: dest.id };
-  mergeKnowledge(state, p.seen, p.spotted);
+  mergeKnowledge(state, p.seen, p.spotted, p);
   removeParty(state, p);
   assignStations(state, dest);
   if (job) {

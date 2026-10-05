@@ -16,7 +16,7 @@ import {
 } from "./sim/supply.js";
 import { treatAtBase } from "./sim/medical.js";
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
-import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView } from "./ui/render.js";
+import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
@@ -66,7 +66,7 @@ const newArmed = () => ({ parties: new Map(), builds: new Set(), crafts: new Set
 // the interface size, the group count and the collapsed panels are the player's preferences and stay.
 const freshUi = () => ({
   started: false, speed: 0, lastSpeed: 1, tab: "bases", selected: -1,
-  planner: null, plannerError: "", routeSetup: null, survivor: null, help: false, cardResult: null, tradeMsg: "",
+  planner: null, plannerError: "", routeSetup: null, survivor: null, cardResult: null, tradeMsg: "",
   baseView: null, baseMsg: "", moveParty: null, moveMsg: "", supplyForm: null, supplyError: "",
   expedition: null, xpMsg: "", xpQueue: false, moveQueue: false, // team panel and order queue
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
@@ -120,7 +120,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade);
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || ui.help || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -327,12 +327,14 @@ function bannerHTML() {
   if (ui.speed === 0) {
     const waiting = armedList(state, ui);
     const n = waiting.length;
-    html += `<div class="paused"><b class="big">Paused</b>— press <b>Space</b> or pick a speed to run. Orders you give now start when you unpause.` +
+    // One short line; the rest is a hover description and Help → Time ("?").
+    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b> <b>Space</b> to run` +
       `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
+      `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
   }
   if (ui.moveParty) {
-    html += `<div class="movemode">Move mode: <b>left-click a tile</b> to ${ui.moveQueue ? "add a move to the team's queue" : "send the team there"}. The clock waits until you pick. <b>Esc</b> cancels.` +
+    html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
   }
   return html;
@@ -450,8 +452,7 @@ const actions = {
   },
   "dev-persona": (d) => { setPersonality(state, d.v); },
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
-  help: () => { ui.help = true; },
-  closehelp: () => { ui.help = false; },
+  help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
   // Base management.
   openbase: (d) => {
@@ -1095,7 +1096,8 @@ canvas.addEventListener("contextmenu", (e) => {
   const own = state.bases.some((b) => b.tile === id);
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
-  menu.innerHTML = `<div class="head">${esc(t.loc ? t.loc.name : `Tile ${t.x},${t.y}`)}</div>` +
+  const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
+  menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     ctxBoats(waiting, id) +
     (acts.length ? acts.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}">${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
@@ -1211,7 +1213,6 @@ function closeTopLayer() {
   }
   if (ui.roster) { ui.roster = null; return true; }
   if (ui.diary) { ui.diary = null; return true; }
-  if (ui.help) { ui.help = false; return true; }
   if (ui.moveParty != null) { endMoveMode(); return true; }
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
   return false;

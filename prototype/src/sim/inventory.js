@@ -26,8 +26,12 @@ export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "
 export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo" };
 const INV_VERSION = 1;
 
-// Odd things the dead still carry (a zombie body has one now and then).
-const ZOMBIE_FINDS = ["knife", "knife", "bandagekit", "pistol", "padding"];
+// Odd things the dead still carry in their pockets (a zombie body has one now and then).
+export const ZOMBIE_FINDS = ["knife", "knife", "bandagekit", "pistol", "padding", "phone", "phone", "photos", "goldring", "watch", "smokes", "lighters", "candy", "batteries", "baton"];
+// Some of the dead still wear a bag (ZOMBIE_PACK of them): a sling bag or a school backpack with a few things inside.
+export const ZOMBIE_PACK = 0.08;
+export const ZOMBIE_PACKS = ["slingbag", "slingbag", "backpack"];
+export const ZOMBIE_PACK_STUFF = ["chocolate", "candy", "phone", "photos", "novel", "magazines", "batteries", "lighters", "toiletpaper", "bandagekit", "knife", "flashlight", "smokes", "instcoffee", "cards", "soap"];
 
 export function newItem(key, quality = 1) {
   const d = GEAR[key];
@@ -238,6 +242,14 @@ export function itemAt(state, str) {
   const r = ref(state, parseLoc(str));
   return r ? r.get() : null;
 }
+// Takes the item at a location away for good (a treat used up, comforts.js). Returns it, or null.
+export function removeAt(state, str) {
+  const r = ref(state, parseLoc(str));
+  const it = r ? r.get() : null;
+  if (it) r.remove(it);
+  return it;
+}
+export const placeOfLoc = (state, loc) => placeOf(state, typeof loc === "string" ? parseLoc(loc) : loc);
 
 // Can a team take on `gained` kg (an item from a body) while losing `lost` kg of max load (a pack taken off)?
 // Moving things between its people and its cargo weighs nothing extra: the team's load is one pool (load.js).
@@ -364,6 +376,12 @@ export function enemyBody(rng, u, kit) {
     if (rng.chance(0.12)) add("ammo", rng.int(2, 6));
     if (rng.chance(0.05)) add("meds", 1);
     if (rng.chance(0.06)) stow(body, newItem(rng.pick(ZOMBIE_FINDS), rng.pick([0.5, 0.7, 0.85])), "");
+    if (rng.chance(ZOMBIE_PACK)) {
+      const pack = newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]));
+      const n = rng.int(1, Math.min(3, pack.contents.length));
+      for (let i = 0; i < n; i++) pack.contents[i] = newItem(rng.pick(ZOMBIE_PACK_STUFF), rng.pick([0.6, 0.8, 1]));
+      body.gear.backpack = pack;
+    }
     return body;
   }
   add("ammo", rng.int(3, 10));
@@ -375,6 +393,7 @@ export function enemyBody(rng, u, kit) {
   if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = newItem(u.armorKey, rng.pick([0.4, 0.55, 0.7]));
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = newItem(kit.pack[0], rng.pick([0.7, 0.85]));
   if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1])), "");
+  if (kit && kit.finds && rng.chance(0.2)) stow(body, newItem(rng.pick(kit.finds), 1), ""); // pockets: smokes, a ring (combat.js KITS finds)
   return body;
 }
 export const allyBody = (s, u) => ({ name: s.name, kind: "ally", uid: u ? u.id : null, sid: s.id, supplies: {} });

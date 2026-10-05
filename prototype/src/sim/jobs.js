@@ -39,6 +39,7 @@
 // or more bases, one of their outposts handed over to you with two of their people as its staff.
 import { GEAR, SUPPLIES, SUPPLY_KEYS, LOCATIONS } from "./data.js";
 import { day, log, hub, factionById, addCard, atBase, snapshot, skill, combatPower, makeSurvivor, newId } from "./world.js";
+import { siteKnown } from "./discovery.js";
 import { attitude, changeGoodwill, isAggressiveType, recomputeOwnership } from "./factions.js";
 import { partyMembers, partyTile, tileLabel, carried, takeSupply, planPath, spawnAiParty, awaitOrders, outpostName } from "./parties.js";
 import { canRadioGroup, tradeBase } from "./radio.js";
@@ -301,6 +302,8 @@ export function acceptJob(state, id) {
   job.deadline = day(state) + JOB_TYPES[job.type].days;
   ensureJobs(state).stats.accepted++;
   f.lastDiplomacy = day(state);
+  // A pick-up at a place you have not found (discovery.js): they show you where it is (via: not your own scouting).
+  if (job.type === "retrieve" && job.data && job.data.site != null && !siteKnown(state, job.data.site)) state.knowledge[job.data.site] = { ...snapshot(state, job.data.site), via: "job" };
   log(state, `Job taken for ${f.name}: ${JOB_TYPES[job.type].name.toLowerCase()} (by day ${job.deadline}).`, "info");
   return `Job accepted: ${job.title}. Deadline day ${job.deadline}.`;
 }

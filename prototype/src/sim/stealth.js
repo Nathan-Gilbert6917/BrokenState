@@ -10,7 +10,9 @@
 //   throwables: a bottle, a noise maker or firecrackers (1 action, thrown up to 7–8 tiles) pull every unaware guard
 //     and the dead within 6 / 8 / 13 tiles to the spot: they walk over and look around for 3 turns (the AI's
 //     "investigate" state), then go back to their beat. A noise maker keeps ringing for 3 turns; firecrackers also
-//     add 6 Heat in a raid.
+//     add 6 Heat in a raid. A road flare is a lure that also lights the ground; pipe bombs, Molotovs and smoke
+//     grenades are thrown the same way but blow up, burn or blind (throwables.js); a deer call is blown where the
+//     unit stands (a lure on yourself, not used up). Handcuffs make tying up free.
 //   bodies: a guard who sees a body or a tied-up comrade within 5 tiles (3 at night) raises the alarm for its group
 //     (+6 Heat in a raid). Drag (1 action) moves a body, a knocked-out enemy or a downed teammate up to 3 tiles.
 //   suppressor: carried by the shooter (anywhere on them), it fits a pistol, hunting rifle or assault rifle: shots
@@ -25,6 +27,7 @@ import {
   CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage,
 } from "./combat.js";
+import { landEffect, blastSpot, BLAST, FIRE } from "./throwables.js";
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3,
@@ -32,13 +35,22 @@ export const STEALTH = {
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
-const CLUB = { spikedbat: 20, pipespear: 5, knife: 10, machete: 10, sawmachete: 10, fists: 5 }; // guns: a butt stroke, +5
-export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar"];
+const CLUB = { spikedbat: 20, pipespear: 5, knife: 10, machete: 10, sawmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
+export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
+// Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
+// look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
 export const THROWABLES = {
   bottle:      { radius: 6,  turns: 1, heat: 0, range: 7, label: "a bottle" },
   noisemaker:  { radius: 8,  turns: 3, heat: 0, range: 7, label: "a noise maker" },
   firecracker: { radius: 13, turns: 1, heat: 6, range: 8, label: "a string of firecrackers" },
+  flare:       { radius: 10, turns: 4, heat: 2, range: 8, label: "a road flare", fx: "flare" },
+  pipebomb:    { radius: 0, turns: 0, heat: 10, range: 6, label: "a pipe bomb", fx: "blast" },
+  molotov:     { radius: 0, turns: 0, heat: 4, range: 6, label: "a Molotov cocktail", fx: "fire" },
+  smokegren:   { radius: 0, turns: 0, heat: 0, range: 7, label: "a smoke grenade", fx: "smoke" },
+  gamecall:    { radius: 7, turns: 1, heat: 0, range: 0, label: "the deer call", self: true, keep: true },
 };
+// The lures the raid bot throws to pull guards away (botStealth), in order.
+const LURES = ["bottle", "noisemaker", "firecracker"];
 export const THROW_KEYS = Object.keys(THROWABLES);
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -249,6 +261,9 @@ export function stealthAct(state, b, u, t, act) {
       if (!t || t.side !== "enemy" || !t.ko || t.dead || !adjacent(u, t)) return "Tie up someone knocked out, right next to you.";
       if (t.tied) return "Already tied up.";
       t.tied = true;
+      // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.
+      const cuffs = findCarried(survivorById(state, u.sid), "cuffs");
+      if (cuffs) { cuffs.take(); say(b, `${u.name} cuffs ${t.name} in a moment.`, "good"); return ""; }
       u.ap -= 1;
       say(b, `${u.name} ties up ${t.name}.`, "good");
       return "";
@@ -258,20 +273,25 @@ export function stealthAct(state, b, u, t, act) {
       const key = act.item && have[act.item] ? act.item : THROW_KEYS.find((k) => have[k]);
       if (!key) return "Nothing to throw.";
       const T = THROWABLES[key];
-      const x = Number(act.x), y = Number(act.y);
+      const x = T.self ? u.x : Number(act.x), y = T.self ? u.y : Number(act.y);
       if (!(x >= 0 && y >= 0 && x < b.w && y < b.h)) return "Throw it where?";
       const d = dist(u.x, u.y, x, y);
-      if (d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
-      if (d < 2) return "Throw it further away.";
-      if (!takeThrowable(state, b, u, key)) return "Nothing to throw.";
+      if (!T.self && d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
+      if (!T.self && d < 2) return "Throw it further away.";
+      if (!T.keep && !takeThrowable(state, b, u, key)) return "Nothing to throw.";
       u.ap -= 1;
       u.hunker = false;
-      const lure = { x, y, key, turns: T.turns, radius: T.radius, id: b.nextId++ };
-      b.lures.push(lure);
-      fx(b, { type: "throw", from: [u.x, u.y], to: [x, y], item: key });
+      let n = 0;
+      if (T.radius) {
+        const lure = { x, y, key, turns: T.turns, radius: T.radius, id: b.nextId++ };
+        b.lures.push(lure);
+        n = pull(b, lure);
+      }
+      if (!T.self) fx(b, { type: "throw", from: [u.x, u.y], to: [x, y], item: key });
       if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
-      const n = pull(b, lure);
-      say(b, `${u.name} throws ${T.label}. ${n ? `${n} of them turn toward the noise.` : "Nothing seems to hear it."}${T.heat && b.raid ? " The bangs raise Heat." : ""}`, n ? "good" : "info");
+      const extra = T.fx ? landEffect(b, u, T, x, y) : "";
+      const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : " Nothing seems to notice.") : "";
+      say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, n || extra ? "good" : "info");
       return "";
     }
     case "drag": {
@@ -424,7 +444,7 @@ export function botStealth(state, b, u, combatAct) {
   }
   if (b.botThrowTurn === b.turn) return false;
   const have = throwablesOf(state, b, u);
-  const key = ["bottle", "noisemaker", "firecracker"].find((k) => have[k]);
+  const key = LURES.find((k) => have[k]);
   if (!key) return false;
   const near = foes.filter((e) => !e.aware && !e.investigate && dist(u.x, u.y, e.x, e.y) <= 6);
   if (!near.length) return false;
@@ -441,4 +461,37 @@ export function botStealth(state, b, u, combatAct) {
   if (!best) return false;
   b.botThrowTurn = b.turn;
   return !combatAct(state, { type: "throw", unit: u.id, item: key, x: best.x, y: best.y });
+}
+
+// ---------- the AI's attacks with throwables (combat.js autoPlayerTurn) ----------
+// One throw a turn for the whole side: a pipe bomb, else a Molotov, on three or more aware enemies bunched within
+// a tile of each other with none of yours close (throwables.js blastSpot). Returns true if the unit threw.
+export function botAttackThrow(state, b, u) {
+  if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
+  const have = throwablesOf(state, b, u);
+  for (const key of ["pipebomb", "molotov"]) {
+    if (!have[key]) continue;
+    const spot = blastSpot(b, u, THROWABLES[key].range, key === "pipebomb" ? BLAST.r : FIRE.r);
+    if (!spot) continue;
+    b.botAttackTurn = b.turn;
+    return !stealthAct(state, b, u, null, { type: "throw", item: key, x: spot.x, y: spot.y });
+  }
+  return false;
+}
+
+// Before the AI sounds the retreat: a smoke grenade over the middle of the team still off the strip (it covers
+// everyone within 4 tiles of it). Returns true if one was thrown.
+export function botRetreatSmoke(state, b, inEvac) {
+  const mine = b.units.filter((u) => u.side === "player" && active(u));
+  const out = mine.filter((u) => !inEvac(b, u.x));
+  if (!out.length) return false;
+  const cx = Math.round(out.reduce((a, u) => a + u.x, 0) / out.length), cy = Math.round(out.reduce((a, u) => a + u.y, 0) / out.length);
+  for (const u of mine) {
+    if (u.ap < 1 || !throwablesOf(state, b, u).smokegren) continue;
+    const d = dist(u.x, u.y, cx, cy);
+    const x = d < 2 ? Math.min(b.w - 1, u.x + 2) : cx, y = cy;
+    if (dist(u.x, u.y, x, y) > THROWABLES.smokegren.range) continue;
+    return !stealthAct(state, b, u, null, { type: "throw", item: "smokegren", x, y });
+  }
+  return false;
 }
