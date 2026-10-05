@@ -167,7 +167,7 @@ export function finishCombat(state, setup, result) {
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
   state.resolving = (state.resolving || 0) + 1;
   try {
-    if (fn) fn(state, result, setup);
+    if (fn) fn(state, result, setup, battle); // battle: the map it was played on, or null (citycrawl.js keeps a building as it was left)
   } finally {
     state.resolving -= 1;
   }
@@ -2507,7 +2507,8 @@ export function createRaid(state, setup) {
     map.areas = map.rooms;
   } else {
     W = RAID_W; H = RAID_H;
-    const types = rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
+    // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : rng.shuffle(raidAreasFor(tile).slice()).slice(0, rng.int(3, 5));
     map = genRaidMap(rng, tile, types, withVehicle);
   }
   const b = {

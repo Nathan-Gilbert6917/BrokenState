@@ -29,6 +29,8 @@ import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } 
 import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, storeCellHtml } from "./farming.js";
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
+import { activeCrawl } from "../sim/citycrawl.js";
+import { crawlModal } from "./citycrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count,
@@ -515,6 +517,7 @@ function pickModal(state, ui) {
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
   if (state.gameOver) return ["over", () => gameOverScreen(state)];
   if (state.cards.length) return ["card", () => cardModal(state, state.cards[0])];
+  if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
   if (state.trade && !state.autopilot) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js
   if (ui.diplo) return ["diplo", () => diplomacyModal(state, ui)]; // ui/diplomacy.js: jobs, market board, world affairs, coalition (over the radio panel)

@@ -18,6 +18,7 @@ import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
+import { crawlTile, startCrawl } from "./citycrawl.js";
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -89,6 +90,8 @@ export function startScavenge(state, p) {
   }
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
+    // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot).
+    if (crawlTile(t) && p.owner === "player") return startCrawl(state, p);
     const groups = raidEnemies(state, p.dest);
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
