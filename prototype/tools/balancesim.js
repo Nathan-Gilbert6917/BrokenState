@@ -358,7 +358,7 @@ function yearByYear(results, days, groups, say) {
   const at = (r, d) => { let best = null; for (const s of r.samples) if (s.day <= d) best = s; return best; };
   say("## Year by year");
   say();
-  say("When the victory conditions were first met (eras.js: the coalition holding over half the land with every group a member; every hive gone and none building), median day and runs; the victory then needs the Accord (a year held) or the containment (a season clear), and year 6:");
+  say("When the victory conditions were first met (eras.js: the coalition holding over half the land with every group a member; every hive gone and none building), median day and runs; the victory then needs the Accord (a year held) or the containment (a season clear), and year 8 (eras.js WIN_FROM_YEAR):");
   say();
   say(table(["Style", "Coalition conditions first met", "Year", "Hives first all gone", "Year", "Victory (median day)", "Year"], groups.map(([s, L]) => {
     const a = L.map((r) => r.era && r.era.accordFirst).filter((v) => v != null), c = L.map((r) => r.era && r.era.clearFirst).filter((v) => v != null);

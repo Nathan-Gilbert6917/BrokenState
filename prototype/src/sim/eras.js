@@ -1,7 +1,7 @@
 // Eras: how the threats and the two victories change over the years of a campaign. Every number is here.
 //
 // Years are the game's calendar years (weather.js: four seasons of 28 days = 112 days; day 1 is day 15 of spring,
-// so year 1 is days 1–98, year 2 starts on day 99, year 5 on day 435, year 6 on 547, year 10 on 995, year 15 on 1555).
+// so year 1 is days 1–98, year 2 starts on day 99, year 5 on day 435, year 8 on 771, year 10 on 995, year 15 on 1555).
 //
 // The three eras
 // - Early game (years 1–2): the first winters. Medium hordes at the gates, small raids sized to your walls, a few
@@ -19,8 +19,9 @@
 //   9 in year 7, 12–15 by years 12–15 when nobody destroys them.
 //
 // Winning (world.js checkGameOver)
-// - Neither victory comes before year WIN_FROM_YEAR (6): until the fifth winter is over the outbreak still burns
-//   beyond the borders and nobody in the state would sign anything. The Goals panel says so.
+// - Neither victory comes before year WIN_FROM_YEAR (8, the start of the late game, day 771): the state is not won in
+//   the long war. Until then the outbreak still burns beyond the borders and nobody would sign anything. The Goals
+//   panel says so.
 // - Coalition victory = the Calder Accord: the coalition holds more than half the land with every group still
 //   standing a member (alliance.js), and it has to KEEP that for ACCORD.DAYS days (a year: four seasons). Each day
 //   the condition holds counts one; a day it does not takes ACCORD.DECAY back (a new gang settling, a member
@@ -58,7 +59,7 @@ export const ERAS = {
   LATE_MIN_AGG: 2,        // from the late game at least this many hostile aggressive groups (factions.js newGangs; RAIDS.MIN_AGG = 2 before)
   LATE_RAIDER_BANDS: 0,   // more outsider raider bands on the map at a time from the late game (visitors.js caps)
   ALLY_LATE: 1,           // from the late game every coalition member sends one more fighter to your hive and base assaults (alliance.js)
-  WIN_FROM_YEAR: 6,
+  WIN_FROM_YEAR: 8,
   ACCORD: { DAYS: 112, DECAY: 2, SEASONS: 12, GRACE: 56 },
   CONTAIN: { DAYS: 28 },
   // The outbreak beyond the border (outbreak.js): while it burns, a new hive is seeded near the border DELAY days

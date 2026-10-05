@@ -1,9 +1,9 @@
 // Eras (src/sim/eras.js, outbreak.js): the calendar (game years of 112 days, as weather.js), the threats growing by
 // year (hordes, the aggressive groups' arms, recruits and new gangs, outsider raider bands), the victories' clocks
-// (no victory before year 6, the Calder Accord held for a year, the hive victory only once the outbreak beyond the
+// (no victory before year 8, the Calder Accord held for a year, the hive victory only once the outbreak beyond the
 // border has burned out and the state has been kept clear for a season), new hives rising near the border while
 // it burns, and then a short long-run check: autopilot campaigns (one per style) to the end of year 6 — no victory
-// before year 6, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
+// before year 8, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
 // Usage: node tools/eratest.js [days=658] (the long-run part; 658 = the last day of year 6)
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
