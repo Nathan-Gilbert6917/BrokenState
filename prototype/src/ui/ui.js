@@ -26,7 +26,7 @@ import { snapshot } from "../sim/world.js";
 const specialTip = (mix) => Object.keys(mix || {}).filter((k) => ZTYPES[k]).map((k) => `${ZTYPES[k].name}: ${ZTYPES[k].special} Counter: ${ZTYPES[k].counter}`).join(" · ");
 import { ERAS } from "../sim/eras.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
-import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, storeCellHtml } from "./farming.js";
+import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, storeCellHtml, upkeepCellHtml } from "./farming.js";
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { activeCrawl } from "../sim/citycrawl.js";
@@ -188,6 +188,7 @@ function renderBases(state) {
         <div${tip("Noise and light that draw hordes. Workshop operators add 3 each.")}>Heat</div><div>${baseHeat(state, b)}</div>
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (crops ripen in batches)")}>Food</div>${foodCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
+        <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         <div>Building</div><div>${job ? `${BUILDINGS[job.type].name}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
         ${supplySummary(state, b)}
         ${caravanLines(state, b)}
@@ -1138,6 +1139,7 @@ function baseOverview(state, b) {
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         <div${tip("Where the fresh food is kept and what spoils a day (storage room: cellars, storehouse, cold store; above it, food is stored outside and spoils fast), and the preserved stock")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
+        <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         ${crowdingRow(state, b)}
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
       </div>

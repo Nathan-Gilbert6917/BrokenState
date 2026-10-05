@@ -7,6 +7,7 @@ import {
   cropForecast, winterOutlook,
 } from "../sim/farming.js";
 import { foodOutlook, waterOutlook, RATION, RATION_DAYS, WATER, summerWater, summerWaterOk, summerFixText, SUMMER } from "../sim/economy.js";
+import { useText, perHeadText } from "../sim/upkeep.js";
 import { THIRST } from "../sim/weather.js";
 import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
@@ -22,12 +23,37 @@ const days = (d) => (!isFinite(d) ? "∞" : d >= 99 ? "99+" : n0(d));
 const SEASON_NAMES = { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" };
 
 // ---------- short lines (Bases list, overview, top bar) ----------
+// Upkeep per head × heads (sim/upkeep.js): "6 people × 1.0 = 6.0" for food, the same for water with the day's thirst
+// (+ dysentery), and who else eats here (prisoners, guests, a holding convoy's crew, the dog).
+export const foodUseText = (o) => useText(o.use);
+export function waterUseText(need) {
+  const parts = [];
+  const g = perHeadText;
+  if (need.n) parts.push(g(need.n, need.n === 1 ? "person" : "people", need.rate));
+  if (need.sick) parts.push(`dysentery ${n1(need.sick)}`);
+  if (need.nPrisoners) parts.push(g(need.nPrisoners, need.nPrisoners === 1 ? "prisoner" : "prisoners", need.rate));
+  if (need.nGuests) parts.push(g(need.nGuests, need.nGuests === 1 ? "guest" : "guests", need.rate));
+  if (need.nCrew) parts.push(g(need.nCrew, "convoy crew", need.rate));
+  if (!parts.length) return "nobody here";
+  const drink = need.people + need.prisoners + need.guests;
+  return parts.length === 1 ? parts[0] : `${parts.join(" + ")} (${(Math.round(drink * 10) / 10).toFixed(1)})`;
+}
+export function upkeepLine(state, b) {
+  const fo = foodOutlook(state, b);
+  const need = waterOutlook(state, b).need;
+  const food = foodUseText(fo), water = waterUseText(need);
+  const cold = fo.use.cold > 1 ? ` The cold: everyone eats ${Math.round((fo.use.cold - 1) * 100)}% more today.` : "";
+  const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's. Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
+  return { food, water, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)} a day`, tip: tipText };
+}
+export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div></div>`; };
+
 // Food: the forecast line that replaces "food per day".
 export function foodLine(state, b) {
   const o = foodOutlook(state, b);
   const sl = storeLine(state, b);
   const next = o.harvests[0];
-  const text = `${n0(o.stock)} in store (${n0(o.fresh)} fresh + ${n0(o.preserved)} preserved) · eaten ${n1(o.eat)}/day · spoils ${n1(o.spoil)}/day${o.used > 0.05 ? ` · workshops ${n1(o.used)}/day` : ""} · ${days(o.daysLeft)} days left without harvests`;
+  const text = `${n0(o.stock)} in store (${n0(o.fresh)} fresh + ${n0(o.preserved)} preserved) · eaten ${foodUseText(o)} a day · spoils ${n1(o.spoil)}/day${o.used > 0.05 ? ` · workshops ${n1(o.used)}/day` : ""} · ${days(o.daysLeft)} days left without harvests`;
   const nextText = next ? `next harvest: ${next.name} in ${next.inDays} day${next.inDays === 1 ? "" : "s"} (~${n0(next.food)} food)` : "nothing growing";
   const why = `Crops do not give food every day: each plot is harvested once, when it ripens (Farming tab). ${text}. Fresh food ${sl.short}. Expected from the plots over the next 30 days: about ${n1(o.farm)} a day. ${nextText}.${b.rationing ? ` On short rations (${Math.round(RATION * 100)}%): under ${RATION_DAYS} days of food.` : ""}${o.store.outside >= 1 ? " The stores are full: food stored outside spoils fast." : ""} Loot brought home by teams and convoys comes on top. ${sl.tip}`;
   const cls = o.daysLeft < 7 || o.store.outside >= 1 ? "danger" : o.daysLeft < 20 ? "" : "good";
@@ -51,7 +77,7 @@ export function waterLine(state, b) {
   const o = waterOutlook(state, b);
   const p = o.prod;
   const ins = [`well ${n1(p.own)}`, p.stream ? `stream ${n1(p.stream)}` : "", p.wells ? `wells ${n1(p.wells)}` : "", p.rain ? `rain ${n1(p.rain)}` : "", p.filters ? `filters ${p.filters}` : ""].filter(Boolean).join(", ");
-  const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: people ${n1(o.need.people)} (${drinkNote(o.need)})${o.need.prisoners ? `, prisoners ${n1(o.need.prisoners)}` : ""}, crops ${n1(o.need.crops)} (none on a rainy day${o.need.season === "summer" ? ", a fifth more in summer" : ""}). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. People drink 1 a day in spring and autumn, ${THIRST.summer} in summer, ${THIRST.winter} in winter and at least ${THIRST.heat} on a hot day. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds ${WATER.filter} a day and cuts dysentery.`;
+  const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: ${waterUseText(o.need)} (${drinkNote(o.need)}), crops ${n1(o.need.crops)} (none on a rainy day${o.need.season === "summer" ? ", a fifth more in summer" : ""}). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. People drink 1 a day in spring and autumn, ${THIRST.summer} in summer, ${THIRST.winter} in winter and at least ${THIRST.heat} on a hot day. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds ${WATER.filter} a day and cuts dysentery.`;
   const cls = o.daysLeft < 5 ? "danger" : o.net < 0 ? "" : "good";
   return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}`, tip: why };
 }
@@ -153,7 +179,7 @@ export function baseFarming(state, b) {
         <div${tip(wxTip)}>Season</div><div${tip(wxTip)}>${esc(wx || (s ? s.name : ""))}</div>
         <div>Food in store</div><div class="${fo.daysLeft < 7 ? "danger" : ""}">${n0(fo.stock)} <span class="muted">(${n0(fo.fresh)} fresh + ${n0(fo.preserved)} preserved)</span>${b.rationing ? " · <b>short rations</b>" : ""}</div>
         <div${tip(sl.tip)}>Storage</div><div class="${sl.cls}"${tip(sl.tip)}>${esc(sl.short)}<div class="small muted">${esc(sl.pres)}</div></div>
-        <div${tip("What everyone living here eats a day (more in the cold)")}>Eaten</div><div>${n1(fo.eat)} a day</div>
+        <div${tip("What everyone fed from these stores eats a day: a ration a person × the people here (more in the cold; prisoners, guests and a holding convoy's crew eat here too). People away on a team eat the team's supplies.")}>Eaten</div><div>${esc(foodUseText(fo))} a day</div>
         <div${tip(`Fresh food spoils ${n1(fo.store.rate * 100)}% a day on average now (by where it is stored), preserved food ${n1(fo.store.presRate * 100)}%. ${sl.tip}`)}>Spoiling</div><div class="${fo.store.outside >= 1 ? "danger" : ""}">${n1(fo.spoil)} a day${fo.store.outside >= 1 ? ` (${n1(fo.store.outLoss)} of it outside)` : ""}</div>
         <div${tip("Days the stock lasts at today's rate, with no harvests and no loot")}>Days of food</div><div class="${fo.daysLeft < 7 ? "danger" : fo.daysLeft < 20 ? "" : "good"}">${days(fo.daysLeft)}</div>
         <div>Next harvests</div><div>${harvests || "<span class='muted'>nothing growing</span>"}</div>

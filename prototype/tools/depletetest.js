@@ -11,7 +11,7 @@
 // - Loot left at day 120 / 240 / 365 on five seeds and the group collapse rate, with and without scavenging groups
 //   (each year in a process of its own; the world goes on after the holdout falls, the groups do not stop).
 // - Determinism and a save / load round trip with parties out.
-// Usage: node tools/depletetest.js [seed] [days] [curve seeds, e.g. 1,2,3,4,5]
+// Usage: node tools/depletetest.js [seed] [days] [curve seeds, default 1,2,...,12]
 import { readFileSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,10 @@ import { tileTooltip } from "../src/ui/render.js";
 const CURVE = process.argv[2] === "--curve"; // child process: one year on a seed, scavenging groups on or off
 const seed = Number(process.argv[CURVE ? 3 : 2] || 42);
 const days = Number(process.argv[CURVE ? 5 : 3] || 365);
-const curveSeeds = (process.argv[4] || "1,2,3,4,5").split(",").map(Number).filter(Number.isFinite);
+// Twelve seeds: on five the collapse rate is mostly dice (a group collapsing or not swings a seed by ±4 of 8): an
+// unrelated change (breakoff.js WEAR, fights by the numbers that break off) moved it from 0.20 → 0.28 to 0.23 → 0.40,
+// past the +0.15, while on twelve it stayed put (0.23 → 0.33 before, 0.27 → 0.38 after).
+const curveSeeds = (process.argv[4] || "1,2,3,4,5,6,7,8,9,10,11,12").split(",").map(Number).filter(Number.isFinite);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);

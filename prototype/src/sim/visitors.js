@@ -105,6 +105,8 @@ import { rumourFromNews } from "./survey.js";
 import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS, raidPaceOpen, noteRaid, outsiderPrep } from "./eras.js";
 import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 import { hcNoRaiders } from "./hardcore-groups.js";
+import { UPKEEP, coldFactor } from "./upkeep.js";
+import { eatFromStore } from "./storage.js";
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -1448,7 +1450,9 @@ export const scoutPrice = (v) => Math.round(12 + Math.min(60, new Set(v.trail).s
 function shelterDay(state, v) {
   const base = baseById(state, v.shelterBase);
   if (!base) return endShelter(state, v);
-  base.stock.food = Math.max(0, (base.stock.food || 0) - v.size);
+  // Per head, as anyone at the base (upkeep.js): food times the cold, fresh then preserved; water times the day's thirst.
+  eatFromStore(base, v.size * UPKEEP.guest * coldFactor(state));
+  base.stock.food = Math.max(0, base.stock.food || 0);
   base.stock.water = Math.max(0, (base.stock.water || 0) - v.size * thirstAt(state)); // the day's thirst (weather.js)
 }
 function endShelter(state, v) {

@@ -4,6 +4,8 @@
 // bases, camera spots, the diary and the roster.
 import { day, alive, residents, survivorById, baseById } from "../sim/world.js";
 import { foodOutlook, waterOutlook } from "../sim/economy.js";
+import { useText } from "../sim/upkeep.js";
+import { waterUseText } from "./farming.js";
 import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
 import { moodRisk } from "../sim/morale.js";
@@ -54,13 +56,13 @@ const SECTIONS = {
         if (o.daysLeft < 5) {
           // Under 3 days: where food from the land is (sim/foraging.js): "hunt or forage nearby: forest to the east".
           const hint = o.daysLeft < 3 ? baseFoodHint(state, b) : "";
-          out.push({ key: `food:${b.id}`, kind: "food", icon: "🥫", tone: o.daysLeft < 2 ? "danger" : "warn", text: `${b.name}: food for ${Math.max(0, Math.floor(o.daysLeft))} day${Math.floor(o.daysLeft) === 1 ? "" : "s"}${hint ? `: ${hint.replace(/ \(.*\)$/, "")}` : ""}`, tip: `About ${Math.floor(o.stock)} food in store and ${Math.round(o.eat * 10) / 10} eaten a day, not counting harvests to come.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}: put people on the Forage job (Work tab or their role), or send a team to hunt or forage.` : ""} Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
+          out.push({ key: `food:${b.id}`, kind: "food", icon: "🥫", tone: o.daysLeft < 2 ? "danger" : "warn", text: `${b.name}: food for ${Math.max(0, Math.floor(o.daysLeft))} day${Math.floor(o.daysLeft) === 1 ? "" : "s"}${hint ? `: ${hint.replace(/ \(.*\)$/, "")}` : ""}`, tip: `About ${Math.floor(o.stock)} food in store; ${useText(o.use)} eaten a day${o.spoil >= 0.05 ? ` and ${Math.round(o.spoil * 10) / 10} spoiling` : ""}, not counting harvests to come.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}: put people on the Forage job (Work tab or their role), or send a team to hunt or forage.` : ""} Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
         }
       }
       if (b.thirstDays > 0 || (b.stock.water || 0) < 1) out.push({ key: `thirst:${b.id}`, kind: "thirst", icon: "🚱", tone: "danger", text: `${b.name} is out of water`, tip: "Thirst kills faster than hunger: everyone there loses health every day. Wells, rain catchers, filters or a supply run. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {
         const w = waterOutlook(state, b);
-        if (w.daysLeft < 3) out.push({ key: `water:${b.id}`, kind: "water", icon: "💧", tone: w.daysLeft < 1.5 ? "danger" : "warn", text: `${b.name}: water for ${Math.max(0, Math.floor(w.daysLeft))} day${Math.floor(w.daysLeft) === 1 ? "" : "s"}`, tip: `${Math.floor(w.stock)} water in store, ${w.net} a day. Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
+        if (w.daysLeft < 3) out.push({ key: `water:${b.id}`, kind: "water", icon: "💧", tone: w.daysLeft < 1.5 ? "danger" : "warn", text: `${b.name}: water for ${Math.max(0, Math.floor(w.daysLeft))} day${Math.floor(w.daysLeft) === 1 ? "" : "s"}`, tip: `${Math.floor(w.stock)} water in store, ${w.net} a day (in ${w.inflow}; drunk ${waterUseText(w.need)}${w.need.crops ? `, crops ${w.need.crops}` : ""}). Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
       }
     }
   },
