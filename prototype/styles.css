@@ -481,6 +481,8 @@ a.lk:hover { color: var(--accent); text-decoration-style: solid; }
 .settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
 .settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
 #cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }
+#cbpanel .cbview { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0 0 0.4rem; }
+#cbpanel .cbview button { min-width: 1.9rem; }
 
 /* Work tab (ui/work.js): the priority grid, the role editor, the schedule strip and the crews */
 .worktab .wbar { gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.4rem; }

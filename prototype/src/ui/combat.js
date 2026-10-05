@@ -14,6 +14,7 @@ import { bodyEmpty } from "../sim/inventory.js";
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
+import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8" };
 
@@ -29,6 +30,16 @@ export function initCombatUI(cv) {
   canvas = cv;
   ctx = cv.getContext("2d");
 }
+
+// The battle view (ui/isoview.js): "iso" (isometric, the default) or "top" (the flat top-down grid below). Options
+// → Display → Battle view, I in a battle, or the panel's view bar; remembered in this browser.
+const VIEW_KEY = "brokenstate.battleView";
+cui.view = (() => { try { return typeof localStorage !== "undefined" && localStorage.getItem(VIEW_KEY) === "top" ? "top" : "iso"; } catch { return "iso"; } })();
+export function setBattleView(v) {
+  cui.view = v === "top" ? "top" : "iso";
+  try { localStorage.setItem(VIEW_KEY, cui.view); } catch { /* this session only */ }
+}
+const isIso = () => cui.view !== "top";
 
 // ---------- helpers ----------
 const players = (b) => b.units.filter((u) => u.side === "player");
@@ -79,6 +90,7 @@ const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
 
 // ---------- input ----------
 function cellFromPx(px, py) {
+  if (isIso() && cui.battle) { const c = isoPick(cui.battle, px, py); return c ? { x: c.x, y: c.y } : null; }
   const x = Math.floor((px - geo.ox) / geo.cs), y = Math.floor((py - geo.oy) / geo.cs);
   return x >= 0 && y >= 0 && x < W && y < H ? { x, y } : null;
 }
@@ -87,10 +99,46 @@ export function combatMouse(state, px, py) {
   const b = state.combat;
   if (!b) return;
   sync(b);
+  // Dragging pans the isometric view (the click it started is not made).
+  if (cui.drag && isIso()) {
+    const d = cui.drag;
+    if (!d.moved && Math.hypot(px - d.x0, py - d.y0) > 6) d.moved = true;
+    if (d.moved) { isoPan(b, px - d.px, py - d.py); d.px = px; d.py = py; return; }
+  }
+  if (isIso() && canvas) isoEdge(px, py, canvas.clientWidth, canvas.clientHeight, performance.now());
   const c = cellFromPx(px, py);
   cui.hover = c ? { ...c, px, py } : null;
-  const el = document.getElementById("cbprev");
+  const el = typeof document !== "undefined" && document.getElementById("cbprev");
   if (el) el.innerHTML = previewHtml(b);
+}
+export function combatLeave() { cui.hover = null; cui.drag = null; isoEdge(null); }
+
+// The mouse on the battle map (main.js): in the isometric view a press that moves pans the view and a press that
+// does not is a click (left: the usual click; right: cancel the current action); the top-down view clicks at once.
+// Returns true when the press was a click main.js should act on now.
+export function combatPress(state, px, py, button) {
+  if (!state.combat) return false;
+  if (!isIso()) return button === 0;
+  cui.drag = { x0: px, y0: py, px, py, moved: false, button };
+  return false;
+}
+export function combatRelease(state, px, py) {
+  const d = cui.drag;
+  cui.drag = null;
+  if (!state.combat || !isIso() || !d) return null;
+  return d.moved ? "drag" : d.button === 0 ? "click" : d.button === 2 ? "cancel" : null;
+}
+export function combatWheel(state, px, py, dy) {
+  const b = state.combat;
+  if (!b || !isIso()) return false;
+  sync(b);
+  isoZoom(b, dy < 0 ? 1 : -1, px, py);
+  return true;
+}
+// Selecting a unit that is off screen brings the camera to it.
+function follow(b) {
+  const u = selUnit(b);
+  if (u && isIso() && !isoOnScreen(b, u.x, u.y)) isoCenterOn(b, u.x, u.y);
 }
 
 function act(state, a) {
@@ -279,10 +327,30 @@ export function retreatConfirmHtml(b, plan) {
     <button data-action="cb-retreat" data-v="cancel" data-tip="Close this and keep fighting. (Esc)">Keep fighting</button></div></div>`;
 }
 
+// The view's keys: I switches isometric / top-down; in the isometric view , and . turn it, + and − zoom, V centers on
+// the selected unit, B shows or hides the roofs, the arrow keys pan (held).
+const PAN_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
+function viewKey(state, b, e) {
+  if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (e.code === "KeyI" && !e.shiftKey) { setBattleView(isIso() ? "top" : "iso"); return true; }
+  if (!isIso()) return false;
+  if (PAN_KEYS.has(e.code)) { iso.keys.add(e.code); return true; }
+  if (e.code === "Comma" || e.code === "Period") { isoRotate(b, e.code === "Period" ? 1 : -1); return true; }
+  if (e.code === "Equal" || e.code === "NumpadAdd") { isoZoom(b, 1); return true; }
+  if (e.code === "Minus" || e.code === "NumpadSubtract") { isoZoom(b, -1); return true; }
+  if (e.code === "KeyB" && !e.shiftKey) { setRoofs(!iso.roofs); return true; }
+  if (e.code === "KeyV" && !e.shiftKey) { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
+  return false;
+}
+export function combatKeyUp(state, e) {
+  if (PAN_KEYS.has(e.code)) iso.keys.delete(e.code);
+}
+
 export function combatKey(state, e) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
+  if (viewKey(state, b, e)) return true;
   if (b.over) {
     if (e.code === "Enter" || e.code === "Space") { closeCombat(state); return true; }
     return false;
@@ -299,11 +367,12 @@ export function combatKey(state, e) {
     const i = list.findIndex((u) => u.id === cui.sel);
     if (list.length) cui.sel = list[(i + (e.shiftKey ? list.length - 1 : 1)) % list.length].id;
     cui.mode = "move";
+    follow(b);
     return true;
   }
   if (/^Digit[1-9]$/.test(e.code)) {
     const u = players(b)[Number(e.code.slice(5)) - 1];
-    if (u && active(u)) { cui.sel = u.id; cui.mode = "move"; }
+    if (u && active(u)) { cui.sel = u.id; cui.mode = "move"; follow(b); }
     return true;
   }
   // The retreat confirm: Enter gives the order, Space does nothing (too easy to press by habit), Esc closes it.
@@ -326,6 +395,15 @@ export function combatAction(state, key, d) {
   sync(b);
   const u = selUnit(b);
   if (key === "cb-close") return void closeCombat(state, { take: d.take !== "0" });
+  // The view bar (ui/isoview.js).
+  if (key === "cb-view") {
+    if (d.v === "iso" || d.v === "top") setBattleView(d.v);
+    else if (d.v === "rotl" || d.v === "rotr") isoRotate(b, d.v === "rotr" ? 1 : -1);
+    else if (d.v === "roofs") setRoofs(!iso.roofs);
+    else if (d.v === "zin" || d.v === "zout") isoZoom(b, d.v === "zin" ? 1 : -1);
+    else if (d.v === "center" && u) isoCenterOn(b, u.x, u.y);
+    return;
+  }
   if (key === "cb-auto") {
     if (b.acted || b.turn > 1) return;
     state.combat = null;
@@ -353,7 +431,7 @@ export function combatAction(state, key, d) {
     }
     return;
   }
-  if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; return; }
+  if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; follow(b); return; }
   // A base's wall map (sim/interior.js): everyone off the walls, into the yard and the buildings.
   if (key === "cb-fallback") {
     if (d.v === "ask") { cui.fallAsk = fallAskOpen(b) ? null : { turn: b.turn, rev: b.rev }; cui.msg = ""; return; }
@@ -458,7 +536,7 @@ export function renderCombatPanel(state) {
   const phase = b.over ? `<b>${b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
-  let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>`;
+  let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar()}`;
   html += b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
@@ -538,6 +616,20 @@ export function renderCombatPanel(state) {
   </div>
   <div class="small muted" style="margin-top:0.3rem"><button class="${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button></div>`;
   return html;
+}
+
+// The view bar: switch the view; in the isometric view turn, zoom, center, roofs.
+export function viewBar() {
+  const on = isIso();
+  const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
+  let html = `<div class="cbview">${btn(on ? "top" : "iso", on ? "▦ Top-down" : "◇ Isometric", on ? "Show the battle as the flat top-down grid (I). Options → Display → Battle view keeps it." : "Show the battle in the isometric (pseudo-3D) view (I).")}`;
+  if (on) {
+    html += btn("rotl", "⟲", "Turn the view a quarter to the left (,)") + btn("rotr", "⟳", "Turn the view a quarter to the right (.)");
+    html += btn("zout", "−", "Zoom out (− or the mouse wheel)") + btn("zin", "+", "Zoom in (+ or the mouse wheel)");
+    html += btn("center", "◎", "Center on the selected unit (V). Drag the map, hold the arrow keys or push the mouse to the edge to pan.");
+    html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", "Roofs on the buildings (B). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.", iso.roofs);
+  }
+  return `${html}</div>`;
 }
 
 // ---------- raid panel pieces ----------
@@ -857,6 +949,11 @@ export function drawCombat(state, now) {
     canvas.height = Math.round(ch * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (isIso()) {
+    drawIsoView(state, b, now, cw, ch);
+    drawBanner(b, cw, 40);
+    return;
+  }
   const cs = Math.max(16, Math.floor(Math.min((cw - 24) / W, (ch - 60) / H)));
   geo.cs = cs;
   geo.ox = Math.floor((cw - cs * W) / 2);
@@ -1028,8 +1125,39 @@ export function drawCombat(state, now) {
   }
 
   drawFx(b, now, cs);
+  drawBanner(b, cw, cs);
+}
 
-  // Phase banner.
+// The isometric view (ui/isoview.js) with what it needs from here.
+function drawIsoView(state, b, now, cw, ch) {
+  const v = view(b);
+  const plan = retreatAskOpen(b) ? askPlan(b) : null;
+  drawIso(ctx, cw, ch, state, b, now, {
+    v, u: v.u, sel: cui.sel, mode: cui.mode, hover: cui.hover, salt: cui.salt,
+    animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
+    fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return n - cui.anim.get(f.seq); },
+    unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
+    hits: hitLabels(b, v), retreatOpen: !!plan, plan,
+  });
+}
+// The selected unit's hit chance against every enemy in sight (the isometric view shows it over their heads).
+function hitLabels(b, v) {
+  const key = `${v.key}:${cui.mode}`;
+  if (v.hitsKey === key) return v.hits;
+  const u = v.u, out = new Map();
+  if (u && active(u) && u.ap > 0 && b.phase === "player" && !b.over) {
+    for (const t of b.units) {
+      if (t.side !== "enemy" || !active(t) || !v.seen.has(t.id)) continue;
+      const o = odds(b, u, t);
+      if (o && o.ok) out.set(t.id, o);
+    }
+  }
+  v.hitsKey = key; v.hits = out;
+  return out;
+}
+
+// The phase banner at the top of the map.
+function drawBanner(b, cw, cs) {
   const heatTag = b.raid ? ` · HEAT ${HEAT_NAMES[Math.min(3, Math.floor(b.raid.heat / 25))].toUpperCase()}` : "";
   const nightTag = b.night ? " · NIGHT" : "";
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
@@ -1643,10 +1771,8 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   });
 }
 
-// Units slide along their last move.
-function animPos(b, t, now) {
-  const { cs, ox, oy } = geo;
-  const at = (x, y) => [ox + (x + 0.5) * cs, oy + (y + 0.5) * cs];
+// Units slide along their last move: where one is now, in cells (fractions while it moves).
+function animTile(b, t, now) {
   for (let i = b.fx.length - 1; i >= 0; i--) {
     const f = b.fx[i];
     if (f.type !== "move" || f.unit !== t.id) continue;
@@ -1656,9 +1782,14 @@ function animPos(b, t, now) {
     const pts = [f.from, ...f.path];
     const k = el / per, s = Math.floor(k), fr = k - s;
     const a = pts[s], c = pts[Math.min(pts.length - 1, s + 1)];
-    return at(a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr);
+    return [a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr];
   }
-  return at(t.x, t.y);
+  return [t.x, t.y];
+}
+function animPos(b, t, now) {
+  const { cs, ox, oy } = geo;
+  const [x, y] = animTile(b, t, now);
+  return [ox + (x + 0.5) * cs, oy + (y + 0.5) * cs];
 }
 
 function drawFx(b, now, cs) {

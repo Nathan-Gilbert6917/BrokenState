@@ -247,7 +247,7 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
 registerBattleLayout("baseAssault", (b, ctx) => {
   const e = b.setup.enemy || {};
   const walls = e.walls || 0;
-  const X = 10, mid = Math.floor(ctx.H / 2);
+  const X = Math.round((10 * ctx.W) / 18), mid = Math.floor(ctx.H / 2); // column 10 of the old 18-wide map, scaled
   if (ctx.phase === "map") {
     if (walls >= 1) {
       const nBreach = walls <= 2 ? 3 : walls <= 5 ? 2 : 1;

@@ -38,6 +38,7 @@ import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow } from "./defences.js";
 import { battleTypes, mixText } from "./zombietypes.js";
+import { rampDay } from "./eras.js"; // the game day the eras' ramps count by (hardcore: from the normal start)
 
 const hash = (n) => { let x = (n >>> 0) ^ 0x85ebca6b; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return (x ^ (x >>> 16)) >>> 0; };
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -64,7 +65,7 @@ export function growthsOf(state, hive, readyOnly = true) {
 // The tier a hive may grow up to: tier t needs the game past TIER_DAY[t] (× 1 to 1 + JITTER for this hive) and the
 // hive TIER_AGE[t] days old.
 export function hiveTier(state, hive) {
-  const d = day(state), age = (state.hour - (hive.born || 0)) / 24;
+  const d = rampDay(state), age = (state.hour - (hive.born || 0)) / 24;
   const j = 1 + TECH.JITTER * ((hash((hive.id || 0) * 7919 + (state.seed || 1)) % 1000) / 1000);
   let t = 0;
   for (let i = 1; i < TECH.TIER_DAY.length; i++) {
@@ -75,7 +76,7 @@ export function hiveTier(state, hive) {
 }
 // The era by the calendar alone (border hordes).
 export function eraTier(state) {
-  const d = day(state);
+  const d = rampDay(state);
   let t = 0;
   for (let i = 1; i < TECH.TIER_DAY.length; i++) if (d >= TECH.TIER_DAY[i]) t = i;
   return t;
@@ -120,7 +121,7 @@ export function hiveMix(state, hive) {
 }
 // A border horde late in the game: the kinds of the era (by the calendar) at TECH.BORDER_SHARE of their share.
 export function borderMix(state) {
-  if (day(state) < TECH.BORDER_DAY) return null;
+  if (rampDay(state) < TECH.BORDER_DAY) return null;
   const era = eraTier(state);
   const mix = {};
   for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= era) mix[G.unlocks] = Math.round(ZTYPES[G.unlocks].share * TECH.BORDER_SHARE * rollRange(state, 0.5, 1.5, "border", G.unlocks) * 1000) / 1000;
