@@ -486,9 +486,9 @@ export function bossUnit(b, kind) {
   };
 }
 // Puts a unit on a free cell the player side can reach, as far right as possible (from column minX).
-export function placeUnitRight(b, ctx, u, minX) {
+export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
   let best = null;
-  for (let y = 0; y < ctx.H; y++) for (let x = minX; x < ctx.W; x++) {
+  for (let y = 0; y < ctx.H; y++) for (let x = minX; x < Math.min(ctx.W, maxX); x++) {
     if (!ctx.standable(x, y)) continue;
     const score = x - Math.abs(y - ctx.H / 2) * 0.3;
     if (!best || score > best.score) best = { x, y, score };

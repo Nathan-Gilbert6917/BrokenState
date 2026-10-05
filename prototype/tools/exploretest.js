@@ -45,7 +45,7 @@ const dis = (st, c) => (typeof c.disabled === "function" ? c.disabled(st) : !!c.
 // A raid on a site of one of these types (a crew of 3 from the hub), started on its map. opts.picks: lockpicks
 // for the first member; opts.want(b): keep trying seeds until the map has it.
 function raidAt(types, opts = {}) {
-  for (let i = 0; i < 60; i++) {
+  for (let i = opts.from || 0; i < (opts.from || 0) + 60; i++) { // opts.from: start further on, for another world
     const st = createWorld({ seed: seed * 100 + i, factionCount: 6 });
     st.cards.length = 0;
     st.crashNext = 1e9;
@@ -221,7 +221,7 @@ console.log("Locks: the raid bot");
   let opened = 0, tries = 0, raids = 0, timeouts = 0, crashes = 0, doorsOpen = 0;
   const how = {};
   for (let i = 0; i < 24; i++) {
-    const r = raidAt([["police", "gunstore", "pharmacy", "military", "warehouse", "office"][i % 6]], { picks: true });
+    const r = raidAt([["police", "gunstore", "pharmacy", "military", "warehouse", "office"][i % 6]], { picks: true, from: i * 7 }); // 24 different raids, not the same 6 four times
     if (!r) continue;
     const { st, b, setup } = r;
     b.units.filter((x) => x.side === "enemy").forEach((x) => { x.dead = true; });

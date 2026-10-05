@@ -59,7 +59,8 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeO
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
-import { startCombat, registerCombatHandler, registerBattleLayout, winOdds } from "./combat.js";
+import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
+import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { takePrisonersAt, prisonersOf } from "./prisoners.js";
@@ -242,12 +243,18 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
   if (p && state.parties.includes(p) && !wipeIfEmpty(state, p)) awaitOrders(state, p, text);
 });
 
-// Their wall line on the battle map: a palisade at column 10 with the gate and breaches (more breaches the weaker
-// the walls), barricades behind it, the defenders at the wall and further back.
+// Their base's map: Medium for a small group up to Extra-large for a big one (battlesize.js SIZES.ASSAULT, by the people
+// living there).
+registerBattleSize("baseAssault", (state, setup) => assaultDims(setup.enemy));
+// Their wall line: column 10 of the old 18-wide map, scaled, but never further from your people than the usual
+// distance between the sides (battlesize.js CONTACT): on a big map the base's grounds go on behind it.
+const assaultWallX = (ctx) => Math.min(Math.round((10 * ctx.W) / 18), CONTACT.PLAYER_X + CONTACT.HUMANS[0]);
+// Their wall line on the battle map: a palisade with the gate and breaches (more breaches the weaker the walls),
+// barricades behind it, the defenders at the wall and further back.
 registerBattleLayout("baseAssault", (b, ctx) => {
   const e = b.setup.enemy || {};
   const walls = e.walls || 0;
-  const X = Math.round((10 * ctx.W) / 18), mid = Math.floor(ctx.H / 2); // column 10 of the old 18-wide map, scaled
+  const X = assaultWallX(ctx), mid = Math.floor(ctx.H / 2);
   if (ctx.phase === "map") {
     if (walls >= 1) {
       const nBreach = walls <= 2 ? 3 : walls <= 5 ? 2 : 1;
@@ -265,18 +272,29 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     }
     return;
   }
-  // Units: half the defenders at the wall (right behind it), the rest where the battle put them.
+  // Units: half the defenders at the wall (right behind it), the rest where the battle put them (behind it too).
   if (walls < 1) return;
   const foes = b.units.filter((u) => u.side === "enemy");
   let k = 0;
   for (const u of foes) {
-    if (k++ % 2) continue;
+    if (k++ % 2) { behindWall(ctx, u, X); continue; }
     for (let t = 0; t < ctx.H; t++) {
       const y = (u.y + t) % ctx.H;
       if (ctx.standable(X + 1, y)) { u.x = X + 1; u.y = y; break; }
     }
   }
 });
+// A defender the battle put in front of their own wall goes back behind it (X + 2 to X + 7, the nearest free cell).
+function behindWall(ctx, u, X) {
+  if (u.x > X) return;
+  let best = null;
+  for (let y = 0; y < ctx.H; y++) for (let x = X + 2; x <= Math.min(ctx.W - 1, X + 7); x++) {
+    if (!ctx.standable(x, y)) continue;
+    const d = Math.abs(y - u.y) + Math.abs(x - (X + 3)) * 0.5;
+    if (!best || d < best.d) best = { x, y, d };
+  }
+  if (best) { u.x = best.x; u.y = best.y; }
+}
 
 // ---------- taking a base ----------
 const emptyStock = () => ({ food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
