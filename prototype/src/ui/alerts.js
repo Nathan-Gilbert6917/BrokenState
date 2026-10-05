@@ -17,6 +17,7 @@ import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
 import { visitorAlerts } from "./visitors.js";
+import { roadAlerts } from "./hardcore.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -29,6 +30,7 @@ const EVENT_HOURS = 24;             // "building finished" and the like stay up 
 // Each alert: { key, kind, icon, text, tip, tone (danger | warn | good | info), go: { team | base+tab | tile | surv } }.
 const teamLabel = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} (${partyMembers(state, p).map((s) => firstName(s.name)).join(", ")})`;
 const SECTIONS = {
+  road: roadAlerts, // hardcore before the first hub: the team's food and water, what the hub still needs (ui/hardcore.js)
   teams(state, out) {
     for (const p of state.parties) {
       if (p.owner !== "player" || p.kind === "convoy" || p.phase !== "waiting") continue;

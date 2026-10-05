@@ -8,6 +8,7 @@ import { day, factionById, hub } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel } from "../sim/parties.js";
 import { canRadioGroup, hasNetwork } from "../sim/radio.js";
+import { firstHubGoal } from "./hardcore.js";
 import { marketOf, marketBoard, priceTrend, LOT } from "../sim/trade.js";
 import {
   ensureJobs, JOB_TYPES, jobById, jobTile, acceptJob, declineJob, abandonJob, requestPickup, pickupProblem, rewardText, acceptProblem, jobsOf,
@@ -72,6 +73,7 @@ function goalsCard(state, g, compact) {
   const lost = a.lost || [];
   return `<div class="card small"${tip(`Two ways to win, each its own path, neither before year ${e.winFrom}. Destroy every hive (none left standing or being built) and keep the state clear for a season. Or win with the coalition: it holds more than half the land and every group still standing is a member (hives or not), and keeps that up for a year (the Calder Accord). Groups that will not join can be broken: take their bases (Assault their base); a group with no base left is gone and no longer counts.`)}>
     <div class="spread"><b>🏁 Goals</b>${compact ? `<a class="link" data-action="dp-open" data-tab="coalition">details</a>` : ""}</div>
+    ${firstHubGoal(state)}
     ${eraLine}
     <div style="margin-top:0.2rem"><b>Destroy every hive</b></div>
     <div>${hiveLine}</div>

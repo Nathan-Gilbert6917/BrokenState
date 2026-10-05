@@ -46,6 +46,7 @@ import {
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
 import { baseWalls, count } from "./buildings.js";
 import { radioBasesInRange, removeBase } from "./world.js";
+import { playerTile } from "./hardcore-start.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou } from "./diplomacy.js";
@@ -96,8 +97,8 @@ const PREFERRED_SITES = {
 export function createFactions(state, count) {
   const rng = state.rng;
   const g = state.grid;
-  const hubTile = hub(state).tile;
-  const types = ["raider", rng.pick(["military", "fortress"]), rng.pick(["traders", "commune"])];
+  const hubTile = hub(state) ? hub(state).tile : playerTile(state); // hardcore: no hub yet, the team on the road
+  const types =["raider", rng.pick(["military", "fortress"]), rng.pick(["traders", "commune"])];
   const all = Object.keys(FACTION_TYPES);
   while (types.length < count) types.push(rng.pick(all));
   rng.shuffle(types);

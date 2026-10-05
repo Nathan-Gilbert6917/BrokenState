@@ -4,6 +4,7 @@ import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef } from "../sim/worldsize.js";
+import { MODES, isHardcore } from "../sim/hardcore.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -77,7 +78,7 @@ function crewCard(state, ui, s) {
           <button class="mini" data-action="nr-name" data-id="${s.id}"${tip("Random name")}>🎲</button></div>
         <div class="row" style="margin-top:0.3rem">
           <button class="mini ${s.leader ? "active" : ""}" data-action="pickleader" data-id="${s.id}"${tip("The leader's Leadership lifts morale at their base. If they die, you pick a new one.")}>${s.leader ? "★ Leader" : "Make leader"}</button>
-          <span class="small muted">${s.gear.weapon ? esc(s.gear.weapon.name) : ""}${s.gear.armor ? `, ${esc(s.gear.armor.name)}` : ""}</span></div>
+          <span class="small muted">${s.gear.weapon ? esc(s.gear.weapon.name) : ""}${s.gear.armor ? `, ${esc(s.gear.armor.name)}` : ""}${s.gear.backpack ? `${s.gear.weapon || s.gear.armor ? ", " : ""}${esc(s.gear.backpack.name)}` : ""}</span></div>
         <div class="small" style="margin-top:0.2rem">${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
       </div>
     </div>
@@ -114,12 +115,24 @@ function groupOptions(ui) {
   return out.join("");
 }
 
+// Normal or Hardcore (sim/hardcore.js MODES): the mode the world on this screen was built with.
+function modeSelect(state) {
+  const cur = isHardcore(state) ? "hardcore" : "normal";
+  const opts = Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${k === cur ? "selected" : ""}${tip(m.tip)}>${esc(m.label)}</option>`).join("");
+  return `<label${tip(`${MODES[cur].tip}. Changing it builds the world again on the same seed (your edited colonists are kept: the first three in Hardcore).`)}>Mode <select data-action="gamemode">${opts}</select></label>`;
+}
+
 export function newRunScreen(state, ui) {
   const people = state.survivors;
+  const hard = isHardcore(state);
+  const intro = hard
+    ? `Hardcore. The day the State of Calder falls. Three of you get out with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
+    : `Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes.`;
   return `<div class="box wide">
     <h1>Broken State — New run</h1>
-    <div class="text small">Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes. Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
+    <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
+      ${modeSelect(state)}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(ui)}
       <label${tip(`How many other survivor groups share the state (${sizeDef(ui.worldSize).groups.join("–")} on a ${sizeDef(ui.worldSize).label} map)`)}>AI groups <select data-action="factioncount">${groupOptions(ui)}</select></label>

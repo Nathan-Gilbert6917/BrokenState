@@ -13,6 +13,7 @@ import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, worldSizeOf, sizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd, setAutoRedeploy, setBattleView } from "./combat.js";
 import { helpTab } from "./help.js";
+import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -53,7 +54,7 @@ function ago(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${esc(e.hub || "?")} · ${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
+const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.mode === "hardcore" ? "Hardcore · " : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
 
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {
@@ -173,7 +174,7 @@ function aboutTab(state, ui, api) {
   const h = hub(state);
   return `<div class="text small" style="line-height:1.7">
     <b>Broken State</b> prototype ${esc(GAME_VERSION)} · save format ${SAVE_VERSION}${api.desktop ? " · desktop app" : " · browser"}<br>
-    ${ui.started ? `This game: seed <b>${state.seed}</b>, ${sizeDef(worldSizeOf(state)).label} map (${state.grid.width}×${state.grid.height}), ${state.factions.length} other groups, day ${day(state)}, ${h ? esc(h.name) : ""}, ${alive(state).length} alive.` : `New run: seed <b>${state.seed}</b>.`}<br>
+    ${ui.started ? `This game: <b>${esc(modeLabel(state))}</b> mode, seed <b>${state.seed}</b>, ${sizeDef(worldSizeOf(state)).label} map (${state.grid.width}×${state.grid.height}), ${state.factions.length} other groups, day ${day(state)}, ${h ? esc(h.name) : "no hub yet"}, ${alive(state).length} alive.` : `New run: <b>${esc(modeLabel(state))}</b> mode, seed <b>${state.seed}</b>.`}<br>
     A save holds the whole world: map, people, bases, teams and their plans, groups and their diplomacy, hordes and hives, battles under way, the diary and the timelapse recording. A card waiting for an answer cannot be saved: answer it first (the autosave waits for that too). Saves stay in this browser's storage${canCompress() ? " (compressed)" : ""}; use Export or Save to file for a backup.
   </div>`;
 }

@@ -44,6 +44,7 @@ import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
+import { firstHubPending, withYou, foundProblem, foundDesc, payFounding, hubFounded, FOUND_LABEL } from "./hardcore-start.js";
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -70,6 +71,7 @@ export const MISSIONS = {
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
+  flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
@@ -593,7 +595,8 @@ function stepAlong(state, p, speed, hour = state.hour) {
 export const partyTile = (p) => p.path[p.idx];
 
 function updateRadio(state, p) {
-  p.radioLive = radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
+  // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
+  p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
   p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
   if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
 }
@@ -849,7 +852,10 @@ export function orderOptions(state, p) {
   if (fb && captivesOf(state, fb.id).length) add("rescue");
   if (fb) add("assault");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
-  if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
+  if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water" && firstHubPending(state)) {
+    // Hardcore: the first hub takes what the team has gathered (hardcore-start.js).
+    out.push({ mission: "outpost", label: FOUND_LABEL, desc: foundDesc(), disabled: foundProblem(state, p, tile) });
+  } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
     add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
@@ -1044,10 +1050,12 @@ function arrive(state, p) {
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
+      const first = firstHubPending(state); // hardcore: the first hub (hardcore-start.js)
       const need = outpostScrap(state, p.dest);
-      if (t.terrain === "water" || blocked || scrap < need) {
+      const short = first ? foundProblem(state, p, p.dest) : scrap < need ? `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).` : null;
+      if (t.terrain === "water" || blocked || short) {
         awaitOrders(state, p, t.terrain === "water" ? "An outpost cannot be built on water or on a bridge." : mine ? "You already have a base here." :
-          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).`, { failed: true });
+          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : short, { failed: true });
         return "";
       }
       const base = {
@@ -1055,7 +1063,8 @@ function arrive(state, p) {
         stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
         radio: false, watchtower: false, buildings: [], construction: [], armory: [],
       };
-      takeSupply(p, "scrap", need);
+      if (first) payFounding(state, p, takeSupply);
+      else takeSupply(p, "scrap", need);
       if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       addStock(base, p.supplies);
       unloadGame(base, p.cargo);
@@ -1071,6 +1080,7 @@ function arrive(state, p) {
       mergeKnowledge(state, p.seen, p.spotted, p);
       removeParty(state, p);
       recomputeOwnership(state);
+      if (first) { hubFounded(state, base); return `${base.name} founded.`; }
       log(state, `${base.name} founded with ${members.length} staff.`, "good");
       return `${base.name} founded.`;
     }
