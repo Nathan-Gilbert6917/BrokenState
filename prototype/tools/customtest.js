@@ -72,7 +72,7 @@ for (const mode of ["normal", "hardcore"]) for (const c of corners) {
     const t1 = performance.now();
     for (let i = 0; i < DAYS * 24 && !st.gameOver; i++) tickHour(st);
     const perDay = (performance.now() - t1) / DAYS;
-    const ld = loadFromString(saveToString(st));
+    const ld = loadFromString(saveToString(st, { dropCards: st.gameOver })); // a run that fell saves as the game-over autosave does (its last cards dropped)
     check(ld.worldSize === st.worldSize && ld.grid.width === st.grid.width && ld.grid.height === st.grid.height, `${label}: loads as ${ld.worldSize} ${ld.grid.width}×${ld.grid.height}`);
     for (let i = 0; i < 24; i++) tickHour(ld);
     console.log(`  ${label}: built in ${built.toFixed(0)} ms, ${st.factions.length} groups placed, ${st.hives.length} hives on day ${day(st)}, ${alive(st).length} alive, ${perDay.toFixed(0)} ms a day`);
