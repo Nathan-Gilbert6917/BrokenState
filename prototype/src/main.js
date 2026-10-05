@@ -30,7 +30,7 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups } from "./sim/worldsize.js";
-import { INV_ACTIONS, invDrop } from "./ui/inventory.js";
+import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
@@ -790,7 +790,7 @@ for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!u
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
-for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 // Farming tab and illness (ui/farming.js, ui/health.js).
 for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // Skills, perks, teaching and reading in the survivor screen (ui/skills.js).
@@ -840,7 +840,7 @@ document.addEventListener("drop", (ev) => {
   ev.preventDefault();
   releaseHold();
   const from = ev.dataTransfer.getData("text/plain");
-  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey); refresh(); } // Shift: half a supply stack (raid search window)
+  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey); refresh(); } // Shift: half a supply stack, Ctrl: one (raid search window)
 });
 
 const changeActions = {
@@ -948,6 +948,7 @@ for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) cha
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the

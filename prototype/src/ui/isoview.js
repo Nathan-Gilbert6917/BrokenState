@@ -1269,12 +1269,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const L = looks[c.y * b.w + c.x], top = L ? L.top : 4;
       const [X, Y] = project(c.x + 0.5, c.y + 0.5, top + 4);
       const s = Math.max(7, 3.2 * S);
-      ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.partial ? "#e08a4f" : "#ffd166";
+      // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
+      ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? "#7fb8e6" : c.partial ? "#e08a4f" : "#ffd166";
       ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
       rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();
       ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
-      ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : "?", X, Y - s * 0.45);
+      ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
     }
     for (const z of b.raid.zones) {
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);

@@ -23,6 +23,10 @@
 // into the vehicle) for free, then every HAUL.per kg more costs one of their actions. With none left they wait for
 // the next turn. One heavy thing can always be lifted with all the actions they have left.
 //
+// Splitting stacks: supplies are stacks, and any part of one moves, 1 to all (raidMove qty; supplyFit says how many
+// would go without moving anything). Only what fits goes; hauling time is paid on what actually moved.
+// A container only rummaged through (search.js box.quick) keeps the rest hidden (box.hidden, not in this window).
+//
 // Extraction: a survivor who comes home (walked out, or carried out while down) adds what they carry loose to the
 // team's cargo (raidHome). Someone who bleeds out drops it where they fall (dropHaul): a pile the others can search.
 // Whatever is still on the map when the raid ends is lost, and not counted as found.
@@ -257,15 +261,30 @@ export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
   return moveGear(state, b, u, from, to);
 }
 
-function moveSupply(state, b, u, from, to, qty) {
-  if (!isList(to)) return "Supplies are carried loose, not in a slot.";
+// How many of a supply stack a move would take (splitting stacks, search window): { have, n (what fits, ≤ qty),
+// err } without moving anything. n is what raidMove(…, qty) would move now: limited by the stack, every load limit
+// the move touches and, when it is hauling, the time left this turn.
+export function supplyFit(state, uid, fromStr, toStr, qty = Infinity) {
+  const b = state.combat;
+  const u = b && b.raid && b.units.find((x) => x.id === uid && x.side === "player");
+  if (!u) return { have: 0, n: 0, err: "Nobody to carry it." };
+  const from = parseRaidLoc(fromStr), to = parseRaidLoc(toStr);
+  if (from.slot !== "sup") return { have: 0, n: 0, err: "Not a supply stack." };
+  const e = reach(state, b, u, from) || reach(state, b, u, to);
+  const P = planSupply(state, b, u, from, to, qty);
+  return { have: P.have || 0, n: (e || P.err != null) ? 0 : P.n, err: e || P.err || "" };
+}
+
+// The plan of a supply move: { A, B, k, n, have, name, timed, shift } or { err, have }.
+function planSupply(state, b, u, from, to, qty) {
+  if (!isList(to)) return { err: "Supplies are carried loose, not in a slot." };
   const A = place(state, b, from), B = place(state, b, to);
-  if (!A || !B) return "That is not there any more.";
+  if (!A || !B) return { err: "That is not there any more." };
   const k = from.i;
   // From the trunk: found supplies first, then what the team packed.
   const have = Math.floor(Math.max(0, A.sup[k] || 0)) + (A.packed ? Math.floor(Math.max(0, A.packed[k] || 0)) : 0);
-  if (have < 1 || !SUPPLIES[k]) return "Nothing there.";
-  if (from.o === to.o && from.id === to.id) return "";
+  if (have < 1 || !SUPPLIES[k]) return { err: "Nothing there.", have: 0 };
+  if (from.o === to.o && from.id === to.id) return { err: "", have };
   // How many fit: move one to see what it uses of each limit, then as many as the tighter one allows.
   const name = SUPPLIES[k].name.toLowerCase();
   const people = [...new Set([u, ownerOf(b, from), ownerOf(b, to)].filter(Boolean))];
@@ -291,14 +310,22 @@ function moveSupply(state, b, u, from, to, qty) {
     const fit = Math.max(0, Math.floor((before[key] + EPS) / per));
     if (fit < n) { n = fit; limit = key; }
   }
-  if (n < 1) return tooHeavy(state, b, limit || u.id, name);
+  if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
   const w = SUPPLIES[k].weight;
   const timed = hauling(from, to);
   if (timed) {
     const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
-    if (fit < 1) return noTime(u, name);
+    if (fit < 1) return { err: noTime(u, name), have };
     n = Math.min(n, fit);
   }
+  return { A, B, k, n, have, name, timed, w, shift };
+}
+
+// Moves n of the stack (n: as many as fit, at most qty; any part of a stack can be taken, 1 to all).
+function moveSupply(state, b, u, from, to, qty) {
+  const P = planSupply(state, b, u, from, to, qty);
+  if (P.err != null) return P.err;
+  const { A, B, k, n, have, name, timed, w, shift } = P;
   shift(n);
   if (timed) payHaul(b, u, n * w);
   tally(b, from, to, { sup: k, n });
@@ -391,11 +418,12 @@ function tally(b, from, to, { item, sup, n }) {
   else { const i = R.foundGear.indexOf(item); if (i >= 0) R.foundGear.splice(i, 1); }
 }
 
-// A container is searched once nothing is left in it (the map stops marking it).
+// A container is searched once nothing is left in it (the map stops marking it); one only rummaged through
+// (search.js box.quick) is not, since a full search may turn up more.
 function afterBox(b, box) {
   if (!box || !box.contents) return;
   const left = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
-  box.searched = !left;
+  box.searched = !left && !box.quick;
   box.partial = !!left;
 }
 
