@@ -44,6 +44,8 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
+import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn } from "./zombietypes.js"; // a hive's special dead
+import { ZTYPES } from "./hiveconst.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -178,7 +180,7 @@ export function autoResolveCombat(state, setup) {
     owed -= t;
   }
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoUsed >= people.length * 3 ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
-  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1); // fortified: behind their walls (conquest.js)
+  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4;
   const ratio = mine / Math.max(0.1, theirs);
@@ -340,6 +342,8 @@ export const WEAPONS = {
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3 },
   leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3 },
   carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3 },
+  // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
+  acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
 const BASH = [8, 12]; // hitting someone with a gun
 export const BODY_FINDS = 0.2; // a person's body: the chance of one small thing in their pockets (KITS finds)
@@ -571,7 +575,8 @@ export function canSeeAt(b, a, x, y) {
   }
   return los(b, a.x, a.y, x, y);
 }
-export const canSee = (b, a, t) => canSeeAt(b, a, t.x, t.y);
+// A crawler low in the grass is hidden from your people until it is close, lit or has struck (zombietypes.js).
+export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && canSeeAt(b, a, t.x, t.y);
 
 // Cover a unit at (x, y) has against an attacker at (ax, ay). Cover sits on the 4 sides; it only
 // counts when the attacker is roughly in front of it. Some cover nearby but none facing = flanked.
@@ -717,7 +722,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d <= 2.5 && w.close) aim += w.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : coverAgainst(b, t.x, t.y, ax, ay);
-  aim -= COVER_DEF[cov.level];
+  aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js)
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
   if (flat) aim += 15;
   if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
@@ -748,7 +753,7 @@ export function meleeOdds(b, a, t) {
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
 // Can this unit fire its gun right now (ranged weapon and, for the player, ammo)?
-export const canFire = (b, u) => isRanged(u) && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo);
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo);
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
@@ -828,7 +833,7 @@ function playerUnit(b, s) {
   };
 }
 
-function enemyUnit(b, rng, kind, power, n) {
+export function enemyUnit(b, rng, kind, power, n) {
   const p = Math.max(1, power);
   if (kind === "zombies") {
     return {
@@ -918,8 +923,11 @@ export function createBattle(state, setup) {
   }
   const flankTop = pc[1] >= mid; // flankers come from the side farther from your people
   let zn = 0, hn = 0;
+  // A hive's special dead among them (e.types: { runner: 3, ... }, zombietypes.js), spread through the zombies.
+  const ztypes = typeList(e.types, kinds.filter((k) => k === "zombies").length);
   kinds.forEach((k, i) => {
     const u = enemyUnit(b, rng, k, e.power, k === "zombies" ? ++zn : ++hn);
+    if (k === "zombies" && ztypes[zn - 1]) applyZType(u, ztypes[zn - 1], !!e.elite, e.power);
     let c;
     if (setup.ambush === "player") {
       const pod = pods[i % pods.length] || [W - 3, Math.floor(mid)];
@@ -1067,6 +1075,7 @@ export function moveAlong(b, u, path) {
 function fire(b, a, t, opts = {}) {
   const w = WEAPONS[a.weapon];
   const rng = b.rng;
+  if (w.cooldown) a.cd = w.cooldown; // a spitter spits every other turn (zombietypes.js zTick)
   if (a.side === "player") {
     take(b, "ammo", w.ammo);
     b.ammoUsed += w.ammo;
@@ -1087,11 +1096,11 @@ function fire(b, a, t, opts = {}) {
     const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1);
     const eff = Math.round(damage(b, t, raw, a));
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
-    text = `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
-    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
+    text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
+    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, acid: !!w.acid });
   } else {
-    text = `${a.name} shoots at ${t.name} and misses (${o.chance}%).`;
-    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side });
+    text = w.acid ? `${a.name} spits acid at ${t.name} and misses (${o.chance}%).` : `${a.name} shoots at ${t.name} and misses (${o.chance}%).`;
+    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, acid: !!w.acid });
   }
   say(b, text, a.side === "player" ? (hit ? "good" : "info") : hit ? "danger" : "info");
   if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shots still carry." : "The gunshots alert everything nearby.");
@@ -1107,10 +1116,11 @@ function strike(b, a, t) {
   const rng = b.rng;
   const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
   a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
+  const amb = a.low ? strikeBonus(b, a) : 1; // a crawler out of hiding (zombietypes.js)
   const hit = rng.chance(o.chance / 100) || sure;
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1), a)); // meleeMult: Brawler
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1) * amb, a)); // meleeMult: Brawler
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
@@ -1275,6 +1285,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") u.ap = 0;
   b.phase = "enemy";
   for (const u of b.units) if (u.side === "enemy" && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; }
+  zTick(b); // zombietypes.js: spitters and screamers get ready again
   if (b.raid) raidTurn(b);
   else reinforcements(b);
   if (b.tier) tierEnemyTurn(state, b); // interior.js: the attackers still outside come in through the breaches
@@ -1361,6 +1372,7 @@ function bestShot(b, u, foes, opts = {}) {
     const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * t.armor;
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
+    if (t.ztype && ZTYPES[t.ztype].priority) v *= ZTYPES[t.ztype].priority; // screamers and spitters first (zombietypes.js)
     if (!best || v > best.v) best = { t, o, v };
   }
   return best;
@@ -1433,6 +1445,7 @@ function aiUnit(b, u) {
   if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
+  if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);

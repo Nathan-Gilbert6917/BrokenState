@@ -12,6 +12,11 @@ import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedFactor } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
 import { hordeAttackBase, hordeWarnings } from "./defences.js";
+import { mergeMix, mixWeight } from "./zombietypes.js";
+import { ZTYPES } from "./hiveconst.js";
+// A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
+// ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
+// runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
 
 export const HOURS_PER_TILE = 12;  // at most 2 tiles a day
 export const HORDE_MAX_SIZE = 600; // merging stops here
@@ -34,6 +39,7 @@ export function makeHorde(state, o) {
   const h = {
     id: newId(), tile: o.tile, size: Math.round(o.size), target: o.target ?? null, move: 0,
     role: o.role || "roam", hive: o.hive ?? null, site: o.site ?? null, bosses: o.bosses || 0, goal: o.goal || null, born: state.hour,
+    mix: o.mix || null, elite: !!o.elite,
   };
   state.hordes.push(h);
   return h;
@@ -61,7 +67,7 @@ export function splitHorde(state, h, n) {
   n = Math.round(n);
   if (n < SPLIT_MIN || h.size - n < SPLIT_MIN) return null;
   h.size -= n;
-  const part = makeHorde(state, { tile: h.tile, size: n, role: h.role, hive: h.hive, site: h.site, goal: h.goal, target: h.target });
+  const part = makeHorde(state, { tile: h.tile, size: n, role: h.role, hive: h.hive, site: h.site, goal: h.goal, target: h.target, mix: h.mix ? { ...h.mix } : null, elite: h.elite });
   part.move = h.move;
   return part;
 }
@@ -93,6 +99,8 @@ export function mergeHordes(state) {
     const room = HORDE_MAX_SIZE - first.size;
     if (room < SPLIT_MIN) { at.set(k, h); continue; } // that one is full: the next ones gather on this one
     const take = h.size - room < SPLIT_MIN ? h.size : room;
+    if (first.mix || h.mix) first.mix = mergeMix(first.mix, first.size, h.mix, take);
+    if (h.elite && take >= first.size) first.elite = true; // the elite dead lead when they are the most
     first.size += take;
     h.size -= take;
     first.bosses = (first.bosses || 0) + (h.size ? 0 : h.bosses || 0);
@@ -133,7 +141,7 @@ export function hordesHour(state) {
   for (const h of [...state.hordes]) {
     if (!state.hordes.includes(h)) continue;
     if (h.target == null || h.target === h.tile) { h.move = Math.min(HOURS_PER_TILE, h.move || 0); continue; }
-    h.move = (h.move || 0) + speed;
+    h.move = (h.move || 0) + speed * (h.mix && h.mix.runner >= 0.1 ? ZTYPES.runner.speed : 1); // runners set the pace
     if (h.move < HOURS_PER_TILE) continue;
     h.move -= HOURS_PER_TILE;
     const next = nextStep(state, h);
@@ -153,7 +161,8 @@ function onHordeEnter(state, h) {
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
   if (f) {
     // A Wallbreaker at its head makes a horde half again as dangerous to a group's walls.
-    const held = resolveRaidOnFaction(state, { strength: h.size * 0.12 * (h.bosses ? 1.6 : 1), owner: null, target: { factionId: f.id, tile: h.tile } }, []);
+    // Special dead (hivetech.js) weigh more against their walls too (zombietypes.js mixWeight).
+    const held = resolveRaidOnFaction(state, { strength: h.size * 0.12 * (h.bosses ? 1.6 : 1) * mixWeight(h.mix, "wall"), owner: null, target: { factionId: f.id, tile: h.tile } }, []);
     if (h.role === "attack") { h.role = "roam"; h.goal = null; }
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
@@ -187,6 +196,15 @@ export function hordesDaily(state) {
   const rng = state.rng;
   const g = state.grid;
   hivesDaily(state); // income, new hordes, build sites, border spawns, infection (hives.js)
+  // Screamers in a horde call the wandering dead near it along (hivetech.js, zombietypes.js).
+  const Z = ZTYPES.screamer;
+  for (const h of state.hordes) {
+    if (!h.mix || !(h.mix.screamer > 0) || (h.role !== "attack" && h.role !== "roam")) continue;
+    for (const w of state.hordes) {
+      if (w === h || w.hive != null || !WANDER.has(w.role) || g.distance(w.tile, h.tile) > Z.pull || !rng.chance(Z.pullOdds)) continue;
+      w.role = h.role; w.goal = h.goal ? { ...h.goal } : null; w.target = h.role === "attack" ? h.target : h.tile;
+    }
+  }
   for (const h of [...state.hordes]) {
     if (!state.hordes.includes(h)) continue;
     // Wandering hordes rot away (1.2% a day, at least 1); the ones with a job are kept up by their hive.

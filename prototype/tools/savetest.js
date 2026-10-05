@@ -179,7 +179,8 @@ const world = (seed, d = 0, style = "balanced") => {
   st.started = true;
   setAutopilot(st, true, style);
   playTo(st, d);
-  while (st.cards.length) tickHour(st);
+  while (st.cards.length && !st.gameOver) tickHour(st);
+  if (st.gameOver) st.cards.length = 0; // a run that has fallen keeps its last card unanswered (the clock no longer moves): drop it
   return st;
 };
 
