@@ -65,7 +65,7 @@ export const SURVEY = {
   weather: { fog: 0.5, blizzard: 0.4, storm: 0.55, rain: 0.85, snow: 0.8 },
   rumour: 3,
   hive: 0.03, hiveRing: 0.08,
-  auto: { spare: 3, home: 7, every: 8, everyRumour: 4 }, // the autopilot's surveys (surveyCandidate)
+  auto: { spare: 2, home: 0, keep: 3, keepFrac: 0.5, every: 6, everyRumour: 3 }, // the autopilot's surveys (surveyCandidate)
   finds: 0.1, // + the look-around bonus for tile.hidden finds (markers.js perceive)
 };
 export const RUMOUR = { days: 20, radius: 3, max: 3, reach: 30, radio: 0.05, visitors: 0.15, news: 0.5, groupNews: 0.35 };

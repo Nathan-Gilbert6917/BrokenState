@@ -6,7 +6,8 @@ import {
   harvestPlot, clearPlot, setPlotWant, setAutoReplant, plotLimit, greenhouseLimit, siteFarm, farmers, recentGrowth,
   cropForecast, winterOutlook,
 } from "../sim/farming.js";
-import { foodOutlook, waterOutlook, RATION, RATION_DAYS } from "../sim/economy.js";
+import { foodOutlook, waterOutlook, RATION, RATION_DAYS, WATER, summerWater, summerWaterOk, summerFixText, SUMMER } from "../sim/economy.js";
+import { THIRST } from "../sim/weather.js";
 import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
@@ -50,11 +51,35 @@ export function waterLine(state, b) {
   const o = waterOutlook(state, b);
   const p = o.prod;
   const ins = [`well ${n1(p.own)}`, p.stream ? `stream ${n1(p.stream)}` : "", p.wells ? `wells ${n1(p.wells)}` : "", p.rain ? `rain ${n1(p.rain)}` : "", p.filters ? `filters ${p.filters}` : ""].filter(Boolean).join(", ");
-  const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: people ${n1(o.need.people)}${o.need.hot ? " (hot day: 1.5 each)" : ""}, crops ${n1(o.need.crops)} (none on a rainy day). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds 3 a day and cuts dysentery.`;
+  const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: people ${n1(o.need.people)} (${drinkNote(o.need)})${o.need.prisoners ? `, prisoners ${n1(o.need.prisoners)}` : ""}, crops ${n1(o.need.crops)} (none on a rainy day${o.need.season === "summer" ? ", a fifth more in summer" : ""}). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. People drink 1 a day in spring and autumn, ${THIRST.summer} in summer, ${THIRST.winter} in winter and at least ${THIRST.heat} on a hot day. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds ${WATER.filter} a day and cuts dysentery.`;
   const cls = o.daysLeft < 5 ? "danger" : o.net < 0 ? "" : "good";
   return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}`, tip: why };
 }
-export const waterCellHtml = (state, b) => { const w = waterLine(state, b); return `<div class="${w.cls}"${tip(w.tip)}>${esc(w.short)}</div>`; };
+const drinkNote = (need) => {
+  const pct = Math.round((need.rate - 1) * 100);
+  const why = need.hot ? "a hot day" : need.season;
+  return pct > 0 ? `${need.rate} each: ${why}, everyone drinks ${pct}% more` : pct < 0 ? `${need.rate} each: ${why}, everyone drinks ${-pct}% less` : "1 each";
+};
+// The summer water outlook (economy.summerWater) for the Farming tab: from spring on, whether the water holds through
+// summer (average summer days and a heat-wave stretch) and what would close a gap.
+export function summerLine(state, b) {
+  const sw = summerWater(state, b);
+  const ok = summerWaterOk(sw);
+  const pct = (f) => Math.round((f - 1) * 100);
+  const fixText = summerFixText(sw.fix);
+  const text = ok ? `holds (+${n1(sw.net)}/day; heat wave ${sw.heatNet >= 0 ? "+" : ""}${n1(sw.heatNet)})` : sw.net < 0 ? `short by ~${n1(sw.short)}/day${fixText ? ` · build ${fixText}` : ""}` : `heat waves: ${n1(-sw.heatNet)}/day short, needs ${sw.reserve} stored (room ${sw.cap})${fixText ? ` · build ${fixText}` : ""}`;
+  const tipText = `Summer: everyone drinks ${pct(sw.rate)}% more water (${sw.rate} each a day), ${pct(sw.heatRate)}% more in a heat wave (${sw.heatRate}); crops need a fifth more on dry days; wells and springs give about 90% on an average summer day and 60% in a dry spell. For ${sw.n} people here and the crops (~${n1(sw.crops)}): about ${n1(sw.need)} a day against ${n1(sw.inflow)} coming in on an average summer day (${sw.net >= 0 ? "+" : ""}${n1(sw.net)}); in a heat wave ${n1(sw.heatNeed)} against ${n1(sw.heatIn)} (${sw.heatNet >= 0 ? "+" : ""}${n1(sw.heatNet)}). Heat waves last up to ${SUMMER.heatStretch} days: ${sw.reserve ? `that takes about ${sw.reserve} water in store (room for ${sw.cap})` : "the sources keep up"}. ${fixText ? `To close the gap: ${fixText}.` : ""} A week before summer the holdout warns any base whose water will not hold.`;
+  return { sw, ok, text, tip: tipText, cls: ok ? "good" : "danger" };
+}
+// The season's (or a hot day's) drinking under the numbers: "Summer: everyone drinks 30% more".
+export function thirstNoteText(state) {
+  const f = Weather.thirstFactor ? Weather.thirstFactor(state) : 1;
+  if (Math.abs(f - 1) < 1e-9) return "";
+  const w = Weather.weather(state);
+  const hot = w.key === "heat" || w.hi >= 30;
+  return `${hot ? "A hot day" : Weather.season(state).name}: everyone drinks ${f > 1 ? `${Math.round((f - 1) * 100)}% more` : `${Math.round((1 - f) * 100)}% less`}`;
+}
+export const waterCellHtml = (state, b) => { const w = waterLine(state, b); const note = thirstNoteText(state); return `<div class="${w.cls}"${tip(w.tip)}>${esc(w.short)}${note ? `<div class="small muted">${esc(note)}</div>` : ""}</div>`; };
 
 // Days left for the top bar's tooltip.
 export function hubSupplyTip(state, b, key) {
@@ -133,7 +158,8 @@ export function baseFarming(state, b) {
         <div${tip("Days the stock lasts at today's rate, with no harvests and no loot")}>Days of food</div><div class="${fo.daysLeft < 7 ? "danger" : fo.daysLeft < 20 ? "" : "good"}">${days(fo.daysLeft)}</div>
         <div>Next harvests</div><div>${harvests || "<span class='muted'>nothing growing</span>"}</div>
         <div${tip(wl.tip)}>Winter outlook</div><div class="${wl.cls}"${tip(wl.tip)}>${esc(wl.text)}</div>
-        <div${tip(waterLine(state, b).tip)}>Water</div><div class="${waterLine(state, b).cls}">${esc(waterLine(state, b).short)}</div>
+        <div${tip(waterLine(state, b).tip)}>Water</div><div class="${waterLine(state, b).cls}">${esc(waterLine(state, b).short)}${thirstNoteText(state) ? `<div class="small muted">${esc(thirstNoteText(state))}</div>` : ""}</div>
+        ${s && s.key !== "autumn" && s.key !== "winter" ? (() => { const su = summerLine(state, b); return `<div${tip(su.tip)}>Summer water</div><div class="${su.cls}"${tip(su.tip)}>${esc(su.text)}</div>`; })() : ""}
       </div>
       <h3>Farmers</h3>
       <div class="card small">

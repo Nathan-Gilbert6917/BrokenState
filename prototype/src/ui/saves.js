@@ -4,7 +4,7 @@
 //
 // Storage keys:  brokenstate.saves          the index: [{ id, name, auto, ts, size, raw, thumb, day, hour, hub, … }]
 //                brokenstate.save.<id>      one save: "BSZ1|<bytes>|<gzip packed 15 bits a character>" or "BSJ1|<json>"
-//                brokenstate.options        the Options tab (autosave, confirmations, pause on focus loss, UI size)
+//                brokenstate.options        the Options tab (autosave, confirmations, pause on focus loss, UI size, map detail)
 // Nothing here runs at import time, so the headless tools can import it with no browser around.
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
 
@@ -14,7 +14,7 @@ const SLOT_KEY = (id) => `brokenstate.save.${id}`;
 const OPTIONS_KEY = "brokenstate.options";
 export const MAX_SLOTS = 12; // manual saves; the autosave is extra
 
-export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true };
+export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true, mapDetail: true };
 export const AUTOSAVE_DAYS = [1, 2, 3, 5, 7];
 
 const storage = () => {
@@ -34,6 +34,7 @@ export function loadOptions() {
       if (typeof v.pauseOnBlur === "boolean") o.pauseOnBlur = v.pauseOnBlur;
       if (typeof v.autoOpen === "boolean") o.autoOpen = v.autoOpen; // folded panels open when you pick what they show (ui/layout.js)
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
+      if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
     }
   } catch { /* unreadable: the defaults */ }
   return o;

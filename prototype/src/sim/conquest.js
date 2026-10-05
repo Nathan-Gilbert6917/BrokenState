@@ -68,6 +68,7 @@ import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
+import { thirstAhead } from "./weather.js";
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -414,7 +415,8 @@ function packFor(state, members, base, v) {
     out[k] = (out[k] || 0) + qty;
     room -= qty * w;
   };
-  take("water", n * 4); take("food", n * 4); take("scrap", 15); take("ammo", n * 15); take("meds", n * 2); take("preserved", n * 4);
+  take("water", Math.ceil(n * 4 * thirstAhead(state, 4))); // more in summer and a heat wave (weather.js)
+  take("food", n * 4); take("scrap", 15); take("ammo", n * 15); take("meds", n * 2); take("preserved", n * 4);
   take("food", n * 6); take("fuel", v ? 20 : 0); take("parts", 3); take("ammo", 200); take("meds", 10); take("scrap", 40);
   return out;
 }

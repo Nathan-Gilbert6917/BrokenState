@@ -7,11 +7,11 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
-import { farmingDaily, farmFoodPerDay, cropWaterNeed, nextHarvests, farmOf, econStats } from "./farming.js";
+import { farmingDaily, farmFoodPerDay, cropWaterNeed, nextHarvests, farmOf, econStats, CROPS } from "./farming.js";
 import { healthDaily, workFactor, conditionsOf, CONDITIONS } from "./health.js";
 import * as Weather from "./weather.js";
 import { foodStore, storageDaily, eatFromStore, edibleFood, rackPlan } from "./storage.js";
@@ -107,12 +107,18 @@ function baseScavenging(state, base, people) {
 // ---------- water ----------
 // The hub has a well; an outpost a spring or a hand pump; a base by a river or lake draws from it too. Well
 // buildings add more, rain catchers fill on wet days (weather.rainWater), cisterns hold more. Production only
-// fills the base up to its capacity (water brought home on top of that is kept). Everyone living at a base drinks
-// 1 a day (1.5 in a heat wave), the sick with dysentery 1 more; growing crops are watered on dry days
-// (farming.cropWaterNeed). Water filters (crafting.js) add their water on top.
-export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, hotDrink: 1.5 };
+// fills the base up to its capacity (water brought home on top of that is kept, though in summer a little of it
+// evaporates: WATER.evaporate a day of what is above the capacity). Everyone living at a base drinks 1 a day times
+// the season's thirst (weather.js THIRST: spring and autumn 1, summer 1.3, winter 0.9; at least 1.6 on a hot day),
+// the sick with dysentery 1 more, prisoners in the cells the same as anyone (prisoners.js); growing crops are
+// watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water on top.
+export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
 export const waterCapacity = (base) => (base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
 const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
+// Water one person drinks on a campaign day (day index; today by default): the season's thirst, a hot day's at least.
+export const drinkRate = (state, dayIdx) => WATER.drink * (Weather.thirstFactor ? Weather.thirstFactor(state, dayIdx) : 1);
+const filtersAt = (base) => base.armory.filter((it) => it && it.key === "waterfilter").length;
+const prisonersHere = (state, base) => (state.prisoners || []).filter((p) => p.at && p.at.kind === "base" && p.at.baseId === base.id).length;
 
 export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
@@ -120,22 +126,22 @@ export function waterProduction(state, base) {
   const stream = byWater(state, base) ? WATER.stream : 0;
   const wells = count(base, "well") * WATER.well * factor;
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
-  const filters = base.armory.filter((it) => it && it.key === "waterfilter").length * 3;
+  const filters = filtersAt(base) * WATER.filter;
   const total = own + stream + wells + rain;
   return { own, stream, wells, rain, filters, factor, total: Math.round(total * 10) / 10 };
 }
 
-const hotToday = (state) => {
-  const w = Weather.weather ? Weather.weather(state) : null;
-  return !!w && (w.key === "heat" || w.hi >= 30);
-};
 export function waterNeed(state, base) {
   const mouths = residents(state, base.id);
-  const hot = hotToday(state);
+  const rate = drinkRate(state);
+  const w = Weather.weather ? Weather.weather(state) : null;
+  const hot = !!w && (w.key === "heat" || w.hi >= 30);
   const sick = mouths.reduce((a, s) => a + conditionsOf(s).reduce((b, c) => b + (CONDITIONS[c.key].thirst || 0), 0), 0);
-  const people = mouths.length * (hot ? WATER.hotDrink : WATER.drink) + sick;
+  const people = mouths.length * rate + sick;
+  const prisoners = prisonersHere(state, base) * rate; // drunk in prisoners.js, at the same rate
   const crops = cropWaterNeed(state, base);
-  return { people: Math.round(people * 10) / 10, crops, total: Math.round((people + crops) * 10) / 10, hot };
+  const season = Weather.season ? Weather.season(state).key : "spring";
+  return { people: Math.round(people * 10) / 10, prisoners: Math.round(prisoners * 10) / 10, crops, total: Math.round((people + prisoners + crops) * 10) / 10, hot, rate: Math.round(rate * 100) / 100, season };
 }
 
 // Water per day and days left, for the top bar and the base panel.
@@ -147,8 +153,92 @@ export function waterOutlook(state, base) {
   const inflow = prod.total + prod.filters;
   const net = inflow - need.total;
   // On a dry day: no rain in the catchers, and the crops need watering (for planning: is the supply enough?).
-  const dryNet = inflow - prod.rain - need.people - cropWaterNeed(state, base, { dry: true });
+  const dryNet = inflow - prod.rain - need.people - need.prisoners - cropWaterNeed(state, base, { dry: true });
   return { stock, cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
+}
+
+// ---------- the summer water outlook ----------
+// A planning figure for summer, by the usual summer weather rather than today's: wells and springs give about 90% on
+// an average summer day (dry spells), a rain catcher about 0.7 a day, everyone drinks THIRST.summer and the crops on
+// dry days SUMMER.crops more. A heat-wave stretch (wells and springs at 60%, no rain, everyone drinking THIRST.heat,
+// the crops half again) lasts up to about SUMMER.heatStretch days, and the stock has to carry that gap.
+// extra: more mouths (a newcomer check); people: count these instead of who lives here now; filterShare: count the
+// water filters at this share (they clog up and cost scrap: the autopilot plans on three quarters). Returns the balances,
+// the stock a summer needs (`reserve`: a heat stretch, plus ten days of any average-day shortfall), the shortfall on
+// an average summer day (`short`, 0 when the sources keep up) and what would close it (`fix`).
+export const SUMMER = { well: 0.9, rain: 0.7, heatWell: 0.6, crops: 1.2, heatCrops: 1.5, heatStretch: 9 };
+export function summerWater(state, base, { extra = 0, people = null, filterShare = 1 } = {}) {
+  const T = Weather.THIRST || { summer: 1.3, heat: 1.6 };
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const n = (people ?? residents(state, base.id).length) + prisonersHere(state, base) + extra;
+  const springs = (base.type === "hub" ? WATER.hubWell : WATER.spring) + countAll(base, "well") * WATER.well; // broken wells count: they get repaired
+  const stream = byWater(state, base) ? WATER.stream : 0;
+  const catchers = count(base, "rain_catcher");
+  const filters = filtersAt(base) * WATER.filter * filterShare;
+  // Crops: what the plots in the ground need on a dry day, an average crop (0.25) for a plot not growing now.
+  const plots = farmOf(state, base).plots;
+  const dryCrops = plots.reduce((a, p) => a + (p.stage === "growing" && CROPS[p.crop] ? CROPS[p.crop].water : 0.25), 0);
+  const crops = dryCrops * SUMMER.crops;
+  const inflow = springs * SUMMER.well + stream + catchers * SUMMER.rain + filters;
+  const need = n * T.summer * WATER.drink + crops;
+  const heatIn = springs * SUMMER.heatWell + stream + filters;
+  const heatNeed = n * T.heat * WATER.drink + dryCrops * SUMMER.heatCrops;
+  const net = inflow - need, heatNet = heatIn - heatNeed;
+  const reserve = Math.ceil(Math.max(0, -heatNet) * SUMMER.heatStretch + Math.max(0, -net) * 10);
+  const cap = waterCapacity(base);
+  const short = Math.max(0, -net);
+  // What would close the gap: wells first (steady), then filters (3 a day each), rain catchers (cheap, but nothing
+  // in a dry spell), and cisterns so the reserve fits.
+  const fix = [];
+  const queued = (t) => base.construction.filter((c) => c.type === t).length;
+  let gap = Math.max(short, -heatNet);
+  const wellsLeft = Math.max(0, BUILDINGS.well.max - countAll(base, "well") - queued("well"));
+  if (gap > 0 && wellsLeft) { const k = Math.min(wellsLeft, Math.ceil(gap / (WATER.well * SUMMER.heatWell))); fix.push({ type: "well", count: k }); gap -= k * WATER.well * SUMMER.heatWell; }
+  if (gap > 0) fix.push({ type: "waterfilter", count: Math.ceil(gap / WATER.filter) });
+  const catchersLeft = Math.max(0, BUILDINGS.rain_catcher.max - catchers - queued("rain_catcher"));
+  if (short > 0 && catchersLeft) fix.push({ type: "rain_catcher", count: catchersLeft });
+  const cisternsLeft = Math.max(0, BUILDINGS.cistern.max - countAll(base, "cistern") - queued("cistern"));
+  if (reserve > cap && cisternsLeft) fix.push({ type: "cistern", count: Math.min(cisternsLeft, Math.ceil((reserve - cap) / WATER.cistern)) });
+  return {
+    n, rate: T.summer, heatRate: T.heat, inflow: r1(inflow), need: r1(need), net: r1(net), heatIn: r1(heatIn), heatNeed: r1(heatNeed), heatNet: r1(heatNet),
+    crops: r1(crops), stock: Math.floor(base.stock.water || 0), cap, reserve, short: r1(short), fix,
+  };
+}
+const FIX_NAMES = { well: ["a well", "wells"], waterfilter: ["a water filter", "water filters"], rain_catcher: ["a rain catcher", "rain catchers"], cistern: ["a cistern", "cisterns"] };
+export const summerFixText = (fix) => fix.map((f) => (f.count === 1 ? FIX_NAMES[f.type][0] : `${f.count} ${FIX_NAMES[f.type][1]}`)).join(", ");
+// True when a base's summer water holds: the sources keep up on an average summer day, and a heat stretch's gap fits
+// in what it can store.
+export const summerWaterOk = (sw) => sw.net >= 0 && sw.reserve <= sw.cap;
+
+// End of spring: SUMMER_WARN_DAYS before summer, a base whose summer water would not hold says so (a log line per
+// base and one card), with the shortfall and what to build. Once a year per base.
+export const SUMMER_WARN_DAYS = 7;
+export function summerWarningDaily(state) {
+  if (!Weather.season) return;
+  const s = Weather.season(state);
+  if (s.key !== "spring" || s.daysLeft !== SUMMER_WARN_DAYS) return;
+  const T = Weather.THIRST || { summer: 1.3, heat: 1.6 };
+  const pct = (f) => Math.round((f - 1) * 100);
+  const lines = [];
+  for (const base of state.bases) {
+    if (base.owner != null && base.owner !== "player") continue;
+    if (!residents(state, base.id).length || base.summerWarned === s.year) continue;
+    const sw = summerWater(state, base);
+    if (summerWaterOk(sw)) continue;
+    base.summerWarned = s.year;
+    const fixText = summerFixText(sw.fix);
+    const line = sw.net < 0
+      ? `${base.name}: ${sw.n} people drink ${sw.rate} each a day and the crops about ${sw.crops}, ${sw.need} in all against about ${sw.inflow} coming in: ${sw.short} a day short on an average summer day, ${-sw.heatNet} in a heat wave.`
+      : `${base.name}: the water keeps up on an average summer day (+${sw.net}), but a heat wave (everyone drinks ${sw.heatRate}, wells at 60%) leaves it ${-sw.heatNet} a day short, and riding out ${SUMMER.heatStretch} days of that takes ${sw.reserve} water in store (room for ${sw.cap}).`;
+    log(state, `☀️ Summer in ${SUMMER_WARN_DAYS} days. ${line}${fixText ? ` Build ${fixText}.` : ""}`, "danger");
+    lines.push(`${line}${fixText ? ` To close it: ${fixText}.` : ""}`);
+  }
+  if (lines.length) addCard(state, {
+    title: "Summer water",
+    text: `Summer starts in ${SUMMER_WARN_DAYS} days: everyone drinks ${pct(T.summer)}% more water (${pct(T.heat)}% more in a heat wave), crops need more on dry days and wells give less in dry spells. ${lines.join(" ")} Wells and water filters keep up through a dry spell; rain catchers help on wet days; cisterns store water ahead of it. Thirst kills faster than hunger.`,
+    summerWater: true,
+    choices: [{ label: "OK", resolve: () => "" }],
+  });
 }
 
 // Thirst: health lost per day by everyone at a base that ran dry (10, 14, 18 … up to 25), scaled by how short they
@@ -217,6 +307,7 @@ function starve(state, base, mouths) {
 
 export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
+  summerWarningDaily(state); // the end of spring: bases whose water would not hold through the summer
   healthDaily(state);
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
@@ -240,6 +331,9 @@ function baseDaily(state, base) {
   const prod = waterProduction(state, base);
   const room = Math.max(0, waterCapacity(base) - (st.water || 0));
   st.water = (st.water || 0) + Math.min(room, prod.total);
+  // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates.
+  const over = (st.water || 0) - waterCapacity(base);
+  if (over > 0 && Weather.season && Weather.season(state).key === "summer") st.water -= Math.round(over * WATER.evaporate * 10) / 10;
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs

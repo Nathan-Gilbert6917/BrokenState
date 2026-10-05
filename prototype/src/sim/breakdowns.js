@@ -107,6 +107,7 @@ const fxKey = (base, fx) => `${base.tile}:${fx.type}:${base.buildings.indexOf(fx
 export const fixtureName = (fx) => (fx.type === "pump" ? "Well pump" : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name) || fx.type);
 export const fixtureById = (base, id) => fixtures(base).find((f) => String(f.id) === String(id)) || null;
 export const isBroken = (fx) => !!(fx && fx.broken);
+export const isWaterFixture = (fx) => !!fx && (fx.type === "well" || fx.type === "pump");
 export const brokenAt = (base) => fixtures(base).filter(isBroken);
 const jobs = (base) => base.repairs || (base.repairs = []);
 export const jobFor = (base, fx) => jobs(base).find((j) => String(j.fx) === String(fx.id)) || null;
@@ -275,8 +276,17 @@ export function breakdownsHour(state) {
       }
     }
     // The autopilot and stewards start the repairs nobody has started.
+    // Water first (thirst kills fastest): a broken well or pump is started before anything else, and while one is
+    // still waiting for scrap or parts, nothing else takes them.
     if (autoHands(state, base) && h === WEAR.workFrom && !onWalls) {
-      for (const fx of brokenAt(base)) autoRepair(state, base, fx);
+      const broken = brokenAt(base).sort((a, b) => isWaterFixture(b) - isWaterFixture(a));
+      let waterWaits = false;
+      for (const fx of broken) {
+        if (waterWaits && !isWaterFixture(fx)) break;
+        autoRepair(state, base, fx);
+        if (isWaterFixture(fx) && fx.broken && !jobFor(base, fx)) waterWaits = true;
+      }
+      if (waterWaits) continue;
       // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (20 kept back).
       for (const fx of fixtures(base).filter((x) => !x.broken && FIXTURES[x.type].outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
         const plan = repairPlan(state, base, fx, "repair");

@@ -3,7 +3,8 @@
 //   ride), they eat 1 food and 1 water a day from the team, and each tries to slip away (5% a day, 2% in a
 //   vehicle). When the team gets home they go to that base's cells.
 //   At a base: Holding cells (buildings.js "cells") hold 3 each; more prisoners than that sit in a shed. A day costs
-//   1 food and 1 water each. Escapes a day: in a cell with someone on the Guard role 0.4%, unguarded 3%, in the shed
+//   1 food and 1 water each (the water times the day's thirst, weather.js: 1.3 in summer, 1.6 on a hot day, 0.9 in
+//   winter, as for anyone). Escapes a day: in a cell with someone on the Guard role 0.4%, unguarded 3%, in the shed
 //   8%, unfed +4%; six unfed days in a row and they die.
 //   What you can do with them (at a base):
 //     question (every 3 days): Speech decides (45% + 3% a point of the best talker, zealots −25%, soldiers −15%,
@@ -38,6 +39,7 @@ import { offerRecruits } from "./recruits.js";
 import { addMood } from "./relations.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { raidForce } from "./conflicts.js";
+import { thirstAt } from "./weather.js";
 
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
@@ -365,24 +367,25 @@ export function prisonersDaily(state) {
   if (!(state.prisoners && state.prisoners.length)) return;
   const rng = state.rng;
   const today = day(state);
+  const drink = Math.round(PRISON.WATER * thirstAt(state) * 100) / 100; // the day's thirst, as for anyone (weather.js)
   for (const p of [...state.prisoners]) {
     if (!state.prisoners.includes(p)) continue;
     let fed = false, escape = 0;
     if (p.at.kind === "party") {
       const party = state.parties.find((x) => x.id === p.at.partyId);
       if (!party) continue; // the hourly check frees them
-      if (carried(party, "food") >= PRISON.FOOD && carried(party, "water") >= PRISON.WATER) { takeSupply(party, "food", PRISON.FOOD); takeSupply(party, "water", PRISON.WATER); fed = true; }
+      if (carried(party, "food") >= PRISON.FOOD && carried(party, "water") >= drink) { takeSupply(party, "food", PRISON.FOOD); takeSupply(party, "water", drink); fed = true; }
       escape = party.vehicle ? PRISON.ESCAPE.vehicle : PRISON.ESCAPE.road;
       teamPace(state, party);
     } else {
       const base = baseById(state, p.at.baseId);
       if (!base) continue;
       const food = (base.stock.food || 0) + (base.stock.preserved || 0);
-      if (food >= PRISON.FOOD && (base.stock.water || 0) >= PRISON.WATER) {
+      if (food >= PRISON.FOOD && (base.stock.water || 0) >= drink) {
         const fresh = Math.min(PRISON.FOOD, base.stock.food || 0);
         base.stock.food = (base.stock.food || 0) - fresh;
         base.stock.preserved = (base.stock.preserved || 0) - (PRISON.FOOD - fresh);
-        base.stock.water -= PRISON.WATER;
+        base.stock.water -= drink;
         fed = true;
       }
       escape = inCell(state, p) ? (guarded(state, base) ? PRISON.ESCAPE.guarded : PRISON.ESCAPE.unguarded) : PRISON.ESCAPE.shed;

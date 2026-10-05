@@ -21,6 +21,8 @@
 //   cropDamage(state, crop)               -> { kill, rot, reason } chances for today (0..1)
 //   isGrowingSeason(state, crop)          -> bool; growingDaysLeft(state, crop) -> days until that season ends
 //   rainWater(state)                      -> water units one rain collector gathers today; wellFactor(state) -> 0.6..1.15
+//   thirstFactor(state, dayIdx)           -> how much people drink that day: THIRST by season, at least THIRST.heat on
+//                                            a hot day (hotDay: a heat wave, or 30 °C and up)
 //   exposureRisk(state, { sheltered })    -> { chance, kind: "cold"|"heat"|null, reason, temp } per person per day outdoors
 //   hordeSpeedFactor(state)               -> 0.5..1 (the dead are slower in deep cold and snow)
 //   foodNeedFactor(state)                 -> 1..1.2 (people eat more in the cold; optional hook)
@@ -37,9 +39,9 @@ export const START_OFFSET = 14; // campaign day 1 = day 15 of spring
 
 export const SEASONS = [
   { key: "spring", name: "Spring", icon: "🌱", desc: "Mild and wet: rain and mud, late frosts early on. Planting time." },
-  { key: "summer", name: "Summer", icon: "🌻", desc: "Warm and mostly dry: fast travel and growth, with heat waves, dry spells and thunderstorms." },
+  { key: "summer", name: "Summer", icon: "🌻", desc: "Warm and mostly dry: fast travel and growth, with heat waves, dry spells and thunderstorms. Everyone drinks 30% more water (60% more in a heat wave), crops need more on dry days and wells give less." },
   { key: "autumn", name: "Autumn", icon: "🍂", desc: "Cooling and wet: rain, fog and mud; first frosts toward the end. Harvest before winter." },
-  { key: "winter", name: "Winter", icon: "❄️", desc: "Freezing: snow piles up and slows everything, blizzards stop travel, nothing grows outdoors." },
+  { key: "winter", name: "Winter", icon: "❄️", desc: "Freezing: snow piles up and slows everything, blizzards stop travel, nothing grows outdoors. People drink a little less (10%)." },
 ];
 
 // severe: storms and blizzards (slow everything, small injury risk on the road, risky boat crossings).
@@ -410,6 +412,27 @@ export function wellFactor(state, dayIdx = dayIndex(state)) {
   return d.soil > 0.6 ? 1.15 : 1;
 }
 
+// ---------- drinking ----------
+// Water a person drinks a day, as a multiple of the usual 1: by season, and at least THIRST.heat on a hot day (a heat
+// wave, or 30 °C and up). The same factor applies at every base, to teams in the field (per hour, the load bands on
+// top), prisoners and guests, and to every water estimate (economy.js, parties.js, plans.js).
+export const THIRST = { spring: 1, summer: 1.3, autumn: 1, winter: 0.9, heat: 1.6 };
+export const hotDay = (d) => d.k === "heat" || d.hi >= 30;
+export function thirstFactor(state, dayIdx = dayIndex(state)) {
+  const s = THIRST[seasonOfDay(dayIdx).key] ?? 1;
+  return hotDay(rec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
+}
+// The factor for the hour a team drinks in (parties.js consume runs after the clock moves on).
+export const thirstAt = (state, hour = state.hour) => thirstFactor(state, dayIndex(state, hour));
+// The highest factor over the next `days` days, today included (packing with a margin: crews, caravans).
+export function thirstAhead(state, days = 1) {
+  const today = dayIndex(state);
+  let f = 0;
+  for (let i = 0; i < Math.max(1, Math.ceil(days)); i++) f = Math.max(f, thirstFactor(state, today + i));
+  return f;
+}
+const thirstNote = (f) => (f > 1.001 ? `everyone drinks ${Math.round((f - 1) * 100)}% more water` : f < 0.999 ? `everyone drinks ${Math.round((1 - f) * 100)}% less water` : "");
+
 // ---------- people and the dead ----------
 // Chance per person per day spent outdoors (travel, farm work, scavenging) of falling ill from cold or heat.
 // sheltered: indoors with a roof and a fire (a quarter of the risk).
@@ -458,7 +481,7 @@ export function weatherDaily(state) {
   const def = WEATHER[d.k];
   if (def.severe) log(state, `${def.icon} ${def.name} today (${Math.round(d.lo)} to ${Math.round(d.hi)} °C): travel is slow and risky.`, "bad");
   else if (d.k === "snow" && prev.cover < 0.05) log(state, `${def.icon} Snow is falling. Travel slows as it builds up, off-road most of all.`, "info");
-  else if (d.k === "heat") log(state, `${def.icon} A heat wave sets in (${Math.round(d.hi)} °C).`, "info");
+  else if (d.k === "heat") log(state, `${def.icon} A heat wave sets in (${Math.round(d.hi)} °C): everyone drinks ${Math.round((THIRST.heat - 1) * 100)}% more water while it lasts.`, "info");
   else if (d.k === "drought") log(state, `${def.icon} A dry spell: no rain in sight and the soil is drying out.`, "info");
   else if (d.k === "frost" && s.key !== "winter") log(state, `${def.icon} Frost overnight (${Math.round(d.lo)} °C): tender crops are at risk.`, "info");
 }
@@ -491,6 +514,8 @@ export function weatherReport(state) {
     ` · soil moisture ${Math.round(w.soil * 100)}%`);
   const rw = rainWater(state);
   if (rw > 0) lines.push(`• Rain water: +${rw} per collector today`);
+  const tf = thirstFactor(state);
+  if (thirstNote(tf)) lines.push(`• Water: ${thirstNote(tf)} (${r2(tf)} a day each${hotDay(rec(state, dayIndex(state))) ? ", a hot day" : ` in ${s.name.toLowerCase()}`})`);
   const ex = exposureRisk(state);
   if (ex.chance > 0) lines.push(`• Exposure: ${ex.reason} (${(ex.chance * 100).toFixed(1)}% a day outdoors)`);
   const hs = hordeSpeedFactor(state);
@@ -498,7 +523,8 @@ export function weatherReport(state) {
   const fc = forecast(state);
   lines.push("", `Forecast (${fc.length} days${forecastRange(state) < 5 ? "; a watchtower or radio station sees further and better" : ""}):`);
   for (const f of fc) {
-    lines.push(`Day ${f.day}: ${f.icon} ${f.name}, ${f.lo} to ${f.hi} °C${f.confidence < 0.8 ? " (uncertain)" : ""}`);
+    const hot = f.key === "heat" || f.hi >= 30;
+    lines.push(`Day ${f.day}: ${f.icon} ${f.name}, ${f.lo} to ${f.hi} °C${hot ? ` (hot: everyone drinks ${Math.round((THIRST.heat - 1) * 100)}% more water)` : ""}${f.confidence < 0.8 ? " (uncertain)" : ""}`);
   }
   return lines.join("\n");
 }
