@@ -632,8 +632,11 @@ function measure(style) {
   const cmp = { tac: { odds: {}, runners: 0, out: 0, team: 0, home: 0, n: 0 }, num: { odds: {}, runners: 0, out: 0, team: 0, home: 0, n: 0 } };
   tot.cmp = cmp;
   const addOdds = (o, kind, chance) => { (o[kind] = o[kind] || [0, 0])[0] += chance; o[kind][1]++; };
-  const noteRetreat = (c, res, size) => {
-    c.n++; c.team += size; c.home += size - res.survivorsDead.length;
+  const noteRetreat = (c, res, size) => { c.n++; c.team += size; c.home += size - res.survivorsDead.length; };
+  // Runners are counted over every break-off, also one that ended in a defeat (nobody got out): counted only after a
+  // retreat, a lone runner lost was never in the share, and "When most are down" by the numbers usually breaks off
+  // with one standing, so its share came out 100% whatever happened to the runners.
+  const noteRun = (c, res) => {
     const ro = res.retreatOrder;
     if (ro) { const runners = new Set([...ro.escaped, ...ro.caught]); c.runners += runners.size; c.out += ro.escaped.length; }
   };
@@ -677,6 +680,7 @@ function measure(style) {
         state.survivors = state.survivors.filter((s) => !crew.includes(s));
         state.deathSites = []; state.cards = []; state.gameOver = false;
         if (res.outcome === "retreat" && b.retreatOrder && b.retreatOrder.by === "ai") noteRetreat(cmp.tac, res, crew.length);
+        if (b.retreatOrder && b.retreatOrder.by === "ai") noteRun(cmp.tac, res);
         return { outcome: res.outcome, dead: res.survivorsDead.length, wipe: res.survivorsDead.length === crew.length, turn: b.turn, ai: !!(b.retreatOrder && b.retreatOrder.by === "ai") };
       };
       // The same fight by the numbers (the Auto-resolve button, the autopilot): fought out, or by the style's policy.
@@ -687,7 +691,7 @@ function measure(style) {
         const res = autoResolveCombat(state, { tile: tile.id, baseId: base.id, fighterIds: crew.map((s) => s.id), enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: true, handler: "rt", context: {}, breakOff: true, retreatPolicy: pol });
         state.survivors = state.survivors.filter((s) => !crew.includes(s));
         state.deathSites = []; state.cards = []; state.gameOver = false;
-        if (res.retreatOrder) { for (const o of res.retreatOrder.odds) addOdds(cmp.num.odds, m.enemy.kind, o.chance); if (res.outcome === "retreat") noteRetreat(cmp.num, res, crew.length); }
+        if (res.retreatOrder) { for (const o of res.retreatOrder.odds) addOdds(cmp.num.odds, m.enemy.kind, o.chance); if (res.outcome === "retreat") noteRetreat(cmp.num, res, crew.length); noteRun(cmp.num, res); }
         return res;
       };
       const off = play(people, false);
@@ -728,7 +732,7 @@ function measure(style) {
   console.log(`escape odds per runner, on the map vs by the numbers: ${kinds.map((k) => `${k} ${avg(cmp.tac.odds, k) == null ? "-" : Math.round(avg(cmp.tac.odds, k))}% (${cmp.tac.odds[k] ? cmp.tac.odds[k][1] : 0}) vs ${avg(cmp.num.odds, k) == null ? "-" : Math.round(avg(cmp.num.odds, k))}% (${cmp.num.odds[k] ? cmp.num.odds[k][1] : 0})`).join(", ")}`);
   const share = (c, a, b) => (c[b] ? c[a] / c[b] : null);
   const f2 = (x) => (x == null ? "-" : `${Math.round(x * 100)}%`);
-  console.log(`in a retreat: runners who got out ${f2(share(cmp.tac, "out", "runners"))} on the map vs ${f2(share(cmp.num, "out", "runners"))} by the numbers; the team home alive ${f2(share(cmp.tac, "home", "team"))} vs ${f2(share(cmp.num, "home", "team"))} (${cmp.tac.n} vs ${cmp.num.n} retreats)`);
+  console.log(`runners who got out of a break-off ${f2(share(cmp.tac, "out", "runners"))} on the map vs ${f2(share(cmp.num, "out", "runners"))} by the numbers; after a retreat, the team home alive ${f2(share(cmp.tac, "home", "team"))} vs ${f2(share(cmp.num, "home", "team"))} (${cmp.tac.n} vs ${cmp.num.n} retreats)`);
   console.log(`deaths a battle fought out: ${(tot.off.dead / tot.n).toFixed(2)} on the map vs ${(T.off.dead / tot.n).toFixed(2)} by the numbers (calibrated on the map: tools/calibrate.js)`);
   return tot;
 }
@@ -759,6 +763,9 @@ if (N > 0) {
       const a = c.tac.out / c.tac.runners, b = c.num.out / c.num.runners, pp = (c.tac.out + c.num.out) / (c.tac.runners + c.num.runners);
       // 17 points: by the numbers a runner caught who tears free counts as out, and with the calibrated blood
       // (breakoff.js LOST_DOWN, tools/calibrate.js) "When most are down" breaks off with fewer standing to catch.
+      // (Aggressive came out 83% on the map vs 100% by the numbers, right at the edge, before the runners by the
+      // numbers carried the fight's wear, breakoff.js WEAR, and the count took in break-offs nobody got out of:
+      // seed 7, 73% vs 78%; Balanced 88% vs 100%, Cautious 98% vs 100%.)
       const tol = Math.max(0.17, 2.5 * Math.sqrt(Math.max(0.0025, pp * (1 - pp)) * (1 / c.tac.runners + 1 / c.num.runners)));
       check(Math.abs(a - b) <= tol, `${s}: runners who get out, on the map ${Math.round(a * 100)}% (${c.tac.runners}) vs by the numbers ${Math.round(b * 100)}% (${c.num.runners}) (within ${Math.round(tol * 100)} points)`);
     }

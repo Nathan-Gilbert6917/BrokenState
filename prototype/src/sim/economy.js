@@ -18,9 +18,10 @@ import { foodStore, storageDaily, eatFromStore, edibleFood, rackPlan } from "./s
 import { baseMoraleDaily } from "./morale.js";
 import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
-import { hasPerk, eatMult } from "./skills.js";
+import { hasPerk } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
+import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -110,8 +111,10 @@ function baseScavenging(state, base, people) {
 // fills the base up to its capacity (water brought home on top of that is kept, though in summer a little of it
 // evaporates: WATER.evaporate a day of what is above the capacity). Everyone living at a base drinks 1 a day times
 // the season's thirst (weather.js THIRST: spring and autumn 1, summer 1.3, winter 0.9; at least 1.6 on a hot day),
-// the sick with dysentery 1 more, prisoners in the cells the same as anyone (prisoners.js); growing crops are
-// watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water on top.
+// the sick with dysentery 1 more, prisoners in the cells the same as anyone (prisoners.js), and so do guests you
+// shelter (visitors.js) and a supply convoy's crew holding there (supply.js) (upkeep.js: per head × heads); growing
+// crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
+// on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
 export const waterCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
 // camp-tier0: a shelter (buildings.js SHELTER, tier 0) has no well or spring of its own; beside a river or lake its
@@ -122,7 +125,7 @@ const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => st
 // Water one person drinks on a campaign day (day index; today by default): the season's thirst, a hot day's at least.
 export const drinkRate = (state, dayIdx) => WATER.drink * (Weather.thirstFactor ? Weather.thirstFactor(state, dayIdx) : 1);
 const filtersAt = (base) => base.armory.filter((it) => it && it.key === "waterfilter").length;
-const prisonersHere = (state, base) => (state.prisoners || []).filter((p) => p.at && p.at.kind === "base" && p.at.baseId === base.id).length;
+const prisonersHere = (state, base) => prisonersAt(state, base);
 
 export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
@@ -142,10 +145,16 @@ export function waterNeed(state, base) {
   const hot = !!w && (w.key === "heat" || w.hi >= 30);
   const sick = mouths.reduce((a, s) => a + conditionsOf(s).reduce((b, c) => b + (CONDITIONS[c.key].thirst || 0), 0), 0);
   const people = mouths.length * rate + sick;
-  const prisoners = prisonersHere(state, base) * rate; // drunk in prisoners.js, at the same rate
+  const nPris = prisonersHere(state, base), nGuests = guestsAt(state, base), nCrew = crewAt(state, base);
+  const prisoners = nPris * rate; // drunk in prisoners.js, at the same rate
+  const guests = (nGuests + nCrew) * rate; // drunk in visitors.js (shelter) and supply.js (a convoy holding here)
   const crops = cropWaterNeed(state, base);
   const season = Weather.season ? Weather.season(state).key : "spring";
-  return { people: Math.round(people * 10) / 10, prisoners: Math.round(prisoners * 10) / 10, crops, total: Math.round((people + prisoners + crops) * 10) / 10, hot, rate: Math.round(rate * 100) / 100, season };
+  const r1 = (v) => Math.round(v * 10) / 10;
+  return {
+    people: r1(people), prisoners: r1(prisoners), guests: r1(guests), crops, total: r1(people + prisoners + guests + crops), hot, rate: Math.round(rate * 100) / 100, season,
+    n: mouths.length, sick: r1(sick), nPrisoners: nPris, nGuests, nCrew, heads: mouths.length + nPris + nGuests + nCrew,
+  };
 }
 
 // Water per day and days left, for the top bar and the base panel.
@@ -157,14 +166,14 @@ export function waterOutlook(state, base) {
   const inflow = prod.total + prod.filters;
   const net = inflow - need.total;
   // On a dry day: no rain in the catchers, and the crops need watering (for planning: is the supply enough?).
-  const dryNet = inflow - prod.rain - need.people - need.prisoners - cropWaterNeed(state, base, { dry: true });
+  const dryNet = inflow - prod.rain - need.people - need.prisoners - need.guests - cropWaterNeed(state, base, { dry: true });
   return { stock, cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
 }
 // Water running short now: more drunk than made, and it runs out within 6 days or is under 3 a head. The governor
 // puts a crafter on a queued water filter only then (autopilot planRoles), and so do work priorities (work.js).
 export function waterRunningShort(state, base) {
   const wo = waterOutlook(state, base);
-  return wo.net < 0 && (wo.daysLeft < 6 || (base.stock.water || 0) < atBase(state, base.id).length * 3);
+  return wo.net < 0 && (wo.daysLeft < 6 || (base.stock.water || 0) < wo.need.heads * 3);
 }
 
 // ---------- the summer water outlook ----------
@@ -273,11 +282,14 @@ function thirst(state, base, mouths, short) {
 export const spoilRate = (state, base) => foodStore(state, base).rate;
 export const foodSpoilage = (state, base) => foodStore(state, base).spoil;
 export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
-export const eatPerDay = (state, base) => residents(state, base.id).length * (Weather.foodNeedFactor ? Weather.foodNeedFactor(state) : 1) * eatMult(state, base); // eatMult: Quartermaster (skills.js)
+// What the people living here eat a day (per head × heads; upkeep.js: the cold, a Quartermaster). Prisoners, guests,
+// a holding convoy's crew and the dog eat on top (foodUse(...).total; each in its own module).
+export const eatPerDay = (state, base) => foodUse(state, base).residents;
 
-// Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten, spoiled and
-// used per day (workshops; the preserving kitchen and drying racks turn fresh food into preserved, so only what
-// they lose counts), days of food left without harvests, the next harvests and the storage.
+// Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten (everyone fed
+// from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled and used per day (workshops; the
+// preserving kitchen and drying racks turn fresh food into preserved, so only what they lose counts), days of food
+// left without harvests, the next harvests and the storage.
 export function foodOutlook(state, base) {
   const farm = farmFoodPerDay(state, base);
   const scav = (scavengeOutput(state, base).food || 0) + (scavengeOutput(state, base).preserved || 0);
@@ -288,16 +300,18 @@ export function foodOutlook(state, base) {
   }
   const rack = rackPlan(state, base);
   used += rack.take - rack.out;
-  const eat = eatPerDay(state, base);
+  const use = foodUse(state, base);
+  const eat = use.total;
   const store = foodStore(state, base);
   const spoil = store.spoil;
   const stock = edibleFood(base);
   const burn = eat + spoil + used - scav;
-  return { stock, fresh: store.fresh, preserved: store.preserved, store, farm, scav, used, eat, spoil, net: farm + scav - eat - spoil - used, daysLeft: burn > 0 ? stock / burn : Infinity, harvests: nextHarvests(state, base) };
+  return { stock, fresh: store.fresh, preserved: store.preserved, store, farm, scav, used, eat, use, perHead: use.rate, heads: use.heads, spoil, net: farm + scav - eat - spoil - used, daysLeft: burn > 0 ? stock / burn : Infinity, harvests: nextHarvests(state, base) };
 }
 
+// Expected food a day from the plots less what everyone fed here eats (per head × heads).
 export function foodForecast(state, base) {
-  return farmOutput(state, base) - residents(state, base.id).length;
+  return farmOutput(state, base) - foodUse(state, base).total;
 }
 
 // Hunger: health lost per day by everyone at a base that ran out of food, by consecutive days without
@@ -367,10 +381,12 @@ function baseDaily(state, base) {
 
   // Eating: fresh food first, then preserved (storage.js). An outpost that runs short is covered from the hub
   // afterwards (shipFromOutposts). Under a week of food left, everyone goes on short rations (60%): it stretches
-  // the stock and costs mood, not health.
-  const full = eatPerDay(state, base);
+  // the stock and costs mood, not health. The week counts everyone fed from these stores (prisoners, guests, a
+  // holding convoy's crew and the dog eat in their own modules; upkeep.js), but only the people living here ration.
+  const use = foodUse(state, base);
+  const full = use.residents;
   const edible = edibleFood(base);
-  const rationing = mouths.length > 0 && edible > 0 && edible < full * RATION_DAYS;
+  const rationing = mouths.length > 0 && edible > 0 && edible < use.total * RATION_DAYS;
   if (rationing && !base.rationing) log(state, `${base.name} is on short rations: under ${RATION_DAYS} days of food left.`, "danger");
   base.rationing = rationing;
   if (rationing) for (const s of mouths) s.mood = Math.max(0, s.mood - 3);
@@ -460,7 +476,9 @@ function shipFromOutposts(state) {
     if (!cutOff) {
       // Ship surplus to the hub, keeping a reserve: enough scrap to save up for a building (and parts once a job is queued).
       // Water and seed: an outpost keeps a week of water (its own well is small) and food to sow its plots.
-      const keep = { food: staff.length * 3 + 6, water: staff.length * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2 };
+      // Food and water by everyone fed here (per head × heads, upkeep.js: prisoners and guests too); ammo by the staff.
+      const fed = mouthsAt(state, base).heads;
+      const keep = { food: Math.ceil(foodUse(state, base).total * 3) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const k of Object.keys(base.stock)) {

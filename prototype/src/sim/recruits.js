@@ -68,7 +68,7 @@ export function baseOutlook(state, base, k = 0) {
   const people = residents(state, base.id).length;
   const beds = baseBeds(base);
   const fo = foodOutlook(state, base) || {};
-  const perHead = people > 0 ? (fo.eat || 0) / people : foodNeedFactor(state);
+  const perHead = fo.perHead != null ? fo.perHead : foodNeedFactor(state); // a resident's share (upkeep.js); fo.eat counts prisoners and guests too
   const burn = Math.max(0, (fo.eat || 0) + (fo.spoil || 0) + (fo.used || 0) - (fo.scav || 0));
   const stock = Math.max(0, fo.stock != null ? fo.stock : base.stock.food || 0); // fresh and preserved food
   const burnK = burn + k * perHead;

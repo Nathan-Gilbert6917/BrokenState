@@ -30,6 +30,7 @@ import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
+import { mouthsAt } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
@@ -295,7 +296,7 @@ function reserveRadio(state) {
   if (state.radioScanDay !== day(state)) radioScan(state);
   const h = hub(state);
   const rs = reserveStatus(state, h);
-  const n = Math.max(1, atBase(state, h.id).length);
+  const n = Math.max(1, mouthsAt(state, h).heads); // everyone fed at the hub (upkeep.js)
   const keep = (k) => (k === "food" ? n * (foodTarget(state, h) * 1.2 + 10) : rs[k] ? rs[k].target * 1.3 + 2 : Infinity);
   const spare = (k) => Math.max(0, Math.floor((h.stock[k] || 0) - keep(k)));
   const short = [...RESERVE_KEYS, "food"].filter((k) => rs[k] && rs[k].short).sort((a, b) => rs[a].have / Math.max(1, rs[a].target) - rs[b].have / Math.max(1, rs[b].target));
@@ -596,7 +597,7 @@ export function foodTarget(state, base = hub(state)) {
   // and what the outposts hold, in days for the people here.
   const w = winterPlan(state, base);
   const req = w.need + w.spoil + w.seed + w.margin - w.crops - Math.max(0, w.have - edibleFood(base));
-  return Math.max(15, Math.min(150, req / Math.max(1, atBase(state, base.id).length)));
+  return Math.max(15, Math.min(150, req / Math.max(1, mouthsAt(state, base).heads))); // upkeep.js: everyone fed here
 }
 // From mid-summer until the first spring harvest the winter outlook drives the plans.
 function winterActive(state, base) {
@@ -1004,7 +1005,7 @@ function needs(state) {
   const st = h.stock;
   const n = Math.max(1, atBase(state, h.id).length);
   const vehicle = state.vehicles.some((v) => isCar(v) && (v.loc.kind === "base" || v.loc.kind === "party"));
-  const foodDays = edibleFood(h) / n; // fresh + preserved (storage.js)
+  const foodDays = edibleFood(h) / Math.max(1, mouthsAt(state, h).heads); // fresh + preserved (storage.js), a day for everyone fed there (upkeep.js)
   const pick = (v, steps) => { for (const [lim, w] of steps) if (v < lim) return w; return steps[steps.length - 1][1]; };
   const out = {
     food: (() => { const t = foodTarget(state); return pick(foodDays, [[Math.min(4, t * 0.3), 3], [t * 0.5, 2], [t, 1.4], [t * 2, 0.6], [Infinity, 0.2]]); })(),
@@ -1081,18 +1082,20 @@ export function reserveStatus(state, base = hub(state)) {
   const row = (have, target, days, why, short = have < target) => ({ have: Math.floor(have), target: Math.round(target), days: days == null || !Number.isFinite(days) ? null : Math.round(days), short, low: have < target / 2, why });
   const out = { threat };
   // Food (fresh + preserved): the food planner's numbers (foodTarget, the winter outlook), not this table's.
-  const eaters = Math.max(1, people.length);
+  const fed = mouthsAt(state, base); // upkeep.js: the people here, prisoners, guests, a holding convoy's crew
+  const eaters = Math.max(1, fed.heads);
   const fDays = foodTarget(state, base);
   const edible = edibleFood(base);
   const wShort = winterShort(state, base);
-  out.food = row(edible, fDays * eaters, edible / eaters, `${Math.round(fDays)} days for ${people.length} (food planner${wShort > 0 ? ": the winter stores fall short" : ""})`, edible / eaters < fDays || wShort > 0);
+  out.food = row(edible, fDays * eaters, edible / eaters, `${Math.round(fDays)} days for ${fed.heads}${fed.heads > fed.residents ? ` (${fed.residents} living here)` : ""} (food planner${wShort > 0 ? ": the winter stores fall short" : ""})`, edible / eaters < fDays || wShort > 0);
   if (SUPPLIES.preserved) out.preserved = row(st.preserved || 0, 0, null, "part of the food above (food planner)", false);
   const wo = waterOutlook(state, base);
   const wp = waterPlan(state, base);
   const wDays = sk === "summer" ? 10 : 7;
   // Late spring and summer: the summer plan's stock (a heat-wave stretch) when that is more (waterPlan).
-  const wTarget = Math.max(Math.min(waterCapacity(base) * 0.9, n * wDays), wp.near ? wp.reserve : 0);
-  out.water = row(st.water || 0, wTarget, wo.daysLeft, `${wDays} days of drinking${wp.near && wp.reserve > n * wDays ? `, ${wp.reserve} for the summer's heat waves` : ""} (well ${wo.dryNet >= 0 ? "keeps up" : "falls short"} on a dry day)`,
+  const drinkers = n + fed.prisoners + fed.guests + fed.crew; // upkeep.js: everyone who drinks here
+  const wTarget = Math.max(Math.min(waterCapacity(base) * 0.9, drinkers * wDays), wp.near ? wp.reserve : 0);
+  out.water = row(st.water || 0, wTarget, wo.daysLeft, `${wDays} days of drinking${wp.near && wp.reserve > drinkers * wDays ? `, ${wp.reserve} for the summer's heat waves` : ""} (well ${wo.dryNet >= 0 ? "keeps up" : "falls short"} on a dry day)`,
     ((st.water || 0) < wTarget && (wo.dryNet < 0 || (wp.near && wp.sw.heatNet < 0))) || wo.daysLeft < 15);
   const sick = medsToTreatAll(state, base) + people.filter((s) => s.woundInfected).length;
   const buffer = Math.ceil((n / 3 + 2) * (cold ? 1.25 : 1));

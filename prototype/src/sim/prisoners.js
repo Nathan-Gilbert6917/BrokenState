@@ -3,8 +3,9 @@
 //   ride), they eat 1 food and 1 water a day from the team, and each tries to slip away (5% a day, 2% in a
 //   vehicle). When the team gets home they go to that base's cells.
 //   At a base: Holding cells (buildings.js "cells") hold 3 each; more prisoners than that sit in a shed. A day costs
-//   1 food and 1 water each (the water times the day's thirst, weather.js: 1.3 in summer, 1.6 on a hot day, 0.9 in
-//   winter, as for anyone). Escapes a day: in a cell with someone on the Guard role 0.4%, unguarded 3%, in the shed
+//   1 food and 1 water each from that base's stores (the food times the cold and the water times the day's thirst,
+//   weather.js: 1.3 in summer, 1.6 on a hot day, 0.9 in winter, as for anyone; upkeep.js counts them in the base's
+//   food and water lines). Escapes a day: in a cell with someone on the Guard role 0.4%, unguarded 3%, in the shed
 //   8%, unfed +4%; six unfed days in a row and they die.
 //   What you can do with them (at a base):
 //     question (every 3 days): Speech decides (45% + 3% a point of the best talker, zealots −25%, soldiers −15%,
@@ -41,6 +42,8 @@ import { addMood } from "./relations.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { raidForce } from "./conflicts.js";
 import { thirstAt } from "./weather.js";
+import { coldFactor } from "./upkeep.js";
+import { eatFromStore } from "./storage.js";
 
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
@@ -382,10 +385,9 @@ export function prisonersDaily(state) {
       const base = baseById(state, p.at.baseId);
       if (!base) continue;
       const food = (base.stock.food || 0) + (base.stock.preserved || 0);
-      if (food >= PRISON.FOOD && (base.stock.water || 0) >= drink) {
-        const fresh = Math.min(PRISON.FOOD, base.stock.food || 0);
-        base.stock.food = (base.stock.food || 0) - fresh;
-        base.stock.preserved = (base.stock.preserved || 0) - (PRISON.FOOD - fresh);
+      const eat = PRISON.FOOD * coldFactor(state); // more in the cold, as for anyone at a base (upkeep.js)
+      if (food >= eat && (base.stock.water || 0) >= drink) {
+        eatFromStore(base, eat); // fresh first, then preserved (its jars come back: storage.js)
         base.stock.water -= drink;
         fed = true;
       }

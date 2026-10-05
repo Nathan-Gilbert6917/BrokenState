@@ -50,6 +50,7 @@ export const BREAKOFF = {
   LOPSIDED: 0.4,
   FALSE_ALARM: [0.25, 0.1], // a fight that would be won looks lost after round 1 / 2: this × (1 − win chance)
   BADLY: 50,               // health under this is badly hurt ("most")
+  WEAR: 1,                 // breaking off: a blow still to come has partly landed, WEAR × (share of the team down)^1.5 (rollFight)
   TILES: [2, 5],           // distance to safety (tiles, as the tactical strip): field fights start near the way out
   AMBUSHED: 2, STRUCK_FIRST: -1, // they had the drop on you: farther; you struck first: closer
   PIN_DEAD: 0.35,          // each of the dead left per runner: this many on them (next to them)
@@ -250,7 +251,8 @@ export function wantsOut(policy, look) {
 
 // One fight, start to end. Draws from rng in a fixed order (the fate, the wounds, then a look after each round), so a
 // fight that is not broken off plays out exactly as it would with the policy Never.
-// Returns { win, outcome, round (broken off after this round, or null), hits: [{ id, raw }], members, run, killShare }.
+// Returns { win, outcome, round (broken off after this round, or null), hits: [{ id, raw }], worn: [{ id, raw }] (broken
+// off: the blows still to come, in part), members, run, killShare }.
 export function rollFight(rng, model, policy = "never") {
   const R = BREAKOFF.ROUNDS;
   const ms = model.members.map((m) => ({ ...m, down: false, hit: false }));
@@ -296,11 +298,29 @@ export function rollFight(rng, model, policy = "never") {
     const killShare = win ? 1 : rng.range(BREAKOFF.KILLS_LOST[0], BREAKOFF.KILLS_LOST[1]);
     return { win, outcome: win ? "victory" : "defeat", round: null, hits, members: ms, run: null, killShare };
   }
+  // Worn down: the fight's blows land whole, so without this whoever still stands when the team breaks off is as
+  // fresh as at the start, and a caught runner (one blow of 18-32, two or three with the dead on them) always tore
+  // free: "When most are down" got 100% of its runners out where the map's Aggressive AI gets about 73%. On the map
+  // those still standing have been shot at and clawed all along, more the more of the team has fallen (runners'
+  // health: about 90 when the Cautious AI pulls out early, about 55 when the Aggressive one does). So a blow still to
+  // come has partly landed: WEAR × (the share of the team down)^1.5 of it (still standing: at least 1 health left).
+  // Kept apart from `hits` (the wounds of the rounds fought, the same as Never's up to here).
+  const share = BREAKOFF.WEAR * (ms.filter((m) => m.down).length / n) ** 1.5;
+  const worn = [];
+  for (let j = i; j < H; j++) {
+    const { m, raw } = plan[j];
+    if (m.down) continue;
+    const w = Math.min(Math.floor(raw * share), Math.ceil(m.hp / Math.max(0.05, m.mult)) - 1);
+    if (w <= 0) continue;
+    m.hp -= w * m.mult;
+    m.hit = true;
+    worn.push({ id: m.id, raw: w });
+  }
   const k = win ? BREAKOFF.KILLS_WON : BREAKOFF.KILLS_LOST;
   const killShare = rng.range(k[0], k[1]) * ((round + 1) / R);
   const left = Math.max(0, model.enemy.count - Math.floor(model.enemy.count * killShare));
   const run = runFor(rng, model, ms, left, BREAKOFF.CLOSE[Math.min(round, BREAKOFF.CLOSE.length - 1)]);
-  return { win, outcome: run.escaped.length ? "retreat" : "defeat", round, hits, members: ms, run, killShare };
+  return { win, outcome: run.escaped.length ? "retreat" : "defeat", round, hits, worn, members: ms, run, killShare };
 }
 
 // ---------- the real fight ----------
@@ -328,10 +348,10 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, refund, ti
     (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
   }
   if (broke) {
-    for (const b of fight.run.blows) {
+    for (const b of [...fight.worn, ...fight.run.blows]) {
       const s = byId.get(b.id);
       if (!s || !s.alive || downNow.has(b.id)) continue;
-      hurt(state, s, b.raw, tile, `${cause}, running for it`);
+      hurt(state, s, b.raw, tile, fight.worn.includes(b) ? cause : `${cause}, running for it`);
       (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
     }
     const barely = (s) => { s.health = Math.min(s.health, rng.int(5, 15)); woundTrauma(state, s, 30); hurtIds.add(s.id); };
