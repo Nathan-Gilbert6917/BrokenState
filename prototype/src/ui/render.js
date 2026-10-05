@@ -17,12 +17,13 @@ import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
+import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
-  partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas,
+  partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
@@ -856,6 +857,7 @@ function moverHash(state) {
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
+  if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(stagingPct(state.staging) * 50)) % 2147483647; // the staging camp (sim/staging.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
@@ -995,6 +997,7 @@ export function render(state) {
   const crowded = (id) => busy.has(id) || (on("hordes") && !live.has(id) && !!k[id] && k[id].hordeSize > 0);
   // Tiles drawn as a base (yours, or another group's as far as you know), with half the sprite's width.
   baseTiles = new Map(state.bases.map((b) => [b.tile, ((b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost) * zoomBoost()) / 2]));
+  if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // teams at the staging camp stand beside it
   spriteBoxes = [];
   besideCount = new Map();
   const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
@@ -1072,6 +1075,24 @@ export function render(state) {
     ctx.fillRect(bx - 1, by - 1, bw + 2, 4 * s + 2);
     ctx.fillStyle = started ? "#e2412f" : "#8a5a5a";
     ctx.fillRect(bx, by, bw * frac, 4 * s);
+  }
+  // Your staging camp (sim/staging.js): tarps, crates and a barricade going up as the work goes on, on your plate, with
+  // a bar of the work done (the lighter part: as far as the materials in its stores allow).
+  const camp = state.staging;
+  if (camp && inView(camp.tile)) {
+    const px = G.x[camp.tile], py = G.y[camp.tile], s = zoomBoost();
+    ownerPlate(px, py, PLAYER_COLOR, s, 15, false);
+    const cv = stagingSpriteCanvas(stagingStage(camp), PLAYER_COLOR), w = STAGING_W * s, cy = py - 4 * s;
+    sprite(cv, px, cy, w);
+    const h = spriteH(cv, w);
+    noteSprite(px, cy, w, h);
+    const bw = 22 * s, bx = px - bw / 2, by = cy + h / 2 + 2 * s, f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
+    ctx.fillStyle = "rgba(13,15,18,0.8)";
+    ctx.fillRect(bx - 1, by - 1, bw + 2, 3 * s + 2);
+    if (cap > f) { ctx.fillStyle = "rgba(217,165,32,0.35)"; ctx.fillRect(bx, by, bw * cap, 3 * s); }
+    ctx.fillStyle = "#d9a520";
+    ctx.fillRect(bx, by, bw * f, 3 * s);
+    labels.push({ text: `Staging camp ${Math.round(f * 100)}%`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : by + 3 * s + 7, pri: -1, screen: true, color: "#cfe2f7", size: 9 });
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   const nodes = radioNodes(state);
@@ -1324,6 +1345,7 @@ const PHASE_COLOR = { waiting: "#ffd166", task: "#9be39b" }; // ring under your 
 const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it last moved
 
 const PLACE_W = { hub: 46, outpost: 34, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
+const STAGING_W = 34; // the staging camp's sprite width (sim/staging.js), an outpost's
 const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")
@@ -1737,6 +1759,8 @@ export function tileTooltip(state, id) {
   const lines = [`<b>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</b>`];
   const ownHere = state.bases.find((b) => b.tile === id);
   if (ownHere) lines.push(`<span style="color:#cfe2f7">${esc(ownHere.name)}</span>`);
+  const campTip = stagingTip(state, id); // sim/staging.js
+  if (campTip) lines.push(`<span style="color:#cfe2f7">${esc(campTip)}</span>`);
   if (loc) {
     const def = LOCATIONS[loc.type], zone = SITE_ZONES[loc.zone || def.cat];
     lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);

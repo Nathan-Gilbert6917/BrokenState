@@ -570,6 +570,38 @@ function paintCamp(color, lit = true) {
   return p;
 }
 
+// Your staging camp (sim/staging.js) by how far the work has got (stage 0–3): 0 a tarp shelter, crates and a fire on
+// trampled ground with a pile of stakes; 1 the first stretch of barricade and the posts of a shack; 2 the shack half
+// boarded, the barricade on both sides; 3 the shack roofed in your color, the barricade all but closed, a flag up.
+// The tarp, roof and flag are in your color (like the camp and base sprites).
+function paintStaging(stage, color) {
+  const p = painter(30, 21);
+  const yb = 19, tarp = shade(color, 0.12);
+  p.rect(1, 13, 28, yb, DIRT);                                    // trampled ground
+  p.rect(1, 13, 28, 13, shade(DIRT, -0.25));
+  for (const [x, y] of [[4, 16], [11, 18], [19, 15], [25, 17], [8, 14]]) p.set(x, y, shade(DIRT, 0.18));
+  // The shack going up at the back right: posts, then boards, then a roof.
+  if (stage >= 1) {
+    for (const x of [17, 25]) p.rect(x, stage >= 2 ? 6 : 8, x, 13, WOOD);
+    p.rect(17, stage >= 2 ? 6 : 8, 25, stage >= 2 ? 6 : 8, WOOD_LIT); // the top beam
+  }
+  if (stage === 2) { p.rect(18, 10, 24, 13, BOARDS); for (let x = 18; x <= 24; x += 2) p.set(x, 10, shade(BOARDS, 0.2)); p.rect(20, 11, 21, 13, shade(BOARDS, -0.6)); }
+  if (stage >= 3) { house(p, 17, 8, 9, 6, BOARDS, color, { rh: 3 }); flag(p, 27, 0, color, 9, 3); }
+  // The tarp shelter at the back left, with a bedroll; the crates at the front right.
+  tent(p, 7, 15, 6, tarp);
+  p.rect(1, 14, 3, 15, shade(OLIVE, 0.1));                          // bedroll
+  crate(p, 19, 15, 4, 3);
+  crate(p, 23, 14, 3, 4, BOARDS);
+  if (stage < 2) crate(p, 21, 12, 3, 3, shade(WOOD_LIT, -0.1));
+  campfire(p, 12, 17);
+  // A pile of stakes waiting (fewer as the barricade grows) and the barricade itself along the front.
+  const pile = 3 - Math.min(3, stage);
+  for (let i = 0; i < pile; i++) p.rect(23 - i, 18 - i, 28 - i, 18 - i, i % 2 ? WOOD : WOOD_LIT);
+  const runs = [[], [[1, 7]], [[1, 9], [22, 28]], [[1, 10], [16, 28]]][Math.max(0, Math.min(3, stage))];
+  for (const [x0, x1] of runs) palisade(p, x0, x1, yb + 1, 5);
+  return p;
+}
+
 
 
 function paintWreck() {
@@ -2112,6 +2144,12 @@ export const skullCanvas = () => cached("skull", paintSkull);
 // Tent and campfire; lit = false for an abandoned camp.
 export function campSpriteCanvas(color, lit = true) {
   return cached(`camp:${color}:${+lit}`, () => paintCamp(color, lit));
+}
+
+// Your staging camp by stage (0–3, sim/staging.js stagingStage), tinted with your color.
+export function stagingSpriteCanvas(stage, color) {
+  const k = Math.max(0, Math.min(3, stage | 0));
+  return cached(`staging:${k}:${color}`, () => paintStaging(k, color));
 }
 
 // The ruins of a razed base (render.js; sim/conquest.js and factions.js tile.ruin): scorched yard, two charred

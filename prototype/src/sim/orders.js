@@ -39,6 +39,7 @@ export function describeOrder(state, o) {
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
+    case "stage": return "Work on the staging camp"; // staging.js: until it is done or the materials run out
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
     case "hunt": return `Hunt ${huntHours(o)}h`;

@@ -496,7 +496,8 @@ section("Losing the hub: with another base, and with none (the exiles)");
   check(!crash, `20 days with no base (player's hands), every screen drawn: no crash ${crash}`);
   check(!s2.gameOver || !alive(s2).length, "the run goes on while anyone lives");
   const opts = ex && s2.parties.includes(ex) ? orderOptions(s2, ex) : [];
-  check(!s2.parties.includes(ex) || opts.some((o) => o.mission === "outpost" || o.mission === "assault") || true, "the exiles can build or retake");
+  check(!s2.parties.includes(ex) || s2.bases.length || opts.some((o) => o.mission === "establish" || o.mission === "assault") || s2.tiles[partyTile(ex)].terrain === "water", "the exiles can establish a base or retake one");
+  check(!opts.some((o) => o.mission === "outpost"), "no instant Build outpost with no base (a staging camp instead)");
   // No base for 60 days on several worlds, every card answered at random: nothing may assume a hub.
   let crash2 = "";
   for (const sd of [3, 5, 8, 13]) {
@@ -517,16 +518,31 @@ section("Losing the hub: with another base, and with none (the exiles)");
     } catch (e) { crash2 += ` seed ${sd} day ${day(w)}: ${e.stack.split("\n").slice(0, 2).join(" | ")}`; }
   }
   check(!crash2, `60 days with no base on 4 worlds, cards answered at random: no crash${crash2}`);
-  // A new base founded by the exiles is the hub.
+  // A new base founded by the exiles: Establish base, a staging camp built up into the hub (staging.js).
+  const S = await import("../src/sim/staging.js");
   const s3 = world();
   const h3 = hub(s3);
   C.occupyPlayerBase(s3, h3, s3.factions.find((x) => x.alive), { garrison: 4 });
   const ex3 = s3.parties.find((p) => p.exile);
-  ex3.supplies.scrap = Math.max(ex3.supplies.scrap || 0, 20);
+  s3.noWanderers = true;
   for (let i = 0; i < 96 && ex3.phase !== "waiting"; i++) { tickHour(s3); s3.cards.length = 0; }
+  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, food: 40, water: 40 });
   const { giveOrder } = await import("../src/sim/parties.js");
-  if (ex3.phase === "waiting") giveOrder(s3, ex3, "outpost");
-  check(!!hub(s3) && hub(s3).type === "hub", `the exiles' new base is the hub (${hub(s3) ? hub(s3).name : "none"})`);
+  const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
+  check(!!est && est.label === S.ESTABLISH_LABEL && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.disabled})`);
+  if (ex3.phase === "waiting") giveOrder(s3, ex3, "establish");
+  const camp3 = s3.staging;
+  check(!!camp3 && !hub(s3) && camp3.tile === partyTile(ex3) && !camp3.first, "it pitches a staging camp, not a base");
+  check(camp3 && camp3.needs.parts === S.STAGING.EXILE.needs.parts && camp3.work === S.STAGING.EXILE.work, `the exiles' camp: ${camp3 && S.needText(camp3.needs)}, ${S.STAGING.EXILE.work} person-hours`);
+  check(camp3 && !S.stagingMissing(camp3).length && ex3.phase === "task" && ex3.task.type === "stage", "the team unloaded everything it takes and works on it");
+  const d3 = day(s3);
+  for (let i = 0; i < 24 * 10 && !hub(s3) && s3.parties.includes(ex3); i++) {
+    tickHour(s3);
+    s3.cards.length = 0;
+    if (s3.parties.includes(ex3) && ex3.phase === "waiting" && s3.staging) giveOrder(s3, ex3, "establish"); // back to work after a scare
+  }
+  check(!!hub(s3) && hub(s3).type === "hub" && !s3.staging, `the camp becomes the hub after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
+  check(!hub(s3) || hub(s3).stock.food >= 10, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
   // The autopilot with no base.
   const s4 = world(seed + 1);
   setAutopilot(s4, true, "balanced");
