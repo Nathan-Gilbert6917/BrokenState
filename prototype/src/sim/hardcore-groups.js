@@ -737,8 +737,15 @@ function militaryFalls(state, f, how) {
     t.ruin = { name: place, day: d, by: "the dead", from: f.name };
     t.loot = Math.max(t.loot || 0, M.RUIN_LOOT);
     t.infection = Math.max(t.infection || 0, 0.85);
+    // The first year's spread (hardcore-outbreak.js) steers every tile toward its infGoal: raise that too, or it
+    // would thin the dead out of the ruin again.
     t.infBase = Math.max(t.infBase || 0, 0.6);
-    for (const id of g.within(tile, 1)) if (id !== tile) state.tiles[id].infection = Math.max(state.tiles[id].infection || 0, 0.6);
+    t.infGoal = Math.max(t.infGoal || 0, 0.85);
+    for (const id of g.within(tile, 1)) if (id !== tile) {
+      const n = state.tiles[id];
+      n.infection = Math.max(n.infection || 0, 0.6);
+      n.infGoal = Math.max(n.infGoal || 0, 0.6);
+    }
     const fallen = Math.round(fallenAll * rng.range(M.FALLEN_HORDE[0], M.FALLEN_HORDE[1])) + 20;
     makeHorde(state, { tile, size: fallen, role: "roam" });
   }
