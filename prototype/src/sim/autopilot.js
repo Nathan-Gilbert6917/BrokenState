@@ -52,6 +52,10 @@ import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, broodForce } from "./hives.js";
 import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
+import {
+  HUNT, CABIN, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkCap,
+  cabinProblem, gameLand, hasFishingGear,
+} from "./hunting.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -1026,7 +1030,7 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
-const ROLE_AREA = { farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { hunt: "food", fish: "food", farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1080,6 +1084,14 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   };
   if (foodDays < 4) farmTo(fw.ideal);
+  // 2b. Food from the land (hunting.js): a hunting cabin's hunters (two at 8+ people) and a fisher by the water while
+  // food is not plentiful. A hunter at a cabin in good game country brings in several farmers' worth (if it has a
+  // weapon), so they go before the comfortable farm crew and the stations.
+  if (areas.food && !gov(state).noHunting && foodDays < Math.max(40, foodTarget(state, base) * 1.5)) {
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, people.length >= 8 ? CABIN.hunters : 1)) give(s, "hunt");
+    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(people.length >= 8 ? 2 : 1, fishWorkCap(state, base)))) give(s, "fish");
+  }
+
   // The winter stores fall short (winterShort): the plots get their tenders before builders, medics and stations.
   if (winterShort(state, base) > 0) farmTo(fw.need);
 
@@ -1280,7 +1292,7 @@ function roleSummaries(state) {
 const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
-  farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
+  huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
 };
 function planBuilds(state, base, areas = ALL_AREAS) {
@@ -1336,6 +1348,9 @@ function buildWishes(state, base) {
   if ((st.water || 0) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && count(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max) add("cistern", "room to store more water");
   if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : 3)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
+  // A hunting cabin (hunting.js) where the land around is good game country, before the winter or while food is short.
+  if (BUILDINGS.huntcabin && !g.noHunting && !count(base, "huntcabin") && !queued("huntcabin") && here.length >= (isHub ? 6 : 2) && !cabinProblem(state, base) && gameLand(state, base) >= 5 &&
+      (st.scrap || 0) >= 30 && (winterShort(state, base) > 0 || (winterActive(state, base) && edibleFood(base) / Math.max(1, here.length) < foodTarget(state, base))) && here.some((s) => bestHuntWeapon(s))) add("huntcabin", "hunt the game land around it for the winter");
   if (isHub && count(base, "greenhouse") + queued("greenhouse") < (pop >= 12 ? 2 : 1) && pop >= 6 && (st.parts || 0) >= 4) add("greenhouse", "something to grow through the winter", wxSeason(state).key === "autumn" || winterShort(state, base) > 0);
   if (!isHub && count(base, "farm_plot") + queued("farm_plot") < 1) add("farm_plot", "an outpost should feed itself", true);
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
@@ -1737,6 +1752,7 @@ function planTrip(state) {
     if (target && cands.includes(target)) cands.splice(cands.indexOf(target), 1); // a look first instead of going straight in
     if (target) cands.push({ ...target, mission: "recon", why: `look for ${short.filter((k) => gives(state.tiles[target.tile]) && (LOCATIONS[state.tiles[target.tile].loc.type].loot[k] || 0) >= 1).join(" and ")} (none known nearby)` });
   }
+  cands.push(...foodTripCands(state, h, pool, need, P)); // hunting and fishing trips when food runs short (hunting.js)
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
   cands.sort((a, b) => b.score - a.score);
 
@@ -2016,7 +2032,7 @@ function launchTrip(state, c, pool, spareHands) {
   const g = gov(state);
   const size = Math.min(c.crew, spareHands);
   if (size < (c.mission === "rescue" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : 1)) return null;
-  const fit = c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
+  const fit = c.fit ? c.fit : c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
     (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
   const crew = friendlyCrew(state, [...pool].sort((a, b) => fit(b) - fit(a)), size, fit); // near-equal picks: friends together, rivals apart (relations.js)
@@ -2048,7 +2064,7 @@ function launchTrip(state, c, pool, spareHands) {
     if (stack && stack.condition >= 25) v = stack;
   }
   const plannedV = isBike(v) ? { ...v, count: n } : v;
-  const onSite = c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  const onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
@@ -2060,7 +2076,7 @@ function launchTrip(state, c, pool, spareHands) {
   const stock = (k) => Math.floor(h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
   // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
-  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission);
+  const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission) || !!c.haul;
   const worstBand = (e) => (e && e.load ? Math.max(-1, ...e.load.people.map((x) => x.band)) : -1);
   if (looting && !isCar(v) && est.hours > 24) {
     for (const s of [...crew].sort((a, b) => wornLoad(b) - wornLoad(a))) {
@@ -2116,17 +2132,68 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
-  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup });
+  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup,
+    plan: c.steps ? { preset: c.preset || "custom", steps: c.steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
   if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
   if (c.mission === "hive") g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1;
+  if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
-  say(state, `Sent ${names(crew)} (${c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
+  say(state, `Sent ${names(crew)} (${c.food === "huntTrips" ? "hunt" : c.food === "fishTrips" ? "fish" : c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
+}
+
+// ---------- food from the land (hunting.js) ----------
+// Hunting and fishing trips when the winter stores fall short (winterShort), food is below the season's target
+// (need 1.4+), or in autumn to stock up while game is fat (below 1.3 × the target): the best game land within range
+// for the hub's best hunters (8 hours; snares set, or checked when it is our line, with wire or 2 scrap), and the
+// best water when the hub has a rod or a net. Scored like a site: food need × the expected haul / 12 (up to 3), by
+// distance, × 1.4 when the winter is short (× 1.15 in autumn). The haul is kept to a load band on foot (haulCap) and a
+// car goes for 3+ tiles, as for scavenging: fresh game is heavy and spoils.
+const huntFit = (s) => hunterMult(s) * (bestHuntWeapon(s) ? 3 : 0.3) + combatPower(s) * 0.1;
+const fishFit = (s) => fisherMult(s) + combatPower(s) * 0.05;
+// gov.noHunting: the test switch (hunttest.js) that leaves hunting and fishing out of the governor's plans.
+function foodTripCands(state, h, pool, need, P) {
+  if (gov(state).noHunting) return [];
+  const n = Math.max(1, atBase(state, h.id).length);
+  const foodDays = edibleFood(h) / n;
+  const season = wxSeason(state).key;
+  const short = winterShort(state, h) > 0;
+  if (!(short || need.food >= 1.4 || (season === "autumn" && foodDays < foodTarget(state, h) * 1.3))) return [];
+  const boost = short ? 1.4 : season === "autumn" ? 1.15 : 1;
+  const size = Math.min(3, Math.max(2, P.crew));
+  const ammo = Math.max(0, (h.stock.ammo || 0) - 20);
+  const out = [];
+  const hunters = [...pool].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, size);
+  if (hunters.some((s) => bestHuntWeapon(s, ammo))) {
+    const wire = (h.armory || []).some((it) => it && it.key === "snarewire");
+    const snareKit = wire || (h.stock.scrap || 0) >= 25;
+    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, hours: HUNT.defHours, limit: 3 })) {
+      if (x.est.rations < 8) continue;
+      const line = snareLine(state, x.tile);
+      const snare = line ? state.hour - (line.check ?? line.set) >= 48 : snareKit;
+      out.push({ mission: "move", tile: x.tile, crew: size, fit: huntFit, haul: true, food: "huntTrips", onSite: HUNT.defHours + (snare ? 2 : 0),
+        steps: [...(snare ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],
+        supplies: snare && !line && !wire ? { scrap: 2 } : undefined,
+        score: (need.food * Math.min(3, x.est.rations / 12) * boost) / (1 + x.dist / 6),
+        why: `hunt for food${short ? " (the winter stores fall short)" : season === "autumn" ? " (stocking up in autumn)" : ""}: ~${Math.round(x.est.rations)} expected` });
+    }
+  }
+  const fishers = [...pool].sort((a, b) => fishFit(b) - fishFit(a) || a.id - b.id).slice(0, 2);
+  if (hasFishingGear(h.armory) || fishKit(fishers).power) {
+    for (const x of fishTargets(state, h.tile, P.range, fishers, h.armory || [], { hours: HUNT.defHours, limit: 2 })) {
+      if (x.est.rations < 5) continue;
+      out.push({ mission: "move", tile: x.tile, crew: 2, fit: fishFit, haul: true, food: "fishTrips", onSite: HUNT.defHours,
+        steps: [{ kind: "fish", hours: HUNT.defHours }, { kind: "home" }],
+        score: (need.food * Math.min(2.5, x.est.rations / 10) * boost) / (1 + x.dist / 6),
+        why: `fish for food${short ? " (the winter stores fall short)" : ""}: ~${Math.round(x.est.rations)} expected` });
+    }
+  }
+  return out;
 }
 
 // Food and water for a first estimate: n people for `days` with a quarter more, and some ammo (load.js weighs it).

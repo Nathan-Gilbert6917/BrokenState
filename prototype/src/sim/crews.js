@@ -32,6 +32,7 @@ import { attitude, isAggressiveType } from "./factions.js";
 import { weather, severeSoon } from "./weather.js";
 import { crewAI } from "./autopilot.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
+import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT } from "./hunting.js";
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
 export const CREW_LOG = 8;         // trips kept in a crew's log
@@ -107,6 +108,38 @@ export const FIELD_TYPES = {
     },
   },
 };
+// Food from the land (hunting.js): a trip to hunt or fish N hours and come home. The crew picks its best hunters
+// (fishers); the hub's rod or net goes along for fishing. Fresh game is heavy and spoils: a car brings it home sooner.
+const huntFit = (s) => hunterMult(s) * (bestHuntWeapon(s) ? 3 : 0.3);
+const fishFit = (s) => fisherMult(s);
+const wantsFood = (need) => (need.food || 0) >= 0.6;
+FIELD_TYPES.hunt = {
+  name: "Hunt", desc: "Hunting trips (8 hours, snares checked or set when the crew has wire or scrap) to the best game land within range while the hub wants food. Needs a hunter with a rifle, bow, crossbow, shotgun or pistol.",
+  cands(ctx) {
+    const { state, base, crew, need, role } = ctx;
+    if (!wantsFood(need)) return [];
+    const team = [...crewReady(state, role)].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, Math.max(1, crew.size || 1));
+    return huntTargets(state, base.tile, crew.range, team, { ammo: Math.max(0, (base.stock.ammo || 0) - 20), hours: HUNT.defHours, limit: 4 })
+      .filter((x) => !targeted(state, x.tile) && x.est.rations >= 6)
+      .map((x) => ({ tile: x.tile, mission: "move", fit: huntFit, onSite: HUNT.defHours + 2, why: `hunt for food (~${Math.round(x.est.rations)} expected)`,
+        steps: [...(x.snares || (base.stock.scrap || 0) >= 10 ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],
+        supplies: (base.stock.scrap || 0) >= 10 && !snareLine(state, x.tile) ? { scrap: 2 } : {},
+        score: (need.food || 0) * Math.min(3, x.est.rations / 12) / (1 + x.dist / 6) }));
+  },
+};
+FIELD_TYPES.fish = {
+  name: "Fish", desc: "Fishing trips (8 hours) to the best river or lake shore within range while the hub wants food. Takes the hub's fishing rod or net.",
+  cands(ctx) {
+    const { state, base, crew, need, role } = ctx;
+    if (!wantsFood(need)) return [];
+    const team = [...crewReady(state, role)].sort((a, b) => fishFit(b) - fishFit(a) || a.id - b.id).slice(0, Math.max(1, crew.size || 1));
+    return fishTargets(state, base.tile, crew.range, team, base.armory || [], { hours: HUNT.defHours, limit: 3 })
+      .filter((x) => !targeted(state, x.tile))
+      .map((x) => ({ tile: x.tile, mission: "move", fit: fishFit, onSite: HUNT.defHours, fishGear: true, why: `fish for food (~${Math.round(x.est.rations)} expected)`,
+        steps: [{ kind: "fish", hours: HUNT.defHours }, { kind: "home" }],
+        score: (need.food || 0) * Math.min(2.5, x.est.rations / 10) / (1 + x.dist / 6) }));
+  },
+};
 export const FIELD_KEYS = Object.keys(FIELD_TYPES);
 
 const targeted = (state, id) => state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)));
@@ -164,7 +197,8 @@ export function planCrewTrip(state, role) {
   if (!cands.length) { c.status = "nothing worth a trip within range"; return ""; }
   let why = "";
   for (const cand of cands.slice(0, 10)) {
-    const team = [...ready].sort((a, b) => fitScore(b, cand.mission) - fitScore(a, cand.mission) || a.id - b.id).slice(0, Math.max(1, c.size || 1));
+    const fit = cand.fit || ((s) => fitScore(s, cand.mission));
+    const team = [...ready].sort((a, b) => fit(b) - fit(a) || a.id - b.id).slice(0, Math.max(1, c.size || 1));
     const res = FIELD_TYPES[cand.key].launch ? FIELD_TYPES[cand.key].launch({ ...ctx, team }, cand) : launchTeam({ ...ctx, team }, cand);
     if (!res || res.error) { why = (res && res.error) || why; continue; }
     c.out = { ...res, mission: cand.mission, key: cand.key, tile: cand.tile, why: cand.why, left: state.hour, members: team.map((s) => s.id), cargo: {}, gear: 0, searched: 0 };
@@ -228,10 +262,12 @@ function launchTeam(ctx, c) {
   const r = crew.rules || {};
   const res = launchExpedition(state, {
     memberIds: ids, dest: c.tile, mission: c.mission, stance, vehicleId: v ? v.id : null, supplies: sup,
-    plan: { preset: "custom", steps: [], conditions: { hurt: r.hurt || null, food: r.food || null, cargo: !!r.cargo } },
+    plan: { preset: "custom", steps: c.steps || [], conditions: { hurt: r.hurt || null, food: r.food || null, cargo: !!r.cargo } },
   });
   if (res.error) return { error: res.error };
   const p = res.party;
+  // Fishing: the hub's rod or net goes along when nobody carries one.
+  if (c.fishGear && !fishKit(team, p.cargo.gear).power) packFishingGear(state, base, p);
   p.crewRole = ctx.role.id;
   p.crewName = ctx.role.name;
   p.crewChain = 0;

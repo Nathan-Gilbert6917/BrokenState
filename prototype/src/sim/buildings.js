@@ -7,6 +7,7 @@ import { stationIO, orderHold } from "./production.js";
 import { refreshPower, generatorStatus, powerLine } from "./power.js";
 import { buildMult } from "./skills.js";
 import { buildLock } from "./blueprints.js";
+import { cabinProblem } from "./hunting.js";
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -50,6 +51,8 @@ export const BUILDINGS = {
   cellar:       { name: "Root cellar",    cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 food storage room underground: food in a cellar spoils slowly (0.5% a day, 0.3% in the cold). The hub already has a small cellar (200), an outpost only a pantry (40); food above the room is stored outside and spoils fast (3% a day, more in heat and rain)." },
   coldstore:    { name: "Cold store",     cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
   kitchen:      { name: "Preserving kitchen", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
+  // Hunting (hunting.js): the land around the base, hunted by the people on the Hunt job.
+  huntcabin:    { name: "Hunting cabin",  cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Up to 2 people on the Hunt job hunt the land within 2 tiles 3 hours a day (dawn and dusk) with their own weapons and this base's ammo; without a weapon they tend snares. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
   smoker:       { name: "Drying rack",    cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
   generator:    { name: "Generator",      cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving kitchen. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
@@ -208,6 +211,7 @@ export function canBuild(state, base, type) {
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
   if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
+  if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
   for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {

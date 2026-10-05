@@ -13,6 +13,7 @@ import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
+import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const SURVEY_HOURS = 2;   // Look around
@@ -35,6 +36,9 @@ export function describeOrder(state, o) {
     case "wait": return `Wait ${o.hours}h`;
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
+    case "hunt": return `Hunt ${huntHours(o)}h`;
+    case "fish": return `Fish ${huntHours(o)}h`;
+    case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
   }
   return o.type;
 }
@@ -110,6 +114,8 @@ export function queueEstimate(state, p) {
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
     else if (o.type === "gather") hours = GATHER_HOURS;
+    else if (o.type === "hunt" || o.type === "fish") hours = huntHours(o);
+    else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
     else if (o.type === "nearby") {
@@ -184,7 +190,9 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "hunt", "fish", "snare"];
+// Hours of a hunt or fishing order: as given, within 2–24 (8 if none).
+export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours))); // order types tied to the tile they were queued for
 
 // Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
 export function startOrder(state, p, o) {
@@ -261,6 +269,26 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "gather", hours: GATHER_HOURS });
       return `The team searches the shore for boat materials (${GATHER_HOURS}h).`;
     }
+    case "hunt": {
+      const why = huntProblem(state, p);
+      if (why) return fail(`Hunt: ${why}`);
+      startTask(state, p, { type: "hunt", hours: huntHours(o) });
+      return `The team goes hunting (${huntHours(o)}h).`;
+    }
+    case "fish": {
+      const why = fishProblem(state, p);
+      if (why) return fail(`Fish: ${why}`);
+      startTask(state, p, { type: "fish", hours: huntHours(o) });
+      return `The team goes fishing (${huntHours(o)}h).`;
+    }
+    case "snare": {
+      const mode = snareMode(state, partyTile(p), o.mode);
+      const why = snareProblem(state, p, partyTile(p), mode);
+      if (why) return fail(`Snares: ${why}`);
+      const hours = snareHours(state, partyTile(p), mode);
+      startTask(state, p, { type: "snare", mode, hours });
+      return mode === "set" ? `The team sets a line of snares (${hours}h).` : `The team checks the snares (${hours}h).`;
+    }
     case "cross": {
       const from = partyTile(p);
       const plan = boatPlan(state, p, from, o.tile, o.mode);
@@ -299,6 +327,11 @@ export function taskHour(state, p) {
   if (!t) return awaitOrders(state, p, "", { failed: true });
   t.done += 1;
   if (t.type === "camp") campHour(state, p);
+  // Hunting and fishing roll every hour (hunting.js); with nothing left to hunt or fish with, the job ends early.
+  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p))) {
+    if (state.parties.includes(p)) finishTask(state, p);
+    return;
+  }
   if (t.type === "cross" && !t.afloat && t.done >= t.build) {
     const err = launchBoat(state, p);
     if (err) return awaitOrders(state, p, err, { failed: true });
@@ -328,6 +361,9 @@ function finishTask(state, p) {
   else if (t.type === "craft") text = fieldCraft(state, p, t.recipe);
   else if (t.type === "wait") text = `Waited ${t.done} hour${t.done === 1 ? "" : "s"}.`;
   else if (t.type === "cross") text = landBoat(state, p);
+  else if (t.type === "hunt") text = huntSummary(state, p, t);
+  else if (t.type === "fish") text = fishSummary(state, p, t);
+  else if (t.type === "snare") text = snareWork(state, p, t.mode);
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
 }

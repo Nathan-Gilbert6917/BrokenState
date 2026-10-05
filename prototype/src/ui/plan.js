@@ -16,7 +16,7 @@ const MAX_STEPS = 10;
 export function defaultPlan(mission) {
   const back = !STAY_MISSIONS.includes(mission) || mission === "recon";
   const preset = mission === "recon" ? "recon" : mission === "scavenge" ? "scavenge" : "custom";
-  return { preset, steps: back ? [{ kind: "home" }] : [], days: 1, cond: { hurt: null, food: null, cargo: false }, add: { camp: 24, wait: 6, radius: 3, count: 2, move: null } };
+  return { preset, steps: back ? [{ kind: "home" }] : [], days: 1, cond: { hurt: null, food: null, cargo: false }, add: { camp: 24, wait: 6, radius: 3, count: 2, move: null, hunt: 8 } };
 }
 const ensure = (pl) => (pl.plan = pl.plan || defaultPlan(pl.mission));
 
@@ -72,7 +72,8 @@ export function planSection(state, pl, est) {
   };
   const legs = est ? est.legs : [];
   const first = legs[0] ? `${legs[0].hours}h` : "no route";
-  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : ""}</span>
+  const haulOf = (i) => { const l = est && est.legs.find((x) => x.label === stepLabel(state, plan.steps[i]) && x.haul != null); return l ? ` <span class="good"${tip("Expected haul of fresh game (an average: luck decides). Carried, it weighs 1 kg a ration; it spoils fast in the warm.")}>~${Math.round(l.haul)} food</span>` : ""; };
+  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : ""}${s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" ? haulOf(i) : ""}</span>
       <button class="mini" data-action="pl-step" data-op="up" data-i="${i}" ${i ? "" : "disabled"}${tip("Earlier")}>▲</button><button class="mini" data-action="pl-step" data-op="down" data-i="${i}" ${i < plan.steps.length - 1 ? "" : "disabled"}${tip("Later")}>▼</button><button class="mini" data-action="pl-step" data-op="del" data-i="${i}"${tip("Remove this step")}>✕</button></li>`).join("");
   const add = plan.add;
   const full = plan.steps.length >= MAX_STEPS || plan.steps.some((s) => s.kind === "home");
@@ -85,10 +86,10 @@ export function planSection(state, pl, est) {
     const on = k === "cargo" ? !!cond.cargo : cond[k] != null;
     return `<label class="small"${tip(`Checked hourly while the plan runs: the team turns for home by itself and reports why (a card lets you undo it).`)}><input type="checkbox" data-action="pl-cond" data-k="${k}" ${on ? "checked" : ""}> ${d.label}${k === "cargo" ? "" : ` <input type="number" class="tiny" style="width:3.6rem" data-action="pl-condv" data-k="${k}" min="${d.min}" max="${d.max}" step="${d.step}" value="${cond[k] ?? d.def}"> ${d.unit}`}</label>`;
   };
-  const whole = est ? `<div class="small" style="margin-top:0.35rem"${tip("Every leg stepped hour by hour like the real trip (weather included); searches count 6 hours, Look around 2. Food and water: one each per person per day for the whole plan, plus the way home if the plan does not end there.")}>Whole plan: <b>~${(est.total / 24).toFixed(1)} days</b> (${est.hours}h${est.backHours ? ` + ${est.backHours}h home` : ""}) · needs ${est.food} food · ${est.water} water${est.fuel ? ` · ${est.fuel} fuel` : ""}${est.returns ? "" : ` · <span class="warn">${est.open ? "a step has no route" : "ends away from home: it waits for orders there"}</span>`}</div>` : "";
+  const whole = est ? `<div class="small" style="margin-top:0.35rem"${tip("Every leg stepped hour by hour like the real trip (weather included); searches count 6 hours, Look around 2. Food and water: one each per person per day for the whole plan, plus the way home if the plan does not end there.")}>Whole plan: <b>~${(est.total / 24).toFixed(1)} days</b> (${est.hours}h${est.backHours ? ` + ${est.backHours}h home` : ""}) · needs ${est.food} food · ${est.water} water${est.fuel ? ` · ${est.fuel} fuel` : ""}${est.haul ? ` · <span class="good">brings home ~${Math.round(est.haul)} food of game (${Math.round(est.haulKg)} kg)</span>` : ""}${est.returns ? "" : ` · <span class="warn">${est.open ? "a step has no route" : "ends away from home: it waits for orders there"}</span>`}</div>` : "";
   const notes = est ? heatNote(state, pl, est) : [];
   return `<h3${tip("What the team does after reaching the target, in order. Out of radio contact the team follows this plan; it reports in with a card on important finds (a horde in sight, a rich site, supplies running short) and when the plan ends. In radio range you can change its orders any time.")}>Plan</h3>
-    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "explore", "camp", "custom"].map(presetBtn).join("")}
+    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "explore", "camp", "hunt", "fish", "custom"].map(presetBtn).join("")}
       <span class="small muted">days <input type="number" class="tiny" style="width:3.2rem" data-action="pl-days" min="1" max="10" value="${plan.days}"></span></div>
     <div class="small muted" style="margin:0.2rem 0">${esc(preset.desc)}</div>
     <ol class="xpqueue small">
@@ -101,6 +102,7 @@ export function planSection(state, pl, est) {
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
+      ${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
       ${addBtn("gather", "Gather")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
       <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles${t.job ? "" : `, loot ~${Math.round((knownLoot(state, t.tile) || 0) * 100)}%`})</option>`).join("")}</select>
       ${addBtn("home", "Return home")}
@@ -112,13 +114,15 @@ export function planSection(state, pl, est) {
 
 // ---------- handlers (main.js) ----------
 const clampN = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+// A preset picked from outside the planner (the map's right-click "Hunting trip", main.js).
+export const applyPreset = (pl, k) => setPreset(pl, k);
 function setPreset(pl, k) {
   const plan = ensure(pl);
   const pr = PRESETS[k];
   if (!pr) return;
   plan.preset = k;
   if (k === "custom") return;
-  plan.steps = pr.steps(plan.days);
+  plan.steps = pr.steps(plan.days, plan);
   if (pr.mission) pl.mission = pr.mission;
 }
 
@@ -139,6 +143,7 @@ export const PLAN_ACTIONS = {
     if (d.k === "camp") step.hours = a.camp;
     if (d.k === "wait") step.hours = a.wait;
     if (d.k === "nearby") { step.radius = a.radius; step.count = a.count; }
+    if (d.k === "hunt" || d.k === "fish") step.hours = a.hunt ?? 8;
     if (d.k === "move") return;
     plan.steps.push(step);
     plan.preset = "custom";
@@ -159,8 +164,10 @@ export const PLAN_CHANGE = {
   },
   "pl-addv": (state, ui, el) => {
     const a = ensure(ui.planner).add, k = el.dataset.k;
-    const lim = { camp: [1, 240, 24], wait: [1, 72, 6], radius: [1, 6, 3], count: [1, 4, 2] }[k];
+    const lim = { camp: [1, 240, 24], wait: [1, 72, 6], radius: [1, 6, 3], count: [1, 4, 2], hunt: [2, 24, 8] }[k];
     if (lim) a[k] = Math.round(clampN(el.value, lim[0], lim[1], lim[2]));
+    const plan = ensure(ui.planner);
+    if (k === "hunt" && (plan.preset === "hunt" || plan.preset === "fish")) plan.steps = PRESETS[plan.preset].steps(plan.days, plan);
   },
   "pl-condv": (state, ui, el) => {
     const c = ensure(ui.planner).cond, def = CONDITIONS[el.dataset.k];
