@@ -38,6 +38,7 @@ import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
+import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { siteKnown, siteNamed } from "./discovery.js";
 
 export const STANCES = {
@@ -63,6 +64,8 @@ export const MISSIONS = {
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
+  hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
+  fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
@@ -99,7 +102,8 @@ export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(sta
 
 export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (SUPPLIES[k] && Number.isFinite(v) && v > 0 ? v * SUPPLIES[k].weight : 0), 0);
 // Kg of found cargo: supplies, and items by weight (a pack in the cargo also counts what is inside it, inventory.js itemLoad).
-export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) : 0);
+// Fresh game (hunting.js) is food that weighs MEAT_KG a ration instead of 0.5: carcasses, bones and hide.
+export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) : 0);
 // Everything the team shares out: packed supplies and found cargo (load.js).
 export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 // Room left for more (found goods): what the team can carry less what it already does. A team the autopilot packs
@@ -240,8 +244,9 @@ export function partyPace(state, p) {
 
 // Pace and rations a planned team would have (the planner and launch): stance × load (× Pathfinder on foot, as the
 // trip gets from its first hour, skills.js skillsHour). members: survivors; supplies: what it packs; v: its vehicle.
-export function plannedPace(state, { members, supplies = {}, v = null, stance = "normal" }) {
-  const t = teamLoad(members, supplyLoad(supplies), v);
+// extraKg: more on top of the packed supplies (the planner's expected haul of fresh game, plans.js).
+export function plannedPace(state, { members, supplies = {}, v = null, stance = "normal", extraKg = 0 }) {
+  const t = teamLoad(members, supplyLoad(supplies) + Math.max(0, extraKg), v);
   const st = STANCES[stance]?.speed || 1;
   const pf = members.some((s) => hasPerk(s, "pathfinder")) ? 1.1 : 1;
   const mode = travelMode(v);
@@ -612,6 +617,7 @@ function playerPartyHour(state, p) {
   reweigh(state, p); // load.js: weighed again when it stops, or when it got heavier
   consume(state, p, members);
   if (!state.parties.includes(p)) return;
+  gameSpoilHour(state, p); // hunting.js: fresh game in the cargo spoils by the temperature
   // Heat from staying put, the plan's conditions and finds, check-ins out of contact (plans.js, fieldheat.js).
   fieldHour(state, p);
   if (!state.parties.includes(p)) return;
@@ -647,7 +653,9 @@ export const rationsPerHour = (state, p, members = partyMembers(state, p)) => ra
 function consume(state, p, members) {
   const n = rationRate(p.burden, members, p.vehicle, onTheMove(p)); // rations a day at this hour's rate
   const s = p.supplies;
-  s.food = (s.food || 0) - n / 24;
+  // Fresh game in the cargo is eaten first: it is the food that spoils (hunting.js).
+  const game = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, n / 24) : 0;
+  s.food = (s.food || 0) - n / 24 + game;
   s.water = (s.water || 0) - n / 24;
   // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
   // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
@@ -730,13 +738,18 @@ function onEnterTile(state, p, tileId) {
 export function trimCargo(state, p, into = null) {
   const dropped = { supplies: {}, gear: [], text: "" };
   let over = poolLoad(p) - partyCapacity(state, p); // found cargo goes first; packed supplies stay with the team
+  // Fresh game first: the heaviest food for what it is worth (hunting.js).
+  if (over > 1e-9 && meatIn(p.cargo) > 0) {
+    const drop = takeMeat(p.cargo, Math.min(meatIn(p.cargo), Math.ceil(over / MEAT_KG - 1e-9)));
+    if (drop > 0) { dropped.supplies.food = drop; over -= drop * MEAT_KG; }
+  }
   const keys = Object.keys(p.cargo.supplies).sort((a, b) => SUPPLIES[a].value / SUPPLIES[a].weight - SUPPLIES[b].value / SUPPLIES[b].weight);
   for (const k of keys) {
     if (over <= 1e-9) break;
     const drop = Math.min(Math.ceil(over / SUPPLIES[k].weight - 1e-9), Math.floor(p.cargo.supplies[k] || 0));
     if (drop <= 0) continue;
     p.cargo.supplies[k] -= drop;
-    dropped.supplies[k] = drop;
+    dropped.supplies[k] = (dropped.supplies[k] || 0) + drop;
     over -= drop * SUPPLIES[k].weight;
   }
   const byValue = [...p.cargo.gear].sort((a, b) => (GEAR[a.key]?.value || 0) * (a.quality || 1) - (GEAR[b.key]?.value || 0) * (b.quality || 1));
@@ -1013,6 +1026,7 @@ function arrive(state, p) {
       takeSupply(p, "scrap", need);
       if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       addStock(base, p.supplies);
+      unloadGame(base, p.cargo);
       addStock(base, p.cargo.supplies);
       base.armory.push(...p.cargo.gear);
       const v = partyVehicle(state, p);
@@ -1373,6 +1387,7 @@ function returnHome(state, p) {
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
   addStock(home, p.supplies);
+  unloadGame(home, p.cargo);
   addStock(home, p.cargo.supplies);
   home.armory.push(...p.cargo.gear);
   const v = partyVehicle(state, p);
@@ -1418,6 +1433,7 @@ export function wipeParty(state, p) {
   const base = state.bases.find((b) => b.tile === tile);
   if (base) {
     addStock(base, p.supplies);
+    unloadGame(base, p.cargo);
     addStock(base, p.cargo.supplies);
     base.armory.push(...p.cargo.gear);
     if (v) v.loc = { kind: "base", baseId: base.id };

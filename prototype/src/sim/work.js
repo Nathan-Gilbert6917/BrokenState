@@ -50,6 +50,7 @@ import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR } from "./economy.js";
 import { prisonersAt } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
+import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 
 export const PRIO_MAX = 5;
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
@@ -236,6 +237,31 @@ export const WORK_TYPES = {
     desc: "Picks through the ruins around the base: usually finds nothing, and the area is picked over for good. Real supplies come from trips (crews).",
     open: (ctx) => (scavLeft(ctx.base) > SCAV_FLOOR + 0.02 ? { cap: 99, urg: 0 } : { cap: 0, why: "the surroundings are picked clean" }),
   },
+  // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
+  hunt: {
+    name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
+    desc: "Hunts the land within 2 tiles with a Hunting cabin here (up to 2 people, while food is short of the season's goal), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    open(ctx) {
+      const why = huntWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const days = ctx.foodDays;
+      if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
+      return { cap: CABIN.hunters, urg: days < 7 ? 7 : days < 20 ? 4.5 : 2.5 };
+    },
+    rank: (s) => hunterMult(s) * 10 * (bestHuntWeapon(s) ? 1 : 0.4),
+  },
+  fish: {
+    name: "Fish", ing: "Fishing", short: "Fish", role: "fish", skill: "scouting",
+    desc: "Fishes the river or lake by this base 3 hours a day while food is short of the season's goal: one fishing rod or net each (carried or in the armory). Fresh fish spoils fast; a fished-out spot comes back in a week or two.",
+    open(ctx) {
+      const why = fishWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const days = ctx.foodDays;
+      if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
+      return { cap: fishWorkCap(ctx.state, ctx.base), urg: days < 7 ? 6.5 : days < 20 ? 4 : 2 };
+    },
+    rank: (s) => fisherMult(s) * 10,
+  },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
 
@@ -324,14 +350,16 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 2, build: 2, repair: 2, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 2, build: 2, repair: 2, hunt: 4, fish: 4, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
+  { name: "Hunter", pri: P({ hunt: 1, fish: 1, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
   { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, scavenge: 4 }) },
+  { name: "Hunting party", kind: "crew", pri: P({ hunt: 2, fish: 2, farm: 3, build: 4 }), crew: { field: { hunt: 1, fish: 2, recover: 3 }, size: 2, rules: { hurt: 45, food: 1, cargo: true } } },
 ];
 
 export function workState(state) {
@@ -350,7 +378,7 @@ function addRole(state, r) {
 }
 // A crew's field settings (crews.js reads them).
 export const defaultCrew = () => ({
-  field: { scavenge: 1, recover: 2, vehicle: 2, trade: 3, supply: 3 },
+  field: { scavenge: 1, recover: 2, vehicle: 2, trade: 3, supply: 3, hunt: 3, fish: 3 },
   range: 10, maxHours: 24, size: 3, stance: "normal", vehicle: "auto", ammo: 10, meds: 2, spare: 1.3,
   rules: { hurt: 45, food: 1, cargo: true }, rest: 1, paused: false, handleAll: false, style: "balanced",
   out: null, log: [], lastTrip: -99,

@@ -18,12 +18,15 @@
 // Jars (supply key "jars") are found in kitchens, shops and farms. A jar holds 2 rations; when jarred food is eaten
 // at a base, 85% of the jars come back (the rest break or lose their lids). Jars that leave with the food (trade,
 // trips, raiders) do not come back.
+// Fresh game (hunting.js, base.meat: the share of the fresh food that is game or fish) is eaten first, dried first by
+// the racks, and spoils faster than other fresh food on top of the stores' rate (hunting.js baseGameDaily).
 import { log, residents, atBase } from "./world.js";
 import { count } from "./buildings.js";
 import { poweredType } from "./power.js";
 import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
+import { meatAt, baseGameDaily } from "./hunting.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150 };
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
@@ -110,6 +113,7 @@ export function eatFromStore(base, amount) {
   const st = base.stock;
   let need = Math.max(0, amount);
   const fresh = Math.min(need, Math.max(0, st.food || 0));
+  if (base.meat) base.meat = Math.max(0, meatAt(base) - fresh); // fresh game is cooked first
   st.food = (st.food || 0) - fresh;
   need -= fresh;
   if (need > 0 && (st.preserved || 0) > 0) {
@@ -140,7 +144,7 @@ export function rackPlan(state, base, fresh = base.stock.food || 0) {
   const w = wx(state);
   const wet = isWet(w) || w.key === "fog" || w.key === "snow" || w.key === "blizzard";
   const st = foodStore(state, base, fresh);
-  const spare = Math.max(st.outside, fresh - eatRate(state, base) * RACK.keepDays);
+  const spare = Math.max(st.outside, fresh - eatRate(state, base) * RACK.keepDays, Math.min(fresh, meatAt(base))); // fresh game goes on the racks first
   const take = Math.max(0, Math.min(racks * RACK.food * (wet ? 0.5 : 1), spare, rackLimit(state, base, fresh))); // production.js: the racks' order
   return { racks, take, out: take * (RACK.out / RACK.food), wet };
 }
@@ -151,9 +155,11 @@ export function storageDaily(state, base) {
   const st = base.stock;
   const rack = rackPlan(state, base);
   if (rack.take > 0) {
+    if (base.meat) base.meat = Math.max(0, meatAt(base) - rack.take);
     st.food -= rack.take;
     st.preserved = (st.preserved || 0) + rack.out;
   }
+  const game = baseGameDaily(state, base, meanTemp(wx(state))); // the hunting cabin smokes, fresh game spoils
   const store = foodStore(state, base);
   base.mash = Math.round(Math.max(0, store.freshLoss) * 10) / 10; // spoiled food: mash for an ethanol still tomorrow (power.js)
   if (store.freshLoss > 0) st.food = Math.max(0, st.food - store.freshLoss);
@@ -168,7 +174,7 @@ export function storageDaily(state, base) {
     log(state, `${base.name}: all the fresh food fits in the stores again.`, "info");
   }
   base.spoilingOutside = outside && (base.spoilingOutside || base.outsideDays >= (base.type === "hub" ? 1 : 3));
-  return { spoiled: store.spoil, dried: rack.out, store };
+  return { spoiled: store.spoil + game.spoiled, dried: rack.out + game.dried, store };
 }
 
 // ---------- text ----------

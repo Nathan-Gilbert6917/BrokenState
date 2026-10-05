@@ -42,7 +42,7 @@ const RX = {
   m: /\bflu\b|dysentery|pneumonia|fever|sprain|deep cut|wounds?\b|infect|\bmeds\b|night care|treated|got over|hospital|infirmary|clinic|medic|\bsick\b|\bill\b|outbreak|quarantine|bitten|turning|bandage|dressings/i,
   t: /trad(e|ed|ers?|ing)\b|caravan|radio|goodwill|\bpacts?\b|barter|\bdeal\b|(neutral|hostile|friendly) toward|allied|tribute/i,
   p: /\bteam\b|left for|is home|convoy|supply run|\bcamp\b|recon|scout|search|cache|mapped|boat|raft|vehicle|truck|\bfuel\b|extracted|on foot|founded|crossing|breakdown|stranded|checkpoint|patrol|carry|death site/i,
-  f: /harvest|crops?\b|\bsow|\bplots?\b|\bfood\b|ration|water|\bwells?\b|frost|spoil|cellar|thirst|hunger|starv|drought|rain catcher|filter|preserv|\bjars\b|fields|winter stores|greenhouse|drying rack|kitchen/i,
+  f: /harvest|crops?\b|\bsow|\bplots?\b|\bfood\b|ration|water|\bwells?\b|frost|spoil|cellar|thirst|hunger|starv|drought|rain catcher|filter|preserv|\bjars\b|fields|winter stores|greenhouse|drying rack|kitchen|hunt|snares?|fish|fresh game|hunting cabin/i,
   b: /finished|queued|\bbuilt\b|crafted|roles|station|workshop|armory|leaving|\bmood\b|quarrel|joined|joins|leads the group|feast|bunkhouse|walls|repair|theft|errand|leader|survivors\.|preacher|tempers|stranger|newcomer|renamed|now called|\bbeds?\b|friends?\b|rival|grief|mourn|buried|memorial|\bdog\b/i,
 };
 const ORDER = ["d", "h", "c", "m", "t", "p", "f", "b"];

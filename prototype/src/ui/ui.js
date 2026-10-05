@@ -60,6 +60,7 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance } from "../sim/hunting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -337,6 +338,9 @@ export function tileActions(state, id) {
   const markers = state.markers.filter((m) => m.tile === id);
   actions.push(["recon", "Send recon"]);
   actions.push(["move", "Send a team here"]);
+  // Food from the land (sim/hunting.js): the planner with the Hunting / Fishing trip preset.
+  if (gameAbundance(state, id) >= 0.08) actions.push(["move", "Hunting trip", "hunt", "Plan a hunting trip here: go, hunt 8 hours (change it in the plan), come home with the game. Forest and hills are best, autumn the best season; fresh game is heavy and spoils fast."]);
+  if (huntInfo(state, id).fishSpot) actions.push(["move", "Fishing trip", "fish", "Plan a fishing trip here: go, fish 8 hours, come home. Needs a fishing rod or net (the hub's goes along)."]);
   // A site nobody has reported on yet is assumed to hold something (the map draws it untouched, too).
   if (info ? info.loot > 0.05 : !!mapLoc(state, id)) actions.push(["scavenge", "Scavenge / raid"]);
   const fb = knownGroupBase(state, id, isLive, snap);
@@ -404,6 +408,7 @@ export function renderRight(state, ui) {
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission).`)}>Hive</div><div class="danger">Yes</div>` : ""}
         ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Culling the hordes gathered here sets it back.`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead</div>` : ""}` : ""}
         ${hz.territory && !info?.hive ? `<div${tip("Land a hive holds: at least 3 danger skulls. On the red-skull ring right around a hive every one of the dead is much tougher (+3 power; +1 elsewhere in its land).")}>Hive land</div><div class="danger">${hz.red ? "Red-skull ground: much tougher dead" : "Yes: tougher dead"}</div>` : ""}
+        ${landRows(state, id, teamsHere)}
         <div>From hub</div><div>${walk ? `${walk.tiles} tiles · ~${Math.ceil(walk.hoursOut)}h on foot` : "No route over land"}</div>
       </div>
       ${walk || base ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
@@ -414,7 +419,38 @@ export function renderRight(state, ui) {
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
     ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
-    ${actions.length ? `<h3>Send a team from the hub</h3><div class="row">${actions.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${tip(MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+    ${actions.length ? `<h3>Send a team from the hub</h3><div class="row" style="flex-wrap:wrap">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+}
+
+// Game, fish and your snares on a tile (sim/hunting.js): what the land holds now and what a hunt would bring: the
+// team standing here, else the hub's two best hunters.
+function landRows(state, id, teamsHere) {
+  const t = state.tiles[id];
+  if (!t || t.terrain === "water") return "";
+  const h = hub(state);
+  const p = teamsHere[0] || null;
+  const people = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).filter((s) => bestHuntWeapon(s, h.stock.ammo || 0)).sort((a, b) => hunterMult(b) - hunterMult(a) || a.id - b.id).slice(0, 2) : [];
+  const ammo = p ? Parties.carried(p, "ammo") : h ? h.stock.ammo || 0 : 0;
+  // What they could carry home: the team's room now, or the pair less what they would pack (about 12 kg each).
+  const room = p ? Parties.cargoRoom(state, p) : Math.max(0, Parties.carryCapacity(state, people, null) - 12 * people.length);
+  const info = huntInfo(state, id, { members: people, ammo, hours: HUNT.defHours, room });
+  const who = p ? "this team" : people.length ? people.map((s) => esc(shortName(s))).join(" and ") : "";
+  const yieldText = info.est ? ` · ~${Math.round(info.est.rations)} food in an ${HUNT.defHours}h hunt (${who})` : people.length || p ? "" : ` · <span class="muted">nobody at the hub has a hunting weapon</span>`;
+  const gameTip = `Game here: ${info.word}. The land: ${Math.round(info.abundance * 100)}% (forest and hills best, farmland fair, towns and hive land almost nothing), hunted down to ${Math.round(info.level * 100)}% (it grows back over weeks). The estimate is an average for ${HUNT.defHours} hours from now (season, time of day, the hunters' weapons and skill); luck decides the rest. Gunshots raise Heat and can draw the dead; bows are silent.`;
+  let out = `<div${tip(gameTip)}>Game</div><div>${info.word === "plenty" ? `<span class="good">plenty</span>` : info.word}${yieldText}</div>`;
+  if (info.fishSpot) {
+    const kitPeople = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).slice(0, 2) : [];
+    const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || []);
+    const fe = kit.power ? expectFish(state, kit, id, HUNT.defHours).rations : null;
+    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod or net; ice fishing in a freeze needs a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? ` · ~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}` : ` · <span class="muted">no rod or net ${p ? "with the team" : "at the hub"}</span>`}</div>`;
+  }
+  const line = snareLine(state, id);
+  if (line) {
+    const since = line.check ?? line.set;
+    const e = expectSnare(state, id, since, state.hour);
+    out += `<div${tip("Your line of 8 snares. Check it (team order) to collect the catch: game left too long rots, and after 2 days unchecked someone or something may rob or spring the line.")}>Snares</div><div>yours, ${line.check != null ? "checked" : "set"} ${ageText(state, { hour: since })} · ~${Math.round(e.animals)} small game by now</div>`;
+  }
+  return out;
 }
 
 // ---------- legend / map layers ----------
@@ -519,6 +555,7 @@ export function helpText() {
     <b>World size:</b> chosen on the new-run screen. Small (48×32) is tight and close: fewer towns, 3–6 groups, the hives a short walk away. Normal (64×42) is the standard state with 5–10 groups. Large (80×52) adds a third city and a second outbreak, 7–14 groups. Huge (100×66) has four cities, three outbreaks and 10–18 groups: trips are long (take vehicles, build outposts), the groups mostly keep to their own corner, but more hives are within reach of your walls. Every size has about the same towns, sites and hives per tile.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue, the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving kitchen</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
+    <b>Hunting, fishing and snares:</b> right-click a tile for a <i>Hunting trip</i> or <i>Fishing trip</i> (the planner's presets: go, hunt or fish 8 hours, come home), or give a team on the spot <i>Hunt</i>, <i>Fish</i> or <i>Set snares</i> (team panel, Land). The tile panel shows the game there (plenty, some, scarce) and what an 8-hour hunt should bring. Forest and hills are the best hunting, farmland fair, towns, cities and hive land almost nothing; autumn is the best season, and snow shows tracks in winter. A hunting rifle or a bow is best (a pistol is poor; no weapon, no hunt: set snares); every gunshot costs ammo, adds Heat and can draw the dead nearby, bows and crossbows are silent. The land runs out of game as you hunt it and grows back over weeks. <b>Snares</b> (snare wire, or 2 scrap) catch a rabbit a day or so: check them within 2–3 days, before the catch rots or someone takes it. <b>Fishing</b> needs a rod or a net, on a river bank; in a freeze, a crowbar, machete or axe to cut the ice (half the catch). Fresh game and fish weigh twice what packed food does (a deer on foot is a slow walk home; a car carries it all) and spoil fast: the team eats it first, and at home drying racks and a <b>Hunting cabin</b> smoke it. A Hunting cabin (any base with game land around it) also lets up to 2 people on the <i>Hunt</i> job hunt the land within 2 tiles every day; a base on a river can put people with a rod or net on the <i>Fish</i> job.<br>
     <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Everything has a weight: what people wear plus the packed supplies and found cargo, shared out among the team (max load 40 kg each, 28 with a Bad Back, more with a pack or Packrat). Load bands slow a team on foot and make it eat and drink more on the move: Light up to 18 kg, Medium up to 28 (−10% pace, +15% rations), Heavy up to 38 (−25%, +35%), Overloaded above (−45%, +60%). Scouting eases it (up to half at 20). A car takes the whole load off its riders (it burns more fuel the fuller it is); bikes (one each) carry 15 kg on the rack and take 55% of the rest away. Teams report only when they get home, unless a radio station is built and they are in range.<br>
     <b>Team panel:</b> click a team on the map, in the Teams tab or in the Running orders list. It shows people, gear, supplies, the vehicle and the order queue. Orders: move, return home, scavenge, look around (2h), camp, roadside repair, treat someone with carried meds (1h), field crafting, boat crossings. A waiting team starts an order at once; a moving team (or queue mode) adds it to its queue. When the queue is empty the team reports in with a card.<br>
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("S")}). Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>

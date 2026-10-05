@@ -20,6 +20,7 @@ import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
 import { hasPerk, eatMult } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
+import { huntingDaily, snaresDaily } from "./hunting.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -31,6 +32,8 @@ export const ROLES = {
   medic:    { name: "Medic",    desc: "Staffs the infirmary or hospital (each tier needs 1–3 medics to run; unstaffed it works like no hospital). The best medic's Medicine speeds up healing for patients in beds; with no medic only slow natural healing and weak meds. Medics are never admitted as patients, and catch contagious illness more easily." },
   craft:    { name: "Craft",    desc: "Makes makeshift gear and supplies by hand from the craft queue (base Crafting tab). No station needed; Mechanics (or Medicine for kits) sets what they can make and how fast." },
   teach:    { name: "Teach",    desc: "Teaches one skill to up to 2 people at this base whose skill is at least 4 below theirs (pick the skill and learners on their survivor screen, or leave it to them). Learners gain 4 + 0.4 × the teacher's skill + 0.15 × the teacher's Leadership and Speech XP a day and keep their own jobs; the teacher does no other work." },
+  hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, with their own weapon (a rifle or a bow best; firearms use the base's ammo; no weapon: snares). Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
+  fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod or net (carried, or in the armory: one each). Brings in fresh fish, which spoils fast." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -216,6 +219,7 @@ export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
   healthDaily(state);
   fieldInfectionDaily(state);
+  snaresDaily(state); // hunting.js: snare lines nobody came back for
   shipFromOutposts(state);
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
@@ -238,6 +242,7 @@ function baseDaily(state, base) {
   st.water = (st.water || 0) + Math.min(room, prod.total);
 
   baseScavenging(state, base, people);
+  huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);

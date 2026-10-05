@@ -22,9 +22,10 @@ import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
-import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts } from "./ui/plan.js";
+import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
 import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
+import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatAction, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups } from "./sim/worldsize.js";
@@ -404,7 +405,8 @@ function autofill(pl) {
       food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
       fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
       meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
-      scrap: pl.mission === "outpost" ? 15 : 0,
+      // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
+      scrap: pl.mission === "outpost" ? 15 : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };
     for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
   }
@@ -555,6 +557,8 @@ const actions = {
     if (d.type === "camp") o.hours = d.hours ? Number(d.hours) : null;
     if (d.sid) o.survivorId = Number(d.sid);
     if (d.recipe) o.recipe = d.recipe; // field crafting
+    if (d.hours && d.type !== "camp") o.hours = Number(d.hours); // hunt, fish (sim/hunting.js)
+    if (d.mode) o.mode = d.mode; // snares: set, check, lift
     issueOrder(p, o);
   },
   // Build a boat and cross one water tile (sim/crossing.js). Hours and materials are fixed now.
@@ -612,6 +616,7 @@ const actions = {
   },
   plan: (d) => {
     const pl = { dest: Number(d.tile), mission: d.mission, crew: new Set(), vehicleId: null, stance: "normal", supplies: {} };
+    if (d.preset) applyPreset(pl, d.preset); // "Hunting trip" / "Fishing trip" (right-click, tile panel)
     ui.planner = pl;
     ui.plannerError = "";
     endMoveMode();
@@ -1099,8 +1104,8 @@ canvas.addEventListener("contextmenu", (e) => {
   const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
   menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
-    ctxBoats(waiting, id) +
-    (acts.length ? acts.map(([m, l]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}">${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
+    ctxBoats(waiting, id) + ctxLand(waiting, id) +
+    (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   menu.style.left = `${e.clientX - r.left}px`;
   menu.style.top = `${e.clientY - r.top}px`;
   menu.classList.remove("hidden");
@@ -1114,6 +1119,34 @@ function ctxBoats(teams, id) {
       return `<button data-action="ctxcross" data-id="${p.id}" data-tile="${id}" data-mode="${m}" ${plan.ok ? "" : "disabled"} data-tip="${esc(boatTip(state, plan, id))}">Boat team (${p.members.length}) across${p.vehicleId ? (m === "raft" ? ", raft vehicle" : ", leave vehicle") : ""} · ${plan.mats.scrap} scrap, ${plan.hours}h</button>`;
     })).join("");
 }
+// Right-click a land tile with a team you are in touch with: go there and hunt (or fish) 8 hours (sim/hunting.js).
+function ctxLand(teams, id) {
+  const t = state.tiles[id];
+  if (!t || t.terrain === "water") return "";
+  const fish = !!fishSpot(state, id);
+  return teams.filter((p) => p.kind !== "convoy").flatMap((p) => [
+    gameAbundance(state, id) >= 0.08 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="hunt">${partyTile(p) === id ? "Hunt here" : "Go and hunt here"}, team (${p.members.length}) · 8h</button>` : "",
+    fish ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="fish">${partyTile(p) === id ? "Fish here" : "Go and fish here"}, team (${p.members.length}) · 8h</button>` : "",
+  ]).join("");
+}
+actions.ctxhunt = (d) => {
+  const p = partyById(d.id);
+  if (p) {
+    const tile = Number(d.tile);
+    const job = { type: d.type === "fish" ? "fish" : "hunt", hours: 8 };
+    let msg;
+    if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
+    else {
+      p.orders = [];
+      msg = orderMove(state, p, tile);
+      if (p.phase === "out" && p.dest === tile) msg = `${msg} ${queueOrder(state, p, { ...job, at: tile })}`;
+    }
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === p.id) ui.xpMsg = msg;
+  }
+  endMoveMode();
+  hideCtx();
+};
 actions.ctxcross = (d) => {
   const p = partyById(d.id);
   if (p) {
@@ -1132,11 +1165,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "ctxmove", "ctxcross"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "ctxmove", "ctxcross", "ctxhunt"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }

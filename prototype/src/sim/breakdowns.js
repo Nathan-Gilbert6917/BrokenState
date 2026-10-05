@@ -76,6 +76,7 @@ export const FIXTURES = {
   cells:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 5, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "broken bars: 3 fewer places for prisoners" },
   common_room: { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no mood from the common room" },
   chapel:      { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no mood from the chapel" },
+  huntcabin:   { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no hunting from it, no smoking" },
   smoker:      { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no drying" },
   rain_catcher:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no rain water from it" },
   relay:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 4, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 2 }, min: 1 }, what: "the relay is off the air" },
