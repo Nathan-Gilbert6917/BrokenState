@@ -14,7 +14,15 @@ export const HIVE = {
   SITE_SCORE: 30,     // construction starts at this combined horde score
   SITE_BIOMASS: 1000, // ... and the hive stands when this many of the dead have gone into it
   SITE_INTAKE: 40,    // ... at most this many a day (a quarter of the gathered mass, at least 25): about 25 days
-  SITE_DAYS: [120, 180], // days between new build sites (slow enough that a hive war can be won)
+  // New hives (hives.js pickSite): a curve, slow in the first year and faster later, under a cap. Over a span of
+  // NEW_SPAN days the hives found at most NEW_CAP[0]–NEW_CAP[1] new hives (by the dice per world) on a Large or Huge
+  // map; smaller maps proportionally fewer by their land against a Large map's (NEW_SCALE: worldsize.js worldScale),
+  // never under NEW_MIN (Normal 3–5, Small 2–3). The n-th site of a span is due NEW_SPAN × (n / cap) ^ SITE_CURVE
+  // days into it (cap 6: days 374, 566, 723, 858, 981, 1095: about a year to the first, then every 4–5 months),
+  // ± SITE_JITTER by the dice, never two within SITE_GAP days. The budget renews every span, so the late game is
+  // not frozen (eras.js hiveCap still caps the hives standing). The census of 2026-10-06 saw ~16 new hives in three
+  // years on a huge map at the old fixed pace of 120–180 days (÷ the area) between sites.
+  NEW_CAP: [5, 8], NEW_MIN: 2, NEW_SPAN: 1095, NEW_SCALE: 1.55, SITE_CURVE: 0.6, SITE_JITTER: 0.15, SITE_GAP: 60,
   SITE_MAX: 1,        // build sites at a time
   BORDER_DAYS: [5, 9],
   GUARD_MIN: 40,      // a hive rebuilds its guard below this

@@ -1,6 +1,6 @@
 // Hives and hordes (src/sim/hives.js, hordes.js, defences.js): resource income by cluster size, horde costs and
 // sizes, 5–6 hives with no hordes and 5 resources each at the start, hordes moving at most 2 tiles a day, merging
-// and splitting (parts of at least 10), a new build site every 120–180 days, the 30-score / 1,000-dead rule for a new
+// and splitting (parts of at least 10), new build sites on a curve under a cap by the map size, the 30-score / 1,000-dead rule for a new
 // hive (at most 40 a day going in), the Wallbreaker for 40 and 90 days between a hive's Wallbreakers, hordes from
 // the border, wall hold limits by tier, a held horde falling back and leaving the base be, a break-in turning into a battle,
 // infection fading after a hive dies, the win condition, determinism, and 365-day runs without NaN. The hive tech
@@ -16,7 +16,7 @@
 import { createWorld, tickHour, day, makeSurvivor, hub, alive } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import {
-  ensureHives, hiveIncome, hivesDaily, hiveTracker, destroyHive, deliverToSite, hiveForce, assaultHive, zombieToughness, hiveDanger,
+  ensureHives, hiveIncome, hivesDaily, hiveTracker, destroyHive, deliverToSite, hiveForce, assaultHive, zombieToughness, hiveDanger, newHiveCap, siteDue,
 } from "../src/sim/hives.js";
 import { HIVE } from "../src/sim/hiveconst.js";
 import { HORDE_SIZES, hordeScore, makeHorde, splitHorde, mergeHordes, hordesHour, hordesDaily, SPLIT_MIN, HORDE_MAX_SIZE } from "../src/sim/hordes.js";
@@ -146,24 +146,44 @@ const t0 = Date.now();
   void big1; void big2;
 }
 
-// 4. Build sites: every 120–180 days, 30 score to start, 1,000 dead to finish at most 40 a day.
+// 4. Build sites: a curve (slow in the first year, faster later) under a cap of new hives per three years by the map's
+// size (HIVE.NEW_CAP: 5–8 on Large and Huge, fewer on Normal, never under 2); 30 score to start, 1,000 dead to finish
+// at most 40 a day.
 {
   console.log("New hives");
-  const st = world(3);
-  const picks = [];
-  let seen = new Set();
-  const end = (HIVE.SITE_DAYS[1] * 3 + 30) * 24; // room for three sites
-  // Only the hives and hordes run (no colony to fall and stop the clock).
-  while (st.hour < end) {
-    st.hour++;
-    hordesHour(st);
-    if (st.hour % 24 === 0) hordesDaily(st);
-    for (const s of st.hiveSites) if (!seen.has(s.id)) { seen.add(s.id); picks.push(day(st)); }
+  // Only the hives and hordes run (no colony to fall and stop the clock) for three years on each size.
+  const grow = (seed, size, days = HIVE.NEW_SPAN) => {
+    const st = createWorld({ seed, factionCount: 8, size }); st.started = true;
+    const picks = [], built = [], seen = new Set();
+    let b0 = 0;
+    while (day(st) <= days) {
+      st.hour++;
+      hordesHour(st);
+      if (st.hour % 24 !== 0) continue;
+      hordesDaily(st);
+      for (const s of st.hiveSites) if (!seen.has(s.id)) { seen.add(s.id); picks.push(day(st)); }
+      if (st.hiveInfo.stats.built > b0) { built.push(day(st)); b0 = st.hiveInfo.stats.built; }
+    }
+    return { st, picks, built, cap: newHiveCap(st) };
+  };
+  const caps = { normal: [], large: [], huge: [] };
+  for (const size of Object.keys(caps)) for (const seed of [1, 2, 3]) caps[size].push(grow(seed, size));
+  for (const [size, runs] of Object.entries(caps)) {
+    const [lo, hi] = HIVE.NEW_CAP;
+    const capLo = size === "normal" ? HIVE.NEW_MIN : lo, capHi = size === "normal" ? hi - 1 : hi;
+    check(runs.every((r) => r.cap >= capLo && r.cap <= capHi), `${size}: the cap on new hives in ${HIVE.NEW_SPAN} days is ${capLo}–${capHi} by the dice (${runs.map((r) => r.cap).join(", ")})`);
+    check(runs.every((r) => r.built.length <= r.cap && r.picks.length <= r.cap && r.built.length >= Math.min(2, r.cap - 1)),
+      `${size}: within the cap over three years (built ${runs.map((r) => `${r.built.length} of ${r.cap}`).join(", ")}; sites on days ${runs.map((r) => r.picks.join("/")).join("; ")})`);
+    check(runs.every((r) => r.picks[0] >= 250), `${size}: slow at first: the first site after day 250 (${runs.map((r) => r.picks[0]).join(", ")})`);
+    const faster = runs.filter((r) => r.picks.length >= 3);
+    check(faster.length && faster.every((r) => r.picks[1] - r.picks[0] > r.picks[r.picks.length - 1] - r.picks[r.picks.length - 2]), `${size}: then faster: the gap between sites shrinks (${faster.map((r) => r.picks.slice(1).map((d, i) => d - r.picks[i]).join("→")).join("; ")})`);
   }
-  const gaps = picks.slice(1).map((d, i) => d - picks[i]);
-  const [lo, hi] = HIVE.SITE_DAYS;
-  check(picks.length >= 3 && picks[0] >= lo && picks[0] <= hi + 1 && gaps.every((x) => x >= lo && x <= hi + 1), `build sites picked on days ${picks.join(", ")} (gaps ${gaps.join(", ")}; ${lo}–${hi} apart)`);
-  check(st.hiveInfo.stats.built >= 1, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day ${day(st)}, ${st.hives.length} standing)`);
+  const st = caps.normal[0].st;
+  check(st.hiveInfo.stats.built >= 1 && st.hiveInfo.stats.grown === st.hiveInfo.stats.built, `hives left alone build new hives (${st.hiveInfo.stats.built} built by day ${day(st)}, ${st.hives.length} standing)`);
+  // The due days: in order, the n-th site of a span NEW_SPAN × (n / cap) ^ SITE_CURVE days into it (± the jitter on the gaps), the next span's after.
+  const due = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => siteDue(st, n)), cap = newHiveCap(st);
+  check(due.every((d, i) => i === 0 || d > due[i - 1]) && Math.abs(due[cap - 1] - HIVE.NEW_SPAN) <= HIVE.NEW_SPAN * HIVE.SITE_JITTER && due[cap] > HIVE.NEW_SPAN,
+    `the ${cap} sites of the first span fall on ramp days ${due.slice(0, cap).join(", ")}; the next span's first on ${due[cap]}`);
   // The rule by hand.
   const s2 = world(4);
   const hv = s2.hives[0];
