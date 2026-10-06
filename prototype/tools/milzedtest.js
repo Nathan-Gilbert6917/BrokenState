@@ -212,8 +212,12 @@ section("Raids: the dead soldiers at a National Guard base, bodies to search");
   }
   check(s1 && s1.soldiers > 0, `a raid at a base has dead soldiers among the dead (${s1 && s1.soldiers} of ${s1 && s1.dead})`);
   check(s1 && s1.zbodies > 0 && s1.b.raid.containers.filter((c) => c.kind === "body" && c.zombie).every((c) => c.uid != null && c.label.endsWith("'s body")), `the dead killed in it left bodies to search (${s1 && s1.zbodies}, ${s1 && s1.zsearched} searched by the bot; dead soldiers ${s1 && s1.solBodies}, ${s1 && s1.solSearched} searched)`);
+  // Any side: raiders and the third side (combat.js damage), your own who bleed out or are torn into lying down
+  // (raidloot.js dropHaul: their body, with what they carried loose on it). Every body is tied to its unit (uid).
   const humanBodies = s1 ? s1.b.raid.containers.filter((c) => c.kind === "body" && !c.zombie) : [];
-  check(humanBodies.every((c) => c.uid != null), "every human killed in a raid is a body to search too (any side)");
+  const deadHumans = s1 ? s1.b.units.filter((u) => u.kind === "human" && u.dead) : [];
+  const unbodied = deadHumans.filter((u) => !humanBodies.some((c) => c.uid === u.id));
+  check(humanBodies.every((c) => c.uid != null) && !unbodied.length, `every human killed in a raid is a body to search too (any side: ${deadHumans.map((u) => u.side).join(", ") || "none"} killed${unbodied.length ? `; no body: ${unbodied.map((u) => u.name).join(", ")}` : ""})`);
   // A raid search: contents of a dead soldier's body through searchBox (combat.js), searched shows.
   const searchedSol = s1 && s1.b.raid.containers.find((c) => c.zombie && c.ztype === "soldier" && c.contents);
   check(!searchedSol || (searchedSol.contents && (searchedSol.searched || searchedSol.partial)), "a searched body is marked searched (its picture shows the pockets turned out)");
