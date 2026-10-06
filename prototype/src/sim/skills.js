@@ -70,7 +70,7 @@ export const PERK_TREE = {
   shooting: {
     5: [P("steadyaim", "Steady Aim", "+5% to hit with guns in battle.", [2, 2, 2], "skills.js battlePerks"),
         P("brawler", "Brawler", "+10% to hit and +25% damage in melee.", [1, 1, 3], "skills.js battlePerks; combat.js strike")],
-    10: [P("deadeye", "Deadeye", "+15% critical-hit chance on every gun shot except overwatch reactions (a critical hit does 1.5× damage).", [1, 2, 3], "combat.js shotOdds"),
+    10: [P("deadeye", "Deadeye", "+15% critical-hit chance on every gun shot except overwatch reactions (a critical hit does 2× damage).", [1, 2, 3], "combat.js shotOdds"),
          P("suppressor", "Suppressor", "Overwatch reaction shots at full aim (no −15% penalty).", [3, 2, 1], "combat.js shotOdds")],
     15: [P("gunslinger", "Gunslinger", "+1.5 fighting strength: counts in fights resolved by the numbers, search encounters and base defence.", [2, 2, 2], "world.js combatPower"),
          P("sniper", "Sniper", "No aim loss for shooting beyond the weapon's best range.", [2, 2, 2], "combat.js shotOdds")],
@@ -81,7 +81,7 @@ export const PERK_TREE = {
     10: [P("ghost", "Ghost", "In battle, unaware enemies only notice them from 2 tiles or closer.", [3, 2, 2], "combat.js detect"),
          P("quiethands", "Quiet Hands", "While they are on the team, an hour-by-hour search builds half the Heat (at least 1 an hour), and in a raid on the map the containers they search never set off an alarm.", [2, 2, 3], "scavenge.js searchHour; combat.js searchBox")],
     15: [P("phantom", "Phantom", "Their team's hard extractions (from a Swarming or Overrun search) never cost anyone health.", [3, 2, 2], "scavenge.js extract"),
-         P("assassin", "Assassin", "Melee attacks on enemies who have not noticed anyone yet always hit and are always critical (1.5× damage).", [1, 2, 3], "combat.js strike")],
+         P("assassin", "Assassin", "Melee attacks on enemies who have not noticed anyone yet always hit and are always critical (2× damage).", [1, 2, 3], "combat.js strike")],
   },
   scavenging: {
     5: [P("scrounger", "Scrounger", "+30% chance a day of a find when scavenging around a base.", [2, 2, 1], "economy.js scavChance"),

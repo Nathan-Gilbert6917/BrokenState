@@ -325,6 +325,9 @@ export const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action poi
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
 export const HUNKER_DEF = 20;
+// A critical hit (shots and melee, both sides; the chances are in shotOdds / meleeOdds): × this damage, and through a
+// dead soldier's or riot cop's armour (deadsoldiers.js armorVs).
+export const CRIT_MULT = 2;
 const BLEED_TURNS = 3;
 const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 
@@ -1340,7 +1343,7 @@ function fire(b, a, t, opts = {}) {
   let text;
   if (hit) {
     const crit = rng.chance(o.crit / 100);
-    const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1);
+    const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1);
     const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit }));
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
     text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
@@ -1368,7 +1371,7 @@ function strike(b, a, t) {
   const hit = rng.chance(o.chance / 100) || sure;
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
@@ -1721,7 +1724,9 @@ function bestShot(b, u, foes, opts = {}) {
   for (const t of foes) {
     if (!canSee(b, u, t)) continue;
     const o = shotOdds(b, u, t, u.x, u.y, opts);
-    const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * (t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor); // a dead soldier's plates by this gun
+    // The expected damage: a dead soldier's plates by this gun (armorVs), a critical hit × CRIT_MULT and through them.
+    const p = o.crit / 100, m = t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor;
+    const avg = (o.dmg[0] + o.dmg[1]) / 2 * ((1 - p) * m + p * CRIT_MULT * (t.ztype ? armorVs(t, u, { how: "shot", crit: true }) : t.armor));
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
     v *= shotPriority(b, t);
