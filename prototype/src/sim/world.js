@@ -67,6 +67,11 @@ export const peekNextId = () => nextId;
 export function setNextId(n) {
   if (Number.isInteger(n) && n >= 1) nextId = n;
 }
+// Ids are process-wide, so a world made after another one hands out higher ids. Anything that feeds an id (from
+// newId) into the world's dice (hash01, a seed) or into arithmetic (id % n) must use localId instead: the id counted
+// from the world's own start (state.idBase, set in createWorld and saved with the world), the same in every world
+// made from the same seed. Never use it on ids that are already world-local counters (war ids, battle unit ids...).
+export const localId = (state, id) => (typeof id === "number" ? id - (state.idBase || 0) : id);
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
 // [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
@@ -81,6 +86,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const map = generateMap(rng, sdef, { hives: clampHives(hives) });
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
+    idBase: nextId - 1, // localId: this world's ids counted from its own start
     woodcutting: 1, // a world with firewood (save.js: older saves are given it on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,

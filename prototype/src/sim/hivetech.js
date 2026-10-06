@@ -31,7 +31,7 @@
 // (roll: a hash of the seed, the hour and what is rolled for), so they never shift the world's random numbers
 // (state.rng) that everything else draws from; a team's fire at a growth uses state.rng. A seed plays out the same.
 import { TECH, GROWTHS, ZTYPES, HIVE, HORDEMIX } from "./hiveconst.js";
-import { log, day, addCard, snapshot, combatPower, hurt, hub } from "./world.js";
+import { log, day, addCard, snapshot, combatPower, hurt, hub, localId } from "./world.js";
 import { ensureHives, hiveById, zombieToughness, hiveGuard, molotovsOf, clusterSize } from "./hives.js";
 import { reduceHorde } from "./hordes.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./parties.js";
@@ -292,7 +292,7 @@ export function growthsDaily(state) {
     if (guard && guard.size >= guardMin(state, hive) * 3) continue;
     for (const h of state.hordes) {
       if (h.hive != null || (h.role !== "roam" && h.role !== "border") || state.grid.distance(h.tile, hive.tile) > TECH.SPIRE_CALL) continue;
-      if (roll(state, "spire", hive.id, h.id) >= TECH.SPIRE_ODDS) continue;
+      if (roll(state, "spire", hive.id, localId(state, h.id)) >= TECH.SPIRE_ODDS) continue;
       h.role = "guard"; h.hive = hive.id; h.target = hive.tile; h.goal = null;
     }
   }

@@ -76,7 +76,7 @@ import { Rng } from "./rng.js";
 import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
-  supplyValue, skill, baseVision,
+  supplyValue, skill, baseVision, localId,
 } from "./world.js";
 import {
   planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply, carriedAny, takeAny,
@@ -806,7 +806,7 @@ function raidWarning(state, v) {
 // fixed once it has picked the base.
 function bandKit(state, v, base) {
   if (!base) return null;
-  if (!v.siegeFor || v.siegeFor.baseId !== base.id) v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.id * 31 + base.id, outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
+  if (!v.siegeFor || v.siegeFor.baseId !== base.id) v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.serial * 31 + localId(state, base.id), /* never the raw ids: they are process-wide */ outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
   return v.siegeFor.kit;
 }
 

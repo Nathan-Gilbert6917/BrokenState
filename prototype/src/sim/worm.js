@@ -103,7 +103,7 @@
 // Infested share of a tile's game: (infection − SHARE_AT) / SHARE_SPAN (at most SHARE_MAX), + HERD_SHARE with a herd
 // there. Each kill there is infested at that share: YIELD of its food, all of it with eggs, and on a herd's tile one
 // animal fewer in the herd (a herd hunted out is gone: a reason to hunt them).
-import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, survivorById, hub, factionById, combatPower } from "./world.js";
+import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, survivorById, hub, factionById, combatPower, localId } from "./world.js";
 import { GEAR } from "./data.js";
 import { Rng } from "./rng.js";
 import { count, isShelter } from "./buildings.js";
@@ -959,7 +959,7 @@ function where(state, s) {
 // Somewhere out on a personal errand: a land tile two or three from the base (by the person, so it stays put).
 function errandTile(state, base, s) {
   const near = state.grid.within(base.tile, 3).filter((id) => { const t = state.tiles[id]; const d = state.grid.distance(id, base.tile); return d >= 2 && t && t.terrain !== "water" && !state.bases.some((b) => b.tile === id); });
-  return near.length ? near[(s.id * 7919) % near.length] : null;
+  return near.length ? near[(localId(state, s.id) * 7919) % near.length] : null; // localId: ids are process-wide
 }
 function tileOf(state, s, at = where(state, s)) {
   if (at.base) return at.base.tile;

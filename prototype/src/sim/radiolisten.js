@@ -24,7 +24,7 @@
 //   LISTEN.CAUGHT a day (about 7% a week), −5 goodwill and a line in the log.
 // - The governor (state.autopilot): once a week it tunes the hub to the channel of the group that raided it last
 //   (else the nearest hostile group in range); the warning card's choices carry its scores (ai).
-import { day, log, hub, atBase, baseById, addCard, skill, snapshot } from "./world.js";
+import { day, log, hub, atBase, baseById, addCard, skill, snapshot, localId } from "./world.js";
 import { networksAt, networkById, netCovers, baseReceives, teamReceives, teamMilRadio, hasMilRadio, PLAYER_NET } from "./radio.js";
 import { partyTile, tileLabel, bestSkill, travelHours } from "./parties.js";
 import { hash01 } from "./skills.js";
@@ -64,6 +64,7 @@ const whenText = (state, d) => (d <= day(state) ? "today" : d === day(state) + 1
 // ---------- the channels: what each group says on the air today ----------
 export function channelTraffic(state, today = day(state)) {
   const c = chan(state);
+  const lid = (id) => localId(state, id); // ids feed the dice (hearChannel) and the day sums below: world-local only
   for (const f of state.factions) {
     if (!f.alive || !f.bases || !f.bases.length) { delete c.traffic[f.id]; continue; }
     const list = (c.traffic[f.id] = (c.traffic[f.id] || []).filter((x) => today - x.day < LISTEN.KEEP_DAYS));
@@ -80,19 +81,19 @@ export function channelTraffic(state, today = day(state)) {
         if (q.target.kind === "player") {
           const b = baseById(state, q.target.baseId);
           if (!b) continue;
-          put({ key: `raid:${q.id}`, kind: "raidYou", baseId: b.id, partyId: q.id, strength: Math.round(q.strength || 0), arrive,
+          put({ key: `raid:${lid(q.id)}`, kind: "raidYou", baseId: b.id, partyId: q.id, strength: Math.round(q.strength || 0), arrive,
             text: `a war party (strength about ${Math.round(q.strength || 0)}) is on its way to your ${b.name}, there ${when}.` });
         } else {
           const o = state.factions.find((x) => x.id === q.target.factionId);
-          put({ key: `raid:${q.id}`, kind: "raid", text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
+          put({ key: `raid:${lid(q.id)}`, kind: "raid", text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
         }
       } else if ((q.kind === "convoy" || q.kind === "caravan") && q.phase === "out") {
         const mine = q.baseId != null ? baseById(state, q.baseId) : null;
         const to = mine ? null : state.factions.find((x) => x.id === (q.targetFaction ?? q.toFaction));
         const where = mine ? `your ${mine.name}` : to ? `${fname(to)} at ${tileLabel(state, dest)}` : tileLabel(state, dest);
-        put({ key: `cv:${q.id}`, kind: "caravan", text: `a ${q.kind === "convoy" ? "trade convoy" : "caravan"} set out from ${tileLabel(state, q.path[0])} for ${where}, there ${whenText(state, arrivalDay(state, q))}.` });
+        put({ key: `cv:${lid(q.id)}`, kind: "caravan", text: `a ${q.kind === "convoy" ? "trade convoy" : "caravan"} set out from ${tileLabel(state, q.path[0])} for ${where}, there ${whenText(state, arrivalDay(state, q))}.` });
       } else if (q.kind === "scav" && q.scav && q.phase === "out") {
-        put({ key: `sc:${q.id}`, kind: "scav", text: `their scavengers are headed for ${tileLabel(state, q.scav.site)}.` });
+        put({ key: `sc:${lid(q.id)}`, kind: "scav", text: `their scavengers are headed for ${tileLabel(state, q.scav.site)}.` });
       }
     }
     // Their war parties against the hives (factions.js groupHiveWar): what changed since yesterday.
@@ -103,22 +104,22 @@ export function channelTraffic(state, today = day(state)) {
       const cut = Math.max(0, now.kills - m.kills);
       const target = groupHiveTarget(state, f);
       const name = burned ? m.hive || "a hive" : (target && target.name) || m.hive || "a hive";
-      put({ key: `hive:${f.id}:${now.fights}`, kind: "hive", text: burned ? `their fighters stormed ${name} and burned it out.` : `their fighters stormed ${name} and were driven off${cut ? `, after cutting down about ${cut} of its brood` : ""}.` });
+      put({ key: `hive:${lid(f.id)}:${now.fights}`, kind: "hive", text: burned ? `their fighters stormed ${name} and burned it out.` : `their fighters stormed ${name} and were driven off${cut ? `, after cutting down about ${cut} of its brood` : ""}.` });
     }
     const target = groupHiveTarget(state, f);
     c.memo[f.id] = { ...now, hive: target ? target.name : null };
     // Their wars (diplomacy.js).
     for (const w of state.diplo ? warsOf(state, f) : []) {
       const o = state.factions.find((x) => x.id === (w.a === f.id ? w.b : w.a));
-      if (o) put({ key: `war:${w.id}:${f.id}`, kind: "war", text: `they talk of their war with ${fname(o)}.` });
+      if (o) put({ key: `war:${w.id}:${lid(f.id)}`, kind: "war", text: `they talk of their war with ${fname(o)}.` });
     }
     // Their stores (this week's market lists, trade.js; only once they are drawn up).
-    if (f.market && (today + f.id) % LISTEN.STORES_EVERY === 0) {
+    if (f.market && (today + lid(f.id)) % LISTEN.STORES_EVERY === 0) {
       const wants = (f.market.wants || []).slice(0, 2).map((x) => x.key), spare = (f.market.surplus || []).slice(0, 2).map((x) => x.key);
-      if (wants.length || spare.length) put({ key: `st:${f.id}:${today}`, kind: "stores", text: `their stores: ${wants.length ? `short of ${wants.join(" and ")}` : "nothing short"}; ${spare.length ? `plenty of ${spare.join(" and ")}` : "nothing to spare"}.` });
+      if (wants.length || spare.length) put({ key: `st:${lid(f.id)}:${today}`, kind: "stores", text: `their stores: ${wants.length ? `short of ${wants.join(" and ")}` : "nothing short"}; ${spare.length ? `plenty of ${spare.join(" and ")}` : "nothing to spare"}.` });
     }
-    if ((today + f.id * 7) % LISTEN.RUMOUR_EVERY === 0) put({ key: `ru:${f.id}:${today}`, kind: "rumour", text: "" }); // the place is named when it is heard
-    if ((today + f.id * 3) % LISTEN.TALK_EVERY === 0) put({ key: `tk:${f.id}:${today}`, kind: "talk", text: talkText(f, today) });
+    if ((today + lid(f.id) * 7) % LISTEN.RUMOUR_EVERY === 0) put({ key: `ru:${lid(f.id)}:${today}`, kind: "rumour", text: "" }); // the place is named when it is heard
+    if ((today + lid(f.id) * 3) % LISTEN.TALK_EVERY === 0) put({ key: `tk:${lid(f.id)}:${today}`, kind: "talk", text: talkText(f, today) });
   }
   for (const k of Object.keys(c.got)) if (today - c.got[k] > 20) delete c.got[k];
   return c.traffic;
@@ -137,9 +138,9 @@ function talkText(f, today) {
 function listenerOf(state, holder, isBase) {
   if (isBase) {
     const best = Math.max(0, ...atBase(state, holder.id).map((s) => skill(s, "scouting")));
-    return { key: `b${holder.id}`, holder, isBase, tile: holder.tile, tuned: holder.tuned, scouting: best, mil: hasMilRadio(holder) };
+    return { key: `b${localId(state, holder.id)}`, holder, isBase, tile: holder.tile, tuned: holder.tuned, scouting: best, mil: hasMilRadio(holder) };
   }
-  return { key: `p${holder.id}`, holder, isBase, tile: partyTile(holder), tuned: holder.tuned, scouting: bestSkill(state, holder, "scouting"), mil: teamMilRadio(state, holder) };
+  return { key: `p${localId(state, holder.id)}`, holder, isBase, tile: partyTile(holder), tuned: holder.tuned, scouting: bestSkill(state, holder, "scouting"), mil: teamMilRadio(state, holder) };
 }
 function tunedListeners(state) {
   const out = [];
@@ -238,7 +239,7 @@ export function listenDaily(state) {
   }
   // Now and then they notice someone on their channel.
   for (const f of tunedTo) {
-    if (!f.known || hash01(state.seed, "listen-caught", f.id, today) >= LISTEN.CAUGHT) continue;
+    if (!f.known || hash01(state.seed, "listen-caught", localId(state, f.id), today) >= LISTEN.CAUGHT) continue;
     changeGoodwill(state, f, LISTEN.CAUGHT_GW, "listening in on their channel");
     log(state, `${f.name} caught on that you listen in on their channel (goodwill ${LISTEN.CAUGHT_GW}).`, "danger");
   }
