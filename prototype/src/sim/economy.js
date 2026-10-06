@@ -26,6 +26,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
+import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { cookAtBase, wormDaily, boilerUse } from "./worm.js";
 
 export const ROLES = {
@@ -141,9 +142,12 @@ export function waterProduction(state, base) {
   const wells = count(base, "well") * WATER.well * factor;
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
   const filters = filtersAt(base) * WATER.filter;
-  const hauled = prisonWater(state, base); // prisoners-tab: prisoners set to Fetch water (prisoners.js labour)
+  // hauled: prisoners set to Fetch water (prisoners.js labour), and the wells on your claims next to the base
+  // (claims.js hauledWells: at most one well per 4 people at the base; claimWells lists them for the base card).
+  const cw = hauledWells(state, base);
+  const hauled = prisonWater(state, base) + cw.total;
   const total = own + stream + wells + rain + hauled;
-  return { own, stream, wells, rain, filters, hauled, factor, total: Math.round(total * 10) / 10 };
+  return { own, stream, wells, rain, filters, hauled, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
 }
 
 export function waterNeed(state, base) {
@@ -366,6 +370,7 @@ function baseDaily(state, base) {
   const prod = waterProduction(state, base);
   const room = Math.max(0, waterCapacity(base) - (st.water || 0));
   st.water = (st.water || 0) + Math.min(room, prod.total);
+  drawWells(state, base); // claims.js: the wells hauled from today lose what was drawn; one at 0 is dry
   // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates.
   const over = (st.water || 0) - waterCapacity(base);
   if (over > 0 && Weather.season && Weather.season(state).key === "summer") st.water -= Math.round(over * WATER.evaporate * 10) / 10;

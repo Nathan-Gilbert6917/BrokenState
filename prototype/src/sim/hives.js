@@ -11,8 +11,9 @@
 // Hives also spend on growths around them (hivetech.js, the tech tree): more income, a bigger guard, and the
 // special dead their hordes carry (runners, brutes, spitters, screamers, crawlers: zombietypes.js).
 //
-// Each hive keeps a guard horde at home. Every 120–180 days a site for a new hive is picked near the current ones;
-// hives within 10 tiles of it send hordes there, the rest defend: they send hordes out to roam and to attack
+// Each hive keeps a guard horde at home. Now and then a site for a new hive is picked near the current ones (a curve:
+// about a year to the first, then every 4–5 months, at most HIVE.NEW_CAP new hives in three years on a big map:
+// newHiveCap / siteDue); hives within 10 tiles of it send hordes there, the rest defend: they send hordes out to roam and to attack
 // bases (medium hordes only before day 60; 20% of new roamers attack at first, 40% on day 30, 65% from about day
 // 70; your bases weigh 2.5× a group's and are attacked from up to 45 tiles). Hordes reaching the site gather into one mass; once the hordes delivered add up
 // to a score of 30 the mass starts turning into a hive, at most 40 of the dead a day, and the hive stands when
@@ -36,17 +37,47 @@ import { tacticalStyleFor } from "./breakoff.js";
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
 import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay } from "./eras.js";
 import { worldScale } from "./worldsize.js";
+import { findPath } from "./hex.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
 import {
   growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths, assaultTypes, hiveMods,
   savingFor, growthsOf, growthCounts,
 } from "./hivetech.js"; // the hives' tech tree: growths around a hive and the special dead they breed
 
-// Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
-// (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
+// Bigger maps (worldsize.js): border hordes come as often per tile of land as on a Normal map (days between them
+// divided by the area), with more build sites at a time. A Normal map is untouched. New build sites are not paced
+// by the land: a bigger map gets a bigger cap on new hives (newHiveCap) and the same curve.
 const paced = (state, days) => { const a = worldScale(state); return a === 1 ? days : Math.max(1, Math.round(days / a)); };
 const siteMax = (state) => Math.max(HIVE.SITE_MAX, Math.round(HIVE.SITE_MAX * worldScale(state)));
+
+// ---------- the pace of new hives (HIVE.NEW_*, SITE_*) ----------
+// How many new hives the hives may found in a span of NEW_SPAN days: NEW_CAP[0]–NEW_CAP[1] by the dice (the seed) on a
+// Large or Huge map, fewer on a smaller one by its land against a Large map's, never under NEW_MIN.
+export function newHiveCap(state) {
+  const [lo, hi] = HIVE.NEW_CAP;
+  const pick = lo + (hash((state.seed || 1) ^ 0x5151) % (hi - lo + 1));
+  return Math.max(HIVE.NEW_MIN, Math.round(pick * Math.min(1, worldScale(state) / HIVE.NEW_SCALE)));
+}
+// New hives so far: the ones the hives' own sites grew (stats.grown; older saves: every hive built) plus the sites
+// under way (hardcore-outbreak.js's first-year sites are the normal start's hives coming back, not growth).
+export function newHiveCount(state) {
+  ensureHives(state);
+  const stats = state.hiveInfo.stats;
+  return (stats.grown ?? stats.built) + state.hiveSites.filter((s) => !s.hardcore).length;
+}
+// The ramp day (eras.js rampDay: hardcore counts from the normal start) the n-th new hive's site is due: the n-th site
+// of its span falls NEW_SPAN × (its number in the span / cap) ^ SITE_CURVE days into it, each gap ± SITE_JITTER by
+// the dice (the jitter is on the gaps, so the days stay in order). Slow at first (the first site about a year in),
+// then faster; never more than the cap's worth of sites in a span.
+export function siteDue(state, n) {
+  const cap = newHiveCap(state), seed = state.seed || 1;
+  const at = (i) => { const k = Math.floor((i - 1) / cap); return HIVE.NEW_SPAN * (k + ((i - k * cap) / cap) ** HIVE.SITE_CURVE); };
+  let d = 0;
+  for (let i = 1; i <= n; i++) d += (at(i) - at(i - 1)) * (1 + HIVE.SITE_JITTER * ((hash(seed * 31 + i) % 2001) / 1000 - 1));
+  return Math.round(d);
+}
 import { hiveAllies, broodAfterAllies } from "./alliance.js";
+import { overwriteClaims } from "./claims.js"; // claims.js: a hive risen wipes the claims around it (agent A's hook)
 
 // HIVE and BOSS_NAMES live in hiveconst.js (no imports, so any module can read them at load time).
 export { HIVE, BOSS_NAMES };
@@ -73,9 +104,11 @@ export function ensureHives(state) {
   state.hives = [];
   state.hiveSites = [];
   state.hiveInfo = {
-    nextSiteDay: HIVE.SITE_DAYS[0] + (h0 % (HIVE.SITE_DAYS[1] - HIVE.SITE_DAYS[0] + 1)),
+    nextSiteDay: siteDue(state, 1), // the first new hive's site, about a year in (the curve above; checked again then)
     nextBorderDay: HIVE.BORDER_DAYS[0] + ((h0 >>> 8) % (HIVE.BORDER_DAYS[1] - HIVE.BORDER_DAYS[0] + 1)),
-    stats: { hordes: 0, zombies: 0, bosses: 0, sites: 0, built: 0, destroyed: 0, border: 0, breakIns: 0, held: 0, repelled: 0, overrun: 0, warnings: 0 },
+    // grown: new hives from the hives' own sites (the cap counts these); groupStorms / groupKills: the AI groups' war
+    // parties against the hives and the hives they destroyed (factions.js groupHiveWar).
+    stats: { hordes: 0, zombies: 0, bosses: 0, sites: 0, built: 0, grown: 0, destroyed: 0, border: 0, breakIns: 0, held: 0, repelled: 0, overrun: 0, warnings: 0, groupStorms: 0, groupKills: 0 },
   };
   for (const t of state.tiles) {
     if (t.infBase == null) t.infBase = t.infection;
@@ -125,8 +158,11 @@ export function hivesDaily(state) {
   growthsDaily(state); // growths finishing, regrowing, rotting at dead hives; a screamer spire calling the dead
   for (const site of [...state.hiveSites]) siteDaily(state, site);
   if (d >= info.nextSiteDay) {
-    pickSite(state);
-    info.nextSiteDay = d + paced(state, state.rng.int(HIVE.SITE_DAYS[0], HIVE.SITE_DAYS[1]));
+    // The next new hive's site is due by the curve (siteDue); picked, the next one is looked at SITE_GAP days on
+    // (its own due day is usually later). Not due yet: wait for its day.
+    const due = d + Math.max(0, siteDue(state, newHiveCount(state) + 1) - rd);
+    if (d >= due) { pickSite(state); info.nextSiteDay = d + HIVE.SITE_GAP; }
+    else info.nextSiteDay = due;
   }
   if (d >= info.nextBorderDay) {
     borderSpawn(state);
@@ -261,7 +297,9 @@ function supportSite(state, hive) {
 function pickSite(state) {
   const g = state.grid, rng = state.rng;
   if (!state.hives.length || state.hiveSites.length >= siteMax(state)) return null;
-  if (state.hives.length + state.hiveSites.length >= hiveCap(state)) return null; // eras.js: the late game's cap on new hives
+  // eras.js: the late game's cap on the hives standing (year 8: 11 on a Normal map), by the land on the other sizes
+  // (a Huge map starts with 14: unscaled, it would never grow a hive past year 7). New hives are paced by siteDue.
+  if (state.hives.length + state.hiveSites.length >= Math.round(hiveCap(state) * worldScale(state))) return null;
   const people = [...state.bases.map((b) => b.tile), ...state.factions.filter((f) => f.alive).flatMap((f) => f.bases)];
   const cands = [];
   for (const t of state.tiles) {
@@ -278,7 +316,17 @@ function pickSite(state) {
     cands.push({ t, w: supporters ** 1.5 * (0.4 + t.infection) });
   }
   if (!cands.length) return null;
-  const pick = rng.weighted(cands, (c) => c.w).t;
+  // A site the nearest hive's hordes can walk to over land (as hordes.js nextStep paths, bridges included): a tile
+  // across a river or on an island would gather nothing and stand in the way of the next site (SITE_MAX) for months.
+  let pick = null;
+  for (let tries = 0; tries < 6 && cands.length && !pick; tries++) {
+    const c = rng.weighted(cands, (x) => x.w);
+    const from = state.hives.reduce((best, hv) => (!best || g.distance(hv.tile, c.t.id) < g.distance(best.tile, c.t.id) ? hv : best), null);
+    const res = findPath(g, from.tile, c.t.id, (a, b) => (state.tiles[b].terrain !== "water" || state.tiles[b].bridge ? 1 : Infinity), 120);
+    if (res && res.path.length >= 2) pick = c.t;
+    else cands.splice(cands.indexOf(c), 1);
+  }
+  if (!pick) return null;
   const site = { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile: pick.id, chosen: state.hour, score: 0, biomass: 0, started: null };
   state.hiveSites.push(site);
   state.hiveInfo.stats.sites++;
@@ -331,8 +379,10 @@ function siteDaily(state, site) {
     }
   }
   if (site.biomass >= HIVE.SITE_BIOMASS) return completeSite(state, site);
-  // Nobody left to build it and nothing gathered: the site is given up after 90 days.
-  const supported = state.hives.some((hv) => state.grid.distance(hv.tile, site.tile) <= HIVE.SUPPORT);
+  // Nobody left to build it and nothing gathered: the site is given up after 90 days. A hive whose hordes found no
+  // way there (noPath: water, mountains) does not count as building it (as supportSite), else such a site would stand
+  // for ever and block the next (SITE_MAX sites at a time).
+  const supported = state.hives.some((hv) => state.grid.distance(hv.tile, site.tile) <= HIVE.SUPPORT && !(site.noPath && site.noPath.includes(hv.id)));
   if (!supported && !mass && state.hour - site.chosen > 90 * 24) state.hiveSites.splice(state.hiveSites.indexOf(site), 1);
 }
 
@@ -341,7 +391,9 @@ function completeSite(state, site) {
   if (state.tiles[site.tile].hive) return null;
   const hive = newHive(state, site.tile, 0);
   state.hives.push(hive);
+  overwriteClaims(state, site.tile, 2, null, "a hive has risen there"); // claims.js (agent A's hook: keep it)
   state.hiveInfo.stats.built++;
+  if (!site.hardcore) state.hiveInfo.stats.grown = (state.hiveInfo.stats.grown ?? 0) + 1; // the cap on new hives counts these (newHiveCount)
   // What was left of the mass: up to 150 stay as the new hive's guard, the rest wander off from it.
   let kept = 0;
   for (const h of state.hordes) {
@@ -425,6 +477,7 @@ export function hiveTracker(state) {
   return {
     hives: state.hives.length, res: state.hives.reduce((a, h) => a + h.res, 0), income: state.hives.reduce((a, h) => a + (h.income || 0), 0),
     bossesReady: state.hives.filter((h) => h.bossReady).length, sites: site, nextSiteDay: state.hiveInfo.nextSiteDay, nextBorderDay: state.hiveInfo.nextBorderDay,
+    newCap: newHiveCap(state), newCount: newHiveCount(state), // the cap on new hives in a span of HIVE.NEW_SPAN days, and how many so far
     stats: { ...state.hiveInfo.stats },
     growths: growthCounts(state), // hivetech.js
   };
@@ -432,8 +485,9 @@ export function hiveTracker(state) {
 
 // ---------- destroying a hive ----------
 // The infection it radiated fades: the land within 7 tiles settles toward a low level (0.06 at the hive, +0.07 a
-// tile), 0.01 a day. Its guard is gone; its other hordes wander on without a home.
-export function destroyHive(state, hive, how = "") {
+// tile), 0.01 a day. Its guard is gone; its other hordes wander on without a home. opts.quiet: no log line (a hive
+// destroyed out of your sight and reach by an AI group's war party, factions.js groupHiveWar, which writes its own).
+export function destroyHive(state, hive, how = "", opts = {}) {
   ensureHives(state);
   const i = state.hives.indexOf(hive);
   if (i < 0) return false;
@@ -451,11 +505,18 @@ export function destroyHive(state, hive, how = "") {
   }
   witherGrowths(state, hive); // its growths wither and rot away (hivetech.js)
   state.hiveInfo.stats.destroyed++;
-  const left = state.hives.length;
-  log(state, `${hive.name[0].toUpperCase() + hive.name.slice(1)} was destroyed${how ? ` ${how}` : ""}. ${left ? `${left} hive${left === 1 ? "" : "s"} still stand${left === 1 ? "s" : ""} in the state.` : "No hive is left standing."}`, "good");
+  if (!opts.quiet) log(state, `${hive.name[0].toUpperCase() + hive.name.slice(1)} was destroyed${how ? ` ${how}` : ""}. ${hivesLeftText(state)}`, "good");
   checkGameOver(state); // destroying the last hive wins (world.js)
   return true;
 }
+// "3 hives still stand in the state." / "No hive is left standing."
+export function hivesLeftText(state) {
+  const left = state.hives.length;
+  return left ? `${left} hive${left === 1 ? "" : "s"} still stand${left === 1 ? "s" : ""} in the state.` : "No hive is left standing.";
+}
+// Your team fought this hive (fires, Molotovs, a storm): an AI group that fights it within GROUP_HIVE.PLAYER_DAYS
+// days warms to you (factions.js groupHiveWar).
+const notePlayerFight = (state, hive) => { hive.playerDay = day(state); };
 
 // Is every hive gone, with no new one being built? (world.js checkGameOver: the survivors win.)
 export function hivesSecured(state) {
@@ -533,6 +594,7 @@ function hiveCard(state, p, hive) {
           if (partyFuel(st, p) < 6) { awaitOrders(st, p, "Not enough fuel for the fires.", { failed: true }); return "The team has less than 6 fuel."; }
           useFuel(st, p, 6);
           markThreat(st, hive); // hivetech.js: it builds for defence
+          notePlayerFight(st, hive);
           const guard = guardOf(st, hive);
           if (guard) reduceHorde(st, guard, Math.round(guard.size * 0.3));
           hive.res = Math.max(0, hive.res - 15);
@@ -558,6 +620,7 @@ function hiveCard(state, p, hive) {
           if (bombs.length < FIREBOMB.molotovs) { awaitOrders(st, p, "Not enough Molotovs.", { failed: true }); return `The team has fewer than ${FIREBOMB.molotovs} Molotovs.`; }
           for (const b of bombs.slice(0, FIREBOMB.molotovs)) b.take();
           markThreat(st, hive);
+          notePlayerFight(st, hive);
           const guard = guardOf(st, hive);
           if (guard) reduceHorde(st, guard, Math.round(guard.size * FIREBOMB.guard));
           hive.res = Math.max(0, hive.res - FIREBOMB.res);
@@ -652,6 +715,7 @@ registerCombatHandler("hiveAssault", (state, result, setup) => {
   const p = state.parties.find((x) => x.id === c.partyId);
   const guard = hive ? guardOf(state, hive) : null;
   if (guard && result.enemiesKilled) reduceHorde(state, guard, Math.round((guard.size * result.enemiesKilled) / Math.max(1, setup.enemy.count + 1)));
+  if (hive) notePlayerFight(state, hive);
   let text;
   if (result.outcome === "victory" && hive) {
     destroyHive(state, hive, "by your team");

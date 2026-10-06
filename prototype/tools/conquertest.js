@@ -265,9 +265,12 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   let s2 = 0;
   for (let i = 0; i < 1500; i++) { const k = st2.factions.length; factionsDaily(st2); if (st2.factions.length > k) { s2++; for (const f of st2.factions) if (f.alive) { f.alive = false; f.bases = []; } } }
   check(s2 >= 4, `new gangs keep coming at any time, with no cap (${s2} in 1500 days)`);
-  // The victory is instant: all in and over half the land at one moment wins, a gang arriving later does not matter.
+  // The victory is instant: a member and over half the land at one moment wins, a gang arriving later does not matter
+  // (alliance.js: groups outside the coalition no longer block it; one group is kept and joins, the rest are broken).
   const st3 = world();
-  for (const f of st3.factions.filter((x) => x.alive)) { while (f.bases.length > 1) f.bases.pop(); C.captureBase(st3, f, f.bases[0], null, {}); }
+  const kept = st3.factions.find((x) => x.alive);
+  for (const f of st3.factions.filter((x) => x.alive && x !== kept)) { while (f.bases.length > 1) f.bases.pop(); C.captureBase(st3, f, f.bases[0], null, {}); }
+  kept.known = true; kept.pact = "trade"; kept.goodwill = 80; A.ensureAlliance(st3).members.push(kept.id);
   const g3 = st3.grid;
   for (let k = 0; k < 40 && !A.goalsProgress(st3).alliance.landOk; k++) {
     const held = new Uint8Array(st3.tiles.length);
@@ -279,7 +282,7 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   const { makeGang } = await import("../src/sim/factions.js");
   const far = st3.tiles.find((t) => t.loc && free(st3, t.id) && st3.bases.every((b) => g3.distance(b.tile, t.id) >= 8));
   const late = makeGang(st3, far.id, { pop: 10 });
-  check(!A.allianceVictory(st3), "a gang that settles first has to be beaten or invited");
+  check(A.allianceVictory(st3) && late.alive, "a gang that settles does not block the coalition's win (conquest counts: beat it or leave it)");
   while (late.bases.length) C.captureBase(st3, late, late.bases[0], null, {});
   check(!late.alive && A.allianceVictory(st3) && checkGameOver(st3) && st3.victoryReason === "alliance", "beaten: the coalition wins at that moment");
 }

@@ -2,14 +2,16 @@
 // groups' own calls to you.
 //
 // Network
-// - A radio station (buildings.js "radio") reaches RADIO_RANGE (8) tiles around its base.
+// - A radio station (buildings.js "radio") reaches RADIO_RANGE (12) tiles around its base. A base holding a Military
+//   encrypted radio (data.js milradio, a loot item) in its armory is a station too, reaching MIL_RADIO_RANGE (24).
 // - A radio relay (buildings.js "relay", outposts only) reaches RELAY_RANGE (6) tiles. It is an unmanned repeater:
 //   it needs no operator but uses 1 part every RELAY_UPKEEP_DAYS (10) days (from its outpost, else from the hub).
 //   With no part it goes offline until one is there (checked each day).
 // - A relay only works when it is linked: it stands within range of a station or of another linked relay
 //   (a chain back to a station). Coverage is the union of the ranges of every station and linked relay.
 // - Your teams in coverage report live (world.js radioBasesInRange); groups whose base is within coverage plus
-//   GROUP_REACH (4) tiles (their own sets reach that far) can be called.
+//   GROUP_REACH (6) tiles (their own sets reach that far) can be called. A chain runs through your own bases only
+//   (every node is one of state.bases); the coalition's NEIGHBOUR / MEMBER_RELAY rules (alliance.js) do the rest.
 //
 // Talking to a group (Groups tab → Radio…), each with a cooldown:
 // - Greet: +2 goodwill (+1 if hostile), every 3 days. Scan the airwaves: groups in reach you have not met are
@@ -44,7 +46,9 @@ import { raidPaceOpen, noteRaid } from "./eras.js";
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
-export const GROUP_REACH = 4;
+export const GROUP_REACH = 6;
+export const MIL_RADIO_RANGE = 24; // a base with a Military encrypted radio in its armory
+export const hasMilRadio = (b) => !!b.armory && b.armory.some((it) => it && it.key === "milradio");
 export const COOLDOWN = { greet: 3, news: 5, caravan: 4, help: 10, scan: 1, offer: 6 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -54,7 +58,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function radioNodes(state) {
   const nodes = [];
   for (const b of state.bases) {
-    if (b.radio) nodes.push({ base: b, tile: b.tile, range: RADIO_RANGE + radioBoost(b), kind: "station", linked: true, offline: false }); // +2 on generator power (power.js)
+    if (b.radio || hasMilRadio(b)) nodes.push({ base: b, tile: b.tile, range: (hasMilRadio(b) ? MIL_RADIO_RANGE : RADIO_RANGE) + radioBoost(b), kind: "station", linked: true, offline: false, military: hasMilRadio(b) }); // +2 on generator power (power.js)
     else if (count(b, "relay")) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: !!b.relayOffline });
   }
   const g = state.grid;
@@ -77,7 +81,7 @@ export const hasNetwork = (state) => radioNodes(state).some((n) => n.linked);
 // One line for the base screen.
 export function radioSummary(state, base) {
   const n = radioNodes(state).find((x) => x.base === base);
-  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage`;
+  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}`;
   if (n) {
     if (n.offline) return "Relay offline: it needs 1 part (from this outpost or the hub)";
     if (!n.linked) return `Relay not linked: no station or linked relay within range (it reaches ${n.range} tiles)`;
