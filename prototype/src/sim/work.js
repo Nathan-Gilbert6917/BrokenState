@@ -43,17 +43,17 @@ import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
 import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
-import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld } from "./crafting.js";
+import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
-import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
+import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
 import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
-import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
+import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse } from "./upkeep.js";
-import { woodWorkWhy, woodWorkCap, woodNeed, woodcutterMult, bestChop, baseWoodDay } from "./woodcutting.js";
+import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
 import { waterIn } from "./water.js"; // purified and un-purified water count together
 import { wormFilterUrgent, WOOD_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
@@ -65,6 +65,9 @@ export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a st
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
 const STICKY = 1.5;                           // staying on the same job this hour
+// Upkeep hands (the Repair type with nothing to build): a building from `from` wear is worn; the wear past `to` on the
+// worn ones, taken off within `days` at WEAR.upkeep a hand a day (breakdowns.js), sizes the crew (tune-jobcaps).
+const UPKEEP = { from: 50, to: 30, days: 20 };
 
 // ---------- the schedule ----------
 export const SCHED = {
@@ -154,11 +157,11 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (it clogs up day by day, needed or not); the jobs behind it go first. As the queue never waits for spare hands, the governor or a steward queues crafts that can wait only from scrap past what the next building needs.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (its scrap goes to the build first); the jobs behind it go first. As the queue never waits for spare hands, the governor or a steward queues crafts that can wait only from scrap past what the next building needs.",
     open(ctx) {
       const jobs = openCrafts(ctx);
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough and a build is queued" : "the queued crafts need a workshop") : "nothing in the craft queue" };
-      const water = jobs.some((j) => j.recipe === "waterfilter") && waterIn(ctx.base.stock) < ctx.people.length * 3;
+      const water = jobs.some(isFilterJob) && waterIn(ctx.base.stock) < ctx.people.length * 3;
       return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
     // The governor's rule (autopilot.js planRoles 1b): a queued water filter gets its crafter first while the water
@@ -166,7 +169,7 @@ export const WORK_TYPES = {
     // ...and while the water carries the worm's eggs and nothing boils it (wormFilterUrgent: no boiler, or one the land
     // cannot feed), as the governor since the worm: without it priorities crafted half the governor's filters.
     emergency(ctx) {
-      if (ctx.used.craft > 0 || !openCrafts(ctx).some((j) => j.recipe === "waterfilter")) return null;
+      if (ctx.used.craft > 0 || !openCrafts(ctx).some(isFilterJob)) return null;
       if (waterRunningShort(ctx.state, ctx.base)) return { slots: 1, why: "the water is running short and a water filter is queued" };
       if (wormFilterUrgent(ctx.state, ctx.base)) return { slots: 1, why: "the water carries the worm's eggs, nothing boils it and a water filter is queued" };
       return null;
@@ -195,10 +198,12 @@ export const WORK_TYPES = {
   },
   repair: {
     name: "Repair", ing: "Repairing", short: "Fix", role: "build", skill: "mechanics",
-    desc: "Repairs broken buildings (the Repairs tab; a repair is started by itself when the base can pay), worked 08:00–20:00, and keeps worn ones in shape when nothing is being built. A broken well pump, well or wall pulls the first hands with Repair set.",
+    desc: "Repairs broken buildings (the Repairs tab; a repair is started by itself when the base can pay; one hand a repair), worked 08:00–20:00, and keeps worn ones in shape when nothing is being built (as many as the wear wants). A broken well pump, well or wall pulls the first hands with Repair set.",
+    // A repair is one hand a job; upkeep has no fixed cap (tune-jobcaps: it was one hand): ctx.upkeepHands, the wear
+    // past UPKEEP.to on the worn buildings taken off within UPKEEP.days.
     open(ctx) {
       const open = ctx.repairJobs.filter((j) => !ctx.repairTaken.has(j.id));
-      const upkeep = !ctx.base.construction.length && ctx.worn > 0 ? 1 : 0;
+      const upkeep = !ctx.base.construction.length && ctx.worn > 0 ? ctx.upkeepHands : 0;
       if (!open.length && !upkeep) return { cap: 0, why: "nothing broken or worn" };
       return { cap: open.length + upkeep, urg: open.length ? 6 : 1 };
     },
@@ -215,7 +220,7 @@ export const WORK_TYPES = {
       const jobs = ctx.repairJobs.filter((j) => (j.who == null || j.who === s.id) && skill(s, "mechanics") >= j.min && !ctx.repairTaken.has(j.id));
       const j = jobs.find((x) => x.who === s.id) || jobs[0];
       if (j) { ctx.repairTaken.add(j.id); return { role: "build", repair: j.id, note: `repairing the ${j.name}` }; }
-      if (!ctx.base.construction.length && ctx.worn > 0 && !ctx.upkeepTaken) { ctx.upkeepTaken = true; return { role: "build", note: "upkeep on worn buildings" }; }
+      if (!ctx.base.construction.length && ctx.worn > 0 && ctx.upkeepTaken < ctx.upkeepHands) { ctx.upkeepTaken++; return { role: "build", note: "upkeep on worn buildings" }; }
       ctx.why = "the repairs have their hands";
       return null;
     },
@@ -223,10 +228,11 @@ export const WORK_TYPES = {
   },
   teach: {
     name: "Teach", ing: "Teaching", short: "Tch", role: "teach", skill: "leadership",
-    desc: "Teaches a skill to up to 2 people here whose skill is at least 4 below theirs (learners keep their own jobs). One teacher, two at 12+ people.",
+    desc: "Teaches a skill to up to 2 people here whose skill is at least 4 below theirs (learners keep their own jobs). As many teachers as there are learners nobody teaches yet.",
+    // No fixed cap (tune-jobcaps: it was one teacher, two at 12+): the learners are the limit (each teacher takes up to
+    // MAX_LEARNERS nobody else teaches, lessonFor), and Teach sits below the producing work in every default role.
     open(ctx) {
-      const cap = ctx.people.length >= 12 ? 2 : 1;
-      return ctx.people.length >= 3 ? { cap, urg: 1 } : { cap: 0, why: "too few people to teach" };
+      return ctx.people.length >= 3 ? { cap: ctx.people.length, urg: 1 } : { cap: 0, why: "too few people to teach" };
     },
     can: (ctx, s) => (lessonFor(ctx, s) ? "" : `nobody here ${TEACH_GAP}+ below them in a skill`),
     take(ctx, s) {
@@ -269,45 +275,46 @@ export const WORK_TYPES = {
   // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
   hunt: {
     name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
-    desc: "Hunts the land within 2 tiles with a Hunting cabin here (up to 2 people, while food is short of the season's goal), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
     open(ctx) {
       const why = huntWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
       const days = ctx.foodDays;
       if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
-      return { cap: CABIN.hunters, urg: days < 7 ? 7 : days < 20 ? 4.5 : 2.5 };
+      // No fixed cap (tune-jobcaps: it was 2): hunters to close the food the land must bring in (hunting.js huntWorkCap).
+      return { cap: huntWorkCap(ctx.state, ctx.base, foodGoal(ctx.state)), urg: days < 7 ? 7 : days < 20 ? 4.5 : 2.5 };
     },
     rank: (s) => hunterMult(s) * 10 * (bestHuntWeapon(s) ? 1 : 0.4),
   },
   fish: {
     name: "Fish", ing: "Fishing", short: "Fish", role: "fish", skill: "scouting",
-    desc: "Fishes the river or lake by this base 3 hours a day while food is short of the season's goal: one fishing rod or net each (carried or in the armory). Fresh fish spoils fast; a fished-out spot comes back in a week or two.",
+    desc: "Fishes the river or lake by this base 3 hours a day while food is short of the season's goal: one fishing rod or net each (carried or in the armory), as many as it takes to bring the stores up (each one past the first catches a little less at the one spot). Fresh fish spoils fast; a fished-out spot comes back in a week or two.",
     open(ctx) {
       const why = fishWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
       const days = ctx.foodDays;
       if (days >= foodGoal(ctx.state)) return { cap: 0, why: `food is plentiful (${Math.floor(days)} days)` };
-      return { cap: fishWorkCap(ctx.state, ctx.base), urg: days < 7 ? 6.5 : days < 20 ? 4 : 2 };
+      return { cap: fishWorkHands(ctx.state, ctx.base, foodGoal(ctx.state)), urg: days < 7 ? 6.5 : days < 20 ? 4 : 2 }; // one rod or net each, sized to the need
     },
     rank: (s) => fisherMult(s) * 10,
   },
   // Wild food around the base (foraging.js): berries, nuts, mushrooms, greens, roots, by the season.
   forage: {
     name: "Forage", ing: "Foraging", short: "Forg", role: "forage", skill: "farming",
-    desc: "Gathers wild food within 2 tiles of the base 6 hours a day while food is short (under 25 days): about a ration a day each in summer, more in autumn, little in spring, nothing worth it in winter. Up to 3 people (4 at 12+). Farming and Scouting help; the land picked hard grows back over weeks.",
+    desc: "Gathers wild food within 2 tiles of the base 6 hours a day while food is short (under 25 days): about a ration a day each in summer, more in autumn, little in spring, nothing worth it in winter. As many as it takes to bring the stores up (no fixed cap: each picks the best ground left, so a crowd strips the land faster). Farming and Scouting help; the land picked hard grows back over weeks.",
     open(ctx) {
       const why = forageWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
       const days = Math.min(ctx.foodDays, edibleFood(ctx.base) / Math.max(1, foodUse(ctx.state, ctx.base).total)); // everyone fed here (upkeep.js)
       if (days >= Math.min(FORAGE_SHORT, foodGoal(ctx.state))) return { cap: 0, why: `food is not short (${Math.floor(days)} days)` };
-      return { cap: forageWorkCap(ctx.state, ctx.base), urg: days < 7 ? 6.5 : days < 14 ? 4 : 2 };
+      return { cap: forageWorkCap(ctx.state, ctx.base, Math.min(FORAGE_SHORT, foodGoal(ctx.state))), urg: days < 7 ? 6.5 : days < 14 ? 4 : 2 }; // sized to the need, no fixed cap
     },
     rank: (s) => foragerMult(s) * 10,
   },
   // Firewood for the winter's heating (woodcutting.js): felled trees, deadfall, fence rails, by the land around.
   wood: {
     name: "Cut wood", ing: "Cutting wood", short: "Wood", role: "wood", skill: "farming",
-    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the coming cold needs (0.2 a head a day below freezing): forest best (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. Up to 2 people (3 at 10+). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
+    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the coming cold needs (0.2 a head a day below freezing): forest best (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
     open(ctx) {
       const why = woodWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
@@ -315,7 +322,7 @@ export const WORK_TYPES = {
       if (!w.short) return { cap: 0, why: w.need > 0 ? `enough firewood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
       const burn = Math.max(0.1, w.heads * 0.2);
       const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
-      return { cap: woodWorkCap(ctx.state, ctx.base), urg };
+      return { cap: Math.max(1, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
     },
     // The governor's rule (autopilot.js planRoles 4a, planWood): from autumn (the cold within WOOD_AP.autumn days, or
     // here, or a water boiler burning wood) the woodcutters it takes to have the pile in by the cold go before the
@@ -327,8 +334,7 @@ export const WORK_TYPES = {
       if (ctx.base.tier === 0 || (ctx.state.governor && ctx.state.governor.noWood) || woodWorkWhy(ctx.state, ctx.base)) return null; // gov.noWood: the test switch (woodtest.js)
       const w = woodNeed(ctx.state, ctx.base);
       if (!w.short || !w.soon || w.need <= 0) return null;
-      const perDay = Math.max(0.1, baseWoodDay(ctx.state, ctx.base));
-      const want = Math.min(woodWorkCap(ctx.state, ctx.base), Math.max(Math.ceil((w.need - w.have) / (perDay * Math.max(WOOD_AP.minDays, w.toCold))), w.boiler > 0 ? Math.ceil(w.boiler / perDay) : 0));
+      const want = woodHandsWanted(ctx.state, ctx.base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) }); // by the cold (and the boiler's), no fixed cap
       const n = ctx.people.length;
       const critical = n <= 3 ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, Math.ceil(n / 4)) : Math.min(1, want);
       const slots = critical - ctx.used.wood;
@@ -344,8 +350,9 @@ export const WORK_KEYS = Object.keys(WORK_TYPES);
 const openCrafts = (ctx) => craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] && meetsNeeds(ctx.base, CRAFTS[j.recipe]) && !craftHeld(ctx.state, j));
 // A water filter the governor or a steward queued (planCrafts: for the summer and dry spells, or wells that cannot keep
 // up) waits while the tanks are at least FILTER_HOLD full and the water is not running short; the crafter works the
-// jobs behind it meanwhile (crafting.js craftJobStatus skips it). Crafted into full tanks, its 3 a day mostly spill
-// over while it clogs up day by day (and is queued again from scrap the build queue wanted), and its water hides
+// jobs behind it meanwhile (crafting.js craftJobStatus skips it). Crafted into full tanks, its 3 a day mostly spilled
+// over while it clogged up day by day (and was queued again from scrap the build queue wanted; since tune-jobcaps a
+// filter clogs only on the days it is in use, crafting.js filtersInUse, but its scrap still went early), and its water hides
 // the dry-day shortfall the governor builds rain catchers for (5 scrap, for good). The governor's own roles leave such
 // a filter queued until spare hands or a shortage come along (planRoles); crafted the moment someone with Craft set is
 // free, priorities finished 286 crafts to the governor's 152 and 7% fewer buildings over worktest's 40 runs. A filter
@@ -358,13 +365,13 @@ const openCrafts = (ctx) => craftQueue(ctx.base).filter((j) => CRAFTS[j.recipe] 
 const FILTER_HOLD = 0.75;
 function holdFilters(state, base) {
   const q = craftQueue(base);
-  if (!q.some((j) => j.recipe === "waterfilter")) return;
+  if (!q.some(isFilterJob)) return;
   const auto = !!state.autopilot || !!(base.steward && base.steward.on && base.steward.areas && base.steward.areas.production !== false);
   // Never while the water carries the worm's eggs and nothing boils it (autopilot.js wormFilterUrgent): that filter is
   // for safe water, not more of it, and planCrafts put it at the front of the queue for the crafter the rule above spares.
   const hold = auto && base.construction.length > 0 && waterIn(base.stock) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base) && !wormFilterUrgent(state, base);
   for (const j of q) {
-    if (j.recipe !== "waterfilter") continue;
+    if (!isFilterJob(j)) continue;
     if (hold && !(j.progress > 0)) j.held = state.hour;
     else delete j.held;
   }
@@ -866,7 +873,7 @@ function makeCtx(state, base, people) {
     threat: threatInfo(state, base),
     foodDays: edibleFood(base) / Math.max(1, people.length),
     stationList, stationKinds: [...new Set(stationList.map(stationKind))],
-    stations: new Set(), learners: new Set(), studying: new Set(), repairTaken: new Set(), upkeepTaken: false,
+    stations: new Set(), learners: new Set(), studying: new Set(), repairTaken: new Set(), upkeepTaken: 0,
     books: {}, used: Object.fromEntries(WORK_KEYS.map((k) => [k, 0])),
     stationWhy: (st) => { if (!whyMemo.has(st.id)) whyMemo.set(st.id, stationWork(state, base, st, opsNow)); return whyMemo.get(st.id); },
   };
@@ -878,7 +885,9 @@ function makeCtx(state, base, people) {
     const here = j.who != null && people.some((s) => s.id === j.who);
     return { id: j.id, who: here ? j.who : null, min: def && def[j.method] ? def[j.method].min || 0 : 0, name: fx ? (fx.type === "pump" ? "well pump" : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name.toLowerCase()) || fx.type) : "fixture" };
   });
-  ctx.worn = fixtures(base).filter((f) => !f.broken && (f.wear || 0) >= 50).length; // upkeep before the risk of breaking (60)
+  const worn = fixtures(base).filter((f) => !f.broken && (f.wear || 0) >= UPKEEP.from);
+  ctx.worn = worn.length; // upkeep before the risk of breaking (60)
+  ctx.upkeepHands = worn.length ? Math.max(1, Math.ceil(worn.reduce((a, f) => a + f.wear - UPKEEP.to, 0) / (WEAR.upkeep * UPKEEP.days))) : 0;
   const opens = new Map();
   ctx.open = (key) => { if (!opens.has(key)) opens.set(key, WORK_TYPES[key].open(ctx)); return opens.get(key); };
   // A person not being planned: what they hold.

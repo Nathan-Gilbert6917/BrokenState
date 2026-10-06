@@ -751,11 +751,14 @@ export function fightXp(state, people, win) {
 // ======================================================================================
 // free: Set of people still without a role this hour; give(s, role). Only when food is comfortable and nothing is
 // attacking. One teacher (two at 12+ people), readers up to a sixth of the base.
-export function planStudy(state, base, free, give, { foodDays = 0, urgent = false } = {}) {
+// plenty (tune-jobcaps): food is past the point where the governor puts more hands on the plots (autopilot.js planRoles
+// step 10): then the learners and the copies are the only limit on teachers and readers (no head-count cap); before
+// that one teacher (two at 12+) and a reader per 6 people, so the spare hands go to the plots first.
+export function planStudy(state, base, free, give, { foodDays = 0, urgent = false, plenty = false } = {}) {
   const people = atBase(state, base.id);
   if (urgent || people.length < 4 || foodDays < 12) return;
   const pool = [...free].filter((s) => !s.inBed && s.mood >= 35).sort((a, b) => (b.role === "teach") - (a.role === "teach") || (b.role === "read") - (a.role === "read") || a.id - b.id);
-  const teachers = people.length >= 12 ? 2 : 1;
+  const teachers = plenty ? people.length : people.length >= 12 ? 2 : 1;
   let n = 0;
   const taken = new Set(people.filter((s) => s.role === "teach" && !free.has(s)).flatMap((s) => (s.teach ? s.teach.learners : [])));
   for (const T of pool) {
@@ -772,7 +775,7 @@ export function planStudy(state, base, free, give, { foodDays = 0, urgent = fals
   const free2 = armoryBooks(base);
   for (const s of people) if (s.role === "read" && !free.has(s) && s.reading && free2[s.reading] > 0) free2[s.reading]--;
   let readers = 0;
-  const cap = Math.max(1, Math.floor(people.length / 6));
+  const cap = plenty ? people.length : Math.max(1, Math.floor(people.length / 6));
   for (const s of pool) {
     if (readers >= cap || !free.has(s)) continue;
     const k = bestBook(s, free2);
