@@ -18,7 +18,7 @@
 import { createWorld, hub, atBase, makeSurvivor, day } from "../src/sim/world.js";
 import {
   createBattle, combatAct, autoPlayerTurn, runEnemyPhase, endPlayerTurn, registerCombatHandler, active, unitAt, CELL,
-  reachable, shotOdds, coverAgainst, WEAPONS, canSeeAt, canFire, autoResolveCombat, byNumbersOdds, enemyUnit, shotPriority, moveAlong, pathTo,
+  reachable, shotOdds, coverAgainst, WEAPONS, canSeeAt, canFire, autoResolveCombat, byNumbersOdds, enemyUnit, shotPriority, moveAlong, pathTo, CRIT,
 } from "../src/sim/combat.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { DEPLOY } from "../src/sim/deploy.js";
@@ -170,7 +170,7 @@ section("Ladders: set up from the foot of a wall section, climbed onto the walkw
   shooter.x = 6; shooter.y = y; b.losCache.fill(0);
   const cov = coverAgainst(b, carrier.x, carrier.y, shooter.x, shooter.y);
   const o = shotOdds(b, shooter, carrier);
-  check(!cov.any && cov.level === 0 && o.crit === 40, `on the ladder: no cover at all (critical chance ${o.crit}%), +${10} to be hit`);
+  check(!cov.any && cov.level === 0 && o.crit === CRIT.EXPOSED, `on the ladder: no cover at all (critical chance ${o.crit}%), +${10} to be hit`);
   check(shotPriority(b, carrier) === 1.5, "the AI shoots a climber first (×1.5)");
   // A defender on the walkway next to it pushes it off.
   const d = mine[1];
