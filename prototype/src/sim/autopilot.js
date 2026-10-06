@@ -1728,7 +1728,7 @@ function wormWishes(state, base, queued) {
 }
 // The water carries the worm's eggs and nothing boils it today (no boiler, a cold one, or one the land cannot feed):
 // a queued water filter is crafted before anything else.
-function wormFilterUrgent(state, base) {
+export function wormFilterUrgent(state, base) {
   const ww = baseWater(state, base);
   return ww.raw > 0 && (!ww.safe || boilerWoodShort(state, base));
 }
@@ -3487,11 +3487,22 @@ function planWood(state, base, people, areas) {
 // land around the hub gives little (a woodcutter there under 2.5 a day): the best wood land within range that a team
 // of 2–3 with the hub's axes would bring the most from in 8 hours (by a car when there is one: firewood is bulky),
 // scored by the share of the shortfall it covers. The trip takes the armory's cutting tools along.
+// When the Cut wood job at its cap (woodWorkCap × a woodcutter's day here × the days to the cold) cannot have the
+// pile in by the winter (a big hub on farmland: three cutters bring in 2 a day against 100+ wanted), the trips are
+// the only way to stock it, and by the share alone every trip scored under routine scavenging (0.3 against 0.8) and
+// none was ever sent: then the score rises with the share of the shortfall the job will leave (WOOD_TRIP.gapScore
+// at most, as a cache or a trade), and they start as soon as the stocking season does.
+export const WOOD_TRIP = { gapScore: 1.8, gapFloor: 1.0 };
 function woodTripCands(state, h, pool, P) {
   if (gov(state).noWood || !h || h.tier === 0) return [];
   const w = woodNeed(state, h, returning(state, h));
-  if (!w.short || !w.soon || w.toCold > WOOD_AP.autumn || w.have >= w.need * 0.7) return [];
+  if (!w.short || !w.soon || w.have >= w.need * 0.7) return [];
   if (!woodWorkWhy(state, h) && baseWoodDay(state, h) >= 2.5) return [];
+  const shortfall = Math.max(10, w.need - w.have);
+  // What the base's own woodcutters (at the job's cap) will still bring in before the cold, and the gap they leave.
+  const own = woodWorkWhy(state, h) ? 0 : woodWorkCap(state, h) * baseWoodDay(state, h) * Math.max(0, w.toCold);
+  const gap = Math.max(0, w.need - w.have - own) / shortfall; // 0: the job will manage .. 1: none of it
+  if (w.toCold > WOOD_AP.autumn && gap <= 0) return [];
   const crew = [...pool].sort((a, b) => woodcutterMult(b) * bestChop(b).mult - woodcutterMult(a) * bestChop(a).mult || a.id - b.id).slice(0, 3);
   if (crew.length < 2) return [];
   const tools = (h.armory || []).filter(isChopTool);
@@ -3507,8 +3518,8 @@ function woodTripCands(state, h, pool, P) {
     const dist = state.grid.distance(h.tile, id);
     out.push({ mission: "move", tile: id, crew: crew.length, fit: (s) => woodcutterMult(s) * bestChop(s).mult + combatPower(s) * 0.05, haul: true, wood: true, food: "woodTrips", onSite: WOOD.defHours,
       steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
-      score: (1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / Math.max(10, w.need - w.have) * 2) / (1 + dist / 6),
-      why: `firewood for the winter (${Math.floor(w.have)} of ${w.need}): ~${Math.round(e.all)} to cut` });
+      score: Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
+      why: `firewood for the winter (${Math.floor(w.have)} of ${w.need}${gap > 0 ? ", more than the woodcutters here can cut by the cold" : ""}): ~${Math.round(e.all)} to cut` });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 2);
 }
