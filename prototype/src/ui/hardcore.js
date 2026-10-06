@@ -6,7 +6,7 @@ import { SUPPLIES } from "../sim/data.js";
 import { partyMembers, partyTile, carried, planPath, partySpeed, tileLabel, teamName } from "../sim/parties.js";
 import { thirstAt } from "../sim/weather.js";
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING, storesText, isWorking, storeOf } from "../sim/staging.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, storesText, isWorking, storeOf, stagesText, waterText } from "../sim/staging.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
 import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low
 
@@ -66,9 +66,26 @@ function campBody(state, v) {
       <div${tip(`Work: daylight hours (${STAGING.DAY[0]}:00–${STAGING.DAY[1]}:00), 1 an hour a worker (+3% a Mechanics point, less when hurt or sick). It goes on as far as the scrap and parts in the stores allow; the hub stands once the work is done and the stores hold everything.`)}>Built</div><div>${pct(v.pct)}${capped}</div>
       <div>Work</div><div class="${v.workers ? "good" : "muted"}">${esc(left)}</div>
       ${v.away >= 1 && !v.present ? `<div${tip(`Nobody at the camp. After ${STAGING.ABANDON} days alone it may be looted: part of the stores and of the barricade lost.`)}>Alone</div><div class="${v.away >= STAGING.ABANDON ? "danger" : "warn"}">${Math.floor(v.away)} day${Math.floor(v.away) === 1 ? "" : "s"}</div>` : ""}
-      ${v.threats.length ? `<div${tip("People working on one spot draw the dead and raiders (Heat). Hordes nearby may walk in.")}>Danger</div><div class="danger">${esc(v.threats.join("; "))}</div>` : ""}
+      ${v.threats.length ? `<div${tip("People working on one spot draw the dead and raiders (Heat). Hordes nearby may walk in.")}>Threats</div><div class="danger">${esc(v.threats.join("; "))}</div>` : ""}
+      ${stageRows(v.tier)}
+      <div${tip("No spring at a camp: beside a river or lake the people there drink from it and haul water into the stores; anywhere else every drop is carried in (Fetch water at a shore, or found searching).")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}${v.riverside ? " · they drink from it" : " · carried in"}</div>
+      ${dangerRows(v.danger, v.fire, `data-camp="1"`)}
     </div>${bar(v.pct, v.done ? "#6fbf73" : "#d9a520")}`;
 }
+// The three stages and what the next one takes (sim/staging.js tierInfo).
+export function stageRows(t) {
+  if (!t) return "";
+  return `<div${tip("Your home grows in three stages: a staging camp, a shelter you can live at (tier 0), then a base (the hub). Each step takes materials and work.")}>Stage</div><div>${esc(stagesText(t.stage))}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${esc(t.needs)}</div>` : ""}`;
+}
+// The camp's danger: Heat an hour by cause (the fire, the people, vehicles, shooting lately, the work), where it
+// settles, and the fire toggle (sim/fieldheat.js CAMP_HEAT). attrs: what the toggle acts on.
+export function dangerRows(d, lit, attrs) {
+  if (!d) return "";
+  const why = "A camp's Heat comes from what it does: its fire (light and smoke carry, most at night), the people there, vehicles parked there (raiders want them) and any shooting at or next to it lately (fading over a day or two). It settles where what it adds an hour meets what fades (3% an hour). The higher it sits, the likelier the dead or raiders find it.";
+  return `<div${tip(why)}>Danger</div><div class="${d.empty ? "muted" : d.settles >= 60 ? "danger" : d.settles >= 35 ? "warn" : ""}">${d.empty ? esc(d.text) : `+${r1(d.gain)} Heat an hour, settles near ${Math.round(d.settles)} (now ${Math.round(d.heat)}): ${esc(d.text)}`}</div>
+    <div${tip("The camp fire: warmth (far less cold sickness), hot food and boiled water (no stomach bugs from raw food), better spirits. Its light and smoke raise the camp's danger, most at night.")}>Fire</div><div>${lit ? "Lit" : "Out"} ${fireButton(lit, attrs)}</div>`;
+}
+export const fireButton = (lit, attrs) => `<button class="mini" data-action="campfire" ${attrs} data-lit="${lit ? 0 : 1}"${tip(lit ? "Put the fire out: darker and quieter (less danger, most at night), but cold, raw food and unboiled water, lower spirits." : "Light the fire: warmth, hot food, boiled water and better spirits, but its light and smoke draw attention, most at night.")}>${lit ? "Put it out" : "Light it"}</button>`;
 
 // The Bases tab with no base: the staging camp's card (or how to start one, and the best spots near the team).
 export function firstHubCard(state) {
@@ -76,10 +93,10 @@ export function firstHubCard(state) {
   if (!v) return "";
   const d = v.p ? teamDays(state, v.p) : null;
   const spots = !v.camp && v.tile != null ? hubSites(state, v.tile, 4).slice(0, 3) : [];
-  const spotRows = spots.map((s) => `<div class="row small"><a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">${s.water >= 3 ? "water beside" : s.water ? "water near" : "no water near"} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span></div>`).join("");
+  const spotRows = spots.map((s) => `<div class="row small"><a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">water: ${esc(waterText(state, s.id))} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span></div>`).join("");
   const intro = v.camp
-    ? `Your people are building a staging camp into your ${v.first ? "first " : "new "}hub. Bring what it still needs (as many trips as it takes; the order at the camp unloads and puts the team to work), and keep people working there: nobody there, no progress. The scrap and parts go into the building; the food and water become the hub's stores.`
-    : `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (water near, sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b>: a staging camp that needs ${esc(needText(v.needs))} brought in, then about ${work3(v)} days of work for three. It becomes your hub, bare: no buildings, no vehicle.`;
+    ? `Your people are building a staging camp into your ${v.first ? "first " : "new "}shelter (Camp → Shelter → Base). Bring what it still needs (as many trips as it takes; the order at the camp unloads and puts the team to work), and keep people working there: nobody there, no progress. The scrap and parts go into the building; the food and water become the shelter's stores.`
+    : `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b>: a staging camp that needs ${esc(needText(v.needs))} brought in, then about ${work3(v)} days of work for three. It becomes a shelter you can live at (Camp → Shelter → Base), bare: no buildings, no vehicle.`;
   return `<div class="card attn">
     <div class="spread"><h2 style="margin:0">${v.title}</h2><span class="muted small">${v.first ? "Hardcore" : "On the road"}</span></div>
     <div class="small" style="margin-top:0.3rem">${intro}</div>
@@ -149,7 +166,7 @@ export function fromTeamRow(state, id) {
   const walk = res ? `${res.path.length - 1} tiles · ~${Math.ceil(res.cost / Math.max(0.3, partySpeed(v.p)))}h on foot` : "No route over land";
   const t = state.tiles[id];
   const spot = t.terrain !== "water" && !(v.camp && v.camp.tile === id) ? hubSites(state, id, 0)[0] : null;
-  const note = spot ? `<div${tip("How this tile would do for your hub: water beside or near, sites to scavenge around, few of the dead.")}>As a hub</div><div>${spot.water >= 3 ? "water beside" : spot.water ? "water near" : "no water near"} · ${spot.sites} site${spot.sites === 1 ? "" : "s"} around</div>` : "";
+  const note = spot ? `<div${tip("How this tile would do for your camp and shelter: water beside or near (there is no spring: a camp drinks only from a river or lake beside it, or what is carried in), sites to scavenge around, few of the dead.")}>As a home</div><div>${spot.sites} site${spot.sites === 1 ? "" : "s"} around</div><div>Water</div><div class="${spot.water >= 3 ? "good" : spot.water ? "warn" : "danger"}">${esc(waterText(state, id))}</div>` : "";
   return `<div>From the team</div><div>${walk}</div>${note}`;
 }
 

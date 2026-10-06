@@ -65,8 +65,9 @@ export const INTERIOR = {
 // (up to max); when: a rule of its own.
 const HOSPITAL_NAME = { infirmary: "Infirmary", field_hosp: "Field hospital", clinic: "Clinic", hospital: "Trauma hospital" };
 export const STRUCTURES = [
-  { key: "hall", name: "Main house", w: 6, h: 5, storeys: 2, when: (base) => base.type === "hub" },
-  { key: "shack", name: "Bunk shack", w: 5, h: 4, storeys: 1, when: (base) => base.type !== "hub" && !countAll(base, "bunkhouse") },
+  { key: "hall", name: "Main house", w: 6, h: 5, storeys: 2, when: (base) => base.type === "hub" && base.tier !== 0 },
+  // A shelter (buildings.js SHELTER, tier 0) has only its shack behind the barricade.
+  { key: "shack", name: "Bunk shack", w: 5, h: 4, storeys: 1, when: (base) => (base.type !== "hub" || base.tier === 0) && !countAll(base, "bunkhouse") },
   { key: "bunkhouse", name: "Bunkhouse", w: 5, h: 4, storeys: 2, per: "bunkhouse", max: 2 },
   { key: "hospital", name: "Infirmary", w: 5, h: 4, storeys: 1, any: Object.keys(HOSPITAL_NAME) },
   { key: "workshop", name: "Workshop", w: 6, h: 4, storeys: 1, any: ["ammo_bench", "med_station", "machine_shop", "kitchen", "still", "generator"] },
@@ -295,7 +296,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     scatter(countAll(base, "well"), "well", I.YARD_X - 2, I.WALL_X - 3, (x, y) => free(x, y) && x >= 4);
     scatter(Math.min(4, countAll(base, "rain_catcher")), "barrel", 3, I.WALL_X - 3, (x, y) => free(x, y));
     if (countAll(base, "garage")) scatter(1, "car", I.YARD_X, I.WALL_X - 3);
-    const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.type === "hub" ? 6 : 2)) / 4));
+    const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.tier === 0 ? 2 : base.type === "hub" ? 6 : 2)) / 4));
     for (let i = 0; i < plots; i++) {
       for (let t = 0; t < 20; t++) {
         const x0 = rng.int(I.BUILD_X[0], I.WALL_X - 5), y0 = rng.int(0, H - 2);

@@ -331,7 +331,7 @@ export const HUB_EVENTS = {
 
   well: {
     name: "Storm damage: the well pump",
-    weight: (st, c) => (c.base.type === "hub" && !c.base.wellDown ? (stormy(c) ? 1.5 : wet(c) ? 0.3 : 0) : 0),
+    weight: (st, c) => (c.base.type === "hub" && c.base.tier !== 0 && !c.base.wellDown ? (stormy(c) ? 1.5 : wet(c) ? 0.3 : 0) : 0),
     // The pump breaks (breakdowns.js): repair it properly, jury-rig it or leave it on the Repairs list; until then the
     // hub's well gives WELL_DOWN.water less a day.
     card: (st, c) => breakCard(st, c.base, fixtures(c.base).find((f) => f.type === "pump"), { pumpStorm: stormy(c) }),

@@ -208,10 +208,10 @@ function record(state, c) {
 
   // Interned parts: the same array is shared by every frame until something changes.
   const prevBases = c.bases, prevFb = c.fb, prevHives = c.hives;
-  const baseSig = state.bases.map((b) => `${b.id}|${b.tile}|${b.type}|${b.name}|${+!!b.radio}${+!!b.watchtower}${+!!b.alert}|${b.buildings.map((x) => x.type).join(",")}`).join(";");
+  const baseSig = state.bases.map((b) => `${b.id}|${b.tile}|${b.type}${b.tier === 0 ? "0" : ""}|${b.name}|${+!!b.radio}${+!!b.watchtower}${+!!b.alert}|${b.buildings.map((x) => x.type).join(",")}`).join(";");
   if (baseSig !== c.baseSig) {
     c.baseSig = baseSig;
-    c.bases = state.bases.map((b) => ({ id: b.id, tile: b.tile, type: b.type, name: b.name, radio: !!b.radio, watchtower: !!b.watchtower, alert: !!b.alert, bld: b.buildings.map((x) => x.type) }));
+    c.bases = state.bases.map((b) => ({ id: b.id, tile: b.tile, type: b.type, ...(b.tier === 0 ? { tier: 0 } : {}), name: b.name, radio: !!b.radio, watchtower: !!b.watchtower, alert: !!b.alert, bld: b.buildings.map((x) => x.type) })); // tier 0: a shelter (buildings.js)
   }
   const fb = c.factions.map(() => []);
   for (const f of state.factions) if (f.alive) fb[facIndex(c, f)] = f.bases.slice();
@@ -454,7 +454,7 @@ export function chronicleReader(state) {
   const baseOf = (r) => {
     let b = baseCache.get(r);
     if (!b) {
-      b = { id: r.id, tile: r.tile, type: r.type, name: r.name, radio: r.radio, watchtower: r.watchtower, alert: r.alert, buildings: r.bld.map((type) => ({ type })), stock: {}, construction: [], armory: [] };
+      b = { id: r.id, tile: r.tile, type: r.type, ...(r.tier === 0 ? { tier: 0 } : {}), name: r.name, radio: r.radio, watchtower: r.watchtower, alert: r.alert, buildings: r.bld.map((type) => ({ type })), stock: {}, construction: [], armory: [] };
       baseCache.set(r, b);
     }
     return b;

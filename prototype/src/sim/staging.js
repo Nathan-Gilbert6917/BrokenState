@@ -4,24 +4,31 @@
 // - Establish base (team order, any land tile you could build on): the team pitches a camp there (state.staging).
 //   It lists the materials the hub takes (NEEDS); the team unloads what it carries (the same order at the camp:
 //   "Unload and work on the camp"), and can leave to scavenge and come back as often as it likes.
+// Three stages: the camp → a shelter (tier 0, buildings.js SHELTER: a small base you can live at) → a base (the hub,
+// tier 1: the shelter's builders build it up, buildings.js hub_up). This file is the first step.
 // - The stores: scrap, parts, food, water (and preserved food, which counts as food) sit at the camp. Scrap and
-//   parts are used up by the building; food and water become the hub's first stock. The workers eat their own
+//   parts are used up by the building; food and water become the shelter's first stock. The workers eat their own
 //   rations, and from the camp's stores only once theirs run out; a team at the camp takes food and water for the
-//   road from what the stores hold beyond the needs. The camp has water of its own: a spring or a creek nearby (3 a
-//   day, as an outpost's) growing toward the hub's well (12) as the work goes on, +3 beside a river or lake, less in
-//   a drought; it runs into its stores.
+//   road from what the stores hold beyond the needs.
+// - Water must be found: the camp has no spring. Beside a river or lake (waterSource) the people there drink from it
+//   and haul CAMP_WATER.river a day into the stores; anywhere else it is only what teams bring (Fetch water at a
+//   shore, water found searching). The tile panel says how far the nearest water is.
+// - The fire (fieldheat.js FIRE, a toggle on the camp's card): warmth, hot food and boiled water, spirits; its light
+//   and smoke raise the camp's danger, most at night.
 // - The work: WORK person-hours of daylight work (07:00-19:00; at night they rest and the hurt heal as in a camp).
 //   Each worker adds 1 + 3% a Mechanics point an hour (× health and the Handy / Master Builder perks: buildings.js
 //   buildRate); 3 workers finish the hardcore camp in about 3 days, one alone in about 9. Work goes on with what has
 //   been delivered: the share of the scrap and parts in the stores caps the progress, and the hub only stands once
 //   the work is done and the stores hold every need. Nobody at the camp, no progress.
-// - Staying put is dangerous: the workers are a team on one tile (fieldheat.js "stage": hammering and a fire draws
-//   the dead and raiders; road meetings and hordes as for any team).
+// - Staying put is dangerous: everyone at the camp shares its danger (fieldheat.js campSite / CAMP_HEAT: the fire,
+//   the people, vehicles parked, shooting nearby lately, the building work), one roll for trouble an hour; road
+//   meetings and hordes as for any team.
 // - Abandoned: nobody there for ABANDON days and the camp may be looted (a share of the stores and of the barricade
 //   lost each time); empty and untouched for GONE days it is gone. A team that dies there leaves the camp standing
 //   for the next one.
-// - Done: the camp becomes your hub (type "hub"), bare (no buildings, no vehicle), the stores its stock, the teams
-//   there its people. Later outposts keep the old Build outpost order (parties.js).
+// - Done: the camp becomes your shelter (type "hub", tier 0: buildings.js SHELTER), bare (no buildings, no vehicle),
+//   the stores its stock, the teams there its people. A camp from a save made before the tiers (no camp.to) was
+//   promised the full hub and becomes one. Later outposts keep the old Build outpost order (parties.js).
 // - A base you get back some other way (retaking one: conquest.js) makes the camp pointless: it is struck and what
 //   was in it is left as a cache (a "Cargo left behind" site) for a team to recover.
 import { SUPPLIES } from "./data.js";
@@ -31,20 +38,23 @@ import { buildMult } from "./skills.js";
 import { recomputeOwnership } from "./factions.js";
 import { markDeathSite } from "./markers.js";
 import { campHealPerHour, startTask } from "./orders.js";
-import { thirstAt, wellFactor } from "./weather.js";
-import { WATER } from "./economy.js";
+import { thirstAt } from "./weather.js";
+import { BUILDINGS, SHELTER, isShelter } from "./buildings.js";
+import { fireLit, FIRE, stagingDanger, shelterHeat } from "./fieldheat.js";
+import * as Weather from "./weather.js";
 import {
   partyMembers, partyTile, carried, takeSupply, tileLabel, teamName, awaitOrders, outpostName, settleInto, cargoRoom,
 } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
 
 export const STAGING = {
-  // What the hub takes, by who founds it. Hardcore's first hub: the old founding cost (25 scrap, 3 parts, 10 food,
-  // 10 water carried) spread over more of each and a build time. Exiles in a normal game (and a hardcore hub lost
-  // later): a little less, they usually carry a base's evacuated stores.
-  HARDCORE: { needs: { scrap: 30, parts: 4, food: 15, water: 15 }, work: 108 },
-  EXILE: { needs: { scrap: 20, parts: 2, food: 10, water: 10 }, work: 72 },
-  USED: ["scrap", "parts"],      // consumed by the building; the rest becomes the hub's stock
+  // What the shelter (tier 0) takes, by who founds it. Hardcore's first: the camp's old cost (30 scrap, 4 parts, 15
+  // food, 15 water, 108 person-hours for the full hub) split in two: the shelter here, the rest (buildings.js hub_up:
+  // 18 scrap, 2 parts, 96 work-hours by the shelter's builders) to build it up into a base later. Exiles in a normal
+  // game (and a hardcore hub lost later): a little less, they usually carry a base's evacuated stores.
+  HARDCORE: { needs: { scrap: 15, parts: 2, food: 10, water: 10 }, work: 60 },
+  EXILE: { needs: { scrap: 10, parts: 1, food: 8, water: 8 }, work: 40 },
+  USED: ["scrap", "parts"],      // consumed by the building; the rest becomes the shelter's stock
   RUIN_SCRAP: 10,                // on the ruins of a burned base: 10 scrap less (salvage, as Build outpost's 15 → 5)
   DAY: [7, 19],                  // working hours (hour of day, from..to)
   CREW_CAP: 6,                   // more workers than this add nothing (they get in each other's way)
@@ -56,6 +66,11 @@ export const STAGING = {
   KEEP_DAYS: 2,                  // food and water a team keeps for the road when it unloads
   STORE_MAX: 2,                  // food and water unloaded up to this many times the need
 };
+// Water at the camp (no spring): beside a river or lake the people there drink from it and haul `river` a day into
+// the stores (nothing while nobody is there). REACH: how far the tile panel looks for water.
+export const CAMP_WATER = { river: 10, reach: 3 };
+// The stages in order (the panels' "Camp → Shelter → Base").
+export const STAGES = ["Camp", "Shelter", "Base"];
 export const ESTABLISH_LABEL = "Establish base";
 export const STORE_KEYS = ["scrap", "parts", "food", "preserved", "water"];
 const NEED_KEYS = ["scrap", "parts", "food", "water"];
@@ -100,6 +115,28 @@ export const stagingStage = (camp) => { const f = stagingPct(camp); return f >= 
 export const workDone = (camp) => camp.progress >= camp.work - 1e-9;
 // Can the work go on right now (materials permitting)?
 export const canWork = (camp) => !workDone(camp) && camp.progress < workCap(camp) - 1e-6;
+
+// ---------- water ----------
+// The nearest river or lake to a tile within CAMP_WATER.reach: { dist, kind: "river" | "lake", tile } or null. dist 1:
+// beside it (a camp there drinks from it and fills its stores; a shelter there hauls SHELTER.river a day).
+export function waterSource(state, tile, reach = CAMP_WATER.reach) {
+  const g = state.grid;
+  let best = null;
+  for (const id of g.within(tile, reach)) {
+    const t = state.tiles[id];
+    if (!t || t.terrain !== "water" || id === tile) continue;
+    const d = g.distance(tile, id);
+    if (!best || d < best.dist || (d === best.dist && t.river && best.kind !== "river")) best = { dist: d, kind: t.river ? "river" : "lake", tile: id };
+  }
+  return best;
+}
+export const besideWaterSource = (state, tile) => { const w = waterSource(state, tile, 1); return !!w && w.dist <= 1; };
+// "Water: river 1 tile away" / "No water source nearby" (the tile panel, the camp's card, the order's text).
+export function waterText(state, tile) {
+  const w = waterSource(state, tile);
+  if (!w) return "No water source nearby";
+  return `${w.kind} ${w.dist} tile${w.dist === 1 ? "" : "s"} away${w.dist <= 1 ? "" : " (fetch it from the shore)"}`;
+}
 
 // ---------- the workers ----------
 export const isWorking = (state, p) => !!state.staging && p.owner === "player" && p.phase === "task" && p.task && p.task.type === "stage" && partyTile(p) === state.staging.tile;
@@ -148,7 +185,8 @@ export function establishProblem(state, tile) {
 function establishDesc(state, tile) {
   const needs = stagingNeeds(state, tile);
   const P = plan(state);
-  return `Pitch a staging camp here for your ${firstHubPending(state) ? "first hub" : "new hub"}: tarps, crates and the first stakes of a barricade. It needs ${needText(needs)} brought in (as many trips as it takes; the team unloads what it carries now), then about ${r1(P.work / (3 * workHours()))} days of work for three (faster with more hands and Mechanics, nothing while nobody is there). The scrap and parts go into the building; the food and water become the hub's stores. People working on one spot draw the dead and raiders. Pick a place with water near, sites to scavenge around and few of the dead.${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${STAGING.RUIN_SCRAP} scrap less (salvage).` : ""}`;
+  const w = waterSource(state, tile);
+  return `Pitch a staging camp here for your ${firstHubPending(state) ? "first" : "new"} home: tarps, crates and the first stakes of a barricade. Camp → Shelter → Base: it needs ${needText(needs)} brought in (as many trips as it takes; the team unloads what it carries now), then about ${r1(P.work / (3 * workHours()))} days of work for three (faster with more hands and Mechanics, nothing while nobody is there), and becomes a shelter you can live at; later your builders build it up into a base (${needText(BUILDINGS.hub_up.cost)}). The scrap and parts go into the building; the food and water become the shelter's stores. There is no spring: water: ${w ? `${waterText(state, tile)}${w.dist <= 1 ? ", the camp drinks from it" : ""}` : "no water source nearby, every drop carried in"}. The camp's fire, its people, vehicles parked there and any shooting draw the dead and raiders. Pick a place beside a river or lake, with sites to scavenge around and few of the dead.${state.tiles[tile] && state.tiles[tile].ruin ? ` On these ruins: ${STAGING.RUIN_SCRAP} scrap less (salvage).` : ""}`;
 }
 function workDesc(state, camp, deposit) {
   const miss = stagingMissing(camp);
@@ -233,8 +271,9 @@ function pitchCamp(state, p, tile) {
     id: newId(), tile, started: day(state), startedHour: state.hour, needs, work: P.work, progress: 0,
     stores: Object.fromEntries(STORE_KEYS.map((k) => [k, 0])), first: firstHubPending(state),
     lastPresent: state.hour, lastWorked: null, workers: 0, looted: 0, name: null,
+    to: 0, fire: true, // becomes a shelter (tier 0); the camp fire lit (fieldheat.js)
   };
-  const text = `${teamName(state, p)} pitched a staging camp ${tileLabel(state, tile)}. ${camp.first ? "Your first hub" : "Your new hub"} needs ${needText(needs)} brought in, then the work.`;
+  const text = `${teamName(state, p)} pitched a staging camp ${tileLabel(state, tile)}. ${camp.first ? "Your first shelter" : "Your new shelter"} needs ${needText(needs)} brought in, then the work. Water: ${waterText(state, tile)}.`;
   log(state, text, "good");
   return camp;
 }
@@ -300,6 +339,7 @@ export const storesText = (camp) => STORE_KEYS.filter((k) => n0(camp.stores[k]) 
 
 // ---------- every hour (world.js tickHour, after the teams move) ----------
 export function stagingHour(state) {
+  if (state.hour % 24 === 0) for (const b of state.bases) if (isShelter(b)) shelterDaily(state, b);
   const camp = state.staging;
   if (!camp) return;
   if (!noBase(state)) { strike(state, "no longer needed: you have a base again"); return; }
@@ -309,12 +349,22 @@ export function stagingHour(state) {
   const workers = here.filter((p) => isWorking(state, p));
   camp.workers = workers.reduce((a, p) => a + partyMembers(state, p).length, 0);
   for (const p of workers) feed(state, p, camp);
+  // No water carried and none in the stores (a camp away from a river or lake): the team stops to go and find some.
+  for (const p of workers) if (carried(p, "water") < 0.5 && storeOf(camp, "water") < 1) {
+    awaitOrders(state, p, `Out of water, and the camp's stores are dry: ${waterSource(state, camp.tile) ? `fetch it from the ${waterSource(state, camp.tile).kind} (${waterText(state, camp.tile)})` : "no water source nearby: search for water (shops, diners, churches, campgrounds)"} and bring some back.`, { failed: true });
+  }
+  const working = workers.filter((p) => isWorking(state, p));
+  workers.length = 0;
+  workers.push(...working);
   if (workers.length) {
     if (isWorkHour(state)) {
       const rate = crewRate(workers.flatMap((p) => partyMembers(state, p)));
       camp.progress = Math.min(workCap(camp), camp.progress + rate);
       camp.lastWorked = state.hour;
-    } else for (const p of workers) for (const s of partyMembers(state, p)) s.health = Math.min(100, s.health + campHealPerHour(state, p, s)); // resting at night
+    } else for (const p of workers) for (const s of partyMembers(state, p)) { // resting at night, by the fire if it is lit
+      s.health = Math.min(100, s.health + campHealPerHour(state, p, s));
+      s.mood = Math.min(100, (s.mood || 0) + (fireLit(camp) ? FIRE.campMood : FIRE.campMoodOut));
+    }
     if (tryFinish(state, camp)) return;
     // Out of materials (or the building done, the stores short): the workers stop and report.
     if (!canWork(camp)) {
@@ -327,9 +377,11 @@ export function stagingHour(state) {
   }
   if (state.hour % 24 === 0) stagingDaily(state, camp);
 }
-// A worker team out of food or water eats from the camp's stores (a day's worth at a time).
+// A worker team out of food or water eats from the camp's stores (a day's worth at a time). Beside a river or lake
+// it drinks from it first (a day's worth when it runs low).
 function feed(state, p, camp) {
   const n = partyMembers(state, p).length;
+  if (besideWaterSource(state, camp.tile) && carried(p, "water") < (n * thirstAt(state)) / 12) p.supplies.water = (p.supplies.water || 0) + Math.ceil(n * thirstAt(state));
   const food = carried(p, "food") + carried(p, "preserved"), water = carried(p, "water");
   if (food < n / 12) {
     for (const k of ["food", "preserved"]) {
@@ -342,11 +394,12 @@ function feed(state, p, camp) {
     if (q >= 1) { camp.stores.water -= q; p.supplies.water = (p.supplies.water || 0) + q; }
   }
 }
-// The camp's own water a day: a spring or a creek nearby, as an outpost's (WATER.spring), growing toward the hub's
-// well (WATER.hubWell) as the work goes on (digging the well is part of it), × the season's wells; more beside a river
-// or lake (WATER.stream). It runs into the stores.
-export const campWater = (state, camp) => (WATER.spring + (WATER.hubWell - WATER.spring) * stagingPct(camp)) * wellFactor(state) +
-  (state.grid.neighbors(camp.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water") ? WATER.stream : 0);
+// The camp's own water a day: none (no spring). Beside a river or lake, CAMP_WATER.river hauled into the stores by the
+// people there (nothing while nobody is), up to STORE_MAX × the need.
+export function campWater(state, camp) {
+  if (!besideWaterSource(state, camp.tile) || !campTeams(state, camp).length) return 0;
+  return Math.max(0, Math.min(CAMP_WATER.river, (camp.needs.water || 0) * STAGING.STORE_MAX - storeOf(camp, "water")));
+}
 function stagingDaily(state, camp) {
   camp.stores.water = (camp.stores.water || 0) + campWater(state, camp);
   const away = (state.hour - camp.lastPresent) / 24;
@@ -367,16 +420,29 @@ function stagingDaily(state, camp) {
   if (lost.length || torn > 0) log(state, `The staging camp ${tileLabel(state, camp.tile)} was left alone too long: ${lost.length ? `scavengers took ${lost.join(", ")}` : "scavengers picked through it"}${torn > 0 ? " and pulled down part of the barricade" : ""}.`, "danger");
 }
 
-// ---------- done: the camp becomes the hub ----------
+// ---------- the shelter, once a day ----------
+// Its fire (fieldheat.js FIRE): everyone living there +FIRE.shelterMood a day with it lit; with it out in the cold,
+// FIRE.coldMood. (Its warmth and boiled water: health.js baseOnsets; its light and smoke: base Heat, hordes.js.)
+function shelterDaily(state, base) {
+  const w = Weather.weather ? Weather.weather(state) : null;
+  const cold = !!w && w.lo <= FIRE.coldAt;
+  const d = fireLit(base) ? FIRE.shelterMood : cold ? FIRE.coldMood : 0;
+  if (!d) return;
+  for (const s of state.survivors) if (s.alive && s.location.kind === "base" && s.location.baseId === base.id) s.mood = Math.max(0, Math.min(100, (s.mood || 0) + d));
+}
+
+// ---------- done: the camp becomes the shelter ----------
 function tryFinish(state, camp) {
   if (!readyToFinish(camp) || !noBase(state)) return false;
   const t = state.tiles[camp.tile];
   const here = campTeams(state, camp);
   if (!here.length) return false; // nobody to move in (a finished camp waits for its people)
+  const shelter = camp.to === 0; // a camp from before the tiers (no `to`) was promised the full hub
   const base = {
     id: newId(), tile: camp.tile, type: "hub", name: outpostName(state, camp.tile),
     stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
+    ...(shelter ? { tier: 0, fire: fireLit(camp) } : {}),
   };
   // The stores: scrap and parts used up by the building, the rest the hub's stock.
   for (const k of STORE_KEYS) base.stock[k] = Math.max(0, n0(camp.stores[k]) - (STAGING.USED.includes(k) ? camp.needs[k] || 0 : 0));
@@ -391,13 +457,37 @@ function tryFinish(state, camp) {
     hubFounded(state, base, `${days} day${days === 1 ? "" : "s"} after the camp went up`);
     return true;
   }
-  const text = `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your new hub, ${days} day${days === 1 ? "" : "s"} after the camp went up. ${people} ${people === 1 ? "person lives" : "people live"} there. It is bare: no buildings yet, a barricade of scrap and the camp's stores.`;
+  const text = shelter
+    ? `Day ${day(state)}: the staging camp is done. ${base.name} is your new shelter, ${days} day${days === 1 ? "" : "s"} after the camp went up. ${people} ${people === 1 ? "person lives" : "people live"} there. ${shelterText()}`
+    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your new hub, ${days} day${days === 1 ? "" : "s"} after the camp went up. ${people} ${people === 1 ? "person lives" : "people live"} there. It is bare: no buildings yet, a barricade of scrap and the camp's stores.`;
   log(state, text, "good");
   addCard(state, { title: "A new home", text, choices: [{ label: "OK", resolve: () => "" }] });
   return true;
 }
 
+// What a new shelter is (the founding cards).
+export const shelterText = () => `A shelter (tier 0): tarps and a shack behind a scrap barricade, the camp's stores, beds for ${SHELTER.beds}. No well: water from a river or lake beside it, rain catchers, or what you bring. Only a few buildings fit (a rain catcher, a drying rack, a barricade, a farm plot) until your builders build it up into a base (Construction: ${BUILDINGS.hub_up.name}, ${needText(BUILDINGS.hub_up.cost)} and ${BUILDINGS.hub_up.hours} work-hours) for a well, walls and everything else.`;
+
 // ---------- for the panels ----------
+// The stage you are at and what the next one takes: { stage (0 camp, 1 shelter, 2 base), name, next, needs }.
+// No camp and no base: stage -1.
+export function tierInfo(state, base = null) {
+  base = base || state.bases.find((b) => b.type === "hub") || null;
+  if (base && isShelter(base)) {
+    const up = BUILDINGS.hub_up;
+    const queued = base.construction.find((c) => c.type === "hub_up");
+    const short = Object.entries(up.cost).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k, v]) => `${v - n0(base.stock[k])} ${k}`);
+    return {
+      stage: 1, name: "Shelter", next: "Base", queued,
+      needs: queued ? `${Math.round((queued.progress / queued.hours) * 100)}% built by the builders` : `${needText(up.cost)} and ${up.hours} work-hours by the builders here (Construction: ${up.name})${short.length ? `; short ${short.join(", ")}` : "; you have the materials"}`,
+    };
+  }
+  if (base) return { stage: 2, name: "Base", next: null, needs: "" };
+  const camp = state.staging;
+  if (camp) return { stage: 0, name: "Camp", next: camp.to === 0 ? "Shelter" : "Base", needs: stagingMissing(camp).length ? `still ${missingText(stagingMissing(camp))}, then the work` : workDone(camp) ? "people there to move in" : `the work (${Math.round(stagingPct(camp) * 100)}% done)` };
+  return { stage: -1, name: "None", next: "Camp", needs: `${ESTABLISH_LABEL} on a good spot` };
+}
+export const stagesText = (stage) => STAGES.map((s, i) => (i === stage ? `[${s}]` : s)).join(" → ");
 // One object for the Bases tab, the Goals line, the top bar, the alerts and the tile panel (null with a base).
 export function stagingView(state) {
   if (!noBase(state)) return null;
@@ -413,7 +503,14 @@ export function stagingView(state) {
     camp, needs: camp.needs, teams, first: camp.first, rows, miss: rows.filter((r) => !r.ok), pct: stagingPct(camp), stage: stagingStage(camp),
     workers: crew.length, rate, left: crew.length ? daysLeft(camp, rate) : null, leftFor3: daysLeft(camp, 3), canWork: canWork(camp), done: workDone(camp),
     away: (state.hour - camp.lastPresent) / 24, present: campTeams(state, camp).length > 0, threats, capPct: camp.work > 0 ? workCap(camp) / camp.work : 1,
+    danger: stagingDanger(state, camp), fire: fireLit(camp), water: waterText(state, camp.tile), riverside: besideWaterSource(state, camp.tile), tier: tierInfo(state),
   };
+}
+// The shelter's danger (its share of base Heat) and fire, for the base panel.
+export function shelterView(state, base) {
+  if (!isShelter(base)) return null;
+  const h = shelterHeat(state, base);
+  return { fire: fireLit(base), heat: h, water: waterText(state, base.tile), riverside: besideWaterSource(state, base.tile), tier: tierInfo(state, base) };
 }
 // Dangers at the camp: hordes within 2 tiles, a worker team's Heat (fieldheat.js), raiders' or outsiders' parties close.
 export function campThreats(state, camp = state.staging) {
@@ -433,5 +530,7 @@ export function stagingTip(state, id) {
   const camp = state.staging;
   if (!camp || camp.tile !== id) return "";
   const miss = stagingMissing(camp);
-  return `Staging camp: ${Math.round(stagingPct(camp) * 100)}% built${miss.length ? `, needs ${missingText(miss)}` : ", everything in"}${camp.workers ? ` · ${camp.workers} at work` : ""}`;
+  if (!camp.needs) return `Staging camp: ${Math.round(stagingPct(camp) * 100)}% built`; // a timelapse frame's camp (chronicle.js)
+  const d = stagingDanger(state, camp);
+  return `Staging camp: ${Math.round(stagingPct(camp) * 100)}% built${miss.length ? `, needs ${missingText(miss)}` : ", everything in"}${camp.workers ? ` · ${camp.workers} at work` : ""} · fire ${fireLit(camp) ? "lit" : "out"} · water: ${waterText(state, camp.tile)}${d && !d.empty ? ` · danger +${r1(d.gain)} Heat/h (${d.text})` : ""}`;
 }

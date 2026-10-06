@@ -542,7 +542,19 @@ section("Losing the hub: with another base, and with none (the exiles)");
     if (s3.parties.includes(ex3) && ex3.phase === "waiting" && s3.staging) giveOrder(s3, ex3, "establish"); // back to work after a scare
   }
   check(!!hub(s3) && hub(s3).type === "hub" && !s3.staging, `the camp becomes the hub after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
-  check(!hub(s3) || hub(s3).stock.food >= 10, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
+  check(!hub(s3) || hub(s3).stock.food >= S.STAGING.EXILE.needs.food, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
+  // Camp → shelter → base: the exiles' new home is a shelter (tier 0) first, then their builders build it up.
+  const B = await import("../src/sim/buildings.js");
+  const sh3 = hub(s3);
+  if (sh3) {
+    check(B.isShelter(sh3) && B.tierName(sh3) === "Shelter" && B.baseWalls(sh3) === B.SHELTER.walls, "the exiles' camp becomes a shelter (tier 0): no wall strength");
+    check(!B.canBuild(s3, sh3, "walls").ok && !B.canBuild(s3, sh3, "well").ok, "a shelter builds no walls or well");
+    Object.assign(sh3.stock, { scrap: 40, parts: 6 });
+    check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "Build up into a base is queued at the shelter");
+    for (const s of atBase(s3, sh3.id)) s.role = "build";
+    for (let i = 0; i < 24 * 8 && B.isShelter(sh3); i++) { tickHour(s3); s3.cards.length = 0; for (const s of atBase(s3, sh3.id)) s.role = "build"; }
+    check(!B.isShelter(sh3) && B.tierName(sh3) === "Main hub" && B.baseWalls(sh3) === 3, `the builders build it up into a base (day ${day(s3)})`);
+  }
   // The autopilot with no base.
   const s4 = world(seed + 1);
   setAutopilot(s4, true, "balanced");

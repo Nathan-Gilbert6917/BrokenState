@@ -513,7 +513,7 @@ export function supplyValue(stock) {
 
 // ---------- vision and knowledge ----------
 export function baseVision(base) {
-  return (base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js)
+  return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
 }
 
 export function snapshot(state, tileId) {

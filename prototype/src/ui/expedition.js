@@ -17,7 +17,8 @@ import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
-import { heatInfo } from "../sim/fieldheat.js";
+import { heatInfo, rowsText } from "../sim/fieldheat.js";
+import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 
@@ -337,7 +338,9 @@ export function heatBlock(state, p) {
   const h = heatInfo(state, p);
   if (h.heat < 1 && !h.activity) return "";
   const color = h.heat < 25 ? "var(--good)" : h.heat < 50 ? "var(--accent)" : h.heat < 75 ? "#e0a84f" : "var(--danger)";
-  return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>`;
+  // At a camp (sim/fieldheat.js campSite: camping, or at the staging camp): what the Heat is made of, and the fire.
+  const camp = h.camp ? `<div class="row small muted" style="margin-top:0.2rem"${tip(h.text)}><span>Camp danger: ${esc(rowsText(h.rows || []))}</span>${fireButton(h.camp.fire, h.camp.kind === "staging" ? `data-camp="1"` : `data-team="${p.id}"`)}</div>` : "";
+  return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>${camp}`;
 }
 
 // The plan the team left with (sim/plans.js): name, steps left and its "come home" rule.

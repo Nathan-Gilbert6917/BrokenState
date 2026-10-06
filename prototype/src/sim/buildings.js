@@ -79,22 +79,52 @@ export const BUILDINGS = {
   hospital:     { name: "Trauma hospital",     family: "hospital", tier: 4, upgrades: "clinic", cost: { scrap: 70, parts: 8, meds: 12 }, hours: 96, max: 1, req: { medicine: 10, mechanics: 4 },
                   med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1 },
                   desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics, and Medicine 10+ and Mechanics 4+ survivors here to build." },
+  // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
+  // building: when it is done the shelter becomes a full hub (upgradeShelter).
+  hub_up:       { name: "Build up into a base", cost: { scrap: 18, parts: 2 }, hours: 96, max: 1, shelterOnly: true, tierUp: true,
+                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four and room for every building. Shelters only. The builders here do the work." },
 };
+
+// ---------- base tiers ----------
+// Your bases grow in three stages: a staging camp (staging.js, not a base yet) → a shelter (tier 0) → a base (tier 1,
+// the hub as it always was; outposts are tier 1 too). A shelter is a base you can live at (stores, rest and healing,
+// the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, beds for
+// four under the tarps, an outpost's two crop plots, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
+// or what is brought in), and only a few survival buildings (SHELTER.build: max of each). Its Heat comes from what it
+// does (fieldheat.js shelterHeat: its fire, people, vehicles parked, shooting nearby) instead of the hub's flat 3.
+// Saves from before the tiers have no tier field: tier 1.
+export const SHELTER = {
+  name: "Shelter",
+  walls: 0, beds: 4, plots: 2, vision: 1, waterCap: 40, // plots: a garden patch, as an outpost's
+  river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
+  build: { rain_catcher: 2, smoker: 1, barricades: 1, farm_plot: 1, hub_up: 1 },
+};
+export const isShelter = (base) => !!base && base.tier === 0;
+export const baseTier = (base) => (isShelter(base) ? 0 : 1);
+// What the base is called in the panels.
+export const tierName = (base) => (isShelter(base) ? "Shelter" : base.type === "hub" ? "Main hub" : "Outpost");
+// The shelter becomes a full hub (the hub_up job is done).
+export function upgradeShelter(state, base) {
+  delete base.tier;
+  base.fire = undefined;
+  base.upgradedDay = Math.floor(state.hour / 24) + 1;
+  log(state, `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
+}
 
 // Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
 export const count = (base, type) => base.buildings.filter((b) => b.type === type && !b.broken).length;
 export const countAll = (base, type) => base.buildings.filter((b) => b.type === type).length;
 // Wall strength: the hub 3, an outpost 1, +3 a wall section, +2 for a section damaged in a raid (wear 60+,
 // breakdowns.js RAID_DAMAGE.damaged) and nothing for a broken one.
-export const baseWalls = (base) => (base.type === "hub" ? 3 : 1) + base.buildings.reduce((a, b) => a + (b.type !== "walls" || b.broken ? 0 : (b.wear || 0) >= 60 ? 2 : 3), 0);
+export const baseWalls = (base) => (isShelter(base) ? SHELTER.walls : base.type === "hub" ? 3 : 1) + base.buildings.reduce((a, b) => a + (b.type !== "walls" || b.broken ? 0 : (b.wear || 0) >= 60 ? 2 : 3), 0);
 // A base on alert or under siege (a raid at its walls): builders and mechanics are on the walls, so construction
 // and repairs stop until it is over (the price of "Prepare defenses").
 export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
-export const baseBeds = (base) => (base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
-// Crop plots (farming.js plotLimit): hub 4, outpost 2, +2 per Farm plot building.
-export const farmSlots = (base) => (base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
+export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
+// Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
+export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 
 export function addBuilding(base, type) {
@@ -211,6 +241,13 @@ export function canBuild(state, base, type) {
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
   if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
+  // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
+  if (def.shelterOnly && !isShelter(base)) return { ok: false, reason: "Shelters only (this is a base already)" };
+  if (isShelter(base)) {
+    const cap = SHELTER.build[type];
+    if (!cap) return { ok: false, reason: "Not at a shelter: build it up into a base first" };
+    if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A shelter has room for ${cap}` };
+  }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
   for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
   if (def.req) {
@@ -254,6 +291,7 @@ export function constructionHour(state) {
     job.progress += buildRate(state, base);
     if (job.progress >= job.hours) {
       base.construction.shift();
+      if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       addBuilding(base, job.type);
       log(state, `${BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
@@ -267,11 +305,12 @@ export function buildingSummary(state, base) {
     ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}`],
     ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
-    ["Vision", `${(base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
+    ...(isShelter(base) ? [["Tier", "Shelter (tier 0): tarps, a shack and a barricade. Build it up into a base (Construction) for walls, a well and every building"]] : []),
+    ["Vision", `${(isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
     ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],
-    ["Water", `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
+    ["Water", `${isShelter(base) ? "no well (a river or lake beside it, rain catchers, or water brought in)" : `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells`}${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
     ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
     ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} kitchen${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
     ["Power", powerLine(state, base)],

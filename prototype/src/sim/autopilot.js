@@ -35,7 +35,8 @@ import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter } from "./buildings.js";
+import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
@@ -72,7 +73,7 @@ import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
-import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem } from "./staging.js";
+import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
@@ -193,6 +194,7 @@ export function autopilotHour(state) {
       engagementHour(state); resolvePending(state); // they search on the way (roadAct)
       idleTeams(state);
       resolvePending(state);
+      autoFires(state);
     } catch (e) { fail(state, e); } finally { g.busy = false; }
     return;
   }
@@ -209,11 +211,22 @@ export function autopilotHour(state) {
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     for (const b of state.bases) governRoles(state, b);
     resolvePending(state);
+    autoFires(state);
   } catch (e) {
     fail(state, e);
   } finally {
     g.busy = false;
   }
+}
+
+// The camp fires (fieldheat.js FIRE): the staging camp's, a shelter's and a camping team's are lit by day (cooking)
+// and put out at night unless it is cold or someone there is badly hurt (the light carries).
+function autoFires(state) {
+  const hurt = (people) => people.some((s) => s.health < ROAD.heal);
+  const camp = state.staging;
+  if (camp) camp.fire = fireWanted(state, { hurt: hurt(state.parties.filter((p) => p.owner === "player" && partyTile(p) === camp.tile).flatMap((p) => partyMembers(state, p))) });
+  for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) });
+  for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) });
 }
 
 // ---------- one base (the autopilot's hourly loop and base stewards, steward.js) ----------
@@ -1446,7 +1459,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if ((base.stock.scrap || 0) - (cost.scrap || 0) < reserve) { if (w.save) return; continue; }
     // Anything but a water building leaves the scrap and parts held for water (waterPlan); it does not save up
     // against that hold (the wishes after it, water among them, still get their turn).
-    if (!WATER_BUILDS.includes(w.type) && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts")))) continue;
+    if (!WATER_BUILDS.includes(w.type) && w.type !== "hub_up" && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts")))) continue;
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
@@ -1473,6 +1486,8 @@ function buildWishes(state, base) {
   // Water first when it is about to run out (economy.js).
   const wo0 = waterOutlook(state, base);
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
+  // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
+  if (isShelter(base) && !queued("hub_up")) add("hub_up", "build the shelter up into a base (a well, walls, room for everything)", true);
   if (people + (isHub ? 1 : 0) > beds) add("bunkhouse", `${people} people for ${beds} beds`, true);
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
@@ -2337,7 +2352,7 @@ function exileAct(state, p) {
 // tiles from the camp it searches first. Short of food or water it goes back to the camp when the stores can spare
 // some (staging.js provisionable).
 const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8, huntHours: 8, huntMin: 4, forageLow: 1 }; // forageLow: foraging.js (landFoodAct)
-const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7 };
+const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7, waterReach: 9 }; // waterReach: camp sites by water (staging.js)
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
   const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
@@ -2378,7 +2393,10 @@ function campAct(state, p) {
     const needs = stagingNeeds(state);
     const ready = carried(p, "scrap") >= needs.scrap * CAMP.pitchShare || day(state) >= CAMP.pitchDay || !firstHubPending(state) || members.some((s) => s.health < 60);
     if (!ready) return false;
-    const sites = hubSites(state, here, ROAD.foundReach).filter((s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle)));
+    const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
+    let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
+    // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
+    if (!sites.length || sites[0].waterDist !== 1) { const wet = hubSites(state, here, CAMP.waterReach).filter((s) => s.waterDist === 1 && ok(s)); if (wet.length) sites = wet; }
     const best = sites[0];
     const atHere = sites.find((s) => s.id === here);
     if (!best) return false;
@@ -2398,9 +2416,14 @@ function campAct(state, p) {
   const prov = provisionable(state, p, camp);
   if (here === camp.tile) {
     if (!dep.length && !canWork(camp) && !prov.length) return false; // nothing to do here: it goes for what is missing
+    // No spring at a camp (staging.js): away from a river or lake, a team under a day of water with the stores dry goes
+    // for water first (roadAct: a shore or a site with water) instead of working itself thirsty.
+    if (!besideWaterSource(state, camp.tile) && roadDays(state, p, "water") < 1 && storeOf(camp, "water") < partyMembers(state, p).length && !dep.some(([k]) => k === "water")) return false;
     giveOrder(state, p, "establish");
     return true;
   }
+  // Thirsty and the camp has no water to give (no river beside it, dry stores): water first (roadAct), not the camp.
+  if (roadDays(state, p, "water") < 1 && !besideWaterSource(state, camp.tile) && storeOf(camp, "water") < partyMembers(state, p).length) return false;
   const route = planPath(state, here, camp.tile, p.vehicle) || planPath(state, here, camp.tile, false);
   if (!route) return false;
   const dist = route.path.length - 1;
@@ -2922,9 +2945,11 @@ function planWaterRun(state) {
   const shore = shoreFor(state, h);
   if (shore == null || shore === h.tile) return;
   const home = atBase(state, h.id);
-  const spare = home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac));
-  const crew = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
-  if (crew.length < 2) return;
+  // A shelter (no well of its own) sends whoever it can spare, one at least (a lone carrier beats thirst).
+  const shelter = isShelter(h);
+  const spare = home.length - (shelter ? 1 : Math.max(2, Math.ceil(home.length * persona(state).homeFrac)));
+  const crew = home.filter((s) => s.health >= (shelter ? 50 : 70) && (!s.leader || shelter) && !s.inBed && !s.woundInfected).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
+  if (crew.length < (shelter ? 1 : 2)) return;
   const ids = crew.map((s) => s.id);
   const steps = [{ kind: "water" }, { kind: "home" }];
   const est = estimatePlan(state, { memberIds: ids, dest: shore, vehicle: false, stance: "normal", mission: "move", steps });

@@ -96,7 +96,7 @@ export const WEAR = { ageDays: 240, breakAt: 100, riskFrom: 60, riskMax: 0.3, ri
 // The hub's pump is a fixture of its own (base.pump); everything else is a building with an entry in FIXTURES.
 export function fixtures(base) {
   const out = base.buildings.filter((b) => FIXTURES[b.type]);
-  if (base.type === "hub") {
+  if (base.type === "hub" && base.tier !== 0) { // a shelter (tier 0) has no well pump yet
     if (!base.pump) base.pump = { id: "pump", type: "pump", wear: 0, built: 1 };
     out.unshift(base.pump);
   }

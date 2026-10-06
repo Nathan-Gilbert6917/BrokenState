@@ -10,7 +10,7 @@ import { queueEstimate, startOrder, queueText, besideWater, FETCH_WATER_HOURS } 
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import {
-  heatGain, heatInfo, fieldHeatHour, troubleChance, tileDanger, heatPreview, HEAT_DECAY, stationaryActivity,
+  heatGain, heatInfo, fieldHeatHour, troubleChance, tileDanger, heatPreview, HEAT_DECAY, stationaryActivity, CAMP_HEAT,
 } from "../src/sim/fieldheat.js";
 import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN_HOURS, CAMP_CHECKIN } from "../src/sim/plans.js";
 import { hiveDistance } from "../src/sim/hives.js";
@@ -97,7 +97,9 @@ section("Heat: builds while a team stands still, faster with a camp, in a city, 
   const day = (h) => { state.hour = Math.floor(state.hour / 24) * 24 + h; };
   day(12);
   const camp = heatGain(state, p).gain;
-  check(Math.abs(camp - 2) < 1e-9, `quiet countryside camp by day, 3 people: +2.0 an hour (got ${camp.toFixed(2)})`);
+  // The camp danger model (fieldheat.js CAMP_HEAT): camped 0.3 + 0.12 a person + the fire by day 0.5.
+  const campWant = CAMP_HEAT.presence + 3 * CAMP_HEAT.person + CAMP_HEAT.fireDay;
+  check(Math.abs(camp - campWant) < 1e-9, `quiet countryside camp by day, 3 people, fire lit: +${campWant.toFixed(2)} an hour (got ${camp.toFixed(2)})`);
   const waitG = heatGain(state, p, "waiting").gain;
   check(Math.abs(waitG - 1) < 1e-9 && waitG < camp, `waiting: +1.0 an hour, half a camp (got ${waitG.toFixed(2)})`);
   check(heatGain(state, p, "camp", 23).gain > camp && heatGain(state, p, "waiting", 23).gain < waitG, "at night a camp fire carries further, waiting in the dark less");
@@ -122,12 +124,12 @@ section("Heat: builds while a team stands still, faster with a camp, in a city, 
   let expect = 0;
   for (let i = 0; i < 10; i++) {
     p.lastConflict = state.hour + 1;
-    expect = Math.min(100, expect + heatGain(state, p, "camp", state.hour + 1).gain);
+    expect = Math.min(100, expect * (1 - CAMP_HEAT.settle) + heatGain(state, p, "camp", state.hour + 1).gain); // a camp settles
     tickHour(state);
     state.cards.length = 0;
   }
   check(Math.abs(p.heat - expect) < 1e-6, `10 hours of camp: Heat ${p.heat.toFixed(1)} as summed (${expect.toFixed(1)})`);
-  check(p.heat > 15 && p.heat < 40, `a night's camp in a quiet spot stays low (Heat ${p.heat.toFixed(1)})`);
+  check(p.heat > 8 && p.heat < 40, `a night's camp in a quiet spot stays low (Heat ${p.heat.toFixed(1)})`);
   const info = heatInfo(state, p);
   check(/Heat \d+\/100/.test(info.text) && /Chance of trouble/.test(info.text) && !/NaN|undefined/.test(info.text), "the panel text explains the risk");
   // Moving on: Heat falls 8 an hour.

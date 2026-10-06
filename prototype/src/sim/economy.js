@@ -7,7 +7,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -117,7 +117,11 @@ function baseScavenging(state, base, people) {
 // crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
-export const waterCapacity = (base) => (base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+export const waterCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+// camp-tier0: a shelter (buildings.js SHELTER, tier 0) has no well or spring of its own; beside a river or lake its
+// people haul SHELTER.river a day instead of the stream's 3.
+const ownWell = (base) => (isShelter(base) ? 0 : base.type === "hub" ? WATER.hubWell : WATER.spring);
+const streamWater = (base) => (isShelter(base) ? SHELTER.river : WATER.stream);
 const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
 // Water one person drinks on a campaign day (day index; today by default): the season's thirst, a hot day's at least.
 export const drinkRate = (state, dayIdx) => WATER.drink * (Weather.thirstFactor ? Weather.thirstFactor(state, dayIdx) : 1);
@@ -126,8 +130,8 @@ const prisonersHere = (state, base) => prisonersAt(state, base);
 
 export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
-  const own = (base.type === "hub" ? WATER.hubWell : WATER.spring) * factor;
-  const stream = byWater(state, base) ? WATER.stream : 0;
+  const own = ownWell(base) * factor;
+  const stream = byWater(state, base) ? streamWater(base) : 0;
   const wells = count(base, "well") * WATER.well * factor;
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
   const filters = filtersAt(base) * WATER.filter;
@@ -187,8 +191,8 @@ export function summerWater(state, base, { extra = 0, people = null, filterShare
   const T = Weather.THIRST || { summer: 1.3, heat: 1.6 };
   const r1 = (v) => Math.round(v * 10) / 10;
   const n = (people ?? residents(state, base.id).length) + prisonersHere(state, base) + extra;
-  const springs = (base.type === "hub" ? WATER.hubWell : WATER.spring) + countAll(base, "well") * WATER.well; // broken wells count: they get repaired
-  const stream = byWater(state, base) ? WATER.stream : 0;
+  const springs = ownWell(base) + countAll(base, "well") * WATER.well; // broken wells count: they get repaired
+  const stream = byWater(state, base) ? streamWater(base) : 0;
   const catchers = count(base, "rain_catcher");
   const filters = filtersAt(base) * WATER.filter * filterShare;
   // Crops: what the plots in the ground need on a dry day, an average crop (0.25) for a plot not growing now.

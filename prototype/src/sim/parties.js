@@ -75,7 +75,7 @@ export const MISSIONS = {
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
-  establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into your hub: bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
+  establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into a shelter (then, later, a base): bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
   strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },

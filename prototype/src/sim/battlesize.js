@@ -129,7 +129,7 @@ export const assaultDims = (enemy) => dimsAt(assaultScale(enemy));
 // Your own base's yard and buildings map, by its type and how many buildings stand there (interior.js).
 export function baseScale(base, nStructures) {
   if (!base) return S;
-  const [s0, from, per] = SIZES.BASE[base.type === "hub" ? "hub" : "outpost"];
+  const [s0, from, per] = SIZES.BASE[base.type === "hub" && base.tier !== 0 ? "hub" : "outpost"]; // a shelter (tier 0): an outpost's small yard
   return s0 + clamp((nStructures - from) / per, 0, 1);
 }
 
