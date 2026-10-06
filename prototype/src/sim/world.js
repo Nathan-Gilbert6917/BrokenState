@@ -46,6 +46,7 @@ import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
 import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
+import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
@@ -367,6 +368,7 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
       party.spotted.set(key, { key, type: "death", tile: tileId, hour: state.hour, label: `Death site: ${site.names.join(", ")}`, info: { items: site.items.length } });
     }
   }
+  riseOnMap(state, s, tileId); // carriers.js: the worm in them (worm.js): they get up again, here on the map or at the base
   if (s.leader) {
     s.leader = false;
     leaderCard(state, `${s.name} is gone. The group needs someone to lead. Morale drops across the hub.`);
@@ -612,6 +614,7 @@ export function tickHour(state) {
     routesDaily(state);
     supplyDaily(state);
     deathSitesDaily(state);
+    walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
     captivesDaily(state);
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders

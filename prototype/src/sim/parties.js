@@ -22,6 +22,7 @@ import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDea
 import { rescueArrive, captivesOf } from "./conflicts.js";
 import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
@@ -1404,6 +1405,7 @@ export function settleInto(state, p, base) {
   unloadGame(base, p.cargo);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
+  bodiesHome(state, p, base); // carriers.js
   const v = partyVehicle(state, p);
   if (v) v.loc = { kind: "base", baseId: base.id };
   for (const m of members) {
@@ -1422,6 +1424,7 @@ function returnHome(state, p) {
   unloadGame(home, p.cargo);
   addStock(home, p.cargo.supplies);
   home.armory.push(...p.cargo.gear);
+  bodiesHome(state, p, home); // carriers.js
   const v = partyVehicle(state, p);
   if (v) v.loc = { kind: "base", baseId: home.id };
   if (isBike(v) || home.armory.some((it) => it && it.key === "bicycle")) parkBikes(state, home); // one stack of bikes per base

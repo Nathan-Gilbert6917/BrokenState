@@ -11,6 +11,7 @@ import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/t
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
 import { queueBuild, cancelBuild, assignStations } from "./sim/buildings.js";
 import { refuel, repair } from "./sim/vehicles.js";
+import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
 } from "./sim/supply.js";
@@ -609,6 +610,8 @@ const actions = {
   cancelcraft: (d) => { ui.baseMsg = cancelCraft(state, baseOf(d), Number(d.id)); },
   refuel: (d) => { ui.baseMsg = refuel(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   repairv: (d) => { ui.baseMsg = repair(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
+  burybody: (d) => { ui.baseMsg = buryBody(state, baseOf(d), Number(d.id)); }, // sim/carriers.js: a body brought home
+  burnbody: (d) => { ui.baseMsg = burnBodyHome(state, baseOf(d), Number(d.id)); },
   survivor: (d) => { ui.survivor = Number(d.id); },
   closesurv: () => { ui.survivor = null; ui.lookEdit = null; ui.relMsg = ""; ui.skillTree = null; ui.skillMsg = ""; },
   unequip: (d) => {

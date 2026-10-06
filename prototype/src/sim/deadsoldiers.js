@@ -75,7 +75,7 @@ const round = (v) => Math.round(v * 1000) / 1000;
 // × the damage a hit does to one of them. hit: { how: "shot" | "melee" | "fire" | "blast", crit, sneak }; a: the
 // attacker (its weapon). No hit info (traps, a spike pit): MILDEAD trap.
 export function armorVs(t, a, hit) {
-  if (t.ztype === "swarm") return swarmArmor(hit); // carriers.js: a worm swarm (most bullets go through it)
+  if (t.ztype === "swarm") return swarmArmor(hit, a); // carriers.js: a worm swarm (a single bullet goes through it; a shotgun catches it)
   const A = t.ztype ? MILDEAD.ARMOR[t.ztype] : null;
   if (!A) return t.armor;
   if (!hit) return A.trap;

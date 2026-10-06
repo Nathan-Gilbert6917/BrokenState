@@ -27,7 +27,7 @@ import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
-import { stirring } from "../sim/carriers.js"; // a body the worm is in
+import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1641,12 +1641,13 @@ function drawGhost(ctx, state, b, q, H) {
 function drawLabels(ctx, b, s, H) {
   const t = s.t;
   if (t.dead) {
-    // A body the worm is in (sim/carriers.js): a pale "!" over it until it gets up, burns or its skull is crushed.
-    if (stirring(t)) {
+    // A body in danger (sim/carriers.js): a pale "!" over it while a Carrier is near or the worm is in it (red: it
+    // gets up at the end of this turn), until it gets up, burns or its skull is crushed.
+    if (endangered(b, t)) {
       const [X, Y0] = feet(s);
       ctx.font = `800 ${Math.max(12, Math.round(5 * FR.S))}px Segoe UI, sans-serif`;
       ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
-      ctx.strokeText("!", X, Y0 - 8 * FR.S); ctx.fillStyle = ZRING.carrier; ctx.fillText("!", X, Y0 - 8 * FR.S);
+      ctx.strokeText("!", X, Y0 - 8 * FR.S); ctx.fillStyle = imminent(b, t) ? "#ff8f85" : ZRING.carrier; ctx.fillText("!", X, Y0 - 8 * FR.S);
     }
     return;
   }
