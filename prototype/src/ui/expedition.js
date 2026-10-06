@@ -4,7 +4,7 @@
 // (sim/orders.js); buttons use data-action handlers in main.js.
 import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
 import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -354,6 +354,7 @@ function suppliesBlock(state, p) {
     <div class="row" style="margin-top:0.3rem"><span class="muted" style="width:7rem"${tip(`Supplies and cargo (kg) against what the team can carry on top of what it wears${p.vehicle ? " (plus the vehicle)" : ""}. ${BANDS_HELP}`)}>Load ${n0(load)}/${n0(cap)} kg</span><div style="flex:1">${bar((load / Math.max(1, cap)) * 100, load > cap * 0.9 ? "var(--danger)" : "var(--info)")}</div></div>
     <div style="margin-top:0.3rem"${tip("The team is weighed when it sets off and each hour it waits: eating on the way does not lighten its pace until it stops, but anything picked up on the move counts at once.")}>${p.vehicle === true ? "" : `<div class="small">Pace from its load: ${pace < 1 ? `<span class="warn">−${Math.round((1 - pace) * 100)}%</span>` : "full"}${b && b.band >= 0 ? ` (worst band when weighed: ${bandName(b.band)})` : ""}</div>`}${paceLine(t)}${carLine(t, partyVehicle(state, p)?.name)}${t.mode === true ? "" : loadRows(t)}</div>
     ${p.cargo.gear.length ? `<div style="margin-top:0.3rem">${p.cargo.gear.map((g) => `<span class="chip">${esc(g.name)}</span>`).join("")}</div>` : ""}
+    ${(p.cargo.bodies || []).length ? `<div style="margin-top:0.3rem">${p.cargo.bodies.map((x) => `<span class="chip off"${tip(`A body in the car: ${Math.round(bodyLoad(x))} kg of the load (the body and its things) until it is buried or burned at a base (Armory tab).${x.worm && !x.safe ? " The worm is in it." : ""}`)}>Body of ${esc(x.name.split(" ")[0])} · ${Math.round(bodyLoad(x))} kg</span>`).join("")}</div>` : ""}
   </div>`;
 }
 

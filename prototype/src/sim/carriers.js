@@ -10,6 +10,9 @@
 //       - Crush skull (combatAct "crush", 1 action, silent, from next to it): any human body, any time; the loot stays.
 //       - Double tap (combatAct "doubletap", 1 action, ammo, the noise of a shot, line of sight): the same from range.
 //       - Fire on its tile (as it would rise, and at each turn's change): the body and everything on it are gone.
+//       - Pick up the body (combatAct "pickup", 1 action; carrying: CARRIER.CARRY × the move distance, no shooting;
+//         P again puts it down) and lay it in the team's car (combatAct "stowbody") if the car has room: the body
+//         weighs CARRIER.BODY_KG plus its things (parties.js bodyLoad) and rides home as cargo (p.cargo.bodies).
 //       - Pick up the body (combatAct "pickup", 1 action; carrying: CARRIER.CARRY_MOB tiles an action, no shooting;
 //         "dropbody" puts it down, "stowbody" puts it in the team's car: a raid's vehicle zone, a field battle's evac
 //         strip). A body carried or in the car cannot rise. Bodies in the car come home (endBodies, bodiesHome):
@@ -60,7 +63,7 @@ import { fireAt } from "./throwables.js";
 import { survivorById, log, day, hurt, atBase, newId, baseById } from "./world.js";
 import { armorMult, enemyBody, allItems, stripAll, ensureInv, stow, unlistFromSites, EQUIP_SLOTS } from "./inventory.js";
 import { GEAR, SUPPLIES } from "./data.js";
-import { partyMembers } from "./parties.js";
+import { partyMembers, cargoRoom, bodyLoad } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
 import { hasWorm, catchWorm, clearWorm } from "./worm.js";
@@ -317,11 +320,11 @@ export function pickUp(b, u, c) {
   c.carriedBy = u.id;
   u.carrying = c.id;
   u.mob0 = u.mob;
-  u.mob = Math.min(u.mob, CARRIER.CARRY_MOB);
+  u.mob = u.mob * CARRIER.CARRY;
   u.ow = false;
   if (b.raid) { const i = b.raid.containers.findIndex((k) => k.kind === "body" && k.uid === c.id); if (i >= 0) c.box = b.raid.containers.splice(i, 1)[0]; }
   u.face = [Math.sign(c.x - u.x), Math.sign(c.y - u.y)];
-  say(b, `${u.name} heaves ${bodyName(c)} over their shoulder (${CARRIER.CARRY_MOB} tiles an action, no shooting).`, "info");
+  say(b, `${u.name} heaves ${bodyName(c)} over their shoulder (half their move distance, no shooting).`, "info");
   return "";
 }
 // Put the body down: on the tile in front of the carrier if the ground allows, else where they stand.
@@ -348,15 +351,30 @@ export function carHere(state, b, u) {
   const v = p ? partyVehicle(state, p) : null;
   return !!(v && isCar(v) && b.evacCols && inEvac(b, u.x, u.y));
 }
+// What a body would weigh in the car (parties.js bodyLoad): the body and what is known to be on it (one of yours: their
+// things; a raid's body: its container; an enemy's kit in a field battle is made when the battle ends and is not counted).
+export function unitBodyLoad(state, b, c) {
+  if (c.side === "player") { const s = survivorById(state, c.sid); return bodyLoad({ items: s ? allItems(s) : [], supplies: {} }); }
+  if (c.box && c.box.contents) return bodyLoad({ items: c.box.contents.gear, supplies: c.box.contents.sup });
+  return bodyLoad({ items: [], supplies: {} });
+}
+// Room left in the car for a body: the team's room (parties.js cargoRoom) less the bodies already laid in it this battle.
+export function carRoom(state, b) {
+  const p = b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) : null;
+  if (!p) return Infinity;
+  return cargoRoom(state, p) - b.units.filter((c) => c.inVehicle && isBody(c)).reduce((s, c) => s + unitBodyLoad(state, b, c), 0);
+}
 export function stowBody(state, b, u) {
   const c = carriedBy(b, u);
   if (!c) return "Pick up a body first (P).";
   if (!carHere(state, b, u)) return b.raid ? "Walk to the vehicle (its zone, or next to it) to put the body in." : "Carry the body onto the green evac strip, where the team's car waits.";
+  const need = unitBodyLoad(state, b, c), room = carRoom(state, b);
+  if (need > room + 0.01) return `No room in the car for ${bodyName(c)}: it weighs ${Math.round(need)} kg and ${Math.max(0, Math.round(room))} kg is free. Unload something, or leave it.`;
   c.carriedBy = null;
   c.inVehicle = true; // stays off the map; comes home (endBodies)
   u.carrying = null;
   if (u.mob0 != null) { u.mob = u.mob0; u.mob0 = null; }
-  say(b, `${u.name} lays ${bodyName(c)} in the car. It will come home with the team.`, "good");
+  say(b, `${u.name} lays ${bodyName(c)} in the car (${Math.round(need)} kg of the load). It will come home with the team.`, "good");
   return "";
 }
 

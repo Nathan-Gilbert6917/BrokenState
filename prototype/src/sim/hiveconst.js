@@ -82,9 +82,10 @@ export const TECH = {
 //   someone living leaves the worm in them INFEST of the time (worm.js catchWorm); someone it kills always has it.
 //   Whoever has the worm and dies, anywhere and any time later, gets up. With no host to go to the swarm sinks into
 //   the ground after SWARM_TURNS turns.
-// - Carrying a body (carriers.js pickUp): CARRY_MOB tiles an action instead of 5, no shooting; put down with another
-//   action, or into the team's car (a raid's vehicle zone; a field battle's evac strip). A body in the car cannot
-//   rise and comes home: bury it (its things to the armory) or burn it (Armory tab). Left unburied with the worm in
+// - Carrying a body (carriers.js pickUp): CARRY × the move distance (half of it), no shooting; put down with another
+//   action, or into the team's car (a raid's vehicle zone; a field battle's evac strip) if the car has room for it:
+//   a body weighs BODY_KG plus its things (parties.js bodyLoad) and counts in the team's load and capacity like
+//   any cargo until it is buried or burned. A body in the car cannot rise and comes home: bury it (its things to the armory) or burn it (Armory tab). Left unburied with the worm in
 //   it, it gets up at the base after BASE_RISE nights.
 // - Walking loot (carriers.js walkOff / placeWalking): the gear of one of the risen still walking when a battle ends
 //   goes into state.walkingLoot with its tile. A battle made within WALK_RADIUS tiles of an entry (nearer = likelier,
@@ -103,7 +104,8 @@ export const CARRIER = {
   SHOTGUN: 1,      // × a shotgun's (data.js GEAR cat "shotgun": the spread catches it)
   MELEE: 0.9, BASH: 1.25, BLAST: 1.5, // × a blade's, a blow's (a club, a gun butt, a boot), a blast's
   INFEST: 0.35,    // a swarm's hit on someone living leaves the worm in them this often (a kill always does)
-  CARRY_MOB: 3,    // tiles an action while carrying a body (combat.js MOVE is 5)
+  CARRY: 0.5,      // × the move distance while carrying a body (combat.js MOVE 5 → 2.5 tiles an action)
+  BODY_KG: 70,     // what a body weighs in the car, on top of its things (parties.js bodyLoad)
   BASE_RISE: 1,    // a body with the worm brought home and left unburied gets up after this many nights
   WALK_RADIUS: 8,  // walking loot is met in battles this many tiles from where it drifted to
   WALK_CHANCE: 0.6, // ... this often on the tile itself, falling off with distance

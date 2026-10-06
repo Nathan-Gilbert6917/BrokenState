@@ -1,6 +1,7 @@
 // Everything that travels across the State Map: your expeditions and convoys, AI raids and convoys.
 // Travel drains supplies hour by hour and rolls events tile by tile. When a team finishes a job
 // it waits for orders: act here, move anywhere, or go home.
+import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
@@ -120,7 +121,10 @@ export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(sta
 export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (SUPPLIES[k] && Number.isFinite(v) && v > 0 ? v * SUPPLIES[k].weight : 0), 0);
 // Kg of found cargo: supplies, and items by weight (a pack in the cargo also counts what is inside it, inventory.js itemLoad).
 // Fresh game (hunting.js) is food that weighs MEAT_KG a ration instead of 0.5: carcasses, bones and hide.
-export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) : 0);
+// A body brought home in the car (carriers.js stowBody / endBodies): the body itself (hiveconst.js CARRIER.BODY_KG) and its things.
+export const bodyLoad = (body) => CARRIER.BODY_KG + supplyLoad(body.supplies) + (body.items || []).reduce((s, g) => s + itemLoad(g), 0);
+export const bodiesLoad = (cargo) => (cargo && cargo.bodies ? cargo.bodies.reduce((s, body) => s + bodyLoad(body), 0) : 0);
+export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) + bodiesLoad(cargo) : 0);
 // Everything the team shares out: packed supplies and found cargo (load.js).
 export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 // Room left for more (found goods): what the team can carry less what it already does. A team the autopilot packs
