@@ -17,6 +17,7 @@ import { allItems } from "./inventory.js";
 import { onLeave, noteMood } from "./relations.js";
 import { buzzWork } from "./comforts.js";
 import { needsWork } from "./needs.js";
+import { nearSnap } from "./mentalbreaks.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -80,13 +81,14 @@ export function moodWork(s) {
 export function moodRisk(s) {
   if (!s || !s.alive) return null;
   const w = s.moodWarn || 0;
+  if (nearSnap(s)) return { level: 3, text: "May break down", tone: "danger" }; // mentalbreaks.js: days at rock bottom
   if (s.mood < MOOD.desert && w >= 2) return { level: 3, text: "May walk out any night", tone: "danger" };
   if (s.mood < MOOD.warn2 || w >= 2) return { level: 2, text: "Close to leaving", tone: "danger" };
   if (s.mood < MOOD.warn1 || w >= 1) return { level: 1, text: "Talks about leaving", tone: "warn" };
   if (s.mood < MOOD.rearm) return { level: 0, text: "Unhappy", tone: "muted" };
   return null;
 }
-export const MOOD_RISK_TIP = `Below ${MOOD.warn1} mood someone talks about leaving (first warning), below ${MOOD.warn2} they are close to it (second warning), and below ${MOOD.desert} they may walk out any night once the second warning has been given. Rest, a bed, food, a good leader and room to sleep lift mood; crowding, short rations, hunger and thirst lower it.`;
+export const MOOD_RISK_TIP = `Below ${MOOD.warn1} mood someone talks about leaving (first warning), below ${MOOD.warn2} they are close to it (second warning), and below ${MOOD.desert} they may walk out any night once the second warning has been given. Under 10 mood for 3 days running, at home or on the road, they may break down: run off, go for someone, take their own life, set a fire, wreck the stores, walk out into the dead or shut down for days. Rest, a bed, food, a good leader and room to sleep lift mood; crowding, short rations, hunger and thirst lower it.`;
 
 // The person best placed to talk someone round: the leader if they are at that base, else the best Speech there.
 export function talker(state, base, s) {
@@ -166,15 +168,17 @@ export function desertionHaul(state, base, s) {
 const itemText = (g) => (g.contents && g.contents.some(Boolean) ? `${g.name} (with ${g.contents.filter(Boolean).map((x) => x.name).join(", ")})` : g.name);
 const listText = (parts) => (parts.length <= 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`);
 
-export function desert(state, base, s) {
+// opts.why: the log line's first half (a mental break, being cast out: mentalbreaks.js); opts.haul false: nothing from
+// the stores.
+export function desert(state, base, s, opts = {}) {
   s.alive = false;
   s.left = true;
   s.station = null;
   s.inBed = false;
   const items = allItems(s).map(itemText);
-  const took = desertionHaul(state, base, s);
+  const took = opts.haul === false ? {} : desertionHaul(state, base, s);
   const parts = [...items, ...Object.entries(took).map(([k, q]) => `${q} ${k}`)];
-  log(state, `${s.name} lost hope and walked away from ${base.name} in the night${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
+  log(state, `${opts.why || `${s.name} lost hope and walked away from ${base.name} in the night`}${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: base.id, day: day(state), took });
   onLeave(state, s, base); // relations.js: friends and a partner take it hard
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].moraleFor === s.id) state.cards.splice(i, 1);
