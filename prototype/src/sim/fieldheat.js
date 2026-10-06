@@ -178,7 +178,7 @@ export function campRows(state, site, hour = state.hour, kitP = null) {
   if (site.working) rows.push({ key: "work", label: "building work", v: C.work });
   return rows;
 }
-const VEHICLE_WORD = { truck: "truck", sedan: "car" };
+const VEHICLE_WORD = { truck: "truck", sedan: "car", suv: "SUV", hummer: "Hummer", van: "van" };
 export const rowsText = (rows) => rows.map((r) => `${r.label[0].toUpperCase()}${r.label.slice(1)}: +${r.v >= 1 ? r1(r.v) : Math.round(r.v * 100) / 100}`).join(", ");
 // A camp's Heat this hour for team p there: { gain, parts, rows, mult }.
 export function campGain(state, p, site, hour = state.hour) {
