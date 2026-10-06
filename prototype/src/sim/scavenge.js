@@ -11,6 +11,7 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
 import { searchHazards } from "./health.js";
+import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, newItem } from "./inventory.js";
@@ -153,6 +154,7 @@ export function afterRaid(state, result, setup) {
   }
   // Cuts and fevers from the hours spent searching (health.js), as in the hour-by-hour search.
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
+  wormSearch(state, p, setup.tile, r.hours || 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   wanderersAfterRaid(state, p, result, setup.tile); // wanderers.js: the survivors you found there can be talked to; the soldiers remember
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
@@ -266,6 +268,7 @@ export function searchHour(state) {
   gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour); // skills.js
   if (e.approach === "sneak") gainXpAll(state, partyMembers(state, p), "stealth", USE.sneakSearch);
   searchHazards(state, partyMembers(state, p), tileLabel(state, e.tile)); // cuts and fevers while searching (health.js)
+  wormSearch(state, p, e.tile, 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   if (!partyMembers(state, p).length) {
     // Everyone died; what they found stays with them.
     for (const [k, v] of Object.entries(e.found.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + v;

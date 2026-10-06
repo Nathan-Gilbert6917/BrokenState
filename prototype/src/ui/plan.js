@@ -5,6 +5,7 @@ import { MISSIONS, tileLabel, STAY_MISSIONS } from "../sim/parties.js";
 import { PRESETS, STEP_KINDS, CONDITIONS, estimatePlan, stepLabel, nearbySites, knownLoot } from "../sim/plans.js";
 import { activeCrashes } from "../sim/crashes.js";
 import { heatPreview } from "../sim/fieldheat.js";
+import { searchRiskText } from "../sim/worm.js"; // the worm: searching badly infected ground
 import { jobTargets } from "./diplomacy.js";
 import { sweepPreview, sweepOpts, rumoursOf, SURVEY } from "../sim/survey.js";
 import { survivorById } from "../sim/world.js";
@@ -53,6 +54,9 @@ function moveTargets(state, pl) {
 function heatNote(state, pl, est) {
   const plan = ensure(pl);
   const notes = [];
+  // The worm (sim/worm.js): a search on badly infected ground is a risk to the hands that do it.
+  const searches = [pl.dest, ...plan.steps.filter((s) => s.kind === "move" && s.tile != null).map((s) => s.tile)];
+  for (const t of [...new Set(searches)]) { const w = searchRiskText(state, t); if (w) notes.push(`${tileLabel(state, t)}: ${w}.`); }
   let tile = pl.dest, known = true;
   for (const s of plan.steps) {
     if (s.kind === "nearby") known = false;

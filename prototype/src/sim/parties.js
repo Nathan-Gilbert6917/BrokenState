@@ -43,7 +43,7 @@ import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { teamNeedsHour } from "./needs.js";
-import { wormTeamHour, packWater } from "./worm.js";
+import { wormTeamHour, packWater, wormHome, unloadWormForage } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
@@ -1404,8 +1404,10 @@ function addStock(base, supplies) {
 // parked there, its people live there (Build outpost; the staging camp becoming the hub, staging.js).
 export function settleInto(state, p, base) {
   const members = partyMembers(state, p);
+  wormHome(state, p, members, base); // worm.js: the hands that searched today, washed if the water here is safe
   addStock(base, p.supplies);
   unloadGame(base, p.cargo);
+  unloadWormForage(base, p.cargo); // worm.js: forage gathered on infected ground
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
   const v = partyVehicle(state, p);
@@ -1422,8 +1424,10 @@ function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
+  wormHome(state, p, members, home); // worm.js: the hands that searched today, washed if the water here is safe
   addStock(home, p.supplies);
   unloadGame(home, p.cargo);
+  unloadWormForage(home, p.cargo); // worm.js: forage gathered on infected ground
   addStock(home, p.cargo.supplies);
   home.armory.push(...p.cargo.gear);
   const v = partyVehicle(state, p);

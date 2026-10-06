@@ -162,6 +162,7 @@ export function groupCardExtras(state, f) {
     ${wars.length ? `<div class="danger">⚔ At war with ${wars.map((w) => esc(nameOf(state, enemyIn(w, f)))).join(", ")}${wars.some((w) => w.playerSide === f.id) ? " (you fight beside them)" : wars.some((w) => w.playerSide != null) ? " (you fight against them)" : ""}</div>` : ""}
     ${pactsOf(state, f).length ? `<div class="muted">Pacts with ${pactsOf(state, f).map((o) => esc(nameOf(state, o.id))).join(", ")}</div>` : ""}
     ${member ? `<div class="good">🤝 Member of ${esc(ALLIANCE.NAME)}</div>` : ""}
+    ${f.wormLost ? `<div class="muted"${tip("The worm (Help: The dead and the worm): a group on infected ground loses people to it as a base of yours would catch it; after its first loss a base boils its water and loses far fewer. Heard on the radio and kept in the chronicle.")}>Lost ${f.wormLost} to the worm${f.wormBoilers && Object.keys(f.wormBoilers).length ? "; they boil their water now" : ""}</div>` : ""}
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>

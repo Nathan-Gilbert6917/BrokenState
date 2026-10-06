@@ -25,7 +25,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
-import { cookAtBase, wormDaily } from "./worm.js";
+import { cookAtBase, wormDaily, boilerUse } from "./worm.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -491,7 +491,10 @@ function shipFromOutposts(state) {
       // Water and seed: an outpost keeps a week of water (its own well is small) and food to sow its plots.
       // Food and water by everyone fed here (per head × heads, upkeep.js: prisoners and guests too); ammo by the staff.
       const fed = mouthsAt(state, base).heads;
-      const keep = { food: Math.ceil(foodUse(state, base).total * 3) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2 };
+      // Firewood: a few days of the water boiler's (worm.js boilerUse) stays here; the rest pools at the hub, which sends
+      // heating and boiler wood back over the line as the outpost runs short (needs.js heatDaily, worm.js boilerDaily).
+      const boil = boilerUse(state, base);
+      const keep = { food: Math.ceil(foodUse(state, base).total * 3) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const k of Object.keys(base.stock)) {

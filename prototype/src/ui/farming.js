@@ -15,7 +15,7 @@ import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
-import { baseWater } from "../sim/worm.js";
+import { baseWater, boilerUse, cropLandBad, WORM } from "../sim/worm.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -47,14 +47,19 @@ export function upkeepLine(state, b) {
   const food = foodUseText(fo), water = waterUseText(need);
   const heat = heatUse(state, b); // needs-gauges: heating per head below 0°C (woodcutting.js: firewood first, then fuel)
   const heating = heat.each > 0 ? `Heating: ${heat.text}` : "";
+  // The water boiler (sim/worm.js): firewood a head every day the water needs boiling, like heating.
+  const boil = count(b, "boiler") ? boilerUse(state, b) : null;
+  const boiler = boil && boil.active ? `Water boiler: ${boil.text}${boil.lit ? "" : " (cold today: nothing to burn)"}` : "";
   const cold = fo.use.cold > 1 ? ` The cold: everyone eats ${Math.round((fo.use.cold - 1) * 100)}% more today.` : "";
   const wn = woodNeed(state, b);
   const woodNote = ` ${n0(b.stock.wood)} firewood and ${n0(b.stock.fuel)} fuel in store${wn.need > 0 && wn.soon ? `; the cold ahead (about ${Math.round(wn.days)} freezing days) needs about ${wn.need} firewood` : ""}.`;
   const heatTip = ` Heating: on a day below 0°C everyone here needs ${HEAT.fuel} fuel's worth of heat a day (×${HEAT.bitter} below ${HEAT.bitterAt}°C). The base burns firewood first (1 firewood heats as much as ${HEAT.wood} fuel: ${woodFor(HEAT.fuel)} firewood a head), then fuel for what the wood does not cover; a shelter with its camp fire lit needs neither. Without them everyone is cold (mood −${COLD.mood} and health −${COLD.hp} a day, and illness as outdoors). Cut wood on the Work tab (the Cut wood job), send a team to cut it, or trade for it.${heating ? ` Today: ${heat.text}.` : " No heating needed today."}${woodNote}${b.cold ? ` ${b.name} is cold now: it ran short of firewood and fuel.` : ""}`;
-  const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's; someone on a personal errand takes a day's food and water a day with them.${heatTip} Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
-  return { food, water, heating, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 ? ` · firewood ${n1(heat.wood)}` : ""} a day`, tip: tipText };
+  const boilTip = boil ? ` The water boiler burns ${WORM.BOILER_WOOD_HEAD} firewood a head a day (or ${WORM.BOILER_WOOD_HEAD * HEAT.wood} fuel) in every season, on the days the water here carries the worm's eggs and no water filter covers it${boil.active ? `: today ${boil.text}${boil.lit ? "" : ", and it is cold: the base could not pay, so the water is unboiled today"}` : "; today it stands ready (nothing to boil, or a filter does the job)"}.` : "";
+  const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold}${boilTip} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's; someone on a personal errand takes a day's food and water a day with them.${heatTip} Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
+  const boilerWood = boil && boil.active ? boil.wood : 0;
+  return { food, water, heating, boiler, boilerCold: !!boil && boil.active && !boil.lit, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 || boilerWood > 0 ? ` · firewood ${n1(heat.wood + boilerWood)}` : ""} a day`, tip: tipText };
 }
-export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}</div>`; };
+export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}${u.boiler ? `<div class="small ${u.boilerCold ? "danger" : "muted"}">${esc(u.boiler)}</div>` : ""}</div>`; };
 
 // Firewood (sim/woodcutting.js) for the top bar and the base panel: days of heating left in the cold, else what is in
 // store against what the coming cold needs. { short, cls, tip }.
@@ -147,6 +152,7 @@ function cropOptions(selected, gh, state, b, p) {
   }).join("");
 }
 
+const baseCooksHere = (b) => count(b, "cookhouse") > 0 || count(b, "kitchen") > 0;
 export function baseFarming(state, b) {
   const f = farmOf(state, b);
   const care = careToday(state, b);
@@ -216,7 +222,7 @@ export function baseFarming(state, b) {
         <div class="kv" style="margin-top:0.3rem">
           <div${tip("Farmers (by how much they can work) per planted plot. More hands give a bigger harvest from the same days, with diminishing returns: 0.5 per plot about 1.0, 1 per plot 1.23, 2 per plot 1.4.")}>Tending</div><div>${n1(care.perPlot)} per plot → ×${n1(care.tend)}</div>
           <div${tip("Average Farming of the farmers who tend (one per planted plot): Farming 0 ×0.75, 7 ×1.0, 20 ×1.45")}>Skill</div><div>Farming ${n1(care.avgSkill)} → ×${n1(care.skill)}</div>
-          <div${tip("Farmland 1.3, forest 0.9, hills 0.85, elsewhere 1")}>Ground</div><div>×${siteFarm(state, b)}</div>
+          <div${tip("Farmland 1.3, forest 0.9, hills 0.85, elsewhere 1")}>Ground</div><div>×${siteFarm(state, b)}${cropLandBad(state, b.tile) ? ` <span class="danger"${tip(`The worm (Help: The dead and the worm): this ground is at ${Math.round((state.tiles[b.tile].infection || 0) * 100)}% infection, ${Math.round(WORM.CROP_MIN * 100)}% or more, so the fresh crops grown here (and anything foraged on land like it) carry its eggs: ${WORM.CROP * 100}% a ration eaten raw (forage ${WORM.FORAGE * 100}%). A cook fire or a preserving kitchen boils everything the base eats; without one that food waits in the stores and is eaten last, raw. Dry crops (grain, dry beans) are threshed and cooked: safe.`)}>infected: the crops carry the worm's eggs${baseCooksHere(b) ? " (boiled here)" : " (build a cook fire)"}</span>` : ""}</div>
           <div>Plots</div><div>${plotLimit(b)} outdoor${greenhouseLimit(b) ? ` + ${greenhouseLimit(b)} under glass` : ""} · ${f.plots.filter((p) => p.stage === "growing").length} growing</div>
         </div>
         <label style="display:block;margin-top:0.35rem"${tip("Farmers sow free plots by themselves (the crop picked for the plot, or the best one for the season) and clear dead ones. Off: only what you sow.")}><input type="checkbox" data-action="farm-auto" data-base="${b.id}" ${f.auto ? "checked" : ""}> Replant automatically</label>

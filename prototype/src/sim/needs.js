@@ -49,7 +49,7 @@ import { heatUse, HEAT } from "./upkeep.js";
 import { shelterFire } from "./woodcutting.js";
 import { econStats } from "./farming.js";
 import { conditionsOf } from "./health.js";
-import { wormMeatIn, eatRawCargo, drinkHour } from "./worm.js";
+import { wormMeatIn, wormForageIn, eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
@@ -124,7 +124,7 @@ export function takeFood(p, want) {
   let got = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, want, { clean: true }) : 0;
   for (const [o, k] of [[p.supplies, "food"], [p.supplies, "preserved"], [p.cargo.supplies, "food"], [p.cargo.supplies, "preserved"]]) {
     if (got >= want - 1e-12) break;
-    if (o === p.cargo.supplies && k === "food") { const q = Math.max(0, Math.min(want - got, (o.food || 0) - wormMeatIn(p.cargo))); o.food = (o.food || 0) - q; got += q; continue; }
+    if (o === p.cargo.supplies && k === "food") { const q = Math.max(0, Math.min(want - got, (o.food || 0) - wormMeatIn(p.cargo) - wormForageIn(p.cargo))); o.food = (o.food || 0) - q; got += q; continue; }
     got += takeFrom(o, k, want - got);
   }
   if (p.cargo.meat && !(meatIn(p.cargo) > 0)) p.cargo.meat = 0;
@@ -195,8 +195,9 @@ export function teamNeedsHour(state, p, members) {
   }
   const share = SHARES[p.share] ? p.share : "hurt";
   const rule = Object.prototype.hasOwnProperty.call(NEEDS.eat, p.ration) ? NEEDS.eat[p.ration] : NEEDS.eat.full;
-  const raw = wormMeatIn(p.cargo); // worm.js: game with eggs, eaten last
-  let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw, (q) => takeFood(p, q), share);
+  const raw = wormMeatIn(p.cargo), rawVeg = wormForageIn(p.cargo); // worm.js: game and forage with eggs, eaten last (the forage before the meat)
+  let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw - rawVeg, (q) => takeFood(p, q), share);
+  if (shortFood && rawVeg > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, rawVeg, (q) => eatRawForageCargo(state, p, members, q), share);
   if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q) => eatRawCargo(state, p, members, q), share);
   const water0 = teamWater(p);
   const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, water0, (q) => takeWater(p, q), share);

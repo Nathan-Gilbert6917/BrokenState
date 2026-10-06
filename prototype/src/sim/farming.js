@@ -20,6 +20,7 @@ import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
 import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Farm (careToday)
+import { addWormCrop } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
@@ -407,7 +408,7 @@ export function harvestPlot(state, base, plotId) {
   if (!p) return "That plot is gone.";
   if (p.stage !== "ripe") return "Nothing ripe on that plot.";
   if (!hasFarmer(state, base)) return "Nobody is on the Farm role here to harvest it.";
-  const got = takeHarvest(base, p);
+  const got = takeHarvest(state, base, p);
   return `Harvested ${got} food from plot ${p.id} at ${base.name}.`;
 }
 
@@ -432,10 +433,11 @@ export function setAutoReplant(state, base, on) {
   return on ? `Farmers at ${base.name} replant free plots automatically.` : `Farmers at ${base.name} only plant what you sow.`;
 }
 
-function takeHarvest(base, p) {
+function takeHarvest(state, base, p) {
   const got = Math.round(p.yieldLeft * 10) / 10;
   const key = CROPS[p.crop] && CROPS[p.crop].store === "preserved" ? "preserved" : "food";
   base.stock[key] = (base.stock[key] || 0) + got;
+  if (key === "food") addWormCrop(state, base, base.tile, got, "crop"); // worm.js: grown on land at CROP_MIN+ infection (dry goods are threshed and cooked: safe)
   Object.assign(p, { stage: "empty", crop: null, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: `Last harvest ${got} food` });
   return got;
 }
@@ -518,7 +520,7 @@ export function farmingDaily(state, base, watered = 1) {
   harvestCap += 2 * farmers(state, base).filter((s) => hasPerk(s, "harvester")).length; // Harvester (skills.js)
   for (const p of f.plots.filter((x) => x.stage === "ripe").sort((a, b) => b.ripeDays - a.ripeDays)) {
     if (harvestCap <= 0) break;
-    out.harvested += takeHarvest(base, p);
+    out.harvested += takeHarvest(state, base, p);
     out.plots++;
     harvestCap--;
   }

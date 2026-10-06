@@ -40,6 +40,7 @@ import { workFactor, addCondition } from "./health.js";
 import { SUPPLIES } from "./data.js";
 import { econStats } from "./farming.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot } from "./hunting.js";
+import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -177,6 +178,7 @@ function gatherHour(state, p, members, got, share = 1) {
   const kept = Math.max(0, Math.min(amount, fit));
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   if (kept > 0) p.cargo.supplies.food = (p.cargo.supplies.food || 0) + kept;
+  addWormForage(state, p, tile, kept); // worm.js: gathered on land at CROP_MIN+ infection (a camp fire boils it)
   got.rations += kept;
   got.left += amount - kept;
   takeForage(state, tile, amount);
@@ -295,6 +297,7 @@ export function foragingDaily(state, base) {
     for (let i = 0; i < FORAGE.base.hours; i++) r += forageRate(state, tile, dayStart + 9 + i * 2, m);
     const amount = Math.round(r * (0.6 + 0.8 * state.rng.next()) * 100) / 100;
     got.rations += amount;
+    addWormCrop(state, base, tile, amount, "forage"); // worm.js: gathered on land at CROP_MIN+ infection (eaten last, raw, without a cook fire)
     takeForage(state, tile, amount);
     const key = seasonKey(state, dayStart + 12);
     const terr = state.tiles[tile].terrain;
