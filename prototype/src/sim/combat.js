@@ -1693,7 +1693,7 @@ export function combatAct(state, act) {
       const from = u.f || 0;
       fx(b, { type: "move", unit: u.id, from: [u.x, u.y], path: [[u.x, u.y]] });
       moveToFloor(b, u, from + (up ? 1 : -1));
-      say(b, `${u.name} goes ${up ? "up" : "down"} the stairs to the ${b.floors[u.f].name.toLowerCase()}.`, "info");
+      say(b, `${u.name} goes ${up ? "up" : "down"} the stairs to ${/^floor/i.test(b.floors[u.f].name) ? "" : "the "}${b.floors[u.f].name.toLowerCase()}.`, "info");
       setFloor(b, u.f); // the view follows
       detect(b, u);
       break;

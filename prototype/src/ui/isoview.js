@@ -1140,7 +1140,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     outlineCells(ctx, b, ev, "rgba(108,196,138,0.75)", 1.5);
     ctx.setLineDash([]);
   }
-  if (b.raid) for (const z of b.raid.zones) {
+  // Extraction zones are on the ground floor only: not drawn while looking at an upper floor (they are void there).
+  if (b.raid && !floorNo(b)) for (const z of b.raid.zones) {
     const inZ = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h; };
     fillCells(ctx, b, inZ, z.vehicle ? "rgba(90,160,255,0.2)" : "rgba(108,196,138,0.2)");
     ctx.setLineDash([6, 4]);
@@ -1269,7 +1270,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     return faces;
   };
-  const topFloor = !F || floorNo(b) === F.length - 1; // the roof is drawn only on the top floor (the storeys above are cut away)
+  // A building with storeys is never roofed over: looking at any of its floors is a cutaway of the storeys above, and
+  // on its top floor you want to see the floor, not the roof (the fog still hides what nobody has seen).
+  const topFloor = !F;
   iso.rects = [];
   for (let d = 0; d <= Wv + Hv - 2; d++) {
     const uLo = Math.max(0, d - (Hv - 1)), uHi = Math.min(Wv - 1, d);
@@ -1449,7 +1452,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
       ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
     }
-    for (const z of b.raid.zones) {
+    if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
       tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : "#6cc48a", Math.max(10, 4 * S));
     }
