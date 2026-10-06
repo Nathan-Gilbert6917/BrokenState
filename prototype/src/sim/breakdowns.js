@@ -46,6 +46,7 @@ import { weatherOnDay } from "./weather.js";
 import { stewardOn } from "./steward.js";
 import { vehiclesAtBase } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
+import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -354,9 +355,11 @@ export function breakdownsDaily(state) {
       const p = w >= WEAR.breakAt ? 1 : w >= WEAR.riskFrom ? ((w - WEAR.riskFrom) / (WEAR.breakAt - WEAR.riskFrom)) ** 2 * WEAR.riskMax : 0;
       if (p > 0 && hash01(state.seed, "brk", fxKey(base, fx), d) < p) breakFixture(state, base, fx, w >= WEAR.breakAt ? "worn out" : "worn");
     }
-    // Upkeep by builders with nothing to build.
-    if (!base.construction.length) {
-      let pts = atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + WEAR.upkeep * workFactor(s), 0);
+    // Upkeep by builders with nothing to build, and by prisoners set to Clean and mend (prisoners-tab: prisoners.js
+    // labour, at their share of a builder's upkeep, build queue or not).
+    const cleaners = WEAR.upkeep * prisonLabour(state, base, "upkeep");
+    if (!base.construction.length || cleaners > 0) {
+      let pts = (base.construction.length ? 0 : atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + WEAR.upkeep * workFactor(s), 0)) + cleaners;
       for (const fx of [...list].filter((f) => !f.broken).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
         if (pts <= 0) break;
         const cut = Math.min(pts, fx.wear || 0);

@@ -22,6 +22,7 @@ import { hasPerk } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
+import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -130,8 +131,9 @@ export function waterProduction(state, base) {
   const wells = count(base, "well") * WATER.well * factor;
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
   const filters = filtersAt(base) * WATER.filter;
-  const total = own + stream + wells + rain;
-  return { own, stream, wells, rain, filters, factor, total: Math.round(total * 10) / 10 };
+  const hauled = prisonWater(state, base); // prisoners-tab: prisoners set to Fetch water (prisoners.js labour)
+  const total = own + stream + wells + rain + hauled;
+  return { own, stream, wells, rain, filters, hauled, factor, total: Math.round(total * 10) / 10 };
 }
 
 export function waterNeed(state, base) {
