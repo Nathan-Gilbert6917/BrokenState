@@ -25,6 +25,7 @@ import { teamWormText } from "../sim/worm.js";
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
+import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -139,6 +140,10 @@ export function renderExpedition(state, ui, p) {
   const rep = repairInfo(state, p);
   const camping = p.phase === "task" && p.task && p.task.type === "camp";
   const working = p.phase === "task" && p.task && !camping;
+  // Land claims and wells (sim/claims.js), on the tile the order would run on.
+  const claimAt = queueing ? queueEndTile(state, p) : tile;
+  const claimWhy = state.bases.length ? canClaim(state, claimAt) : "No base yet: a claim must border land you hold.";
+  const wellWhy = wellProblem(state, p, claimAt);
   const actions = `<div class="card small">
       <div class="spread"><b>Orders</b>${moving ? `<span class="muted">queued after the current one</span>` :
         `<button class="mini ${ui.xpQueue ? "active" : ""}" data-action="xp-queuemode"${tip("On: actions go to the end of the queue. Off: they start now (stopping work on the spot).")}>${ui.xpQueue ? "Queue mode: on" : "Queue mode: off"}</button>`}</div>
@@ -157,6 +162,8 @@ export function renderExpedition(state, ui, p) {
         ${CAMP_HOURS.map((h) => ord("camp", ` data-hours="${h ?? ""}"`, h ? `Camp ${h}h` : "Camp (until broken)", `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}. The hurt heal a little each hour (infected wounds need meds); nobody travels, so no road events. Supplies keep draining.`)).join("")}
         ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Water for a base that runs short in summer.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
+        ${ord("claim", "", `Claim this tile (${CLAIM.HOURS}h)`, claimWhy && !queueing ? `Claim this tile: ${claimWhy}` : `Raise a marker post here (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 50% the alliance victory needs. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.`, !!claimWhy && !queueing)}
+        ${claimOwner(state, claimAt) === "player" || queueing ? ord("well", "", `Dig a well (${CLAIM.WELL_HOURS}h)`, wellWhy && !queueing ? `Dig a well: ${wellWhy}` : `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): about ${wellYield(state, claimAt)} water a day here, hauled by the people at your base next to it (one well per ${CLAIM.WELL_PER_PEOPLE} people there counts). It holds 1,500–4,000 water and runs dry in time.`, !!wellWhy && !queueing) : ""}
         ${opts.filter((o) => o.mission !== "scavenge").map((o) => ord("mission", ` data-mission="${o.mission}"`, esc(o.label), o.disabled || o.desc, !!o.disabled && !queueing)).join("")}
       </div>
       ${landBlock(state, p, queueing ? queueEndTile(state, p) : tile, queueing)}

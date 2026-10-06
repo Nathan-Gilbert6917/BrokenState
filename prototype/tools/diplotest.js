@@ -600,7 +600,7 @@ section("Alliance victory");
     if (t.terrain === "water" || (t.x + t.y * 3) % 11) continue;
     if (st.grid.distance(t.id, hub(st).tile) > 4 && free(st, t.id)) ms[k++ % ms.length].bases.push(t.id);
   }
-  check(A.controlledLand(st).pct > 0.5 && !A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held but ${last.name} is outside: no victory`);
+  check(A.controlledLand(st).pct > 0.5 && A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: the victory stands (groups outside no longer block it; members are enough)`);
   last.bases.unshift(nearTile(st, hub(st).tile, 2, 7));
   A.inviteToAlliance(st, last);
   check(A.isMember(st, last) && A.allianceVictory(st), "land over half, every group in, no hive: victory");
@@ -613,7 +613,7 @@ section("Alliance victory");
   // A collapsed group does not count against you.
   const outsider = st.factions.find((f) => f.alive && A.isMember(st, f));
   st.alliance.members = st.alliance.members.filter((id) => id !== outsider.id);
-  check(!A.allianceVictory(st), "a living group outside the coalition: no victory");
+  check(A.allianceVictory(st) && A.allianceMembers(st).length > 0, "a living group outside the coalition no longer blocks the victory (members and land are what count)");
   outsider.alive = false; outsider.bases = [];
   check(A.allianceVictory(st) === (A.controlledLand(st).pct > 0.5), "a collapsed group does not count");
   st.alliance.members.push(outsider.id);

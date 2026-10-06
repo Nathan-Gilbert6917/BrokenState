@@ -20,6 +20,7 @@ import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
+import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
@@ -426,7 +427,9 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
       if (F.infOn) inf = isLive ? t.infection : snap.infection;
       if (F.terrOn) {
         const owner = isLive ? t.owner : snap.owner;
-        if (owner != null) {
+        const claim = state.claims ? state.claims[i] : null; // sim/claims.js: your claims are always known to you
+        if (claim && claim.owner === "player") key |= ownerId(G, CLAIM_COLOR) << 4;
+        else if (owner != null) {
           const color = owner === "player" ? PLAYER_COLOR : ownerColor.get(owner);
           if (color) key |= ownerId(G, color) << 4;
         }
@@ -862,7 +865,7 @@ function moverHash(state) {
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
-  h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0)) % 2147483647;
+  h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0) + (state.claims ? Object.keys(state.claims).length * 11 : 0)) % 2147483647; // claims (sim/claims.js) made or lost while paused
   return h;
 }
 function unchanged(state, now) {
@@ -1355,6 +1358,7 @@ export function render(state) {
 
 // ---------- party sprites ----------
 const PLAYER_COLOR = "#4f8fd6";    // your teams (same blue as your bases)
+const CLAIM_COLOR = "#8db9ea";     // the tiles your teams claimed (sim/claims.js): a lighter player blue on the Territory layer
 const ROUTE_COLOR = "#c9e07a";     // trade-route convoys
 const SUPPLY_COLOR = "#5cc8b4";    // supply runs between your bases
 const PHASE_COLOR = { waiting: "#ffd166", task: "#9be39b" }; // ring under your teams; moving: light blue
@@ -1788,6 +1792,10 @@ export function tileTooltip(state, id) {
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
+  const ct = claimText(state, id); // sim/claims.js: "Claimed by you (day N)", and the well on it
+  if (ct) lines.push(`<span style="color:#8db9ea">${esc(ct)}</span>`);
+  const wt = wellText(state, id);
+  if (wt) lines.push(`<span style="color:#8db9ea">${esc(wt)}</span>`);
   // Loot left as you know it (aiscav.js bands): the live value, else the last you saw or heard (it may be gone since).
   if (loc && !ownHere && (isLive || snap)) lines.push(`<span class="muted">Loot: ${LOOT_BANDS[lootBand(t, isLive ? t.loot : snap.loot)].toLowerCase()}${isLive ? "" : " (then)"}</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);

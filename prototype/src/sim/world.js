@@ -40,6 +40,7 @@ import { onDeath } from "./relations.js";
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
+import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
@@ -56,7 +57,7 @@ import { wanderersDaily } from "./wanderers.js";
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
-export const RADIO_RANGE = 8;
+export const RADIO_RANGE = 12; // a radio station's reach; a base with a Military encrypted radio in its armory reaches radio.js MIL_RADIO_RANGE (24)
 
 let nextId = 1;
 export const newId = () => nextId++;
@@ -459,7 +460,7 @@ function coalitionWins(state) {
   const members = state.alliance ? state.alliance.members.length : 0;
   const pct = Math.round(controlledLand(state).pct * 100);
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
-  log(state, `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members ? `every group left standing is in the alliance (${members})` : "no group is left standing against you"}. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+  log(state, `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members} member${members === 1 ? "" : "s"} beside you (the groups outside do not count: conquest). ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
   return true;
 }
 
@@ -629,6 +630,7 @@ export function tickHour(state) {
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
+    claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
     ensureLeader(state);

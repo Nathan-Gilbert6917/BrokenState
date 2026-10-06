@@ -20,6 +20,7 @@ import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSu
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
 import { sourceEggs, addWormWater } from "./worm.js";
 import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.js";
+import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -51,6 +52,8 @@ export function describeOrder(state, o) {
     case "forage": return `Forage ${huntHours(o)}h`; // foraging.js
     case "wood": return `Cut wood ${huntHours(o)}h`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
+    case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
+    case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
   }
   return o.type;
 }
@@ -141,6 +144,8 @@ export function queueEstimate(state, p) {
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
     else if (o.type === "hunt" || o.type === "fish" || o.type === "forage" || o.type === "wood") hours = huntHours(o);
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
+    else if (o.type === "claim") hours = CLAIM.HOURS;
+    else if (o.type === "well") hours = CLAIM.WELL_HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
     else if (o.type === "nearby") {
@@ -255,7 +260,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -379,6 +384,21 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "snare", mode, hours });
       return mode === "set" ? `The team sets a line of snares (${hours}h).` : `The team checks the snares (${hours}h).`;
     }
+    case "claim": {
+      // A marker post on this tile (claims.js): it must border land you hold; the scrap is taken when the post is up.
+      const why = canClaim(state, partyTile(p));
+      if (why) return fail(`Claim this tile: ${why}`);
+      if (carried(p, "scrap") < CLAIM.SCRAP) return fail(`Claim this tile: needs ${CLAIM.SCRAP} scrap carried for the marker post (have ${Math.floor(carried(p, "scrap"))}).`);
+      startTask(state, p, { type: "claim", hours: CLAIM.HOURS });
+      return `The team paces out the tile and raises a marker post (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap).`;
+    }
+    case "well": {
+      // A well on a claim of yours next to one of your bases (claims.js): the yield by the ground, 24 hours of digging.
+      const why = wellProblem(state, p, partyTile(p));
+      if (why) return fail(`Dig a well: ${why}`);
+      startTask(state, p, { type: "well", hours: CLAIM.WELL_HOURS });
+      return `The team starts digging a well (${CLAIM.WELL_HOURS}h, ${CLAIM.WELL_SCRAP} scrap and ${CLAIM.WELL_PARTS} part when it is done).`;
+    }
     case "cross": {
       const from = partyTile(p);
       const plan = boatPlan(state, p, from, o.tile, o.mode);
@@ -474,6 +494,8 @@ function finishTask(state, p) {
   else if (t.type === "forage") text = forageSummary(state, p, t);
   else if (t.type === "wood") text = woodSummary(state, p, t);
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
+  else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
+  else if (t.type === "well") text = digWell(state, p, partyTile(p));
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
 }

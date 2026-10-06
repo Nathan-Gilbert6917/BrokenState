@@ -51,6 +51,7 @@ import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
+import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -899,6 +900,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
         },
       })),
       { label: "Set up camp (8h)", hint: "Stop and rest here for 8 hours: the hurt recover a little, nobody travels. Break camp early from the team panel.", order: true, resolve: (st) => startOrder(st, p, { type: "camp", hours: 8 }) },
+      ...(state.bases.length && !canClaim(state, tile) ? [{ label: `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, hint: "Raise a marker post: the tile counts as land the coalition holds (toward the 50% the alliance victory needs). Lost if a group or a hive settles on it or a hostile band camps there.", order: true, disabled: carried(p, "scrap") < CLAIM.SCRAP, resolve: (st) => startOrder(st, p, { type: "claim" }) }] : []),
       ...(crossingsFrom(state, tile).length ? [{ label: "Build a boat and cross…", hint: "This team stands on a shore with land straight across the water. The team panel shows each crossing with its cost (scrap, hours) and lets you gather materials.", uiAction: { type: "expedition", partyId: p.id }, resolve: () => "" }] : []),
       { label: "Move to another tile…", hint: "Pick any tile on the map. The team travels there and waits for orders again.", uiAction: { type: "move", partyId: p.id }, resolve: () => "Pick a destination on the map (Esc to cancel)." },
       { label: "Return home", hint: "Head back to the hub with everything carried.", order: true, resolve: (st) => (startReturn(st, p) ? "" : "The team heads home.") },
