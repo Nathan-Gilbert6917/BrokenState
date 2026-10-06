@@ -54,6 +54,7 @@ import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
+import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { activeCrawl } from "./sim/citycrawl.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
@@ -827,6 +828,8 @@ for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...RO
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
 for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
+for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).

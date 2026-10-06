@@ -105,6 +105,8 @@ export function deserializeState(save) {
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
+  // needs.js: saves from before the hunger and thirst gauges start everyone full.
+  for (const sv of state.survivors || []) { if (!Number.isFinite(sv.hunger)) sv.hunger = 100; if (!Number.isFinite(sv.thirst)) sv.thirst = 100; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   return state;
 }

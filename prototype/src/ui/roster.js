@@ -14,6 +14,8 @@ import { MISSIONS } from "../sim/parties.js";
 import * as Skills from "../sim/skills.js";
 import { roleOf, roleById, toManual } from "../sim/work.js";
 import { roleSelect, taskChip, applyRoleChoice } from "./work.js";
+import { gaugeMini } from "./needs.js";
+import { hungerOf, thirstOf } from "../sim/needs.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -90,6 +92,7 @@ export function rosterRows(state, ui) {
     if (k === "role") return r.w.key.startsWith("b") ? (ROLES[s.role] ? ROLES[s.role].name : s.role) : "~";
     if (k === "health") return r.k ? s.health : -1;
     if (k === "mood") return r.k ? s.mood : -1;
+    if (k === "needs") return r.k ? Math.min(hungerOf(s), thirstOf(s)) : -1; // the lower of hunger and thirst (sim/needs.js)
     if (k === "cond") return r.k ? conditionsOf(s).reduce((a, c) => a + 100 + (c.sev || 0), 0) : -1;
     if (k === "weapon") return s.gear && s.gear.weapon ? s.gear.weapon.name : "~";
     if (k === "armor") return armorPower(s);
@@ -131,6 +134,7 @@ export function rosterModal(state, ui) {
       <td>${w.key.startsWith("b") ? roleSel(s) : `<span class="muted"${tip("Roles are set at a base")}>${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)}</span>`}</td>
       <td>${k ? `<div class="ro-hp"><span class="${hp < 40 ? "danger" : hp < 70 ? "warn" : "good"}">${hp}</span><div class="bar"><i style="width:${hp}%;background:${hp < 40 ? "var(--danger)" : "var(--good)"}"></i></div></div>` : `<span class="muted"${tip("No contact: unknown until the team reports in")}>?</span>`}</td>
       <td>${k ? `${n0(s.mood)}${risk ? ` <span class="${risk.tone}"${tip(MOOD_RISK_TIP)}>${esc(risk.text)}</span>` : ""}` : `<span class="muted">?</span>`}</td>
+      <td>${k ? gaugeMini(s) : `<span class="muted">?</span>`}</td>
       <td>${k ? (conds.length ? conds.map((c) => `<span class="chip off">${esc(c)}</span>`).join("") : "") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
       ${skills}
       <td>${esc(weapon) || `<span class="muted">none</span>`}</td>
@@ -156,10 +160,10 @@ export function rosterModal(state, ui) {
     </div>
     <div class="basebody ro-wrap"><table class="t ro-table"><thead><tr>
       <th><input type="checkbox" data-action="ro-selall" ${allOn ? "checked" : ""}${tip("Tick or untick everyone shown")}></th>
-      ${th("name", "Name")}${th("where", "Where")}${th("role", "Role")}${th("health", "Health")}${th("mood", "Mood")}${th("cond", "Conditions")}
+      ${th("name", "Name")}${th("where", "Where")}${th("role", "Role")}${th("health", "Health")}${th("mood", "Mood")}${th("needs", "Needs", "Hunger, thirst and mood bars (sorted by the lower of hunger and thirst).")}${th("cond", "Conditions")}
       ${SKILLS.map((k) => th(`sk:${k}`, SHORT[k] || k, SKILL_NAMES[k] + ".")).join("")}
       ${th("weapon", "Weapon")}${th("armor", "Armor", "Body armor and the armor of all worn pieces.")}${th("traits", "Traits")}
-    </tr></thead><tbody>${body || `<tr><td colspan="${10 + SKILLS.length}" class="muted">Nobody matches the filters.</td></tr>`}</tbody></table></div>
+    </tr></thead><tbody>${body || `<tr><td colspan="${11 + SKILLS.length}" class="muted">Nobody matches the filters.</td></tr>`}</tbody></table></div>
   </div>`;
 }
 

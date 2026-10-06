@@ -36,6 +36,7 @@ import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
+import { needsAim } from "./needs.js";
 import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE } from "./throwables.js";
 import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM } from "./siege.js"; // ladders, the ram, rocks from the walls
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
@@ -1030,7 +1031,7 @@ function playerUnit(b, s) {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
-    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js)
+    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js)
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),

@@ -42,6 +42,7 @@ import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
+import { teamNeedsHour } from "./needs.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
@@ -687,48 +688,13 @@ export const onTheMove = (p) => (p.phase === "out" || p.phase === "back") && Arr
 export const rationsPerHour = (state, p, members = partyMembers(state, p)) => rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)) / 24; // a survey walks about (survey.js)
 export const waterPerHour = (state, p, members = partyMembers(state, p), hour = state.hour) => rationsPerHour(state, p, members) * thirstAt(state, hour);
 
+// Eating and drinking, person by person (needs.js): each member's hunger and thirst gauges fall by their own ration
+// rate (the load band on the move, load.js personRation) and they eat and drink from the team's inventory when low
+// (fresh game first, packed food, packed preserved, then what was found; the team's ration and share settings). An
+// empty gauge costs health (raw: armor and toughness do not help). p.noFood / p.noWater: orders.js (no camp healing)
+// and health.js (illness) read them.
 function consume(state, p, members) {
-  const n = rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)); // rations a day at this hour's rate (a survey walks about: survey.js)
-  const s = p.supplies;
-  // Fresh game in the cargo is eaten first: it is the food that spoils (hunting.js).
-  const game = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, n / 24) : 0;
-  s.food = (s.food || 0) - n / 24 + game;
-  s.water = (s.water || 0) - (n / 24) * thirstAt(state); // more in summer and on a hot day (weather.js)
-  // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
-  // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
-  // preserved food.
-  if (s.food < 0 && (s.preserved || 0) > 0) {
-    const take = Math.min(-s.food, s.preserved);
-    s.preserved -= take;
-    s.food += take;
-  }
-  for (const k of ["food", "water"]) {
-    if (s[k] < 0 && (p.cargo.supplies[k] || 0) > 0) {
-      const take = Math.min(-s[k], p.cargo.supplies[k]);
-      p.cargo.supplies[k] -= take;
-      s[k] += take;
-    }
-  }
-  if (s.food < 0 && (p.cargo.supplies.preserved || 0) > 0) {
-    const take = Math.min(-s.food, p.cargo.supplies.preserved);
-    p.cargo.supplies.preserved -= take;
-    s.food += take;
-  }
-  // Out of food or water this hour (orders.js: no camp healing while it lasts). Hunger and thirst are not
-  // softened by armor or toughness (world.js hurt, raw).
-  p.noFood = s.food < 0;
-  p.noWater = s.water < 0;
-  const name = teamName(state, p);
-  if (p.noFood) {
-    s.food = 0;
-    for (const m of members) hurt(state, m, 0.6, partyTile(p), "of starvation on the road", { raw: true });
-    if (state.hour % 24 === 0) log(state, `${name} is out of food.`, "danger");
-  }
-  if (p.noWater) {
-    s.water = 0;
-    for (const m of members) hurt(state, m, 1.0, partyTile(p), "of thirst on the road", { raw: true });
-    if (state.hour % 24 === 0) log(state, `${name} is out of water.`, "danger");
-  }
+  teamNeedsHour(state, p, members);
   if (!wipeIfEmpty(state, p) && partyMembers(state, p).length < members.length) shedOverload(state, p);
 }
 

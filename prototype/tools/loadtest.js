@@ -25,6 +25,15 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { crossingsFrom, boatPlan } from "../src/sim/crossing.js";
 import { seasonOfDay, thirstFactor, thirstAt, THIRST } from "../src/sim/weather.js";
 
+import { NEEDS } from "../src/sim/needs.js";
+
+// Water and food a team used, the gauges counted (needs.js): what it took from its supplies plus the thirst (hunger)
+// points its people lost, in rations. People drink when their gauge is low, so the supplies go in gulps.
+const gaugeSum = (st, p, key) => partyMembers(st, p).reduce((a, s) => a + (s[key] ?? 100), 0);
+const snapNeeds = (st, p) => ({ water: p.supplies.water, food: p.supplies.food, thirst: gaugeSum(st, p, "thirst"), hunger: gaugeSum(st, p, "hunger") });
+const usedWater = (st, p, s0) => (s0.water - p.supplies.water) + (s0.thirst - gaugeSum(st, p, "thirst")) / NEEDS.water;
+const usedFood = (st, p, s0) => (s0.food - p.supplies.food) + (s0.hunger - gaugeSum(st, p, "hunger")) / NEEDS.food;
+
 const SEED = Number(process.argv[2] || 42);
 const AP_DAYS = Number(process.argv[3] || 60);
 let pass = 0, fail = 0;
@@ -147,17 +156,17 @@ section("On foot: estimate = trip (hours and rations), Heavy is slower and hungr
   check(!res.error, `launch: ${res.error}`);
   const p = res.party;
   check(near(partySpeed(p), eH.pace.speed), `the team's pace is the planner's (${r1(partySpeed(p))})`);
-  const w0 = p.supplies.water;
+  const w0 = snapNeeds(st, p);
   const flags = {};
   const r = run(st, p, flags);
   if (!flags.event) {
     check(r.hours === eH.hoursOut, `the trip took the estimate (${eH.hoursOut}h → ${r.hours}h)`);
     const want = (eH.pace.eatMove * eH.hoursOut) / 24;
-    check(near(w0 - p.supplies.water, want, 1e-6), `water drunk on the way = the estimate's rate (${r1(w0 - p.supplies.water)} vs ${r1(want)})`);
+    check(near(usedWater(st, p, w0), want, 1e-6), `water drunk on the way (supplies and thirst) = the estimate's rate (${r1(usedWater(st, p, w0))} vs ${r1(want)})`);
   } else console.log("  (an event changed the trip: exact checks skipped)");
-  const w1 = p.supplies.water;
+  const w1 = snapNeeds(st, p);
   for (let i = 0; i < 6; i++) tickOnce(st, p, {});
-  check(near(w1 - p.supplies.water, (2 * 6) / 24), "resting: normal rations, whatever the load");
+  check(near(usedWater(st, p, w1), (2 * 6) / 24), "resting: normal rations, whatever the load");
   // Eating does not speed it up until it stops; it is weighed again when it waits.
   check(p.burden && p.phase === "waiting", "weighed again while it waits");
   // A newcomer mid-move does not make it faster until it stops.
@@ -338,12 +347,13 @@ section("Summer and heat: water at the day's thirst, the estimate = the trip");
     const res = launchExpedition(st, { memberIds: ids, dest, mission: "move", stance: "normal", supplies: sup });
     check(!res.error, `launch: ${res.error}`);
     const p = res.party;
-    const w0 = p.supplies.water, f0 = p.supplies.food;
+    const s0 = snapNeeds(st, p);
     const flags = {};
     const r = run(st, p, flags);
     if (flags.event) { console.log("  (an event changed the trip: next seed)"); continue; }
     check(r.hours === e.hoursOut, `the summer trip took the estimate (${e.hoursOut}h → ${r.hours}h)`);
-    check(near(w0 - p.supplies.water, ((e.pace.eatMove * e.hoursOut) / 24) * THIRST.summer, 1e-6) && near(w0 - p.supplies.water, (f0 - p.supplies.food) * THIRST.summer, 1e-6), `water drunk on the way = the rations × ${THIRST.summer} (${r1(w0 - p.supplies.water)} water for ${r1(f0 - p.supplies.food)} food)`);
+    const dw = usedWater(st, p, s0), df = usedFood(st, p, s0);
+    check(near(dw, ((e.pace.eatMove * e.hoursOut) / 24) * THIRST.summer, 1e-6) && near(dw, df * THIRST.summer, 1e-6), `water drunk on the way = the rations × ${THIRST.summer} (${r1(dw)} water for ${r1(df)} food, the gauges counted)`);
     exact = true;
     break;
   }
@@ -362,10 +372,11 @@ section("Summer and heat: water at the day's thirst, the estimate = the trip");
   const p2 = res2.party;
   let drunk = 0, expect = 0, same = true;
   for (let i = 0; i < 48 && p2.phase !== "waiting"; i++) {
-    const before = p2.supplies.water, want = waterPerHour(st2, p2, partyMembers(st2, p2), st2.hour + 1);
+    const before = snapNeeds(st2, p2), want = waterPerHour(st2, p2, partyMembers(st2, p2), st2.hour + 1);
     tickOnce(st2, p2, {});
-    expect += want; drunk += before - p2.supplies.water;
-    if (!near(before - p2.supplies.water, want, 1e-9)) same = false;
+    const used = usedWater(st2, p2, before); // the gauges counted (needs.js)
+    expect += want; drunk += used;
+    if (!near(used, want, 1e-9)) same = false;
     if (thirstAt(st2) >= THIRST.heat && onTheMove(p2)) check(near(waterPerHour(st2, p2), (rationsFor(partyPace(st2, p2), 1, 0, 0, 2) * thirstAt(st2)), 1e-9), "a hot hour on the road: the load's rate × the heat's thirst");
   }
   check(same && near(drunk, expect, 1e-6), `every hour drunk at that hour's thirst (${r1(drunk)})`);

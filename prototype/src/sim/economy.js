@@ -22,6 +22,7 @@ import { hasPerk } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
+import { heatDaily } from "./needs.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 
 export const ROLES = {
@@ -267,6 +268,7 @@ export function summerWarningDaily(state) {
 // were (at least 35%). Like hunger, armor does not help and nobody heals; it kills faster than hunger.
 export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
 function thirst(state, base, mouths, short) {
+  base.waterFed = Math.round((1 - short) * 100) / 100; // needs.js: the share of a day's water everyone got (thirst gauges)
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
@@ -414,6 +416,8 @@ function baseDaily(state, base) {
   }
   // Healing: passive healing runs hourly (medical.js); here the daily meds use and infected wounds.
   medicalDaily(state, base);
+  // Heating: below 0°C fuel per head (upkeep.js heatUse); without it everyone there is cold (needs.js heatDaily).
+  heatDaily(state, base);
   // Beds (crowding scales with how far over capacity), the leader's lift (capped below crowding), warnings before
   // desertion and desertion itself (deserters keep their gear and may take supplies; checkGameOver): morale.js.
   baseMoraleDaily(state, base, people, mouths);
