@@ -18,15 +18,6 @@
         "process.env.PORT=\"5181\"; require(\"C:/Dev/BrokenState/.claude/worktrees/bridges/prototype/server.cjs\")"
       ],
       "port": 5181
-    },
-    {
-      "name": "toiletries",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "-e",
-        "process.env.PORT=\"5183\"; require(\"C:/Dev/BrokenState/.claude/worktrees/toiletries/prototype/server.cjs\")"
-      ],
-      "port": 5183
     }
   ]
 }
