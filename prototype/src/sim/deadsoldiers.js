@@ -18,6 +18,7 @@
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { mergeMix } from "./zombietypes.js";
+import { swarmArmor } from "./carriers.js";
 
 export const MILDEAD = {
   // × damage by weapon key (combat.js WEAPONS); other: anything not listed of that kind (shot / melee).
@@ -74,6 +75,7 @@ const round = (v) => Math.round(v * 1000) / 1000;
 // × the damage a hit does to one of them. hit: { how: "shot" | "melee" | "fire" | "blast", crit, sneak }; a: the
 // attacker (its weapon). No hit info (traps, a spike pit): MILDEAD trap.
 export function armorVs(t, a, hit) {
+  if (t.ztype === "swarm") return swarmArmor(hit); // carriers.js: a worm swarm (most bullets go through it)
   const A = t.ztype ? MILDEAD.ARMOR[t.ztype] : null;
   if (!A) return t.armor;
   if (!hit) return A.trap;

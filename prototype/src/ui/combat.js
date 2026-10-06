@@ -25,9 +25,10 @@ import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
+import { crushable, stirring } from "../sim/carriers.js"; // the Carrier: bodies that stir, the risen
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -432,7 +433,7 @@ export function combatKey(state, e) {
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
   if (e.code === "KeyS" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; } // a quick rummage (sim/search.js)
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace" };
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -556,6 +557,13 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "drop") return void act(state, { type: "drop", unit: u.id, target: Number(d.id) }); // rocks from the walls (sim/siege.js)
+  // Crush skull (sim/carriers.js): a stirring body next to the unit first.
+  if (v === "crush") {
+    const near = crushable(b, u);
+    const c = near.find(stirring) || near[0];
+    if (!c) { cui.msg = "Crush skull needs a body right next to you, while the worm is about (a Carrier, a worm swarm or a stirring body)."; return; }
+    return void act(state, { type: "crush", unit: u.id, target: c.id });
+  }
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
   if (v === "peek" || v === "close" || v === "brace") {
     const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
@@ -619,7 +627,7 @@ export function renderCombatPanel(state) {
 
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
-    const status = p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
+    const status = p.roseAs != null ? "Turned: one of the dead" : stirring(p) ? "Dead, stirring: crush the skull (U)" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
       [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !active(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = active(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
@@ -648,6 +656,7 @@ export function renderCombatPanel(state) {
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
+      ${crushButton(b, u, btn)}
       ${stealthButtons(state, b, u, btn)}
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
@@ -776,6 +785,16 @@ function chooseHtml(b) {
   const list = b.raid.choose || [];
   return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
     <div class="cbactions" style="margin-top:0.35rem">${list.map((o) => `<button data-action="cb-act" data-v="building" data-k="${esc(o.id)}" data-tip="${esc(`${o.name}${o.size ? ` (${o.size}, ${o.rooms} rooms)` : ""}. ${o.hint}`)}">${esc(o.name)}${o.size ? ` <span class="muted">${o.size}</span>` : ""}</button>`).join("")}</div></div>`;
+}
+
+// ---------- the worm (sim/carriers.js) ----------
+// Crush skull: shown while a Carrier, a worm swarm or a stirring body is on the map and a body is next to the unit.
+function crushButton(b, u, btn) {
+  const near = crushable(b, u);
+  if (!near.length) return "";
+  const c = near.find(stirring) || near[0];
+  const tip = `1 action, silent: crush the skull of ${c.side === "player" ? c.name : `${c.name}'s body`} next to ${u.name.split(" ")[0]}, so the worm cannot raise it.${stirring(c) ? " It is stirring: it gets up at the end of this turn otherwise." : " Near a Carrier, or where the worm swarm kills, a body gets up after a turn."} Fire does the same.`;
+  return btn("crush", "Crush skull", tip, u.ap > 0, "U");
 }
 
 // ---------- the stealth kit (sim/stealth.js) ----------
@@ -1010,7 +1029,9 @@ function previewHtml(b) {
       return ` <span class="${m >= 0.8 ? "good" : m >= 0.55 ? "warn" : "danger"}">Armour: ${Math.round(m * 100)}% of ${esc(u.weaponName)}'s damage gets through${stabsGap(u, t) ? ` (a blade from behind or unseen: all of it)` : ""}; critical hits always do.</span>`;
     })() : "";
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""}${ar} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
+    const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
+    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
   if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
@@ -1021,6 +1042,9 @@ function previewHtml(b) {
     const hh = heightAt(b, t.x, t.y);
     return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
   }
+  // A body the worm is in (sim/carriers.js): it gets up after this turn.
+  const wormy = v.vis[h.y * W + h.x] ? b.units.find((o) => stirring(o) && o.x === h.x && o.y === h.y) : null;
+  if (wormy) return `<b>${esc(wormy.side === "player" ? wormy.name : `${wormy.name}'s body`)}</b> · <span class="danger">stirring: the worm is in it</span><br><span class="muted">It gets up as one of the dead at the end of this turn, unless it burns or one of yours next to it crushes the skull (U, 1 action).</span>`;
   // A last-seen ghost (sim/combat.js enemyGhosts): where an enemy was when your people last saw it.
   const ghost = (v.ghosts || []).find((g) => g.x === h.x && g.y === h.y && !v.vis[h.y * W + h.x]);
   if (ghost) return `<b>${esc(ghost.name)}</b> <span class="muted">last seen here on turn ${ghost.turn}. Nobody sees this tile now: it may have moved.</span>`;
@@ -1979,6 +2003,16 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   if (t.dead) {
     // The body lying where it fell (ui/downsprites.js: its own picture per kind; pockets out once searched).
     drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.06, [cs, 0], [0, cs], { facing, scale: downScale(t), alpha: 0.92 });
+    if (stirring(t)) {
+      // The worm is in it (sim/carriers.js): a pale "!" until it gets up, burns or its skull is crushed.
+      ctx.font = `800 ${Math.round(cs * 0.3)}px Segoe UI, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.8)";
+      ctx.strokeText("!", cx, cy - cs * 0.12);
+      ctx.fillStyle = ZRING.carrier;
+      ctx.fillText("!", cx, cy - cs * 0.12);
+    }
     if (t.side === "player") {
       ctx.strokeStyle = "#8fc1ff";
       ctx.lineWidth = 2;

@@ -335,7 +335,8 @@ export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched =
     });
     p.rect(19, CY - 5, 21, CY - 4, "#2e3137"); p.rect(19, CY + 2, 21, CY + 3, "#2e3137"); // shin guards
     wounds(p, rng, z.gore ? 2 : 0, 7, 22);
-  } else return paintDownedZombie("walker", seed, look, searched);
+  } else if (kind === "carrier") return paintDownedZombie("bloated", seed, look, searched); // burst open, the worms gone (sim/carriers.js)
+  else return paintDownedZombie("walker", seed, look, searched);
   wounds(p, rng, 2, 7, 20);
   return p;
 }

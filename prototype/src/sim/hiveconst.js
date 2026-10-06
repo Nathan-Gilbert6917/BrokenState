@@ -36,7 +36,8 @@ export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother" };
 // taking days to grow. Which ones it may grow is set by its tier: tier t is open once the game is past
 // TIER_DAY[t] (stretched by up to JITTER per hive, so the hives do not all evolve on the same day) and the hive
 // itself is TIER_AGE[t] days old (a young hive starts at the bottom). The years are the game's 112-day years
-// (eras.js). With the defaults: pits and a brood chamber from the start, runners and feeding grounds from year 2
+// (eras.js). With the defaults: pits, a brood chamber and the worm cyst (Carriers, the first special dead a hive
+// breeds: CARRIER below) from the start, runners and feeding grounds from year 2
 // (the early game), brutes and spitters from year 5–6 (the mid game), screamers, crawlers and the Wallbreaker den
 // from year 10–13 (the late game: no Wallbreakers before), the mutation vat (elite dead) from year 14. Every number
 // the tree uses is here.
@@ -65,6 +66,30 @@ export const TECH = {
   ELITE_HP: 1.3, ELITE_DMG: 1.2, ELITE_WEIGHT: 1.25, // a mutation vat's special dead
 };
 
+// The Carrier (carriers.js): one of the dead so full of the worm that it is swollen with it. Every number it and its
+// worm swarm use is here (their battle stats in ZTYPES carrier / swarm).
+// - A human body (anyone killed: your people, raiders, soldiers, neutrals; never one of the dead) within RANGE tiles
+//   of a Carrier (diagonals count as 1) stirs: the worms get into it. It gets up at the end of your next turn as one
+//   of the dead, unless it burns first (a fire on its tile) or one of yours next to it crushes the skull (1 action).
+//   A Carrier walks to a body within SEEK tiles when none of the living is next to it.
+// - The risen keep what the person wore: worn armour still takes its share of every hit; they use no guns. Killed,
+//   the body has the person's things to take off; your own fallen get up as "Dana (turned)".
+// - Killed, a Carrier bursts: a worm swarm comes out where it fell (quick, weak, most bullets go through it; fire and
+//   blows are the answer). Anyone it kills is full of the worm and gets up the same way (one of yours it brings down
+//   rises if they bleed out). With no host to go to it sinks into the ground after SWARM_TURNS turns.
+// - The worm cyst (GROWTHS.cyst) costs CYST_COST and grows in CYST_DAYS days. It is tier 0, so Carriers are the
+//   first special dead a hive breeds: a young hive grows its first biomass pit, then the cyst (about the second
+//   month); runners only come with tier 1 (year 2).
+export const CARRIER = {
+  RANGE: 2,        // a body this close (Chebyshev) to a Carrier stirs
+  SEEK: 8,         // a Carrier walks to a body this close when none of the living is next to it
+  RISE_AP: 1,      // the risen get up with this many actions on their first turn
+  SWARM_TURNS: 6,  // the swarm sinks into the ground after this many enemy turns
+  SHOT: 0.35,      // × the damage a bullet or bolt does to the swarm (most go through)
+  MELEE: 0.9, BASH: 1.25, BLAST: 1.5, // × a blade's, a blow's (a club, a gun butt, a boot), a blast's
+  CYST_COST: 18, CYST_DAYS: 15,
+};
+
 // The growths. tier: the tier it needs; cost / days: resources and days to grow; max: per hive; unlocks: the kind of
 // dead it lets the hive breed (ZTYPES); income: + resources a day; incomeMult: × the hive's income; guard / out:
 // + its guard's minimum and + hordes out at once; boss: Wallbreakers need one (HIVE.BOSS_DEN); elite: the special
@@ -74,6 +99,9 @@ export const GROWTHS = {
               desc: "A pit of rotting flesh the hive feeds on: +1 resource a day." },
   brood:    { name: "Brood chamber",   tier: 0, cost: 20, days: 15, max: 1, guard: 40, out: 1, outTier: 2, danger: 2,
               desc: "Swollen sacs where the dead are kept: the hive's guard is 40 bigger, and once the hive has evolved to tier 2 one more of its hordes can be out." },
+  // The first special dead a hive breeds (CARRIER above): tier 0, but a young hive grows its first pit before it.
+  cyst:     { name: "Worm cyst",       tier: 0, cost: CARRIER.CYST_COST, days: CARRIER.CYST_DAYS, max: 1, unlocks: "carrier", danger: 2,
+              desc: "A swollen bladder of the worm the dead are fed into: the hive's hordes bring Carriers, bloated dead that raise the human dead around them and burst into a worm swarm when killed." },
   feeding:  { name: "Feeding grounds", tier: 1, cost: 25, days: 20, max: 1, incomeMult: 1.5, danger: 1.5,
               desc: "A field of bones and offal: the hive's income is half again as much." },
   warren:   { name: "Runner warren",   tier: 1, cost: 25, days: 20, max: 1, unlocks: "runner", danger: 2.5,
@@ -128,6 +156,14 @@ export const ZTYPES = {
   crawler:  { name: "Crawler",  short: "C", hp: 0.8, dmg: 1.2, aim: 10, mob: 3, armor: 1, share: 0.06, wall: 0.5, weight: 1.3, reveal: 2.5, ambush: 1.6, slip: 0.6, senses: ["heat"],
               special: "Low in the grass: unseen until it is within 2 tiles, in light or has struck, and its first bite hits hard. At the walls some slip past and attack inside. Follows heat.",
               counter: "Watchtowers and floodlights (they see them coming), flares, keeping your people together. Hand warmers and heat packs pull them out of hiding." },
+  // The Carrier and its worm swarm (CARRIER above, carriers.js). No growth breeds the swarm (share 0): it only comes
+  // out of a Carrier. swarm armor 1: what a hit does to it is by the kind of hit (carriers.js swarmArmor).
+  carrier:  { name: "Carrier",  short: "Ca", hp: 1.5, dmg: 0.8, aim: 0, mob: 2.5, armor: 1, share: 0.06, wall: 1.1, weight: 1.5, priority: 2, burn: 1.3,
+              special: `Bloated with the worm and slow. A human body within ${CARRIER.RANGE} tiles of it stirs and gets up as one of the dead at the end of your next turn, wearing what the person wore. Killed, it bursts into a worm swarm. It never raises the dead.`,
+              counter: "Shoot it before it reaches the bodies, and not next to your people (the swarm). Burn a stirring body or crush its skull (U) from next to it." },
+  swarm:    { name: "Worm swarm", short: "W", hp: 0.7, dmg: 0.6, aim: 15, mob: 4, armor: 1, share: 0, wall: 1, weight: 1, burn: 2.5,
+              special: `Worms from a burst Carrier: quick and weak, but most bullets go through it (a third of the damage). Whoever it kills gets up as one of the dead. It sinks into the ground after ${CARRIER.SWARM_TURNS} turns.`,
+              counter: "Fire, a blast, or clubs and boots (blows hurt it more than blades); or keep away until it sinks." },
   shepherd: { name: "Shepherd", short: "Sh", hp: 1.6, dmg: 0.8, aim: 0, mob: 3, armor: 0.85, share: 0.02, wall: 1.6, weight: 2.6, priority: 3, keep: SHEPHERD.KEEP, senses: [], aura: SHEPHERD.AURA,
               special: `Stays behind its pack and steps around fire. The dead within ${SHEPHERD.AURA} tiles of it ignore decoys and fire, go for the living and the breaches, and keep together.`,
               counter: "Kill it first, at range: the aura ends with it. Until then decoys and fire are wasted on its pack." },
