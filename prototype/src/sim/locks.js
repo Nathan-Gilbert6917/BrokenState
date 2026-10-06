@@ -225,19 +225,21 @@ const WALK = { has: (k) => !!(CELL[k] && CELL[k].walk) };
 
 // ---------- what is locked next to a unit ----------
 // Targets: { ref: "c<id>" | "d<id>", x, y, lock, name, box?, door? }.
+// Containers and doors carry f (their storey, buildingmaps.js): only the active floor's are next to anyone on it.
+const onFloor = (b, o) => (o.f || 0) === (b.floor || 0);
 export function lockedNear(b, u) {
   if (!b.raid) return [];
-  const near = (x, y) => Math.max(Math.abs(u.x - x), Math.abs(u.y - y)) <= 1;
+  const near = (o) => (o.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - o.x), Math.abs(u.y - o.y)) <= 1;
   const out = [];
-  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && near(c.x, c.y)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
-  for (const d of b.raid.doors || []) if (!d.lock.open && near(d.x, d.y)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
+  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && near(c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
+  for (const d of b.raid.doors || []) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
   return out;
 }
 export function lockAt(b, x, y) {
   if (!b.raid) return null;
-  const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y);
+  const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y && onFloor(b, q));
   if (d) return { ref: `d${d.id}`, x, y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d };
-  const c = b.raid.containers.find((q) => q.x === x && q.y === y && q.lock);
+  const c = b.raid.containers.find((q) => q.x === x && q.y === y && q.lock && onFloor(b, q));
   return c ? { ref: `c${c.id}`, x, y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null;
 }
 const targetOf = (b, ref) => {
@@ -291,11 +293,12 @@ export function openLock(state, b, u, act, H) {
       // An opened door: open floor on the street map; an open door in a building (buildingmaps.js, no longer two
       // storeys of sight-blocking).
       const openCell = (dc) => { dc.k = R.interior ? "odoor" : "open"; dc.f = "floor"; delete dc.t; };
-      openCell(b.cells[t.y * b.w + t.x]);
+      const cellsOf = (d) => (b.floors && b.floors[d.f || 0] ? b.floors[d.f || 0].cells : b.cells); // the door's own storey (buildingmaps.js)
+      openCell(cellsOf(t.door)[t.y * b.w + t.x]);
       b.losCache.fill(0);
       const area = t.door.area != null ? R.areas[t.door.area] : null;
       // Every door of the room opens with the same key; a forced door is just broken.
-      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(b.cells[d.y * b.w + d.x]); }
+      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
       else H.say(b, "The way out is open.", "info");
     }
@@ -389,7 +392,7 @@ export function lockTargets(b) {
   const out = [];
   const W = b.w, H = b.h;
   for (const d of (b.raid && b.raid.doors) || []) {
-    if (d.lock.open || d.botSkip) continue;
+    if (d.lock.open || d.botSkip || !onFloor(b, d)) continue; // this storey's doors
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const x = d.x + dx, y = d.y + dy;
       if (x >= 0 && y >= 0 && x < W && y < H && WALK.has(b.cells[y * W + x].k)) out.push([x, y]);

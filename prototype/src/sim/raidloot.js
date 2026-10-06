@@ -522,7 +522,7 @@ export function dropHaul(b, u) {
     if (any) { old.searched = false; old.partial = true; }
     return old;
   }
-  const pile = { id: b.nextId++, x: u.x, y: u.y, kind: "body", drop: true, area: null, searched: !any, partial: any, label: `${u.name}'s body`, uid: u.id, contents: { sup, gear } };
+  const pile = { id: b.nextId++, x: u.x, y: u.y, f: u.f || 0, kind: "body", drop: true, area: null, searched: !any, partial: any, label: `${u.name}'s body`, uid: u.id, contents: { sup, gear } };
   b.raid.containers.push(pile);
   return pile;
 }

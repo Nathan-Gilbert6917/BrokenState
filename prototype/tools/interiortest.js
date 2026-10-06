@@ -30,7 +30,8 @@ registerCombatHandler("itest", () => {});
 
 // Walking over a map: 4-way steps; heights only change on stairs or a ladder (as combat.js climbCost); locked doors
 // count as passable when lockedOk.
-function walkFrom(m, sx, sy, lockedOk = true) {
+// cells: a grid (the ground map's, or an upper floor's: m.floors[f].cells).
+function walkFrom(m, sx, sy, lockedOk = true, cells = m.cells) {
   const W = m.w, H = m.h, seen = new Uint8Array(W * H);
   const pass = (c) => CELL[c.k].walk || (lockedOk && c.k === "door");
   const hOf = (c) => c.h ?? CELL[c.k].h ?? 0;
@@ -38,11 +39,11 @@ function walkFrom(m, sx, sy, lockedOk = true) {
   const q = [sy * W + sx];
   seen[q[0]] = 1;
   while (q.length) {
-    const i = q.pop(), x = i % W, y = (i / W) | 0, c = m.cells[i];
+    const i = q.pop(), x = i % W, y = (i / W) | 0, c = cells[i];
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      const j = ny * W + nx, d = m.cells[j];
+      const j = ny * W + nx, d = cells[j];
       if (seen[j] || !pass(d)) continue;
       if (hOf(c) !== hOf(d) && !climb(c) && !climb(d) && c.k !== "door" && d.k !== "door") continue;
       seen[j] = 1; q.push(j);
@@ -72,15 +73,20 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");
       const reach = walkFrom(m, start[0], start[1], true);
-      // Rooms reachable from the front.
+      // Storeys (multi-storey-crawl.md): every floor's grid, its reach from the first stairwell (storeytest.js goes further).
+      const floors = m.floors || [{ cells: m.cells }];
+      const gridOf = (f) => floors[f || 0].cells;
+      const reachOf = floors.map((F, f) => (f === 0 ? reach : walkFrom(m, m.stairs[0][0], m.stairs[0][1], true, F.cells)));
+      // Rooms reachable from the front (upstairs: from the stairwell).
       for (const r of m.rooms.filter((a) => !a.outdoor)) {
         let any = false;
-        for (let y = r.y0 + 1; y < r.y0 + r.h - 1 && !any; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (reach[y * W + x]) { any = true; break; }
-        if (!any) errs.push(`room ${r.name} unreachable`);
+        const rf = reachOf[r.f || 0];
+        for (let y = r.y0 + 1; y < r.y0 + r.h - 1 && !any; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (rf[y * W + x]) { any = true; break; }
+        if (!any) errs.push(`room ${r.name} (floor ${r.f || 0}) unreachable`);
       }
-      // Every walkable cell reachable (no pockets).
+      // Every walkable cell reachable (no pockets), on every floor.
       let pockets = 0;
-      for (let i = 0; i < W * H; i++) if ((CELL[m.cells[i].k].walk || m.cells[i].k === "door") && !reach[i]) pockets++;
+      floors.forEach((F, f) => { for (let i = 0; i < W * H; i++) if ((CELL[F.cells[i].k].walk || F.cells[i].k === "door") && !reachOf[f][i]) pockets++; });
       if (pockets) errs.push(`${pockets} walkable cells cut off`);
       // Zones on the edge, reachable, not overlapping; the front zone at the bottom edge.
       if (z0.y0 + z0.h !== H) errs.push("the front zone is not on the front edge");
@@ -98,28 +104,33 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       exitsBy[key].push(m.exits.filter((e) => e.zone >= 0).map((e) => `${e.side}${e.locked ? "(L)" : ""}`).join("+") || "front only");
       // Containers: on a box cell, with a walkable cell next to them reached from the front (locked doors passable).
       for (const c of m.containers) {
-        const k = m.cells[c.y * W + c.x].k;
+        const grid = gridOf(c.f), rf = reachOf[c.f || 0];
+        const k = grid[c.y * W + c.x].k;
         if (CELL[k].walk) errs.push(`container ${c.label} on walkable ${k}`);
-        const near = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => { const x = c.x + dx, y = c.y + dy; return x >= 0 && y >= 0 && x < W && y < H && CELL[m.cells[y * W + x].k].walk && reach[y * W + x]; });
+        const near = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => { const x = c.x + dx, y = c.y + dy; return x >= 0 && y >= 0 && x < W && y < H && CELL[grid[y * W + x].k].walk && rf[y * W + x]; });
         if (!near) errs.push(`container ${c.label} unreachable`);
         const area = m.rooms[c.area];
-        if (!area || !AREAS[area.type]) errs.push(`container ${c.label} in an area with no loot type`);
+        if (!area || area.id !== c.area || !AREAS[area.type]) errs.push(`container ${c.label} in an area with no loot type`);
+        if ((area && (area.f || 0)) !== (c.f || 0)) errs.push(`container ${c.label} on floor ${c.f || 0}, its room on ${area && area.f}`);
       }
       // Locks: every locked room's doors are locked door cells, its containers flagged.
       for (const r of m.rooms.filter((a) => a.locked)) {
         locksBy[key].rooms++;
+        const grid = gridOf(r.f);
         const ds = m.lockedDoors.filter((d) => d.area === r.id);
-        if (!ds.length || !ds.every((d) => m.cells[d.y * W + d.x].k === "door")) errs.push(`locked room ${r.name} without locked doors`);
+        if (!ds.length || !ds.every((d) => (d.f || 0) === (r.f || 0) && grid[d.y * W + d.x].k === "door")) errs.push(`locked room ${r.name} without locked doors`);
         if (m.containers.some((c) => c.area === r.id && !c.room)) errs.push(`a container in locked ${r.name} not flagged`);
-        // With its doors shut, nothing inside is reachable from the front.
-        const shut = walkFrom(m, start[0], start[1], false);
+        // With its doors shut, nothing inside is reachable from the front (upstairs: from the stairwell).
+        const shut = r.f ? walkFrom(m, m.stairs[0][0], m.stairs[0][1], false, grid) : walkFrom(m, start[0], start[1], false);
         for (let y = r.y0 + 1; y < r.y0 + r.h - 1; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (shut[y * W + x]) { errs.push(`locked ${r.name} reachable with its doors shut`); y = 1e9; break; }
       }
       locksBy[key].boxes += m.containers.filter((c) => c.lockKind).length;
       locksBy[key].exits += m.exits.filter((e) => e.locked).length;
-      // Upper floors: walls two storeys tall, loft cells raised.
-      if (m.plan.tall && !m.cells.some((c) => c.k === "loft" && c.h === 1)) errs.push("tall but no upper floor");
+      // A raised loft (a barn's hayloft): walls two storeys tall, loft cells raised, a ladder or stairs up to it. Real
+      // storeys (m.floors): the ground floor's walls two storeys tall, a stairwell on every floor.
+      if (m.plan.tall && !(m.storeys > 1) && !m.cells.some((c) => c.k === "loft" && c.h === 1)) errs.push("tall but no upper floor");
       if (m.rooms.some((a) => a.up) && !m.cells.some((c) => c.k === "stairs" || c.k === "ladder")) errs.push("an upper floor with no stairs");
+      if (m.storeys > 1 && !floors.every((F) => m.stairs.every(([x, y]) => F.cells[y * W + x].k === "stairs"))) errs.push("a floor without the stairwell");
       if (errs.length) { bad++; if (bad <= 12) console.log(`  ${key} seed ${s}: ${errs.slice(0, 4).join("; ")}`); }
     }
   }
