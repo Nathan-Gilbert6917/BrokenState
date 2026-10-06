@@ -71,10 +71,13 @@ export function serializeState(state, { dropCards = false } = {}) {
   const why = saveBlocker(state);
   if (why && !(dropCards && state && state.cards && state.cards.length)) throw new SaveError(why, "card", ".cards");
   const root = dropCards && state.cards.length ? { ...state, cards: [] } : state;
+  // A battle's line-of-sight cache is only a cache (combat.js makeLosCache: up to tens of MB on a big yard or a fort map):
+  // left out of the save and made fresh on load, the floors' too (the cells and reach they alias stay shared).
+  const lean = root.combat && root.combat.losCache ? { ...root, combat: { ...root.combat, losCache: null, floors: Array.isArray(root.combat.floors) ? root.combat.floors.map((F) => ({ ...F, losCache: null })) : root.combat.floors } } : root;
   return {
     format: SAVE_FORMAT, v: SAVE_VERSION, game: GAME_VERSION,
     nextId: peekNextId(), meta: saveMeta(state),
-    state: encodeGraph(root),
+    state: encodeGraph(lean),
   };
 }
 
@@ -140,7 +143,7 @@ export function deserializeState(save) {
   // them all the same (a save edited by hand, an older encoder), and the "away" flags follow the active floor.
   const b = state.combat;
   // A big yard's sparse line-of-sight cache (combat.js SparseLos) comes back as a plain Map: a fresh one (it is only a cache).
-  if (b && b.losCache instanceof Map && !(b.losCache instanceof SparseLos)) b.losCache = makeLosCache(b.w, b.h);
+  if (b && (!b.losCache || (b.losCache instanceof Map && !(b.losCache instanceof SparseLos)))) b.losCache = makeLosCache(b.w, b.h);
   for (const F of (b && b.floors) || []) if (F.losCache instanceof Map && !(F.losCache instanceof SparseLos)) F.losCache = null;
   if (b && Array.isArray(b.floors) && b.floors.length) {
     const F = b.floors[b.floor || 0] || b.floors[0];
