@@ -31,9 +31,10 @@
 //       The first answer gives their group's bases (and puts the group on your map), its people and stock, every
 //       party it has out (raids included) and the hives near it, as knowledge snapshots; later answers the parties
 //       and hives again. Each questioning sours them (−6).
-//     ask to join (every 7 days; ASK): (opinion − 25) / 75 × who they were (zealots 0.5, soldiers 0.8, a loner 1.2)
-//       + 1% a point of the leader's Leadership and of the best talker's Speech + rations + labour + (their mood − 30)
-//       / 200, 2–95%. Yes: they join (the recruit card); no: opinion −8.
+//     ask to join (every 7 days; ASK): (opinion − 30) / 90 × who they were (zealots 0.5, soldiers 0.8, a loner 1.2)
+//       + 0.5% a point of the leader's Leadership and of the best talker's Speech + rations + labour + (their mood −
+//       30) / 200, 2–95% (the bonuses only once their opinion is above 30). Yes: they join (the recruit card); no:
+//       opinion −8.
 //     hold for ransom: their group (alive) is asked for goods worth 15 + 4 × their power; it answers in 2–4 days:
 //       pays (40% + goodwill / 200, −15% for aggressive groups, 10–90%; only what it can spare), goodwill −4 and the
 //       prisoner walks home; or refuses: goodwill −3 and a rescue raid is twice as likely for 10 days.
@@ -67,7 +68,7 @@ import { raidForce } from "./conflicts.js";
 import { thirstAt } from "./weather.js";
 import { coldFactor, foodUse } from "./upkeep.js";
 import { eatFromStore, foodStore } from "./storage.js";
-import { underAttack } from "./buildings.js";
+import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 
 export const PRISON = {
@@ -83,7 +84,7 @@ export const PRISON = {
   TRADE_BACK: 10, RELEASE: 4, HAND_OVER: 3,
   RECRUIT: { base: 1, speech: 0.04, lead: 0.03, hungry: -2, holdDrift: 0.2, holdCap: 25, kind: { zealots: 0.35, soldiers: 0.6, none: 1.2 } },
   // Asking a prisoner to join now: by their opinion of you, who they were, Leadership and Speech, rations, labour, mood.
-  ASK: { from: 25, span: 75, kind: { zealots: 0.5, soldiers: 0.8, none: 1.2 }, lead: 0.01, speech: 0.01, mood: 1 / 200, min: 0.02, max: 0.95, fail: -8, gap: 7 },
+  ASK: { from: 30, span: 90, kind: { zealots: 0.5, soldiers: 0.8, none: 1.2 }, lead: 0.005, speech: 0.005, mood: 1 / 200, min: 0.02, max: 0.95, fail: -8, gap: 7 },
   EXECUTE: { mood: -6, hardened: -2, soft: -8, goodwill: -20, others: -4, infamy: 3, fearDays: 14, fear: 0.5, fearMood: -10 },
   RESCUE: { chance: 0.012, aggressive: 1.5, angry: 2, friendly: 0.3, minPop: 6, range: 25, hours: 10, manned: 1.3, steal: 0.1 },
   // Rations at a base (food a day = FOOD × share × the cold). heal: health a day (toward healTo when positive; above
@@ -150,11 +151,20 @@ const hasTrait = (s, list) => (s.traits || []).some((t) => list.includes(t));
 
 // What a prisoner does at work, as a share of a survivor: 0.5–0.7 by the task's skill, × rations × health. 0: idle,
 // too weak, not at a base, or the base is under attack (everyone is locked in).
+// The tasks a base has work for. A Shelter (tier 0, buildings.js SHELTER) has a smaller set: no buildings to clean and
+// mend, and water only from a river or lake beside it (no well yet).
+export function tasksAt(state, base) {
+  const all = Object.keys(TASKS);
+  if (!isShelter(base)) return all;
+  const byWater = state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
+  return all.filter((k) => k !== "upkeep" && (k !== "water" || byWater));
+}
 export function labourOutput(state, p, base = null) {
   const task = taskOf(p);
   if (task === "idle" || !p.at || p.at.kind !== "base") return 0;
   const b = base || baseById(state, p.at.baseId);
   if (!b || health(p) < PRISON.LABOUR.minHealth || underAttack(state, b)) return 0;
+  if (isShelter(b) && !tasksAt(state, b).includes(task)) return 0; // nothing of that kind to do at a shelter
   const L = PRISON.LABOUR, T = TASKS[task];
   const eff = T.skill && p.s ? clamp(L.min + skill(p.s, T.skill) * L.perSkill, L.min, L.max) : (L.min + L.max) / 2;
   return Math.round(eff * rationDef(p).labour * clamp(health(p) / L.healthFull, 0.3, 1) * 1000) / 1000;
@@ -216,15 +226,17 @@ export function setAllRations(state, baseId, ration) {
 export function setTask(state, id, task) {
   const p = byId(state, id);
   if (!p || !TASKS[task]) return "";
+  const base = heldAt(state, p);
+  if (base && !tasksAt(state, base).includes(task)) return `Nothing of that kind to do at ${base.name}: ${isShelter(base) ? "a shelter has no buildings to mend and no well (water only beside a river or lake)" : "no work"}.`;
   p.task = task;
   if (task === "idle") return `${first(p.name)} stays in the cell.`;
-  const base = heldAt(state, p);
   const out = base ? labourOutput(state, p, base) : 0;
   return `${first(p.name)} goes out to work: ${TASKS[task].name} (${Math.round(out * 100)}% of a survivor)${base && !guarded(state, base) ? ". Nobody is on guard: they may run" : ""}.`;
 }
 export function setAllTasks(state, baseId, task) {
-  if (!TASKS[task]) return "";
-  const list = prisonersAt(state, Number(baseId));
+  const base = baseById(state, Number(baseId));
+  if (!TASKS[task] || !base || !tasksAt(state, base).includes(task)) return "";
+  const list = prisonersAt(state, base.id);
   for (const p of list) p.task = task;
   return list.length ? (task === "idle" ? "Every prisoner here stays in the cells." : `Every prisoner here goes out to work: ${TASKS[task].name}.`) : "";
 }

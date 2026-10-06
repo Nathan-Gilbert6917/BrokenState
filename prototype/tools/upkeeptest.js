@@ -97,12 +97,13 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(m.prisoners === 2 && m.heads === n + 2, `two prisoners counted (${m.heads} fed)`);
   const use = foodUse(st, h);
   const pg = use.groups.find((g) => g.key === "prisoners");
-  check(pg && pg.n === 2 && near(pg.total, 2 * PRISON.FOOD * coldFactor(st)), `prisoners eat ${PRISON.FOOD} each × the cold (${pg && pg.total})`);
+  const pr = PRISON.FOOD * PRISON.RATIONS[PRISON.RATION_DEFAULT].share; // their rations: Short by default (prisoners.js)
+  check(pg && pg.n === 2 && near(pg.total, 2 * pr * coldFactor(st)), `prisoners eat ${pr} each on Short rations × the cold (${pg && pg.total})`);
   check(near(waterNeed(st, h).prisoners, Math.round(2 * drinkRate(st) * 10) / 10) && waterNeed(st, h).nPrisoners === 2, "and drink as anyone");
   // prisonersDaily takes their food from the base (fresh, then preserved).
   h.stock.food = 0; h.stock.preserved = 10;
   prisonersDaily(st);
-  check(near(h.stock.preserved, 10 - 2 * PRISON.FOOD * coldFactor(st), 1e-6), `prisoners eat preserved food when the fresh is gone (${h.stock.preserved} left)`);
+  check(near(h.stock.preserved, 10 - 2 * pr * coldFactor(st), 1e-6), `prisoners eat preserved food when the fresh is gone (${h.stock.preserved} left)`);
   // Guests sheltering: three travellers.
   h.stock.food = 0; h.stock.preserved = 20;
   st.visitors = [{ id: 9001, kind: "explorers", phase: "sheltered", shelterBase: h.id, size: 3, shelterUntil: st.hour + 72, done: {} }];
