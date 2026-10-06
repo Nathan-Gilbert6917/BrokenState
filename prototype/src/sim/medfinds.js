@@ -4,7 +4,8 @@
 //   loot) picks what an hour turns up. At a pharmacy, a clinic, a hospital or a medevac wreck (SITES) a meds find is
 //   the full roll (4–9 × what is left); anywhere else it is a bottle or a box from a bathroom cabinet: SEARCH_SCALE of
 //   the roll, 1 to SEARCH_MAX at a time. The ordinary places' meds weights in LOCATIONS are low too (a few % of
-//   the hours). Groups' scavengers (aiscav.js haulFor) bring home the same share (haulMult).
+//   the hours). Groups' scavengers (aiscav.js haulFor) bring home the same share (haulMult): their meds weight is cut
+//   the same way, and the share it loses goes to the site's other goods (a haul finds as much, less of it meds).
 // - A raid (combat.js AREAS loot per area, AREA_SETS per site): pharmacy and clinic areas are full of meds; houses,
 //   stores, offices, cabins, chapels, locker rooms a small chance of 1; a school nurse, a fire station's first-aid
 //   room and a barracks' medical store ("nurse") a little more. A town's, a city centre's and a mall's street maps
@@ -28,5 +29,6 @@ export const FIELD_CARE = { below: 40 };
 export const medSite = (t) => !!(t && t.loc && MEDS.SITES.includes(t.loc.type));
 // An hour's meds find at a tile, from the full roll qty: the full roll at a medical site, else 1 to SEARCH_MAX.
 export const searchMeds = (t, qty) => (medSite(t) ? qty : Math.max(1, Math.min(MEDS.SEARCH_MAX, Math.round(qty * MEDS.SEARCH_SCALE))));
-// × the meds a group's scavengers haul from a site (aiscav.js haulFor: expected amounts, no dice).
+// × the meds weight of a site's table for a group's scavengers (aiscav.js haulFor: expected amounts, no dice; the
+// weight it loses goes to the site's other goods).
 export const haulMult = (t) => (medSite(t) ? 1 : MEDS.SEARCH_SCALE);
