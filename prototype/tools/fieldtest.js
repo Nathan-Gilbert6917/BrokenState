@@ -16,6 +16,7 @@ import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN
 import { hiveDistance } from "../src/sim/hives.js";
 import { seasonOfDay, thirstFactor, THIRST } from "../src/sim/weather.js";
 import { NEEDS } from "../src/sim/needs.js";
+import { waterIn, RAW } from "../src/sim/water.js";
 import { endTurnDecision, requestEndTurn, setConfirmEnd, unitsWithActions, cui } from "../src/ui/combat.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -377,17 +378,18 @@ section("Fetch water: a plan to a river or lake shore fills the containers and b
   const res = launchExpedition(state, { memberIds: ids, dest: shore, mission: "move", stance: "normal", supplies: { food: est.food + 2, water: est.water + 2 }, plan: { preset: "custom", steps } });
   const p = res.party;
   check(p.orders[0] && p.orders[0].type === "water" && p.orders[0].at === shore, "the queue: Fetch water at the shore, then home");
-  const w0 = h.stock.water;
+  // water.js: the shore's water is un-purified (rawwater) in the cargo and the hub's stock; count both kinds.
+  const w0 = waterIn(h.stock);
   let filled = 0;
   for (let i = 0; i < 24 * 5 && !home(state, p); i++) {
     p.lastConflict = state.hour + 1; state.hordes.length = 0;
     tickHour(state);
-    filled = Math.max(filled, p.cargo.supplies.water || 0);
+    filled = Math.max(filled, waterIn(p.cargo.supplies));
     for (let k = state.cards.length - 1; k >= 0; k--) { const c = state.cards[k]; state.cards.splice(k, 1); const ch = c.choices.find((x) => !x.uiAction && choiceOk(state, x)); if (!c.isOrders && !c.planCard && ch) ch.resolve(state); }
     if (state.combat) state.combat = null;
   }
   check(home(state, p) && filled >= 30, `home with ${Math.floor(filled)} water filled at the shore`);
-  check(h.stock.water > w0 + filled * 0.5, `the hub's water went up (${Math.round(w0)} → ${Math.round(h.stock.water)})`);
+  check(waterIn(h.stock) > w0 + filled * 0.5, `the hub's water went up (${Math.round(w0)} → ${Math.round(waterIn(h.stock))}, ${Math.round(h.stock[RAW] || 0)} of it un-purified)`);
   // Not on a dry tile: the order fails with a reason.
   const st2 = mk();
   const r2 = launchExpedition(st2, { memberIds: crewOf(st2, 2), dest: dry, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
