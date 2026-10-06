@@ -151,9 +151,15 @@ function sinkSwarms(b) {
 // ---------- a Carrier bursts ----------
 // combat.js damage, as a Carrier dies: the worm swarm comes out where it fell.
 export function burst(b, t) {
-  const at = standAt(b, t.x, t.y);
+  const w = releaseSwarm(b, t.x, t.y, t.power || battlePower(b));
+  if (w) say(b, `${t.name} bursts open: a swarm of worms pours out of it. Whoever it kills gets up as one of the dead. Fire and blows hurt it; most bullets go straight through.`, "danger");
+  return w;
+}
+// A worm swarm comes out at (x, y), or on a free tile next to it (null: nowhere): a Carrier bursting, a Sleeper
+// splitting open, a Flinger's throw (sleepers.js, middead.js). It acts from the next enemy turn.
+export function releaseSwarm(b, x, y, power = battlePower(b)) {
+  const at = standAt(b, x, y);
   if (!at) return null;
-  const power = t.power || battlePower(b);
   const w = applyZType(enemyUnit(b, b.rng, "zombies", power, zombieCount(b)), "swarm", false, power);
   w.name = "Worm swarm";
   w.x = at[0]; w.y = at[1];
@@ -163,7 +169,6 @@ export function burst(b, t) {
   w.life = CARRIER.SWARM_TURNS;
   w.ap = 0;
   b.units.push(w);
-  say(b, `${t.name} bursts open: a swarm of worms pours out of it. Whoever it kills gets up as one of the dead. Fire and blows hurt it; most bullets go straight through.`, "danger");
   fx(b, { type: "loot", to: [w.x, w.y], text: "WORMS" });
   return w;
 }

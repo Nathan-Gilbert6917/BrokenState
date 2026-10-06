@@ -29,7 +29,9 @@ import {
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say } from "./combat.js";
 import { BUILDINGS, buildingHint } from "./buildingmaps.js";
 import { raidEnemies } from "./scavenge.js";
-import { applyZType, battleTypes } from "./zombietypes.js";
+import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
+import { eraTier } from "./hivetech.js";
+import { ZTYPES } from "./hiveconst.js";
 import { MILDEAD, siteDeadMix, maxMix } from "./deadsoldiers.js";
 import { newItem, itemLoad } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
@@ -285,6 +287,16 @@ export function placeRichness(state, c, place, n = c.block) {
   const site = CRAWL.RICH.base + CRAWL.RICH.site * Math.min(1, t.loot ?? 0.5);
   return clamp(site * (1 + CRAWL.RICH.perBlock * (n - 1)) * place.rich * (1 - CRAWL.RICH.looted * (place.looted || 0)), CRAWL.RICH.min, CRAWL.RICH.max);
 }
+// A kind of special dead deeper in the city: one of the kinds the hives have grown by now (hivetech.js eraTier, by
+// their shares); before any, one of SPECIAL.types.
+export function crawlKind(state, rng) {
+  const kinds = eraKinds(eraTier(state));
+  const tot = Object.values(kinds).reduce((a, v) => a + v, 0);
+  if (!tot) return rng.pick(CRAWL.SPECIAL.types);
+  let r = rng.next() * tot;
+  for (const k in kinds) { r -= kinds[k]; if (r < 0) return k; }
+  return Object.keys(kinds)[0];
+}
 // The special dead's share at this depth (0 above block SPECIAL.from).
 export function specialChance(state, n) {
   const S = CRAWL.SPECIAL;
@@ -415,7 +427,7 @@ export function enterPlace(state, p, placeId, opts = {}) {
   else {
     // The special dead deeper in (zombietypes.js).
     const sp = specialChance(state, n);
-    if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, state.rng.pick(CRAWL.SPECIAL.types), false, groups.find((g) => g.kind === "zombies")?.power || 3);
+    if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, crawlKind(state, state.rng), false, groups.find((g) => g.kind === "zombies")?.power || 3);
   }
   say(b, `City crawl, block ${n} (${DEPTHS[Math.min(n, DEPTHS.length - 1)]}). The city's Alert is ${alertName(c.alert)}: you start at Heat ${heat0}. Extract to come back out to the street.`, c.alert >= 60 ? "danger" : "info");
   c.inside = place.id;
@@ -556,7 +568,7 @@ export function quickSearch(state, p, place) {
     const groups = placeGroups(state, c, place).map((g) => (g.kind === "zombies" ? { ...g, count: Math.max(1, Math.round(g.count * 0.5)) } : g));
     const enemy = mergeGroups(groups);
     const sp = enemy.kind === "zombies" ? specialChance(state, n) : 0;
-    if (sp > 0) enemy.types = { [rng.pick(CRAWL.SPECIAL.types)]: Math.max(1, Math.round(enemy.count * sp)) };
+    if (sp > 0) enemy.types = { [crawlKind(state, rng)]: Math.max(1, Math.round(enemy.count * sp)) };
     const setup = { tile: c.tile, partyId: p.id, enemy, ambush: null, canRetreat: true, handler: "crawlfight", context: { crawl: { kind: "quick", place: place.id, block: n } } };
     const res = autoResolveCombat(state, setup);
     finishCombat(state, setup, res);
@@ -744,7 +756,7 @@ function makeEncounter(state, c, n, ctx) {
     const sp = specialChance(state, n);
     if (sp > 0) {
       const k = Math.round(enemy.count * sp);
-      if (k > 0) enemy.types = { [rng.pick(CRAWL.SPECIAL.types)]: k };
+      if (k > 0) enemy.types = { [crawlKind(state, rng)]: k };
     }
     // The armoured dead of the city (deadsoldiers.js siteDeadMix: riot police, soldiers near a base): no dice.
     const mil = siteDeadMix(state, c.tile);
@@ -757,7 +769,7 @@ function makeEncounter(state, c, n, ctx) {
   }
   const text = kind === "patrol" ? `${enemy.count} raiders come down the street, guns up.` :
     kind === "breakout" ? `The city is roused: ${enemy.count} of the dead fill the streets between you and the edge. You will have to fight your way out, or find a gap.` :
-    `${enemy.count} of the dead${enemy.types ? ` (${Object.entries(enemy.types).map(([k, v]) => `${v} special`).join(", ")})` : ""} shamble into the street ahead.`;
+    `${enemy.count} of the dead${enemy.types ? ` (${Object.entries(enemy.types).map(([k, v]) => `${v} ${ZTYPES[k] ? ZTYPES[k].name.toLowerCase() : "special"}${v > 1 ? "s" : ""}`).join(", ")})` : ""} shamble into the street ahead.`;
   return { kind, block: n, enemy, text, move: ctx.move || null, exit: !!ctx.exit, event: ctx.event || null, spotted: !!ctx.spotted };
 }
 const runHurt = (e, over) => { const R = CRAWL.RUN; return Math.min(R.max, R.hurt + R.perBlock * e.block + over * R.load + (e.kind === "patrol" ? R.patrol : 0)); };

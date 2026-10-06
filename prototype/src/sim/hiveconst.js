@@ -160,7 +160,7 @@ export const MIDDEAD = {
     COST: 1, SLIP: 0.5, TOWER: 0.4, MANNED: 0.3,
   },
   FLINGER: { RANGE: 7, WINDUP: 1, COOLDOWN: 2, THROWS: 3, DROP: 10 },
-  SOWER: { PER: 0.004, PASS: 0.2, CAP: 0.95, BATTLE: 0.05, BATTLE_MAX: 0.3, NOTE_RANGE: 1 },
+  SOWER: { PER: 0.015, PASS: 0.2, CAP: 0.95, BATTLE: 0.05, BATTLE_MAX: 0.3, NOTE_RANGE: 1 },
   NIGHTMARE: { EVERY: 3, RANGE: 6, WAKE: 12, HEAT: 15, NOISE: 4, HOLD: 0.3, BRAVE: 0.3, COWARD: -0.2, NEAR: 0.1 },
 };
 // Sleepers (sleepers.js): bodies lie about every battle map in the open and every raid (COUNT by the map's area, more

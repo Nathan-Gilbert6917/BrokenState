@@ -48,11 +48,13 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
-import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
-import { ZTYPES } from "./hiveconst.js";
+import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
+import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 import { MEDS } from "./medfinds.js"; // how rare meds are
+import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
+import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
 import { stirBodies, carrierRound, burst, swarmHit, crush, botCrush, turnedBody, walksOn, turnedName, turnedLine, dropBodyBox, raidEndBodies } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
@@ -121,6 +123,7 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   b.losCache = new Int8Array(W * H * W * H);
   b.reach = flood(cells, rx, ry);
   b.acid = []; // acid pools (acid.js) stay on the old map
+  b.corpses = []; // and the bodies lying about (sleepers.js)
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
@@ -777,6 +780,10 @@ export function reachable(b, u, maxCost, opts = {}) {
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
   const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
+  // A Climber (middead.js climbOver) goes over walls, fences and the like, a level up or down anywhere, never
+  // stopping on one of them.
+  const climber = u.ztype === "climber";
+  const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -790,14 +797,14 @@ export function reachable(b, u, maxCost, opts = {}) {
     const x = cur % W, y = (cur / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
-      if (!inside(nx, ny) || !cellAt(b, nx, ny).walk) continue;
+      if (!inside(nx, ny) || !passes(nx, ny)) continue;
       const diag = dx && dy;
-      if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
+      if (diag && (!passes(x + dx, y) || !passes(x, y + dy))) continue;
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
-      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j])) continue;
+      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j]) && !(climber && climbOver(u, b.cells[j].k))) continue;
       if (avoid && avoid.has(j)) continue;
-      const climb = climbCost(b, x, y, nx, ny, diag, per);
+      const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
       const step = (diag ? 1.5 : 1) + climb;
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
@@ -811,7 +818,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   }
   // Downed bodies can be stepped over but not stood on.
   const stop = real.slice();
-  for (let j = 0; j < W * H; j++) if (occ[j] === 2) stop[j] = Infinity;
+  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (climber && (!CELL[b.cells[j].k].walk || barredCell(b.cells[j])))) stop[j] = Infinity;
   return { dist: stop, prev };
 }
 
@@ -836,14 +843,16 @@ export function distField(b, sources, walker = null) {
   const burning = walker && b.fires && b.fires.length && (walker.kind === "human" || walker.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   // The same field asked again with the map unchanged (every one of the dead in a turn heads for the same people):
   // the one worked out before (fieldCache). Callers only read it.
-  const key = `${siege ? 1 : 0}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const climber = !!walker && walker.ztype === "climber"; // middead.js: over walls and fences, up a level anywhere
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
   const d = new Float32Array(W * H).fill(Infinity);
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
-  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c))) && !(burning && burning.has(idx(x, y))); };
+  const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
+  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y)) && !(burning && burning.has(idx(x, y))); };
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
@@ -859,11 +868,11 @@ export function distField(b, sources, walker = null) {
       const nx = x + dx, ny = y + dy;
       if (!inside(nx, ny) || !pass(nx, ny)) continue;
       const diag = dx && dy;
-      if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue; // no corner cutting (as reachable)
-      const climb = climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
+      if (diag && (!(cellAt(b, x + dx, y).walk || over(x + dx, y)) || !(cellAt(b, x, y + dy).walk || over(x, y + dy)))) continue; // no corner cutting (as reachable)
+      const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (over(nx, ny) ? MIDDEAD.CLIMBER.COST : 0) : climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
-      const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+      const bash = !over(nx, ny) && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
       const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash + (aw ? aw[j] : 0); // aw: acid.js
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
@@ -1031,6 +1040,7 @@ function playerUnit(b, s) {
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js)
+    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
@@ -1182,6 +1192,7 @@ export function createBattle(state, setup) {
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
+  if (!setup.layout) placeBodies(b, state.seed); // sleepers.js: bodies lie about a fight in the open, Sleepers among them
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
@@ -1210,7 +1221,8 @@ function foesOf(b, u) {
   if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
   if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
-  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && o.side === "third"));
+  // A Sleeper lying where it is (sleepers.js) is shot only by order: the AI keeps clear of it.
+  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant)));
 }
 
 // ---------- actions ----------
@@ -1219,11 +1231,22 @@ function foesOf(b, u) {
 // armorVs: their armour by the weapon that struck); everyone else takes raw × their armor ("acid": half of it, acid.js).
 // A spitter that dies bursts (acid.js spitterBurst); a Carrier bursts into a worm swarm, and whoever the swarm kills
 // carries the worm (carriers.js; deadsoldiers.js armorVs: most bullets go through the swarm).
+// A Boneback's plates take most of a hit from the front (middead.js bonebackMult); a Flinger winding up drops its
+// mass when hit hard (afterHit); a spotted Sleeper splits where it lies (sleepers.js).
+export function hitMult(t, by, hit) {
+  if (hit && hit.how === "acid") return acidArmor(t);
+  if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
+  if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
+  return t.armor;
+}
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * (hit && hit.how === "acid" ? acidArmor(t) : t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm") ? armorVs(t, by, hit) : t.armor);
+  const eff = raw * hitMult(t, by, hit);
   t.hp = Math.max(0, t.hp - eff);
-  if (t.hp > 0) return eff;
+  if (t.hp > 0) {
+    if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
+    return eff;
+  }
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
   swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
   if (t.side === "player") {
@@ -1241,11 +1264,13 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
     // swarm leaves nothing.
-    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
+    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
     say(b, t.ztype === "swarm" ? `${t.name} is crushed and scattered.` : `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
     if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
     if (t.ztype === "carrier") burst(b, t); // carriers.js: the worm swarm comes out
     if (t.ztype === "swarm") t.off = true; // no body: gone from the map
+    if (t.ztype === "flinger") onDeath(b, t); // middead.js: the mass it was winding up to throw spills out
+    if (t.ztype === "sleeper") sleeperDies(b, t, hit); // sleepers.js: it splits where it lies, or the fire cooks it
   }
   return eff;
 }
@@ -1323,6 +1348,7 @@ export function moveAlong(b, u, path) {
       fire(b, o, u, { reaction: true });
     }
     if (u.side === "player" && active(u)) detect(b, u);
+    if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
     if (!active(u) || stopAtDoor) break;
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
@@ -1614,6 +1640,8 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
+  sowerRound(b); // middead.js: Sowers thicken the ground with eggs
+  burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   carrierRound(state, b); // carriers.js: the bodies a Carrier stirred get up (and act this turn); worm swarms sink
   acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
@@ -1669,6 +1697,9 @@ function startPlayerTurn(state, b) {
     }
   }
   stirBodies(b); // carriers.js: bodies near a Carrier (and the worm swarm's dead) stir: they get up after this turn
+  burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
+  terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
+  for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   offerClear(b);
@@ -1728,11 +1759,12 @@ function reinforcements(b) {
 // ---------- AI (works for either side) ----------
 // Who the AI shoots first (× the worth of a shot): a Shepherd, a screamer, a spitter (zombietypes.js ZTYPES priority),
 // the ram's crew (siege.js) and anyone coming over the wall on a ladder.
-export const SHOT_PRIORITY = { crew: 1.8, climber: 1.5 };
+export const SHOT_PRIORITY = { crew: 1.8, climber: 1.5, windup: 1.5 };
 export function shotPriority(b, t) {
   let v = t.ztype && ZTYPES[t.ztype] && ZTYPES[t.ztype].priority ? ZTYPES[t.ztype].priority : 1;
   if (t.ram != null && b.rams && isCrew(b, t)) v *= SHOT_PRIORITY.crew;
   else if (b.cells[t.y * b.w + t.x].k === "siegeladder") v *= SHOT_PRIORITY.climber;
+  if (t.windup != null) v *= SHOT_PRIORITY.windup; // a Flinger about to throw (middead.js)
   return v;
 }
 function bestShot(b, u, foes, opts = {}) {
@@ -1742,8 +1774,9 @@ function bestShot(b, u, foes, opts = {}) {
     if (!canSee(b, u, t)) continue;
     const o = shotOdds(b, u, t, u.x, u.y, opts);
     // The expected damage: a dead soldier's plates by this gun (armorVs), a critical hit × CRIT_MULT and through them.
-    const p = o.crit / 100, m = t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor;
-    const avg = (o.dmg[0] + o.dmg[1]) / 2 * ((1 - p) * m + p * CRIT_MULT * (t.ztype ? armorVs(t, u, { how: "shot", crit: true }) : t.armor));
+    // A Boneback's plates by where the shooter stands (hitMult).
+    const p = o.crit / 100, m = hitMult(t, u, { how: "shot" });
+    const avg = (o.dmg[0] + o.dmg[1]) / 2 * ((1 - p) * m + p * CRIT_MULT * hitMult(t, u, { how: "shot", crit: true }));
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
     v *= shotPriority(b, t);
@@ -1800,6 +1833,7 @@ function bestMove(b, u, foes, field = null) {
 
 function aiUnit(b, u) {
   if (!active(u)) return;
+  if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
     const plan = thirdPlan(b, u);
     if (plan === "hold") { u.ap = 0; return; }
@@ -2334,7 +2368,8 @@ function checkEnd(state, b) {
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
-  if (!b.units.some((u) => u.side === "enemy" && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
+  // A spotted Sleeper lying where it is (sleepers.js) does not hold the field.
+  if (!b.units.some((u) => u.side === "enemy" && !u.dormant && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
   if (!b.units.some((u) => u.side === "player" && active(u))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
 }
 
@@ -2405,7 +2440,7 @@ function endBattle(state, b, outcome) {
     // carriers.js: a body that got up is one body, the risen one's (with the person's kit); one of yours who got up is
     // their own body as below; a worm swarm leaves none.
     for (const e of enemies) {
-      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || (e.turned && e.turned.sid != null)) continue;
+      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || (e.turned && e.turned.sid != null)) continue;
       b.bodies.push(e.turned ? turnedBody(rng, e) : enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
     }
     for (const e of captives) { const body = enemyBody(rng, e, KITS[e.kit] || KITS.raiders); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
@@ -2783,7 +2818,7 @@ export function createRaid(state, setup) {
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
-      const zl = mixList(g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js)
+      const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);
@@ -2811,6 +2846,7 @@ export function createRaid(state, setup) {
       pod++;
     }
   }
+  placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room

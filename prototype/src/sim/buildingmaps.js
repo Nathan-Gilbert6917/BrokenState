@@ -33,7 +33,7 @@ import { interiorOccupants } from "./wanderers.js";
 import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod } from "./combat.js";
 import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
-import { applyZType, mixList } from "./zombietypes.js";
+import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside } from "./battlesize.js";
 
 export const BMAP = {
@@ -1282,7 +1282,7 @@ export function placeInterior(state, b, map, groups) {
     if (!(g.count > 0)) continue;
     if (g.kind === "zombies") {
       const n = Math.max(1, Math.round(g.count * scale));
-      const zl = mixList(g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js)
+      const zl = siteList(rng, g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js); the bred kinds met exploring
       for (let i = 0; i < n; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);

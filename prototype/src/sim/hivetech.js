@@ -38,7 +38,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./
 import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow } from "./defences.js";
-import { battleTypes, mixText } from "./zombietypes.js";
+import { battleTypes, mixText, ambientMix } from "./zombietypes.js";
 import { rampDay } from "./eras.js"; // the game day the eras' ramps count by (hardcore: from the normal start)
 
 const hash = (n) => { let x = (n >>> 0) ^ 0x85ebca6b; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return (x ^ (x >>> 16)) >>> 0; };
@@ -172,6 +172,21 @@ export function borderMix(state) {
   const mix = {};
   for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= era) mix[G.unlocks] = Math.round(ZTYPES[G.unlocks].share * TECH.BORDER_SHARE * rollRange(state, 0.5, 1.5, "border", G.unlocks) * 1000) / 1000;
   return Object.keys(mix).length ? mix : null;
+}
+
+// The special dead met exploring a tile away from a hive's hordes (zombietypes.js ambientMix): more in towns and
+// cities every game year, of the kinds of the era; on a hive's land more, and on its red-skull ring the kinds the
+// nearest hive breeds. Shares ({ climber: 0.04, ... }) or null.
+export function siteSpecials(state, tileId) {
+  const t = state.tiles[tileId];
+  if (!t) return null;
+  const tough = state.hives && state.hives.length ? zombieToughness(state, tileId) : 0;
+  let hiveKinds = null;
+  if (tough >= 3) {
+    const hv = state.hives.reduce((a, h) => (!a || state.grid.distance(h.tile, tileId) < state.grid.distance(a.tile, tileId) ? h : a), null);
+    if (hv) { hiveKinds = {}; for (const k of hiveMods(state, hv).unlocks) hiveKinds[k] = ZTYPES[k].share; }
+  }
+  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds });
 }
 
 // ---------- threat ----------
