@@ -166,8 +166,9 @@ export const floorNo = (b) => (floorsOf(b) ? Math.max(0, Math.min(b.floors.lengt
 export const liftOf = (b) => floorNo(b) * LV; // art px the active floor is raised
 const isVoid = (c) => c.k === "void";
 const liftAt = (b, i) => (floorNo(b) && !isVoid(b.cells[i]) ? floorNo(b) * LV : 0);
-// A unit on the active floor (or any unit when the battle has no floors).
-export const onFloor = (b, t) => !floorsOf(b) || t.f == null || t.f === b.floor;
+// Something (a unit, a container, a room, a ghost, an effect) on the active floor: its f, 0 when it has none, as
+// sim/combat.js counts it. Always true when the battle has no floors.
+export const onFloor = (b, t) => !floorsOf(b) || (t.f || 0) === floorNo(b);
 // A cell's rules, with a stand-in for `void` until sim/combat.js knows it.
 const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
 const cdef = (c) => CELL[c.k] || VOIDDEF;
@@ -1341,18 +1342,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   iso.markers = [];
   if (F) {
     for (const t of b.units) {
-      if (t.left || t.fled || t.off || t.dead || t.f == null || t.f === b.floor) continue;
+      const tf = t.f || 0;
+      if (t.left || t.fled || t.off || t.dead || tf === floorNo(b)) continue;
       if (t.side !== "player" && !v.seen.has(t.id)) continue;
       const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
       const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
       ctx.beginPath(); diamond(ctx, t.x, t.y, standZ(b, t.x, t.y), 2); ctx.stroke(); ctx.setLineDash([]);
-      const text = `${t.f > b.floor ? "▲" : "▼"}${t.f + 1}`;
+      const text = `${tf > floorNo(b) ? "▲" : "▼"}${tf + 1}`;
       ctx.globalAlpha = 0.75;
       tag(ctx, text, X, Y - 2 * S, col.replace("0.7", "1"), Math.max(10, 3.4 * S));
       ctx.globalAlpha = 1;
-      iso.markers.push({ id: t.id, f: t.f, x: t.x, y: t.y });
-      iso.rects.push({ x0: X - 10 * S, x1: X + 10 * S, y0: Y - 8 * S, y1: Y + 5 * S, x: t.x, y: t.y, id: t.id, f: t.f });
+      iso.markers.push({ id: t.id, f: tf, x: t.x, y: t.y });
+      iso.rects.push({ x0: X - 10 * S, x1: X + 10 * S, y0: Y - 8 * S, y1: Y + 5 * S, x: t.x, y: t.y, id: t.id, f: tf });
     }
     const sel = H.sel != null ? b.units.find((q) => q.id === H.sel) : null;
     for (let i = 0; i < N; i++) {

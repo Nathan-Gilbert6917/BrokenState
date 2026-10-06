@@ -1513,7 +1513,8 @@ function drawFloorMarkers(b, v, cs) {
   ctx.textAlign = "center";
   const f0 = floorNo(b), F = floorsOf(b);
   for (const t of b.units) {
-    if (t.left || t.fled || t.off || t.dead || t.f == null || t.f === f0) continue;
+    const tf = t.f || 0;
+    if (t.left || t.fled || t.off || t.dead || tf === f0) continue;
     if (t.side !== "player" && !v.seen.has(t.id)) continue;
     const px = ox + t.x * cs, py = oy + t.y * cs;
     ctx.strokeStyle = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
@@ -1521,7 +1522,7 @@ function drawFloorMarkers(b, v, cs) {
     ctx.strokeRect(px + 3, py + 3, cs - 6, cs - 6);
     ctx.setLineDash([]);
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.fillText(`${t.f > f0 ? "▲" : "▼"}${t.f + 1}`, px + cs / 2, py + cs * 0.62);
+    ctx.fillText(`${tf > f0 ? "▲" : "▼"}${tf + 1}`, px + cs / 2, py + cs * 0.62);
   }
   const sel = selUnit(b);
   const up = f0 < F.length - 1, down = f0 > 0;
