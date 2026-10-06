@@ -21,6 +21,7 @@ import { medKitBonus, useMedKit } from "./crafting.js";
 import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, applyCondition, autoWantsCondition, conditionDanger } from "./health.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
+import { FIELD_CARE } from "./medfinds.js";
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -216,7 +217,7 @@ export function medicalDaily(state, base) {
   }
 }
 
-// Infections set in more easily on the road (called daily for people away).
+// Infections set in more easily on the road (called daily for people away); then the teams' own care.
 export function fieldInfectionDaily(state) {
   for (const s of alive(state)) {
     if (s.location.kind !== "party" || s.woundInfected || s.health >= 40) continue;
@@ -225,7 +226,23 @@ export function fieldInfectionDaily(state) {
       log(state, `${s.name}'s wounds are infected out in the field. Treat them with meds.`, "danger");
     }
   }
+  fieldCareDaily(state);
 }
+
+// A team in the field patches up a bad wound from the meds it carries (medfinds.js FIELD_CARE: below `below` health
+// or infected; once a day, as a field treatment: 1 meds, +1 to clean an infection). Meds go on need only: nobody
+// hurt, nothing spent. Illnesses on the road: health.js teamOnsets. A team in a battle is left to it.
+export function fieldCareDaily(state) {
+  for (const p of state.parties) {
+    if (p.owner !== "player" || !Array.isArray(p.members) || (state.combat && state.combat.setup && state.combat.setup.partyId === p.id)) continue;
+    const hurtOnes = partyMembers(state, p).filter((s) => s.alive && s.location.kind === "party" && (s.woundInfected || s.health < FIELD_CARE.below)).sort((a, b) => careNeed(b) - careNeed(a));
+    for (const s of hurtOnes) {
+      if (!fieldTreatInfo(state, p, s).ok) continue;
+      log(state, `${teamWord(state, p)}: ${fieldTreat(state, p, s.id)}`, "info");
+    }
+  }
+}
+const teamWord = (state, p) => { const ms = partyMembers(state, p); return ms.length === 1 ? ms[0].name.split(" ")[0] : `${ms[0].name.split(" ")[0]}'s team`; };
 
 // ---------- who does the treating ----------
 // The best treater among some people: Medicine plus the kit in their off hand (crafting.medKitBonus: a bandage

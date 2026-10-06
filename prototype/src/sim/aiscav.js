@@ -43,6 +43,7 @@ import { hash01 } from "./skills.js";
 import { attitude } from "./factions.js";
 import { triggerConflict } from "./conflicts.js";
 import { ZONE_RICHNESS } from "./mapgen.js";
+import { haulMult } from "./medfinds.js";
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
@@ -95,7 +96,7 @@ export function haulFor(t, taken, level, eff) {
   const total = Object.values(table).reduce((a, v) => a + v, 0) || 1;
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
-  for (const [k, w] of Object.entries(table)) out[k] = units * (w / total) * (MULT[k] || 1);
+  for (const [k, w] of Object.entries(table)) out[k] = units * (w / total) * (MULT[k] || 1) * (k === "meds" ? haulMult(t) : 1); // medfinds.js: meds by the box only at medical sites
   return out;
 }
 const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(goods)) into[g] = (into[g] || 0) + q * k; };
