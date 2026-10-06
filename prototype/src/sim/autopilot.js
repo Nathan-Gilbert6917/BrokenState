@@ -19,7 +19,7 @@ import {
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
   STANCES, paceOpts, modeSpeed, partyPace, poolLoad, missionProblem, carried, takeSupply, weighTeam,
 } from "./parties.js";
-import { startOrder, resumeQueue, besideWater } from "./orders.js";
+import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./orders.js";
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
@@ -2089,6 +2089,7 @@ function planTrip(state) {
     if (target) cands.push({ ...target, mission: "recon", why: `look for ${short.filter((k) => gives(state.tiles[target.tile]) && (LOCATIONS[state.tiles[target.tile].loc.type].loot[k] || 0) >= 1).join(" and ")} (none known nearby)` });
   }
   cands.push(...foodTripCands(state, h, pool, need, P)); // hunting and fishing trips when food runs short (hunting.js)
+  cands.push(...waterTripCands(state, h, pool, need, P)); // hauling water from a shore when the base cannot make enough (orders.js fetchWater)
   cands.push(...heatFuelCands(state, h, need, P)); // needs-gauges: fuel for the winter's heating
   cands.push(...woodTripCands(state, h, pool, P)); // woodcutting.js: firewood when the land around the hub gives little
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
@@ -3028,6 +3029,39 @@ function foodTripCands(state, h, pool, need, P) {
     }
   }
   return out;
+}
+
+// ---------- hauling water (orders.js fetchWater, plans.js "water" step) ----------
+// A big hub in a dry summer drinks more than its well, wells, stream and rain catchers make (economy.js
+// waterProduction: about 30 a day at best, 17 in a dry spell, against 1.3-1.6 a head), and once the cisterns run dry
+// everyone there loses health daily and the whole hub can die within a week or two (economy.js thirst). When the
+// stock is under WATER_HAUL.days of the day's need and production falls short, a team goes to the nearest land tile
+// beside a river or lake (within reach, never the hub's own tile) and fills every container it carries (1 kg a water,
+// a 2-3 person team brings 60-150), then comes home. Scored above an ordinary scavenging trip, more the drier it is.
+const WATER_HAUL = { days: 3, reach: 6, crewMax: 3, hours: FETCH_WATER_HOURS };
+function waterTripCands(state, h, pool, need, P) {
+  const want = waterNeed(state, h).total;
+  if (want <= 0) return [];
+  const prod = waterProduction(state, h).total;
+  const days = (h.stock.water || 0) / want;
+  if (!(need.water >= 1.4 || (days < WATER_HAUL.days && prod < want))) return [];
+  // One hauling team at a time; two while the shortfall is severe (under a day and a half in store, or the base
+  // making under 60% of what it drinks: a 40-head hub in a heat wave drinks 60-70 against 17 made).
+  const hauling = state.parties.filter((p) => p.owner === "player" && p.plan && p.plan.steps && p.plan.steps.some((s) => s.kind === "water")).length;
+  const severe = days < 1.5 || prod < want * 0.6;
+  if (hauling >= (severe ? 2 : 1)) return [];
+  let best = null;
+  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.reach))) {
+    if (id === h.tile || !besideWater(state, id)) continue;
+    const d = state.grid.distance(id, h.tile);
+    if (!best || d < best.d) best = { id, d };
+  }
+  if (!best) return [];
+  const size = Math.min(WATER_HAUL.crewMax, Math.max(2, P.crew));
+  const shortBy = Math.max(0, want - prod);
+  return [{ mission: "move", tile: best.id, crew: size, haul: true, onSite: WATER_HAUL.hours, steps: [{ kind: "water" }, { kind: "home" }],
+    score: Math.min(6, 2 + shortBy / 10 + (WATER_HAUL.days - Math.min(WATER_HAUL.days, days))),
+    why: `haul water from ${tileLabel(state, best.id)} (${Math.floor(h.stock.water || 0)} in store, ${Math.round(want)} a day drunk, ${Math.round(prod)} made)` }];
 }
 
 // ---------- wild food and the land when food runs low (foraging.js, hunting.js) ----------
