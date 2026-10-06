@@ -7,7 +7,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -128,7 +128,27 @@ function baseScavenging(state, base, people) {
 // crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
-export const waterCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+// The tanks and cisterns hold both kinds; water barrels (buildings.js WATER_BARREL) keep room for one kind each.
+export const tankCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+export const waterCapacity = (base) => tankCapacity(base) + barrelRoom(base, "water") + barrelRoom(base, RAW);
+// Where the water stands: each kind fills its own barrels first, then the shared tanks (purified water first); what
+// is left over stands outside. { pure, raw, tanks, pureOut, rawOut, outside }.
+export function waterLayout(base) {
+  const st = base.stock;
+  const pure = Math.max(0, st.water || 0), raw = Math.max(0, st[RAW] || 0);
+  const pureOver = Math.max(0, pure - barrelRoom(base, "water")), rawOver = Math.max(0, raw - barrelRoom(base, RAW));
+  const tanks = tankCapacity(base);
+  const pureOut = Math.max(0, pureOver - tanks);
+  const rawOut = Math.max(0, rawOver - Math.max(0, tanks - pureOver));
+  return { pure, raw, tanks, pureOut, rawOut, outside: pureOut + rawOut };
+}
+// Room for un-purified water coming in (the well, springs, rain, the river haul): its barrels and the tanks, not the
+// purified barrels.
+export function rawRoom(base) {
+  const st = base.stock;
+  const pureOver = Math.max(0, (st.water || 0) - barrelRoom(base, "water"));
+  return Math.max(0, tankCapacity(base) + barrelRoom(base, RAW) - pureOver - Math.max(0, st[RAW] || 0));
+}
 // camp-tier0: a shelter (buildings.js SHELTER, tier 0) has no well or spring of its own; beside a river or lake its
 // people haul SHELTER.river a day instead of the stream's 3.
 const ownWell = (base) => (isShelter(base) ? 0 : base.type === "hub" ? WATER.hubWell : WATER.spring);
@@ -373,11 +393,11 @@ function baseDaily(state, base) {
   // Water in: the well, streams, wells and rain catchers fill the base up to its capacity (both kinds count), as
   // un-purified water (water.js).
   const prod = waterProduction(state, base);
-  const room = Math.max(0, waterCapacity(base) - waterIn(st));
+  const room = rawRoom(base); // the un-purified barrels and the tanks (the purified barrels stay for safe water)
   st[RAW] = Math.max(0, st[RAW] || 0) + Math.min(room, prod.total);
   drawWells(state, base); // claims.js: the wells hauled from today lose what was drawn; one at 0 is dry
   // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates (un-purified first).
-  const over = waterIn(st) - waterCapacity(base);
+  const over = waterLayout(base).outside;
   if (over > 0 && Weather.season && Weather.season(state).key === "summer") drawWater(st, Math.round(over * WATER.evaporate * 10) / 10, { rawFirst: true });
 
   baseScavenging(state, base, people);

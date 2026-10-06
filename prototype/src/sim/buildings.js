@@ -25,10 +25,10 @@ export const RECIPES = {
 
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: the hub 6, an outpost 2." },
-  ammo_bench:   { name: "Ammo bench",     cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", desc: "Workshop station. One operator turns scrap into ammo." },
-  med_station:  { name: "Med station",    cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
-  machine_shop: { name: "Machine shop",   cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
-  bunkhouse:    { name: "Bunkhouse",      cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
+  ammo_bench:   { name: "Ammo bench",     plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", desc: "Workshop station. One operator turns scrap into ammo." },
+  med_station:  { name: "Med station",    plot: "utility", cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
+  machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
+  bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
   walls:        { name: "Walls",          cost: { scrap: 25 },            hours: 36, max: 3, desc: "+3 wall strength (each point adds 2 defense against raids, and holds back 18 more of a horde). In a base battle: the wall map (tier 1), with a walkway behind the wall to shoot down from; each wall section has 40 + 12 hit points a point of wall strength." },
   // Defences against hordes (defences.js): they raise the size of horde the base holds out, and show up on the
   // base's battle map when the dead break in anyway.
@@ -37,72 +37,198 @@ export const BUILDINGS = {
   trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
-  watchtower:   { name: "Watchtower",     cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
+  watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
   // prisoners.js: where prisoners are held. Someone on the Guard role keeps them from slipping out.
-  cells:        { name: "Holding cells",  cost: { scrap: 16, parts: 1 },  hours: 20, max: 2, desc: "Barred rooms for 3 prisoners each (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded; 8% for anyone kept in a shed when the cells are full)." },
-  radio:        { name: "Radio station",  cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
+  cells:        { name: "Holding cells",  plot: "building", cost: { scrap: 16, parts: 1 },  hours: 20, max: 2, desc: "Barred rooms for 3 prisoners each (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded; 8% for anyone kept in a shed when the cells are full)." },
+  radio:        { name: "Radio station",  plot: "building", cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
-  relay:        { name: "Radio relay",    cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
-  garage:       { name: "Garage",         cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed." },
-  storehouse:   { name: "Storehouse",     cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked dry-goods store: +150 food storage room (0.8% a day, less in the cold), and raiders steal half as much from this base." },
+  relay:        { name: "Radio relay",    plot: "utility", cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
+  garage:       { name: "Garage",         plot: "building", cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed." },
+  storehouse:   { name: "Storehouse",     plot: "building", cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked dry-goods store: +150 food storage room (0.8% a day, less in the cold), and raiders steal half as much from this base." },
   // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
-  well:         { name: "Well",           cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
-  rain_catcher: { name: "Rain catcher",   cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
-  cistern:      { name: "Cistern",        cost: { scrap: 25 },            hours: 30, max: 3, desc: "+150 water capacity (the hub holds 80 without one, an outpost 40)." },
+  well:         { name: "Well",           plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
+  rain_catcher: { name: "Rain catcher",   plot: "utility", cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
+  cistern:      { name: "Cistern",        plot: "building", cost: { scrap: 25 },            hours: 30, max: 3, desc: "+150 water capacity (the hub holds 80 without one, an outpost 40)." },
   // The worm (worm.js): heat kills its eggs. The boiler makes a base's ground water safe; the cook fire its game.
-  boiler:       { name: "Water boiler",   cost: { scrap: 10 },            hours: 10, max: 1, desc: "A drum over a fire pit: everything this base draws from its well, springs and streams is boiled before it is drunk, so the worm's eggs in infected ground water die. Burns 0.2 firewood's worth a day for every person fed here, in every season, on days un-purified water would be drunk and no water filter here covers it: firewood first, then cheap wooden, paper and cloth junk from the armory (novels, magazines, rag boots; anything you mark to burn; never weapons, tools or armour) while the base allows it, then fuel (0.04 a head). A day with nothing to burn it stays cold: the filters, then the armory's purification tablets, else the water is drunk unboiled. A water filter does the same job for nothing, as long as it lasts." },
+  boiler:       { name: "Water boiler",   plot: "utility", cost: { scrap: 10 },            hours: 10, max: 1, desc: "A drum over a fire pit: everything this base draws from its well, springs and streams is boiled before it is drunk, so the worm's eggs in infected ground water die. Burns 0.2 firewood's worth a day for every person fed here, in every season, on days un-purified water would be drunk and no water filter here covers it: firewood first, then cheap wooden, paper and cloth junk from the armory (novels, magazines, rag boots; anything you mark to burn; never weapons, tools or armour) while the base allows it, then fuel (0.04 a head). A day with nothing to burn it stays cold: the filters, then the armory's purification tablets, else the water is drunk unboiled. A water filter does the same job for nothing, as long as it lasts." },
   // Food storage (storage.js): room for fresh food; food above the room is stored outside and spoils fast.
-  cellar:       { name: "Root cellar",    cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 food storage room underground: food in a cellar spoils slowly (0.5% a day, 0.3% in the cold). The hub already has a small cellar (200), an outpost only a pantry (40); food above the room is stored outside and spoils fast (3% a day, more in heat and rain)." },
-  coldstore:    { name: "Cold store",     cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
-  kitchen:      { name: "Preserving kitchen", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
+  cellar:       { name: "Root cellar",    plot: "building", cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 food storage room underground: food in a cellar spoils slowly (0.5% a day, 0.3% in the cold). The hub already has a small cellar (200), an outpost only a pantry (40); food above the room is stored outside and spoils fast (3% a day, more in heat and rain)." },
+  coldstore:    { name: "Cold store",     plot: "building", cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
+  kitchen:      { name: "Preserving kitchen", plot: "building", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
   // Hunting (hunting.js): the land around the base, hunted by the people on the Hunt job.
-  huntcabin:    { name: "Hunting cabin",  cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Up to 2 people on the Hunt job hunt the land within 2 tiles 3 hours a day (dawn and dusk) with their own weapons and this base's ammo; without a weapon they tend snares. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
-  cookhouse:    { name: "Cook fire",      cost: { scrap: 6 },             hours: 6,  max: 1, desc: "A stone-lined fire pit with spits and a big pot: all the game and fish eaten here is cooked through, and the greens, roots and crops from infected ground are boiled, which kills the worm's eggs in meat from infected land and infested animals and in food grown or gathered on land at 40%+ infection. Without it (or a preserving kitchen) that food waits in the stores and is eaten raw, last, when the clean food is gone." },
-  smoker:       { name: "Drying rack",    cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
+  huntcabin:    { name: "Hunting cabin",  plot: "building", cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Up to 2 people on the Hunt job hunt the land within 2 tiles 3 hours a day (dawn and dusk) with their own weapons and this base's ammo; without a weapon they tend snares. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
+  cookhouse:    { name: "Cook fire",      plot: "utility", cost: { scrap: 6 },             hours: 6,  max: 1, desc: "A stone-lined fire pit with spits and a big pot: all the game and fish eaten here is cooked through, and the greens, roots and crops from infected ground are boiled, which kills the worm's eggs in meat from infected land and infested animals and in food grown or gathered on land at 40%+ infection. Without it (or a preserving kitchen) that food waits in the stores and is eaten raw, last, when the clean food is gone." },
+  smoker:       { name: "Drying rack",    plot: "utility", cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
-  generator:    { name: "Generator",      cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving kitchen. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
-  still:        { name: "Ethanol still",  cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 food + 2 water into 3 fuel a day; up to 4 of the food can be yesterday's spoiled food. Set a Keep-at-least order so it only takes the surplus." },
-  greenhouse:   { name: "Greenhouse",     cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
+  generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving kitchen. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
+  still:        { name: "Ethanol still",  plot: "utility", cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 food + 2 water into 3 fuel a day; up to 4 of the food can be yesterday's spoiled food. Set a Keep-at-least order so it only takes the surplus." },
+  greenhouse:   { name: "Greenhouse",     plot: "building", cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Mood (relations.js moodFactors): no operator needed.
-  common_room:  { name: "Common room",    cost: { scrap: 22 },            hours: 30, max: 2, desc: "Chairs, a stove and a card table: +1.5 mood a day for everyone living here, up to 15 people a room (spread thinner above that). No operator." },
-  chapel:       { name: "Chapel",         cost: { scrap: 16 },            hours: 24, max: 1, desc: "A quiet room with candles: +1 mood a day for everyone here, grief weighs half as much, and a memorial service held here lifts everyone 2 more. No operator." },
+  common_room:  { name: "Common room",    plot: "building", cost: { scrap: 22 },            hours: 30, max: 2, desc: "Chairs, a stove and a card table: +1.5 mood a day for everyone living here, up to 15 people a room (spread thinner above that). No operator." },
+  chapel:       { name: "Chapel",         plot: "building", cost: { scrap: 16 },            hours: 24, max: 1, desc: "A quiet room with candles: +1 mood a day for everyone here, grief weighs half as much, and a memorial service held here lifts everyone 2 more. No operator." },
   // Hospital tiers (family "hospital"): each one upgrades the one below and replaces it when finished.
   // med: beds = patients that get the bonus, heal = extra health per day in a bed, eff = meds multiplier,
   // treat = health per manual treatment before Medicine, staff = Medic-role people needed to run it,
   // guards = beds stop wounds getting infected, cures = cleans infected wounds reliably,
   // severe = healing speed for wounds below 30 health in a bed (0.4 without a bed), surgery = operates on
   // severe wounds (full speed plus a bigger heal per treatment), craft = extra meds per day from each med station. See medical.js.
-  infirmary:    { name: "Makeshift infirmary", family: "hospital", tier: 1, cost: { scrap: 15, meds: 2 }, hours: 20, max: 1,
+  infirmary:    { name: "Makeshift infirmary", plot: "building", family: "hospital", tier: 1, cost: { scrap: 15, meds: 2 }, hours: 20, max: 1,
                   med: { beds: 2, heal: 6, eff: 1.25, treat: 14, staff: 1, guards: false, cures: false, severe: 0.6, surgery: false, craft: 0 },
                   desc: "Cots behind a curtain. 2 beds: +6 health/day for patients, meds 25% more effective, severe wounds (below 30) heal at 60% instead of 40%. Needs 1 survivor on the Medic role." },
-  field_hosp:   { name: "Field hospital",      family: "hospital", tier: 2, upgrades: "infirmary", cost: { scrap: 30, parts: 2, meds: 4 }, hours: 36, max: 1,
+  field_hosp:   { name: "Field hospital",      plot: "building", family: "hospital", tier: 2, upgrades: "infirmary", cost: { scrap: 30, parts: 2, meds: 4 }, hours: 36, max: 1,
                   med: { beds: 4, heal: 10, eff: 1.5, treat: 16, staff: 1, guards: true, cures: false, severe: 0.8, surgery: false, craft: 0 },
                   desc: "Army tents, clean water, real dressings. 4 beds: +10 health/day, meds 50% more effective, wounds in bed do not get infected, severe wounds heal at 80%. Upgrades the infirmary. Needs 1 Medic." },
-  clinic:       { name: "Clinic",              family: "hospital", tier: 3, upgrades: "field_hosp", cost: { scrap: 45, parts: 4, meds: 8 }, hours: 60, max: 1, req: { medicine: 6 },
+  clinic:       { name: "Clinic",              plot: "building", family: "hospital", tier: 3, upgrades: "field_hosp", cost: { scrap: 45, parts: 4, meds: 8 }, hours: 60, max: 1, req: { medicine: 6 },
                   med: { beds: 6, heal: 16, eff: 1.8, treat: 18, staff: 2, guards: true, cures: true, severe: 1, surgery: true, craft: 1 },
                   desc: "A proper treatment room with sterilised tools. 6 beds: +16 health/day, meds 80% more effective, cleans infected wounds, surgery for severe wounds (full speed, bigger treatments), med stations make +1 meds a day. Upgrades the field hospital. Needs 2 Medics and a Medicine 6+ survivor here to build." },
-  hospital:     { name: "Trauma hospital",     family: "hospital", tier: 4, upgrades: "clinic", cost: { scrap: 70, parts: 8, meds: 12 }, hours: 96, max: 1, req: { medicine: 10, mechanics: 4 },
+  hospital:     { name: "Trauma hospital",     plot: "building", family: "hospital", tier: 4, upgrades: "clinic", cost: { scrap: 70, parts: 8, meds: 12 }, hours: 96, max: 1, req: { medicine: 10, mechanics: 4 },
                   med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1 },
                   desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics, and Medicine 10+ and Mechanics 4+ survivors here to build." },
+  // Water barrels (WATER_BARREL below): up to 4, each upgraded on its own and set to hold purified or un-purified water.
+  water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
+  // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors.
+  crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 4 },  hours: 5,  max: 4, desc: "Stacked, lidded crates under a tarp: +30 food storage room (dry goods: 0.8% a day, as the pantry and storehouse)." },
   // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
   // building: when it is done the shelter becomes a full hub (upgradeShelter).
   hub_up:       { name: "Build up into a base", cost: { scrap: 18, parts: 2 }, hours: 96, max: 1, shelterOnly: true, tierUp: true,
-                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four and room for every building. Shelters only. The builders here do the work." },
+                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four, 16 building plots and 14 utility plots. Shelters only. The builders here do the work." },
 };
+
+// ---------- construction plots ----------
+// Every building stands on a plot, by the size of the base: building plots for anything with a roof (bunkhouses,
+// the storehouse, cellars, workshops, the hospital), utility plots for the small things in the yard (the boiler, water
+// barrels, storage crates, the watchtower, the cook fire, rain catchers, benches). Walls, defences and farm plots need
+// no plot. A hospital takes one building plot whatever its tier (an upgrade replaces it in place), and a water
+// barrel's upgrades stay on its plot. Demolishing frees the plot (demolish below).
+export const PLOTS = {
+  shelter: { building: 0, utility: 2 },
+  outpost: { building: 6, utility: 6 },
+  hub:     { building: 16, utility: 14 },
+};
+export const PLOT_NAMES = { building: "Building plot", utility: "Utility plot" };
+export const plotSize = (base) => (isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
+export const plotCap = (base, kind) => PLOTS[plotSize(base)][kind] || 0;
+// Plots in use: buildings standing (broken ones too) and new buildings in the queue. A hospital upgrade or a barrel
+// upgrade in the queue takes no new plot.
+export function plotsUsed(base, kind) {
+  const fams = new Set();
+  let n = 0;
+  for (const b of base.buildings) {
+    const d = BUILDINGS[b.type];
+    if (!d || d.plot !== kind) continue;
+    if (d.family) { if (fams.has(d.family)) continue; fams.add(d.family); }
+    n++;
+  }
+  for (const c of base.construction) {
+    const d = BUILDINGS[c.type];
+    if (!d || d.plot !== kind || c.target) continue;
+    if (d.family) { if (fams.has(d.family)) continue; fams.add(d.family); }
+    n++;
+  }
+  return n;
+}
+export const plotsFree = (base, kind) => Math.max(0, plotCap(base, kind) - plotsUsed(base, kind));
+
+// ---------- water barrels ----------
+// Each barrel (a building { type: "water_barrel", tier, holds }) adds room for one kind of water (water.js): holds
+// "water" (purified) or RAW (un-purified). economy.js waterCapacity counts every barrel; the well, rain and river
+// water fill only the un-purified barrels and the base's own tanks (economy.js rawRoom).
+export const WATER_BARREL = {
+  tiers: [
+    null,
+    { name: "Water barrel", cap: 25 },
+    { name: "Barrel rack", cap: 50, cost: { scrap: 8 }, hours: 10, desc: "Three drums on a timber rack, piped together" },
+    { name: "Water tank", cap: 100, cost: { scrap: 12, parts: 1 }, hours: 16, desc: "A caged plastic tank on a block stand, with a tap" },
+  ],
+  holds: "rawwater", // what a new barrel holds (water.js RAW)
+};
+export const barrels = (base) => base.buildings.filter((b) => b.type === "water_barrel");
+export const barrelTier = (b) => Math.max(1, Math.min(WATER_BARREL.tiers.length - 1, b.tier || 1));
+export const barrelCap = (b) => WATER_BARREL.tiers[barrelTier(b)].cap;
+export const barrelHolds = (b) => (b.holds === "water" ? "water" : "rawwater");
+export const barrelName = (b) => WATER_BARREL.tiers[barrelTier(b)].name;
+// Room in the barrels for one kind (a broken barrel holds nothing).
+export const barrelRoom = (base, kind) => barrels(base).reduce((a, b) => a + (!b.broken && barrelHolds(b) === kind ? barrelCap(b) : 0), 0);
+export function canUpgradeBarrel(state, base, id) {
+  const b = base && base.buildings.find((x) => x.id === id && x.type === "water_barrel");
+  if (!b) return { ok: false, reason: "That barrel is gone" };
+  const next = WATER_BARREL.tiers[barrelTier(b) + 1];
+  if (!next) return { ok: false, reason: "Already a water tank (the top tier)" };
+  if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "An upgrade is already queued" };
+  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
+  return { ok: true, next };
+}
+export function queueBarrelUpgrade(state, base, id) {
+  const chk = canUpgradeBarrel(state, base, id);
+  if (!chk.ok) return chk.reason;
+  const b = base.buildings.find((x) => x.id === id);
+  const tier = barrelTier(b) + 1;
+  for (const [k, v] of Object.entries(chk.next.cost)) base.stock[k] -= v;
+  base.construction.push({ id: newId(), type: "water_barrel", target: id, tier, cost: { ...chk.next.cost }, progress: 0, hours: chk.next.hours });
+  return `${barrelName(b)} → ${chk.next.name} queued at ${base.name}.`;
+}
+// Purified or un-purified: switching only changes what the barrel keeps room for (water of the other kind in it now
+// goes to the base's tanks, or stands outside when they are full).
+export function setBarrelHolds(base, id, kind) {
+  const b = base && base.buildings.find((x) => x.id === id && x.type === "water_barrel");
+  if (!b) return "That barrel is gone.";
+  b.holds = kind === "water" ? "water" : "rawwater";
+  return `${barrelName(b)} now holds ${b.holds === "water" ? "purified" : "un-purified"} water.`;
+}
+// The name of a queue job: a new building, or a barrel's upgrade.
+export const jobName = (job) => (job.target ? `Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
+
+// ---------- demolishing ----------
+// Pulls a building down to free its plot: half its scrap and parts back (rounded down), and for a barrel half of its
+// upgrades' too. Not while the base is under attack, nor with an upgrade of it in the queue.
+export function demolishRefund(b) {
+  const out = {};
+  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts") out[k] = (out[k] || 0) + v; };
+  add(BUILDINGS[b.type].cost);
+  if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
+  for (const k of Object.keys(out)) out[k] = Math.floor(out[k] / 2);
+  return out;
+}
+export function canDemolish(state, base, id) {
+  const b = base && base.buildings.find((x) => x.id === id);
+  if (!b) return { ok: false, reason: "That building is gone" };
+  if (underAttack(state, base)) return { ok: false, reason: "Not while the base is under attack" };
+  if (base.construction.some((c) => c.target === id || (BUILDINGS[b.type].family && BUILDINGS[c.type].family === BUILDINGS[b.type].family))) return { ok: false, reason: "An upgrade of it is in the queue" };
+  return { ok: true };
+}
+export function demolish(state, base, id) {
+  const chk = canDemolish(state, base, id);
+  if (!chk.ok) return chk.reason;
+  const b = base.buildings.find((x) => x.id === id);
+  const back = demolishRefund(b);
+  base.buildings.splice(base.buildings.indexOf(b), 1);
+  for (const [k, v] of Object.entries(back)) base.stock[k] = (base.stock[k] || 0) + v;
+  if (b.type === "radio") base.radio = count(base, "radio") > 0;
+  if (b.type === "watchtower") base.watchtower = count(base, "watchtower") > 0;
+  for (const s of atBase(state, base.id)) if (s.station === b.id) s.station = null;
+  assignStations(state, base);
+  const name = b.type === "water_barrel" ? barrelName(b) : BUILDINGS[b.type].name;
+  const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`).join(", ");
+  log(state, `${name} at ${base.name} pulled down${got ? ` (${got} salvaged)` : ""}.`, "info");
+  return `${name} pulled down${got ? `: ${got} salvaged` : ""}. Its plot is free.`;
+}
 
 // ---------- base tiers ----------
 // Your bases grow in three stages: a staging camp (staging.js, not a base yet) → a shelter (tier 0) → a base (tier 1,
 // the hub as it always was; outposts are tier 1 too). A shelter is a base you can live at (stores, rest and healing,
 // the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, beds for
 // four under the tarps, an outpost's two crop plots, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
-// or what is brought in), and only a few survival buildings (SHELTER.build: max of each). Its Heat comes from what it
+// or what is brought in), and only a few survival buildings (SHELTER.build: max of each) on its two utility plots
+// (PLOTS.shelter: no building plots). Its Heat comes from what it
 // does (fieldheat.js shelterHeat: its fire, people, vehicles parked, shooting nearby) instead of the hub's flat 3.
 // Saves from before the tiers have no tier field: tier 1.
 export const SHELTER = {
   name: "Shelter",
   walls: 0, beds: 4, plots: 2, vision: 1, waterCap: 40, // plots: a garden patch, as an outpost's
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
-  build: { rain_catcher: 2, smoker: 1, barricades: 1, farm_plot: 1, hub_up: 1 },
+  // What a shelter may build (the most of each): yard things on its 2 utility plots (PLOTS.shelter), a barricade, a
+  // garden patch and the step up.
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1 },
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -140,6 +266,7 @@ export function addBuilding(base, type) {
   base.buildings.push(b);
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
+  if (BUILDINGS[type].barrel) { b.tier = 1; b.holds = WATER_BARREL.holds; }
   return b;
 }
 
@@ -236,7 +363,7 @@ export function runStations(state, base) {
 
 export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
-  const queued = base.construction.filter((c) => c.type === type).length;
+  const queued = base.construction.filter((c) => c.type === type && !c.target).length; // a barrel's upgrade is not a new one
   if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
   if (def.family) {
     // Tiered buildings: one step at a time, and only one upgrade in the queue.
@@ -252,6 +379,13 @@ export function canBuild(state, base, type) {
     const cap = SHELTER.build[type];
     if (!cap) return { ok: false, reason: "Not at a shelter: build it up into a base first" };
     if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A shelter has room for ${cap}` };
+  }
+  // Plots (PLOTS): a new building needs a free plot of its kind; a hospital upgrade stands on the old one's.
+  const kind = def.plot;
+  const onOld = def.family && (base.buildings.some((x) => BUILDINGS[x.type].family === def.family));
+  if (kind && !onOld && plotsFree(base, kind) <= 0) {
+    const cap = plotCap(base, kind);
+    return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
   for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
@@ -279,9 +413,9 @@ export function cancelBuild(state, base, id) {
   const job = base ? base.construction.find((c) => c.id === id) : null;
   if (!job) return "That job is gone.";
   const full = job.progress <= 0;
-  for (const [k, v] of Object.entries(BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
+  for (const [k, v] of Object.entries(job.cost || BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2)); // job.cost: a barrel upgrade
   base.construction.splice(base.construction.indexOf(job), 1);
-  return `Cancelled ${BUILDINGS[job.type].name}. ${full ? "All" : "Half"} the materials were returned.`;
+  return `Cancelled ${jobName(job)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
 
 export function buildRate(state, base) {
@@ -298,6 +432,11 @@ export function constructionHour(state) {
     if (job.progress >= job.hours) {
       base.construction.shift();
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
+      if (job.target) { // a water barrel's upgrade (WATER_BARREL); nothing if it was pulled down meanwhile
+        const b = base.buildings.find((x) => x.id === job.target);
+        if (b) { b.tier = Math.max(barrelTier(b), job.tier); log(state, `${base.name}: a water barrel is now a ${barrelName(b).toLowerCase()} (${barrelCap(b)} water).`, "good"); }
+        continue;
+      }
       addBuilding(base, job.type);
       log(state, `${BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
@@ -316,7 +455,8 @@ export function buildingSummary(state, base) {
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
     ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],
-    ["Water", `${isShelter(base) ? "no well (a river or lake beside it, rain catchers, or water brought in)" : `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells`}${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150}`],
+    ["Water", `${isShelter(base) ? "no well (a river or lake beside it, rain catchers, or water brought in)" : `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells`}${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150 + barrelRoom(base, "water") + barrelRoom(base, "rawwater")}${barrels(base).length ? ` (barrels: ${barrelRoom(base, "rawwater")} un-purified, ${barrelRoom(base, "water")} purified)` : ""}`],
+    ["Plots", `building ${plotsUsed(base, "building")}/${plotCap(base, "building")}, utility ${plotsUsed(base, "utility")}/${plotCap(base, "utility")}`],
     ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
     ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} kitchen${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
     ["Power", powerLine(state, base)],
