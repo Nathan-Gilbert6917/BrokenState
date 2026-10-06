@@ -29,6 +29,7 @@ import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
+import { woodAbundance } from "./sim/woodcutting.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -1325,13 +1326,14 @@ function ctxLand(teams, id) {
     forageAbundance(state, id) >= 0.05 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="forage">${partyTile(p) === id ? "Forage here" : "Go and forage here"}, team (${p.members.length}) · 8h</button>` : "",
     gameAbundance(state, id) >= 0.08 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="hunt">${partyTile(p) === id ? "Hunt here" : "Go and hunt here"}, team (${p.members.length}) · 8h</button>` : "",
     fish ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="fish">${partyTile(p) === id ? "Fish here" : "Go and fish here"}, team (${p.members.length}) · 8h</button>` : "",
+    woodAbundance(state, id) >= 0.1 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="wood">${partyTile(p) === id ? "Cut wood here" : "Go and cut wood here"}, team (${p.members.length}) · 8h</button>` : "", // sim/woodcutting.js
   ]).join("");
 }
 actions.ctxhunt = (d) => {
   const p = partyById(d.id);
   if (p) {
     const tile = Number(d.tile);
-    const job = { type: d.type === "fish" || d.type === "forage" ? d.type : "hunt", hours: 8 };
+    const job = { type: d.type === "fish" || d.type === "forage" || d.type === "wood" ? d.type : "hunt", hours: 8 };
     let msg;
     if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
     else {

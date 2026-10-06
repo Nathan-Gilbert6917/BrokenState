@@ -61,6 +61,7 @@ import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteR
 import { raidTier } from "./defences.js";
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
+import { freezeShare } from "./woodcutting.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -129,7 +130,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 }, // preserved / jars: storage.js
+      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start }, // preserved / jars: storage.js; wood: woodcutting.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
   });
@@ -243,6 +244,9 @@ export function razeGroupBase(state, target, tile, attacker) {
   if ((attacker && attacker.known) || (target && target.known) || state.live.has(tile)) log(state, `${attacker ? knownName(attacker, "Raiders") : "Raiders"} burned ${target ? `${knownName(target, "a group")}'s base at ` : ""}${tileLabel(state, tile)} to the ground.`, "danger");
 }
 
+// A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
+// days by the time of year, woodcutting.js FREEZE_SHARE).
+export const GROUP_WOOD = { start: 4, cap: 8, cut: 0.12, burn: 0.3 };
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);
@@ -269,6 +273,9 @@ export function factionsDaily(state) {
     f.stock.scrap = Math.min(f.pop * 10, f.stock.scrap + f.pop * 0.2 * mk);
     f.stock.fuel = Math.min(f.pop * 3, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
     f.stock.meds = Math.min(f.pop * 3, f.stock.meds + f.pop * 0.04 * mk);
+    // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
+    // price, trade.js) runs low by the end of a winter and fills again by the autumn.
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + f.pop * (GROUP_WOOD.cut - GROUP_WOOD.burn * freezeShare(today - 1))));
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
@@ -387,7 +394,7 @@ export function makeGang(state, tile, opts = {}) {
     id: newId(), name, type, color: FACTION_COLORS[state.factions.length % FACTION_COLORS.length],
     bases: [tile], pop, alive: true, known: !!opts.known,
     goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
-    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0 },
+    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start },
     lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state), gear: isAggressiveType({ type }) ? gangArms(state) : 1,
   };
   for (const [k, q] of Object.entries(opts.stock || {})) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q;

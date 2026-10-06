@@ -29,6 +29,10 @@ export const SUPPLIES = {
   // in them is eaten at a base.
   preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
+  // Firewood (woodcutting.js): a bundle of split logs and branches, cut from the land around a base (the Cut wood job)
+  // or by a team (the Cut wood order). The winter's heating: a base burns firewood before fuel, 1 firewood heating as
+  // much as 0.5 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
+  wood:  { name: "Firewood", value: 0.6, weight: 3, cat: "firewood" },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 
@@ -246,6 +250,7 @@ export const CATEGORIES = {
   food:        { name: "food", group: "food" },
   water:       { name: "water", group: "food" },
   fuel:        { name: "fuel", group: "survival" },
+  firewood:    { name: "firewood", group: "survival" },
   parts:       { name: "spare parts", group: "survival" },
   scrap:       { name: "scrap", group: "survival" },
   containers:  { name: "jars and containers", group: "survival" },
@@ -277,24 +282,24 @@ export const CATEGORIES = {
 export const TRADE_PREFS = {
   raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, optics: 1.3, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
                   liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9,
-                  books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6 },
+                  books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6, firewood: 0.6 },
   military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, optics: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
                   gadgets: 1.15, packs: 1.2, medical: 1.15, fuel: 1.15, vehicle: 1.2, manuals: 1.15, smokes: 1.1,
-                  melee: 0.7, bow: 0.75, luxury: 0.6, liquor: 0.7, drugs: 0.4, jewelry: 0.7, collectibles: 0.6, farming: 0.7, containers: 0.7, scrap: 0.8 },
+                  melee: 0.7, bow: 0.75, luxury: 0.6, liquor: 0.7, drugs: 0.4, jewelry: 0.7, collectibles: 0.6, farming: 0.7, containers: 0.7, scrap: 0.8, firewood: 0.75 },
   fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, optics: 1.15, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
-                  camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8 },
+                  camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8, firewood: 1.2 },
   traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, optics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
-                  drugs: 1, scrap: 0.9 },
+                  drugs: 1, scrap: 0.9, firewood: 0.8 },
   commune:      { food: 1.25, water: 1.1, farming: 1.6, medical: 1.3, books: 1.35, manuals: 1.3, tools: 1.25, containers: 1.4, clothing: 1.2, camp: 1.1, treats: 1.35,
                   household: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
-                  melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8 },
+                  melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8, firewood: 1.2 },
   zealot:       { liquor: 0, drugs: 0, smokes: 0, optics: 0.8, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
-                  medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2 },
+                  medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2, firewood: 1.1 },
   expansionist: { fuel: 1.5, vehicle: 1.6, optics: 1.25, parts: 1.35, pistol: 1.15, shotgun: 1.2, rifle: 1.25, automatic: 1.35, ammo: 1.2, armor: 1.15, packs: 1.2, electronics: 1.1,
-                  camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8 },
+                  camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8, firewood: 0.9 },
   merchants:    { "*": 1.05, margin: 1.1, food: 1.35, water: 1.3, scrap: 1.4, containers: 1.5, jewelry: 1.3, collectibles: 1.4, gadgets: 1.25, liquor: 1.2, smokes: 1.2,
-                  treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9 },
-  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7 },
+                  treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9, firewood: 0.6 },
+  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
 };
 // Small valuables traded as goods (where they exist: gold ring, cigarettes, whiskey, coffee, batteries) are light.
 for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 1, coffee: 0.5, batteries: 0.2 })) if (GEAR[k]) GEAR[k].weight = w;

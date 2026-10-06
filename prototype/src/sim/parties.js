@@ -81,6 +81,7 @@ export const MISSIONS = {
   strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
+  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts firewood.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 

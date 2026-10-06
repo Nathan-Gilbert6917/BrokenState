@@ -78,7 +78,9 @@ export function planSection(state, pl, est) {
   const legs = est ? est.legs : [];
   const first = legs[0] ? `${legs[0].hours}h` : "no route";
   const haulOf = (i) => { const l = est && est.legs.find((x) => x.label === stepLabel(state, plan.steps[i]) && x.haul != null); return l ? ` <span class="good"${tip("Expected haul of fresh game (an average: luck decides). Carried, it weighs 1 kg a ration; it spoils fast in the warm.")}>~${Math.round(l.haul)} food</span>` : ""; };
-  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : s.kind === "sweep" ? ` <span class="muted">~${hrs(sweepOpts(s).hours)}</span>` : ""}${s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage" ? haulOf(i) : ""}</span>
+  // Firewood (sim/woodcutting.js): what the step is expected to bring home, as far as the team can carry it.
+  const woodOf = (i) => { const l = est && est.legs.find((x) => x.label === stepLabel(state, plan.steps[i]) && x.wood != null); return l ? ` <span class="good"${tip("Expected firewood (an average: the land, the season, the team's axes), as much as the team can carry (3 kg each).")}>~${Math.round(l.wood)} firewood</span>` : ""; };
+  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : s.kind === "sweep" ? ` <span class="muted">~${hrs(sweepOpts(s).hours)}</span>` : ""}${s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage" ? haulOf(i) : s.kind === "wood" ? woodOf(i) : ""}</span>
       <button class="mini" data-action="pl-step" data-op="up" data-i="${i}" ${i ? "" : "disabled"}${tip("Earlier")}>▲</button><button class="mini" data-action="pl-step" data-op="down" data-i="${i}" ${i < plan.steps.length - 1 ? "" : "disabled"}${tip("Later")}>▼</button><button class="mini" data-action="pl-step" data-op="del" data-i="${i}"${tip("Remove this step")}>✕</button></li>`).join("");
   const add = plan.add;
   const full = plan.steps.length >= MAX_STEPS || plan.steps.some((s) => s.kind === "home");
@@ -108,7 +110,7 @@ export function planSection(state, pl, est) {
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
-      ${addBtn("forage", `Forage ${add.hunt ?? 8}h`)}${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
+      ${addBtn("forage", `Forage ${add.hunt ?? 8}h`)}${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${addBtn("wood", `Cut wood ${add.hunt ?? 8}h`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
       ${addBtn("gather", "Gather")}${addBtn("water", "Fetch water")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
       <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles${t.job ? "" : `, loot ~${Math.round((knownLoot(state, t.tile) || 0) * 100)}%`})</option>`).join("")}</select>
       ${addBtn("home", "Return home")}
@@ -151,7 +153,7 @@ export const PLAN_ACTIONS = {
     if (d.k === "wait") step.hours = a.wait;
     if (d.k === "nearby") { step.radius = a.radius; step.count = a.count; }
     if (d.k === "sweep") Object.assign(step, sweepOpts({ radius: a.sradius ?? 3, hours: a.shours ?? 12 }));
-    if (d.k === "hunt" || d.k === "fish" || d.k === "forage") step.hours = a.hunt ?? 8;
+    if (d.k === "hunt" || d.k === "fish" || d.k === "forage" || d.k === "wood") step.hours = a.hunt ?? 8;
     if (d.k === "move") return;
     plan.steps.push(step);
     plan.preset = "custom";

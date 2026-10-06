@@ -107,6 +107,13 @@ export function deserializeState(save) {
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
   // needs.js: saves from before the hunger and thirst gauges start everyone full.
   for (const sv of state.survivors || []) { if (!Number.isFinite(sv.hunger)) sv.hunger = 100; if (!Number.isFinite(sv.thirst)) sv.thirst = 100; }
+  // woodcutting.js: saves from before firewood (no state.woodcutting) start every base with none, and the work roles
+  // get the Cut wood job at the priority they give foraging. Worlds made since carry the mark, so they load unchanged.
+  if (!state.woodcutting) {
+    for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
+    for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
+    state.woodcutting = 1;
+  }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   return state;
 }
