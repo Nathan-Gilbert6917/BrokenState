@@ -8,6 +8,9 @@
 //   few things in it, or with only their clothes and pockets (0–4 small things). Maybe a weapon from the house: a kitchen
 //   knife, a bat, a crowbar, a pistol with a few rounds. The team's food and water (pooled, like any team's) come from
 //   what they carried: 1–3 days' worth for three. Almost no ammo, no fuel, no vehicle.
+// - The prepper (HC_START.PREPPER): one of the three fled with a duffle bag packed for five days (15 food, 15 water,
+//   meds, a water filter in hand, a kit, a knife or a gun with 20 rounds) and carries the Prepper trait when a slot
+//   allows. Day 1's log names them; state.hardcore.start.prepper is their id.
 // - The team is on the road (a state.parties entry, like the exiles in conquest.js): no base, no home to return to.
 //   You are with them, so they always report and take orders (radio contact without a radio).
 // - The first hub: Build outpost becomes Establish base, a staging camp the team brings materials to and then builds
@@ -48,6 +51,19 @@ export const HC_START = {
   WATER: { pack: [1, 3], pockets: [0, 1] },
   TEAM_MIN: 3, TEAM_MAX: 9,
   MEDS: { pack: 0.35 }, // a bottle of pills in the bag
+  // The prepper (2026-10-06): one of the three (which one: the dice, by seed) kept a go-bag by the door: a duffle bag
+  // (data.js, bigger than a hiking pack) with FOOD and WATER (five days for three, pooled with the team's like
+  // everyone's), MEDS, a charcoal water filter in the off hand (it cleans what the team fetches: worm.js), KIT always,
+  // EXTRA_N more from EXTRA, a knife or (GUN chance) a gun from GUNS with AMMO rounds, and the Prepper trait (data.js, a
+  // background trait never rolled at birth) when they have fewer than MAX_TRAITS traits; else only the log line says it.
+  PREPPER: {
+    BAG: "duffle", FOOD: 15, WATER: 15, MEDS: 2, AMMO: 20, GUN: 0.5,
+    GUNS: { pistol: 3, revolver: 1.5, huntrifle: 1 },
+    KIT: ["waterfilter", "flashlight", "bandagekit", "lighters", "batteries"],
+    EXTRA: { survivalbook: 1, stove: 1, snarewire: 1, instcoffee: 1, candles: 0.6, medbook: 0.4, fishrod: 0.6, binoculars: 0.5, soap: 0.6, toiletpaper: 0.5 },
+    EXTRA_N: [2, 3],
+    MAX_TRAITS: 2,
+  },
   // The first hub: a staging camp (staging.js STAGING.HARDCORE: what it takes and the days of work).
 };
 
@@ -183,6 +199,40 @@ export function rollGrab(state, s) {
   return got;
 }
 
+// The prepper's flight: the packed duffle bag, its kit, the water filter in hand, a knife or a gun with rounds, the
+// five days of food and water for three, and the trait when a slot allows (got.trait). Deterministic by the state's rng.
+export function rollPrepper(state, s) {
+  const rng = state.rng, P = HC_START.PREPPER;
+  const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, meds: P.MEDS, prepper: true, trait: false };
+  s.gear.backpack = newItem(P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
+  got.bag = s.gear.backpack;
+  const gun = rng.chance(P.GUN);
+  const w = gun ? pickW(rng, P.GUNS) : "knife";
+  s.gear.weapon = newItem(w, Math.round(rng.range(0.8, 1) * 100) / 100);
+  got.weapon = s.gear.weapon;
+  if (gun) got.ammo += P.AMMO;
+  const place = (key) => {
+    const item = newItem(key, 1);
+    if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item; // the water filter, in hand
+    else {
+      const at = packOf(s).indexOf(null);
+      if (at < 0) return false;
+      packOf(s)[at] = item;
+    }
+    got.items.push(item);
+    return true;
+  };
+  for (const key of P.KIT) place(key);
+  const extra = { ...P.EXTRA };
+  for (let n = rng.int(P.EXTRA_N[0], P.EXTRA_N[1]); n > 0 && Object.keys(extra).length; n--) {
+    const key = pickW(rng, extra);
+    delete extra[key];
+    if (!place(key)) break;
+  }
+  if (s.traits.length < P.MAX_TRAITS && !s.traits.includes("prepper")) { s.traits.push("prepper"); got.trait = true; }
+  return got;
+}
+
 // "a, b and c", with repeats counted ("family photos (2)").
 function listOf(items) {
   const counts = new Map();
@@ -194,6 +244,7 @@ function grabLine(s, got) {
   const things = listOf(got.items);
   const who = firstName(s);
   const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${got.ammo ? ` (${got.ammo} rounds)` : ""}` : "";
+  if (got.prepper) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   if (got.bag) return `${who} grabbed a ${got.bag.name.toLowerCase()}${things.length ? ` with ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   return `${who} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
 }
@@ -211,12 +262,17 @@ export function setupHardcoreStart(state, crew) {
   people[0].leader = true;
   if (crew) applyCrew(state, crew);
   if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start
-  // What each one grabbed.
+  // What each one grabbed. One of them is the prepper (the dice say which): their bag's five days come on top of the
+  // others' 1–3 days (TEAM_MIN..TEAM_MAX clamps what the other two carried, as before).
   const sup = {};
   for (const k of SUPPLY_KEYS) sup[k] = 0;
   const lines = [];
-  for (const s of people) {
-    const got = rollGrab(state, s);
+  const prepAt = state.rng.int(0, people.length - 1);
+  let prepper = null, prepGot = null;
+  for (let i = 0; i < people.length; i++) {
+    const s = people[i];
+    const got = i === prepAt ? rollPrepper(state, s) : rollGrab(state, s);
+    if (got.prepper) { prepper = s; prepGot = got; continue; }
     sup.food += got.food;
     sup.water += got.water;
     sup.ammo += got.ammo;
@@ -225,6 +281,13 @@ export function setupHardcoreStart(state, crew) {
   }
   sup.food = Math.max(HC_START.TEAM_MIN, Math.min(HC_START.TEAM_MAX, sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN, Math.min(HC_START.TEAM_MAX, sup.water));
+  if (prepGot) {
+    sup.food += prepGot.food;
+    sup.water += prepGot.water;
+    sup.ammo += prepGot.ammo;
+    sup.meds += prepGot.meds;
+    lines.unshift(grabLine(prepper, prepGot));
+  }
   const p = {
     id: newId(), owner: "player", kind: "expedition", mission: "move", teamMission: "flee", dest: tile.id, homeBaseId: null,
     members: people.map((s) => s.id), stance: "normal", vehicle: false, vehicleId: null, supplies: sup, cargo: { supplies: {}, gear: [] },
@@ -236,7 +299,9 @@ export function setupHardcoreStart(state, crew) {
   for (const s of people) { s.location = { kind: "party", partyId: p.id }; s.role = "scavenge"; s.station = null; }
   state.parties.push(p);
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
-  state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines };
+  state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null };
+  // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
+  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? " and a water filter" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
   const intro = `Calder is falling. ${lines.join(" ")} Between you: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;

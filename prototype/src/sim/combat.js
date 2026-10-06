@@ -3353,25 +3353,101 @@ function endRaid(state, b) {
   bump(b);
 }
 
-// Headless auto-player for raids: loot what is near, extract when Heat or wounds get bad.
+// The raid bot's call to leave (autoRaidTurn; 2026-10-06, the census's testing item 6: a player-style bot that leaves
+// earlier and by the odds, so building and crawl balance can be measured without hand play). Made once a turn for the
+// whole squad and kept once made (R.botOut = { turn, why }):
+//   heat        Heat at HEAT or more (was 55);
+//   hurt        at least HURT_SHARE of those standing are under HURT_HP health;
+//   down        someone is down and stabilised (carried out if the others get out), or down with no meds left;
+//   outnumbered more aware enemies in sight (any floor's, seen by anyone standing on it) than the squad has standing;
+//   cut off     a fighter's safe way to the exit (round the aware enemies, botExitDetour) has grown longer than the
+//               plain way two turns running, or there has been no safe way for two turns: things are getting between
+//               them and the door.
+// Per person, as before: badly hurt (HP), a full load, nothing left to search; on a floor with nothing left and Heat at
+// FLOOR_HEAT or more, down rather than on to another floor. Tuned against tools/interiortest.js, storeytest.js and
+// citycrawltest.js ("the bot gets out of N").
+export const BOT_LEAVE = { HEAT: 40, HURT_HP: 60, HURT_SHARE: 0.5, HP: 45, FLOOR_HEAT: 30, DETOUR_TURNS: 2 };
+// Walking distance (8-way, walkable cells of the floor shown, no heights) from a unit to the nearest of the target
+// cells, keeping clear of the cells the aware enemies on this floor stand on and the ones next to them (avoid = true),
+// or plain. Infinity: no such way.
+function botExitDetour(b, u, targets, avoid) {
+  bindDims(b);
+  const goal = new Uint8Array(W * H);
+  for (const [x, y] of targets) if (inside(x, y)) goal[idx(x, y)] = 1;
+  const block = new Uint8Array(W * H);
+  if (avoid) for (const o of b.units) {
+    if (o.side === "player" || o.side === "third" || !active(o) || !o.aware || o.dormant || (o.f || 0) !== (u.f || 0)) continue;
+    for (const [dx, dy] of [[0, 0], ...DIRS8]) if (inside(o.x + dx, o.y + dy)) block[idx(o.x + dx, o.y + dy)] = 1;
+  }
+  const d = new Int32Array(W * H).fill(-1);
+  const q = [idx(u.x, u.y)];
+  d[q[0]] = 0;
+  for (let qi = 0; qi < q.length; qi++) {
+    const i = q[qi], x = i % W, y = (i / W) | 0;
+    if (goal[i]) return d[i];
+    for (const [dx, dy] of DIRS8) {
+      const nx = x + dx, ny = y + dy;
+      if (!inside(nx, ny)) continue;
+      const j = idx(nx, ny);
+      if (d[j] >= 0 || !cellAt(b, nx, ny).walk || (block[j] && !goal[j])) continue;
+      d[j] = d[i] + 1;
+      q.push(j);
+    }
+  }
+  return Infinity;
+}
+
+// Headless auto-player for raids: loot what is near, extract when Heat or wounds get bad (BOT_LEAVE).
 function autoRaidTurn(state) {
   const b = state.combat;
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   const stairCells = () => (R.stairs || []).filter(([x, y]) => cellAt(b, x, y).walk);
+  const exitCells = () => { const out = []; for (const zz of R.zones) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) out.push([x, y]); return out; };
   if (R.folk) resolveBattleCards(state); // floorfolk.js: a card raised over the fight (the survivors upstairs) answered by its weights
+  // The squad's call to leave, once a turn (BOT_LEAVE above).
+  const squad = b.units.filter((x) => x.side === "player" && !x.left && !x.dead);
+  const standing = squad.filter(activeAny);
+  if (!R.botOut && standing.length) {
+    let why = "";
+    if (R.heat >= BOT_LEAVE.HEAT) why = "heat";
+    else if (standing.filter((x) => x.hp < BOT_LEAVE.HURT_HP).length >= standing.length * BOT_LEAVE.HURT_SHARE) why = "hurt";
+    else if (squad.some((x) => x.down && (x.stab || medsLeft(b) <= 0))) why = "down";
+    else {
+      let seen = 0;
+      for (const o of b.units) {
+        if (o.side === "player" || o.side === "third" || !active(o) || !o.aware || o.dormant) continue;
+        const f = o.f || 0;
+        if (standing.some((x) => (x.f || 0) === f && ((b.floor || 0) === f ? canSee(b, x, o) : dist(x.x, x.y, o.x, o.y) <= x.sight))) seen++;
+      }
+      if (seen > standing.length) why = "outnumbered";
+    }
+    if (why) R.botOut = { turn: b.turn, why };
+  }
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.floors && activeAny(u) && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0); // storeys: each one acts on its own floor
+    // Cut off: the safe way to the exit (down the stairs first, upstairs) against the plain one, two turns running.
+    if (!R.botOut && active(u) && u.exitTurn !== b.turn) {
+      u.exitTurn = b.turn;
+      const targets = (u.f || 0) ? stairCells() : exitCells();
+      const plain = botExitDetour(b, u, targets, false), safe = botExitDetour(b, u, targets, true);
+      const detour = isFinite(plain) ? safe - plain : 0; // Infinity: no safe way at all
+      const h = u.exitHist || []; // the last DETOUR_TURNS detours
+      const n = BOT_LEAVE.DETOUR_TURNS;
+      const grew = h.length >= n && detour > 0 && h.every((v, i) => (v === Infinity ? detour === Infinity && i >= n - 1 : v < (i + 1 < h.length ? h[i + 1] : detour)));
+      if (grew) R.botOut = { turn: b.turn, why: "cut off" };
+      u.exitHist = [...h.slice(-(n - 1)), detour];
+    }
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
-      const unload = mine < 2 && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < 55 && u.noStash !== b.turn;
+      const unload = mine < 2 && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < BOT_LEAVE.HEAT && u.noStash !== b.turn;
       if (unload && atVehicle(b, u)) { if (combatAct(state, { type: "stash", unit: u.id })) u.noStash = b.turn; continue; }
       const full = !!party && mine < 2 && !unload;
       const todo = (c) => !botDone(c) && !(c.skipBy && c.skipBy.includes(u.id)); // skipBy: nothing in it fits on this one
       const here = (c) => (c.f || 0) === (u.f || 0); // storeys (buildingmaps.js): this floor's containers
       const hereTodo = R.containers.some((c) => todo(c) && here(c));
-      const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some(todo) || (!!b.floors && !hereTodo && R.heat >= 45); // botDone: searched, or a lock it gave up on (locks.js)
+      const leave = !!R.botOut || u.hp < BOT_LEAVE.HP || full || !R.containers.some(todo) || (!!b.floors && !hereTodo && R.heat >= BOT_LEAVE.FLOOR_HEAT); // botDone: searched, or a lock it gave up on (locks.js)
       // Storeys: on the way out, down the stairs; with this floor done and more above or below (Heat still low), the
       // stairs toward the nearest floor with something left. On a stairwell: take it.
       const otherFloor = !leave && b.floors && !hereTodo ? nearestFloorWith(b, u, todo) : -1;

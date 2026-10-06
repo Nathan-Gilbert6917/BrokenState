@@ -169,6 +169,9 @@ export const GEAR = {
   // the wearer's load band). searchHeat: × a search's Heat for a team with one (scavenge.js).
   slingbag:    { name: "Sling bag",                slot: "backpack", skill: null, power: 1, req: 0, value: 6,  noise: 0, carry: 3, slots: 3, desc: "A small cross-body bag: 3 pack slots and +3 kg max load.", weight: 0.5, cat: "packs" },
   hikingpack:  { name: "Hiking pack",              slot: "backpack", skill: null, power: 1, req: 0, value: 30, noise: 0, carry: 14, slots: 10, ease: 0.08, searchHeat: 1.05, desc: "A 60-litre trekking pack: 10 pack slots, +14 kg max load, and a hip belt (the wearer's load counts 8% lighter). Bright nylon and clinking buckles: a searching team with one makes 5% more Heat.", weight: 2.5, cat: "packs" },
+  // A prepper's go-bag (hardcore-start.js: one of the three starts with it packed). More room than a hiking pack, but a
+  // duffle hangs off one shoulder: no belt or frame (ease 0), and it swings about on a search like the hiking pack does.
+  duffle:      { name: "Duffle bag",               slot: "backpack", skill: null, power: 1, req: 0, value: 24, noise: 0, carry: 16, slots: 12, searchHeat: 1.05, desc: "A big canvas duffle: 12 pack slots and +16 kg max load, carried on one shoulder (no belt, so none of the load is spared the wearer). It swings and clinks: a searching team with one makes 5% more Heat.", weight: 1.5, cat: "packs" },
   rucksack:    { name: "Frame rucksack",           slot: "backpack", skill: null, power: 1, req: 0, value: 55, noise: 0, carry: 18, slots: 14, ease: 0.2, desc: "An external-frame military rucksack: 14 pack slots, +18 kg max load, and the frame carries the weight (the wearer's load counts 20% lighter).", weight: 3.5, cat: "packs" },
   // Throwables in battle (stealth.js THROWABLES: throw = the key). One use each, from a pocket, the pack, the team's
   // cargo or the base armory.
@@ -399,6 +402,11 @@ export const TRAITS = {
   lucky:     { name: "Lucky",        desc: "+1 to every skill" },
   badback:   { name: "Bad Back",     desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
 };
+// A background trait, given only by the hardcore start (hardcore-start.js: the one of the three who fled with a packed
+// duffle bag) and never rolled at birth: it is not enumerable, so world.js makeSurvivor's Object.keys(TRAITS) draw
+// does not see it (and no seed's rolls move), while TRAITS.prepper still resolves for the roster, the tooltips and
+// the crew filter. It changes nothing in play: the kit it stands for is on the team's first day.
+Object.defineProperty(TRAITS, "prepper", { value: { name: "Prepper", desc: "Saw it coming: fled Calder with a duffle bag packed for five days (hardcore start). The kit is the trait." }, enumerable: false, writable: true, configurable: true });
 
 // Faction types. Starting attitude comes from the type (design doc: Faction count and starting attitudes).
 export const FACTION_TYPES = {

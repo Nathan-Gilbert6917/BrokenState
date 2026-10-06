@@ -13,7 +13,7 @@ import { stagingDanger, setFire, noteGunfire, CAMP_HEAT, nextHeat, heatInfo, tea
 import { startOrder } from "../src/sim/orders.js";
 import { rainWater } from "../src/sim/weather.js";
 import { fromTeamRow } from "../src/ui/hardcore.js";
-import { GEAR, SUPPLIES } from "../src/sim/data.js";
+import { GEAR, SUPPLIES, TRAITS } from "../src/sim/data.js";
 import { partyTile, partyMembers, orderOptions, giveOrder, orderMove, carried, MISSIONS, planPath } from "../src/sim/parties.js";
 import { packSize } from "../src/sim/inventory.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -85,15 +85,68 @@ for (const st of worlds) {
     for (const k of ["weapon", "tool", "backpack"]) if (s.gear[k]) check(GEAR[s.gear[k].key] && GEAR[s.gear[k].key].slot === k, `seed ${st.seed}: ${s.gear[k].key} in its slot`);
     check(!s.gear.armor, `seed ${st.seed}: nobody fled in body armor`);
   }
-  const sup = p.supplies, n = partyMembers(st, p).length;
-  check(sup.food >= HC_START.TEAM_MIN && sup.food <= HC_START.TEAM_MAX && sup.water >= HC_START.TEAM_MIN && sup.water <= HC_START.TEAM_MAX, `seed ${st.seed}: 1–3 days of food and water for three (${sup.food} food, ${sup.water} water)`);
-  check(sup.food / n <= 3 && sup.water / n <= 3, `seed ${st.seed}: no more than 3 days each`);
-  check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 36 && (sup.meds || 0) <= 3, `seed ${st.seed}: no fuel, scrap or parts, almost no ammo (${sup.ammo || 0}) or meds`);
+  // The other two carried 1–3 days for three (TEAM_MIN..TEAM_MAX); the prepper's five days (PREPPER.FOOD / WATER) come on top.
+  const sup = p.supplies, n = partyMembers(st, p).length, P = HC_START.PREPPER;
+  check(sup.food >= HC_START.TEAM_MIN + P.FOOD && sup.food <= HC_START.TEAM_MAX + P.FOOD && sup.water >= HC_START.TEAM_MIN + P.WATER && sup.water <= HC_START.TEAM_MAX + P.WATER, `seed ${st.seed}: the others' 1–3 days plus the prepper's five (${sup.food} food, ${sup.water} water)`);
+  check(sup.food / n <= 3 + P.FOOD / n && sup.water / n <= 3 + P.WATER / n, `seed ${st.seed}: no more than 3 days each beyond the bag`);
+  check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 36 + P.AMMO && (sup.meds || 0) <= 3 + P.MEDS, `seed ${st.seed}: no fuel, scrap or parts, little ammo (${sup.ammo || 0}) or meds beyond the bag`);
   check(Object.values(sup).every((v) => Number.isFinite(v) && v >= 0), `seed ${st.seed}: clean supply numbers`);
 }
 check(bags > 0 && pocketsOnly > 0, `some fled with a bag, some with only pockets (${bags} bags, ${pocketsOnly} pockets only)`);
 check(armed > 0 && unarmed > 0, `some grabbed a weapon, some did not (${armed} armed: ${[...weaponKinds].join(", ")})`);
 check(bagKinds.size >= 2 && itemKinds.size >= 8, `the rolls vary (${bagKinds.size} kinds of bag, ${itemKinds.size} kinds of thing)`);
+
+// ---------- the prepper ----------
+section("The prepper: one of the three fled with a duffle bag packed for five days (2026-10-06)");
+{
+  const P = HC_START.PREPPER;
+  check(!!GEAR.duffle && GEAR.duffle.slot === "backpack" && GEAR.duffle.slots > GEAR.hikingpack.slots && GEAR.duffle.carry > GEAR.hikingpack.carry, `the duffle bag is a pack bigger than a hiking pack (${GEAR.duffle && GEAR.duffle.slots} slots, +${GEAR.duffle && GEAR.duffle.carry} kg)`);
+  check(!!TRAITS.prepper && !Object.keys(TRAITS).includes("prepper"), "the Prepper trait resolves for the roster but is never rolled at birth (not enumerable)");
+  check(P.FOOD === 15 && P.WATER === 15, `the bag holds five days for three: ${P.FOOD} food, ${P.WATER} water`);
+  let withTrait = 0, guns = 0, knives = 0, ammoOk = 0, preppersAt = new Set();
+  const kitKinds = new Set();
+  for (const st of worlds) {
+    const p = roadTeam(st);
+    const hc0 = st.hardcore.start;
+    const pr = st.survivors.find((s) => s.id === hc0.prepper);
+    if (!check(!!pr && partyMembers(st, p).includes(pr), `seed ${st.seed}: the start names a prepper on the team`)) continue;
+    preppersAt.add(st.survivors.indexOf(pr));
+    const bag = pr.gear.backpack;
+    check(!!bag && bag.key === P.BAG, `seed ${st.seed}: ${pr.name.split(" ")[0]} carries the ${P.BAG}`);
+    const inBag = (bag && bag.contents || []).filter(Boolean);
+    const onThem = [pr.gear.tool, pr.gear.weapon, ...inBag].filter(Boolean);
+    for (const it of onThem) kitKinds.add(it.key);
+    check(pr.gear.tool && pr.gear.tool.key === "waterfilter", `seed ${st.seed}: the water filter is in their hand`);
+    check(P.KIT.every((k) => onThem.some((it) => it.key === k)), `seed ${st.seed}: the whole kit is on them (${P.KIT.join(", ")})`);
+    const extras = inBag.filter((it) => !P.KIT.includes(it.key)).length;
+    check(extras >= P.EXTRA_N[0] && extras <= P.EXTRA_N[1] && inBag.every((it) => !packSize(it) && !GEAR[it.key].bulky), `seed ${st.seed}: ${extras} extras from the prepper's list, everything fits a pack`);
+    const w = pr.gear.weapon;
+    check(!!w && (w.key === "knife" || P.GUNS[w.key]), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
+    if (w && P.GUNS[w.key]) { guns++; if (p.supplies.ammo >= P.AMMO) ammoOk++; } else knives++;
+    const traited = pr.traits.includes("prepper");
+    if (traited) withTrait++;
+    check(traited ? pr.traits.length <= P.MAX_TRAITS : pr.traits.length >= P.MAX_TRAITS, `seed ${st.seed}: the trait when a slot allows (${pr.traits.join(", ")})`);
+    const line = st.log.find((l) => /was a prepper/.test(l.text));
+    check(!!line && line.text.startsWith(pr.name.split(" ")[0]) && Math.floor(line.hour / 24) === 0 && (traited || /no room for the trait/.test(line.text)), `seed ${st.seed}: day 1's log names the prepper (${line ? line.text.slice(0, 60) : "no line"}…)`);
+    check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 food, 15 water/.test(hc0.grabbed[0]) && /15 food, 15 water/.test(st.cards[0].text), "the orders card tells the bag's contents first");
+    check(p.supplies.meds >= P.MEDS, `seed ${st.seed}: the bag's meds are pooled (${p.supplies.meds})`);
+    check(!p.burden || p.burden.band <= 1, `seed ${st.seed}: the team still walks (load band ${p.burden && p.burden.band})`);
+  }
+  check(guns === ammoOk && guns > 0 && knives > 0, `across ${worlds.length} seeds: ${guns} guns (each with ${P.AMMO}+ rounds), ${knives} knives`);
+  check(withTrait > 0 && withTrait < worlds.length, `the trait fits some and not others (${withTrait} of ${worlds.length})`);
+  check(preppersAt.size >= 2, `the prepper is not always the same one of the three (slots ${[...preppersAt].sort().join(", ")})`);
+  check(kitKinds.size >= P.KIT.length + 3, `the kits vary beyond the fixed part (${kitKinds.size} kinds)`);
+  // Deterministic by seed, and it survives a save.
+  const a = hc(606), b = hc(606);
+  const who = (st) => { const pr = st.survivors.find((s) => s.id === st.hardcore.start.prepper); return JSON.stringify([pr.name, pr.traits, pr.gear, roadTeam(st).supplies]); };
+  check(who(a) === who(b), "same seed, same prepper and kit");
+  a.cards.length = 0; // the opening card is answered before a save
+  const ld = loadFromString(saveToString(a));
+  const prA = a.survivors.find((s) => s.id === a.hardcore.start.prepper), prL = ld.survivors.find((s) => s.id === ld.hardcore.start.prepper);
+  check(!!prL && prL.name === prA.name && prL.traits.join() === prA.traits.join() && prL.gear.backpack.key === P.BAG && JSON.stringify(prL.gear.backpack.contents) === JSON.stringify(prA.gear.backpack.contents) && prL.gear.tool.key === "waterfilter", "a save brings the prepper, the trait and the bag's contents back");
+  check(JSON.stringify(roadTeam(ld).supplies) === JSON.stringify(roadTeam(a).supplies), "and the pooled five days");
+  check(ld.log.some((l) => /was a prepper/.test(l.text)), "and the log line");
+}
 {
   const a = hc(4242), b = hc(4242);
   const sig = (st) => JSON.stringify(st.survivors.map((s) => [s.name, s.gear, s.pockets])) + JSON.stringify(roadTeam(st).supplies) + partyTile(roadTeam(st));
