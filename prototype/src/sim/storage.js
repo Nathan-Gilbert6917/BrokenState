@@ -29,7 +29,7 @@ import { spoilMult } from "./skills.js";
 import { meatAt, baseGameDaily } from "./hunting.js";
 import { wormMeatAt, wormVegAt, smokeWormMeat } from "./worm.js";
 
-export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150 };
+export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30 };
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
 export const RATE = { cellar: 0.005, dry: 0.008, outside: 0.03, preserved: 0.001 };
 export const RACK = { food: 4, out: 3, keepDays: 15 };   // drying rack: food in, preserved out, days of eating kept fresh
@@ -61,6 +61,7 @@ export function storeSpaces(base) {
   if (cellar > 0) out.push({ key: "cellar", name: count(base, "cellar") ? (base.type === "hub" ? "Cellars" : "Root cellar") : "Cellar", kind: "cellar", cap: cellar });
   if (base.type !== "hub") out.push({ key: "pantry", name: "Pantry", kind: "dry", cap: STORE.pantry });
   if (count(base, "storehouse")) out.push({ key: "storehouse", name: "Storehouse", kind: "dry", cap: count(base, "storehouse") * STORE.storehouse });
+  if (count(base, "crates")) out.push({ key: "crates", name: "Storage crates", kind: "dry", cap: count(base, "crates") * STORE.crates });
   if (count(base, "coldstore")) out.push({ key: "coldstore", name: poweredType(base, "coldstore") ? "Cold store (powered)" : "Cold store", kind: poweredType(base, "coldstore") ? "freezer" : "cold", cap: count(base, "coldstore") * STORE.coldStore });
   return out;
 }

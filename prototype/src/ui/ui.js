@@ -34,6 +34,7 @@ import { crawlModal } from "./citycrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
+  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -199,7 +200,7 @@ function renderBases(state) {
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         ${illnessRowHtml(state, b)}
-        <div>Building</div><div>${job ? `${BUILDINGS[job.type].name}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
+        <div>Building</div><div>${job ? `${buildJobName(job)}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
         ${supplySummary(state, b)}
         ${caravanLines(state, b)}
         ${line ? `<div${tip("Share of outpost surplus that reaches the hub, and how long backup takes")}>Supply line</div><div class="${line.strength < 0.6 ? "danger" : "good"}">${Math.round(line.strength * 100)}% · ETA ${isFinite(line.hours) ? line.hours + "h" : "cut off"}</div>` : ""}
@@ -1259,35 +1260,88 @@ function baseBuildings(state, b) {
   </div>`;
 }
 
-function baseConstruction(state, b) {
+// Construction (sim/buildings.js): the plots (building and utility, by the base's size), the queue, what stands on
+// the plots (demolish to free one), the water barrels (upgrade each, choose what it holds) and what can be built.
+function baseConstruction(state, b, ui) {
   const rate = buildRate(state, b);
   const builders = atBase(state, b.id).filter((s) => s.role === "build");
   let elapsed = 0;
+  const costText = (cost) => Object.entries(cost).map(([c, v]) => `${v} ${c}`).join(", ");
+  const demolishBtn = (x) => {
+    const chk = canDemolish(state, b, x.id);
+    const back = costText(demolishRefund(x)) || "nothing";
+    const armed = ui && ui.demolishArm === x.id;
+    return `<button class="mini${armed ? " danger" : ""}" data-action="demolish" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `Pull it down to free its plot: ${back} salvaged.${armed ? " Click again to confirm." : ""}` : chk.reason)}>${armed ? "Confirm" : "Demolish"}</button>`;
+  };
+  const plotBar = (kind) => {
+    const cap = plotCap(b, kind), used = plotsUsed(b, kind);
+    return `<div class="spread"><b>${PLOT_NAMES[kind]}s</b><span class="${cap && used >= cap ? "warn" : "muted"}">${used} of ${cap} used</span></div>${cap ? bar(Math.min(100, (used / cap) * 100), used > cap ? "var(--danger)" : "var(--accent)") : `<div class="muted">None at a ${tierName(b).toLowerCase()}.</div>`}`;
+  };
+  const sizes = [["shelter", "Shelter"], ["outpost", "Outpost"], ["hub", "Main hub"]].map(([k, n]) => `${n} ${PLOTS[k].building} / ${PLOTS[k].utility}`).join(" · ");
+  // What stands on the plots, the barrels apart (their own card).
+  const plotList = (kind) => {
+    const list = b.buildings.filter((x) => BUILDINGS[x.type] && BUILDINGS[x.type].plot === kind && x.type !== "water_barrel");
+    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span>${demolishBtn(x)}</div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
+  };
+  const holdsSel = (x) => `<select data-action="barrel-holds" data-base="${b.id}" data-id="${x.id}"${tip("Un-purified: room for the well, rain and river water. Purified: room only safe water may use (the water filters' surplus, bottled water brought home), never crowded out by the well's water. Switching moves nothing: water of the other kind goes to the tanks, or stands outside if they are full.")}><option value="rawwater" ${barrelHolds(x) === "rawwater" ? "selected" : ""}>Un-purified</option><option value="water" ${barrelHolds(x) === "water" ? "selected" : ""}>Purified</option></select>`;
+  const barrelCard = () => {
+    const list = barrels(b);
+    const tiers = WATER_BARREL.tiers.slice(1).map((t, i) => `${i + 1}. ${t.name} ${t.cap}`).join(" → ");
+    return `<div class="card small"${tip(BUILDINGS.water_barrel.desc)}>
+      <div class="spread"><b>Water barrels</b><span class="muted">${list.length}/${BUILDINGS.water_barrel.max}</span></div>
+      <div class="muted">${tiers} water. Each keeps room for one kind.</div>
+      ${list.map((x, i) => {
+        const up = canUpgradeBarrel(state, b, x.id);
+        const queuedUp = b.construction.some((c) => c.target === x.id);
+        const next = WATER_BARREL.tiers[barrelTier(x) + 1];
+        const upBtn = queuedUp ? `<span class="chip">Upgrade queued</span>` : next ? `<button class="mini" data-action="barrel-up" data-base="${b.id}" data-id="${x.id}" ${up.ok ? "" : "disabled"}${tip(`${next.name} (${next.cap} water): ${next.desc}. ${costText(next.cost)}, ${next.hours} work-hours.${up.ok ? "" : ` ${up.reason}.`}`)}>Upgrade</button>` : `<span class="chip on">Top tier</span>`;
+        return `<div class="row" style="margin-top:0.3rem;gap:0.4rem;flex-wrap:wrap"><span style="flex:1;min-width:8rem">${i + 1}. ${esc(barrelName(x))} <span class="muted">${barrelCap(x)}${x.broken ? " · broken" : ""}</span></span>${holdsSel(x)}${upBtn}${demolishBtn(x)}</div>`;
+      }).join("")}
+    </div>`;
+  };
+  const buildCard = (k, d) => {
+    const chk = canBuild(state, b, k);
+    return `<div class="card small"${tip(d.desc)}>
+      <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
+      <span class="muted">${costText(d.cost)} · ${d.hours} work-hours · have ${count(b, k)}/${d.max}${chk.ok ? "" : ` · ${esc(chk.reason)}`}</span>
+      ${lockLine(state, b, "building", k)}
+    </div>`;
+  };
+  const types = Object.entries(BUILDINGS).filter(([, d]) => !d.shelterOnly || isShelter(b)).sort(([ka], [kb]) => (isShelter(b) ? (kb === "hub_up") - (ka === "hub_up") : 0));
+  const section = (title, list) => `<h3>${title}</h3>${list.map(([k, d]) => buildCard(k, d)).join("") || `<div class="muted small">None.</div>`}`;
+  const free = (kind) => Math.max(0, plotCap(b, kind) - plotsUsed(b, kind));
+  const freeText = (kind) => `<span class="muted small">(${free(kind)} ${PLOT_NAMES[kind].toLowerCase()}${free(kind) === 1 ? "" : "s"} free)</span>`;
   return `<div class="grid2">
     <div>
+      <h3>Plots</h3>
+      <div class="card small"${tip("Every building stands on a plot. Building plots: anything with a roof (bunkhouses, the storehouse, cellars, workshops, the hospital). Utility plots: the small things in the yard (the boiler, water barrels, storage crates, the watchtower, the cook fire, rain catchers, benches). Walls, defences and farm plots need none. A hospital keeps its plot when upgraded; a barrel's upgrades stay on its plot.")}>
+        ${plotBar("building")}
+        <div style="margin-top:0.4rem">${plotBar("utility")}</div>
+        <div class="muted" style="margin-top:0.4rem">By base size (building / utility): ${sizes}. Demolish a building to free its plot.</div>
+      </div>
       <h3>Queue</h3>
       <div class="small muted" style="margin-bottom:0.4rem">${builders.length ? `Builders: ${builders.map((x) => first(x) + bedTag(x)).join(", ")} (${n1(rate)} work-hours per hour${builders.some((x) => x.inBed) ? "; people in a hospital bed do not build" : ""})` : "No builders. Set someone's role to Build."}</div>
       ${b.construction.length ? b.construction.map((job, i) => {
         const left = job.hours - job.progress;
         elapsed += left;
         const eta = rate > 0 ? Math.ceil(elapsed / rate) : null;
+        const plot = BUILDINGS[job.type].plot;
         return `<div class="card small">
-          <div class="spread"><b>${i === 0 ? "▶ " : ""}${BUILDINGS[job.type].name}</b><button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></div>
+          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(buildJobName(job))}</b><button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></div>
           ${bar((job.progress / job.hours) * 100, "var(--accent)")}
-          <span class="muted">${i === 0 ? `${n1(left)} work-hours left` : "Waiting in queue"} · ${eta != null ? `done in about ${eta}h` : "paused"}</span>
+          <span class="muted">${i === 0 ? `${n1(left)} work-hours left` : "Waiting in queue"} · ${eta != null ? `done in about ${eta}h` : "paused"}${plot && !job.target ? ` · ${PLOT_NAMES[plot].toLowerCase()}` : ""}</span>
         </div>`;
       }).join("") : `<div class="muted small">Nothing queued.</div>`}
+      <h3>On the building plots</h3>
+      <div class="card small">${plotList("building")}</div>
+      <h3>On the utility plots</h3>
+      <div class="card small">${plotList("utility")}</div>
+      ${barrels(b).length ? barrelCard() : ""}
     </div>
     <div>
-      <h3>Build</h3>
-      ${Object.entries(BUILDINGS).filter(([, d]) => !d.shelterOnly || isShelter(b)).sort(([ka], [kb]) => (isShelter(b) ? (kb === "hub_up") - (ka === "hub_up") : 0)).map(([k, d]) => {
-        const chk = canBuild(state, b, k);
-        return `<div class="card small"${tip(d.desc)}>
-          <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
-          <span class="muted">${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours · have ${count(b, k)}/${d.max}${chk.ok ? "" : ` · ${esc(chk.reason)}`}</span>
-          ${lockLine(state, b, "building", k)}
-        </div>`;
-      }).join("")}
+      ${section(`Buildings ${freeText("building")}`, types.filter(([, d]) => d.plot === "building"))}
+      ${section(`Utilities ${freeText("utility")}`, types.filter(([, d]) => d.plot === "utility"))}
+      ${section(`Walls, defences and fields <span class="muted small">(no plot)</span>`, types.filter(([, d]) => !d.plot))}
     </div>
   </div>`;
 }
