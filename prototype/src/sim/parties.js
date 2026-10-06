@@ -38,7 +38,7 @@ import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead } from "./weather.js";
+import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt } from "./weather.js";
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
@@ -374,6 +374,14 @@ export function waterForHours(state, startHour, segs) {
   for (const [hours, rate] of segs) for (let i = 0; i < hours; i++) { h += 1; w += (rate / 24) * thirstAt(state, h); }
   return w;
 }
+// Food the same way: each hour eaten at that day's cold (weather.js coldAt: ×1.1 below 0°C, ×1.2 below −8°C, as
+// needs.js teamCold), except stretches by a lit camp fire (segs = [[hours, rations a day, warm], ...]: warm true).
+// With no cold it equals rationsFor.
+export function foodForHours(state, startHour, segs) {
+  let h = startHour, f = 0;
+  for (const [hours, rate, warm] of segs) for (let i = 0; i < hours; i++) { h += 1; f += (rate / 24) * (warm ? 1 : coldAt(state, h)); }
+  return f;
+}
 
 // fuel: what the vehicle can burn (tank + cans); leave it out to assume enough. supplies: what the team packs (its
 // load sets its pace and rations, load.js); v: the vehicle (object or id) when there is one.
@@ -400,13 +408,13 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   // Hours the weather adds (or, rarely, saves) against the same trip in fair weather: shown by the planner.
   const fairOut = travelHours(state, out.path, { vehicle: mode, ...po, fuel: mode === true ? fuel ?? Infinity : 0, weather: false }).hours;
   const fairBack = backPlan ? travelHours(state, backPlan.path, { ...backOpts, weather: false }).hours : fairOut;
-  // Rations: more on the move while loaded (load.js), the 6 hours on site at the plain rate.
-  const eat = members.length ? rationsFor(pace, hoursOut + hoursBack, go.rideHours + back.rideHours, 6, n) : (n * hours) / 24;
-  // Water: the same rations hour by hour (riding first, then on foot if the tank runs dry; 6 hours on site), each at
-  // its day's thirst (summer, a heat wave), as the team will drink it.
-  const drink = members.length
-    ? waterForHours(state, state.hour, [[go.rideHours, pace.eatMove], [hoursOut - go.rideHours, pace.eatFoot], [6, n], [back.rideHours, pace.eatMove], [hoursBack - back.rideHours, pace.eatFoot]])
-    : waterForHours(state, state.hour, [[hours, n]]);
+  // Rations: more on the move while loaded (load.js), the 6 hours on site at the plain rate; hour by hour (riding
+  // first, then on foot if the tank runs dry; 6 hours on site), each at its day's cold (no camp fire on such a trip,
+  // needs.js teamCold), as the team will eat it.
+  const segs = members.length ? [[go.rideHours, pace.eatMove], [hoursOut - go.rideHours, pace.eatFoot], [6, n], [back.rideHours, pace.eatMove], [hoursBack - back.rideHours, pace.eatFoot]] : [[hours, n]];
+  const eat = foodForHours(state, state.hour, segs);
+  // Water: the same rations hour by hour, each at its day's thirst (summer, a heat wave), as the team will drink it.
+  const drink = waterForHours(state, state.hour, segs);
   return {
     path: out.path,
     hoursOut, hoursBack, hours, noWayBack: !backPlan, // noWayBack: the team could get there but not home (the autopilot never sends one)

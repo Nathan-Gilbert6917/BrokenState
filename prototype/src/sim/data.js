@@ -36,7 +36,7 @@ export const SUPPLIES = {
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
   // Firewood (woodcutting.js): a bundle of split logs and branches, cut from the land around a base (the Cut wood job)
   // or by a team (the Cut wood order). The winter's heating: a base burns firewood before fuel, 1 firewood heating as
-  // much as 0.5 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
+  // much as 0.2 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
   wood:  { name: "Firewood", value: 0.6, weight: 3, cat: "firewood" },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
