@@ -96,6 +96,7 @@ const tileOf = (state, setup) => {
 export function siteScale(tile) {
   const t = tile || { terrain: "plains" };
   if (t.loc && SIZES.SITE[t.loc.type] != null) return SIZES.SITE[t.loc.type];
+  if (t.bridge) return L; // a bridge raid: room for a 12–24 cell span with a bank either side (combat.js bridgeSpan)
   return SIZES.TERRAIN[t.terrain] ?? M;
 }
 export const raidDims = (tile) => dimsAt(siteScale(tile));
@@ -109,6 +110,7 @@ export function fieldScale(tile, players, enemy) {
   const t = tile || { terrain: "plains" };
   if (t.terrain === "plains" || t.terrain === "water") s += F.OPEN;
   else if (t.terrain === "forest" || t.terrain === "hills" || t.terrain === "mountain") s += F.COVERED;
+  if (t.bridge) s = Math.max(s, L); // a bridge: the span needs the room
   s = Math.min(F.MAX, s);
   if (t.loc && SIZES.SITE[t.loc.type] != null) s = Math.max(s, Math.min(F.MAX, SIZES.SITE[t.loc.type]) - F.SITE);
   return s;
@@ -164,7 +166,7 @@ export function coverShare(cells, W, H, R = COVER.R, reach = null) {
 // crates and barrels in the rubble, cars on the road, crates and counters indoors.
 const PROPS = {
   grass: ["tree", "rock", "rock", "tree", "fence", "boulder"], field: ["hay", "hay", "fence", "tree"], dirt: ["rock", "rock", "boulder", "crate"],
-  gravel: ["boulder", "rock", "rock"], rubble: ["car", "crate", "rock", "barrel", "truck", "crate"], road: ["car", "car", "truck"],
+  gravel: ["boulder", "rock", "rock"], rubble: ["crate", "rock", "barrel", "crate", "rock"], road: ["crate", "barrel"], // no single-cell cars: cars are 2 × 3–4 cells (combat.js placeCar)
   floor: ["crate", "counter", "cabinet"],
 };
 // Tops a map up with props until COVER's share of its open ground has cover within R tiles (opts.target), placing

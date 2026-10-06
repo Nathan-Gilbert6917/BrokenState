@@ -69,6 +69,7 @@ export const RAIDS = {
   HOLD: 1.2, BREAK: 0.8, SIEGE_HOURS: 8, PACE: 1.2, PACE_MAX: 4, TRIBUTE_GW: 6, TRIBUTE_FADE: 0.5,
   PROVOKED: { military: 0.03, fortress: 0.02, traders: 0.01, commune: 0.01 },
   EXPAND_AGG: 0.02, EXPAND_RANGE: 7, KEEP_CLEAR: 3, BASES_AGG: 6, BASES: 4, HEIR_RANGE: 15, HEIR_CHANCE: 0.5,
+  BRIDGE_PICK: 0.35, BRIDGE_PICK_AGG: 0.6, // a bridge's weight against a site when a group expands (a barricade over the river)
   TAKE_BASE_AGG: 0.8, MIN_AGG: 2, NEW_GANG_FROM: 60, NEW_GANG: 0.02, RECRUIT: 0.12, RECRUIT_BASE: 0.02, RECRUIT_UNTIL: 45, COOL_OFF: 0.1,
   // Keeping a base won in a raid (keepChance): by type, × nearness to their own bases (1 within KEEP_NEAR tiles,
   // falling to 0.4 at KEEP_FAR), × richness (0.8 + stock value / 2000, at most 1.4); none beyond maxBases. A base
@@ -287,18 +288,23 @@ export function factionsDaily(state) {
         if (seen.has(id)) continue;
         seen.add(id);
         const t = state.tiles[id];
-        if (t.loc && t.loc.type !== "city" && (t.owner == null) && !state.bases.some((pb) => pb.tile === id) &&
+        // A site, or a bridge: a base on a bridge barricades the road over the river (parties.js bridgeClosedTo), so a
+        // group that wants you kept out, or the river crossing for itself, takes one (BRIDGE_PICK of a pick, more for
+        // aggressive groups, and only a bridge within reach of you or on their side of the river).
+        const bridge = !!t.bridge && !t.loc;
+        if ((bridge || (t.loc && t.loc.type !== "city")) && (t.owner == null) && !state.bases.some((pb) => pb.tile === id) &&
           state.factions.every((o) => !o.bases.includes(id)) && !reservedForYou(state, id) && // land left for your outpost after a peace (diplomacy.js)
           !(agg && state.bases.some((pb) => g.distance(pb.tile, id) <= RAIDS.KEEP_CLEAR))) cands.push(t);
       }
       if (cands.length) {
         let t;
-        if (agg) {
-          const toYou = (id) => { let d = Infinity; for (const pb of state.bases) d = Math.min(d, g.distance(pb.tile, id)); return d; };
-          t = rng.weighted(cands, (c) => (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6)));
-        } else t = rng.pick(cands);
+        const toYou = (id) => { let d = Infinity; for (const pb of state.bases) d = Math.min(d, g.distance(pb.tile, id)); return d; };
+        // A bridge is weighed like a middling site, and more the nearer it lies to you (it is a barricade against you).
+        const bridgeW = (c) => (agg ? RAIDS.BRIDGE_PICK_AGG : RAIDS.BRIDGE_PICK) * (1 + 2 / (1 + toYou(c.id) / 6));
+        if (agg) t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6))));
+        else t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : 1));
         f.bases.push(t.id);
-        if (state.knowledge[t.id] && state.live.has(t.id)) log(state, `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.`, "danger");
+        if (state.knowledge[t.id] && state.live.has(t.id)) log(state, t.loc ? `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.` : `${knownName(f, "An unknown group")} has barricaded the bridge at ${tileLabel(state, t.id)}: the road over the river is closed to everyone else.`, "danger");
       }
     }
 

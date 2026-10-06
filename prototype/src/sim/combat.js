@@ -31,7 +31,7 @@
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
-import { GEAR, SUPPLIES } from "./data.js";
+import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
@@ -464,6 +464,7 @@ export const CELL = {
   sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },
   pump:    { walk: false, cover: 1, los: false, name: "Fuel pump" },
   water:   { walk: false, cover: 0, los: false, name: "Water" },
+  rail:    { walk: false, cover: 1, los: false, name: "Bridge railing" }, // a bridge's railing over the river (layRoad)
   // Raid containers and props.
   shelf:   { walk: false, cover: 1, los: false, name: "Shelves" },
   locker:  { walk: false, cover: 2, los: true,  name: "Lockers" },
@@ -656,6 +657,117 @@ export const ammoLeft = (b) => pool(b, "ammo");
 export const medsLeft = (b) => pool(b, "meds");
 
 /// ---------- battle map ----------
+// Roads, bridges and the cars on them (the battle maps). A road tile's map has the road across it, ROAD.WIDTH (8) cells
+// wide (6 on a small field map), with the cars people fled in scattered along it: cover, and on a raid map the
+// searchable ones (AREAS.roadcars). A bridge tile (a road over a water tile, mapgen.js) has the river across the map
+// too, bridgeSpan wide (12–24 cells: about half the map), and the road crosses it on a concrete deck between two
+// railings ("rail" cells: half cover you see over): the only way from one bank to the other, so a fight funnels onto
+// it. c.deck marks the deck's cells (ui/isoview.js draws the concrete).
+// Cars are 2 cells across and 3 (a sedan) or 4 (a van, a pickup, a truck) long. Every cell of one is a "car" (or
+// "truck") cell sharing c.car = { id, i, j, L, ax, kind, v }: i along the length (0 the front), j across, ax the world
+// axis the length runs along ("x" | "y"), v the paint dice; the views draw each cell's piece so the pieces make one
+// body (ui/isoview.js carPieces, ui/combat.js). A car keeps a free ring of cells around it (never against another car,
+// a railing or a wall), so the way along a road is never closed; layRoad checks the road still runs end to end and
+// takes cars back out if it does not.
+export const ROAD = { WIDTH: 8, WIDTH_SMALL: 6, SMALL_H: 18, SPAN_MIN: 12, SPAN_MAX: 24, SPAN_SHARE: 0.5, BANKS: 10 };
+export const roadWidth = (h) => (h >= ROAD.SMALL_H ? ROAD.WIDTH : ROAD.WIDTH_SMALL);
+export const bridgeSpan = (w) => Math.max(4, Math.min(ROAD.SPAN_MAX, Math.max(ROAD.SPAN_MIN, Math.round(w * ROAD.SPAN_SHARE)), w - ROAD.BANKS));
+export const CAR_LEN = { car: [3, 3, 4], truck: [4] };
+// What a battle is called by its tile: the site, else a bridge, a road or the terrain.
+export const placeName = (tile) => (!tile ? "Open ground" : tile.loc ? tile.loc.name : tile.bridge ? "Bridge" : tile.road ? `Road (${TERRAIN[tile.terrain] ? TERRAIN[tile.terrain].name.toLowerCase() : tile.terrain})` : tile.terrain[0].toUpperCase() + tile.terrain.slice(1));
+// The rect a car at (x, y) covers: its length along ax.
+export const carRect = (x, y, ax, L) => (ax === "x" ? { x0: x, y0: y, w: L, h: 2 } : { x0: x, y0: y, w: 2, h: L });
+// Put a car down if its cells pass `ok` and the ring around them is open ground (or off the map). Returns the rect.
+export function placeCar(cells, W, H, x, y, ax, L, kind, ok, v = 0) {
+  const r = carRect(x, y, ax, L);
+  if (r.x0 < 0 || r.y0 < 0 || r.x0 + r.w > W || r.y0 + r.h > H) return null;
+  for (let yy = r.y0 - 1; yy <= r.y0 + r.h; yy++) for (let xx = r.x0 - 1; xx <= r.x0 + r.w; xx++) {
+    if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+    const inRect = xx >= r.x0 && yy >= r.y0 && xx < r.x0 + r.w && yy < r.y0 + r.h;
+    if (inRect ? !ok(xx, yy) : cells[yy * W + xx].k !== "open" && cells[yy * W + xx].k !== "rail") return null; // the ring may touch a bridge's railing (parked at the kerb)
+  }
+  const id = r.y0 * W + r.x0 + 1;
+  for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) {
+    const c = cells[yy * W + xx];
+    c.k = kind;
+    c.car = { id, i: ax === "x" ? xx - r.x0 : yy - r.y0, j: ax === "x" ? yy - r.y0 : xx - r.x0, L, ax, kind, v };
+  }
+  return { id, ...r, ax, L, kind };
+}
+export function removeCar(cells, W, r) {
+  for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) { const c = cells[yy * W + xx]; c.k = "open"; delete c.car; }
+}
+// Cars parked or left off the road: n of them, each at a free spot in `ok` cells, turned as their dice say.
+export function scatterCars(rng, cells, W, H, n, ok, kind = "car", lo = 1, hi = W - 2) {
+  let placed = 0;
+  for (let tries = 0; tries < n * 12 && placed < n; tries++) {
+    const k = kind === "mixed" ? (rng.chance(0.25) ? "truck" : "car") : kind;
+    const L = rng.pick(CAR_LEN[k]), ax = rng.chance(0.5) ? "x" : "y";
+    if (placeCar(cells, W, H, rng.int(lo, hi), rng.int(0, H - 1), ax, L, k, ok, rng.int(0, 1e6))) placed++;
+  }
+  return placed;
+}
+function layRoad(rng, cells, W, H, t, r0, opts = {}) {
+  const idx = (x, y) => y * W + x;
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const reserved = opts.reserved || null;
+  const isRes = (x, y) => !!(reserved && reserved[idx(x, y)]);
+  const width = roadWidth(H);
+  const r = Math.max(1, Math.min(H - width - 1, r0));
+  const rows = [];
+  for (let i = 0; i < width; i++) rows.push(r + i);
+  // The road's floor, under the ways in and out too (their cells stay open ground for the zones).
+  for (let x = 0; x < W; x++) for (const y of rows) { const c = cells[idx(x, y)]; if (c.k === "open" || c.k === "vehicle") c.f = "road"; }
+  let deck = null;
+  if (t.bridge) {
+    const span = bridgeSpan(W);
+    const c0 = Math.max(2, Math.min(W - span - 2, Math.floor((W - span) / 2) + rng.int(-1, 1)));
+    deck = { c0, c1: c0 + span - 1, span };
+    for (let x = c0; x <= deck.c1; x++) for (let y = 0; y < H; y++) {
+      if (isRes(x, y)) continue;
+      const c = cells[idx(x, y)];
+      if (rows.includes(y)) { c.deck = true; continue; }       // the deck: road over the water
+      if (y === r - 1 || y === r + width) { c.k = "rail"; c.f = "road"; c.deck = true; continue; } // the railings
+      c.k = "water"; c.f = "grass"; delete c.deck;
+    }
+  }
+  // The cars left along the road: in lanes two rows wide, lengthwise, a ring of free cells around each (a railing may
+  // be part of the ring: parked at the kerb of the bridge).
+  const lanes = Math.floor(width / 2);
+  const onRoad = (x, y) => inside(x, y) && !isRes(x, y) && cells[idx(x, y)].k === "open" && cells[idx(x, y)].f === "road";
+  const placed = [];
+  const putCar = (x, lane, kind, L, v) => {
+    const rect = placeCar(cells, W, H, x, r + lane * 2, "x", L, kind, onRoad, v);
+    if (rect) placed.push(rect);
+    return rect;
+  };
+  const n = Math.max(2, Math.round(opts.carsPer ?? W / 6));
+  const lo = opts.lo ?? 2, hi = opts.hi ?? W - 3;
+  for (let i = 0, tries = 0; i < n && tries < n * 10; tries++) {
+    const kind = rng.chance(0.25) ? "truck" : "car", L = rng.pick(CAR_LEN[kind]);
+    if (putCar(rng.int(lo, Math.max(lo, hi - L)), rng.int(0, lanes - 1), kind, L, rng.int(0, 1e6))) i++;
+  }
+  // The road must still run from one edge to the other through its own rows (8-way steps, as units move): else the
+  // last cars go back until it does.
+  const through = () => {
+    const seen = new Uint8Array(W * H), q = [];
+    for (const y of rows) if (CELL[cells[idx(0, y)].k].walk) { seen[idx(0, y)] = 1; q.push([0, y]); }
+    while (q.length) {
+      const [x, y] = q.pop();
+      if (x === W - 1) return true;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny) || !rows.includes(ny) || seen[idx(nx, ny)] || !CELL[cells[idx(nx, ny)].k].walk) continue;
+        seen[idx(nx, ny)] = 1; q.push([nx, ny]);
+      }
+    }
+    return false;
+  };
+  while (placed.length && !through()) removeCar(cells, W, placed.pop());
+  return { r, rows, width, lanes, deck, putCar, onRoad, through };
+}
+
+
 // The field map. Its layouts were drawn for 18 × 13 and are scaled to the battle's size (FIELD_W × FIELD_H): fixed
 // columns and rows by the width and height, how many things are scattered by the area, and on a bigger map a few
 // more buildings where there are buildings.
@@ -670,6 +782,8 @@ function genMap(rng, tile, opts = {}) {
   const X = (v) => Math.round(v * fx), Y = (v) => Math.round(v * fy), N = (n) => Math.round(n * area);
   const rx = (lo = 3, hi = W - 4) => rng.int(lo, hi);
   const scatter = (k, n, lo = 3, hi = W - 4) => {
+    // Cars and trucks are 2 × 3–4 cells (placeCar): half as many of them, parked off the road and outside.
+    if (k === "car" || k === "truck") { scatterCars(rng, cells, W, H, Math.max(1, Math.round(N(n) / 2)), (x, y) => free(x, y) && at(x, y).f !== "road" && at(x, y).f !== "floor", k, lo, hi); return; }
     // Crates may go indoors; everything else stays outside.
     for (let i = 0; i < N(n); i++) { const x = rx(lo, hi), y = rng.int(0, H - 1); if (free(x, y) && at(x, y).f !== "road" && (k === "crate" || at(x, y).f !== "floor")) put(x, y, k); }
   };
@@ -707,14 +821,11 @@ function genMap(rng, tile, opts = {}) {
     }
   };
 
-  // Road strip with wrecks.
-  if (t.road) {
-    const r = rng.int(Y(5), Y(7));
-    for (let x = 0; x < W; x++) for (const y of [r, r + 1]) put(x, y, "open", "road");
-    for (let i = 0; i < Math.round(rng.int(2, 4) * fx); i++) { const x = rx(X(4), W - X(5)), y = rng.pick([r, r + 1]); put(x, y, rng.chance(0.3) ? "truck" : "car"); }
-  }
-  // River for water tiles: a band with a couple of fords.
-  if (t.terrain === "water") {
+  // Road strip (ROAD.width rows) with the cars left on it: a bridge tile puts the river across the map and the road
+  // over it on a deck between railings (layRoad).
+  const road = t.road ? layRoad(rng, cells, W, H, t, rng.int(Y(5), Y(7)), { carsPer: Math.round(W / 5) }) : null;
+  // River for water tiles: a band with a couple of fords (on a bridge tile the river is the bridge's, laid above).
+  if (!road && t.terrain === "water") {
     const c = rng.int(X(8), X(9));
     const fords = [rng.int(Y(1), Y(4)), rng.int(Y(8), Y(11))];
     for (let y = 0; y < H; y++) for (const x of [c, c + 1]) if (!fords.some((f) => Math.abs(f - y) <= 0) && at(x, y).f !== "road") put(x, y, "water");
@@ -758,14 +869,17 @@ function genMap(rng, tile, opts = {}) {
   }
   if (type === "farm" || type === "ranch") for (const c of cells) if (c.f === "grass") c.f = "field";
   // Most open ground with cover within a few tiles, whatever the map's size (battlesize.js densify).
-  if (opts.densify !== false) densify(cells, W, H, rng, { target: coverTarget(t.terrain) }); // not on a base's wall map (its own ground)
+  if (opts.densify !== false) densify(cells, W, H, rng, { target: coverTarget(t.terrain), keep: (x, y) => !!cells[idx(x, y)].deck }); // not on a base's wall map (its own ground); nothing extra on a bridge's deck
 
-  // Every open cell must connect to both deployment zones; carve a lane if not.
+  // Every open cell must connect to both deployment zones; carve a lane if not. On a bridge tile the lane is the
+  // deck (the river is never carved): clear whatever blocks it.
   const mid = Math.floor(H / 2);
+  const rowsToTry = road ? [road.rows[Math.floor(road.width / 2)], road.rows[1], road.rows[road.width - 2]] : [mid - 1, mid, mid + 1];
+  const KEEP = new Set(["open", "water", "rail", "car", "truck"]); // never through the river, a railing or a car (cars leave the road open: layRoad)
   for (let tries = 0; tries < 3; tries++) {
     const r = flood(cells, 0, mid);
     if (r[idx(W - 1, mid)]) return { cells, reach: r };
-    for (let x = 0; x < W; x++) if (cells[idx(x, mid + tries - 1)].k !== "open") cells[idx(x, mid + tries - 1)].k = "open";
+    for (let x = 0; x < W; x++) { const c = cells[idx(x, rowsToTry[tries])]; if (!KEEP.has(c.k)) c.k = "open"; }
   }
   return { cells, reach: flood(cells, 0, mid) };
 }
@@ -1228,7 +1342,7 @@ export function createBattle(state, setup) {
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence" });
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
-    place: tile ? (tile.loc ? tile.loc.name : (tile.terrain[0].toUpperCase() + tile.terrain.slice(1))) : "Open ground",
+    place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1,
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
     ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
@@ -2742,6 +2856,10 @@ export const AREAS = {
   control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [["flashlight", 0.04]] },
   campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02]] },
   wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02]], alarm: 0.15 },
+  // The cars left along a road or on a bridge (layRoad): placed on the road itself, not in a cluster. What people
+  // fled with: fuel in the tanks, a bag of food and bottles, the odd gun in the glovebox. Some are locked (locks.js
+  // "car": pick it, pry it with a crowbar, or shatter the glass, which wakes everything nearby).
+  roadcars:  { name: "Cars on the road", outdoor: true, road: true, boxes: ["car", "car", "car"], loot: { fuel: [0.35, 1, 3], food: [0.3, 1, 3], water: [0.3, 1, 2], scrap: [0.35, 1, 3], ammo: [0.12, 4, 10], meds: [0.06, 1, 1] }, gear: [["pistol", 0.03], ["flashlight", 0.04], ["bottle", 0.06], ["slingbag", 0.03], ["backpack", 0.02], ["prybar", 0.02], ["binoculars", 0.01]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
   gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04]] },
   lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1]] },
@@ -2764,6 +2882,8 @@ export const AREA_SETS = {
   factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
   suburb: ["house", "house", "house", "garage"], water: ["campsite", "wreck"],
+  // A road with no site on it, and a bridge: the cars people left on the road (roadcars, placed on the road itself).
+  road: ["roadcars", "roadcars", "wreck", "campsite"], bridge: ["roadcars", "roadcars", "roadcars", "campsite"],
   // City blocks.
   autoshop: ["garage", "garage", "workshop", "wreck"], pharmacy: ["pharmacy", "pharmacy", "store", "office"],
   supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"],
@@ -2784,7 +2904,9 @@ export const AREA_SETS = {
 
 export function raidAreasFor(tile) {
   const t = tile || { terrain: "plains" };
-  return (t.loc && AREA_SETS[t.loc.type]) || AREA_SETS[t.terrain] || AREA_SETS.plains;
+  if (t.loc && AREA_SETS[t.loc.type]) return AREA_SETS[t.loc.type];
+  if (t.road && !t.loc) return t.bridge ? AREA_SETS.bridge : AREA_SETS.road; // a bare road or a bridge: the cars on it
+  return AREA_SETS[t.terrain] || AREA_SETS.plains;
 }
 
 // What an area tends to hold, for tooltips.
@@ -2797,9 +2919,20 @@ export function areaHint(type) {
 
 export const zoneAt = (b, x, y) => (b.raid ? b.raid.zones.findIndex((z) => x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h) : -1);
 // Containers carry c.f (their floor, buildingmaps.js storeys): the search helpers see the active floor's only.
-export const nearBox = (u, c) => (c.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1;
+// A container may cover several cells (a car: c.w × c.h cells from c.x, c.y; everything else one): next to it is next
+// to any of them, its marker sits over its middle, and the ring of cells around it is where a searcher stands.
+export const boxW = (c) => c.w || 1, boxH = (c) => c.h || 1;
+export const inBox = (c, x, y) => x >= c.x && y >= c.y && x < c.x + boxW(c) && y < c.y + boxH(c);
+export const boxCenter = (c) => [c.x + (boxW(c) - 1) / 2, c.y + (boxH(c) - 1) / 2];
+const boxGap = (c, x, y) => Math.max(c.x - x, x - (c.x + boxW(c) - 1), c.y - y, y - (c.y + boxH(c) - 1), 0);
+export const nearBox = (u, c) => (c.f || 0) === (u.f || 0) && boxGap(c, u.x, u.y) <= 1;
+export function boxRing(b, c) {
+  const out = [];
+  for (let y = c.y - 1; y <= c.y + boxH(c); y++) for (let x = c.x - 1; x <= c.x + boxW(c); x++) if (!inBox(c, x, y) && x >= 0 && y >= 0 && x < b.w && y < b.h) out.push([x, y]);
+  return out;
+}
 const onFloor = (b, c) => (c.f || 0) === (b.floor || 0);
-export const boxAt = (b, x, y) => (b.raid ? b.raid.containers.find((c) => c.x === x && c.y === y && onFloor(b, c) && !c.searched) || b.raid.containers.find((c) => c.x === x && c.y === y && onFloor(b, c)) : null);
+export const boxAt = (b, x, y) => (b.raid ? b.raid.containers.find((c) => inBox(c, x, y) && onFloor(b, c) && !c.searched) || b.raid.containers.find((c) => inBox(c, x, y) && onFloor(b, c)) : null);
 export const floorContainers = (b, f = b.floor || 0) => (b.raid ? b.raid.containers.filter((c) => (c.f || 0) === f) : []);
 export function searchableNear(b, u) {
   bindDims(b);
@@ -2817,10 +2950,11 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
 
   // Extraction zones: 3×3 at the edges. The first is where the team comes in.
   const zones = [];
+  // On a bridge tile the river runs across the middle: the ways in and out are the two ends of the bridge.
   const zoneSpots = rng.shuffle([
     { side: "west", x0: 0, y0: rng.int(2, H - 5) },
     { side: "east", x0: W - 3, y0: rng.int(2, H - 5) },
-    { side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 },
+    ...(t.bridge ? [] : [{ side: rng.chance(0.5) ? "north" : "south", x0: rng.int(8, W - 11), y0: 0 }]),
   ]);
   zoneSpots.sort((a, c) => (a.side === "west" ? -1 : c.side === "west" ? 1 : 0));
   for (const zs of zoneSpots) {
@@ -2834,12 +2968,8 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
     put(z.x0 + 1, z.y0 + 1, "vehicle", "road");
   }
 
-  // Road across the map.
-  if (t.road) {
-    const r = rng.int(3, H - 5);
-    for (let x = 0; x < W; x++) for (const y of [r, r + 1]) if (!reserved[idx(x, y)]) put(x, y, "open", "road");
-    for (let i = 0; i < rng.int(2, 4); i++) { const x = rng.int(5, W - 6), y = rng.pick([r, r + 1]); if (!reserved[idx(x, y)]) put(x, y, rng.chance(0.3) ? "truck" : "car"); }
-  }
+  // Road across the map (layRoad: ROAD.WIDTH wide, the cars left on it; on a bridge tile the river and the deck).
+  const road = t.road ? layRoad(rng, cells, W, H, t, rng.int(3, H - roadWidth(H) - 3), { reserved, carsPer: Math.round(W / 5), lo: 5, hi: W - 6 }) : null;
 
   const rectFree = (x0, y0, w, h) => {
     if (x0 < 1 || y0 < 1 || x0 + w > W - 1 || y0 + h > H - 1) return false;
@@ -2852,6 +2982,28 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
     const def = AREAS[type];
     if (!def) continue;
     const area = { id: areas.length, type, name: def.name };
+    if (def.road) {
+      // Cars on the road itself (AREAS.roadcars), 2 × 3–4 cells each, lengthwise in the lanes (layRoad putCar: a free ring
+      // round each, the road still open end to end); on a bridge the first such area's cars stand on the deck.
+      if (!road) continue;
+      const onDeck = road.deck && !areas.some((a) => a.type === type);
+      const lo = onDeck ? road.deck.c0 : 3, hi = onDeck ? road.deck.c1 : W - 4;
+      const n = rng.int(4, 6);
+      const rects = [];
+      for (let tries = 0; tries < 120 && rects.length < n; tries++) {
+        const L = rng.pick(CAR_LEN.car);
+        const rect = road.putCar(rng.int(lo, Math.max(lo, hi - L + 1)), rng.int(0, road.lanes - 1), "car", L, rng.int(0, 1e6));
+        if (!rect) continue;
+        if (!road.through()) { removeCar(cells, W, rect); continue; }
+        rects.push(rect);
+        containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, area: area.id, kind: "car", searched: false, label: `${def.name}: ${onDeck ? "car on the bridge" : "car"}` });
+      }
+      if (!rects.length) continue;
+      const xs = rects.flatMap((q) => [q.x0, q.x0 + q.w - 1]);
+      Object.assign(area, { x0: Math.min(...xs) - 1, y0: road.rows[0], w: Math.max(...xs) - Math.min(...xs) + 3, h: road.rows.length, outdoor: true, onRoad: true, bridge: !!onDeck });
+      areas.push(area);
+      continue;
+    }
     if (def.outdoor) {
       // A cluster of objects around a free spot.
       let cx = 0, cy = 0, ok = false;
@@ -2866,8 +3018,10 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
         const x = cx + rng.int(-3, 3), y = cy + rng.int(-2, 2);
         if (!free(x, y)) continue;
         const kind = rng.pick(def.boxes);
-        put(x, y, kind === "pump" ? "pump" : kind === "car" ? "car" : "crate");
-        containers.push({ id: cid++, x, y, area: area.id, kind, searched: false, label: `${def.name}: ${kind === "car" ? "car" : kind === "pump" ? "fuel pump" : "crate"}` });
+        let rect = null;
+        if (kind === "car") { rect = placeCar(cells, W, H, x, y, rng.chance(0.5) ? "x" : "y", rng.pick(CAR_LEN.car), "car", free, rng.int(0, 1e6)); if (!rect) continue; } // a wrecked car is 2 × 3–4 cells
+        else put(x, y, kind === "pump" ? "pump" : "crate");
+        containers.push({ id: cid++, x, y, ...(rect ? { w: rect.w, h: rect.h } : {}), area: area.id, kind, searched: false, label: `${def.name}: ${kind === "car" ? "car" : kind === "pump" ? "fuel pump" : "crate"}` });
         placed++;
       }
       Object.assign(area, { x0: cx - 3, y0: cy - 2, w: 7, h: 5, outdoor: true });
@@ -2915,7 +3069,10 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
   }
 
   // Terrain cover.
-  const scatter = (k, n) => { for (let i = 0; i < Math.round((n * W * H) / (28 * 18)); i++) { const x = rng.int(1, W - 2), y = rng.int(0, H - 1); if (free(x, y)) put(x, y, k); } };
+  const scatter = (k, n) => {
+    if (k === "car" || k === "truck") { scatterCars(rng, cells, W, H, Math.max(1, Math.round((n * W * H) / (28 * 18) / 2)), free, k); return; } // 2 × 3–4 cells each (placeCar): half as many
+    for (let i = 0; i < Math.round((n * W * H) / (28 * 18)); i++) { const x = rng.int(1, W - 2), y = rng.int(0, H - 1); if (free(x, y)) put(x, y, k); }
+  };
   switch (t.terrain) {
     case "forest": scatter("tree", 70); scatter("rock", 10); break;
     case "hills": scatter("rock", 30); scatter("boulder", 12); scatter("tree", 10); break;
@@ -2933,12 +3090,12 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
   const start = [entry.x0 + (entry.vehicle ? 0 : 1), entry.y0 + 1];
   const carve = (x0, y0, x1, y1) => {
     let x = x0, y = y0;
-    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle") { c.k = "open"; if (c.f === "floor") c.f = "floor"; } };
+    const step = () => { const c = at(x, y); if (c && !CELL[c.k].walk && c.k !== "vehicle" && c.k !== "water" && c.k !== "rail" && !c.car) { c.k = "open"; if (c.f === "floor") c.f = "floor"; } }; // never through the river, a bridge's railing or a car (half a car is no car)
     while (x !== x1) { x += Math.sign(x1 - x); step(); }
     while (y !== y1) { y += Math.sign(y1 - y); step(); }
   };
   let reach = flood(cells, start[0], start[1]);
-  const reachableNear = (c) => DIRS8.some(([dx, dy]) => inside(c.x + dx, c.y + dy) && reach[idx(c.x + dx, c.y + dy)]);
+  const reachableNear = (c) => boxRing({ w: W, h: H }, c).some(([x, y]) => reach[idx(x, y)]);
   for (const z of zones.slice(1)) {
     if (!reach[idx(z.x0 + 1, z.y0 + 1)]) { carve(start[0], start[1], z.x0 + 1, z.y0 + 1); reach = flood(cells, start[0], start[1]); }
   }
@@ -2973,11 +3130,12 @@ export function createRaid(state, setup) {
     [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
     const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile), W, H); // more rooms and areas on a bigger map
+    if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     map = genRaidMap(rng, tile, types, withVehicle);
   }
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
-    place: tile ? (tile.loc ? tile.loc.name : tile.terrain[0].toUpperCase() + tile.terrain.slice(1)) : "Open ground",
+    place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1000,
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
     ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
@@ -3506,7 +3664,7 @@ function autoRaidTurn(state) {
         for (const zz of zs) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
       } else {
         targets = [];
-        for (const c of R.containers) if (todo(c) && here(c) && !(skipQuick && c.quick)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
+        for (const c of R.containers) if (todo(c) && here(c) && !(skipQuick && c.quick)) for (const [x, y] of boxRing(b, c)) if (cellAt(b, x, y).walk) targets.push([x, y]); // the ring round it (a car covers several cells)
         targets.push(...lockTargets(b)); // locks.js: the doors of a locked room (this floor's)
       }
       if (!targets.length) { u.ap = 0; break; }

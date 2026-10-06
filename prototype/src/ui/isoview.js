@@ -311,8 +311,44 @@ const along = (o) => (o.j & 3 && !(o.j & 12) ? "u" : o.j & 12 && !(o.j & 3) ? "v
 // A box spanning the tile along an axis, thin across it.
 const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u1: a1, v0: c0, v1: c1, z0, z1, m } : { u0: c0, u1: c1, v0: a0, v1: a1, z0, z1, m });
 
+// One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }). The
+// body is drawn in car-local units (a along its length 0..L, c across 0..2, z in art px) and clipped to this cell, so
+// the cells' pieces meet into one car: a low body, a cabin of glass in the middle (a van's longer, a pickup's bed
+// behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
+function carPieces(car, r) {
+  const { i, j, L, ax, kind, v } = car, big = kind === "truck";
+  const body = big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
+  const paint = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return big && q < 0.35 ? mul(PAL.tire, 1.4) : q > 0.93 ? mul(PAL.rust, 1.1) : mul(body, f === "top" ? 1 : 0.95); };
+  const glass = (f) => (f === "top" ? mul(body, 0.8) : PAL.glass);
+  const boxM = flatM(mul(PAL.tire, 1.6)), tire = flatM(PAL.tire);
+  const parts = []; // [a0, a1, c0, c1, z0, z1, m]
+  const wheel = (a, c) => parts.push([a - 0.3, a + 0.3, c - 0.2, c + 0.2, 0, 5, tire]);
+  if (big) {
+    parts.push([0.1, 1.35, 0.15, 1.85, 3, 10, paint], [0.25, 1.3, 0.25, 1.75, 10, 16, glass]);  // the cab
+    parts.push([1.5, L - 0.1, 0.1, 1.9, 3, 17, boxM]);                                         // the box
+    for (const a of [0.7, L - 1.4, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
+  } else {
+    parts.push([0.1, L - 0.1, 0.15, 1.85, 3, 9, paint]);                                       // the body
+    if (L === 3) parts.push([0.9, 2.1, 0.3, 1.7, 9, 15, glass]);                               // a sedan's cabin
+    else if (v % 2) parts.push([0.8, 3.7, 0.3, 1.7, 9, 15, glass]);                            // a van
+    else parts.push([0.8, 2.0, 0.3, 1.7, 9, 15, glass], [2.2, 3.8, 0.25, 1.75, 9, 11, paint]); // a pickup: cab and bed
+    for (const a of [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
+  }
+  // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
+  const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
+  const out = [];
+  for (const [a0, a1, c0, c1, z0, z1, m] of parts) {
+    const A0 = Math.max(a0, i) - i, A1 = Math.min(a1, i + 1) - i, C0 = Math.max(c0, j) - j, C1 = Math.min(c1, j + 1) - j;
+    if (A1 - A0 <= 0.02 || C1 - C0 <= 0.02) continue;
+    const [fx0, fx1, fy0, fy1] = ax === "x" ? [A0, A1, C0, C1] : [C0, C1, A0, A1];
+    const [ua, va] = loc(fx0, fy0), [ub, vb] = loc(fx1, fy1);
+    out.push({ u0: Math.min(ua, ub), u1: Math.max(ua, ub), v0: Math.min(va, vb), v1: Math.max(va, vb), z0, z1, m });
+  }
+  return out;
+}
 function prims(k, o) {
   const v = o.v || 0;
+  if (o.car && (k === "car" || k === "truck")) return carPieces(o.car, iso.rot);
   switch (k) {
     case "wall": case "window": case "door": case "idoor": {
       const top = o.stub ? STUB : o.top;
@@ -449,6 +485,16 @@ function prims(k, o) {
       for (const [a, c] of [[0.2, 0.72], [0.8, 0.72]]) out.push({ ...L(a - 0.08, a + 0.08, c, c + 0.08, 0, 5, wheel.m) });
       return out;
     }
+    case "rail": {
+      // A bridge's railing (sim/combat.js layRoad): concrete kerb, steel posts and two rails along the deck's edge.
+      const ax = along(o), post = flatM(PAL.metalDk), bar = tex(PAL.metal, 0.1, 7), kerb = tex(PAL.conc, 0.1, 8);
+      return [
+        run(ax, 0.3, 0.7, 0, 3, kerb),
+        run(ax, 0.46, 0.54, 10, 12, bar),
+        run(ax, 0.46, 0.54, 5, 7, bar),
+        ...[0.15, 0.5, 0.85].map((a) => (ax === "u" ? { u0: a - 0.05, u1: a + 0.05, v0: 0.44, v1: 0.56, z0: 3, z1: 13, m: post } : { u0: 0.44, u1: 0.56, v0: a - 0.05, v1: a + 0.05, z0: 3, z1: 13, m: post })),
+      ];
+    }
     case "fence": case "wire": {
       // Posts and rails along the line (towards the neighbours in the line; across the tile when alone).
       const wire = k === "wire", pm = tex(wire ? PAL.metalDk : PAL.woodDk, 0.12), rm = wire ? flatM(hex("#9a9a92")) : tex(PAL.wood, 0.14);
@@ -545,7 +591,7 @@ const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", 
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}`;
+  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${iso.rot & 3}` : ""}`;
   let s = spriteCache.get(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -604,7 +650,7 @@ function massSprite(mat, lift, faces, fog) {
 
 // ---------- the ground ----------
 const FLOORC = {
-  grass: hex("#4a5834"), field: hex("#6a6238"), dirt: hex("#5c4f3e"), gravel: hex("#5c5a57"), road: hex("#37393d"),
+  grass: hex("#4a5834"), field: hex("#6a6238"), dirt: hex("#5c4f3e"), gravel: hex("#5c5a57"), road: hex("#37393d"), deck: hex("#5e5f5c"),
   floor: hex("#5a4632"), rubble: hex("#4e4842"), roof: hex("#6a6a64"),
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
@@ -624,6 +670,11 @@ function floorColor(c, k, x, y, lx, ly, mud) {
     case "dirt": col = q > 0.93 ? mul(FLOORC.dirt, 1.3) : mul(FLOORC.dirt, 0.9 + q * 0.12 + v * 0.06); break;
     case "gravel": col = mul(FLOORC.gravel, 0.78 + q * 0.38); break;
     case "road": {
+      if (c.deck) { // a bridge's deck (sim/combat.js layRoad): weathered concrete slabs with their joints, paler than the asphalt
+        col = (tx === 0 || ty === 0) ? mul(FLOORC.deck, 0.72) : q > 0.95 ? mul(FLOORC.deck, 0.82) : mul(FLOORC.deck, 0.94 + q * 0.1 + v * 0.04);
+        if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#8a8262"); // faded paint
+        break;
+      }
       col = q > 0.97 ? mul(FLOORC.road, 0.7) : mul(FLOORC.road, 0.92 + q * 0.1);
       if (ty >= 7 && ty <= 8 && (x * 16 + tx) % 16 < 7 && v > 0.35) col = hex("#7a7254"); // faded paint
       break;
@@ -719,7 +770,7 @@ const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
-  fence: new Set(["fence"]), wire: new Set(["wire"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
+  fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
@@ -778,7 +829,8 @@ function lookOf(b, scene, x, y, cut, focus = null) {
     });
     o.dir = best < 0 ? 0 : best;
   }
-  if (k === "car" || k === "truck" || k === "vehicle") {
+  if (c.car && (k === "car" || k === "truck")) o.car = c.car; // one piece of a 2 × 3–4 cell car (sim/combat.js placeCar): carPieces draws its share
+  else if (k === "car" || k === "truck" || k === "vehicle") {
     // Cars lie along the road, or as their dice say; the axis turns with the view.
     const roadX = (x > 0 && b.cells[i - 1].f === "road") || (x < b.w - 1 && b.cells[i + 1].f === "road");
     const worldAxis = c.f === "road" || roadX ? (hash3(x, y, 5) < 0.85 ? 0 : 1) : (o.v & 1);
@@ -802,11 +854,13 @@ function blockTop0(k, o) {
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
-    case "truck": return 23; case "car": case "vehicle": return 16;
+    case "truck": return o.car ? 17 : 23;
+    case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
+    case "vehicle": return 16;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
-    case "rock": return 10; case "wire": return 10;
+    case "rock": return 10; case "wire": return 10; case "rail": return 13;
     default: return 0;
   }
 }
@@ -999,6 +1053,7 @@ export function isoPick(b, px, py, opts = {}) {
   // On an upper floor (floorsOf) the footprint's cells sit at their raised height; outside it the ground is at 0.
   const topOf = (x, y) => {
     const i = y * b.w + x, c = b.cells[i];
+    if (opts.ground) return liftAt(b, i); // ground: the cell under the point as if nothing stood on it (the view's checks, tools/uitest.js)
     if (cdef(c).walk && !SOLIDWALK.has(c.k)) return standZ(b, x, y);
     const L = looks[i];
     if (!L) return liftAt(b, i);
@@ -1442,7 +1497,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const c of b.raid.containers) {
       if (!onFloor(b, c)) continue; // b.raid.containers holds every floor's
       const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
-      const [X, Y] = project(c.x + 0.5, c.y + 0.5, top + 4);
+      const [X, Y] = project(c.x + (c.w || 1) / 2, c.y + (c.h || 1) / 2, top + 4); // over the middle of a car's cells
       const s = Math.max(7, 3.2 * S);
       // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
       ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? "#7fb8e6" : c.partial ? "#e08a4f" : "#ffd166";

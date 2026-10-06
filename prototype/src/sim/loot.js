@@ -41,6 +41,7 @@ export const AREA_TAGS = {
   pumps: ["travel"], gunshop: ["guns", "hunt"], lockers: ["school", "sport"], chapel: ["church"],
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
+  roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
 };
 // Where each thing is normally kept. Books are placed by skills.js BOOK_SITES and blueprints by blueprints.js.
 export const ITEM_TAGS = {
@@ -189,6 +190,7 @@ export const AREA_FINDS = {
   control: { p: 0.05, items: { batteries: 2 } },
   campsite: { p: 0.08, items: { handwarmer: 1, pocketradio: 0.5, cards: 1, harmonica: 1, chocolate: 1, instcoffee: 1, lighters: 1, ragboots: 1, scentmask: 1, tripwire: 1 } },
   wreck: { p: 0.06, items: { phone: 2, photos: 2, smokes: 1, flare: 2, watch: 0.5, goldring: 0.3, cigarettes: 0.5 } },
+  roadcars: { p: 0.08, items: { phone: 2, photos: 2, smokes: 1, flare: 1, watch: 0.5, goldring: 0.2, cigarettes: 1, chocolate: 1 } },
   gunshop: { p: 0.04, items: { gamecall: 1, scentmask: 1, monocular: 1 } },
   lockers: { p: 0.08, items: { phone: 2, console: 1, tcards: 1, candy: 1, guitar: 0.3 } },
   chapel: { p: 0.08, items: { candles: 3, wine: 1, coins: 1, silverware: 0.5 } },

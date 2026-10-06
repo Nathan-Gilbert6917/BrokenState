@@ -26,7 +26,7 @@ export function lockPanel(state, b, u) {
       const ok = can && x.ok && u.ap >= x.ap;
       return `<button class="mini" data-action="lk-open" data-u="${u.id}" data-t="${t.ref}" data-m="${m}" ${ok ? "" : "disabled"} data-tip="${esc(x.ok ? tipText : x.why)}">${label}</button>`;
     };
-    const force = o.force.label === "Smash" ? `Smash ${pct(o.force.chance)} (2 actions, loud)` : `Force ${pct(o.force.chance)} (loud)`;
+    const force = o.force.glass ? `Break glass ${pct(o.force.chance)} (2 actions, loud)` : o.force.label === "Smash" ? `Smash ${pct(o.force.chance)} (2 actions, loud)` : `Force ${pct(o.force.chance)} (loud)`;
     // How the pick odds come about (sim/locks.js PICK): the picker's Stealth against the lock's difficulty.
     const s = survivorById(state, u.sid);
     const st = s ? skill(s, "stealth") : 0, quiet = !!(u.quiet || (s && hasPerk(s, "quiethands")));
@@ -35,7 +35,7 @@ export function lockPanel(state, b, u) {
       <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">
         ${button("key", hasKey(state, b.tileId) ? "Key ✓" : "Key ✗", `Unlock it with the ${keyName(state, b.tileId)} (1 action, silent).`)}
         ${button("pick", `Pick ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock: 1 action a try, ${pct(o.pick.chance)} each try (${why}). Heat +1 a try, the lockpicks lose a use, Stealth XP. Once it is open, searching it takes 1 action.`)}
-        ${button("force", force, o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, Heat +10, wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, Heat +6, wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
+        ${button("force", force, o.force.glass ? `No crowbar: shatter a window and reach in (both actions, Heat +10, breaking glass wakes everything within 11 tiles). ${pct(o.force.chance)}.` : o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, Heat +10, wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, Heat +6, wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
       </div></div>`;
   }).join("");
 }
@@ -86,7 +86,7 @@ export function drawLocks(ctx, b, ox, oy, cs) {
   }
   for (const c of b.raid.containers) {
     if (!c.lock || c.searched) continue;
-    const px = ox + c.x * cs, py = oy + c.y * cs;
+    const px = ox + Math.round(c.x + ((c.w || 1) - 1) / 2) * cs, py = oy + Math.round(c.y + ((c.h || 1) - 1) / 2) * cs; // over a car's middle cell
     padlock(ctx, px + cs * 0.24, py + cs * 0.24, cs * 0.15, c.lock.open ? "#6cc48a" : "#ff9f43");
   }
 }

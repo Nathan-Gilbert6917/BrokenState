@@ -1937,12 +1937,18 @@ function paintWake() {
   return p;
 }
 
-// Road bridge: a deck in the road's color between two railings (drawn turned along the road).
+// Road bridge: a concrete deck bank to bank (drawn turned along the road, as wide as the hex: render.js BRIDGE_W)
+// between two steel railings on kerbs, with its piers showing under the edges and the road's centre line on it.
 function paintBridge() {
-  const p = painter(18, 7);
-  p.rect(0, 1, 17, 5, "#cdbb8a"); p.rect(0, 1, 17, 1, shade("#cdbb8a", 0.2));
-  for (let x = 1; x <= 16; x += 3) p.rect(x, 2, x, 5, shade("#cdbb8a", -0.15));
-  for (const y of [0, 6]) { p.rect(0, y, 17, y, shade(WOOD, 0.1)); for (let x = 0; x <= 17; x += 4) p.set(x, y, WOOD_LIT); }
+  const p = painter(40, 11);
+  const deck = "#8c8a80", kerb = "#6a6760", rail = "#b8bcc2", post = "#5e626a", pier = "#4f4c48";
+  p.rect(0, 2, 39, 8, deck);
+  p.rect(0, 2, 39, 2, shade(deck, 0.18)); p.rect(0, 8, 39, 8, shade(deck, -0.18));
+  for (let x = 4; x <= 36; x += 8) p.rect(x, 3, x, 7, shade(deck, -0.1)); // slab joints
+  for (let x = 2; x <= 37; x += 6) p.rect(x, 5, x + 2, 5, "#b9ad7a");    // the dashed centre line
+  for (const y of [1, 9]) p.rect(0, y, 39, y, kerb);                      // kerbs
+  for (const y of [0, 10]) { p.rect(0, y, 39, y, rail); for (let x = 1; x <= 38; x += 5) p.set(x, y, post); } // railings and posts
+  for (const x of [8, 20, 31]) { p.set(x, 9, pier); p.set(x + 1, 9, pier); p.set(x, 1, pier); p.set(x + 1, 1, pier); } // piers
   return p;
 }
 

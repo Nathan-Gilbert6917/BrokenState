@@ -371,7 +371,8 @@ export function tileActions(state, id) {
   if (fb) actions.push(["trade", "Trade visit"]);
   if (fb && captivesOf(state, fb.id).length) actions.push(["rescue", "Rescue captives"]);
   if (fb) actions.push(["assault", occupiedAt(state, id) ? "Retake the base" : "Assault their base"]);
-  if (!fb && t.terrain !== "water" && (!info || info.owner == null || info.owner === "player")) actions.push(["outpost", "Build outpost"]);
+  // A bridge can be barricaded with an outpost: the road over the river is then closed to everyone else (sim/parties.js bridgeClosedTo).
+  if (!fb && (t.terrain !== "water" || t.bridge) && (!info || info.owner == null || info.owner === "player")) actions.push(["outpost", t.bridge ? "Barricade the bridge (outpost)" : "Build outpost"]);
   if (markers.some((m) => m.type === "death")) actions.push(["recover", "Recover bodies"]);
   if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
   if (markers.some((m) => (m.type === "cache" || m.type === "car" || m.type === "camp") && !m.info?.emptied)) actions.push(["investigate", "Investigate find"]);

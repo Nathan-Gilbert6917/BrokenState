@@ -2,7 +2,7 @@
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
-  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
+  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
@@ -1262,7 +1262,7 @@ function previewHtml(b) {
 }
 
 // ---------- drawing ----------
-const FLOOR = { grass: "#36432c", field: "#4a4a2c", dirt: "#4a4234", gravel: "#47464a", road: "#2f3135", floor: "#3b3129", rubble: "#423e3b" };
+const FLOOR = { grass: "#36432c", field: "#4a4a2c", dirt: "#4a4234", gravel: "#47464a", road: "#2f3135", deck: "#4d4e4b", floor: "#3b3129", rubble: "#423e3b" };
 // A building's floors by room (sim/buildingmaps.js c.fl).
 const ROOM_FLOOR = { wood: "#3b3129", tile: "#4c4a44", conc: "#3e3d3b", carpet: "#3a2f34", dirt: "#40372b" };
 
@@ -1305,7 +1305,7 @@ export function drawCombat(state, now) {
     const c = b.cells[y * W + x];
     const px = ox + x * cs, py = oy + y * cs;
     if (c.k === "void") { ctx.fillStyle = VOID_TOP; ctx.fillRect(px, py, cs, cs); continue; } // outside the footprint on an upper floor (floorsOf)
-    ctx.fillStyle = (c.f === "floor" && c.fl && ROOM_FLOOR[c.fl]) || FLOOR[c.f] || FLOOR.grass;
+    ctx.fillStyle = (c.f === "floor" && c.fl && ROOM_FLOOR[c.fl]) || (c.deck ? FLOOR.deck : FLOOR[c.f]) || FLOOR.grass; // deck: a bridge's concrete (sim/combat.js layRoad)
     ctx.fillRect(px, py, cs, cs);
     const n = hash(x, y);
     if (c.f === "grass" || c.f === "field") { ctx.fillStyle = `rgba(255,255,255,${0.02 + n * 0.03})`; ctx.fillRect(px + n * cs * 0.6, py + ((n * 7) % 1) * cs * 0.6, cs * 0.25, cs * 0.25); }
@@ -1590,7 +1590,8 @@ function drawRaidOverlay(b, cs) {
   }
   for (const c of R.containers) {
     if (!onFloor(b, c)) continue; // R.containers holds every floor's (floorsOf)
-    const px = ox + c.x * cs, py = oy + c.y * cs;
+    const [bx, by] = boxCenter(c); // a car covers several cells: its marker over the middle one
+    const px = ox + Math.round(bx) * cs, py = oy + Math.round(by) * cs;
     // A fallen unit's body (uid) is its own picture (ui/downsprites.js), drawn with the units: only its marker here.
     if (c.kind === "body" && c.uid == null) {
       ctx.fillStyle = c.searched ? "rgba(120,110,100,0.5)" : "#6b5a44";
@@ -1982,6 +1983,23 @@ function drawObject(k, px, py, cs, n, cell = null) {
     }
     case "car": case "truck": {
       const colors = ["#7a3b34", "#3b5a7a", "#6b6b6b", "#7a6a34", "#3f6b4a"];
+      if (cell && cell.car) {
+        // One cell's share of a 2 × 3–4 cell car (sim/combat.js placeCar): the body in car-local units (a along, c across),
+        // clipped to this cell, so the cells meet into one car; glass over the cabin, wheels at the corners.
+        const { i, j, L, ax, kind, v } = cell.car, big = kind === "truck";
+        const body = big ? "#5a4030" : colors[v % colors.length];
+        const parts = big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
+          : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
+        for (const a of big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
+        for (const [a0, a1, c0, c1, col] of parts) {
+          const A0 = Math.max(a0, i) - i, A1 = Math.min(a1, i + 1) - i, C0 = Math.max(c0, j) - j, C1 = Math.min(c1, j + 1) - j;
+          if (A1 - A0 <= 0.02 || C1 - C0 <= 0.02) continue;
+          const [fx0, fx1, fy0, fy1] = ax === "x" ? [A0, A1, C0, C1] : [C0, C1, A0, A1];
+          ctx.fillStyle = col;
+          ctx.fillRect(px + fx0 * cs, py + fy0 * cs, (fx1 - fx0) * cs, (fy1 - fy0) * cs);
+        }
+        break;
+      }
       ctx.fillStyle = k === "truck" ? "#4a3a2e" : colors[Math.floor(n * colors.length)];
       roundRect(px + cs * 0.08, py + cs * 0.18, cs * 0.84, cs * 0.64, cs * 0.12); ctx.fill();
       ctx.strokeStyle = "#1f1f1f"; ctx.stroke();
@@ -1990,6 +2008,12 @@ function drawObject(k, px, py, cs, n, cell = null) {
       if (k === "truck") { ctx.fillStyle = "rgba(255,120,40,0.25)"; ctx.fillRect(px + cs * 0.15, py + cs * 0.3, cs * 0.3, cs * 0.4); }
       break;
     }
+    case "rail": // a bridge's railing (sim/combat.js layRoad): steel rails on a kerb
+      ctx.fillStyle = "#6c6b66"; ctx.fillRect(px, cy - cs * 0.1, cs, cs * 0.2);
+      ctx.strokeStyle = "#9aa0a6"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, cy - cs * 0.3); ctx.lineTo(px + cs, cy - cs * 0.3); ctx.moveTo(px, cy - cs * 0.18); ctx.lineTo(px + cs, cy - cs * 0.18);
+      ctx.moveTo(px + cs * 0.15, cy - cs * 0.34); ctx.lineTo(px + cs * 0.15, cy); ctx.moveTo(px + cs * 0.5, cy - cs * 0.34); ctx.lineTo(px + cs * 0.5, cy); ctx.moveTo(px + cs * 0.85, cy - cs * 0.34); ctx.lineTo(px + cs * 0.85, cy); ctx.stroke();
+      break;
     case "fence":
       ctx.strokeStyle = "#8a6a44"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(px, cy - cs * 0.12); ctx.lineTo(px + cs, cy - cs * 0.12); ctx.moveTo(px, cy + cs * 0.12); ctx.lineTo(px + cs, cy + cs * 0.12);

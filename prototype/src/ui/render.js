@@ -29,6 +29,7 @@ import {
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 
 export const HEX = 26;
+const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
 
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
@@ -729,8 +730,8 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
     }
   }
   ctx.stroke();
-  // Bridges: a railed deck turned along the road.
-  for (let a = 0; a < n; a++) { const id = list[a]; if (G.angle[id] === G.angle[id]) sprite(bridgeCanvas(), X[id], Y[id], 24, { angle: G.angle[id] }); }
+  // Bridges: a railed concrete deck turned along the road, bank to bank (the hex's width between its edges).
+  for (let a = 0; a < n; a++) { const id = list[a]; if (G.angle[id] === G.angle[id]) sprite(bridgeCanvas(), X[id], Y[id], BRIDGE_W, { angle: G.angle[id] }); }
   // Hives you know about (live, or in the last report): their land is tinted dark red, the ring right around each
   // hive brighter, with a red skull on every ring tile when zoomed in (the dead there are much tougher). Sites
   // inside a hive's land show at least 3 skulls, red ones on the ring (labels).

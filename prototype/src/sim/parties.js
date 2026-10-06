@@ -90,10 +90,31 @@ export const MISSIONS = {
 // vehicle: false (on foot), true (a car) or "bike". Bikes: roads at BIKE_ROAD (faster than walking), off-road and
 // over mountains at walking cost (vehicles.js).
 export const BIKE_ROAD = 0.75;
-export function moveCost(state, from, to, vehicle) {
+// A barricaded bridge: a base on a bridge tile (yours or a group's) closes the only road over the river to everyone
+// but its own people and their allies (your coalition, alliance.js). Nobody passes through; the tile can still be the
+// destination (a raid, an assault, a trade visit), and the river can still be crossed by boat elsewhere (crossing.js).
+// who: "player", a group's id, or undefined for nobody in particular (no bridge is closed to them).
+export function bridgeHolder(state, tile) {
+  const t = state.tiles[tile];
+  if (!t || !t.bridge) return null;
+  if (state.bases.some((b) => b.tile === tile)) return "player";
+  const f = state.factions.find((x) => x.alive && x.bases.includes(tile));
+  return f ? f.id : null;
+}
+export function bridgeClosedTo(state, tile, who) {
+  if (who === undefined) return false;
+  const holder = bridgeHolder(state, tile);
+  if (holder == null || holder === who) return false;
+  const allied = (id) => !!(state.alliance && state.alliance.members && state.alliance.members.includes(id));
+  if (holder === "player") return !allied(who);
+  if (who === "player") return !allied(holder);
+  return true;
+}
+export function moveCost(state, from, to, vehicle, who) {
   const t = state.tiles[to];
   const mode = vehicle === true ? "vehicle" : "walk";
   if (t.terrain === "water" && !t.bridge) return Infinity;
+  if (t.bridge && bridgeClosedTo(state, to, who)) return Infinity; // someone else's barricade across the bridge
   const f = state.tiles[from];
   // On a bridge the only way is along it: off the side is the river. (Without this a team could step off a bridge
   // onto a bank it can never leave again, since water is only crossed on the road, and starve there waiting for a boat.)
@@ -103,8 +124,10 @@ export function moveCost(state, from, to, vehicle) {
   return TERRAIN[t.terrain][mode];
 }
 
-export function planPath(state, from, to, vehicle) {
-  return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle));
+// who: whose way it is ("player" by default): a bridge barricaded by someone else is closed to them, except as the
+// destination itself.
+export function planPath(state, from, to, vehicle, who = "player") {
+  return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle, b === to ? undefined : who));
 }
 
 // Fuel a car burns along a path (road 0.6, off-road 1.5 a tile) times its load multiplier (vehicles.js fuelMultFor).
@@ -242,8 +265,11 @@ export function outpostName(state, tile) {
       place = `${dir} of ${best.x.loc.name}`;
     } else place = tileLabel(state, tile);
   }
-  let name = `${place} Outpost`;
-  for (let n = 2; state.bases.some((b) => b.name === name); n++) name = `${place} Outpost ${n}`;
+  // A base on a bridge is the barricade across it: "Dunmore Bridge Barricade" (the nearest named place, not a direction).
+  const kind = t.bridge ? "Bridge Barricade" : "Outpost";
+  if (t.bridge && !t.loc) place = place.replace(/^(North|South|East|West|North-east|North-west|South-east|South-west) of /, "");
+  let name = `${place} ${kind}`;
+  for (let n = 2; state.bases.some((b) => b.name === name); n++) name = `${place} ${kind} ${n}`;
   return name;
 }
 
@@ -431,11 +457,11 @@ export function missionProblem(state, tile, mission) {
   if (!MISSIONS[mission]) return "Unknown mission.";
   const theirs = state.factions.find((f) => f.alive && f.known && f.bases.includes(tile));
   if (mission === "outpost") {
-    if (t.terrain === "water") return "An outpost cannot be built on water or on a bridge.";
+    if (t.terrain === "water" && !t.bridge) return "An outpost cannot be built on open water. A bridge can be barricaded with one.";
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
   }
-  if (mission === "scavenge" && t.terrain === "water") return "There is nothing to search on the water.";
+  if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
   return null;
 }
@@ -538,9 +564,9 @@ export function sendHelpSquad(state, raidParty, target) {
 // ---------- AI parties ----------
 export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
   const vehicle = kind === "convoy";
-  let res = planPath(state, fromTile, toTile, vehicle);
+  let res = planPath(state, fromTile, toTile, vehicle, f.id); // a bridge barricaded by someone else is closed to them (bridgeClosedTo)
   let usesVehicle = vehicle && !!res;
-  if (!res) res = planPath(state, fromTile, toTile, false);
+  if (!res) res = planPath(state, fromTile, toTile, false, f.id);
   if (!res) return null;
   const p = {
     id: newId(), owner: f.id, kind, path: res.path, idx: 0, progress: 0, vehicle: usesVehicle,
@@ -601,9 +627,12 @@ function stepAlong(state, p, speed, hour = state.hour) {
   const entered = [];
   while (p.idx < p.path.length - 1) {
     const from = p.path[p.idx], to = p.path[p.idx + 1];
-    const cost = moveCost(state, from, to, p.vehicle) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }));
+    // A bridge barricaded since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the
+    // way is the destination itself and is never closed.
+    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }));
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
+      if (p.owner === "player" && p.phase === "out" && state.tiles[to].bridge) p.bridgeStop = to; // told on arrival (arrive)
       break;
     }
     if (p.progress < cost) break;
@@ -994,6 +1023,16 @@ export function survey(state, p, bonus, debit = true) {
 // ---------- arriving and acting ----------
 function arrive(state, p) {
   if (wipeIfEmpty(state, p)) return "";
+  // Stopped short at a bridge someone barricaded after the way was planned (stepAlong): the team waits at its foot.
+  if (p.bridgeStop != null && partyTile(p) !== p.dest) {
+    const bridge = p.bridgeStop;
+    delete p.bridgeStop;
+    const holder = bridgeHolder(state, bridge);
+    const f = typeof holder === "number" ? state.factions.find((x) => x.id === holder) : null;
+    const who = f ? (f.known ? f.name : "An unknown group") : "Someone";
+    awaitOrders(state, p, `${who} has barricaded the bridge at ${tileLabel(state, bridge)}: the road over the river is closed. Storm the barricade, or cross the river by boat from a shore (team panel: Boat crossing).`, { failed: true });
+    return "";
+  }
   const t = state.tiles[p.dest];
   const members = partyMembers(state, p);
   switch (p.mission) {
@@ -1009,7 +1048,7 @@ function arrive(state, p) {
     case "sweep":
       return startSweep(state, p, p.sweepPlan || {}); // survey.js
     case "scavenge":
-      if (t.terrain === "water") {
+      if (t.terrain === "water" && !t.bridge) { // a bridge is searched: the cars left on it (combat.js AREAS.roadcars)
         awaitOrders(state, p, "There is nothing to search on the water.", { failed: true });
         return "";
       }
@@ -1049,8 +1088,8 @@ function arrive(state, p) {
       const scrap = carried(p, "scrap");
       const need = outpostScrap(state, p.dest);
       const short = scrap < need ? `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).` : null;
-      if (t.terrain === "water" || blocked || short) {
-        awaitOrders(state, p, t.terrain === "water" ? "An outpost cannot be built on water or on a bridge." : mine ? "You already have a base here." :
+      if ((t.terrain === "water" && !t.bridge) || blocked || short) {
+        awaitOrders(state, p, t.terrain === "water" && !t.bridge ? "An outpost cannot be built on open water." : mine ? "You already have a base here." :
           blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : short, { failed: true });
         return "";
       }

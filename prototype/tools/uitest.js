@@ -1317,7 +1317,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(hit && hit.x === me.x && hit.y === me.y && hit.unit === me.id, "clicking a unit's body picks its tile");
     // Rotating keeps the middle of the screen where it is; zoom steps stay in range.
     ISO.iso.zoom = 4;
-    const mid = (b) => ISO.isoPick(b, 800, 450, { noUnits: true });
+    const mid = (b) => ISO.isoPick(b, 800, 450, { noUnits: true, ground: true }); // the ground under the centre (a tall wreck there would be picked instead after the turn)
     const m0 = mid(ft.b);
     ISO.isoRotate(ft.b, 1); UI.drawCombat(ft.st, NOW);
     const m1 = mid(ft.b);

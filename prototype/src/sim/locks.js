@@ -23,7 +23,7 @@ import { log, skill, survivorById, day } from "./world.js";
 import { hash01, gainXp, hasPerk, anyPerk } from "./skills.js";
 import { newItem, allItems } from "./inventory.js";
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
-import { CELL } from "./combat.js";
+import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 
 // diff: 1–4. force: can be forced at all. loot: extras inside (LOCK_LOOT).
 export const LOCKS = {
@@ -37,10 +37,13 @@ export const LOCKS = {
   safe:     { name: "Safe", diff: 4, force: false, loot: "safe" },
   door:     { name: "Locked door", diff: 2, force: true },
   vault:    { name: "Steel security door", diff: 3, force: true },
+  // A car left locked on the road or a bridge (combat.js AREAS.roadcars / wreck). No site key opens it: pick the door
+  // lock, pry it with a crowbar (loud) or shatter the glass (glass: the no-crowbar way, both actions, loudest, SMASH).
+  car:      { name: "Locked car", diff: 1, force: true, loot: "car", glass: true, nokey: true },
 };
 export const PICK = { base: 0.55, perStealth: 0.04, perDiff: 0.15, quiet: 0.1, heat: 1, xpWin: 6, xpMiss: 2 };
 export const FORCE = { base: 0.85, perMech: 0.015, perDiff: 0.2, heat: 6, radius: 8, noise: 2 };
-export const SMASH = { base: 0.5, perDiff: 0.2, heat: 10, radius: 11, noise: 3, maxDiff: 2, ap: 2 };
+export const SMASH = { base: 0.5, perDiff: 0.2, heat: 10, radius: 11, noise: 3, maxDiff: 2, ap: 2, glassBonus: 0.4 }; // glassBonus: a car window nearly always gives
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // Which containers lock, by raid area: [box kinds, lock kind, chance].
@@ -53,6 +56,8 @@ const RULES = {
   warehouse: [["crate"], "crate", 0.12], hangar: [["crate", "locker"], "crate", 0.2], motorpool: [["crate", "locker"], "crate", 0.2],
   milwreck: [["crate"], "case", 0.45], medwreck: [["crate"], "case", 0.4], newswreck: [["crate"], "case", 0.35],
   fuselage: [["crate", "locker"], "case", 0.4], cargodrop: [["crate"], "case", 0.25],
+  // The cars on the road and in a wreck pile: some were locked when their people left them (or died in them).
+  roadcars: [["car"], "car", 0.4], wreck: [["car"], "car", 0.2],
 };
 // Chance of a locked room at a site (one building with every door locked), by site type.
 const ROOM = {
@@ -123,13 +128,16 @@ export function openOdds(state, b, u, lock) {
   const s = survivorById(state, u.sid);
   const site = b.tileId;
   const out = {};
-  out.key = hasKey(state, site) ? { ok: true, chance: 1, ap: 1, label: "Key", why: "" } : { ok: false, chance: 0, ap: 1, label: "Key", why: `No key for ${b.place} on the key ring.` };
+  // A site's key opens every lock at the site; a car on the road has its own keys, long gone (nokey).
+  out.key = def.nokey ? { ok: false, chance: 0, ap: 1, label: "Key", why: "Whoever had the keys to this car took them." }
+    : hasKey(state, site) ? { ok: true, chance: 1, ap: 1, label: "Key", why: "" } : { ok: false, chance: 0, ap: 1, label: "Key", why: `No key for ${b.place} on the key ring.` };
   const picks = picksOf(s);
   const pc = clamp(PICK.base + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (def.diff - 1) + (u.quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0), 0.05, 0.95);
   out.pick = picks ? { ok: true, chance: pc, ap: 1, label: "Pick", why: "" } : { ok: false, chance: pc, ap: 1, label: "Pick", why: "Needs lockpicks (the Crowbar and lockpicks item) on this person." };
   if (!def.force) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${def.name.toLowerCase()} cannot be forced: pick it or use a key.` };
   else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (def.diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
-  else if (def.diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (def.diff - 1), 0.05, 0.95), ap: SMASH.ap, label: "Smash", why: u.ap >= SMASH.ap ? "" : "Smashing it takes both actions." };
+  // Without a crowbar: kick it in, or on a car shatter a window and reach in (glass): both actions and the loudest way.
+  else if (def.diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (def.diff - 1) + (def.glass ? SMASH.glassBonus : 0), 0.05, 0.95), ap: SMASH.ap, label: def.glass ? "Break glass" : "Smash", glass: !!def.glass, why: u.ap >= SMASH.ap ? "" : `${def.glass ? "Breaking the glass" : "Smashing it"} takes both actions.` };
   else out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: "Too solid to smash without a crowbar." };
   return out;
 }
@@ -231,7 +239,7 @@ export function lockedNear(b, u) {
   if (!b.raid) return [];
   const near = (o) => (o.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - o.x), Math.abs(u.y - o.y)) <= 1;
   const out = [];
-  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && near(c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
+  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && nearBox(u, c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
   for (const d of b.raid.doors || []) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
   return out;
 }
@@ -239,7 +247,7 @@ export function lockAt(b, x, y) {
   if (!b.raid) return null;
   const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y && onFloor(b, q));
   if (d) return { ref: `d${d.id}`, x, y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d };
-  const c = b.raid.containers.find((q) => q.x === x && q.y === y && q.lock && onFloor(b, q));
+  const c = b.raid.containers.find((q) => inBox(q, x, y) && q.lock && onFloor(b, q));
   return c ? { ref: `c${c.id}`, x, y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null;
 }
 const targetOf = (b, ref) => {
@@ -257,7 +265,7 @@ export const lockedMsg = (box) => `The ${LOCKS[box.lock.kind].name.toLowerCase()
 export function openLock(state, b, u, act, H) {
   const t = targetOf(b, act.target);
   if (!t || t.lock.open) return "Nothing locked there.";
-  if (Math.max(Math.abs(u.x - t.x), Math.abs(u.y - t.y)) > 1) return "Move next to it first.";
+  if (t.box ? !nearBox(u, t.box) : Math.max(Math.abs(u.x - t.x), Math.abs(u.y - t.y)) > 1) return "Move next to it first."; // a car: next to any of its cells
   const odds = openOdds(state, b, u, t.lock);
   const o = odds[act.method];
   if (!o) return "Unknown way to open it.";
@@ -281,8 +289,9 @@ export function openLock(state, b, u, act, H) {
     const P = smash ? SMASH : FORCE;
     R.heat = Math.min(100, R.heat + P.heat);
     b.noise = (b.noise || 0) + P.noise;
-    H.say(b, ok ? `${u.name} ${smash ? "smashes" : "forces"} the ${lower} open with a crash (${Math.round(o.chance * 100)}%).` : `${u.name} ${smash ? "kicks at" : "heaves on"} the ${lower}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
-    H.alertNear(b, t.x, t.y, P.radius, "The noise wakes everything nearby.");
+    if (o.glass) H.say(b, ok ? `${u.name} shatters the car's window with a crash and reaches in (${Math.round(o.chance * 100)}%).` : `${u.name} hits the car's window; it cracks and holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
+    else H.say(b, ok ? `${u.name} ${smash ? "smashes" : "forces"} the ${lower} open with a crash (${Math.round(o.chance * 100)}%).` : `${u.name} ${smash ? "kicks at" : "heaves on"} the ${lower}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
+    H.alertNear(b, t.x, t.y, P.radius, o.glass ? "Breaking glass carries down the road: the dead nearby turn toward it." : "The noise wakes everything nearby.");
   } else {
     H.say(b, `${u.name} unlocks the ${lower} with the ${keyName(state, b.tileId)}.`, "good");
   }
@@ -318,6 +327,8 @@ const LOCK_LOOT = {
   guns:     { sup: [["ammo", 0.95, 20, 40]], gear: [["pistol", 0.4], ["shotgun", 0.3], ["huntrifle", 0.25], ["ar", 0.1]], key: 0.1 },
   safe:     { sup: [["meds", 0.25, 1, 2], ["ammo", 0.5, 10, 20]], gear: [["nvg", 0.05], ["milradio", 0.05]], key: 0.3 },
   crash:    { sup: [["meds", 0.45, 1, 3], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08]], key: 0 },
+  // A locked car: what its people packed to flee with, still in the back seat and the glovebox.
+  car:      { sup: [["fuel", 0.5, 1, 3], ["food", 0.4, 2, 4], ["water", 0.35, 1, 3], ["ammo", 0.2, 4, 10], ["meds", 0.1, 1, 1]], gear: [["pistol", 0.08], ["flashlight", 0.1], ["bottle", 0.1], ["slingbag", 0.05], ["backpack", 0.04], ["binoculars", 0.03], ["revolver", 0.03]], key: 0.05 },
 };
 const BP_MULT = { lock: 4, room: 2, plain: 0.5 };
 const ZBODY_KEY = 0.04; // a key to a nearby place on one of the dead (their own house, a car, a shop)

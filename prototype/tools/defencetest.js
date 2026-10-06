@@ -334,7 +334,11 @@ section("Fog of war");
   const h4 = fortHub(st4, ["walls", "floodlights"], 0);
   h4.stock.fuel = 10;
   const b4 = baseBattle(st4, h4, { kind: "zombies", count: 6, power: 2 }, { through: 50, night: true, floodlit: true });
-  const eye = b4.units.find((u) => u.side === "player" && active(u) && u.sight === 7 && heightAt(b4, u.x, u.y) === 0);
+  // The eye: a plain-sighted defender on the ground with some floodlit ground in its line of sight beyond its 7 (the
+  // wrecks on the road through the yard can hide every lit cell from one of them).
+  const eyes = b4.units.filter((u) => u.side === "player" && active(u) && u.sight === 7 && heightAt(b4, u.x, u.y) === 0);
+  const litInLos = (eye) => { let n = 0; for (let i = 0; i < b4.w * b4.h; i++) { const x = i % b4.w, y = (i / b4.w) | 0, d = Math.hypot(x - eye.x, y - eye.y); if (b4.lit[i] && d > sightRange(b4, eye) && d <= 13 && los(b4, eye.x, eye.y, x, y)) n++; } return n; };
+  const eye = eyes.find((u) => litInLos(u) > 0) || eyes[0];
   let litFar = 0, darkFar = 0;
   if (eye) for (let i = 0; i < b4.w * b4.h; i++) {
     const x = i % b4.w, y = (i / b4.w) | 0, d = Math.hypot(x - eye.x, y - eye.y);
