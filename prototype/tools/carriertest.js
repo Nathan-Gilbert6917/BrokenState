@@ -322,7 +322,7 @@ section("The worm in the living: caught in battle, saved and loaded, shown; whoe
   clearField(b);
   const n0 = st.log.length;
   endBattleNow(st, "victory");
-  check(hasWorm(sA) && sA.worm.from === "swarm" && sA.worm.since === day(st) && sA.worm.stage === "eggs" && wormSeen(sA), `the battle over, ${first(sA.name)} has caught the worm (worm.js catchWorm, cause "swarm", spotted at once: stage ${sA.worm.stage}, from "${sA.worm.from}")`);
+  check(hasWorm(sA) && sA.worm.from === "swarm" && sA.worm.since === day(st) && sA.worm.stage === "gut" && sA.worm.day === 0 && wormSeen(sA), `the battle over, ${first(sA.name)} has caught the worm (worm.js catchWorm, cause "swarm", spotted at once: stage ${sA.worm.stage}, from "${sA.worm.from}")`);
   check(newLogs(st, n0).some((t) => /bitten by the worm swarm/.test(t)), `the log: “${newLogs(st, n0).find((t) => /bitten by the worm swarm/.test(t))}”`);
   check(!catchWorm(st, sA, "again") && hasWorm(sA), "catching it twice changes nothing");
   closeCombat(st);
@@ -360,7 +360,7 @@ section("The worm in the living: caught in battle, saved and loaded, shown; whoe
   const n0 = st.log.length;
   hurt(st, sB, 9999, h.tile, "a test");
   const hurtOne = people.filter((s) => s !== sB).some((s, i) => s.health < before[i]);
-  check(!sB.alive && hurtOne && newLogs(st, n0).some((t) => /got up again.*tore at/.test(t)), `dying at the hub with the worm, ${first(sB.name)} gets up and tears at someone before they are put down (${newLogs(st, n0).find((t) => /tore at/.test(t))})`);
+  check(!sB.alive && hurtOne && newLogs(st, n0).some((t) => /got up again, the worm in their eyes\. .* was (hurt|killed) before/.test(t)), `dying at the hub with the worm, ${first(sB.name)} gets up and goes for the nearest people before they are put down (${newLogs(st, n0).find((t) => /got up again/.test(t))})`);
   check(!hasWorm(sB), "handled, the worm is cleared: they do not rise again");
   check(walkingLoot(st).length === 0, "their things stay in the armory: nothing walks off from inside the walls");
   const sD = atBase(st, h.id)[0];

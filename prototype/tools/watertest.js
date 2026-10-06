@@ -224,7 +224,7 @@ section("A team: purified first; filter, tablets, camp fire or nothing for the u
   check(teamWaterHow(st, p) === "tabs", "on the road with tablets: \"tabs\"");
   n = withNums(WORM, { WATER: 24 }, () => { drinkHour(st, p, members, 10, 10); return caught(members); });
   check(n === 0 && tube.dur === 9, `tablets: one per ${WORM.TABS_WATER} un-purified water drunk (${10 - tube.dur} used), safe`);
-  check(/dropped a purification tablet into the river water/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
+  check(/dropped a purification tablet into the un-purified water/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
   p.cargo.gear = [];
   p.tabWater = 0;
   check(teamWaterHow(st, p) === "unsafe", "nothing to purify it with: \"unsafe\"");
@@ -232,9 +232,12 @@ section("A team: purified first; filter, tablets, camp fire or nothing for the u
   check(n === members.length, "drunk as it is: the worm's dice (pinned)");
   clearAll(members);
   p.wormEggs = 0;
-  check(teamWaterHow(st, p) === "clean", "un-purified water from clean ground: \"clean\" (nothing to kill)");
-  n = withNums(WORM, { WATER: 24 }, () => { drinkHour(st, p, members, 5, 5); return caught(members); });
-  check(n === 0, "and nobody catches anything from it");
+  check(teamWaterHow(st, p) === "unsafe", "un-purified water from clean ground is still \"unsafe\": any of it can carry the worm");
+  n = withNums(WORM, { WATER: 24, RAW_BASE: 0 }, () => { drinkHour(st, p, members, 5, 5); return caught(members); });
+  check(n === 0, "no eggs in it: the eggs' part does nothing (RAW_BASE 0)");
+  n = withNums(WORM, { WATER: 0, RAW_BASE: 24 }, () => { drinkHour(st, p, members, 5, 5); return caught(members); });
+  check(n === members.length, "but RAW_BASE (any un-purified water) does (pinned)");
+  clearAll(members);
   const t = takeTeamWater({ supplies: { water: 2, [RAW]: 1 }, cargo: { supplies: { water: 3, [RAW]: 4 } } }, 6);
   check(t.pure === 5 && t.raw === 1, "takeTeamWater: purified first (packed, then found), then un-purified");
   const pp = { supplies: { water: 1, [RAW]: 5 }, cargo: { supplies: {} } };

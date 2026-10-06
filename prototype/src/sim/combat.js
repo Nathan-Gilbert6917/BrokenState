@@ -2610,7 +2610,7 @@ function endBattle(state, b, outcome) {
       if (outcome === "retreat") { lines.push(`${u.name} was left behind and is lost.`); u.lostBehind = true; }
     }
     if (dies) {
-      hurt(state, s, 9999, b.tileId, cause);
+      hurt(state, s, 9999, b.tileId, u.wormDeath ? `of the worm, in a fight with ${setup.enemy.name || setup.enemy.kind}` : cause); // carriers.js riseInBattle
       deadIds.push(s.id);
       if (!u.lostBehind) lines.push(u.roseAs != null ? turnedLine(b, u) : carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`); // carriers.js: got up as one of the dead
       continue;

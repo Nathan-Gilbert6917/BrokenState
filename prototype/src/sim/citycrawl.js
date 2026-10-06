@@ -68,7 +68,7 @@ export const CRAWL = {
   INFECT_PER_BLOCK: 0.05,       // the raid's infection (Heat per turn, the power of the dead that come in) a block deeper
   // Alert 0–100: start (+ the city's infection × infection), + a building's Heat gained × fromHeat when you come out,
   // + fight / mapFight for a fight on the street, + move for walking a block, − decay an hour (not below the start).
-  ALERT: { start: 5, infection: 15, fromHeat: 0.3, fight: 8, mapFight: 5, move: 3, alarm: 12, decay: 2, lieLow: 10, names: ["Calm", "Uneasy", "Stirred", "Roused", "Swarming"] },
+  ALERT: { start: 5, infection: 15, fromHeat: 0.3, fight: 8, mapFight: 5, move: 3, alarm: 12, decay: 2, lieLow: 10, turned: 6, names: ["Calm", "Uneasy", "Stirred", "Roused", "Swarming"] },
   // The Heat you start each building with: day / night + perBlock a block deeper + the Alert above the city's own
   // (its start) × fromAlert, at most max.
   HEAT0: { day: 5, night: 0, perBlock: 2, fromAlert: 0.35, max: 50 },
@@ -674,6 +674,7 @@ export function nextBlock(state, p) {
   const risk = moveRisk(state, c, to);
   addAlert(c, CRAWL.ALERT.move);
   if (!passHours(state, p, CRAWL.MOVE_HOURS)) return crawlGoneText(state, p);
+  if (c.enc) return ""; // one of you turned on the way (crawlTurned): that first
   if (state.rng.chance(risk)) {
     c.enc = makeEncounter(state, c, to, { move: to });
     say2(c, `On the way to block ${to}: ${c.enc.text}`, "danger", state.hour);
@@ -698,6 +699,7 @@ export function lieLow(state, p) {
   addAlert(c, -CRAWL.ALERT.lieLow);
   c.alert = Math.max(c.floor, c.alert);
   if (!passHours(state, p, CRAWL.LIE_LOW_HOURS)) return crawlGoneText(state, p);
+  if (c.enc) return ""; // one of you turned (crawlTurned)
   if (state.rng.chance(risk)) {
     c.enc = makeEncounter(state, c, c.block, {});
     say2(c, `Lying low: ${c.enc.text}`, "danger", state.hour);
@@ -762,6 +764,7 @@ function stepLeave(state, p) {
     const i = c.leaving.at;
     const risk = exitRisk(state, p).steps[0].p;
     if (!passHours(state, p, i % 2 === 0 ? 1 : 0)) return crawlGoneText(state, p); // half an hour a block
+    if (c.enc) return ""; // one of you turned (crawlTurned)
     if (state.rng.chance(risk)) {
       c.enc = makeEncounter(state, c, i, { exit: true });
       say2(c, `On the way out, block ${i}: ${c.enc.text}`, "danger", state.hour);
@@ -805,11 +808,30 @@ function crawlGoneText(state, p) {
 // ---------- encounters ----------
 // What the team runs into on the street: a horde (the dead; the special dead deeper), a patrol of raiders, or at a high
 // Alert on the way out a breakout (a big horde between you and the edge).
+// One of the team died with the worm in them on a block card (worm.js wormRise, from the midnight tick while the crawl passes its
+// hours): the encounter "One of you turned", fought like the street encounters (the window's choices, the autopilot's
+// crawlAutoStep); the Alert rises. With an encounter already in front of them, the risen joins it. Returns true.
+export function crawlTurned(state, p, s) {
+  const c = crawlOf(state, p);
+  if (!c) return false;
+  const name = `${s.name.split(" ")[0]} (turned)`;
+  if (c.enc) {
+    c.enc.enemy = { ...c.enc.enemy, count: (c.enc.enemy.count || 0) + 1 };
+    c.enc.text = `${c.enc.text} And ${s.name} has just died among you with the worm in them and got up again: one more of the dead.`;
+  } else c.enc = makeEncounter(state, c, c.block, { kind: "turned", name, who: s.name });
+  addAlert(c, CRAWL.ALERT.turned);
+  say2(c, `One of you turned: ${s.name} died with the worm in them and got up again, the worm in their eyes.`, "danger", state.hour);
+  return true;
+}
 function makeEncounter(state, c, n, ctx) {
   const t = state.tiles[c.tile];
   const rng = state.rng;
   const inf = t.infection || 0;
   const E = CRAWL.ENC;
+  if (ctx.kind === "turned") {
+    const enemy = { kind: "zombies", count: 1, power: 2 + inf * 3 + CRAWL.DEAD.powerPerBlock * (n - 1), name: ctx.name || "one of you, turned" };
+    return { kind: "turned", block: n, enemy, text: `One of you turned: ${ctx.who || "one of the team"} died with the worm in them and got up again among you, the worm in their eyes.`, move: null, exit: false, event: null, spotted: true };
+  }
   const raiders = !ctx.breakout && !ctx.kind && n >= 2 && rng.chance(E.raiders + E.raidersPerBlock * (n - 2));
   const kind = ctx.kind || (ctx.breakout ? "breakout" : raiders ? "patrol" : "horde");
   let enemy;

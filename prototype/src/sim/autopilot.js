@@ -84,7 +84,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
-import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad } from "./worm.js";
+import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -1705,7 +1705,7 @@ function buildWishes(state, base) {
   return out;
 }
 
-// The worm (worm.js): a water boiler as soon as the base's water carries its eggs (saved for unless a water filter
+// The worm (worm.js): a water boiler as soon as the base drinks un-purified water (any of it can carry the worm; saved for unless a water filter
 // covers it for now, or the land around gives too little firewood to keep it burning: then filters are the plan,
 // planCrafts, and the boiler waits its turn), and a cook fire once game, crops or forage with eggs come in, or
 // hunters, fishers, farmers and foragers work infected land.
@@ -1713,13 +1713,13 @@ function wormWishes(state, base, queued) {
   const out = [];
   if (isShelter(base)) return out; // its fire boils and cooks
   const w = baseWater(state, base);
-  if (w.raw > 0 && !count(base, "boiler") && !queued("boiler")) {
+  if (w.drawn && !count(base, "boiler") && !queued("boiler")) {
     const filter = baseFilter(state, base) && w.safe; // the filters purify the day's drinking (worm.js PURIFY_FILTER each)
     const woodShort = boilerWoodShort(state, base);
     const sick = residents(state, base.id).some(wormSeen);
     // Little firewood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
     // until someone here has caught it.
-    if (!woodShort || sick) out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
+    if (!woodShort || sick) out.push({ type: "boiler", why: `un-purified water can carry the worm${w.raw > 0 ? " (and the ground here is infected)" : ""}${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
   }
   const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
   const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
@@ -1733,7 +1733,7 @@ function wormWishes(state, base, queued) {
 // a queued water filter is crafted before anything else.
 export function wormFilterUrgent(state, base) {
   const ww = baseWater(state, base);
-  return ww.raw > 0 && (!ww.safe || boilerWoodShort(state, base));
+  return ww.drawn && (!ww.safe || boilerWoodShort(state, base));
 }
 // The land around a base gives less firewood a day (one woodcutter, woodcutting.js) than its boiler would burn, and the
 // pile is short of what the base wants (the winter's wood and the boiler's days, woodNeed): the boiler would eat the
@@ -1832,12 +1832,15 @@ function planCrafts(state, base) {
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "water is below the reserve", 4)) return;
   // The worm (worm.js): water with eggs and no boiler burning (none built, or nothing to burn, or the land gives too
   // little firewood for one): a filter makes it safe while it lasts, and a second is kept against the first clogging.
-  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft(["waterfilter"], baseWater(state, base).safe ? "the water carries the worm's eggs and the boiler's firewood is short" : "the water carries the worm's eggs and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
-  if (filters < 1 && tryCraft(["waterfilter"], "clean water: dysentery is four times rarer with a filter (health.js)", 8)) return;
+  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft(["waterfilter"], baseWater(state, base).safe ? "un-purified water can carry the worm and the boiler's firewood is short" : "un-purified water can carry the worm and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
+  // Dewormers (worm.js): the sure cure in the worm's first days, kept on hand (two at a hub, one at an outpost).
+  const dewormers = baseDewormers(state, base) + q.filter((j) => j.recipe === "dewormer").length;
+  if (dewormers < (base.type === "hub" ? 2 : 1) && (st.meds || 0) >= 8 && tryCraft(["dewormer"], "a dewormer on hand: the worm kills within a week", 4)) return;
+  if (filters < 1 && tryCraft(["waterfilter"], "clean water: a filter purifies 10 a day against the worm and an upset stomach (worm.js)", 8)) return;
   if (rs) floor = rs.scrap.target;
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
-  if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and clean water means less dysentery)", 15)) return;
+  if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;

@@ -6,7 +6,7 @@ import {
   CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick as hasCondition, medsToTreatAll,
   daysLeftText, courseText, needsDose, fieldDoseInfo, treatConditionAnywhere, sickMedsWeek, illnessRisk, baseRiskCtx, isIll, teamMeds,
 } from "../sim/health.js";
-import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM } from "../sim/worm.js";
+import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM, wormCureText } from "../sim/worm.js";
 import { baseById, residents, day } from "../sim/world.js";
 import {
   admitBelow, medsReserve, medicTime, bedReason, dailyHealthChange, autoCare, treatAtBaseInfo, isHurt, nextDayText,
@@ -77,7 +77,7 @@ function wormTreatRow(state, b, s) {
   return `<div class="row small" style="flex-wrap:wrap">${wormChip(state, s)}${kinds.map((k) => {
     const info = wormTreatInfo(state, b, s, k);
     return `<button class="mini" data-action="treatworm" data-base="${b.id}" data-id="${s.id}" data-kind="${k}" ${info.ok ? "" : "disabled"}${tip(info.ok ? what[k](info) : info.reason)}>${label[k]}</button>`;
-  }).join(" ")}</div>`;
+  }).join(" ")}<span class="muted">${esc(wormCureText(s))}</span></div>`;
 }
 
 // Medical tab: Treat buttons per condition for someone at this base.
@@ -149,8 +149,8 @@ export function illnessCard(state, b) {
 // The worm (sim/worm.js): whether the water here is safe, and how it is caught and cured.
 function wormWaterLine(state, b) {
   const w = baseWater(state, b);
-  const water = w.raw > 0 ? (w.safe ? `<span class="good">safe</span> (${esc(w.why)})` : `<span class="danger">carries the worm's eggs</span> (${esc(w.why)})`) : "clean (the ground here is clean enough)";
-  return `<div style="margin-top:0.3rem"${tip(`The worm: people catch it from water drunk unboiled from infected ground, from game from infected land that was not cooked through, and from camping on badly infested land. A water boiler or a water filter makes the water safe, a cook fire or a preserving kitchen cooks the game. A medic spots it in the gut stage (better Medicine sooner), where a dewormer or a purge (${WORM.PURGE_MEDS} meds) clears it; in the brain only surgery in a Clinic.`)}>Water: ${water}</div>`;
+  const water = !w.drawn ? "no un-purified water here" : w.safe ? `<span class="good">safe</span> (${esc(w.why)})` : `<span class="danger">${w.raw > 0 ? "carries the worm's eggs" : "un-purified: it can carry the worm"}</span> (${esc(w.why)})`;
+  return `<div style="margin-top:0.3rem"${tip(`The worm: any un-purified water can carry it (${Math.round(WORM.RAW_BASE * 1000) / 10}% a day drinking nothing else, far more from infected ground), and game from infected land not cooked through, and camping on badly infested land. A water boiler or a water filter makes the water safe, a cook fire or a preserving kitchen cooks the game. It hurts more every day and kills in about a week: a medic spots it from the first day (better Medicine sooner); days 1–${WORM.BRAIN_FROM - 1} a dewormer or a purge (${WORM.PURGE_MEDS} meds) clears it, from day ${WORM.BRAIN_FROM} only surgery in a Clinic. Un-purified water also gives an upset stomach now and then: mood only, it passes.`)}>Water: ${water}</div>`;
 }
 
 // Medical tab, per patient: the bed chip with the reason they are (or are not) in one.

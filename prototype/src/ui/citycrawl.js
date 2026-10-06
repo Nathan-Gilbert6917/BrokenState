@@ -109,7 +109,7 @@ function encounterCard(state, p, c) {
   const e = c.enc;
   if (e.fighting) return `<div class="card attn"><b>Fighting</b><div class="small">${esc(e.text)}</div></div>`;
   const opts = encounterOptions(state, p);
-  const title = e.kind === "patrol" ? "Raiders" : e.kind === "breakout" ? "Fight your way out" : "The dead";
+  const title = e.kind === "patrol" ? "Raiders" : e.kind === "breakout" ? "Fight your way out" : e.kind === "turned" ? "One of you turned" : "The dead";
   return `<div class="card attn"><b>${esc(title)}${e.spotted ? " — they have seen you" : ""}</b>
     <div class="small" style="margin:0.25rem 0 0.5rem">${esc(e.text)}${e.exit ? " You are on your way out." : e.move ? ` You were on your way to block ${e.move}.` : ""}</div>
     <div class="choices">${opts.map((o) => `<button data-action="cc-enc" data-id="${p.id}" data-ch="${o.id}" ${o.disabled ? "disabled" : ""}>${esc(o.label)}<span class="hint">${esc(o.tip)}</span></button>`).join("")}</div></div>`;

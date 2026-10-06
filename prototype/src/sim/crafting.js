@@ -87,7 +87,7 @@ export function craftOutputText(key) {
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
-  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; bases do not use them)`); // worm.js
+  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; a base only when its boiler is cold for want of firewood and it has no water filter)`); // worm.js
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);

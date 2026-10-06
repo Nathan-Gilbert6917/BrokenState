@@ -191,8 +191,8 @@ const SECTIONS = {
       const base = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
       const brain = w.stage === "brain";
       const where = base ? `at ${base.name}` : s.location.kind === "party" ? "on a team" : "away";
-      out.push({ key: `worm:${s.id}:${w.stage}`, kind: "worm", icon: "🪱", tone: brain ? "danger" : "warn", text: `${firstName(s.name)} has the worm${brain ? " in the brain" : ""} (${where})`,
-        tip: brain ? `${s.name}'s worm has reached the brain: they turn within days. Only surgery in a staffed Clinic can save them.${w.locked ? " Locked away: nobody will be hurt." : ""}` : `${s.name} carries the worm in the gut. A dewormer cures it for sure; a purge (${WORM.PURGE_MEDS} meds and a medic) usually does. ${base ? "Click for the Medical tab." : "Bring them to a base with meds and a medic."}`,
+      out.push({ key: `worm:${s.id}:${w.stage}`, kind: "worm", icon: "🪱", tone: brain ? "danger" : "warn", text: `${firstName(s.name)} has the worm${brain ? " in the brain" : ""}, day ${w.day} of about ${WORM.COURSE} (${where})`,
+        tip: brain ? `${s.name}'s worm has reached the brain: in a day or two it kills them and they get up again. Only surgery in a staffed Clinic can save them.${w.locked ? " Locked away: nobody will be hurt." : ""}` : `${s.name} carries the worm in the gut: it hurts more every day and reaches the brain on day ${WORM.BRAIN_FROM}. A dewormer cures it for sure; a purge (${WORM.PURGE_MEDS} meds and a medic) usually does. ${base ? "Click for the Medical tab." : "Bring them to a base with meds and a medic."}`,
         go: base ? { base: base.id, tab: "medical" } : { surv: s.id } });
     }
   },

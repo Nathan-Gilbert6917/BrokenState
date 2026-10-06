@@ -442,8 +442,9 @@ export function fetchWater(state, p) {
   // worm.js: river water on infected land carries the worm's eggs (a filter carried, a camp fire or tablets make it safe).
   const eggs = sourceEggs(state, partyTile(p));
   addWormWater(state, p, units, eggs);
-  const how = eggs > 0 ? teamWaterHow(state, p) : "";
-  const worm = eggs > 0 ? (how === "filter" ? " The land here is infected, but the team's water filter strains out the worm's eggs." : how === "tabs" ? " The land here is infected: the team drops purification tablets in before drinking it." : " The land here is infected: boil it at a camp fire (or filter it) before drinking it.") : "";
+  const how = teamWaterHow(state, p);
+  const land = eggs > 0 ? "The land here is infected" : "Even from clean ground un-purified water can carry the worm";
+  const worm = how === "filter" ? ` ${land}, but the team's water filter strains it.` : how === "fire" ? ` ${land}: the camp fire boils it.` : how === "tabs" ? ` ${land}: the team drops purification tablets in before drinking it.` : ` ${land}: boil it at a camp fire (or filter it) before drinking it.`;
   return `Filled the containers: ${units} un-purified water to carry home.${worm}`;
 }
 
@@ -518,10 +519,10 @@ function finishTask(state, p) {
 const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `${m.name.split(" ")[0]} ${Math.floor(m.health)}`).join(", ")}.`;
 
 // Resting in camp: the hurt heal at twice the rate of a base without a hospital, spirits lift a little.
-// An infected wound does not heal in camp (it needs meds). A camp with no food or no water gives no rest:
+// An infected wound does not heal in camp (it needs meds), nor anyone with the worm in them (worm.js). A camp with no food or no water gives no rest:
 // nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume). In daylight the fit
 // forage around the camp, part of each hour (foraging.js campForageHour): a hungry camp feeds itself a little.
-export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? (BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24 : 0);
+export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !s.worm && !starving(p) ? (BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24 : 0);
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);

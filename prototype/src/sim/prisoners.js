@@ -376,6 +376,8 @@ function goHome(state, p, goodwill = 0, why = "") {
   }
   refreshTeam(state, p);
 }
+// A prisoner gone for good (worm.js: died of the worm in the cells).
+export function dropPrisoner(state, p) { drop(state, p); }
 function drop(state, p) {
   const i = (state.prisoners || []).indexOf(p);
   if (i >= 0) state.prisoners.splice(i, 1);
@@ -641,7 +643,7 @@ export function prisonersDaily(state) {
       if (p.s) {
         const H = fed ? RD : PRISON.RATIONS.none;
         const h0 = health(p);
-        p.s.health = H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal;
+        p.s.health = H.heal > 0 && p.s.worm ? h0 : H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal;
         p.s.mood = clamp(mood(p) + H.mood, 0, 100);
         if (work > 0) {
           const T = PRISON.LABOUR.tire[fed ? rationOf(p) : "none"];
