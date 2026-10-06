@@ -21,7 +21,7 @@
 //     point), times their rations (Full 1, Short 0.9, Starvation 0.6, None 0.3) and health (under 60 less; under 25
 //     they cannot). It tires them: mood −0.5 a day on Full, −1 Short, −2 Starvation, and health −0.5 on Short, −1.5
 //     Starvation. A guard (someone on the Guard role) watches up to 4 at work; a watched labourer escapes 1% a day, an
-//     unwatched one 7%. Weeks of good work (Full or Short) win them over: +1% a day worked to the winning-over rate
+//     unwatched one 4%. Weeks of good work (Full or Short) win them over: +1% a day worked to the winning-over rate
 //     (up to +40%) and +0.4% to asking them to join (up to +10%). Nobody goes out while the base is under attack.
 //   What you can do with them (at a base):
 //     question (every 3 days): Speech decides (45% + 3% a point of the best talker + 1% a point of the leader's
@@ -31,10 +31,10 @@
 //       The first answer gives their group's bases (and puts the group on your map), its people and stock, every
 //       party it has out (raids included) and the hives near it, as knowledge snapshots; later answers the parties
 //       and hives again. Each questioning sours them (−6).
-//     ask to join (every 7 days; ASK): (opinion − 30) / 90 × who they were (zealots 0.5, soldiers 0.8, a loner 1.2)
+//     ask to join (every 7 days; ASK): (opinion − 30) / 140 × who they were (zealots 0.5, soldiers 0.8, a loner 1.2)
 //       + 0.5% a point of the leader's Leadership and of the best talker's Speech + rations + labour + (their mood −
-//       30) / 200, 2–95% (the bonuses only once their opinion is above 30). Yes: they join (the recruit card); no:
-//       opinion −8.
+//       30) / 200, 2–95% (the bonuses only once their opinion is above 30): at opinion 80 on Short with a good leader
+//       and talker about 45% (Full ~50%, Starvation ~30%; with no Leadership or Speech 36%). Yes: they join (the recruit card); no: opinion −8.
 //     hold for ransom: their group (alive) is asked for goods worth 15 + 4 × their power; it answers in 2–4 days:
 //       pays (40% + goodwill / 200, −15% for aggressive groups, 10–90%; only what it can spare), goodwill −4 and the
 //       prisoner walks home; or refuses: goodwill −3 and a rescue raid is twice as likely for 10 days.
@@ -85,7 +85,8 @@ export const PRISON = {
   TRADE_BACK: 10, RELEASE: 4, HAND_OVER: 3,
   RECRUIT: { base: 1, speech: 0.04, lead: 0.03, hungry: -2, holdDrift: 0.2, holdCap: 25, kind: { zealots: 0.35, soldiers: 0.6, none: 1.2 } },
   // Asking a prisoner to join now: by their opinion of you, who they were, Leadership and Speech, rations, labour, mood.
-  ASK: { from: 30, span: 90, kind: { zealots: 0.5, soldiers: 0.8, none: 1.2 }, lead: 0.005, speech: 0.005, mood: 1 / 200, min: 0.02, max: 0.95, fail: -8, gap: 7 },
+  // span 140 (was 90): opinion 80 on Short with a good leader and talker is about 45% (Full ~50%, Starvation ~30%).
+  ASK: { from: 30, span: 140, kind: { zealots: 0.5, soldiers: 0.8, none: 1.2 }, lead: 0.005, speech: 0.005, mood: 1 / 200, min: 0.02, max: 0.95, fail: -8, gap: 7 },
   EXECUTE: { mood: -6, hardened: -2, soft: -8, goodwill: -20, others: -4, infamy: 3, fearDays: 14, fear: 0.5, fearMood: -10 },
   RESCUE: { chance: 0.012, aggressive: 1.5, angry: 2, friendly: 0.3, minPop: 6, range: 25, hours: 10, manned: 1.3, steal: 0.1 },
   // Rations at a base (food a day = FOOD × share × the cold). heal: health a day (toward healTo when positive; above
@@ -110,7 +111,7 @@ export const PRISON = {
   LABOUR: {
     min: 0.5, max: 0.7, perSkill: 0.02, hours: 12, minHealth: 25, healthFull: 60,
     water: 4, kitchen: { food: 4, out: 3, keepDays: 15 },
-    guardWatch: 4, escapeGuarded: 0.01, escapeUnguarded: 0.07,
+    guardWatch: 4, escapeGuarded: 0.01, escapeUnguarded: 0.04, // unwatched was 7%: a guard is strongly advised, not a must
     tire: { full: { health: 0, mood: -0.5 }, short: { health: -0.5, mood: -1 }, starve: { health: -1.5, mood: -2 }, none: { health: -3, mood: -3 } },
     goodDay: 0.4, recruitPerDay: 0.01, recruitMax: 0.4, askPerDay: 0.004, askMax: 0.1,
   },

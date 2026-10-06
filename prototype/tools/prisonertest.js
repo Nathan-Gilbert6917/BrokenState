@@ -16,7 +16,7 @@ import {
   PRISON, TASKS, prisonersAt, captiveRecords, capturePrisoners, prisonersDaily, rationOf, taskOf, prisonerFood,
   labourOutput, prisonLabour, prisonBuildRate, prisonWater, labourWatch, escapeOdds, prisonGuardsWanted, tasksAt,
   setRation, setAllRations, setTask, setAllTasks, questionOdds, questionPrisoner, askOdds, askToJoin, recruitRate,
-  executePrisoner, prisonSummary, kitchenPlan,
+  executePrisoner, prisonSummary, kitchenPlan, bestSpeaker,
 } from "../src/sim/prisoners.js";
 import { prisonTab, PRISON_CHANGE, PRISON_ACTIONS } from "../src/ui/prisoners.js";
 
@@ -206,21 +206,34 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   check(near(watched, PRISON.LABOUR.escapeGuarded) && near(unwatched, PRISON.LABOUR.escapeUnguarded) && near(extra, PRISON.LABOUR.escapeUnguarded), `escape a day at work: watched ${pct(watched)}, unwatched ${pct(unwatched)} (the 5th and 6th with one guard ${pct(extra)})`);
   const idleCell = (() => { setTask(st, list[0].id, "idle"); const e = escapeOdds(st, list[0]); setTask(st, list[0].id, "farm"); return e; })();
   check(idleCell < watched, `in a guarded cell less (${pct(idleCell)})`);
-  // Monte Carlo: labourers with and without a guard.
+  check(near(PRISON.LABOUR.escapeGuarded, 0.01) && near(PRISON.LABOUR.escapeUnguarded, 0.04), `the rule: watched ${pct(PRISON.LABOUR.escapeGuarded)}, unwatched ${pct(PRISON.LABOUR.escapeUnguarded)} a day (Short, fed, mood 20+)`);
+  // Monte Carlo over many days: labourers with and without a guard (Short, fed, health and mood held steady so the
+  // rate is the rule's, not the low-mood multiplier's).
   const rate = (guard) => {
     let esc = 0, days = 0;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 150; i++) {
       const x = prisonWorld(seed + 900 + i, 1);
-      x.list[0].s.health = 80;
       setTask(x.st, x.list[0].id, "farm");
       if (guard) guardOn(x.st, x.h);
-      for (let d = 0; d < 5 && x.st.prisoners.length; d++) { day1(x.st); days++; }
+      for (let d = 0; d < 20 && x.st.prisoners.length; d++) { x.list[0].s.health = 80; x.list[0].s.mood = 30; day1(x.st); days++; }
       esc += 1 - x.st.prisoners.length;
     }
-    return esc / days;
+    return { r: esc / days, esc, days };
   };
   const g = rate(true), u = rate(false);
-  check(g < 0.03 && u > 0.035 && u > g * 2, `labourers run off: ${pct(g)} a day with a guard, ${pct(u)} without`);
+  check(g.r > 0.003 && g.r < 0.02 && u.r > 0.03 && u.r < 0.05 && u.r > g.r * 2, `labourers run off: ${pct(g.r)} a day with a guard (${g.esc} in ${g.days} days), ${pct(u.r)} without (${u.esc} in ${u.days} days)`);
+  // Starvation and low mood still push it up.
+  {
+    const x = prisonWorld(seed + 1100, 1);
+    x.list[0].s.health = 80;
+    setTask(x.st, x.list[0].id, "farm");
+    const w0 = labourWatch(x.st, x.h), base = escapeOdds(x.st, x.list[0], { watch: w0 });
+    setRation(x.st, x.list[0].id, "starve");
+    const hungry = escapeOdds(x.st, x.list[0], { watch: labourWatch(x.st, x.h) });
+    x.list[0].s.mood = PRISON.ESCAPE.lowMood - 5;
+    const both = escapeOdds(x.st, x.list[0], { watch: labourWatch(x.st, x.h) });
+    check(near(base, PRISON.LABOUR.escapeUnguarded) && near(hungry, base * PRISON.RATIONS.starve.escape) && near(both, hungry * PRISON.ESCAPE.lowMoodMult), `unwatched at work: ${pct(base)}, on Starvation ${pct(hungry)}, and low mood ${pct(both)}`);
+  }
   // Tiring, and weeks of work.
   noEscapes(() => {
     const a = prisonWorld(seed + 6, 2, 1);
@@ -291,7 +304,20 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   setRation(st, q.id, "full"); const fullOdds = askOdds(st, q);
   setRation(st, q.id, "starve"); const starveOdds = askOdds(st, q);
   setRation(st, q.id, "short");
-  check(fullOdds > shortOdds && shortOdds > starveOdds, `opinion 80: Full ${pct(fullOdds)}, Short ${pct(shortOdds)}, Starvation ${pct(starveOdds)}`);
+  const lead0 = atBase(st, h.id).find((s) => s.leader), talker = bestSpeaker(st, h);
+  check(fullOdds > shortOdds && shortOdds > starveOdds, `opinion 80: Full ${pct(fullOdds)}, Short ${pct(shortOdds)}, Starvation ${pct(starveOdds)} (Leadership ${lead0 ? lead0.skills.leadership : 0}, Speech ${talker ? talker.skills.speech : 0})`);
+  check(shortOdds > 0.4 && shortOdds < 0.5 && fullOdds > 0.45 && fullOdds < 0.55 && starveOdds > 0.25 && starveOdds < 0.35, "the reference points: Short ~45%, Full ~50%, Starvation ~30%");
+  // The opinion term alone (no Leadership or Speech, Short, mood 30, no labour): (80 − 30) / span.
+  {
+    const keep = atBase(st, h.id).map((s) => [s, s.skills.leadership, s.skills.speech]);
+    for (const [s] of keep) { s.skills.leadership = 0; s.skills.speech = 0; }
+    const bare = askOdds(st, q);
+    q.labourDays = 30; const worked = askOdds(st, q); q.labourDays = 0;
+    if (lead0) lead0.skills.leadership = 8;
+    const led = lead0 ? askOdds(st, q) : 1;
+    for (const [s, l, sp] of keep) { s.skills.leadership = l; s.skills.speech = sp; }
+    check(near(bare, (80 - PRISON.ASK.from) / PRISON.ASK.span) && worked > bare && led > bare, `no Leadership or Speech: ${pct(bare)}; with 30 good days of work ${pct(worked)}; with a Leadership 8 leader ${pct(led)}`);
+  }
   let yes = 0, no = 0, n = 0;
   for (let i = 0; i < 80; i++) {
     const x = prisonWorld(seed + 1200 + i, 1);
