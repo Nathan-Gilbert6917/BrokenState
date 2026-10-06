@@ -411,7 +411,7 @@ export function enemyBody(rng, u, kit) {
 // { sup, gear }. ZBODY: chances of each kind of find.
 export const ZBODY = {
   ammo: [0.08, 2, 6], food: [0.12, 1, 1], meds: [0.05, 1, 1], scrap: [0.06, 1, 1],
-  find: 0.3, FINDS: ["phone", "phone", "lighters", "smokes", "candy", "chocolate", "goldring", "watch", "photos", "batteries", "bandagekit", "knife", "cigarettes", "cards"],
+  find: 0.3, FINDS: ["phone", "phone", "lighters", "smokes", "candy", "chocolate", "goldring", "watch", "photos", "batteries", "bandagekit", "knife", "cigarettes", "cards", "deodorant", "lipbalm"],
   pistol: 0.02, bag: 0.03,
 };
 export function deadBodyFinds(rng, ztype) {

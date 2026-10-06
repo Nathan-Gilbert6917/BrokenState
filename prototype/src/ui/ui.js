@@ -1000,7 +1000,7 @@ function gapLabel(s, item, plain = false) {
 function gearTip(item) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${d.name}: power ${d.power}${d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}, worth: ${worthTier(item)}${item.quality < 1 ? `, condition ${Math.round(item.quality * 100)}%` : ""}${dur != null ? d.tabs ? `. ${dur} of ${d.dur} tablets left` : `. Makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left before it breaks` : ""}${d.desc ? `. ${d.desc}` : ""}`;
+  return `${d.name}: power ${d.power}${d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}, worth: ${worthTier(item)}${item.quality < 1 ? `, condition ${Math.round(item.quality * 100)}%` : ""}${dur != null ? d.tabs ? `. ${dur} of ${d.dur} tablets left` : d.groom ? `. ${dur} of ${d.dur} days of use left` : `. Makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left before it breaks` : ""}${d.desc ? `. ${d.desc}` : ""}`;
 }
 // Uses left on makeshift gear, e.g. " [7/10]".
 const durTag = (item) => { const v = itemDur(item); return v != null ? ` [${v}/${GEAR[item.key].dur}]` : ""; };

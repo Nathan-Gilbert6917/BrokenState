@@ -260,9 +260,9 @@ export function minSellable(state, f, key, speech, value, cap = Infinity) {
 // farm and camp things, the fortress its defences.
 export const WARES = {
   traders: ["pistol", "shotgun", "huntrifle", "vest", "machete", "bikehelmet", "kneeguards", "backpack", "bandagekit", "crowbar", "waterfilter", "assaultpack",
-    "revolver", "leverrifle", "compbow", "slingbag", "hikingpack", "camonet", "stove", "flare", "cards", "guitar", "chocolate", "instcoffee", "smokes", "vodka", "binoculars", "monocular"],
+    "revolver", "leverrifle", "compbow", "slingbag", "hikingpack", "camonet", "stove", "flare", "cards", "guitar", "chocolate", "instcoffee", "smokes", "vodka", "binoculars", "monocular", "deodorant", "toothpaste", "perfume"],
   commune: ["machete", "huntrifle", "pipespear", "waterfilter", "bandagekit", "backpack", "padding", "bat", "compbow", "slingbag", "stove", "ghillie", "harmonica", "cards",
-    "beartrap", "barbedwire", "tripwire", "chocolate"],
+    "beartrap", "barbedwire", "tripwire", "chocolate", "toothpaste", "shampoo"],
   military: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "pistol", "carbine", "rucksack", "camonet", "smokegren", "flare", "frag", "heatpack", "sandbags", "barbedwire", "instcoffee", "binoculars", "thermal"],
   fortress: ["shotgun", "huntrifle", "vest", "riothelmet", "kneeguards", "crowbar", "sledge", "prybar", "fireaxe", "sandbags", "barbedwire", "beartrap", "tripwire", "riotarms"],
   raider: ["pistol", "shotgun", "machete", "spikedbat", "tirevest", "bikehelmet", "pipegun", "revolver", "bat", "nailbat", "molotov", "pipebomb", "ladder", "vodka", "smokes"],
