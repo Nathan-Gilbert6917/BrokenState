@@ -426,6 +426,40 @@ console.log("A raid inside a building saved and loaded halfway");
   check(b2 && b2.raid.interior && b2.raid.interior.key === r.b.raid.interior.key && b2.over, `loads with its building (${b2 && b2.raid.interior.name}, ${b2 && b2.raid.doors.length} locked doors) and plays to the end (${b2 && b2.result && b2.result.outcome})`);
 }
 
+console.log("Where everyone starts (every unit on a walkable cell of its own floor, nobody on top of anyone)");
+{
+  // Units carry their storey in u.f (combat.js setFloor; b.floors[f].cells): a unit upstairs is checked against its
+  // own floor's grid, not the ground floor's (an upstairs ward can be open where the ground floor has a wall).
+  const types = ["hospital", "univ", "mall", "factory", "office", "military", "police", "pharmacy", "gunstore", "grocery", "clinic", "church", "autoshop", "motel", "apartments", "school", "hardware", "diner", "cabin", "barn", "firestation", "supermarket", "warehouse", "prison", "airport", "lodge", "ranch", "town", "city", "farm"];
+  const bad = [];
+  let units = 0, maps = 0, upstairs = 0;
+  for (let s = 0; s < Math.max(2, Math.ceil(SEEDS / 2)); s++) {
+    for (const type of types) {
+      const r = raidAt([type], { seed: 5000 + s * 977 + type.length * 11, raid: { choose: true }, vehicle: s % 2 === 1 });
+      if (!r) continue;
+      const b = r.b;
+      maps++;
+      const seen = new Set();
+      for (const u of b.units) {
+        if (u.dead || u.off || u.fled || u.left) continue;
+        units++;
+        const f = u.f || 0;
+        if (f) upstairs++;
+        const grid = b.floors ? (b.floors[f] || {}).cells : b.cells;
+        const where = `${type}${b.raid.interior ? ` (${b.raid.interior.key})` : " (street)"} seed ${s}: ${u.side} ${u.name}`;
+        if (!grid) { bad.push(`${where} on floor ${f} of ${b.floors ? b.floors.length : 1}`); continue; }
+        if (u.x < 0 || u.y < 0 || u.x >= b.w || u.y >= b.h) { bad.push(`${where} off the map at ${u.x},${u.y}`); continue; }
+        const c = grid[u.y * b.w + u.x];
+        if (!CELL[c.k].walk) bad.push(`${where} on ${c.k} at ${u.x},${u.y} floor ${f}`);
+        const key = `${f}:${u.x},${u.y}`;
+        if (seen.has(key)) bad.push(`${where} on someone at ${u.x},${u.y} floor ${f}`);
+        seen.add(key);
+      }
+    }
+  }
+  check(maps >= types.length && !bad.length, `${units} units on ${maps} raid maps (${upstairs} upstairs) all start on walkable cells of their own floor, alone${bad.length ? `: ${bad.slice(0, 4).join("; ")}` : ""}`);
+}
+
 console.log(`Headless raids on building maps (${RAIDS})`);
 {
   const types = ["police", "pharmacy", "gunstore", "grocery", "clinic", "church", "autoshop", "motel", "apartments", "school", "hardware", "diner", "cabin", "barn", "firestation", "supermarket", "town", "farm", "military"];

@@ -4,6 +4,7 @@
 //     on the site's street map (combat.js AREAS / AREA_SETS through the raid bot), the bodies (inventory.js ZBODY,
 //     enemyBody; combat.js searchBox; deadsoldiers.js bodyLoot), locked things (locks.js LOCK_LOOT), foraging herbs;
 //     pharmacies, clinics, hospitals and medevac wrecks give many times what ordinary places do, which give 1–2 at once
+//     (a raid is measured per container searched, so the bot's appetite for containers does not move the check)
 //   - trade: what a group pays and asks for meds (trade.js, data.js SUPPLIES.meds.value)
 //   - no flat drain: a base whose people are all well spends no meds; every meds spent is a treatment
 //   - a team in the field treats a bad wound or an illness from its own meds; a base from its stock
@@ -35,8 +36,8 @@ const inBrowser = (fn) => { const had = "window" in globalThis; if (!had) global
 
 // Site types: the medical ones, then ordinary places of every kind.
 const MED = ["pharmacy", "clinic", "hospital", "crash_med"];
-const ORDINARY = ["town", "city", "suburb", "mall", "supermarket", "grocery", "apartments", "office", "school", "motel", "church", "police", "farm", "cabin", "gas", "factory"];
-const SOME = ["univ", "firestation", "ranger", "military", "crash_mil", "airdrop"]; // first aid on hand, a little
+const ORDINARY = ["town", "city", "suburb", "mall", "supermarket", "grocery", "apartments", "office", "motel", "church", "police", "farm", "cabin", "gas", "factory"];
+const SOME = ["univ", "firestation", "school", "ranger", "military", "crash_mil", "airdrop"]; // first aid on hand, a little (a school's nurse, a fire station's first-aid room: combat.js AREAS nurse)
 const label = (k) => (LOCATIONS[k] ? LOCATIONS[k].name : k);
 
 // A plain tile far from the hub that nobody holds, made into a site of the given type.
@@ -75,7 +76,7 @@ function searchRate(type, hours = 240) {
 
 // ---------- a raid on the site's street map (the raid bot) ----------
 function raidRate(type, n) {
-  const o = { raids: 0, meds: 0, biggest: 0 };
+  const o = { raids: 0, meds: 0, biggest: 0, searched: 0 };
   for (let i = 0; i < n; i++) {
     const st = createWorld({ seed: SEED * 1000 + i, factionCount: 4 });
     const t = siteTile(st, type);
@@ -94,7 +95,7 @@ function raidRate(type, n) {
     st.combat = null;
     if (!b.over) continue;
     const m = b.result.loot.supplies.meds || 0;
-    o.raids++; o.meds += m; o.biggest = Math.max(o.biggest, m);
+    o.raids++; o.meds += m; o.biggest = Math.max(o.biggest, m); o.searched += (b.result.raid && b.result.raid.searched) || 0;
   }
   return o;
 }
@@ -110,7 +111,7 @@ if (!SAMPLE) {
     const s = searchRate(type);
     const r = raidRate(type, N);
     rows.push({ type, s, r, box: perSiteBoxes(type), med: MED.includes(type), some: SOME.includes(type) });
-    console.log(`    ${label(type).padEnd(24)} search ${r2(s.perHour).toFixed(2).padStart(5)}/h (${Math.round(s.hoursWith * 100).toString().padStart(2)}% of hours, at most ${s.biggest})   raid ${r2(r.meds / Math.max(1, r.raids)).toFixed(2).padStart(5)} (at most ${r.biggest} in one)   a container ${r2(perSiteBoxes(type)).toFixed(2)}`);
+    console.log(`    ${label(type).padEnd(24)} search ${r2(s.perHour).toFixed(2).padStart(5)}/h (${Math.round(s.hoursWith * 100).toString().padStart(2)}% of hours, at most ${s.biggest})   raid ${r2(r.meds / Math.max(1, r.raids)).toFixed(2).padStart(5)} (at most ${r.biggest} in one, ${r2(r.searched / Math.max(1, r.raids)).toFixed(1)} containers searched, ${r2(r.meds / Math.max(1, r.searched)).toFixed(2)} each)   a container ${r2(perSiteBoxes(type)).toFixed(2)}`);
   }
   const avg = (list, f) => list.reduce((a, x) => a + f(x), 0) / Math.max(1, list.length);
   const med = rows.filter((x) => x.med), ord = rows.filter((x) => !x.med && !x.some);
@@ -118,7 +119,12 @@ if (!SAMPLE) {
   console.log(`    average: medical sites ${r2(mS)}/h, ${r2(mR)} a raid; ordinary places ${r2(oS)}/h, ${r2(oR)} a raid`);
   check(mS >= 8 * oS, `an hour at a pharmacy, clinic, hospital or medevac wreck finds many times the meds of an ordinary place (${r2(mS)} vs ${r2(oS)} an hour, ×${r2(mS / Math.max(0.001, oS))})`);
   check(ord.every((x) => x.s.perHour <= 0.25 && x.s.biggest <= 2), `ordinary places: at most 0.25 meds an hour and 1–2 at a time (worst ${label(ord.slice().sort((a, b) => b.s.perHour - a.s.perHour)[0].type)} ${r2(Math.max(...ord.map((x) => x.s.perHour)))}/h, biggest find ${Math.max(...ord.map((x) => x.s.biggest))})`);
-  check(mR >= 4 * oR && ord.every((x) => x.r.meds / Math.max(1, x.r.raids) <= 1.5), `a raid: medical sites ${r2(mR)} a raid vs ordinary ${r2(oR)} (no ordinary place above 1.5)`);
+  // Per container searched, not per raid: how many containers the bot gets through is its own business (raidloot.js,
+  // breakoff.js) and changes with every bot change; what one container holds is the meds design (AREAS, locks.js
+  // LOCK_LOOT, the upper storeys' richness).
+  const each = (x) => x.r.meds / Math.max(1, x.r.searched);
+  const worstOrd = ord.slice().sort((a, b) => each(b) - each(a))[0];
+  check(mR >= 4 * oR && ord.every((x) => each(x) <= 0.3) && med.every((x) => each(x) >= 1), `a raid: medical sites ${r2(mR)} a raid vs ordinary ${r2(oR)}; per container searched, every medical site 1+ (least ${r2(Math.min(...med.map(each)))}), no ordinary place above 0.3 (most ${label(worstOrd.type)} ${r2(each(worstOrd))})`);
   check(med.every((x) => x.s.perHour >= 1.5), `every medical site is worth the trip: ${med.map((x) => `${label(x.type)} ${r2(x.s.perHour)}/h`).join(", ")}`);
   check(!["town", "city", "mall"].some((k) => (AREA_SETS[k] || []).includes("pharmacy") || (AREA_SETS[k] || []).includes("clinic")), "the street maps of a town, a city centre and a mall have no pharmacy or clinic area (their pharmacy building can still be raided)");
 
