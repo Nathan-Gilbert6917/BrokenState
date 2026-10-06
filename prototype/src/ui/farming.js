@@ -15,7 +15,7 @@ import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
-import { baseWater, boilerUse, cropLandBad, WORM } from "../sim/worm.js";
+import { baseWater, boilerUse, cropLandBad, WORM, purifyText, baseTabCount } from "../sim/worm.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -105,11 +105,16 @@ export function waterLine(state, b) {
   // Wells dug on your claims next to the base (sim/claims.js): each with its yield and what is left, hauled by the base's people.
   const cw = (p.claimWells || []).length ? ` Wells on your claims next to ${b.name}: ${p.claimWells.map((o) => `(${state.tiles[o.tile].x},${state.tiles[o.tile].y}) ${o.well.left <= 0 ? "dry" : `${o.rate}/day, ${Math.round(o.well.left)} left`}${o.counted || o.well.left <= 0 ? "" : " (nobody free to haul: one well per 4 people here)"}`).join("; ")}.` : "";
   const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: ${waterUseText(o.need)} (${drinkNote(o.need)}), crops ${n1(o.need.crops)} (none on a rainy day${o.need.season === "summer" ? ", a fifth more in summer" : ""}). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. People drink 1 a day in spring and autumn, ${THIRST.summer} in summer, ${THIRST.winter} in winter and at least ${THIRST.heat} on a hot day. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds ${WATER.filter} a day and cuts dysentery.`;
+  // Purified and un-purified water (sim/water.js, sim/worm.js purifyDaily): what comes in from the land is un-purified;
+  // the boiler, the filters and a shelter's fire purify it each day before people drink, purified water first.
+  const pu = purifyText(state, b);
+  const tabs = baseTabCount(state, b);
+  const purify = ` Purified ${n0(o.pure)}, un-purified ${n0(o.raw)} (the wells, springs, streams, rain catchers and hauled water come in un-purified). Purified a day: ${pu.total > 0 ? `${n1(pu.total)} (${pu.text})` : "none (no water boiler lit, no water filter, no fire)"}; people drink purified water first, then un-purified water (the worm's eggs, on infected ground); crops get un-purified water first. The tanks hold both together.${tabs ? ` Purification tablets here (${tabs}): for the road, not used at the base (a team leaving packs a tube).` : ""}`;
   // The worm (sim/worm.js): water from infected ground carries its eggs unless it is boiled or filtered.
   const ww = baseWater(state, b);
-  const worm = ww.raw > 0 ? ` The worm: this ground and its water carry the worm's eggs, and the water here is ${ww.safe ? `safe (${ww.why})` : `not safe (${ww.why}): build a water boiler or keep a water filter here`}.` : "";
+  const worm = ww.raw > 0 ? ` The worm: this ground and its water carry the worm's eggs, and the water here is ${ww.safe ? `safe (${ww.why})` : `not safe (${ww.why}): build a water boiler or keep water filters here (each purifies ${WORM.PURIFY_FILTER} a day)`}.` : "";
   const cls = o.daysLeft < 5 || !ww.safe ? "danger" : o.net < 0 ? "" : "good";
-  return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}${ww.safe ? "" : " · unboiled (the worm)"}`, tip: why + cw + worm };
+  return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${o.raw >= 1 ? ` (${n0(o.raw)} raw)` : ""}${pu.total > 0 ? ` · purify ${n0(pu.total)}/day` : ""}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}${ww.safe ? "" : " · un-purified (the worm)"}${tabs ? " · tablets: for the road" : ""}`, tip: why + purify + cw + worm };
 }
 const drinkNote = (need) => {
   const pct = Math.round((need.rate - 1) * 100);

@@ -19,6 +19,7 @@ import { foodOutlook } from "./economy.js";
 import { allItems } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 import { packErrand, unpackErrand } from "./needs.js";
+import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -86,11 +87,11 @@ export const HUB_EVENTS = {
           {
             label: `Fight it with water and every hand (${FIRE.water} water)`,
             hint: `${pct(wetChance)} to save it (better with more people); 30% someone is burned (8–18 health)`,
-            disabled: () => (c.base.stock.water || 0) < FIRE.water,
-            ai: () => ((c.base.stock.water || 0) >= 40 ? 10 : 6),
+            disabled: () => waterIn(c.base.stock) < FIRE.water,
+            ai: () => (waterIn(c.base.stock) >= 40 ? 10 : 6),
             resolve: (s2) => {
               if (!standing()) return "The fire is out.";
-              c.base.stock.water = Math.max(0, (c.base.stock.water || 0) - FIRE.water);
+              drawWater(c.base.stock, FIRE.water, { rawFirst: true }); // un-purified first (water.js)
               const ok = s2.rng.chance(wetChance);
               return `${ok ? `The ${name} is saved, black and dripping.` : lose(s2)}${burn(s2, 0.3)}`;
             },
@@ -364,7 +365,7 @@ export const HUB_EVENTS = {
     card: (st, c) => {
       const s = st.rng.pick(adults(c).filter((x) => x.health >= 60));
       const why = st.rng.pick(["look for their sister", "visit their family's graves", "check on their old house", "find out what happened to an old friend"]);
-      const can = () => (c.base.stock.food || 0) >= ERRAND.food && (c.base.stock.water || 0) >= ERRAND.water;
+      const can = () => (c.base.stock.food || 0) >= ERRAND.food && waterIn(c.base.stock) >= ERRAND.water;
       return {
         title: `${s.name} asks to leave for a few days`,
         text: `${s.name} wants to ${why}, and asks for ${ERRAND.minDays}–${ERRAND.maxDays} days away from ${c.base.name}.`,
@@ -380,7 +381,7 @@ export const HUB_EVENTS = {
               const pack = packErrand(s2, c.base, s, days); // needs.js: a day's food and water a day, never below zero
               s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days, pack };
               s.station = null;
-              return `${firstName(s)} sets off at dawn with ${pack.food} food and ${pack.water} water.`;
+              return `${firstName(s)} sets off at dawn with ${pack.food} food and ${pack.water + (pack[RAW] || 0)} water.`;
             },
           },
           { label: "Ask them to stay", hint: `${firstName(s)} mood ${ERRAND.refuse}`, ai: () => 1, resolve: () => { moodAll([s], ERRAND.refuse); return `${firstName(s)} stays, unhappily.`; } },
@@ -471,7 +472,7 @@ export function hubUpkeepDaily(state) {
       }
     }
     if (base.wellDown) {
-      base.stock.water = Math.max(0, (base.stock.water || 0) - base.wellDown.water);
+      drawWater(base.stock, base.wellDown.water, { rawFirst: true }); // the well's water that never came (un-purified first)
       if (d >= base.wellDown.until) { delete base.wellDown; log(state, `The well at ${base.name} is working properly again.`, "good"); }
     }
   }

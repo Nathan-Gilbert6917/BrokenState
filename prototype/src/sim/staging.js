@@ -47,6 +47,7 @@ import {
 } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
 import { sourceEggs, addWormWater } from "./worm.js";
+import { teamWaterIn, takeTeamWater, moveWater, drawWater, keyWord, RAW } from "./water.js"; // purified and un-purified water (the camp's river water is un-purified)
 
 export const STAGING = {
   // What the shelter (tier 0) takes, by who founds it. Hardcore's first: the camp's old cost (30 scrap, 4 parts, 15
@@ -73,7 +74,7 @@ export const CAMP_WATER = { river: 10, reach: 3 };
 // The stages in order (the panels' "Camp → Shelter → Base").
 export const STAGES = ["Camp", "Shelter", "Base"];
 export const ESTABLISH_LABEL = "Establish base";
-export const STORE_KEYS = ["scrap", "parts", "food", "preserved", "water"];
+export const STORE_KEYS = ["scrap", "parts", "food", "preserved", "water", RAW];
 const NEED_KEYS = ["scrap", "parts", "food", "water"];
 
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -93,7 +94,8 @@ export function stagingNeeds(state, tile = null) {
 }
 export const needText = (needs) => NEED_KEYS.filter((k) => needs[k]).map((k) => `${needs[k]} ${k}`).join(", ");
 // What the stores hold toward a need (preserved food counts as food).
-export const storeOf = (camp, k) => n0((camp.stores[k] || 0) + (k === "food" ? camp.stores.preserved || 0 : 0));
+// Food counts the preserved food, water both kinds (water.js).
+export const storeOf = (camp, k) => n0((camp.stores[k] || 0) + (k === "food" ? camp.stores.preserved || 0 : k === "water" ? camp.stores[RAW] || 0 : 0));
 // Each need: { key, need, have, short, ok }.
 export function stagingRows(camp) {
   return NEED_KEYS.filter((k) => camp.needs[k]).map((k) => {
@@ -210,7 +212,7 @@ export function depositable(state, p, camp = state.staging) {
   const fromPres = Math.min(n0(pres), food);
   if (fromPres >= 1) out.push(["preserved", fromPres]);
   if (food - fromPres >= 1) out.push(["food", n0(Math.min(fresh, food - fromPres))]);
-  const water = spare(carried(p, "water"), n * STAGING.KEEP_DAYS * th, n * th, Math.max(0, (camp.needs.water || 0) - storeOf(camp, "water")), "water");
+  const water = spare(teamWaterIn(p), n * STAGING.KEEP_DAYS * th, n * th, Math.max(0, (camp.needs.water || 0) - storeOf(camp, "water")), "water");
   if (water >= 1) out.push(["water", water]);
   return out.filter(([, q]) => q >= 1);
 }
@@ -227,13 +229,14 @@ export function provisionable(state, p, camp = state.staging) {
     const q = Math.min(wantFood, spareFood, n0(camp.stores[k]));
     if (q >= 1) { out.push([k, q]); wantFood -= q; spareFood -= q; }
   }
-  const w = Math.min(n0(n * STAGING.KEEP_DAYS * th - carried(p, "water")), Math.max(0, storeOf(camp, "water") - (camp.needs.water || 0)));
+  const w = Math.min(n0(n * STAGING.KEEP_DAYS * th - teamWaterIn(p)), Math.max(0, storeOf(camp, "water") - (camp.needs.water || 0)));
   if (w >= 1) out.push(["water", w]);
   return out;
 }
 function provision(state, p, camp) {
   const got = [];
   for (const [k, q] of provisionable(state, p, camp)) {
+    if (k === "water") { const d = moveWater(camp.stores, p.supplies, q); if (d.raw > 0) addWormWater(state, p, d.raw, sourceEggs(state, camp.tile)); got.push(`${q} water`); continue; } // purified first
     camp.stores[k] -= q;
     p.supplies[k] = (p.supplies[k] || 0) + q;
     got.push(`${q} ${k === "preserved" ? "preserved food" : k}`);
@@ -282,6 +285,13 @@ function pitchCamp(state, p, tile) {
 function deposit(state, p, camp) {
   const got = [];
   for (const [k, q] of depositable(state, p, camp)) {
+    if (k === "water") { // un-purified first: the team keeps its purified water for the road
+      const d = takeTeamWater(p, q, { rawFirst: true });
+      if (d.pure > 0) camp.stores.water = (camp.stores.water || 0) + d.pure;
+      if (d.raw > 0) camp.stores[RAW] = (camp.stores[RAW] || 0) + d.raw;
+      if (d.got >= 1) got.push(`${Math.floor(d.got)} water`);
+      continue;
+    }
     const took = Math.floor(takeSupply(p, k, q));
     if (took < 1) continue;
     camp.stores[k] = (camp.stores[k] || 0) + took;
@@ -336,7 +346,7 @@ function strike(state, why) {
   if (why !== "struck") log(state, `The staging camp ${tileLabel(state, camp.tile)} is ${why}. What was in it is left there as a cache.`, "info");
   return items.map((i) => `${i.qty} ${i.key}`).join(", ");
 }
-export const storesText = (camp) => STORE_KEYS.filter((k) => n0(camp.stores[k]) >= 1).map((k) => `${n0(camp.stores[k])} ${k}`).join(", ");
+export const storesText = (camp) => STORE_KEYS.filter((k) => n0(camp.stores[k]) >= 1).map((k) => `${n0(camp.stores[k])} ${keyWord(k)}`).join(", ");
 
 // ---------- every hour (world.js tickHour, after the teams move) ----------
 export function stagingHour(state) {
@@ -351,7 +361,7 @@ export function stagingHour(state) {
   camp.workers = workers.reduce((a, p) => a + partyMembers(state, p).length, 0);
   for (const p of workers) feed(state, p, camp);
   // No water carried and none in the stores (a camp away from a river or lake): the team stops to go and find some.
-  for (const p of workers) if (carried(p, "water") < 0.5 && storeOf(camp, "water") < 1) {
+  for (const p of workers) if (teamWaterIn(p) < 0.5 && storeOf(camp, "water") < 1) {
     awaitOrders(state, p, `Out of water, and the camp's stores are dry: ${waterSource(state, camp.tile) ? `fetch it from the ${waterSource(state, camp.tile).kind} (${waterText(state, camp.tile)})` : "no water source nearby: search for water (shops, diners, churches, campgrounds)"} and bring some back.`, { failed: true });
   }
   const working = workers.filter((p) => isWorking(state, p));
@@ -382,12 +392,12 @@ export function stagingHour(state) {
 // it drinks from it first (a day's worth when it runs low).
 function feed(state, p, camp) {
   const n = partyMembers(state, p).length;
-  if (besideWaterSource(state, camp.tile) && carried(p, "water") < (n * thirstAt(state)) / 12) {
+  if (besideWaterSource(state, camp.tile) && teamWaterIn(p) < (n * thirstAt(state)) / 12) {
     const q = Math.ceil(n * thirstAt(state));
-    p.supplies.water = (p.supplies.water || 0) + q;
+    p.supplies[RAW] = (p.supplies[RAW] || 0) + q; // un-purified river water (water.js)
     addWormWater(state, p, q, sourceEggs(state, camp.tile)); // worm.js: river water on infected land (the camp fire boils it)
   }
-  const food = carried(p, "food") + carried(p, "preserved"), water = carried(p, "water");
+  const food = carried(p, "food") + carried(p, "preserved"), water = teamWaterIn(p);
   if (food < n / 12) {
     for (const k of ["food", "preserved"]) {
       const q = Math.min(n0(camp.stores[k]), n);
@@ -395,8 +405,8 @@ function feed(state, p, camp) {
     }
   }
   if (water < (n * thirstAt(state)) / 12) {
-    const q = Math.min(n0(camp.stores.water), Math.ceil(n * thirstAt(state)));
-    if (q >= 1) { camp.stores.water -= q; p.supplies.water = (p.supplies.water || 0) + q; }
+    const q = Math.min(storeOf(camp, "water"), Math.ceil(n * thirstAt(state)));
+    if (q >= 1) { const d = moveWater(camp.stores, p.supplies, q); if (d.raw > 0) addWormWater(state, p, d.raw, sourceEggs(state, camp.tile)); } // purified first
   }
 }
 // The camp's own water a day: none (no spring). Beside a river or lake, CAMP_WATER.river hauled into the stores by the
@@ -406,9 +416,9 @@ export function campWater(state, camp) {
   return Math.max(0, Math.min(CAMP_WATER.river, (camp.needs.water || 0) * STAGING.STORE_MAX - storeOf(camp, "water")));
 }
 function stagingDaily(state, camp) {
-  camp.stores.water = (camp.stores.water || 0) + campWater(state, camp);
+  camp.stores[RAW] = (camp.stores[RAW] || 0) + campWater(state, camp); // hauled from the river: un-purified (water.js)
   const away = (state.hour - camp.lastPresent) / 24;
-  if (away >= STAGING.GONE && camp.progress <= 0.05 * camp.work && !STORE_KEYS.some((k) => k !== "water" && n0(camp.stores[k]) >= 1)) {
+  if (away >= STAGING.GONE && camp.progress <= 0.05 * camp.work && !STORE_KEYS.some((k) => k !== "water" && k !== RAW && n0(camp.stores[k]) >= 1)) {
     state.staging = null;
     log(state, `The staging camp ${tileLabel(state, camp.tile)} is gone: nothing left of it after ${Math.floor(away)} days alone.`, "danger");
     return;

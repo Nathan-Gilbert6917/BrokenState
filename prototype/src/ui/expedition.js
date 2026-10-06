@@ -17,11 +17,13 @@ import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { conditionChips, isSick } from "./health.js"; // illness chips with days left and a Treat button (the team's meds)
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
-import { commandable, planStatus, conditionText, NO_RADIO, HAND_RADIO, HAND_RADIO_TIP } from "../sim/plans.js";
+import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
+import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
-import { teamWormText } from "../sim/worm.js";
+import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
+import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
@@ -130,7 +132,7 @@ export function renderExpedition(state, ui, p) {
     </div>`;
 
   if (!cmd) {
-    return head + status + (p.radioHear ? `<div class="card small muted"${tip(HAND_RADIO_TIP)}>📻 ${HAND_RADIO}.${p.heard && p.heard.length ? ` Heard: ${p.heard.map((h) => esc(h.text)).join(" · ")}` : " Nothing on the air yet."}</div>` : "") + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
+    return head + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
@@ -169,6 +171,7 @@ export function renderExpedition(state, ui, p) {
       ${landBlock(state, p, queueing ? queueEndTile(state, p) : tile, queueing)}
       ${craftBlock(state, p, queueing)}
       ${boatBlock(state, p, queueing ? queueEndTile(state, p) : tile, queueing)}
+      ${listenBlock(state, p, queueing)}
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
@@ -349,7 +352,7 @@ function suppliesBlock(state, p) {
   const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
   // Days at the rate it eats on the move (more under a load, sim/load.js).
   const n = Math.max(1, partyPace(state, p).eatMove);
-  const daysOf = (k) => n0(((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n);
+  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n); // water: both kinds
   const t = partyLoad(state, p);
   const b = p.burden;
   const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;
@@ -358,6 +361,7 @@ function suppliesBlock(state, p) {
       ${packed.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
     </table>
     <div class="muted" style="margin-top:0.3rem">Food for ~${daysOf("food")} days, water for ~${daysOf("water")} days on the move · meds ${n0(partyMeds(p))}</div>
+    ${teamWaterNote(state, p)}
     <div class="row" style="margin-top:0.3rem"><span class="muted" style="width:7rem"${tip(`Supplies and cargo (kg) against what the team can carry on top of what it wears${p.vehicle ? " (plus the vehicle)" : ""}. ${BANDS_HELP}`)}>Load ${n0(load)}/${n0(cap)} kg</span><div style="flex:1">${bar((load / Math.max(1, cap)) * 100, load > cap * 0.9 ? "var(--danger)" : "var(--info)")}</div></div>
     <div style="margin-top:0.3rem"${tip("The team is weighed when it sets off and each hour it waits: eating on the way does not lighten its pace until it stops, but anything picked up on the move counts at once.")}>${p.vehicle === true ? "" : `<div class="small">Pace from its load: ${pace < 1 ? `<span class="warn">−${Math.round((1 - pace) * 100)}%</span>` : "full"}${b && b.band >= 0 ? ` (worst band when weighed: ${bandName(b.band)})` : ""}</div>`}${paceLine(t)}${carLine(t, partyVehicle(state, p)?.name)}${t.mode === true ? "" : loadRows(t)}</div>
     ${p.cargo.gear.length ? `<div style="margin-top:0.3rem">${p.cargo.gear.map((g) => `<span class="chip">${esc(g.name)}</span>`).join("")}</div>` : ""}
@@ -396,3 +400,15 @@ function planBlock(state, p) {
   const c = conditionText(p.plan.conditions);
   return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. Out of radio contact the team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; in contact you can change it any time.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
 }
+
+// The team's water (sim/water.js): purified and un-purified, and how it drinks the un-purified water now (sim/worm.js
+// drinkHour): through a filter, boiled at the camp fire, a tablet dropped in, or as it is.
+function teamWaterNote(state, p) {
+  const raw = teamRawIn(p);
+  if (!(raw >= 1)) return "";
+  const how = teamWaterHow(state, p);
+  const tabs = teamTabCount(state, p);
+  const text = how === "filter" ? "drunk through the water filter carried (safe)" : how === "fire" ? "boiled at the camp fire (safe)" : how === "tabs" ? `dropping a tablet in the river water (${tabs} purification tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER})` : how === "clean" ? "from clean ground: safe enough as it is" : "drunk as it is: it carries the worm's eggs (camp with the fire lit, or carry a filter or purification tablets)";
+  return `<div class="small ${how === "unsafe" ? "danger" : "muted"}"${tip("Purified water (bottled, boiled, filtered) is drunk first. Un-purified water (fetched from a river or lake, or a base's well water) is safe once purified: a water filter carried, a lit camp fire (it also boils some into purified water each hour), or purification tablets (one per " + WORM.TABS_WATER + " water, no need to stop and camp).")}>Water: ${n0(carriedW(p))} purified, ${n0(raw)} un-purified: ${esc(text)}.</div>`;
+}
+const carriedW = (p) => Math.max(0, p.supplies.water || 0) + Math.max(0, (p.cargo && p.cargo.supplies.water) || 0);

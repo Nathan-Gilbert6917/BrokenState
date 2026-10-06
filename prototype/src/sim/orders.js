@@ -18,9 +18,11 @@ import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel }
 import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
-import { sourceEggs, addWormWater } from "./worm.js";
+import { sourceEggs, addWormWater, teamWaterHow } from "./worm.js";
 import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.js";
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
+import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in: tune a receiver to a radio network
+import { networkById } from "./radio.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -54,6 +56,7 @@ export function describeOrder(state, o) {
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
+    case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
   return o.type;
 }
@@ -146,6 +149,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "claim") hours = CLAIM.HOURS;
     else if (o.type === "well") hours = CLAIM.WELL_HOURS;
+    else if (o.type === "listen") hours = LISTEN.HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
     else if (o.type === "nearby") {
@@ -399,6 +403,13 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "well", hours: CLAIM.WELL_HOURS });
       return `The team starts digging a well (${CLAIM.WELL_HOURS}h, ${CLAIM.WELL_SCRAP} scrap and ${CLAIM.WELL_PARTS} part when it is done).`;
     }
+    case "listen": {
+      // Tune the team's receiver to a radio network whose coverage it stands in (radiolisten.js); an hour at the set.
+      const why = listenProblem(state, p, false, o.net ?? null);
+      if (why) return fail(`Listen in: ${why}`);
+      startTask(state, p, { type: "listen", net: o.net ?? null, hours: LISTEN.HOURS });
+      return `The team cranks up the radio and listens in (${LISTEN.HOURS}h).`;
+    }
     case "cross": {
       const from = partyTile(p);
       const plan = boatPlan(state, p, from, o.tile, o.mode);
@@ -421,16 +432,19 @@ export function startOrder(state, p, o) {
 
 // Fetch water: on a land tile next to a river or lake, the team fills what it can carry (its cargo room, water
 // weighs 1 kg; a haul limit set for the team counts) and brings it home like any find. Rivers and lakes do not run dry.
+// It is un-purified water (water.js): the base purifies it (its boiler, filters), the team boils it at a camp fire,
+// filters it or drops purification tablets in (worm.js drinkHour).
 export const besideWater = (state, tile) => state.tiles[tile] && state.tiles[tile].terrain !== "water" && state.grid.neighbors(tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
 export function fetchWater(state, p) {
-  const units = Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight);
+  const units = Math.floor(cargoRoom(state, p) / SUPPLIES.rawwater.weight);
   if (units < 1) return "No room left to carry any water.";
-  p.cargo.supplies.water = (p.cargo.supplies.water || 0) + units;
-  // worm.js: river water on infected land carries the worm's eggs (a filter carried cleans it; a camp fire boils it).
+  p.cargo.supplies.rawwater = (p.cargo.supplies.rawwater || 0) + units;
+  // worm.js: river water on infected land carries the worm's eggs (a filter carried, a camp fire or tablets make it safe).
   const eggs = sourceEggs(state, partyTile(p));
   addWormWater(state, p, units, eggs);
-  const worm = eggs > 0 ? (p.wormWater > 0 ? " The land here is infected: boil it at a camp fire before drinking it." : " The land here is infected, but the team's water filter strains out the worm's eggs.") : "";
-  return `Filled the containers: ${units} water to carry home.${worm}`;
+  const how = eggs > 0 ? teamWaterHow(state, p) : "";
+  const worm = eggs > 0 ? (how === "filter" ? " The land here is infected, but the team's water filter strains out the worm's eggs." : how === "tabs" ? " The land here is infected: the team drops purification tablets in before drinking it." : " The land here is infected: boil it at a camp fire (or filter it) before drinking it.") : "";
+  return `Filled the containers: ${units} un-purified water to carry home.${worm}`;
 }
 
 // Work on the spot: the team stays on its tile until the task is done (or you stop it).
@@ -496,6 +510,7 @@ function finishTask(state, p) {
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
   else if (t.type === "well") text = digWell(state, p, partyTile(p));
+  else if (t.type === "listen") text = listenIn(state, p, t.net, false).text; // radiolisten.js: tuned, and the last few days caught up
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
 }

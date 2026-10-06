@@ -27,7 +27,8 @@ import { heatDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
-import { cookAtBase, wormDaily, boilerUse } from "./worm.js";
+import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
+import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -69,7 +70,7 @@ export function farmOutput(state, base) {
 // supplies come from.
 export const GREEDY_SCAV = 1.15; // the Greedy trait: finds more when scavenging around a base
 export const BASE_SCAV_CHANCE = 0.07;   // per scavenger per day at Scavenging 0, fresh surroundings
-export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1], preserved: [1, 3], jars: [2, 6] };
+export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], rawwater: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1], preserved: [1, 3], jars: [2, 6] };
 export const SCAV_DEPLETE = 0.004, SCAV_FLOOR = 0.2;
 export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
@@ -114,6 +115,9 @@ function baseScavenging(state, base, people) {
 }
 
 // ---------- water ----------
+// Purified and un-purified water (water.js): everything below is made un-purified (stock.rawwater); each day the
+// boiler, the water filters and a shelter's fire purify it (worm.js purifyDaily) before people drink, purified water
+// first. The capacity and the outlook count both kinds together.
 // The hub has a well; an outpost a spring or a hand pump; a base by a river or lake draws from it too. Well
 // buildings add more, rain catchers fill on wet days (weather.rainWater), cisterns hold more. Production only
 // fills the base up to its capacity (water brought home on top of that is kept, though in summer a little of it
@@ -173,19 +177,19 @@ export function waterNeed(state, base) {
 export function waterOutlook(state, base) {
   const prod = waterProduction(state, base);
   const need = waterNeed(state, base);
-  const stock = base.stock.water || 0;
+  const stock = waterIn(base.stock); // both kinds (water.js)
   const cap = waterCapacity(base);
   const inflow = prod.total + prod.filters;
   const net = inflow - need.total;
   // On a dry day: no rain in the catchers, and the crops need watering (for planning: is the supply enough?).
   const dryNet = inflow - prod.rain - need.people - need.prisoners - need.guests - cropWaterNeed(state, base, { dry: true });
-  return { stock, cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
+  return { stock, pure: Math.max(0, base.stock.water || 0), raw: Math.max(0, base.stock[RAW] || 0), cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
 }
 // Water running short now: more drunk than made, and it runs out within 6 days or is under 3 a head. The governor
 // puts a crafter on a queued water filter only then (autopilot planRoles), and so do work priorities (work.js).
 export function waterRunningShort(state, base) {
   const wo = waterOutlook(state, base);
-  return wo.net < 0 && (wo.daysLeft < 6 || (base.stock.water || 0) < wo.need.heads * 3);
+  return wo.net < 0 && (wo.daysLeft < 6 || waterIn(base.stock) < wo.need.heads * 3);
 }
 
 // ---------- the summer water outlook ----------
@@ -232,7 +236,7 @@ export function summerWater(state, base, { extra = 0, people = null, filterShare
   if (reserve > cap && cisternsLeft) fix.push({ type: "cistern", count: Math.min(cisternsLeft, Math.ceil((reserve - cap) / WATER.cistern)) });
   return {
     n, rate: T.summer, heatRate: T.heat, inflow: r1(inflow), need: r1(need), net: r1(net), heatIn: r1(heatIn), heatNeed: r1(heatNeed), heatNet: r1(heatNet),
-    crops: r1(crops), stock: Math.floor(base.stock.water || 0), cap, reserve, short: r1(short), fix,
+    crops: r1(crops), stock: Math.floor(waterIn(base.stock)), cap, reserve, short: r1(short), fix,
   };
 }
 const FIX_NAMES = { well: ["a well", "wells"], waterfilter: ["a water filter", "water filters"], rain_catcher: ["a rain catcher", "rain catchers"], cistern: ["a cistern", "cisterns"] };
@@ -366,14 +370,15 @@ function baseDaily(state, base) {
   for (const s of people) if (s.role === "work") s.role = "scavenge";
   farmOf(state, base); // plots follow the buildings
 
-  // Water in: the well, streams, wells and rain catchers fill the base up to its capacity.
+  // Water in: the well, streams, wells and rain catchers fill the base up to its capacity (both kinds count), as
+  // un-purified water (water.js).
   const prod = waterProduction(state, base);
-  const room = Math.max(0, waterCapacity(base) - (st.water || 0));
-  st.water = (st.water || 0) + Math.min(room, prod.total);
+  const room = Math.max(0, waterCapacity(base) - waterIn(st));
+  st[RAW] = Math.max(0, st[RAW] || 0) + Math.min(room, prod.total);
   drawWells(state, base); // claims.js: the wells hauled from today lose what was drawn; one at 0 is dry
-  // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates.
-  const over = (st.water || 0) - waterCapacity(base);
-  if (over > 0 && Weather.season && Weather.season(state).key === "summer") st.water -= Math.round(over * WATER.evaporate * 10) / 10;
+  // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates (un-purified first).
+  const over = waterIn(st) - waterCapacity(base);
+  if (over > 0 && Weather.season && Weather.season(state).key === "summer") drawWater(st, Math.round(over * WATER.evaporate * 10) / 10, { rawFirst: true });
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
@@ -383,18 +388,24 @@ function baseDaily(state, base) {
   assignStations(state, base);
   runStations(state, base);
 
-  // Drinking: people first, then the crops get what is left.
+  // Purifying (worm.js purifyDaily): the boiler (it burns its firewood now), the water filters and a shelter's fire
+  // turn un-purified water into purified water before anyone drinks.
+  purifyDaily(state, base);
+  // Drinking: people first (purified water first, then un-purified: worm.js rolls the share drunk un-purified), then the
+  // crops get what is left (un-purified first). Thirst counts both kinds.
   const need = waterNeed(state, base);
-  if (mouths.length && (st.water || 0) + 1e-9 < need.people) {
-    const short = 1 - (st.water || 0) / need.people;
-    st.water = 0;
+  const have = waterIn(st);
+  let drank;
+  if (mouths.length && have + 1e-9 < need.people) {
+    const short = 1 - have / need.people;
+    drank = drawWater(st, have);
     thirst(state, base, mouths, short);
   } else {
-    st.water = (st.water || 0) - need.people;
+    drank = drawWater(st, need.people);
     base.thirstDays = 0;
   }
-  const give = Math.min(Math.max(0, st.water || 0), need.crops);
-  st.water = (st.water || 0) - give;
+  base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
+  const give = drawWater(st, need.crops, { rawFirst: true }).got;
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
 
   // Eating: fresh food first, then preserved (storage.js). An outpost that runs short is covered from the hub
@@ -504,6 +515,7 @@ function shipFromOutposts(state) {
       const keep = { food: Math.ceil(foodUse(state, base).total * 3) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
+      keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first
       for (const k of Object.keys(base.stock)) {
         const surplus = base.stock[k] - (keep[k] || 0);
         if (surplus > 1) {

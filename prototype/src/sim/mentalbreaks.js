@@ -37,6 +37,7 @@ import { FIRE } from "./hubevents.js";
 import { carsAtBase, vehicleLabel } from "./vehicles.js";
 import { partyMembers, partyTile, partySpeed, tileLabel, teamName } from "./parties.js";
 import { allItems } from "./inventory.js";
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 export const SNAP = {
   at: 10, days: 3, base: 0.12, per: 0.02, cooldown: 10, relief: 15,
@@ -119,7 +120,7 @@ export function snap(state, pl, s, rng, force = null) {
   if (others.length) kinds.push(["attack", 3 * (rivalsOf(state, s).length ? 1.5 : 1)]);
   kinds.push(["suicide", 1 + (s.grief ? 1 : 0) + (partnerOf(state, s) ? 0 : 0.3)]);
   if (pl.base && pl.base.buildings.some((b) => FIRE.burnable.includes(b.type))) kinds.push(["fire", 1.5]);
-  if ((stock.food || 0) + (stock.water || 0) >= (pl.base ? 20 : 6)) kinds.push(["stores", 1.5]);
+  if ((stock.food || 0) + (stock.water || 0) + (stock.rawwater || 0) >= (pl.base ? 20 : 6)) kinds.push(["stores", 1.5]);
   if (!s.leader && t && (t.infection || 0) >= SNAP.DEAD) kinds.push(["dead", pl.party ? 1.5 : 1]);
   if (!s.leader && cars.length) kinds.push(["car", 1]);
   kinds.push(["shutdown", 2 + (s.traits.includes("coward") ? 1 : 0)]);
@@ -161,7 +162,7 @@ export function snap(state, pl, s, rng, force = null) {
     aftermath(state, pl, s, null, `${s.name} burned down the ${bn}.`);
   } else if (kind === "stores") {
     const lost = {};
-    for (const k of ["food", "water"]) { const n = Math.min(SNAP.STORES.max, Math.floor((stock[k] || 0) * SNAP.STORES.share)); if (n > 0) { stock[k] -= n; lost[k] = n; } }
+    for (const k of ["food", "water", "rawwater"]) { const n = Math.min(SNAP.STORES.max, Math.floor((stock[k] || 0) * SNAP.STORES.share)); if (n > 0) { stock[k] -= n; lost[k] = n; } }
     s.onBreak = true;
     const what = Object.entries(lost).map(([k, n]) => `${n} ${k}`).join(" and ") || "nothing much";
     log(state, pl.base ? `${s.name} tore through the stores at ${where} in the night, smashing and spilling what they could (mood ${mood}): ${what} lost.` : `${s.name} tore through the team's packs in the night at ${where}, flinging what they could into the dark (mood ${mood}): ${what} lost.`, "danger");
@@ -193,7 +194,7 @@ export function leaveParty(state, p, s, opts = {}) {
   s.inBed = false;
   const took = {};
   if (opts.haul !== false) for (const [k, [lo, hi]] of Object.entries(SNAP.ROAD_HAUL)) { const n = Math.min(state.rng.int(lo, hi), Math.floor(Math.max(0, p.supplies[k] || 0))); if (n > 0) { p.supplies[k] -= n; took[k] = n; } }
-  const parts = [...allItems(s).map((g) => g.name), ...Object.entries(took).map(([k, q]) => `${q} ${k}`)];
+  const parts = [...allItems(s).map((g) => g.name), ...Object.entries(took).map(([k, q]) => `${q} ${keyWord(k)}`)];
   log(state, `${opts.why || `${s.name} slipped away from the team in the night`}${parts.length ? `, taking ${parts.join(", ")}` : " with nothing but the clothes on their back"}.`, "death");
   const h = hub(state);
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: h ? h.id : null, day: day(state), took, road: true });

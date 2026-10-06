@@ -13,7 +13,8 @@ import { SKILL_NAMES, TRAITS } from "./data.js";
 import { log, addCard, day, hub, baseById, residents, survivorById, makeSurvivor, skill } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { foodOutlook, waterOutlook, drinkRate } from "./economy.js";
-import { partyMembers, partyTile, carried, takeSupply, planPath, partySpeed, hoursLeft, tileLabel } from "./parties.js";
+import { stockHas, takeStock } from "./water.js"; // water counts both kinds, purified given first
+import { partyMembers, partyTile, carried, takeSupply, carriedAny, takeAny, planPath, partySpeed, hoursLeft, tileLabel } from "./parties.js";
 import { newItem, stow, allItems } from "./inventory.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { foodNeedFactor, thirstAhead } from "./weather.js";
@@ -91,7 +92,7 @@ export function outlookText(o, k) {
 // water times the thirst of the days ahead: more in summer and a heat wave).
 export function teamOutlook(state, p, k = 0) {
   const members = partyMembers(state, p).length;
-  const food = carried(p, "food"), water = carried(p, "water");
+  const food = carried(p, "food"), water = carriedAny(p, "water");
   // No base left (conquest.js exiles): the team itself is home for now.
   const home = baseById(state, p.homeBaseId) || hub(state) || { name: "the road (no base)", tile: partyTile(p) };
   const speed = partySpeed(p) || 1;
@@ -243,7 +244,7 @@ export function recruitCard(state, candidates, ctx) {
   }
   // Supplies and a handshake.
   const cost = p ? PART_TEAM : PART_BASE;
-  const afford = (st, k) => Object.entries(cost).every(([key, q]) => (p ? carried(p, key) : base.stock[key] || 0) >= q * k);
+  const afford = (st, k) => Object.entries(cost).every(([key, q]) => (p ? carriedAny(p, key) : stockHas(base.stock, key)) >= q * k);
   choices.push({
     label: `Give ${them} supplies and part ways`, kind: "part",
     hint: `Costs ${costText(cost, n)} from the ${p ? "team" : "stores"}: ${p ? "the team" : `everyone at ${base.name}`} feels better for it (mood +${PART_MOOD}), and known groups within ${PART_RADIUS} tiles hear of it (goodwill +${PART_GOODWILL})`,
@@ -253,8 +254,8 @@ export function recruitCard(state, candidates, ctx) {
       if (!list.length) return notWaiting();
       if (!afford(st, list.length) || (p && !st.parties.includes(p))) return "You no longer have that to give.";
       for (const [key, q] of Object.entries(cost)) {
-        if (p) takeSupply(p, key, q * list.length);
-        else base.stock[key] = Math.max(0, (base.stock[key] || 0) - q * list.length);
+        if (p) takeAny(p, key, q * list.length);
+        else takeStock(base.stock, key, q * list.length);
       }
       const people = p ? partyMembers(st, p) : residents(st, base.id);
       for (const o of people) o.mood = clamp(o.mood + PART_MOOD, 0, 100);

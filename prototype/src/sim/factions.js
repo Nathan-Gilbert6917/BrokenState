@@ -68,6 +68,7 @@ import { markThreat } from "./hivetech.js";
 import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -722,14 +723,14 @@ function raidWon(state, f) {
 function steal(stock, frac, into = null) {
   for (const k of Object.keys(stock)) {
     const left = Math.floor((stock[k] || 0) * (1 - frac));
-    if (into && k !== "water") into[k] = (into[k] || 0) + Math.max(0, (stock[k] || 0) - left);
+    if (into && k !== "water" && k !== "rawwater") into[k] = (into[k] || 0) + Math.max(0, (stock[k] || 0) - left);
     stock[k] = left;
   }
 }
 // "40 food, 12 ammo and 3 meds": what left the stock (the biggest losses first, at most four).
 export function stolenText(before, after) {
   const lost = Object.keys(before).map((k) => [k, Math.floor((before[k] || 0) - (after[k] || 0))]).filter(([, q]) => q > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const parts = lost.map(([k, q]) => `${q} ${k}`);
+  const parts = lost.map(([k, q]) => `${q} ${keyWord(k)}`);
   return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "";
 }
 

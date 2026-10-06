@@ -35,6 +35,7 @@ import {
 } from "./trade.js";
 import { marketOf } from "./trade.js";
 import { escortArrived, pickupArrived } from "./jobs.js";
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 export const CARAVAN_STAY_HOURS = 24;
 const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
@@ -111,7 +112,7 @@ export function caravanArrive(state, p) {
   if (p.leaving) {
     // Home again: what it carries goes back into their stores.
     if (f && f.alive) {
-      for (const [k, q] of Object.entries(p.goods.supplies)) f.stock[k] = (f.stock[k] || 0) + Math.max(0, q);
+      for (const [k, q] of Object.entries(p.goods.supplies)) { const tk = k === "rawwater" ? "water" : k; f.stock[tk] = (f.stock[tk] || 0) + Math.max(0, q); } // one water pool (trade.js poolKey)
       f.wares = [...(f.wares || []), ...p.goods.gear].slice(-WARES_MAX);
     }
     removeParty(state, p);
@@ -130,7 +131,7 @@ export function caravanArrive(state, p) {
   if (p.gift) {
     for (const [k, q] of Object.entries(p.goods.supplies)) base.stock[k] = (base.stock[k] || 0) + q;
     base.armory.push(...p.goods.gear);
-    const what = Object.entries(p.goods.supplies).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing";
+    const what = Object.entries(p.goods.supplies).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ") || "nothing";
     log(state, `Aid from ${f.name} reached ${base.name}: ${what}.`, "good");
     p.goods = { supplies: {}, gear: [] };
     caravanLeave(state, p, "");

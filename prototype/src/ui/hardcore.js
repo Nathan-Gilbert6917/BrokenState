@@ -29,7 +29,7 @@ function view(state) {
 // Days of food and water the team carries at today's thirst.
 function teamDays(state, p) {
   const n = Math.max(1, partyMembers(state, p).length);
-  return { food: (carried(p, "food") + carried(p, "preserved")) / n, water: carried(p, "water") / (n * thirstAt(state)) };
+  return { food: (carried(p, "food") + carried(p, "preserved")) / n, water: (carried(p, "water") + carried(p, "rawwater")) / (n * thirstAt(state)) }; // both kinds (sim/water.js)
 }
 const missText = (rows) => rows.map((r) => `${r.short} ${r.key}`).join(", ");
 const work3 = (v) => r1((v.camp ? v.camp.work : (v.first ? STAGING.HARDCORE : STAGING.EXILE).work) / (3 * (STAGING.DAY[1] - STAGING.DAY[0])));

@@ -7,6 +7,7 @@ import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
 import { weatherTint, season } from "../sim/weather.js";
 import { radioNodes } from "../sim/radio.js";
+import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
@@ -1124,6 +1125,21 @@ export function render(state) {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+  // A group's channel one of your receivers is tuned to (sim/radiolisten.js): its coverage, dotted, in its colour.
+  for (const net of state.timelapse ? [] : tunedNetworks(state)) {
+    ctx.strokeStyle = net.color || "#aaa";
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([2, 5]);
+    for (const n of net.nodes) {
+      const [px, py] = g.toPixel(n.tile, HEX);
+      ctx.beginPath();
+      ctx.arc(px, py, n.range * HEX * Math.sqrt(3), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
   // Markers you know about: death sites, abandoned vehicles, spotted finds, as sprites on a faint ring in their
   // layer's color (dots when zoomed far out, like minor sites). Older reports fade; dealt-with finds show emptied.

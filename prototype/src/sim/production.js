@@ -28,6 +28,7 @@ import { BUILDINGS, RECIPES, stations, recipeOutput } from "./buildings.js";
 import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName } from "./crafting.js";
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
 import { isManaged } from "./work.js";
+import { stockHas } from "./water.js"; // a Keep-at-least order on water counts both kinds
 
 export const ORDER_MODES = {
   forever: { name: "Forever", desc: "Runs whenever the operator and the inputs are there." },
@@ -131,7 +132,7 @@ export function orderHold(state, base, st) {
   if (o.mode === "keep") {
     const k = o.key;
     const use = st.id === RACK.id ? 0 : (stationIO(state, base, st).in[k] || 0);
-    const have = base.stock[k] || 0;
+    const have = stockHas(base.stock, k);
     if (have - use < o.n) return `Keeps ${o.n} ${k} (${Math.floor(have)} here)`;
   }
   return "";

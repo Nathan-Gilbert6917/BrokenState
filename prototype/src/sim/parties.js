@@ -45,14 +45,15 @@ import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { teamNeedsHour } from "./needs.js";
-import { wormTeamHour, packWater, wormHome, unloadWormForage } from "./worm.js";
+import { wormTeamHour, packWater, wormHome, unloadWormForage, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
-import { teamListens, HEAR_EXTRA } from "./radio.js"; // a team's hand-crank radio: hears, cannot call (updateRadio)
+import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
+import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, RAW } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -178,6 +179,10 @@ export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad
 export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / SUPPLIES[key].weight));
 // What a team carries of one supply: packed plus found (never negative).
 export const carried = (p, key) => Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0);
+// A supply a team carries for a check or a cost, water counting both kinds (water.js), and taking it (water: purified
+// first).
+export const carriedAny = (p, key) => (key === "water" ? teamWaterIn(p) : carried(p, key));
+export const takeAny = (p, key, qty) => (key === "water" ? takeTeamWater(p, qty).got : takeSupply(p, key, qty));
 // Uses up carried supplies, found cargo first, then packed. Takes what is there and never goes below zero
 // (callers check `carried` first when the full amount is required). Returns the amount taken.
 export function takeSupply(p, key, qty) {
@@ -477,7 +482,9 @@ export function launchExpedition(state, opts) {
   const plannedV = bikes ? { ...v, count: members.length } : v;
   const est = estimateTrip(state, { memberIds, dest, vehicle: travelMode(v), stance, fuel: v ? v.fuel + (supplies.fuel || 0) : 0, supplies, v: plannedV });
   if (!est) return { error: v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile." };
-  for (const [k, val] of Object.entries(supplies)) if ((home.stock[k] || 0) < val) return { error: `Not enough ${SUPPLIES[k].name.toLowerCase()} at the hub.` };
+  // Water: purified and un-purified together (water.js), purified packed first.
+  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : home.stock[k] || 0);
+  for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return { error: `Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at the hub.` };
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
   const cap = carryCapacity(state, members, plannedV);
@@ -486,7 +493,14 @@ export function launchExpedition(state, opts) {
     return { error: `Too much to carry: the packed supplies weigh ${Math.ceil(load)} kg, the crew${v ? ` and the ${vehicleLabel(plannedV)}` : ""} can carry ${Math.floor(cap)} kg more than they wear. Pack less${v ? "" : ", or take more people, bikes or a vehicle"}.` };
   }
   if (bikes) v = takeBikes(state, home, members.length);
-  for (const [k, val] of Object.entries(supplies)) home.stock[k] -= val;
+  const packed = { ...supplies };
+  for (const [k, val] of Object.entries(supplies)) {
+    if (k !== "water") { home.stock[k] -= val; continue; }
+    const d = drawWater(home.stock, val); // purified first, then un-purified (water.js)
+    packed.water = d.pure;
+    if (d.raw > 0) packed[RAW] = (packed[RAW] || 0) + d.raw;
+  }
+  Object.assign(supplies, packed);
   const stays = STAY_MISSIONS.includes(mission);
   const p = {
     id: newId(), owner: "player", kind: "expedition", mission, teamMission: mission, dest, homeBaseId: home.id,
@@ -504,7 +518,8 @@ export function launchExpedition(state, opts) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
-  packWater(state, p, home); // worm.js: water from a base whose water is not safe carries the worm's eggs
+  packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
+  if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as
   // much as the crew can carry on top of its supplies; opts.siegeKit false: none).
   const siegeKit = mission === "assault" && opts.siegeKit !== false ? packSiegeKit(home, p.cargo, members, Math.max(0, cap - load)) : [];
@@ -527,8 +542,8 @@ export function sendHelpSquad(state, raidParty, target) {
   if (!fighters.length) return "Nobody at the hub can go.";
   // Two days of food and water each (a short, rushed trip), within what the squad can carry.
   const n = fighters.length;
-  const have = (k) => Math.max(0, Math.floor(h.stock[k] || 0));
-  const supplies = { food: Math.min(have("food"), 2 * n), water: Math.min(have("water"), Math.ceil(2 * n * thirstAhead(state, 2))), meds: Math.min(have("meds"), Math.min(2, n)), ammo: Math.min(have("ammo"), 10 * n) };
+  const have = (k) => Math.max(0, Math.floor(stockHas(h.stock, k))); // water: both kinds (water.js)
+  const supplies = { food: Math.min(have("food"), 2 * n), water: Math.min(Math.floor(waterIn(h.stock)), Math.ceil(2 * n * thirstAhead(state, 2))), meds: Math.min(have("meds"), Math.min(2, n)), ammo: Math.min(have("ammo"), 10 * n) };
   const res = launchExpedition(state, { memberIds: fighters.map((s) => s.id), dest: raidParty.target.tile, mission: "help", stance: "rushed", supplies });
   if (res.error) return res.error;
   res.party.helpFor = raidParty.id;
@@ -623,15 +638,12 @@ function updateRadio(state, p) {
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
   p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
   if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
-  // Listening (radio.js): a team carrying a hand-crank radio out of two-way reach still hears a station's traffic
-  // HEAR_EXTRA tiles beyond its coverage: it is not in contact (no orders, nothing reported) but takes in the day's
-  // news lines (p.heard, newest first: what the base logged as good or bad news this hour).
+  // Listening (radio.js networks): a team carrying a receiver (a hand-crank or military radio) out of two-way reach
+  // hears a radio network only while it stands inside that network's coverage (a group's, or yours: nothing beyond
+  // it). It is not in contact (no orders, nothing reported). What it picks up on the channel it tuned to (Listen
+  // in, radiolisten.js) goes to p.heard each day.
   if (p.owner !== "player" || p.kind === "convoy") return;
-  p.radioHear = !p.radioLive && teamListens(state, p) && radioBasesInRange(state, partyTile(p), HEAR_EXTRA).length > 0;
-  if (!p.radioHear) return;
-  const name = teamName(state, p);
-  const fresh = state.log.filter((l) => l.hour >= state.hour - 1 && (l.kind === "danger" || l.kind === "good") && !l.text.includes(name) && !(p.heard || []).some((h) => h.text === l.text)); // this hour's lines and the last hour's (logged before the tick turned the hour)
-  if (fresh.length) p.heard = [...fresh.map((l) => ({ hour: l.hour, text: l.text })), ...(p.heard || [])].slice(0, 3);
+  p.radioHear = !p.radioLive && teamReceives(state, p) && networksAt(state, partyTile(p)).length > 0;
 }
 
 // A team that lost people (dead, captured, gone home) may hold more found cargo than those left can carry:
@@ -891,7 +903,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
   return {
     title: title || (doneLabel ? `Done: ${doneLabel}` : `Orders: team at ${tileLabel(state, tile)}`),
     isOrders: true,
-    text: `${text ? text + " " : ""}${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")} ${partyMembers(state, p).length === 1 ? "waits" : "wait"} for your call at ${tileLabel(state, tile)}. Supplies: ${Math.floor(p.supplies.food || 0)} food, ${Math.floor(p.supplies.water || 0)} water${p.vehicle ? `, ${Math.floor(partyFuel(state, p))} fuel` : ""}.${queued ? ` Queued orders on hold: ${queueText(state, p)}.` : ""}`,
+    text: `${text ? text + " " : ""}${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")} ${partyMembers(state, p).length === 1 ? "waits" : "wait"} for your call at ${tileLabel(state, tile)}. Supplies: ${Math.floor(p.supplies.food || 0)} food, ${waterText(p.supplies.water, p.supplies[RAW])}${p.vehicle ? `, ${Math.floor(partyFuel(state, p))} fuel` : ""}.${queued ? ` Queued orders on hold: ${queueText(state, p)}.` : ""}`,
     partyId: p.id,
     choices: [
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
@@ -1554,8 +1566,7 @@ export function dispatchConvoy(state, route) {
   h.stock[route.sendKey] -= route.sendQty;
   h.stock.food -= food;
   const wantWater = Math.ceil(food * thirstAhead(state, hours / 24)); // more in summer and a heat wave (weather.js)
-  const water = Math.min(h.stock.water || 0, wantWater);
-  h.stock.water -= water;
+  const w = drawWater(h.stock, wantWater); // purified first (water.js)
   if (useTruck) {
     const top = Math.max(0, need - v.fuel);
     h.stock.fuel -= top;
@@ -1564,7 +1575,7 @@ export function dispatchConvoy(state, route) {
   const p = {
     id: newId(), owner: "player", kind: "convoy", mission: "route", routeId: route.id, dest: f.bases[0], homeBaseId: h.id,
     members: escorts.map((s) => s.id), stance: "normal", vehicle: useTruck, vehicleId: useTruck ? v.id : null,
-    supplies: { food, water: Math.max(water, wantWater), fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
+    supplies: { food, water: Math.max(w.pure, wantWater - w.raw), [RAW]: w.raw, fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
     cargo: { supplies: { [route.sendKey]: route.sendQty }, gear: [] },
     path: res.path, idx: 0, progress: 0, phase: "out", seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false,
     departed: state.hour, plannedHours: hours, eventsSeen: 0,

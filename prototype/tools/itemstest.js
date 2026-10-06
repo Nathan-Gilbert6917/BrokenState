@@ -1,11 +1,12 @@
 // The hand-crank radio and purification tablets (2026-10-06; src/sim/data.js handradio / puritabs):
-// - the radio only listens (radio.js listeners): a base holding one or a team carrying one hears the airwaves scan's
-//   new voices and group news without a station, but canRadioGroup stays false, a team carrying one out of coverage is
-//   not commandable (it gets the listening state, p.radioHear, with the news lines it picked up), and nobody's
-//   coverage grows;
-// - the tablets make unsafe water safe (worm.js): a team spends one per 10 water drunk from infected sources (no worm
-//   roll on what they cover), a base uses them on the day's drinking when its boiler is cold or missing and no filter
-//   covers the water (logged), what runs out is rolled; what a team packs at such a base is not treated;
+// - the radio only listens (radio.js listeners): a base holding one or a team carrying one inside a radio network's
+//   coverage (yours, or a group's own: radio.js radioNetworks) hears the airwaves scan's new voices and group news
+//   without a station, but canRadioGroup stays false, a team carrying one out of your coverage is not commandable (it
+//   gets the listening state, p.radioHear, only inside some network: no band beyond coverage any more, HEAR_EXTRA 0),
+//   and nobody's coverage grows (Listen in and the channels' traffic: tools/radiolistentest.js);
+// - the tablets make un-purified water safe on the road (worm.js, water.js): a team spends one per 10 un-purified water
+//   drunk from infected sources (no worm roll on what they cover; none for purified water, none with a filter); bases
+//   never use them (a team leaving packs a tube: packTablets); what a team packs at a base is not treated;
 // - the hardcore prepper's kit has both; the loot tables hold both; the recipe; save/load.
 // Usage: node tools/itemstest.js [seed]
 import { createWorld, tickHour, hub, atBase, residents, log, day } from "../src/sim/world.js";
@@ -14,10 +15,10 @@ import { newItem } from "../src/sim/inventory.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { partyMembers, partyTile } from "../src/sim/parties.js";
 import { commandable, HAND_RADIO } from "../src/sim/plans.js";
-import { canRadioGroup, canHearGroup, listeners, canListen, hasNetwork, radioScan, radioNodes, inCoverage, heardBy, HEAR_EXTRA, GROUP_REACH, baseListens, teamListens } from "../src/sim/radio.js";
+import { canRadioGroup, canHearGroup, listeners, canListen, hasNetwork, radioScan, radioNodes, inCoverage, heardBy, HEAR_EXTRA, GROUP_REACH, baseListens, teamListens, networksAt, groupNetwork, netCovers } from "../src/sim/radio.js";
 import { RADIO_RANGE } from "../src/sim/world.js";
 import { news, ensureDiplo } from "../src/sim/diplomacy.js";
-import { WORM, baseWater, wormDaily, drinkHour, addWormWater, packWater, teamTabCount, baseTabCount, teamWormText, eggsAt } from "../src/sim/worm.js";
+import { WORM, baseWater, wormDaily, drinkHour, addWormWater, packWater, packTablets, teamTabCount, baseTabCount, teamWormText, eggsAt } from "../src/sim/worm.js";
 import { HC_START, roadTeam } from "../src/sim/hardcore-start.js";
 import { SITE_FINDS, AREA_FINDS, ITEM_TAGS, fitsTags, SITE_TAGS } from "../src/sim/loot.js";
 import { CRAFTS, durUnit } from "../src/sim/crafting.js";
@@ -60,6 +61,16 @@ function team(st, h, tile, n = 2) {
 const caught = (people) => people.filter((s) => s.worm).length;
 const clearAll = (people) => { for (const s of people) s.worm = null; };
 const tabsOf = (it) => (it ? (it.dur != null ? it.dur : GEAR[it.key].dur) : 0);
+// Plain land tiles (no site, no base) more than `outside` tiles from the hub: one inside some group's network (and the
+// hub outside that network), one outside every network (radio.js networksAt).
+function radioSpots(st, h, outside) {
+  const g = st.grid;
+  const ok = (t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !st.bases.some((b) => b.tile === t.id) && g.distance(h.tile, t.id) > outside;
+  const inGroup = st.tiles.find((t) => ok(t) && networksAt(st, t.id).some((n) => n.kind === "group" && !netCovers(st, n, h.tile)));
+  const silent = st.tiles.find((t) => ok(t) && networksAt(st, t.id).length === 0);
+  const net = inGroup ? networksAt(st, inGroup.id).find((n) => n.kind === "group" && !netCovers(st, n, h.tile)) : null;
+  return { inGroup, silent, f: net ? net.faction : null };
+}
 
 // ---------- 1. the items ----------
 section("The items (data.js)");
@@ -67,7 +78,7 @@ section("The items (data.js)");
   const r = GEAR.handradio, t = GEAR.puritabs;
   check(r && r.slot === "tool" && r.listen && r.small && r.weight <= 1 && r.cat === "electronics" && /needs no batteries/.test(r.desc) && /cannot call/.test(r.desc), "the hand-crank radio: a small tool, listen: true, light, needs no batteries, its text says it cannot call in");
   check(GEAR.pocketradio.throw === "pocketradio" && !GEAR.pocketradio.listen, "the pocket radio stays a thrown decoy, not a receiver");
-  check(t && t.slot === "pack" && t.tabs && t.dur === 10 && t.small && t.weight <= 0.2 && t.cat === "medical" && /10 water/.test(t.desc), "purification tablets: a small pack item, a tube of 10 (dur counts tablets), light, medical");
+  check(t && t.slot === "pack" && t.tabs && t.dur === 10 && t.small && t.weight <= 0.2 && t.cat === "medical" && /10 un-purified water/.test(t.desc) && /for the road/.test(t.desc), "purification tablets: a small pack item, a tube of 10 (dur counts tablets), light, medical");
   const tube = newItem("puritabs");
   check(tube.dur === 10 && durUnit("puritabs") === "tablets", "a new tube holds 10 tablets; the durability unit reads \"tablets\"");
   check(CRAFTS.puritabs && CRAFTS.puritabs.gear === "puritabs" && CRAFTS.puritabs.needs === "med_station" && CRAFTS.puritabs.in.meds >= 1 && CRAFTS.puritabs.skill === "medicine", `the recipe: a med station, ${JSON.stringify(CRAFTS.puritabs.in)}, Medicine ${CRAFTS.puritabs.min}`);
@@ -90,24 +101,27 @@ section("Loot tables (loot.js): both found where they belong");
 }
 
 // ---------- 3. the hand-crank radio at a base ----------
-section("Hand-crank radio at a base: hears the scan and the news, calls nobody, no coverage");
+section("Hand-crank radio at a base: hears the scan and the news inside a group's network, calls nobody, no coverage");
 {
   const { st, h } = world(0.3);
   h.radio = false;
   const g = st.grid;
-  const near = st.factions.filter((f) => f.alive && f.bases.some((b) => g.distance(h.tile, b) <= RADIO_RANGE + GROUP_REACH));
-  const far = st.factions.filter((f) => f.alive && f.bases.every((b) => g.distance(h.tile, b) > RADIO_RANGE + GROUP_REACH));
+  // The hub inside the nearest group's network (a base of theirs moved in when it is not).
+  const f0 = st.factions.filter((f) => f.alive && f.bases.length).sort((a, b) => g.distance(h.tile, a.bases[0]) - g.distance(h.tile, b.bases[0]))[0];
+  if (!netCovers(st, groupNetwork(st, f0), h.tile)) { const t = st.tiles.find((x) => g.distance(h.tile, x.id) === 4 && x.terrain !== "water" && !x.loc); f0.bases.push(t.id); }
+  const near = st.factions.filter((f) => f.alive && f.bases.length && netCovers(st, groupNetwork(st, f), h.tile));
+  const far = st.factions.filter((f) => f.alive && f.bases.length && !netCovers(st, groupNetwork(st, f), h.tile) && f.bases.every((b) => g.distance(h.tile, b) > RADIO_RANGE + GROUP_REACH));
   check(!hasNetwork(st) && !canListen(st) && listeners(st).length === 0, "no station, nothing to listen with: silence");
   check(radioScan(st) === "You need a radio station (or a hand-crank radio) first.", "the scan needs something to hear with");
   h.armory.push(newItem("handradio"));
   check(baseListens(st, h) && listeners(st).length === 1 && listeners(st)[0].base === h && canListen(st) && !hasNetwork(st), "a hand-crank radio in the armory listens; it is no network");
   check(radioNodes(st).length === 0 && !inCoverage(st, h.tile), "it adds no transmitter and no coverage");
   check(st.factions.every((f) => !canRadioGroup(st, f)), "no group can be called");
-  check(near.length > 0 && near.every((f) => canHearGroup(st, f)) && far.every((f) => !canHearGroup(st, f)), `groups within ${RADIO_RANGE} + ${GROUP_REACH} tiles are heard (${near.length}), further ones not (${far.length})`);
+  check(near.length > 0 && near.every((f) => canHearGroup(st, f)) && far.every((f) => !canHearGroup(st, f)), `groups whose own network covers the hub are heard (${near.length}: ${near.map((f) => f.name).join(", ")}), the others not (${far.length})`);
   for (const f of st.factions) f.known = false;
   st.radioScanDay = -1;
   const text = radioScan(st);
-  check(near.every((f) => f.known && f.heard) && far.every((f) => !f.known) && /New voices on the radio/.test(text) && /hand-crank radio: within earshot, not within call/.test(text), `the scan hears them: "${text.slice(0, 90)}…"`);
+  check(near.every((f) => f.known && f.heard) && far.every((f) => !f.known) && /New voices on the radio/.test(text) && /on their own channel: within earshot, not within call/.test(text), `the scan hears them: "${text.slice(0, 90)}…"`);
   check(near.every((f) => st.knowledge[f.bases[0]]), "their bases are on the map");
   check(st.factions.every((f) => !canRadioGroup(st, f)), "heard, still not callable");
   // Group news on the air (diplomacy.js news): logged when heard and one of them is known.
@@ -130,31 +144,36 @@ section("Hand-crank radio at a base: hears the scan and the news, calls nobody, 
 }
 
 // ---------- 4. a team carrying one ----------
-section("A team carrying one out of coverage: listening, not in contact");
+section("A team carrying one out of coverage: listening inside a group's network only (no band past coverage)");
 {
   const { st, h } = world(0.3);
   h.radio = true; // a station at the hub: coverage RADIO_RANGE
   const g = st.grid;
   const range = radioNodes(st).find((n) => n.base === h).range;
+  check(HEAR_EXTRA === 0, "no listening band beyond a network's coverage (HEAR_EXTRA 0)");
   const pick = (dist) => st.tiles.find((t) => g.distance(h.tile, t.id) === dist && t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !st.bases.some((b) => b.tile === t.id));
-  const inside = pick(range - 2), band = pick(range + HEAR_EXTRA - 1), beyond = pick(range + HEAR_EXTRA + 2);
-  check(inside && band && beyond, `tiles found: in coverage (${range - 2}), in the listening band (${range + HEAR_EXTRA - 1}), beyond (${range + HEAR_EXTRA + 2})`);
+  const inside = pick(range - 2);
+  const { inGroup: band, silent: beyond, f: f0 } = radioSpots(st, h, range + 1);
+  check(inside && band && beyond && f0, `tiles found: in coverage (${range - 2}), in ${f0 && f0.name}'s network out of your coverage, outside every network`);
   const A = team(st, h, band.id, 2), B = team(st, h, beyond.id, 1), C = team(st, h, inside.id, 1), D = team(st, h, band.id, 1); // five of the hub's six
   check([A, B, C, D].every((t) => t.members.length >= 1), "every team has someone on it");
   A.members[0].pockets[0] = newItem("handradio");
   B.members[0].pockets[0] = newItem("handradio");
   C.p.cargo.gear.push(newItem("handradio"));
   check(teamListens(st, A.p) && teamListens(st, B.p) && teamListens(st, C.p) && !teamListens(st, D.p), "a radio in a pocket or the cargo makes a team a listener; D has none");
-  check(listeners(st).length === 3 && radioNodes(st).length === 1 && !inCoverage(st, band.id), "listeners: the hub's station is not one, the three teams are; coverage is still the one station");
+  check(listeners(st).length === 2 && listeners(st).every((l) => l.party === A.p || l.party === C.p) && radioNodes(st).length === 1 && !inCoverage(st, band.id), "listeners on the air: A (a group's network) and C (yours); B hears nothing; the hub's station is not one; coverage is still the one station");
+  // Just past your coverage (where the old band was) and in no group's network: nothing.
+  const edge = st.tiles.find((t) => g.distance(h.tile, t.id) === range + 2 && t.terrain !== "water" && !t.loc && networksAt(st, t.id).length === 0);
+  if (edge) check(!inCoverage(st, edge.id), `a tile ${range + 2} tiles out (the old band) in no group's network: silence`);
   log(st, "Test alarm: a horde is coming.", "danger");
   for (const t of [A, B, C, D]) t.p.lastConflict = st.hour;
   tickHour(st);
   for (const c of [...st.cards]) if (!c.isOrders) st.cards.splice(st.cards.indexOf(c), 1);
-  check(A.p.radioHear === true && A.p.radioLive === false && !commandable(st, A.p), "A (radio, in the band): listening, not live, not commandable");
-  check(A.p.heard && A.p.heard.some((x) => /Test alarm/.test(x.text)), `A picked up the station's news: "${A.p.heard && A.p.heard[0] && A.p.heard[0].text}"`);
-  check(B.p.radioHear === false && !B.p.radioLive && !commandable(st, B.p) && !B.p.heard, "B (radio, beyond the band): hears nothing, not in contact");
+  check(A.p.radioHear === true && A.p.radioLive === false && !commandable(st, A.p), "A (radio, in a group's network): listening, not live, not commandable");
+  check(!(A.p.heard && A.p.heard.some((x) => /Test alarm/.test(x.text))), "A does not pick up your station's news out past your coverage (no band)");
+  check(B.p.radioHear === false && !B.p.radioLive && !commandable(st, B.p) && !B.p.heard, "B (radio, outside every network): hears nothing, not in contact");
   check(C.p.radioLive === true && C.p.radioHear === false && commandable(st, C.p), "C (radio, in coverage): live as any team there, two-way (the radio changes nothing)");
-  check(D.p.radioHear === false && !D.p.radioLive && !commandable(st, D.p), "D (no radio, in the band): out of contact, no listening state");
+  check(D.p.radioHear === false && !D.p.radioLive && !commandable(st, D.p), "D (no radio, in the network): out of contact, no listening state");
   check(!inCoverage(st, band.id) && !inCoverage(st, beyond.id), "the teams' radios gave nobody coverage");
   // The team card says so.
   const ui = { tab: "teams", moveParty: null, expedition: null, selected: null, hover: null };
@@ -169,16 +188,17 @@ section("A team carrying one out of coverage: listening, not in contact");
 }
 
 // ---------- 5. tablets on the road ----------
-section("Purification tablets on the road: one per 10 water drunk, no worm roll on what they cover");
+section("Purification tablets on the road: one per 10 un-purified water drunk, no worm roll on what they cover");
 {
   const { st, h } = world(0.9);
   const tile = st.grid.neighbors(h.tile)[0];
   const { p, members } = team(st, h, tile, 2);
+  p.supplies.water = 0; p.supplies.rawwater = 20;
   addWormWater(st, p, 20, 1);
-  check(p.wormWater === 20 && p.wormEggs === 1, "the team carries 20 water with eggs");
-  // drinkHour runs after the hour's water left the supplies: `drink` fills the tank with `have` water, all of it with
-  // eggs, takes q off it and drinks it (so every unit drunk is unsafe).
-  const drink = (q, have = 20) => { p.wormWater = have; p.wormEggs = 1; p.supplies.water = have - q; drinkHour(st, p, members, q); };
+  check(p.wormEggs === 1 && p.supplies.rawwater === 20, "the team carries 20 un-purified water with eggs");
+  // drinkHour runs after the hour's water left the supplies: `drink` leaves `have` − q un-purified water, all of it with
+  // eggs, and drinks q of it un-purified (every unit drunk is unsafe).
+  const drink = (q, have = 20) => { p.wormEggs = 1; p.supplies.water = 0; p.supplies.rawwater = have - q; drinkHour(st, p, members, q, q); };
   // Without tablets: WATER pinned to 100%, eggs 1, every unit drunk has eggs: someone catches it within a few drinks.
   let n = withNums(WORM, { WATER: 1 }, () => { for (let i = 0; i < 12 && caught(members) === 0; i++) drink(1); return caught(members); });
   check(n > 0, `without tablets they catch it (${n} of 2 within 12 drinks of water with eggs)`);
@@ -189,13 +209,13 @@ section("Purification tablets on the road: one per 10 water drunk, no worm roll 
   const used0 = st.log.length;
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 9 && p.tabWater === 5, `5 water drunk: a tablet opened (9 left), 5 of its 10 water kept for the next drink, nobody caught it (tabWater ${p.tabWater})`);
-  check(st.log.length === used0 + 1 && /dropped a purification tablet into the water \(9 left\)/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
+  check(st.log.length === used0 + 1 && /dropped a purification tablet into the river water \(9 left\)/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 9 && p.tabWater === 0, "5 more: the rest of that tablet, no new one");
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 8 && p.tabWater === 5, "5 more: the second tablet");
-  p.wormWater = 20; p.supplies.water = 20;
-  check(/purification tablets carried: 8, one per 10 water/.test(teamWormText(st, p)), `the team panel: "${teamWormText(st, p)}"`);
+  p.supplies.rawwater = 20; p.wormEggs = 1;
+  check(/dropping a tablet in the river water: 8 purification tablets carried, one per 10 water/.test(teamWormText(st, p)), `the team panel: "${teamWormText(st, p)}"`);
   // The whole tube: 100 water. Nobody catches it; the tube is gone when the last tablet is used.
   n = withNums(WORM, { WATER: 1 }, () => { for (let i = 0; i < 17; i++) drink(5); return caught(members); });
   check(n === 0 && teamTabCount(st, p) === 0 && members[1].pockets[2] === null && p.tabWater === 0 && p.tabsUsed === 10, `100 water drunk on the tube: 10 tablets used, the empty tube gone from the pocket, nobody caught it (tabsUsed ${p.tabsUsed}, tabWater ${p.tabWater})`);
@@ -208,68 +228,44 @@ section("Purification tablets on the road: one per 10 water drunk, no worm roll 
   p.cargo.gear.push(half);
   n = withNums(WORM, { WATER: 0 }, () => { drink(15); return caught(members); });
   check(p.cargo.gear.length === 0 && p.tabWater === 0 && n === 0, "a last tablet in the cargo covers 10 of 15 water and the empty tube is gone from the cargo (the 5 left over are rolled: WATER pinned to 0 here)");
-  // A water filter carried makes the tablets moot (nothing to treat).
-  p.cargo.gear.push(newItem("puritabs"), newItem("waterfilter"));
-  drink(5);
-  check(p.wormWater === 0 && teamTabCount(st, p) === 10, "with a water filter carried the water is clean and no tablet is used");
+  // Purified water drunk needs nothing: no tablet for it.
+  p.cargo.gear.push(newItem("puritabs"));
+  p.wormEggs = 1; p.supplies.rawwater = 10; p.supplies.water = 5;
+  drinkHour(st, p, members, 5, 0);
+  check(teamTabCount(st, p) === 10, "purified water drunk: no tablet used");
+  // A water filter carried makes the tablets moot (it strains what is drunk).
+  p.cargo.gear.push(newItem("waterfilter"));
+  n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
+  check(n === 0 && teamTabCount(st, p) === 10, "with a water filter carried the water is clean and no tablet is used");
 }
 
 // ---------- 6. tablets at a base ----------
-section("Purification tablets at a base: used when the boiler is cold or missing, logged, run out");
+section("Purification tablets at a base: never used (they are for the road)");
 {
   const { st, h } = world(0.9);
   const people = residents(st, h.id);
   const N = people.length;
+  Object.assign(h.stock, { water: 0, rawwater: 300 });
   let w = baseWater(st, h);
-  check(!w.safe && w.eggs > 0.5 && w.ground === 1, `no boiler, no filter: the water is unsafe (${w.why})`);
+  check(!w.safe && w.eggs > 0.5 && w.ground === 1 && w.rawShare === 1, `no boiler, no filter, only un-purified water: unsafe (${w.why})`);
   h.armory.push(newItem("puritabs"), newItem("puritabs"));
   w = baseWater(st, h);
-  check(w.safe && w.tabs && w.eggs === 0 && /treated with purification tablets \(20 left, one per 10 water\)/.test(w.why), `two tubes in the armory: safe (${w.why})`);
-  const need = Math.ceil(N / 10);
-  let n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
-  check(n === 0, `a day with WATER pinned to 100%: nobody caught it (${N} people)`);
-  check(baseTabCount(st, h) === 20 - need && h.tabWater === need * 10 - N && h.tabsUsed === need, `${need} tablet${need === 1 ? "" : "s"} used for ${N} people (one per 10 water), ${h.tabWater} water of the last one kept for tomorrow`);
-  const line = st.log.find((l) => /Purification tablets kept the water safe/.test(l.text));
-  check(!!line && new RegExp(`at ${h.name}: ${need} used, ${20 - need} left`).test(line.text), `logged: "${line && line.text}"`);
-  check(!st.log.some((l) => /drawn from infected ground and carries the worm's eggs/.test(l.text)), "no \"build a boiler\" warning while the tablets cover it");
-  // A boiler burning takes over: no tablet used that day.
-  addBuilding(h, "boiler");
-  h.stock.wood = 50;
-  const tabsBefore = baseTabCount(st, h), keepBefore = h.tabWater;
-  wormDaily(st);
-  w = baseWater(st, h);
-  check(/boiled in the water boiler/.test(w.why) && baseTabCount(st, h) === tabsBefore && h.tabWater === keepBefore && h.stock.wood < 50, "with the boiler burning the water is boiled and no tablet is used");
-  // The boiler goes cold (nothing to burn): the tablets are used again.
-  h.stock.wood = 0; h.stock.fuel = 0;
-  n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
-  w = baseWater(st, h);
-  check(n === 0 && /water boiler is cold/.test(w.why) && /treated with purification tablets/.test(w.why) && baseTabCount(st, h) < tabsBefore, `cold boiler: the tablets cover the day (${w.why})`);
-  // Running out: one tablet for more than 10 people: the rest is drunk untreated and rolled.
-  h.armory = h.armory.filter((it) => !(it && it.key === "puritabs"));
-  h.tabWater = 0;
-  const one = newItem("puritabs"); one.dur = 1;
-  h.armory.push(one);
+  check(!w.safe && !/tablet/.test(w.why) && baseTabCount(st, h) === 20, `two tubes in the armory change nothing (${w.why})`);
+  // The day's drinking was all un-purified (economy.js baseDaily records it): rolled, and no tablet opened.
+  h.drank = { day: day(st), pure: 0, raw: N };
+  const n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
+  check(n > 0 && baseTabCount(st, h) === 20 && !(h.tabsUsed > 0), `a day drinking un-purified water at WATER 100%: ${n} of ${N} caught it, all 20 tablets still in the armory`);
+  check(!st.log.some((l) => /Purification tablets kept the water safe/.test(l.text)), "no tablet line in the log");
+  // What a team packs here: un-purified water carries the base's eggs; a team leaving can pack a tube (packTablets).
   clearAll(people);
-  const before = st.log.length;
-  n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
-  const ran = st.log.slice(0, st.log.length - before).find((l) => /ran out/.test(l.text));
-  if (N > 10) {
-    check(baseTabCount(st, h) === 0 && h.armory.every((it) => it.key !== "puritabs") && !!ran && new RegExp(`${N - 10} of today's ${N} water was drunk untreated`).test(ran.text), `one tablet for ${N} people: the tube is gone, ${N - 10} water untreated ("${ran && ran.text}")`);
-    check(n > 0, `the untreated share is rolled (${n} caught at WATER 100%, eggs ${(eggsAt(st, h.tile) * (N - 10) / N).toFixed(2)})`);
-  } else {
-    check(baseTabCount(st, h) === 0 && !ran && n === 0, `one tablet covers ${N} people: the tube is gone, nothing untreated`);
-  }
-  // Someone's pocket at the base counts too; what a team packs here is not treated.
-  clearAll(people);
-  people[0].pockets[0] = newItem("puritabs");
-  h.tabWater = 0;
-  w = baseWater(st, h);
-  check(w.tabs && baseTabCount(st, h) === 10, "a tube in a resident's pocket counts for the base");
   const tile = st.grid.neighbors(h.tile)[0];
   const { p } = team(st, h, tile, 1);
+  p.supplies = { food: 5, water: 0, rawwater: 10 };
   packWater(st, p, h);
-  check(p.wormWater > 0 && p.wormEggs > 0.5, `water packed at a base living on tablets carries the eggs (${p.wormWater} at ${p.wormEggs}): the team needs its own`);
-  people[0].pockets[0] = null;
+  check(p.wormEggs > 0.5, `un-purified water packed here carries the eggs (${p.wormEggs}): the team needs its own way to purify it`);
+  const t = packTablets(st, h, p);
+  check(t && p.cargo.gear.includes(t) && baseTabCount(st, h) === 10 && teamTabCount(st, p) === 10, "packTablets moves one tube from the armory into the team's cargo");
+  check(packTablets(st, h, p) === null && baseTabCount(st, h) === 10, "a team that carries tablets takes no second tube");
 }
 
 // ---------- 7. the hardcore prepper ----------
@@ -302,12 +298,12 @@ section("Save and load");
   h.tabWater = 3;
   const g = st.grid;
   const range = radioNodes(st).find((n) => n.base === h).range;
-  const band = st.tiles.find((t) => g.distance(h.tile, t.id) === range + 2 && t.terrain !== "water" && t.terrain !== "mountain" && !t.loc);
+  const band = radioSpots(st, h, range + 1).inGroup; // in a group's network, out of your coverage
   const { p, members } = team(st, h, band.id, 1);
   members[0].pockets[0] = newItem("handradio");
   const t2 = newItem("puritabs"); t2.dur = 4; p.cargo.gear.push(t2);
   p.tabWater = 6; p.tabsUsed = 2;
-  log(st, "Test alarm 2.", "danger");
+  p.heard = [{ day: 0, net: 1, name: "Test", text: "Test line 2." }];
   p.lastConflict = st.hour;
   tickHour(st);
   for (let i = st.cards.length - 1; i >= 0; i--) st.cards.splice(i, 1);

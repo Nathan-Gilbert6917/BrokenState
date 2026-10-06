@@ -5,6 +5,7 @@ import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES } from "../sim/data.js";
 import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
+import { waterIn } from "../sim/water.js"; // purified and un-purified water
 import {
   tradeContext, tradeTotals, tradeVerdict, sellPrice, buyPrice, spread, intelOffer, setQty, toggleGear, setIntel, balanceWith,
   executeTrade, giftAll, proposePact, endTrade, openCaravanTrade, priceWhy, supplyInfo, gearInfo, goodsWorth,
@@ -23,6 +24,7 @@ import { itemLoad } from "../sim/inventory.js";
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
+import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -210,9 +212,10 @@ export function groupsRadioHeader(state) {
     <div class="spread"><b>📻 Radio</b><span class="muted">${net ? `${nodes.filter((n) => n.linked).length} transmitter${nodes.filter((n) => n.linked).length === 1 ? "" : "s"} on the air${ears.length ? `, ${ears.length} hand-crank radio${ears.length === 1 ? "" : "s"} listening` : ""}` : ears.length ? `No radio station: ${ears.length === 1 ? "a hand-crank radio listens" : `${ears.length} hand-crank radios listen`} (hearing only)` : "No radio station"}</span></div>
     <div class="muted">${net ? `Groups whose base is within your coverage (plus ${GROUP_REACH} tiles: they have radios too) can be called.${relays.length ? ` Relays: ${relays.map((n) => `${esc(n.base.name)} ${n.offline ? "(offline)" : n.linked ? "(linked)" : "(not linked)"}`).join(", ")}.` : ` Build radio relays at outposts to reach further (${RELAY_RANGE} tiles each, linked in a chain).`}` : "Build a radio station at the hub (Manage → Construction) to call other groups and hear from them."}</div>
     <div class="row" style="margin-top:0.35rem">
-      <button data-action="rd-scan" ${(net || ears.length) && state.radioScanDay !== day(state) ? "" : "disabled"}${tip(net || ears.length ? `Listen for groups within reach that you have not met (once a day)${ears.length ? "; a hand-crank radio hears them within earshot but cannot call them" : ""}` : "Needs a radio station or a hand-crank radio")}>Scan the airwaves</button>
+      <button data-action="rd-scan" ${(net || ears.length) && state.radioScanDay !== day(state) ? "" : "disabled"}${tip(net || ears.length ? `Listen for groups within reach that you have not met (once a day)${ears.length ? "; a hand-crank radio hears them inside their network but cannot call them" : ""}` : "Needs a radio station, or a hand-crank radio inside a radio network's coverage")}>Scan the airwaves</button>
       <button data-action="cp-open"${tip("A trade caravan of yours: crew, goods and a list of destinations (groups' bases, your outposts)")}>New trade caravan…</button>
     </div>
+    ${baseListenSection(state)}
     ${coming.length ? coming.map((c) => {
       const f = factionById(state, c.owner);
       const b = baseById(state, c.baseId);
@@ -350,7 +353,7 @@ export const TRADE_ACTIONS = {
     const form = ui.caravanPlan, h = hub(state), est = caravanEstimate(state, form);
     const v = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
     form.travel.food = Math.min(n0(h.stock.food) - (form.goods.food || 0), est.food);
-    form.travel.water = Math.min(n0(h.stock.water) - (form.goods.water || 0), est.water);
+    form.travel.water = Math.min(n0(waterIn(h.stock)) - (form.goods.water || 0) - (form.goods.rawwater || 0), est.water); // both kinds (sim/water.js): purified packed first
     form.travel.fuel = v ? Math.max(0, Math.min(n0(h.stock.fuel) - (form.goods.fuel || 0), est.fuel - Math.floor(v.fuel))) : 0;
     for (const k of ["food", "water", "fuel"]) form.travel[k] = Math.max(0, form.travel[k]);
   },
