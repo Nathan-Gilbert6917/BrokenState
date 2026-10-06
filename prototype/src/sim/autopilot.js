@@ -77,7 +77,7 @@ import {
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
-import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, WOOD } from "./woodcutting.js";
+import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
@@ -3105,7 +3105,8 @@ function launchTrip(state, c, pool, spareHands) {
     if (stack && stack.condition >= 25) v = stack;
   }
   const plannedV = isBike(v) ? { ...v, count: n } : v;
-  const onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  let steps = c.steps;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
@@ -3113,6 +3114,16 @@ function launchTrip(state, c, pool, spareHands) {
   // a boat order the governor never gives, and starve; the dead's gear there would draw the next team into the same trap.
   if (!est || est.noWayBack || est.hoursOut > (c.mission === "hive" || c.mission === "assault" || c.mission === "growth" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
+  // A wood trip cuts by daylight only (woodcutting.js woodTime): its Cut wood step runs from the arrival until it has had
+  // WOOD.defHours of daylight (overnight on the spot when it gets there late). An 8-hour step begun at dusk cut in the dark
+  // and brought home half the haul it was sent for (fix-wood-diplo: 3–7 firewood from trips planned at ~12–14).
+  if (c.wood && steps) {
+    const arrive = state.hour + Math.max(0, est.hoursOut || 0);
+    let hours = 0, light = 0;
+    while (light < WOOD.defHours - 1e-9 && hours < WOOD.maxHours) light += woodTime(arrive + ++hours);
+    onSite = Math.max(WOOD.defHours, hours);
+    steps = steps.map((x) => (x.kind === "wood" ? { ...x, hours: onSite } : x));
+  }
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.
   if (P.reserves && est.hours > 12 && severeSoon(state, Math.ceil(days) + 1)) return off();
@@ -3196,7 +3207,7 @@ function launchTrip(state, c, pool, spareHands) {
   // water fetched or un-purified water packed is drunk safe on the way without stopping to boil it.
   const tabs = armoryTabs(h).length > 0 && ((c.steps || []).some((x) => x.kind === "water") || days > TABS_TRIP_DAYS);
   const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep, tabs,
-    plan: c.steps ? { preset: c.preset || "custom", steps: c.steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
+    plan: steps ? { preset: c.preset || "custom", steps: steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
   if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);
   if (c.wood) { // woodcutting.js: the armory's axes go along for those without one

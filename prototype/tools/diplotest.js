@@ -34,6 +34,16 @@ const longDays = Number(process.argv[3] || 365);
 // Twelve seeds: a year's collapses swing by ±2-4 groups a seed either way (new gangs come and go), so six seeds
 // (the old default) failed the +0.15 band on code changes far from the wars (0.26 → 0.42 at 5d2be6a, with seed 6
 // alone 2 → 9), while seeds 1–12 give +0.06 there and on 07778af. The years run 4 at a time.
+// Twelve seeds are still noisy (fix-wood-diplo, seeds 1–48 in fresh processes): the gap per seed has a spread of
+// ~0.17–0.20 a group-year, so twelve seeds' gap has a standard error of ~0.05. At 3f692ed seeds 1–12 read +0.16 (a
+// fail of the fixed +0.15 band) while 1–48 read +0.11 ± 0.03; a8fbc7d (before the winter, job-cap and combat merges)
+// +0.02 ± 0.03, 3f692ed with a8fbc7d's combat +0.07 ± 0.03: a code change anywhere reshuffles the world's dice, the
+// collapses are the same kinds in all three (hordes and outsiders' raids, decline; a war raid alone never takes a
+// group under DIPLO.MIN_POP), so the true gap sits around +0.07–0.11, under the band, and a fixed +0.15 failed about
+// one run in five. So the band is COLLAPSE_BAND.gap (the most wars may add) plus COLLAPSE_BAND.se standard errors
+// measured from this run's own seeds (~+0.23–0.26 at twelve): a false alarm about one run in a hundred at a true +0.11,
+// while a true +0.30 (wars more than doubling the rate) still fails about nine runs in ten.
+const COLLAPSE_BAND = { gap: 0.15, se: 1.5 };
 const collapseSeeds = (process.argv[4] || "1,2,3,4,5,6,7,8,9,10,11,12").split(",").map(Number).filter(Number.isFinite);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -775,11 +785,13 @@ section(`Group collapse per year, with and without wars between groups (seeds ${
   const worker = async () => { while (next < years.length) { const [s, noWars] = years[next++]; done.set(`${s}:${noWars}`, await one(s, noWars)); } };
   await Promise.all(Array.from({ length: Math.min(4, years.length) }, worker));
   let onC = 0, offC = 0, span = 0, wars = 0, gone = 0, terms = { land: 0, tribute: 0, white: 0 };
+  const pairs = []; // per seed: the extra collapses with wars, over its years
   for (const s of collapseSeeds) {
     const on = done.get(`${s}:false`), offR = done.get(`${s}:true`);
     const until = Math.min(on.end, offR.end);
     const c1 = Object.values(on.died).filter((d) => d <= until).length, c0 = Object.values(offR.died).filter((d) => d <= until).length;
     onC += c1; offC += c0; span += until;
+    pairs.push({ d: c1 - c0, y: until / 365 });
     wars += on.stats.wars;
     gone += on.gone;
     for (const k of Object.keys(terms)) terms[k] += on.stats[k];
@@ -787,9 +799,14 @@ section(`Group collapse per year, with and without wars between groups (seeds ${
   }
   const yrs = span / 365;
   const r0 = offC / (8 * yrs), r1 = onC / (8 * yrs);
-  console.log(`  per group per year: ${r0.toFixed(2)} without wars, ${r1.toFixed(2)} with (${(r0 * 8).toFixed(1)} → ${(r1 * 8).toFixed(1)} of 8 groups a year); ${(wars / yrs).toFixed(1)} wars a year; peace terms: ${terms.land} land, ${terms.tribute} tribute, ${terms.white} white; ${gone} ended by a side collapsing`);
+  // The band: COLLAPSE_BAND.gap plus COLLAPSE_BAND.se standard errors of the gap, from this run's own spread (the
+  // seeds paired, a ratio over their years: the extra collapses per seed against gap × its years).
+  const n = pairs.length, gap = r1 - r0;
+  const se = n > 1 ? Math.sqrt((n / (n - 1)) * pairs.reduce((a, x) => a + (x.d - 8 * gap * x.y) ** 2, 0)) / (8 * yrs) : 0;
+  const allowed = COLLAPSE_BAND.gap + COLLAPSE_BAND.se * se;
+  console.log(`  per group per year: ${r0.toFixed(2)} without wars, ${r1.toFixed(2)} with (${(r0 * 8).toFixed(1)} → ${(r1 * 8).toFixed(1)} of 8 groups a year; gap ${gap >= 0 ? "+" : ""}${gap.toFixed(2)} ± ${se.toFixed(2)} SE over ${n} seeds); ${(wars / yrs).toFixed(1)} wars a year; peace terms: ${terms.land} land, ${terms.tribute} tribute, ${terms.white} white; ${gone} ended by a side collapsing`);
   check(terms.land + terms.tribute + terms.white >= 3 * Math.max(1, gone), "wars end in terms far more often than in a wipe-out");
-  check(r1 <= r0 + 0.15, `wars do not wipe groups out much faster (${r0.toFixed(2)} → ${r1.toFixed(2)} a group a year, allowed +0.15)`);
+  check(gap <= allowed, `wars do not wipe groups out much faster (${r0.toFixed(2)} → ${r1.toFixed(2)} a group a year, allowed +${allowed.toFixed(2)}: +${COLLAPSE_BAND.gap} and ${COLLAPSE_BAND.se} SE of ${se.toFixed(2)})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
