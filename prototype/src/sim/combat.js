@@ -729,26 +729,102 @@ export function syncVehicleZone(b) {
   R.vehicleZone = R.zones.findIndex((z) => v.x <= z.x0 + z.w && z.x0 <= v.x + v.w && v.y <= z.y0 + z.h && z.y0 <= v.y + v.h); // touching (a cell apart at most)
   for (let i = 0; i < R.zones.length; i++) R.zones[i].vehicle = i === R.vehicleZone;
 }
-// Drive: the vehicle's rect to the position whose middle is nearest (x, y), by 4-way steps over cells that are open
-// ground with nobody on them (not water, a railing, a tank trap, a wall or another car); the driver rides along and
-// steps off next to it. Returns an error, or "" when it drove.
+// Seats: who can ride in the team's vehicle (board / disembark), by its model (vehicles.js VEHICLE_TYPES).
+export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 0 };
+// Ramming (driveTo): the vehicle drives through people (any side, RAMMING.HIT damage, the dead ZOMBIE_HIT) and light
+// obstacles (WEAR: what each costs the vehicle's condition, settled when the battle ends: settleVehicle). Walls, trees,
+// other cars, water, railings and trenches stop it.
+export const RAMMING = {
+  HIT: [14, 28], ZOMBIE_HIT: [20, 40], SHOVE: 3,
+  WEAR: { unit: 1, zombie: 2, tanktrap: 12, fence: 2, wire: 1, sandbag: 4, crate: 2, hay: 1, barrel: 3, barricade: 8, rock: 6, pump: 10, well: 10, spikes: 6, beartrap: 2 },
+  LEFT: { tanktrap: "rubble", pump: "rubble", well: "rubble" }, // what a rammed obstacle becomes (else open ground)
+};
+const rammable = (c) => RAMMING.WEAR[c.k] != null;
+const vehicleCells = (v) => { const out = []; for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) out.push([cx, cy]); return out; };
+const inVehicle = (v, x, y) => x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h;
+export const aboardCount = (b) => b.units.filter((u) => u.aboard && !u.dead).length;
+// Board from next to it (1 action): the unit rides, off the map (not a target, not drawn), until it gets out.
+export function boardVehicle(b, u) {
+  const v = b.vehicle;
+  if (!v) return "There is no vehicle here.";
+  if (!atVehicle(b, u)) return "Stand next to the vehicle to get in.";
+  if (aboardCount(b) >= (v.seats || 4)) return `The ${v.kind} is full (${v.seats || 4} seats).`;
+  u.aboard = true; u.off = true; u.ow = u.hunker = false; u.ap = Math.max(0, u.ap - 1);
+  u.x = v.x; u.y = v.y;
+  say(b, `${u.name} gets into the ${v.kind} (${aboardCount(b)} of ${v.seats || 4} seats).`, "info");
+  bump(b);
+  return "";
+}
+// Out, onto a free cell round it (1 action; force: at the end of a battle, anywhere near).
+export function disembark(b, u, force = false) {
+  bindDims(b);
+  const v = b.vehicle;
+  if (!v || !u.aboard) return "Not in the vehicle.";
+  const ring = [];
+  const scan = (r) => {
+    for (let cy = v.y - r; cy <= v.y + v.h + r - 1; cy++) for (let cx = v.x - r; cx <= v.x + v.w + r - 1; cx++) {
+      if (!inside(cx, cy) || inVehicle(v, cx, cy)) continue;
+      const c = b.cells[idx(cx, cy)];
+      if (CELL[c.k].walk && c.k !== "vehicle" && !unitAt(b, cx, cy)) ring.push([cx, cy]);
+    }
+  };
+  scan(1);
+  if (!ring.length && force) for (let r = 2; r <= 6 && !ring.length; r++) scan(r);
+  if (!ring.length) return "No room to get out here.";
+  u.aboard = false; u.off = false;
+  u.x = ring[0][0]; u.y = ring[0][1];
+  if (!force) { u.ap = Math.max(0, u.ap - 1); say(b, `${u.name} gets out of the ${v.kind}.`, "info"); detect(b, u); }
+  bump(b);
+  return "";
+}
+export function landAll(b) { if (b.vehicle) for (const u of b.units) if (u.aboard && !u.dead) disembark(b, u, true); }
+// Turn the vehicle a quarter (1 action, from inside or next to it): its rect swaps sides at the same corner; the cells
+// it turns onto must be open with nobody on them.
+export function turnVehicle(b, u) {
+  bindDims(b);
+  const v = b.vehicle;
+  if (!v) return "There is no vehicle here.";
+  const nw = v.h, nh = v.w;
+  const tx = Math.min(v.x, W - nw), ty = Math.min(v.y, H - nh);
+  if (tx < 0 || ty < 0) return "No room to turn here.";
+  for (let cy = ty; cy < ty + nh; cy++) for (let cx = tx; cx < tx + nw; cx++) {
+    const c = b.cells[idx(cx, cy)];
+    if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy))) || unitAt(b, cx, cy)) return "No room to turn here: open ground with nobody on it on all its cells.";
+  }
+  const car = b.cells[idx(v.x, v.y)].car;
+  for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
+  v.x = tx; v.y = ty; v.w = nw; v.h = nh; v.ax = v.ax === "x" ? "y" : "x";
+  for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "vehicle"; c.car = { ...car, ax: v.ax, i: v.ax === "x" ? cx - v.x : cy - v.y, j: v.ax === "x" ? cy - v.y : cx - v.x }; }
+  for (const o of b.units) if (o.aboard) { o.x = v.x; o.y = v.y; }
+  u.ap = Math.max(0, u.ap - 1);
+  b.losCache.fill(0);
+  const at = u.aboard ? (v.x > 0 ? [v.x - 1, v.y] : [v.x + v.w, v.y]) : [u.x, u.y];
+  b.reach = flood(b.cells, at[0], at[1]);
+  syncFloor(b);
+  if (b.raid) syncVehicleZone(b);
+  say(b, `${u.name} turns the ${v.kind} ${v.ax === "x" ? "along" : "across"}.`, "info");
+  bump(b);
+  return "";
+}
+// Drive: the vehicle's rect to the position whose middle is nearest (x, y), by 4-way steps over open ground, through
+// people and light obstacles (ramming: RAMMING); the driver rides along (aboard, or steps off next to it). Returns an
+// error, or "" when it drove.
 export function driveTo(b, u, x, y) {
   bindDims(b);
   const v = b.vehicle;
   if (!v) return "You came on foot: there is no vehicle here.";
   const tx = Math.max(0, Math.min(W - v.w, x - Math.floor((v.w - 1) / 2))), ty = Math.max(0, Math.min(H - v.h, y - Math.floor((v.h - 1) / 2)));
   if (tx === v.x && ty === v.y) return "It is already there.";
-  const mine = (cx, cy) => cx >= v.x && cy >= v.y && cx < v.x + v.w && cy < v.y + v.h;
-  const clear = (px, py) => {
+  const passable = (px, py) => {
     if (px < 0 || py < 0 || px + v.w > W || py + v.h > H) return false;
     for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) {
       const c = b.cells[idx(cx, cy)];
-      if (!(c.k === "open" || (c.k === "vehicle" && mine(cx, cy))) || unitAt(b, cx, cy)) return false;
+      if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy)) || rammable(c))) return false;
     }
     return true;
   };
   const key = (px, py) => py * W + px;
-  const seen = new Map([[key(v.x, v.y), 0]]);
+  const seen = new Map([[key(v.x, v.y), 0]]), parent = new Map();
   const q = [[v.x, v.y]];
   let found = false;
   while (q.length && !found) {
@@ -757,48 +833,95 @@ export function driveTo(b, u, x, y) {
     if (d >= DRIVE.RANGE) continue;
     for (const [dx, dy] of DIRS4) {
       const nx = px + dx, ny = py + dy;
-      if (seen.has(key(nx, ny)) || !clear(nx, ny)) continue;
-      seen.set(key(nx, ny), d + 1);
+      if (seen.has(key(nx, ny)) || !passable(nx, ny)) continue;
+      seen.set(key(nx, ny), d + 1); parent.set(key(nx, ny), key(px, py));
       if (nx === tx && ny === ty) { found = true; break; }
       q.push([nx, ny]);
     }
   }
-  if (!found) return `The vehicle cannot get there: open ground only, within ${DRIVE.RANGE} cells, nobody in the way.`;
-  // Where the driver steps off: the same side of it as now, else the nearest free cell round it.
+  if (!found) return `The vehicle cannot get there: open ground, people and light obstacles only, within ${DRIVE.RANGE} cells.`;
+  // The way: every position from the first step to the last; the cells swept are rammed.
+  const way = [];
+  for (let k = key(tx, ty); k !== key(v.x, v.y); k = parent.get(k)) way.unshift([k % W, Math.floor(k / W)]);
+  const swept = new Set();
+  for (const [px, py] of way) for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) swept.add(idx(cx, cy));
+  // Where the driver steps off (not aboard): the same side of it as now, else the nearest free cell round it.
   const ox = u.x - v.x, oy = u.y - v.y;
-  const ring = [];
-  for (let cy = ty - 1; cy <= ty + v.h; cy++) for (let cx = tx - 1; cx <= tx + v.w; cx++) {
-    if (!inside(cx, cy) || (cx >= tx && cy >= ty && cx < tx + v.w && cy < ty + v.h)) continue;
-    const c = b.cells[idx(cx, cy)];
-    const o = unitAt(b, cx, cy);
-    if (!CELL[c.k].walk || c.k === "vehicle" || (o && o !== u)) continue;
-    ring.push([cx, cy, Math.abs(cx - (tx + ox)) + Math.abs(cy - (ty + oy))]);
+  const ringOf = (not) => {
+    const ring = [];
+    for (let cy = ty - 1; cy <= ty + v.h; cy++) for (let cx = tx - 1; cx <= tx + v.w; cx++) {
+      if (!inside(cx, cy) || (cx >= tx && cy >= ty && cx < tx + v.w && cy < ty + v.h)) continue;
+      const c = b.cells[idx(cx, cy)];
+      const o = unitAt(b, cx, cy);
+      if (!CELL[c.k].walk || c.k === "vehicle" || rammable(c) || (o && o !== not)) continue;
+      ring.push([cx, cy, Math.abs(cx - (tx + ox)) + Math.abs(cy - (ty + oy))]);
+    }
+    return ring.sort((a, c) => a[2] - c[2]);
+  };
+  if (!u.aboard && !ringOf(u).length) return "There is nowhere to step off there.";
+  // Ram: obstacles swept are broken (the vehicle wears), people swept are hit and shoved aside.
+  const rng = b.rng;
+  let wear = 0;
+  const hits = [];
+  for (const i of swept) {
+    const c = b.cells[i];
+    if (rammable(c)) { wear += RAMMING.WEAR[c.k]; c.k = RAMMING.LEFT[c.k] || "open"; c.hp = 0; }
   }
-  ring.sort((a, c) => a[2] - c[2]);
-  if (!ring.length) return "There is nowhere to step off there.";
+  for (const o of b.units) {
+    if (!onMap(o) || o === u || o.aboard || !swept.has(idx(o.x, o.y))) continue;
+    const z = o.kind === "zombie";
+    const eff = Math.round(damage(b, o, rng.int(...(z ? RAMMING.ZOMBIE_HIT : RAMMING.HIT)), u));
+    wear += z ? RAMMING.WEAR.zombie : RAMMING.WEAR.unit;
+    hits.push(`${o.name} (${eff})`);
+    fx(b, { type: "melee", from: [o.x, o.y], to: [o.x, o.y], hit: true, crit: false, dmg: eff, side: u.side, text: "RAMMED" });
+    if (o.dead) continue;
+    let best = null;
+    for (let r = 1; r <= RAMMING.SHOVE && !best; r++) for (let cy = o.y - r; cy <= o.y + r && !best; cy++) for (let cx = o.x - r; cx <= o.x + r && !best; cx++) {
+      if (!inside(cx, cy) || (cx >= tx && cy >= ty && cx < tx + v.w && cy < ty + v.h)) continue;
+      const c = b.cells[idx(cx, cy)];
+      if (CELL[c.k].walk && c.k !== "vehicle" && !unitAt(b, cx, cy)) best = [cx, cy];
+    }
+    if (best) { o.x = best[0]; o.y = best[1]; o.hunker = false; o.ow = false; }
+    else { const e2 = Math.round(damage(b, o, rng.int(...RAMMING.HIT), u)); hits.push(`${o.name} again (${e2}, crushed)`); }
+  }
+  v.wear = (v.wear || 0) + wear;
   const car = b.cells[idx(v.x, v.y)].car;
-  for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
-  for (let cy = ty; cy < ty + v.h; cy++) for (let cx = tx; cx < tx + v.w; cx++) {
-    const c = b.cells[idx(cx, cy)];
-    c.k = "vehicle";
-    c.car = { ...car, i: v.ax === "x" ? cx - tx : cy - ty, j: v.ax === "x" ? cy - ty : cx - tx };
-  }
+  for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
   const from = [u.x, u.y], steps = seen.get(key(tx, ty));
   v.x = tx; v.y = ty;
-  u.x = ring[0][0]; u.y = ring[0][1];
+  for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "vehicle"; c.car = { ...car, i: v.ax === "x" ? cx - v.x : cy - v.y, j: v.ax === "x" ? cy - v.y : cx - v.x }; }
+  for (const o of b.units) if (o.aboard) { o.x = v.x; o.y = v.y; }
+  if (!u.aboard) {
+    const ring = ringOf(u);
+    u.x = ring[0][0]; u.y = ring[0][1];
+    fx(b, { type: "move", unit: u.id, from, path: [[u.x, u.y]] });
+  }
   u.ap = Math.max(0, u.ap - DRIVE.AP); u.hunker = false; u.ow = false;
-  fx(b, { type: "move", unit: u.id, from, path: [[u.x, u.y]] });
   b.losCache.fill(0);
-  b.reach = flood(b.cells, u.x, u.y);
+  const at = u.aboard ? (ringOf(null)[0] || [v.x, v.y]) : [u.x, u.y];
+  b.reach = flood(b.cells, at[0], at[1]);
   syncFloor(b);
   if (b.raid) { b.raid.heat = Math.min(100, b.raid.heat + DRIVE.HEAT); syncVehicleZone(b); }
   b.noise = (b.noise || 0) + 2;
-  say(b, `${u.name} drives the ${v.kind === "truck" ? "truck" : "car"} ${steps} cell${steps === 1 ? "" : "s"}${b.raid ? ` (Heat +${DRIVE.HEAT})` : ""}.`, "info");
+  say(b, `${u.name} drives the ${v.kind === "truck" ? "truck" : "car"} ${steps} cell${steps === 1 ? "" : "s"}${b.raid ? ` (Heat +${DRIVE.HEAT})` : ""}${hits.length ? `, running down ${hits.join(", ")}` : ""}${wear ? ` (the ${v.kind} takes a beating: condition −${wear})` : ""}.`, hits.length ? "danger" : "info");
   alertNear(b, tx + Math.floor(v.w / 2), ty + Math.floor(v.h / 2), DRIVE.RADIUS, "The engine carries: the unaware nearby turn toward it.");
-  detect(b, u);
+  if (!u.aboard) detect(b, u);
   bump(b);
   return "";
 }
+// When a battle ends: everyone aboard back on the ground, and what ramming cost the party's vehicle (vehicles.js condition).
+export function settleVehicle(state, b) {
+  landAll(b);
+  const v = b.vehicle;
+  if (!v || !v.wear) return;
+  const party = b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) : null;
+  const pv = party ? partyVehicle(state, party) : null;
+  if (!pv) return;
+  pv.condition = Math.max(1, Math.round((pv.condition - v.wear) * 10) / 10);
+  log(state, `The ${pv.name} took a beating ramming through ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
+  v.wear = 0;
+}
+
 
 // Cars parked or left off the road: n of them, each at a free spot in `ok` cells, turned as their dice say.
 export function scatterCars(rng, cells, W, H, n, ok, kind = "car", lo = 1, hi = W - 2) {
@@ -1494,7 +1617,7 @@ export function createBattle(state, setup) {
         const vr = placeVehicle(b.cells, W, H, { x0: 1, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
         if (vr) { b.vehicle = vr; break; }
       }
-      if (b.vehicle) b.reach = flood(b.cells, 0, Math.floor(H / 2));
+      if (b.vehicle) { b.vehicle.seats = SEATS[(pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); }
     }
   }
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -1850,7 +1973,9 @@ export function combatAct(state, act) {
   const u = unitById(b, act.unit);
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
-  if (!u || u.side !== "player" || !active(u) || u.ap < 1) return "That unit cannot act.";
+  // Aboard the team's vehicle (boardVehicle): off the map, but they can drive it, turn it, get out, or extract with it.
+  const aboardAct = u && u.aboard && !u.dead && ["drive", "turn", "disembark", "extract"].includes(act.type);
+  if (!u || u.side !== "player" || !(active(u) || aboardAct) || u.ap < 1) return "That unit cannot act.";
   const t = act.target != null ? unitById(b, act.target) : null;
   switch (act.type) {
     case "move": {
@@ -1886,11 +2011,20 @@ export function combatAct(state, act) {
       u.ap = 0;
       break;
     }
-    case "drive": { // the team's vehicle (DRIVE, driveTo): from next to it, both actions, loud
+    case "drive": { // the team's vehicle (DRIVE, driveTo): from inside or next to it, both actions, loud; through people and light obstacles (RAMMING)
       if (!b.vehicle) return "You came on foot: there is no vehicle here.";
-      if (!atVehicle(b, u)) return "Stand next to the vehicle to drive it.";
+      if (!u.aboard && !atVehicle(b, u)) return "Stand next to the vehicle (or get in) to drive it.";
       if (u.ap < DRIVE.AP) return "Driving takes both actions.";
       const err = driveTo(b, u, Number(act.x), Number(act.y));
+      if (err) return err;
+      break;
+    }
+    case "board": { const err = boardVehicle(b, u); if (err) return err; break; } // in (1 action, SEATS)
+    case "disembark": { const err = disembark(b, u); if (err) return err; break; } // out onto a free cell round it (1 action)
+    case "turn": { // a quarter turn (1 action, from inside or next to it)
+      if (!b.vehicle) return "You came on foot: there is no vehicle here.";
+      if (!u.aboard && !atVehicle(b, u)) return "Stand next to the vehicle (or get in) to turn it.";
+      const err = turnVehicle(b, u);
       if (err) return err;
       break;
     }
@@ -1965,6 +2099,13 @@ export function combatAct(state, act) {
     }
     case "extract": {
       if (!b.raid) return "Use Retreat.";
+      if (u.aboard) { // everyone in the vehicle leaves with it, from the zone it stands at
+        if (b.raid.vehicleZone < 0) return "Drive the vehicle to an extraction zone first.";
+        const riders = b.units.filter((o) => o.aboard && !o.dead);
+        for (const o of riders) { o.aboard = false; o.off = false; o.left = true; o.exitZone = b.raid.vehicleZone; o.exitVehicle = true; o.ap = 0; o.ow = o.hunker = false; }
+        say(b, `${riders.map((o) => o.name).join(", ")} extract in the ${b.vehicle.kind}.`, "good");
+        break;
+      }
       if (u.f) return "Go down to the ground floor to extract.";
       const z = zoneAt(b, u.x, u.y);
       if (z < 0) return "Move into an extraction zone first.";
@@ -2828,13 +2969,13 @@ export function afterDeploy(state, b) {
 function checkEnd(state, b) {
   if (b.over) return;
   if (b.raid) {
-    if (!b.units.some((u) => u.side === "player" && activeAny(u))) endRaid(state, b); // on any floor (buildingmaps.js storeys)
+    if (!b.units.some((u) => u.side === "player" && (activeAny(u) || u.aboard))) endRaid(state, b); // on any floor (buildingmaps.js storeys), or in the vehicle
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
   // A spotted Sleeper lying where it is (sleepers.js) does not hold the field.
-  if (!b.units.some((u) => u.side === "enemy" && !u.dormant && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
-  if (!b.units.some((u) => u.side === "player" && active(u))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
+  if (!b.units.some((u) => u.side === "enemy" && !u.dormant && (active(u) || (u.off && !u.dead && !u.aboard)))) return endBattle(state, b, "victory");
+  if (!b.units.some((u) => u.side === "player" && (active(u) || u.aboard))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
 }
 
 // Ends the open battle now (a battle played out headless that ran too long: defences.js fightNow).
@@ -2845,6 +2986,7 @@ export function endBattleNow(state, outcome) {
 function endBattle(state, b, outcome) {
   const rng = state.rng;
   b.over = true;
+  settleVehicle(state, b); // everyone out of the vehicle; what ramming cost it
   b.phase = "over";
   const setup = b.setup;
   const cause = `in a fight with ${setup.enemy.name || setup.enemy.kind}`;
@@ -3317,6 +3459,7 @@ export function createRaid(state, setup) {
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
+  if (b.vehicle) b.vehicle.seats = SEATS[(pv && pv.type) || "sedan"] ?? 4; // who can ride in it (boardVehicle)
   b.reinfMax = 0;
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -3598,6 +3741,7 @@ function endRaid(state, b) {
   const rng = state.rng;
   const R = b.raid;
   b.over = true;
+  settleVehicle(state, b); // everyone out of the vehicle; what ramming cost it
   b.phase = "over";
   const hurtIds = [], deadIds = [], extractedIds = [], carriedIds = [];
   const home = new Set(); // units who come home with what they carry (raidloot.js)

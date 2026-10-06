@@ -279,10 +279,36 @@ for (let i = 0; i < runs; i++) {
           let back = "";
           for (let i = 0; i < 4 && v.x !== x0; i++) { u.ap = 2; back = combatAct(state, { type: "drive", unit: u.id, x: x0 + Math.floor((v.w - 1) / 2), y: y0 + Math.floor((v.h - 1) / 2) }); if (back) break; }
           check(!back && v.x === x0 && v.y === y0 && b.raid.vehicleZone === 0, `driven back to the zone (${back || "ok"}, zone ${b.raid.vehicleZone})`);
+          // Get in (seats by the model), turn, and ram: one of the dead put in the way is run down and shoved, a fence broken.
+          check(v.seats >= 4, `the ${v.kind} has seats (${v.seats})`);
+          u.ap = 2;
+          const eb = combatAct(state, { type: "board", unit: u.id });
+          check(!eb && u.aboard && u.off, `the driver gets in (${eb || "ok"})`);
+          u.ap = 2;
+          const et = combatAct(state, { type: "turn", unit: u.id });
+          check(!et && b.cells.filter((c) => c.k === "vehicle").length === v.w * v.h && b.cells.filter((c) => c.k === "vehicle").every((c) => c.car && c.car.ax === v.ax), `it turns (${et || "ok"}, now ${v.w}×${v.h})`);
+          const z = b.units.find((o) => o.side === "enemy" && o.kind === "zombie" && !o.dead) || b.units.find((o) => o.side === "enemy" && !o.dead);
+          const zx = v.x + v.w + 2, zy = v.y + Math.floor(v.h / 2);
+          if (z && zx + 2 < b.w && CELL[b.cells[zy * b.w + zx].k].walk && b.cells[zy * b.w + zx].k === "open") {
+            z.x = zx; z.y = zy; z.aware = true; const hp0 = z.hp;
+            const fc = b.cells[zy * b.w + zx + 1]; const hadFence = fc.k === "open"; if (hadFence) fc.k = "fence";
+            u.ap = 2;
+            const er = combatAct(state, { type: "drive", unit: u.id, x: zx + 1, y: zy });
+            check(!er && (z.hp < hp0 || z.dead), `driving through the dead runs them down (${er || "ok"}: ${Math.round(hp0)} → ${Math.round(z.hp)} hp)`);
+            check(!er && (z.dead || !(z.x >= v.x && z.y >= v.y && z.x < v.x + v.w && z.y < v.y + v.h)), "and shoves them out of the way");
+            if (hadFence) check(!er && fc.k !== "fence" && (v.wear || 0) > 0, `a fence in the way is broken and the ${v.kind} wears (${v.wear})`);
+            check(u.aboard && u.x === v.x && u.y === v.y, "the driver rides along inside");
+          } else console.log("  (no room east of the vehicle for the ram check)");
+          u.ap = 2;
+          const ed = combatAct(state, { type: "disembark", unit: u.id });
+          check(!ed && !u.aboard && !u.off && atVehicle(b, u), `the driver gets out next to it (${ed || "ok"})`);
+          // Back to the zone for the extraction check below.
+          for (let i = 0; i < 6 && (v.x !== x0 || v.y !== y0); i++) { u.ap = 2; if (combatAct(state, { type: "drive", unit: u.id, x: x0 + Math.floor((v.w - 1) / 2), y: y0 + Math.floor((v.h - 1) / 2) })) break; }
+          if (v.x !== x0 || v.y !== y0) { u.ap = 2; combatAct(state, { type: "turn", unit: u.id }); for (let i = 0; i < 6 && (v.x !== x0 || v.y !== y0); i++) { u.ap = 2; if (combatAct(state, { type: "drive", unit: u.id, x: x0 + Math.floor((v.w - 1) / 2), y: y0 + Math.floor((v.h - 1) / 2) })) break; } }
           // Extracting from the zone it stands at keeps it.
-          const z = b.raid.zones[0];
+          const zone0 = b.raid.zones[0];
           const spot = [];
-          for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) if (CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o.x === x && o.y === y)) spot.push([x, y]);
+          for (let y = zone0.y0; y < zone0.y0 + zone0.h; y++) for (let x = zone0.x0; x < zone0.x0 + zone0.w; x++) if (CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o.x === x && o.y === y)) spot.push([x, y]);
           if (spot.length) { u.x = spot[0][0]; u.y = spot[0][1]; u.ap = 2; const e = combatAct(state, { type: "extract", unit: u.id }); check(!e && u.left && u.exitVehicle, `extracting there is extracting with the vehicle (${e || "ok"})`); }
         }
       }

@@ -2,7 +2,7 @@
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
-  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, AREAS, areaHint, HEAT_NAMES,
+  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
@@ -84,7 +84,7 @@ function stairsOf(b, u) {
 const floorLabel = (b, f) => `Floor ${f + 1} of ${floorsOf(b).length}`;
 // Still in the fight, whatever floor they are on (sim/combat.js active() counts a unit on another floor as off the
 // map for the active floor; the team list, Tab and the number keys must still reach them).
-const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
+const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && (!u.off || u.aboard); // aboard the vehicle: off the map but still yours to order
 // A cell's rules, with a stand-in for `void` (outside the footprint on an upper floor) until the sim knows it.
 const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
 const CDEF = (c) => CELL[c.k] || VOIDDEF;
@@ -198,7 +198,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -581,9 +581,10 @@ export function combatAction(state, key, d) {
   const v = d.v;
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
+  if (v === "board" || v === "disembark" || v === "turn") return void act(state, { type: v, unit: u.id }); // sim/combat.js boardVehicle / disembark / turnVehicle
   if (v === "drive") { // sim/combat.js driveTo: pick where it goes
     if (!b.vehicle) { cui.msg = "You came on foot: there is no vehicle here."; return; }
-    if (!atVehicle(b, u)) { cui.msg = "Stand next to the vehicle to drive it."; return; }
+    if (!u.aboard && !atVehicle(b, u)) { cui.msg = "Stand next to the vehicle (or get in) to drive it."; return; }
     if (u.ap < DRIVE.AP) { cui.msg = "Driving takes both actions."; return; }
     cui.mode = "drive"; cui.msg = `Click where to drive the ${b.vehicle.kind === "truck" ? "truck" : "car"} (open ground, up to ${DRIVE.RANGE} cells).`;
     return;
@@ -734,7 +735,7 @@ export function renderCombatPanel(state) {
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
       <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
-      <div class="small muted">${esc(p.weaponName)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}</div>
+      <div class="small muted">${esc(p.weaponName)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
     </div>`;
   });
   html += `</div>`;
@@ -748,7 +749,7 @@ export function renderCombatPanel(state) {
     html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
   }
 
-  if (u && active(u) && b.phase === "player") {
+  if (u && (active(u) || u.aboard) && b.phase === "player") { // aboard the vehicle: Drive, Turn, Get out, Extract
     const ap = u.ap;
     const gun = isRanged(u), ammo = canFire(b, u);
     const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && adjacent(u, t));
@@ -759,7 +760,10 @@ export function renderCombatPanel(state) {
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
-      ${b.vehicle ? btn("drive", "Drive", `Both actions, from next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it (open ground only, up to ${DRIVE.RANGE} cells, nobody in the way; tank traps, railings, cars and walls stop it). Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. What is loaded in it rides along, the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && atVehicle(b, u), "V") : ""}
+      ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "V") : ""}
+      ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
+      ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
+      ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${floorButtons(b, u, btn)}
       ${bodyButtons(state, b, u, btn)}
