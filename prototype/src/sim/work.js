@@ -52,10 +52,10 @@ import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
-import { foodUse } from "./upkeep.js";
+import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
 import { waterIn } from "./water.js"; // purified and un-purified water count together
-import { wormFilterUrgent, WOOD_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
+import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -320,7 +320,7 @@ export const WORK_TYPES = {
       if (why) return { cap: 0, why };
       const w = woodNeed(ctx.state, ctx.base);
       if (!w.short) return { cap: 0, why: w.need > 0 ? `enough firewood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
-      const burn = Math.max(0.1, w.heads * 0.2);
+      const burn = Math.max(0.1, w.heads * woodFor(HEAT.fuel) + (w.boiler || 0)); // a day's heating and boiling
       const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
       return { cap: Math.max(1, woodHandsWanted(ctx.state, ctx.base, { w })), urg }; // sized to the need (the pile in within 3 weeks), no fixed cap
     },
@@ -334,9 +334,7 @@ export const WORK_TYPES = {
       if (ctx.base.tier === 0 || (ctx.state.governor && ctx.state.governor.noWood) || woodWorkWhy(ctx.state, ctx.base)) return null; // gov.noWood: the test switch (woodtest.js)
       const w = woodNeed(ctx.state, ctx.base);
       if (!w.short || !w.soon || w.need <= 0) return null;
-      const want = woodHandsWanted(ctx.state, ctx.base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) }); // by the cold (and the boiler's), no fixed cap
-      const n = ctx.people.length;
-      const critical = n <= 3 ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, Math.ceil(n / 4)) : Math.min(1, want);
+      const critical = woodCritical(ctx.state, ctx.base, w, ctx.people.length); // the governor's rule (autopilot.js): by the cold (and the boiler's), no fixed cap
       const slots = critical - ctx.used.wood;
       return slots > 0 ? { slots, why: `the winter's firewood (${Math.floor(w.have)} of ${w.need}, ${w.toCold} days to the cold)` } : null;
     },

@@ -77,7 +77,7 @@ import {
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
-import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, WOOD } from "./woodcutting.js";
+import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
@@ -1060,7 +1060,7 @@ export function heatFuelWant(state, base) {
   const s = wxSeason(state);
   const soon = s.key === "winter" || (s.key === "autumn" && s.dayOfSeason > 10) || (s.key === "spring" && s.dayOfSeason <= 14);
   const wn = woodNeed(state, base);
-  const cutting = !gov(state).noWood && !woodWorkWhy(state, base) && !wn.cold && woodCuttersFor(state, base, wn) <= woodCrewMax(atBase(state, base.id).length);
+  const cutting = !gov(state).noWood && !woodWorkWhy(state, base) && !wn.cold && woodCuttersFor(state, base, wn) <= woodCrewMax(atBase(state, base.id).length, wn);
   // In the cold months the fuel is never "plenty" (0.7: not traded away) even with the winter's need in store.
   const want = !soon || need <= 0 ? 0 : have < need * 0.5 ? 1.9 : have < need ? 1.4 : 0.7;
   return { need, want: cutting ? Math.min(1.4, want) : want };
@@ -3507,20 +3507,37 @@ function planForage(state, base, people, foodDays, areas) {
 }
 // ---------- firewood for the winter (woodcutting.js) ----------
 // From late summer (woodSeason) a base whose woodpile is short of what the coming cold needs (woodNeed: everyone fed
-// there and the teams coming home, 0.2 a head a freezing day, a fifth to spare) works out how many woodcutters it
+// there and the teams coming home, woodFor(HEAT.fuel) a head a freezing day, a fifth to spare, and the boiler's days) works out how many woodcutters it
 // takes to have it in by the winter (the shortfall over what one brings in a day here × the days left, at least
 // WOOD_AP.minDays): from autumn (the winter within WOOD_AP.autumn days, or here) that many go before the builders and
 // stations (step 4a; at most the job's cap and a quarter of the people, one at a base of 3 or fewer), in late summer
 // one; and the spare hands cut wood too (step 10, up to the cap) until it is stocked. Only where the land around gives
 // a woodcutter at least WOOD.worth a day; the best woodcutters with axes first. gov.noWood: the test switch
 // (woodtest.js, the balance runs) that leaves it out.
-export const WOOD_AP = { autumn: 28, minDays: 5 };
+export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5 };
 // tune-jobcaps: the Cut wood job has no fixed cap (it was 2, 3 at 10+ people). The woodcutters it takes to have the pile
 // in by the cold (and keep up with the boiler) go ahead of the builders and stations up to a quarter of the people
-// (woodCrewMax: the governor's order of work); the spare hands cut toward having it in within three weeks
+// (woodCrewMax: the governor's order of work; a third while the pile is under WOOD_AP.behind of what the cold needs:
+// the quarter was set when a winter took 0.2 firewood's worth a head a day, before tune-winter's HEAT.wood 0.2 made it
+// 2.5 times that and the boiler burned firewood daily, and a big hub on farmland then met the winter with its pile a
+// third in: woodtest seed 42, 133 of 353); the spare hands cut toward having it in within three weeks
 // (woodcutting.js woodHandsWanted), each one past the first a little less (woodCrowd).
 const woodCuttersFor = (state, base, w) => woodHandsWanted(state, base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) });
-const woodCrewMax = (n) => (n <= 3 ? 1 : Math.ceil(n / 4));
+const woodCrewMax = (n, w = null) => (n <= 3 ? 1 : Math.ceil(n / (w && w.have < w.need * WOOD_AP.behind ? 3 : 4)));
+const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCrowd(i)).reduce((a, v) => a + v, 0); // k woodcutters' day in woodcutters (woodCrowd)
+// The woodcutters that go ahead of the builders and stations (planWood's critical, work.js's emergency): from autumn
+// (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
+// the cold, at most woodCrewMax; in late summer what the summer must cut so that the autumn's full crew can finish it
+// (at least one, at most that crew; it was one, whatever the need). n: the people here.
+export function woodCritical(state, base, w, n) {
+  const want = woodCuttersFor(state, base, w);
+  if (n <= 3) return Math.min(1, want);
+  const full = Math.min(want, woodCrewMax(n, w));
+  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0) return full;
+  const each = baseWoodDay(state, base);
+  const left = Math.max(0, w.need - w.have - each * crewDays(full) * WOOD_AP.autumn); // what the autumn's crew will not cut
+  return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
+}
 function planWood(state, base, people, areas) {
   if (!areas.production || gov(state).noWood || base.tier === 0 || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
@@ -3531,7 +3548,7 @@ function planWood(state, base, people, areas) {
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
   return {
     cap,
-    critical: small ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, woodCrewMax(people.length)) : Math.min(1, want),
+    critical: Math.min(want, woodCritical(state, base, w, people.length)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,
@@ -3555,8 +3572,13 @@ function woodTripCands(state, h, pool, P) {
   const shortfall = Math.max(10, w.need - w.have);
   // What the base's own woodcutters (at the job's cap) will still bring in before the cold, and the gap they leave.
   // (no fixed cap since tune-jobcaps: the crew the governor puts on it ahead of other work, woodCrewMax, each past the first a little less)
-  const crewDay = Array.from({ length: woodCrewMax(atBase(state, h.id).length) }, (_, k) => woodCrowd(k)).reduce((a, v) => a + v, 0);
-  const own = woodWorkWhy(state, h) ? 0 : crewDay * baseWoodDay(state, h) * Math.max(0, w.toCold);
+  // The crew it actually fields (woodCritical): the late summer's until the cold is within WOOD_AP.autumn days, the
+  // full crew after (it counted the full crew from late summer on).
+  const nHere = atBase(state, h.id).length, wantHands = woodCuttersFor(state, h, w);
+  const full = crewDays(nHere <= 3 ? Math.min(1, wantHands) : Math.min(wantHands, woodCrewMax(nHere, w)));
+  const lone = crewDays(woodCritical(state, h, w, nHere));
+  const early = Math.max(0, w.toCold - WOOD_AP.autumn), late = Math.max(0, Math.min(w.toCold, WOOD_AP.autumn));
+  const own = woodWorkWhy(state, h) ? 0 : baseWoodDay(state, h) * (lone * early + full * late);
   const gap = Math.max(0, w.need - w.have - own) / shortfall; // 0: the job will manage .. 1: none of it
   if (w.toCold > WOOD_AP.autumn && gap <= 0) return [];
   const crew = [...pool].sort((a, b) => woodcutterMult(b) * bestChop(b).mult - woodcutterMult(a) * bestChop(a).mult || a.id - b.id).slice(0, 3);
