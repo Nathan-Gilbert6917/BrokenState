@@ -7,7 +7,7 @@
 // (simple auto-play and the autopilot) without NaN.
 // Usage: node tools/tradetest.js [seed] [days]
 import { readFileSync } from "node:fs";
-import { createWorld, tickHour, hub, atBase, makeSurvivor, radioBasesInRange, day, newId } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, makeSurvivor, radioBasesInRange, day, newId, RADIO_RANGE } from "../src/sim/world.js";
 import { GEAR, SUPPLY_KEYS, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "../src/sim/data.js";
 import { itemLoad } from "../src/sim/inventory.js";
 import { itemCat, groupSick, worthTier } from "../src/sim/valuation.js";
@@ -24,6 +24,7 @@ import {
 import {
   radioNodes, inCoverage, canRadioGroup, radioScan, radioDeal, dealQuote, radioNews, radioRequestCaravan, radioDaily, RELAY_RANGE, GROUP_REACH,
 } from "../src/sim/radio.js";
+import { radioBoost } from "../src/sim/power.js";
 import { attackCaravan, launchCaravan, caravansAt } from "../src/sim/caravans.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLines, newCaravanForm, TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "../src/ui/tradewindow.js";
@@ -379,7 +380,8 @@ function visit(st, f, n = 2, cargo = {}) {
   const g = st.grid;
   check(radioNodes(st).length === 0 && !inCoverage(st, h.tile), "no radio, no coverage");
   const aTile = st.tiles.find((t) => land(st, t.id) && g.distance(t.id, h.tile) === 7).id;
-  const bTile = st.tiles.find((t) => land(st, t.id) && g.distance(t.id, aTile) <= RELAY_RANGE && g.distance(t.id, h.tile) >= 12).id;
+  // B beyond the station's own reach (RADIO_RANGE 12, unpowered here), so it can only link through A.
+  const bTile = st.tiles.find((t) => land(st, t.id) && g.distance(t.id, aTile) <= RELAY_RANGE && g.distance(t.id, h.tile) > RADIO_RANGE).id;
   const cTile = st.tiles.find((t) => land(st, t.id) && g.distance(t.id, h.tile) >= 30 && g.distance(t.id, bTile) >= 20).id;
   const A = outpost(st, aTile, "Relay A"), B = outpost(st, bTile, "Relay B"), C = outpost(st, cTile, "Relay C");
   for (const b of [A, B, C]) addBuilding(b, "relay");
@@ -388,7 +390,7 @@ function visit(st, f, n = 2, cargo = {}) {
   const nodes = radioNodes(st);
   const L = (b) => nodes.find((n) => n.base === b).linked;
   check(L(A) && L(B) && !L(C), `A (7 from the hub) links to the station, B (${g.distance(bTile, h.tile)} from the hub, ${g.distance(bTile, aTile)} from A) links through A, C far away does not`);
-  const beyond = st.tiles.find((t) => g.distance(t.id, bTile) === RELAY_RANGE && g.distance(t.id, h.tile) > 8 && g.distance(t.id, aTile) > RELAY_RANGE);
+  const beyond = st.tiles.find((t) => g.distance(t.id, bTile) === RELAY_RANGE && g.distance(t.id, h.tile) > RADIO_RANGE &&g.distance(t.id, aTile) > RELAY_RANGE);
   if (beyond) check(inCoverage(st, beyond.id) && radioBasesInRange(st, beyond.id).includes(B), "coverage reaches the edge of the chain (teams there report live)");
   check(!inCoverage(st, cTile), "C's land is not covered");
   // Upkeep: no parts anywhere, A goes off the air on its due day and B (linked through A) drops with it.
@@ -408,13 +410,17 @@ function visit(st, f, n = 2, cargo = {}) {
   const h = hub(st);
   const g = st.grid;
   addBuilding(h, "radio");
+  // A station reaches RADIO_RANGE (12) tiles, +2 on generator power (power.js radioBoost); a group's own set reaches
+  // GROUP_REACH (6) beyond that, so a group whose base is within 18 (20 powered) of the hub can be called.
+  const R = radioNodes(st).find((n) => n.base === h).range;
+  check(R === RADIO_RANGE + radioBoost(h), `the hub's station reaches ${RADIO_RANGE}${radioBoost(h) ? " + 2 on power" : ""} tiles (${R})`);
   let right = 0, total = 0;
   for (const f of st.factions) {
-    const expect = f.bases.some((b) => g.distance(b, h.tile) <= 8 + GROUP_REACH);
+    const expect = f.bases.some((b) => g.distance(b, h.tile) <= R + GROUP_REACH);
     total++;
     if (canRadioGroup(st, f) === expect) right++;
   }
-  check(right === total, `a group can be called when a base of theirs is within coverage + ${GROUP_REACH} (${right}/${total})`);
+  check(right === total, `a group can be called when a base of theirs is within coverage (${R}) + ${GROUP_REACH} (${right}/${total})`);
   const f = st.factions[0];
   f.bases = [g.within(h.tile, 9).find((t) => g.distance(t, h.tile) === 9)];
   f.known = false;
@@ -430,7 +436,7 @@ function visit(st, f, n = 2, cargo = {}) {
   check(dealQuote(st, f, { wantKey: "meds", wantQty: 5, payKey: "ammo", payQty: q.minPay }).ok, "their price is accepted");
   check(!dealQuote(st, f, { wantKey: "meds", wantQty: 5, payKey: "ammo", payQty: q.minPay - 1 }).ok, "one less is not");
   const far = st.factions[1];
-  far.bases = [st.tiles.find((t) => g.distance(t.id, h.tile) > 8 + GROUP_REACH + 5).id];
+  far.bases = [st.tiles.find((t) => g.distance(t.id, h.tile) > R + GROUP_REACH + 5).id];
   check(!canRadioGroup(st, far), "a group out of reach cannot be called");
 }
 
