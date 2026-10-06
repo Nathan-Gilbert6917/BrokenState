@@ -1708,9 +1708,12 @@ function onOutsiderFight(state, result, setup) {
   const lines = [];
   if (v) { v.size -= result.enemiesKilled || 0; if (v.kind === "merchants") v.guards = Math.max(0, (v.guards || 0) - (result.enemiesKilled || 0)); }
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
+    const where = tileLabel(state, partyTile(p));
     Parties.wipeParty(state, p);
     log(state, `The whole team was lost fighting ${name}.`, "death");
     if (v) { v.phase = "travel"; nextGoal(state, v); }
+    // The fight still ends with its result card (as every other outcome does): the team is gone, not the news.
+    addCard(state, { title: `The fight with ${name}`, text: `The whole team was lost fighting ${name} near ${where}. Where they fell is marked on the map.`, where, choices: [{ label: "OK", resolve: () => "" }] });
     return;
   }
   if (result.outcome === "victory") {

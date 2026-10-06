@@ -3385,9 +3385,12 @@ function autoRaidTurn(state) {
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       const adj = foes.find((f) => adjacent(u, f));
-      if (adj && !isRanged(u)) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
       const shot = foes.length ? bestShot(b, u, foes) : null;
-      if (shot && shot.o.chance >= 45) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+      const fair = shot && shot.o.chance >= 45;
+      // Something next to them and no fair shot (no gun, nothing left to fire, a poor shooter): strike it, as the
+      // field AI does (aiMelee), instead of standing in a doorway being chewed on with a dry or a shaky pistol.
+      if (adj && !fair) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
+      if (fair) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
       const fallen = medsLeft(b) > 0 ? b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && adjacent(u, o)) : null;
       if (fallen) { combatAct(state, { type: "meds", unit: u.id, target: fallen.id }); continue; }
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
@@ -3431,7 +3434,12 @@ function autoRaidTurn(state) {
       const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];
       let best = null;
       for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || score(i) < score(best))) best = i;
-      if (best == null || field[best] >= field[idx(u.x, u.y)]) { u.ap = 0; break; }
+      if (best == null || field[best] >= field[idx(u.x, u.y)]) {
+        // Nowhere better to go (the way is blocked, often by what is coming at them): a shot at anything aware and
+        // close rather than waiting with the action unused.
+        if (shot) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+        u.ap = 0; break;
+      }
       const err = combatAct(state, pools ? { type: "move", unit: u.id, x: best % W, y: (best / W) | 0, wary: true } : { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
       if (err) { u.ap = 0; break; }
     }
