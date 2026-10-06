@@ -369,6 +369,16 @@ export function landCentres(state) {
 // Land the coalition controls: land tiles within reach of your bases or a member's base, plus your claims
 // (claims.js). `claims`: how many land tiles the claims add that no base's reach covered; `claimed`: all of them.
 export function controlledLand(state) {
+  // Cached for the day: checkGameOver asks every hour and the mark pass over every tile cost 9% of a huge map's
+  // hour. A new base, claim or member (or the next day) recomputes it.
+  const key = `${Math.floor(state.hour / 24)}|${state.bases.length}|${state.bases.reduce((a, b) => a + b.tile, 0)}|${playerClaims(state).length}|${allianceMembers(state).reduce((a, f) => a + f.bases.length * 7919 + f.id, 0)}`;
+  const c = state.landCache;
+  if (c && c.key === key) return c.res;
+  const res = controlledLandNow(state);
+  Object.defineProperty(state, "landCache", { value: { key, res }, writable: true, configurable: true, enumerable: false }); // not saved
+  return res;
+}
+function controlledLandNow(state) {
   const g = state.grid;
   let land = 0, held = 0, claims = 0;
   const mark = new Uint8Array(state.tiles.length);
