@@ -50,6 +50,7 @@ import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
+import { teamListens, HEAR_EXTRA } from "./radio.js"; // a team's hand-crank radio: hears, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 
@@ -622,6 +623,15 @@ function updateRadio(state, p) {
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
   p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
   if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
+  // Listening (radio.js): a team carrying a hand-crank radio out of two-way reach still hears a station's traffic
+  // HEAR_EXTRA tiles beyond its coverage: it is not in contact (no orders, nothing reported) but takes in the day's
+  // news lines (p.heard, newest first: what the base logged as good or bad news this hour).
+  if (p.owner !== "player" || p.kind === "convoy") return;
+  p.radioHear = !p.radioLive && teamListens(state, p) && radioBasesInRange(state, partyTile(p), HEAR_EXTRA).length > 0;
+  if (!p.radioHear) return;
+  const name = teamName(state, p);
+  const fresh = state.log.filter((l) => l.hour >= state.hour - 1 && (l.kind === "danger" || l.kind === "good") && !l.text.includes(name) && !(p.heard || []).some((h) => h.text === l.text)); // this hour's lines and the last hour's (logged before the tick turned the hour)
+  if (fresh.length) p.heard = [...fresh.map((l) => ({ hour: l.hour, text: l.text })), ...(p.heard || [])].slice(0, 3);
 }
 
 // A team that lost people (dead, captured, gone home) may hold more found cargo than those left can carry:

@@ -50,6 +50,7 @@ import { zombieToughness } from "./hives.js";
 import { crashSurvey } from "./crashes.js";
 import { opticsFor, OPTICS } from "./optics.js";
 import { carriedAll } from "./comforts.js";
+import { listeners } from "./radio.js";
 
 export const SURVEY = {
   radius: { min: 2, max: 4, def: 3 },
@@ -453,7 +454,7 @@ export function strikeRumour(state, site, p = null) {
 export function surveyDaily(state) {
   if (!state.bases || !state.bases.length) return;
   for (const r of state.rumours || []) if (!r.done && siteKnown(state, r.site)) { r.done = true; r.foundHour = state.hour; }
-  let chance = state.bases.some((b) => b.radio) ? RUMOUR.radio : 0;
+  let chance = state.bases.some((b) => b.radio) || listeners(state).length ? RUMOUR.radio : 0; // a station, or a hand-crank radio listening (radio.js)
   const near = (v) => state.bases.some((b) => state.grid.distance(b.tile, v.tile) <= 3);
   let src = chance ? "radio" : null;
   for (const v of state.visitors || []) {

@@ -374,6 +374,9 @@ export function commandable(state, p) {
   return state.bases.some((b) => b.tile === partyTile(p));
 }
 export const NO_RADIO = "No radio contact: the team follows its plan. New orders only through the cards it raises, or once it is in radio range (a station or a linked relay).";
+// A team carrying a hand-crank radio out of two-way reach (parties.js updateRadio p.radioHear): it listens, that is all.
+export const HAND_RADIO = "Hand-crank radio: hears the station, cannot call in";
+export const HAND_RADIO_TIP = "The team carries a hand-crank radio (a receiver): within 6 tiles beyond your coverage it hears the station's news, but it cannot answer, so it is not in contact: no orders, nothing reported, until it is in radio range or raises a card.";
 
 // ---------- hourly (parties.js playerPartyHour) ----------
 export function fieldHour(state, p) {

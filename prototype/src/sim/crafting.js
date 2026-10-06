@@ -12,6 +12,7 @@ import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "
 import { workFactor } from "./health.js";
 import { hasPerk } from "./skills.js";
 import { craftLock } from "./blueprints.js";
+import { WORM } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -32,6 +33,8 @@ export const CRAFTS = {
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // The worm (worm.js): a sure cure in the gut stage. Strong meds pressed into tablets at a med station.
   dewormer:    { gear: "dewormer",    in: { meds: 3, food: 1 },   hours: 8,  skill: "medicine",  min: 5, needs: "med_station" },
+  // Purification tablets (worm.js): iodine from the meds pressed into a tube of 10 at a med station.
+  puritabs:    { gear: "puritabs",    in: { meds: 1, scrap: 1 },  hours: 4,  skill: "medicine",  min: 3, needs: "med_station" },
   backpack:    { gear: "backpack",    in: { scrap: 3 },           hours: 5,  skill: "mechanics", min: 0 },
   // The stealth kit (stealth.js).
   noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
@@ -83,6 +86,7 @@ export function craftOutputText(key) {
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
+  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} water safe without boiling (a team drinking from infected sources, or a base whose boiler is cold)`); // worm.js
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
@@ -104,6 +108,7 @@ export function craftOutputText(key) {
 }
 export function durUnit(key) {
   const d = GEAR[key];
+  if (d.tabs) return "tablets"; // purification tablets: dur counts the tablets in the tube (worm.js)
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.suppressor) return "shots";

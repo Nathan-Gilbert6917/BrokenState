@@ -64,13 +64,15 @@ export const HC_START = {
   MEDS: { pack: 0.35 }, // a bottle of pills in the bag
   // The prepper (2026-10-06): one of the three (which one: the dice, by seed) kept a go-bag by the door: a duffle bag
   // (data.js, bigger than a hiking pack) with FOOD and WATER (five days for three, pooled with the team's like
-  // everyone's), MEDS, a charcoal water filter in the off hand (it cleans what the team fetches: worm.js), KIT always,
-  // EXTRA_N more from EXTRA, a knife or (GUN chance) a gun from GUNS with AMMO rounds, and the Prepper trait (data.js, a
+  // everyone's), MEDS, a charcoal water filter in the off hand (it cleans what the team fetches: worm.js), KIT always
+  // (the filter, a hand-crank radio that only listens (radio.js) and a tube of purification tablets for the road
+  // (worm.js: the filter stays with whoever holds it, the tablets go in anyone's pocket), a flashlight, bandages,
+  // lighters, batteries), EXTRA_N more from EXTRA, a knife or (GUN chance) a gun from GUNS with AMMO rounds, and the Prepper trait (data.js, a
   // background trait never rolled at birth) when they have fewer than MAX_TRAITS traits; else only the log line says it.
   PREPPER: {
     BAG: "duffle", FOOD: 15, WATER: 15, MEDS: 2, AMMO: 20, GUN: 0.5,
     GUNS: { pistol: 3, revolver: 1.5, huntrifle: 1 },
-    KIT: ["waterfilter", "flashlight", "bandagekit", "lighters", "batteries"],
+    KIT: ["waterfilter", "handradio", "puritabs", "flashlight", "bandagekit", "lighters", "batteries"],
     EXTRA: { survivalbook: 1, stove: 1, snarewire: 1, instcoffee: 1, candles: 0.6, medbook: 0.4, fishrod: 0.6, binoculars: 0.5, soap: 0.6, toiletpaper: 0.5 },
     EXTRA_N: [2, 3],
     MAX_TRAITS: 2,
@@ -458,7 +460,7 @@ export function setupHardcoreStart(state, crew) {
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
   state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car.id, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
-  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? " and a water filter" : ""}.`, "good");
+  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
   const intro = `Calder is falling. ${lines.join(" ")} Between you: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;

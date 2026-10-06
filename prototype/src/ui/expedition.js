@@ -17,7 +17,7 @@ import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { conditionChips, isSick } from "./health.js"; // illness chips with days left and a Treat button (the team's meds)
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
-import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
+import { commandable, planStatus, conditionText, NO_RADIO, HAND_RADIO, HAND_RADIO_TIP } from "../sim/plans.js";
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
@@ -130,7 +130,7 @@ export function renderExpedition(state, ui, p) {
     </div>`;
 
   if (!cmd) {
-    return head + status + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
+    return head + status + (p.radioHear ? `<div class="card small muted"${tip(HAND_RADIO_TIP)}>📻 ${HAND_RADIO}.${p.heard && p.heard.length ? ` Heard: ${p.heard.map((h) => esc(h.text)).join(" · ")}` : " Nothing on the air yet."}</div>` : "") + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 

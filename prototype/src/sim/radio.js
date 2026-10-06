@@ -30,11 +30,13 @@
 // they need) or a request (they need something, paying with their surplus): 15% a day for traders, 10% for a
 // commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out.
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
-import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
 import { count } from "./buildings.js";
 import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
-import { planPath, spawnAiParty } from "./parties.js";
+import { planPath, spawnAiParty, partyTile } from "./parties.js";
+import { packOf } from "./inventory.js";
+import { teamKit } from "./fieldheat.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
@@ -50,6 +52,31 @@ export const GROUP_REACH = 6;
 export const MIL_RADIO_RANGE = 24; // a base with a Military encrypted radio in its armory
 export const hasMilRadio = (b) => !!b.armory && b.armory.some((it) => it && it.key === "milradio");
 export const COOLDOWN = { greet: 3, news: 5, caravan: 4, help: 10, scan: 1, offer: 6 };
+
+// ---------- hand-crank radios (data.js handradio: a receiver, never a transmitter) ----------
+// A base with one in its armory (or on someone there) and a player team carrying one are listeners: they hear what
+// a station at their tile would hear (RADIO_RANGE around them, a group's set GROUP_REACH further), and a station's
+// own traffic HEAR_EXTRA tiles beyond its coverage (a team's handheld cannot answer from there: parties.js
+// updateRadio sets p.radioHear, never p.radioLive). Hearing calls nobody: canRadioGroup, commandable (plans.js) and
+// the coverage (radioNodes) ignore them.
+export const HEAR_EXTRA = GROUP_REACH;
+const isHandRadio = (it) => !!(it && GEAR[it.key] && GEAR[it.key].listen);
+export const hasHandRadioIn = (list) => Array.isArray(list) && list.some(isHandRadio);
+export const baseListens = (state, b) => hasHandRadioIn(b.armory) || atBase(state, b.id).some((s) => isHandRadio(s.gear && s.gear.tool) || hasHandRadioIn(s.pockets) || hasHandRadioIn(packOf(s))); // packOf: the pack's slots
+export const teamListens = (state, p) => !!p && p.owner === "player" && p.kind !== "convoy" && teamKit(state, p).some(isHandRadio);
+// Every hand-crank radio switched on: { tile, base } or { tile, party }.
+export function listeners(state) {
+  const out = [];
+  for (const b of state.bases) if (baseListens(state, b)) out.push({ tile: b.tile, base: b });
+  for (const p of state.parties) if (teamListens(state, p)) out.push({ tile: partyTile(p), party: p });
+  return out;
+}
+// Something to hear with: a station or linked relay on the air, or a hand-crank radio somewhere.
+export const canListen = (state) => hasNetwork(state) || listeners(state).length > 0;
+// A tile within earshot of a hand-crank radio: what a station at the listener's tile would hear (RADIO_RANGE + extra).
+export const heardBy = (state, tile, extra = 0) => listeners(state).some((l) => state.grid.distance(l.tile, tile) <= RADIO_RANGE + extra);
+// A group whose set is heard: callable (canRadioGroup, two-way) or within a hand-crank radio's earshot (one-way).
+export const canHearGroup = (state, f) => !!f && f.alive && (canRadioGroup(state, f) || f.bases.some((b) => heardBy(state, b, GROUP_REACH)));
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -147,19 +174,23 @@ export function tradeBase(state, f) {
 
 // ---------- your calls ----------
 export function radioScan(state) {
-  if (!hasNetwork(state)) return "You need a radio station first.";
+  if (!canListen(state)) return "You need a radio station (or a hand-crank radio) first.";
   if (state.radioScanDay === day(state)) return "You already scanned the airwaves today.";
   state.radioScanDay = day(state);
-  const heard = [];
+  const heard = [], onHand = [];
   for (const f of state.factions) {
-    if (!f.alive || f.known || !canRadioGroup(state, f)) continue;
+    if (!f.alive || f.known) continue;
+    const call = canRadioGroup(state, f);
+    if (!call && !canHearGroup(state, f)) continue; // a hand-crank radio hears them (one way)
     f.known = true;
     f.heard = true;
     const b = f.bases[0];
     if (b != null) state.knowledge[b] = snapshot(state, b);
     heard.push(f.name);
+    if (!call) onHand.push(f.name);
   }
-  const text = heard.length ? `New voices on the radio: ${heard.join(", ")}. Their base is marked on the map.` : "Static. No new voices within reach.";
+  const hand = onHand.length ? ` ${onHand.length === heard.length ? "Heard" : `${onHand.join(", ")} heard`} on a hand-crank radio: within earshot, not within call.` : "";
+  const text = heard.length ? `New voices on the radio: ${heard.join(", ")}. Their base is marked on the map.${hand}` : "Static. No new voices within reach.";
   log(state, text, heard.length ? "good" : "info");
   return text;
 }

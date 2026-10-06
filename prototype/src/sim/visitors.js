@@ -90,7 +90,7 @@ import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { inCoverage, hasNetwork } from "./radio.js";
+import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
 import { newItem } from "./inventory.js";
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
@@ -1798,13 +1798,14 @@ registerCombatHandler("outsiderRaid", onOutsiderRaid);
 // ---------- being seen ----------
 function sight(state, v) {
   const live = state.live.has(v.tile);
-  const heard = !live && inCoverage(state, v.tile);
+  const heard = !live && (inCoverage(state, v.tile) || heardBy(state, v.tile)); // your coverage, or a hand-crank radio's earshot (radio.js)
   v.live = live;
   v.heard = heard;
   if (!live && !heard) return;
   v.seen = { tile: v.tile, hour: state.hour };
   if (!v.known) { v.known = true; announce(state, v, live); }
-  if (v.kind === "merchants" && !v.called && (heard || (live && hasNetwork(state)))) merchantCall(state, v);
+  // Their call needs an answer: only within your own coverage (a hand-crank radio hears them but cannot reply).
+  if (v.kind === "merchants" && !v.called && hasNetwork(state) && ((heard && inCoverage(state, v.tile)) || live)) merchantCall(state, v);
 }
 
 function announce(state, v, live) {

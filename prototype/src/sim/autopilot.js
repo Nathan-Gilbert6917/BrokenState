@@ -26,7 +26,7 @@ import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
-import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
+import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
@@ -83,7 +83,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
-import { WORM, baseWater, baseFilter, baseCooks, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad } from "./worm.js";
+import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -317,8 +317,8 @@ export function autopilotDaily(state) {
 // dealQuote / radioDeal; their caravan brings the goods). Returns true when a deal was made.
 const RADIO_CAP = { scrap: 60, ammo: 200, meds: 15, food: 60, water: 40, fuel: 15, parts: 6 };
 function reserveRadio(state) {
-  if (!hasNetwork(state)) return false;
-  if (state.radioScanDay !== day(state)) radioScan(state);
+  if (canListen(state) && state.radioScanDay !== day(state)) radioScan(state); // a hand-crank radio hears new voices too
+  if (!hasNetwork(state)) return false; // deals need a transmitter
   const h = hub(state);
   const rs = reserveStatus(state, h);
   const n = Math.max(1, mouthsAt(state, h).heads); // everyone fed at the hub (upkeep.js)
@@ -1712,11 +1712,12 @@ function wormWishes(state, base, queued) {
   const w = baseWater(state, base);
   if (w.raw > 0 && !count(base, "boiler") && !queued("boiler")) {
     const filter = baseFilter(state, base);
+    const tabs = baseTabCount(state, base) > 0; // purification tablets in store treat the day's water while they last (worm.js): no rush to save for the boiler, and with wood short they go first
     const woodShort = boilerWoodShort(state, base);
     const sick = residents(state, base.id).some(wormSeen);
     // Little firewood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
     // until someone here has caught it.
-    if (!woodShort || sick) out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (a filter covers it while it lasts)" : ""}`, save: !filter || sick });
+    if (!woodShort || sick) out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (a filter covers it while it lasts)" : tabs ? " (purification tablets cover it while they last)" : ""}`, save: (!filter && !tabs) || sick });
   }
   const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
   const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);

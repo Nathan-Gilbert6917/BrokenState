@@ -48,7 +48,7 @@ import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { spawnAiParty, tileLabel } from "./parties.js";
-import { hasNetwork, canRadioGroup, radioSpeech } from "./radio.js";
+import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
 import { season } from "./weather.js";
 import { gainXp, USE } from "./skills.js";
@@ -152,10 +152,11 @@ export function knownAs(state, f) {
   return `a group to the ${dir}`;
 }
 
-// News on the radio: kept for the Affairs screen, and logged when you have a radio on the air and know one of them.
+// News on the radio: kept for the Affairs screen, and logged when you have a radio on the air (a station, or a
+// hand-crank radio listening: radio.js canListen) and know one of them.
 export function news(state, text, kind = "info", involved = []) {
   const d = ensureDiplo(state);
-  const heard = hasNetwork(state) && involved.some((f) => f && f.known);
+  const heard = canListen(state) && involved.some((f) => f && f.known);
   d.news.unshift({ day: day(state), text, heard });
   if (d.news.length > 60) d.news.length = 60;
   if (heard) log(state, `📻 ${text}`, kind);
