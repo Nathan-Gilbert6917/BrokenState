@@ -53,7 +53,8 @@ import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js
 import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse } from "./upkeep.js";
-import { woodWorkWhy, woodWorkCap, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
+import { woodWorkWhy, woodWorkCap, woodNeed, woodcutterMult, bestChop, baseWoodDay } from "./woodcutting.js";
+import { wormFilterUrgent, WOOD_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -161,9 +162,13 @@ export const WORK_TYPES = {
     },
     // The governor's rule (autopilot.js planRoles 1b): a queued water filter gets its crafter first while the water
     // is running short (thirst kills in days; a hungry base still has its stock).
+    // ...and while the water carries the worm's eggs and nothing boils it (wormFilterUrgent: no boiler, or one the land
+    // cannot feed), as the governor since the worm: without it priorities crafted half the governor's filters.
     emergency(ctx) {
-      if (ctx.used.craft > 0 || !openCrafts(ctx).some((j) => j.recipe === "waterfilter") || !waterRunningShort(ctx.state, ctx.base)) return null;
-      return { slots: 1, why: "the water is running short and a water filter is queued" };
+      if (ctx.used.craft > 0 || !openCrafts(ctx).some((j) => j.recipe === "waterfilter")) return null;
+      if (waterRunningShort(ctx.state, ctx.base)) return { slots: 1, why: "the water is running short and a water filter is queued" };
+      if (wormFilterUrgent(ctx.state, ctx.base)) return { slots: 1, why: "the water carries the worm's eggs, nothing boils it and a water filter is queued" };
+      return null;
     },
     can(ctx, s) {
       const ok = openCrafts(ctx).some((j) => {
@@ -311,6 +316,24 @@ export const WORK_TYPES = {
       const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
       return { cap: woodWorkCap(ctx.state, ctx.base), urg };
     },
+    // The governor's rule (autopilot.js planRoles 4a, planWood): from autumn (the cold within WOOD_AP.autumn days, or
+    // here, or a water boiler burning wood) the woodcutters it takes to have the pile in by the cold go before the
+    // farm and the builders, up to a quarter of the people (one at a base of 3 or fewer; in late summer one). Cut wood
+    // sits at 3 in every default role under Farm at 1-2, so with the plots short of hands nobody cut wood at all and the
+    // hub stocked its winter by woodcutting trips alone (12 a season on worktest's seed 8 to the governor's 3, each
+    // three people away for a day or two: 8% fewer buildings than the governor).
+    emergency(ctx) {
+      if (ctx.base.tier === 0 || (ctx.state.governor && ctx.state.governor.noWood) || woodWorkWhy(ctx.state, ctx.base)) return null; // gov.noWood: the test switch (woodtest.js)
+      const w = woodNeed(ctx.state, ctx.base);
+      if (!w.short || !w.soon || w.need <= 0) return null;
+      const perDay = Math.max(0.1, baseWoodDay(ctx.state, ctx.base));
+      const want = Math.min(woodWorkCap(ctx.state, ctx.base), Math.max(Math.ceil((w.need - w.have) / (perDay * Math.max(WOOD_AP.minDays, w.toCold))), w.boiler > 0 ? Math.ceil(w.boiler / perDay) : 0));
+      const n = ctx.people.length;
+      const critical = n <= 3 ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, Math.ceil(n / 4)) : Math.min(1, want);
+      const slots = critical - ctx.used.wood;
+      return slots > 0 ? { slots, why: `the winter's firewood (${Math.floor(w.have)} of ${w.need}, ${w.toCold} days to the cold)` } : null;
+    },
+    emergencyCan: (ctx, s) => (s.health ?? 100) >= 50 && !s.woundInfected && (ctx.people.length <= 3 || !s.leader),
     rank: (s) => woodcutterMult(s) * 10 * bestChop(s).mult,
   },
 };
@@ -336,7 +359,9 @@ function holdFilters(state, base) {
   const q = craftQueue(base);
   if (!q.some((j) => j.recipe === "waterfilter")) return;
   const auto = !!state.autopilot || !!(base.steward && base.steward.on && base.steward.areas && base.steward.areas.production !== false);
-  const hold = auto && base.construction.length > 0 && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base);
+  // Never while the water carries the worm's eggs and nothing boils it (autopilot.js wormFilterUrgent): that filter is
+  // for safe water, not more of it, and planCrafts put it at the front of the queue for the crafter the rule above spares.
+  const hold = auto && base.construction.length > 0 && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base) && !wormFilterUrgent(state, base);
   for (const j of q) {
     if (j.recipe !== "waterfilter") continue;
     if (hold && !(j.progress > 0)) j.held = state.hour;
