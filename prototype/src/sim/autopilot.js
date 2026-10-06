@@ -2888,7 +2888,9 @@ function launchTrip(state, c, pool, spareHands) {
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
-  if (!est || est.hoursOut > (c.mission === "hive" || c.mission === "assault" || c.mission === "growth" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
+  // No trip to a place with no way home over land (parties.js estimateTrip noWayBack): the team would wait there for
+  // a boat order the governor never gives, and starve; the dead's gear there would draw the next team into the same trap.
+  if (!est || est.noWayBack || est.hoursOut > (c.mission === "hive" || c.mission === "assault" || c.mission === "growth" ? 96 : P.maxHoursOut * (v ? 1.3 : 1) * (c.reach || 1))) return off();
   if (est.hours > 24 && severeSoon(state, 2)) return off(); // a long trip with a storm or blizzard forecast: wait it out
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.

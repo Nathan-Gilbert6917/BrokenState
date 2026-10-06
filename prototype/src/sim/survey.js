@@ -65,7 +65,7 @@ export const SURVEY = {
   weather: { fog: 0.5, blizzard: 0.4, storm: 0.55, rain: 0.85, snow: 0.8 },
   rumour: 3,
   hive: 0.03, hiveRing: 0.08,
-  auto: { spare: 2, home: 0, keep: 3, keepFrac: 0.5, every: 6, everyRumour: 3 }, // the autopilot's surveys (surveyCandidate)
+  auto: { spare: 2, home: 0, keep: 3, keepFrac: 0.5, every: 6, everyRumour: 3, range: 10, rangeStep: 3, rangeEvery: 60, rangeMax: 40 }, // the autopilot's surveys (surveyCandidate): range grows with the months
   finds: 0.1, // + the look-around bonus for tile.hidden finds (markers.js perceive)
 };
 export const RUMOUR = { days: 20, radius: 3, max: 3, reach: 30, radio: 0.05, visitors: 0.15, news: 0.5, groupNews: 0.35 };
@@ -510,7 +510,10 @@ export function surveyCandidate(state, spareHands) {
   const rumour = rumoursOf(state).length > 0;
   if (day(state) - info.lastAuto < (rumour ? SURVEY.auto.everyRumour : SURVEY.auto.every)) return null;
   if (state.parties.some((p) => p.owner === "player" && (p.teamMission || p.mission) === "sweep")) return null; // one survey team at a time
-  const t = surveyTarget(state, h, { range: 10 });
+  // The scouts range farther as the months pass (10 tiles at first, +3 every two months, up to 40): on a big map
+  // the hives keep 30-40 tiles from the hub, and the governor storms only hives it knows of (autopilot.js hiveCandidate).
+  const range = Math.min(SURVEY.auto.rangeMax, SURVEY.auto.range + Math.floor(day(state) / SURVEY.auto.rangeEvery) * SURVEY.auto.rangeStep);
+  const t = surveyTarget(state, h, { range });
   if (!t) return null;
   const hours = t.rumour ? 18 : 24;
   return { mission: "sweep", tile: t.tile, score: t.rumour ? 3.2 : 1.4 + Math.min(1.4, t.unknown / 25), crew: 2, why: `survey: ${t.why}`, sweep: { radius: t.radius, hours }, onSite: hours, survey: true };

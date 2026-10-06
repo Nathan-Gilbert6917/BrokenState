@@ -94,7 +94,11 @@ export function moveCost(state, from, to, vehicle) {
   const t = state.tiles[to];
   const mode = vehicle === true ? "vehicle" : "walk";
   if (t.terrain === "water" && !t.bridge) return Infinity;
-  const onRoad = state.tiles[from].roadLinks.includes(to);
+  const f = state.tiles[from];
+  // On a bridge the only way is along it: off the side is the river. (Without this a team could step off a bridge
+  // onto a bank it can never leave again, since water is only crossed on the road, and starve there waiting for a boat.)
+  if (f.terrain === "water" && f.bridge && !f.roadLinks.includes(to)) return Infinity;
+  const onRoad = f.roadLinks.includes(to);
   if (onRoad) return vehicle === "bike" ? BIKE_ROAD : ROAD_COST[mode];
   return TERRAIN[t.terrain][mode];
 }
@@ -398,7 +402,7 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
     : waterForHours(state, state.hour, [[hours, n]]);
   return {
     path: out.path,
-    hoursOut, hoursBack, hours,
+    hoursOut, hoursBack, hours, noWayBack: !backPlan, // noWayBack: the team could get there but not home (the autopilot never sends one)
     weatherOut: hoursOut - fairOut, weatherBack: hoursBack - fairBack,
     arriveHour: state.hour + hoursOut,
     dryAt: go.dryAt,

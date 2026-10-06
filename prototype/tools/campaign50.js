@@ -6,7 +6,7 @@
 // totals by start and by style, every crash with its stack, runs that look stuck (no events for a long stretch),
 // and writes a JSON report for later reading. Seeds run in parallel worker threads (tools/wintest.js's pool).
 // Usage: node tools/campaign50.js [games=50] [days=1095] [--size huge|120x80|...] [--groups 15-20] [--seed 1000]
-//                                [--styles balanced,aggressive,cautious] [--out path.json] [--no-keep] [--log N]
+//                                [--styles balanced,aggressive,cautious] [--mode both|normal|hardcore] [--out path.json] [--no-keep] [--log N]
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,9 @@ const SEED0 = Number(flag("--seed", 1000));
 const STYLES = flag("--styles", Object.keys(PERSONALITIES).join(",")).split(",").filter((s) => PERSONALITIES[s]);
 const OUT = flag("--out", null);
 const KEEP = !has("--no-keep");
+const MODE = flag("--mode", "both"); // both: the first half normal, the second hardcore; or one start for every game
 const LOGN = Number(flag("--log", 0));
+const GREP = flag("--grep", null); // collect every log line matching this regex (up to 300 a run), printed per run
 const STUCK_DAYS = 60; // a run with no log line of any kind for this long is reported as possibly stuck
 
 // A size argument: a preset key, or WxH for a custom map (worldsize.js customDef: huge is 100x66).
@@ -55,7 +57,8 @@ function deathCause(text) {
 }
 
 function runOne(job) {
-  const { seed, mode, style, groups, size, days, keep, logN } = job;
+  const { seed, mode, style, groups, size, days, keep, logN, grep } = job;
+  const grepRe = grep ? new RegExp(grep, "i") : null, grepLines = [];
   const t0 = Date.now();
   let state, error = null, crashDay = null;
   try {
@@ -80,6 +83,7 @@ function runOne(job) {
       for (let i = 0; i < state.log.length && state.log[i] !== lastTop; i++) {
         const l = state.log[i];
         if (EVENT.test(l.text) && (!l.text.startsWith("🤖") || /\(hive\) to/.test(l.text))) { events.push({ day: day(state), text: l.text.replace(/^🤖 /, "") }); lastEventDay = day(state); }
+        if (grepRe && grepLines.length < 300 && grepRe.test(l.text)) grepLines.push(`d${day(state)} ${l.text}`);
         if (l.kind === "death" && / died /.test(l.text)) { const c = deathCause(l.text); deaths[c] = (deaths[c] || 0) + 1; }
         else if (/walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
       }
@@ -114,6 +118,7 @@ function runOne(job) {
       world: { collapsed: state.factions.filter((f) => !f.alive).length, newGangs: state.stats.newGangs || 0, razedYours: state.stats.razedYours || 0, razedGroups: state.stats.razedGroups || 0 },
     },
     log: logN ? state.log.slice(0, logN).reverse().map((l) => `d${Math.floor(l.hour / 24) + 1} ${l.text}`) : null,
+    grepLines: grepRe ? grepLines : null,
   };
 }
 
@@ -147,11 +152,11 @@ const topDeaths = (d) => Object.entries(d).sort((a, b) => b[1] - a[1]).slice(0, 
 async function main() {
   const jobs = [];
   for (let i = 0; i < GAMES; i++) {
-    const mode = i < Math.ceil(GAMES / 2) ? "normal" : "hardcore";
-    const k = mode === "normal" ? i : i - Math.ceil(GAMES / 2);
+    const mode = MODE === "both" ? (i < Math.ceil(GAMES / 2) ? "normal" : "hardcore") : MODE;
+    const k = MODE !== "both" || mode === "normal" ? i : i - Math.ceil(GAMES / 2);
     const style = STYLES[k % STYLES.length];
     const groups = clampGroups(SIZE, GMIN + (k % (GMAX - GMIN + 1)));
-    jobs.push({ seed: SEED0 + i, mode, style, groups, size: SIZE, days: DAYS, keep: KEEP, logN: LOGN });
+    jobs.push({ seed: SEED0 + i, mode, style, groups, size: SIZE, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP });
   }
   console.log(`${GAMES} games to day ${DAYS}: ${jobs.filter((j) => j.mode === "normal").length} normal + ${jobs.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZE}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}`);
   console.log(`legend: h hive win, a coalition win, l loss, g still going at the cap, X crash`);
@@ -221,6 +226,10 @@ async function main() {
   if (crashes.length) {
     console.log(`\nCRASHES (${crashes.length}):`);
     for (const r of crashes) console.log(`  seed ${r.seed} ${r.mode}/${r.style} groups ${r.groups} day ${r.crashDay ?? r.day}: ${r.error}`);
+  }
+  if (GREP) for (const r of results) if (r.grepLines && r.grepLines.length) {
+    console.log(`\n--- seed ${r.seed} (${r.mode}/${r.style}): ${r.grepLines.length} log lines matching /${GREP}/ ---`);
+    for (const l of r.grepLines) console.log(`  ${l}`);
   }
   if (LOGN) for (const o of ["hives", "alliance", "loss", "going", "crash"]) {
     const r = results.find((x) => x.outcome === o && x.log);
