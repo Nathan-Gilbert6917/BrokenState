@@ -260,7 +260,8 @@ section("Raids: the dead soldiers at a National Guard base, bodies to search");
   check(humanBodies.every((c) => c.uid != null) && !unbodied.length, `every human killed in a raid is a body to search too (any side: ${deadHumans.map((u) => u.side).join(", ") || "none"} killed${unbodied.length ? `; no body: ${unbodied.map((u) => u.name).join(", ")}` : ""})`);
   // A raid search: contents of a dead soldier's body through searchBox (combat.js), searched shows.
   const searchedSol = s1 && s1.b.raid.containers.find((c) => c.zombie && c.ztype === "soldier" && c.contents);
-  check(!searchedSol || (searchedSol.contents && (searchedSol.searched || searchedSol.partial)), "a searched body is marked searched (its picture shows the pockets turned out)");
+  // search.js: the bot may only rummage through it in a hurry (quick: its own marker, "…"; a full search turns up the rest).
+  check(!searchedSol || (searchedSol.contents && (searchedSol.searched || searchedSol.partial || searchedSol.quick)), `a searched body is marked searched, part-taken or rummaged (${searchedSol ? (searchedSol.searched ? "searched: its picture shows the pockets turned out" : searchedSol.quick ? "rummaged" : "something left inside") : "none searched"})`);
 }
 if (!QUICK) {
   section(`Raids at a National Guard base, ${N} each: with the dead soldiers, and the same raids with ordinary dead (hunting rifles, Shooting 6+)`);

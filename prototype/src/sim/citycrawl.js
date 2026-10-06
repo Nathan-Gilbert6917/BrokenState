@@ -968,7 +968,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
         return done(`${s.name} has been holed up here for weeks. They ask to come with you.`, "good");
       }
       // Someone who knows these streets: the next block's places are scouted (looks exact) and a stash.
-      const r = rollArea(rng, rng.pick(["house", "store", "pharmacy"]), rich, scav);
+      const r = rollArea(rng, rng.pick(["house", "store", "house"]), rich, scav); // his flat's cupboards (meds: medfinds.js)
       const text = give(state, p, c, r.sup, r.gear);
       addAlert(c, -5);
       return done(`An old man who will not leave his flat. He shares what he can spare (${text}) and tells you which streets the dead avoid (Alert −5).`, "good");

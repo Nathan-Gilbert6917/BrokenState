@@ -34,7 +34,7 @@ export const SITE_TAGS = {
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
-  clinic: ["medical"], garage: ["garage", "tools"], workshop: ["tools", "industry"], warehouse: ["industry", "shop", "tools"],
+  clinic: ["medical"], nurse: ["medical", "school"], garage: ["garage", "tools"], workshop: ["tools", "industry"], warehouse: ["industry", "shop", "tools"],
   office: ["office", "tech"], armory: ["police", "military", "guns"], barracks: ["military", "camp"], motorpool: ["military", "garage"],
   barn: ["farm", "tools"], lab: ["school", "tech", "medical"], cabin: ["hunt", "outdoor", "home"], hangar: ["travel", "industry", "garage"],
   cellblock: ["prison", "crime"], control: ["tech", "industry"], campsite: ["camp", "outdoor"], wreck: ["travel", "garage"],
@@ -173,6 +173,7 @@ export const AREA_FINDS = {
   kitchen: { p: 0.1, items: { instcoffee: 2, coffee: 0.4, tea: 1, honey: 0.5, chocolate: 1, vodka: 1, wine: 1, candles: 0.5, silverware: 0.3, lighters: 1 } },
   pharmacy: { p: 0.1, items: { razors: 2, soap: 2, candy: 1, toiletpaper: 1, chocolate: 1 } },
   clinic: { p: 0.06, items: { chocolate: 1, candy: 1, soap: 1 } },
+  nurse: { p: 0.05, items: { candy: 1, soap: 1 } },
   garage: { p: 0.08, items: { lighters: 2, flare: 2, batteries: 1 } },
   workshop: { p: 0.05, items: { batteries: 1, toiletpaper: 1 } },
   warehouse: { p: 0.08, items: { toiletpaper: 2, batteries: 2, soap: 1, cigarettes: 1, candles: 1 } },
