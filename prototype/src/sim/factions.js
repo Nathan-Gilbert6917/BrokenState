@@ -51,6 +51,7 @@ import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou } from "./diplomacy.js";
 import { allianceRaidHelp } from "./alliance.js";
+import { overwriteClaims } from "./claims.js"; // claims.js: a base founded takes the claims around it (agent A's hook)
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
 import { worldScale, stateSizeDef } from "./worldsize.js";
@@ -62,6 +63,11 @@ import { raidTier } from "./defences.js";
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
 import { freezeShare } from "./woodcutting.js";
+import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
+import { markThreat } from "./hivetech.js";
+import { reduceHorde } from "./hordes.js";
+import { broodGrowth } from "./eras.js";
+import { canRadioGroup } from "./radio.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -82,6 +88,25 @@ export const RAIDS = {
   RAZE: { raider: 0.22, zealot: 0.12, expansionist: 0.05 }, RAZE_GRUDGE: 0.25, RAZE_RUIN_LOOT: 0.25,
   RAZE_HUB: 0.4, RAZE_EMPTY: 0.5, // your hub, and a base with nobody in it (nothing to make an example of), burn less often
 };
+// The AI groups against the hives (groupHiveWar, every day per group): a group with a hive within RANGE tiles of one
+// of its bases looks at it every EVERY days and sends a war party ODDS of the time by type (zealots always, the
+// military and a fortress often, expansionists sometimes, traders and communes rarely, raiders never), with at least
+// MIN_POP people. The party is SHARE of the group (at least MIN fighters) at the group's arms (strength); it kills
+// FIGHT of the hive's guard per point of its strength (× 0.7–1.3, ÷ the brood's growth over the years, eras.js),
+// burns STORES of the hive's stores per kill, and burns the hive out when the guard left is SMALL or fewer. The group
+// loses people to it: LOSS × the guard's size against the kills, at most LOSS_MAX of the party. A hive you fought
+// within PLAYER_DAYS days (fires, Molotovs, a storm: hives.js notePlayerFight): +GOODWILL with the group, you are
+// fighting the same enemy. You hear of it when the group is in radio reach (radio.js canRadioGroup) or the hive is
+// in sight; a hive destroyed counts like any other (hives.js destroyHive: the hive victory, the records).
+export const GROUP_HIVE = {
+  RANGE: 12, EVERY: [20, 40], MIN_POP: 10,
+  ODDS: { zealot: 1, military: 0.75, fortress: 0.7, expansionist: 0.4, traders: 0.15, commune: 0.15, raider: 0 },
+  SHARE: 0.35, MIN: 3, FIGHT: 2.5, STORES: 0.3, SMALL: 20, LOSS: 0.1, LOSS_MAX: 0.3, GOODWILL: 3, PLAYER_DAYS: 30,
+};
+// With these a fortress of 30 (11 fighters at arms 1.2: strength 13) kills about 33 of a guard a party: a hive with a
+// guard of 100 and no brood chamber is burned out in 3–4 parties (a season) if it cannot rebuild its guard; one in a
+// cluster that rebuilds (a medium horde every time the guard falls under its minimum) holds out until the group has
+// grown to 40–50 or your fires have cut the guard first (then +GOODWILL). tools/grouphivetest.js measures it.
 // A group of GROUP_BREAK people or fewer is broken (collapseFaction): every floor that kept groups above 8 (war raids,
 // peace when a side is worn down) lets them be ground down this far.
 export const GROUP_BREAK = 3;
@@ -304,6 +329,7 @@ export function factionsDaily(state) {
         if (agg) t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6))));
         else t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : 1));
         f.bases.push(t.id);
+        overwriteClaims(state, t.id, 2, f.id, t.loc ? `${knownName(f, "a group")} has taken over ${t.loc.name}` : `${knownName(f, "a group")} has barricaded the bridge at ${tileLabel(state, t.id)}`); // claims.js (agent A's hook: keep it)
         if (state.knowledge[t.id] && state.live.has(t.id)) log(state, t.loc ? `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.` : `${knownName(f, "An unknown group")} has barricaded the bridge at ${tileLabel(state, t.id)}: the road over the river is closed to everyone else.`, "danger");
       }
     }
@@ -344,6 +370,9 @@ export function factionsDaily(state) {
       f.raidCooldown = rng.int(8, 16);
     }
 
+    // The hives near them are a threat to everyone: a war party against one now and then (GROUP_HIVE).
+    groupHiveWar(state, f, today);
+
     // Trade convoys between friendly groups make the world feel alive.
     if ((f.type === "traders" || f.type === "commune" || f.type === "fortress") && rng.chance(0.15)) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
@@ -358,6 +387,63 @@ export function factionsDaily(state) {
   newGangs(state);
   aiScavDaily(state); // aiscav.js: scavenging parties out, sites in their own land stripped
   clearStaleAlerts(state);
+}
+
+// ---------- the groups against the hives (GROUP_HIVE) ----------
+// The hive a group would fight: the nearest within GROUP_HIVE.RANGE of any of its bases (null: none).
+export function groupHiveTarget(state, f) {
+  const g = state.grid;
+  let best = null, bd = Infinity;
+  for (const hv of state.hives || []) {
+    for (const b of f.bases) { const d = g.distance(b, hv.tile); if (d <= GROUP_HIVE.RANGE && (d < bd || (d === bd && hv.id < best.id))) { best = hv; bd = d; } }
+  }
+  return best;
+}
+// The war party a group sends: its fighters and their strength (by the group's arms, eras.js gear).
+export const groupHiveParty = (f) => { const fighters = Math.max(GROUP_HIVE.MIN, Math.round(f.pop * GROUP_HIVE.SHARE)); return { fighters, power: fighters * FACTION_TYPES[f.type].arms * (f.gear || 1) }; };
+
+// One group's day against the hives: on its day (f.hiveDay; EVERY days apart), with a hive in reach and the people
+// for it, a war party goes ODDS of the time by type. Resolved by the numbers the same day (see GROUP_HIVE); the
+// group remembers its fights (f.hiveFights, f.hiveKills). Returns what happened: null (nothing), "driven" or "burned".
+export function groupHiveWar(state, f, today = day(state)) {
+  const rng = state.rng;
+  ensureHives(state);
+  if (f.hcNoGrow) return null; // hardcore's besieged military fights its hive its own way (hardcore-groups.js culls)
+  if (f.hiveDay == null) f.hiveDay = today + rng.int(GROUP_HIVE.EVERY[0], GROUP_HIVE.EVERY[1]);
+  if (today < f.hiveDay) return null;
+  const hive = groupHiveTarget(state, f);
+  if (!hive) { f.hiveDay = today + GROUP_HIVE.EVERY[0]; return null; } // nothing in reach: look again in a while
+  f.hiveDay = today + rng.int(GROUP_HIVE.EVERY[0], GROUP_HIVE.EVERY[1]);
+  const odds = GROUP_HIVE.ODDS[f.type] ?? 0;
+  if (f.pop < GROUP_HIVE.MIN_POP || !odds || !rng.chance(odds)) return null;
+  const { fighters, power } = groupHiveParty(f);
+  const guard = hiveGuard(state, hive);
+  const size = guard ? guard.size : 0;
+  const kill = Math.round((power * GROUP_HIVE.FIGHT * rng.range(0.7, 1.3)) / broodGrowth(state));
+  const cut = Math.min(size, kill);
+  if (guard && cut > 0) reduceHorde(state, guard, cut);
+  hive.res = Math.max(0, hive.res - Math.round(cut * GROUP_HIVE.STORES));
+  markThreat(state, hive); // hivetech.js: it builds for defence
+  const dead = Math.min(fighters, Math.round(fighters * Math.min(GROUP_HIVE.LOSS_MAX, (GROUP_HIVE.LOSS * size) / Math.max(1, kill)) * rng.range(0.5, 1.5)));
+  f.pop = Math.max(0, f.pop - dead);
+  f.hiveFights = (f.hiveFights || 0) + 1;
+  f.hiveKills = (f.hiveKills || 0) + cut;
+  const stats = state.hiveInfo.stats;
+  stats.groupStorms = (stats.groupStorms || 0) + 1;
+  // Fighting the hive you fought lately: they think better of you.
+  if (hive.playerDay != null && today - hive.playerDay <= GROUP_HIVE.PLAYER_DAYS) changeGoodwill(state, f, GROUP_HIVE.GOODWILL, "fighting the same hive as you");
+  const burned = size - cut <= GROUP_HIVE.SMALL;
+  const heard = state.live.has(hive.tile) || canRadioGroup(state, f); // in sight, or the group within radio reach
+  const who = knownName(f, "An unknown group");
+  if (burned) {
+    f.hivesBurned = (f.hivesBurned || 0) + 1;
+    stats.groupKills = (stats.groupKills || 0) + 1;
+    destroyHive(state, hive, `by ${knownName(f, "another group")}'s fighters`, { quiet: true }); // the hive victory and the records as for any hive
+    if (heard) log(state, `${who}'s fighters stormed ${hive.name} and burned it out${dead ? `, losing ${dead} of their own` : ""}. ${hivesLeftText(state)}`, "good");
+    return "burned";
+  }
+  if (heard) log(state, `${who}'s fighters stormed ${hive.name} and were driven off${cut ? ` after cutting down about ${cut} of its brood` : ""}${dead ? ` (${dead} of them killed)` : ""}.`, "info");
+  return "driven";
 }
 
 // The state is never empty of predators for long: with fewer than 2 hostile aggressive groups (from day 60), a gang

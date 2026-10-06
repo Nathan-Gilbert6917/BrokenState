@@ -107,7 +107,8 @@ export function wanderDensity(state, tileId) {
 export function modeFactor(state, d = day(state)) {
   return isHardcore(state) ? 1 + W.HC_EARLY * Math.exp(-(d - 1) / W.HC_FADE) : 1;
 }
-export const roadChance = (state, tileId, night = isNight(state)) => Math.min(W.ROAD_MAX, W.ROAD * wanderDensity(state, tileId) * modeFactor(state)) * (night ? W.NIGHT : 1);
+// factor: the mode's (default); 1 for the chance a normal game would have on the tile (the tests' baseline).
+export const roadChance = (state, tileId, night = isNight(state), factor = modeFactor(state)) => Math.min(W.ROAD_MAX, W.ROAD * wanderDensity(state, tileId) * factor) * (night ? W.NIGHT : 1);
 export const siteChance = (state, tileId) => Math.min(W.SITE_MAX, W.SITE * wanderDensity(state, tileId) * modeFactor(state));
 
 // The groups that send squads out: any living military group with a base (hardcore: the original one until its base
@@ -193,6 +194,10 @@ export function rollWanderer(state, p, tileId) {
   if (state.wanderers) bump(state, "road-tiles"); // counted once someone has been met (no state at all before that)
   if (p.lastWander != null && state.hour - p.lastWander < W.COOLDOWN) return null;
   const c = roadChance(state, tileId);
+  // The stats (wanderertest.js): the meetings expected on the tiles rolled, with the mode's factor and at ×1 (a normal
+  // game's chance on the same tiles, by night and day), so a sample's meetings per tile can be read against the ground
+  // walked and the factor's effect in the game measured apart from the dice and the terrain.
+  if (state.wanderers) { bump(state, "road-expect", c); bump(state, "road-expect1", roadChance(state, tileId, isNight(state), 1)); }
   if (c <= 0 || hash01(state.seed, "wander-road", teamKey(state, p), tileId, state.hour) >= c) return null;
   const rng = rngFor(state, "wander-road-who", teamKey(state, p), tileId, state.hour);
   const pick = pickKind(state, tileId, rng);

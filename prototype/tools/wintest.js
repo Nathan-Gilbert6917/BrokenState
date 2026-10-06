@@ -1,7 +1,7 @@
 // Win conditions under the autopilot: plays long campaigns (default 3 years) on many seeds per style and counts how
 // each one ends: hive victory (every hive destroyed, none being built: hives.js hivesSecured), coalition victory
-// (alliance.js allianceVictory: over half the land and every group still standing a member, hives or not; groups
-// broken by conquest.js no longer count; also after "Keep playing" on a hive victory: --keep), loss (everyone dead
+// (alliance.js allianceVictory: at least one member and over half the land, hives or not; groups outside do not
+// block it any more; also after "Keep playing" on a hive victory: --keep), loss (everyone dead
 // or gone) or still going. Per style it also counts the conquest (bases taken, groups broken) and the bases the
 // groups took from you (and hubs lost, retreats). For every victory it
 // prints the day and a short timeline (hives destroyed by day, coalition members and land, population); for the
@@ -30,7 +30,7 @@ import { HORDE_SIZES } from "../src/sim/hordes.js";
 import { ERAS } from "../src/sim/eras.js";
 
 // --tune: try a balance number for this run only (nothing in the game files changes), e.g.
-// --tune HIVE.SITE_DAYS=60:120,HIVE.BOSS_DAY=240. Tables: HIVE (hiveconst.js), DEFENCE (defences.js), ALLIANCE
+// --tune HIVE.NEW_CAP=3:5,HIVE.BOSS_DAY=240. Tables: HIVE (hiveconst.js), DEFENCE (defences.js), ALLIANCE
 // (alliance.js), HORDE_SIZES (hordes.js, e.g. HORDE_SIZES.large.max=150), ERAS (eras.js, e.g. ERAS.WIN_FROM_YEAR=5). a:b is a pair.
 const TABLES = { HIVE, DEFENCE, ALLIANCE, HORDE_SIZES, RAIDS, ERAS };
 function applyTune(spec) {
@@ -103,6 +103,7 @@ function runOne({ seed, style, days, keep, logN, tune }) {
     end: { pop: alive(state).length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building, sites: gp.hives.sites,
       members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 1000) / 10, outside, outposts: state.bases.filter((b) => b.type === "outpost").length,
       hiveTrips: events.filter((x) => /\(hive\) to/.test(x.text)).length, built: hiveStats(state).built, reason: state.victoryReason || null, screen: !!(state.gameOver && state.victory),
+      blocks: gp.alliance.blocks, // alliance.js: what blocks the coalition's win today (no member, land short)
       conquest: { ...ensureConquest(state).stats },
       // The world's groups: collapsed (all causes), new gangs from the border, raider bands that settled, bases razed
       // (yours / between groups).
@@ -286,6 +287,9 @@ async function main() {
       for (const r of going) for (const o of r.end.outside) { const k = o.replace(/^[^:]*: /, "").replace(/\d+/g, "#").replace(/\b[A-Z][\w']+( [A-Z][\w']+)*\b/g, "X"); why[k] = (why[k] || 0) + 1; }
       const top = Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 6);
       if (top.length) console.log(`    groups outside the coalition, why: ${top.map(([k, v]) => `${v}× "${k}"`).join("; ")}`);
+      const bl = {};
+      for (const r of going) for (const b of r.end.blocks || []) { const k = b.replace(/\d+/g, "#"); bl[k] = (bl[k] || 0) + 1; }
+      if (Object.keys(bl).length) console.log(`    what blocks the coalition's win: ${Object.entries(bl).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v}× ${k}`).join("; ")}`);
     }
     const cq = (k) => (list.reduce((a, r) => a + ((r.end && r.end.conquest && r.end.conquest[k]) || 0), 0) / Math.max(1, list.length)).toFixed(1);
     const lostRuns = list.filter((r) => r.end && r.end.conquest && r.end.conquest.basesLost > 0).length;

@@ -16,10 +16,15 @@ import { newId, log, day, atBase, skill } from "./world.js";
 import { count } from "./buildings.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
 
+// The hardcore start's cars (hardcore-start.js ARCHETYPES) added the SUV, the Hummer and the work van; anything that
+// draws or prices a car by type takes them as a truck unless it says otherwise (mapsprites.js, crossing.js, fieldheat.js).
 export const VEHICLE_TYPES = {
-  truck: { name: "Pickup truck", tank: 30, payload: 650, motor: true },
-  sedan: { name: "Old sedan",    tank: 18, payload: 400, motor: true },
-  bike:  { name: "Bicycles",     tank: 0,  rack: 15, motor: false },
+  truck:  { name: "Pickup truck", tank: 30, payload: 650, motor: true },
+  sedan:  { name: "Old sedan",    tank: 18, payload: 400, motor: true },
+  suv:    { name: "SUV",          tank: 24, payload: 520, motor: true },
+  hummer: { name: "Hummer",       tank: 40, payload: 700, motor: true },
+  van:    { name: "Work van",     tank: 26, payload: 800, motor: true },
+  bike:   { name: "Bicycles",     tank: 0,  rack: 15, motor: false },
 };
 export const RIDER_KG = 80;        // a person in a car, before what they wear
 export const OVERLOAD_MAX = 1.25;  // a car can be loaded to 125% of its payload

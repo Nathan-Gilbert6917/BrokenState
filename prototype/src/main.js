@@ -31,6 +31,7 @@ import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
+import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -1304,7 +1305,7 @@ canvas.addEventListener("contextmenu", (e) => {
   menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) +
+    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) +
     (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   menu.style.left = `${e.clientX - r.left}px`;
   menu.style.top = `${e.clientY - r.top}px`;
@@ -1332,6 +1333,36 @@ function ctxLand(teams, id) {
     woodAbundance(state, id) >= 0.1 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="wood">${partyTile(p) === id ? "Cut wood here" : "Go and cut wood here"}, team (${p.members.length}) · 8h</button>` : "", // sim/woodcutting.js
   ]).join("");
 }
+// Right-click a land tile with a team you are in touch with: go there and claim it (sim/claims.js: a marker post, the
+// land counts for the coalition), or dig a well on a claim of yours next to one of your bases.
+function ctxClaim(teams, id) {
+  const t = state.tiles[id];
+  if (!t || t.terrain === "water" || !state.bases.length) return "";
+  const cw = canClaim(state, id), ww = wellProblem(state, null, id);
+  if (cw && ww) return "";
+  return teams.filter((p) => p.kind !== "convoy").flatMap((p) => [
+    !cw ? `<button data-action="ctxclaim" data-id="${p.id}" data-tile="${id}" data-type="claim" data-tip="${esc(`Raise a marker post (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 50% the alliance victory needs.`)}">${partyTile(p) === id ? "Claim this tile" : "Go and claim this tile"}, team (${p.members.length}) · ${CLAIM.HOURS}h</button>` : "",
+    !ww ? `<button data-action="ctxclaim" data-id="${p.id}" data-tile="${id}" data-type="well" data-tip="${esc(`Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.`)}">${partyTile(p) === id ? "Dig a well here" : "Go and dig a well here"}, team (${p.members.length}) · ${CLAIM.WELL_HOURS}h</button>` : "",
+  ]).join("");
+}
+actions.ctxclaim = (d) => {
+  const p = partyById(d.id);
+  if (p) {
+    const tile = Number(d.tile);
+    const job = { type: d.type === "well" ? "well" : "claim" };
+    let msg;
+    if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
+    else {
+      p.orders = [];
+      msg = orderMove(state, p, tile);
+      if (p.phase === "out" && p.dest === tile) msg = `${msg} ${queueOrder(state, p, { ...job, at: tile })}`;
+    }
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === p.id) ui.xpMsg = msg;
+  }
+  endMoveMode();
+  hideCtx();
+};
 actions.ctxhunt = (d) => {
   const p = partyById(d.id);
   if (p) {
@@ -1378,11 +1409,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }

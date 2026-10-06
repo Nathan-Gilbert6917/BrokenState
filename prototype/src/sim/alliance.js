@@ -27,14 +27,15 @@
 // over land or water (side with one: +6 with it, −8 with the other and −10 between them; or a compromise: a Speech
 // check of 25% + 4% a point + goodwill / 400; it works: +3 with both and +5 between them, it fails: −3 with both).
 //
-// Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members)
-// controls more than half of the state's land and every group still alive is a member, and keeps that up for a
-// year (the Calder Accord, eras.js: not before year 8, and the coalition must have stood 12 seasons). Groups you broke (conquest.js:
-// take their last base) or that collapsed do not count; with none left standing, you alone are the coalition.
+// Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members) has at
+// least one member and controls more than half of the state's land (LAND_NEEDED), and keeps that up for a year (the
+// Calder Accord, eras.js: not before year 8, and the coalition must have stood 12 seasons). Groups outside the
+// coalition do not block it any more: conquest counts (break them, take their land, or leave them be).
 // Land: land tiles within reach of a base: your hub and every base you took from another group STRONGHOLD_RANGE (9),
 // an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale
 // with the square root of the area (Small 7 / 5, Large 11 / 9, Huge 14 / 11), so it takes about as many bases on any
-// map. world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
+// map; plus every tile your teams claimed (claims.js: a marker post on a tile bordering land you hold).
+// world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
@@ -49,6 +50,7 @@ import { gainXp, USE } from "./skills.js";
 import { diploRng, relation, changeRelation, warsOf, enemyIn, warBetween, autoWarTrade } from "./diplomacy.js";
 import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDaily } from "./jobs.js";
 import { eraProgress, ERAS, isLate } from "./eras.js";
+import { playerClaims, claimedLand } from "./claims.js";
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -358,23 +360,36 @@ export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" ||
 export function coalitionMask(state) {
   const mark = new Uint8Array(state.tiles.length);
   for (const c of landCentres(state)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
+  for (const id of playerClaims(state)) mark[id] = 1; // claims.js: tiles your teams claimed
   return mark;
 }
 export function landCentres(state) {
   return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...allianceMembers(state).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
 }
-// Land the coalition controls: land tiles within reach of your bases or a member's base.
+// Land the coalition controls: land tiles within reach of your bases or a member's base, plus your claims
+// (claims.js). `claims`: how many land tiles the claims add that no base's reach covered; `claimed`: all of them.
 export function controlledLand(state) {
+  // Cached for the day: checkGameOver asks every hour and the mark pass over every tile cost 9% of a huge map's
+  // hour. A new base, claim or member (or the next day) recomputes it.
+  const key = `${Math.floor(state.hour / 24)}|${state.bases.length}|${state.bases.reduce((a, b) => a + b.tile, 0)}|${playerClaims(state).length}|${allianceMembers(state).reduce((a, f) => a + f.bases.length * 7919 + f.id, 0)}`;
+  const c = state.landCache;
+  if (c && c.key === key) return c.res;
+  const res = controlledLandNow(state);
+  Object.defineProperty(state, "landCache", { value: { key, res }, writable: true, configurable: true, enumerable: false }); // not saved
+  return res;
+}
+function controlledLandNow(state) {
   const g = state.grid;
-  let land = 0, held = 0;
+  let land = 0, held = 0, claims = 0;
   const mark = new Uint8Array(state.tiles.length);
   for (const c of landCentres(state)) for (const id of g.within(c.tile, c.r)) mark[id] = 1;
+  for (const id of playerClaims(state)) if (!mark[id] && state.tiles[id] && state.tiles[id].terrain !== "water") { mark[id] = 1; claims++; }
   for (const t of state.tiles) {
     if (t.terrain === "water") continue;
     land++;
     if (mark[t.id]) held++;
   }
-  return { held, land, pct: land ? held / land : 0 };
+  return { held, land, pct: land ? held / land : 0, claims, claimed: claimedLand(state) };
 }
 // Progress toward both victories, for the Goals panel and the tools. alliance.outsiders: each group still alive and
 // outside the coalition with what to do about it: "invite" (it could join now), "court" (not yet: why), or
@@ -390,6 +405,11 @@ export function goalsProgress(state) {
   const hivesOk = hivesSecured(state);
   const landOk = land.pct > ALLIANCE.LAND_NEEDED;
   const allIn = groups.every((f) => isMember(state, f));
+  const membersOk = ms.length > 0;
+  // What blocks the coalition's victory today (wintest's "what blocks the win", the Goals panel).
+  const blocks = [];
+  if (!membersOk) blocks.push("no member yet (invite a group)");
+  if (!landOk) blocks.push(`land ${Math.round(land.pct * 100)}% of the ${Math.round(ALLIANCE.LAND_NEEDED * 100)}%+ needed (bases, members, claims)`);
   const outsiders = groups.filter((f) => !isMember(state, f)).map((f) => {
     const why = inviteProblem(state, f);
     const hostile = attitude(f) === "Hostile";
@@ -400,22 +420,22 @@ export function goalsProgress(state) {
   return {
     era: eraProgress(state), // eras.js: the year, the era, the Accord's and the containment's clocks
     hives: { destroyed: st.destroyed || 0, left: hivesLeft, building, sites, ok: hivesOk },
-    alliance: { land, landOk, members: ms.length, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk,
-      infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && allIn },
+    alliance: { land, landOk, members: ms.length, membersOk, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk, blocks,
+      infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && membersOk },
   };
 }
-// The Calder Accord's daily test (eras.js, world.js): over half the land, every group still standing a member, except
-// a gang that came from beyond the border (or a raider band that dug in: factions.js makeGang, f.arrived) less than
-// ERAS.ACCORD.GRACE days ago: the coalition has that long to break it or win it over before it counts against the Accord.
+// The Calder Accord's daily test (eras.js, world.js): the same as allianceVictory (at least one member, over half
+// the land); the groups outside do not count against it any more. newcomer: kept for the tools (a gang from beyond
+// the border less than ERAS.ACCORD.GRACE days in the state).
 export const newcomer = (state, f) => f.arrived != null && day(state) - f.arrived < ERAS.ACCORD.GRACE;
 export function accordHolds(state) {
-  if (!alive(state).length || !state.bases.length) return false;
-  if (!state.factions.every((f) => !f.alive || isMember(state, f) || newcomer(state, f))) return false;
-  return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
+  return allianceVictory(state);
 }
+// The coalition's victory today: you are alive with a base, at least one group is a member, and the coalition holds
+// more than LAND_NEEDED of the land (bases' reach plus claims). Groups outside do not block it: conquest counts.
 export function allianceVictory(state) {
   if (!alive(state).length || !state.bases.length) return false;
-  if (!state.factions.every((f) => !f.alive || isMember(state, f))) return false; // cheap check first
+  if (!allianceMembers(state).length) return false; // cheap check first
   return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
 }
 

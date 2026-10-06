@@ -88,3 +88,31 @@ Testing (make each aspect measurable):
    whole squads), so building and crawl balance can be measured without hand play.
 7. Keep the three census JSON reports (`campaign50-report*.json`) under tools/census/ with the commit they ran on,
    so the next change can be compared against them.
+
+## Pass 4 (commit 5dec01e, after docs/coalition-war-plan.md landed)
+
+| pass | commit | fell | coalition wins | thirst | hunger | left | horde | avg end pop | hives left (avg) | hives destroyed (sum) | coalition land, best | crashes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4 | 5dec01e | 4 (4 hardcore) | **6** (4 normal, 2 hardcore; day 771–983; all Aggressive) | 31 | 22 | 216 | 944 | 32 | 17.5 (was 25) | 78 (was 7–22) | 64.2% | 0 |
+
+Report: `tools/census/2026-10-06-5dec01e.json`. Same 50 seeds as passes 1–3.
+
+- **The coalition win is reachable now**: six wins, every one by the Aggressive style, between day 771 and 983, with
+  1–5 members and 53–64% of the land (bases, members, claims). Balanced and Cautious hold 20–40% at the cap: they do
+  not expand or claim enough. Blockers at the cap, summed over 50 runs: out of radio reach 215 (was 371 at month 12),
+  not met 68, goodwill 69, hostile 49; groups outside do not block the win any more, they only hold land.
+- **Hives are fought but not yet beaten**: 289 fire trips were launched (the campaign at work), hives left fell from
+  ~25 to 17.5 a map and 78 were destroyed in total (groups and the player's fires), but no storm succeeded: of the
+  mornings the governor looked at its target, 18,537 were rejected on the odds, 3,056 for too few people at home,
+  1,443 because no hive was known. The guard rebuilds between fire trips (see campaigntest's note: 97 → 119
+  between trips on seed 1), so a 150-guard hive takes a dozen trips. Levers: the hive's guard regrowth and
+  `hiveRest`, or more fires per trip.
+- **Thirst is solved for practical purposes**: 31 deaths (225 → 105 → 31), 14 in summer and 15 in winter (frozen
+  stores), only 3 in hardcore. Hunger 22.
+- **Hardcore's early losses remain**: 4 of 25 fell, three of them before day 125 (hunger, people walking away) and
+  one at day 310. The prepper bag did not change that: the three-person first hub still cannot keep two trips and
+  a home guard going.
+- **Performance**: the pass took 28 minutes against 10 before (claims, group war parties, the campaign). Profiled
+  afterwards: the coalition land count ran every hour inside the game-over check (9%) and the nearest-hive distance
+  was recomputed per tile per hour (5%); both now cached per day (`landCache`, `hiveDistCache`, not saved). A
+  400-day huge game: 128 s → 32 s.

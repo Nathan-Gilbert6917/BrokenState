@@ -34,7 +34,7 @@ export function swatch(k) {
 // here shows its own description from sim/markers.js.
 const LAYER_HELP = {
   pois: "Towns and sites with their names. A site is a building for its type on a plate colored by its zone; the more faded, the less loot was left when you last saw it. Skulls under a name show its danger when zoomed in; small sites become dots when zoomed out. The ruins of a razed base (yours or a group's) stand in its place, named \"Ruins of …\".",
-  territory: "Land held by you and by the groups you know, tinted in their color. Their bases are compounds in that color.",
+  territory: "Land held by you and by the groups you know, tinted in their color. Their bases are compounds in that color. Tiles your teams claimed (Claim this tile) are a lighter blue; hover one for Claimed by you (day N) and its well.",
   teams: "Your teams (! waiting for orders, ? an estimated position out of radio contact), plus the raiders, convoys, caravans and scavengers of other groups you can see. Their parties look like the group: bikers, humvees, robed zealots, caravans; scavengers carry a stuffed sack.",
   hordes: "Hordes you see now (size on the badge), faded \"N?\" badges where one was last seen, known hives with their dark-red land and red-skull ring, and hives being built.",
   deaths: "Graves where your people died, with what was left on them.",
@@ -62,7 +62,7 @@ const LEGEND = [
   [`<i class="sw" style="background:#7a3a3a"></i>`, "Hive growths", "Small structures of flesh and bone beside a hive: a bubbling pit, amber egg sacs, a field of bones, a warren with red eyes, a grey brute in a pit, green acid bladders, a shrieking tower, a burrow with grasping hands, an arch of ribs (the Wallbreaker den), a glowing magenta vat. Faint while growing, grey once their hive is gone. Burn the growth to take it away from the hive."],
   [`<i class="sw" style="background:#c8ccd2">✝</i>`, "Markers", "On a ring: a grave = death site, your vehicle (red can = needs fuel, smoke = damaged), a wreck, a cache, a camp. Dots when zoomed out."],
   [`<i class="sw" style="background:#c8ccd2">▲</i>`, "Siege", "Tents and a banner by a base."],
-  [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles: a station reaches 8 tiles, a linked relay 6. Red = a relay not linked or off the air."],
+  [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles: a station reaches 12 tiles (24 with a Military encrypted radio in the base's armory), a linked relay 6. Red = a relay not linked or off the air."],
   [`<i class="sw" style="background:#ffd166">!</i>`, "Waiting", "A team waiting for orders."],
   [`<i class="sw" style="background:#c8ccd2">?</i>`, "Estimated", "A team's estimated position (out of radio contact)."],
   [`<i class="sw" style="background:linear-gradient(90deg,#d8dee8 0 33%,#7b8494 33% 66%,#1b1e23 66%)"></i>`, "Bright, dim, dark", "Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel."],

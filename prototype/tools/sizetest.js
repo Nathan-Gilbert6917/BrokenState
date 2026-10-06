@@ -157,17 +157,20 @@ for (const ctx of CONTEXTS) {
   for (const u of b.units) {
     if (u.dead || u.off || u.fled || u.left) continue;
     if (u.x < 0 || u.y < 0 || u.x >= b.w || u.y >= b.h) { bad.push(`${u.name} off the map`); continue; }
-    const c = b.cells[u.y * b.w + u.x];
-    if (!CELL[c.k].walk) bad.push(`${u.name} on ${c.k}`);
-    if (seen.has(u.x + u.y * b.w)) bad.push(`${u.name} on someone`);
-    seen.add(u.x + u.y * b.w);
-    if (u.side === "player" && !b.reach[u.y * b.w + u.x]) bad.push(`${u.name} cut off`);
+    // A unit upstairs in a building (u.f; combat.js setFloor) stands on its own floor's grid, not the ground floor's.
+    const f = u.f || 0, grid = b.floors ? b.floors[f].cells : b.cells;
+    const c = grid[u.y * b.w + u.x];
+    if (!CELL[c.k].walk) bad.push(`${u.name} on ${c.k}${f ? ` (floor ${f})` : ""}`);
+    if (seen.has(`${f}:${u.x + u.y * b.w}`)) bad.push(`${u.name} on someone`);
+    seen.add(`${f}:${u.x + u.y * b.w}`);
+    if (u.side === "player" && !f && !b.reach[u.y * b.w + u.x]) bad.push(`${u.name} cut off`);
   }
   // Every enemy can be got at: something next to it is reachable (the dead in a hive's openings, guards indoors).
   const near = (u) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].some(([dx, dy]) => { const x = u.x + dx, y = u.y + dy; return x >= 0 && y >= 0 && x < b.w && y < b.h && b.reach[y * b.w + x]; });
   // (One of the dead shut in a locked room of a building is meant to be: buildingmaps.js LOCKED_DEAD.)
   const lockedIn = (u) => !!b.raid && (b.raid.areas || []).some((a) => a.locked && u.x >= a.x0 && u.x < a.x0 + a.w && u.y >= a.y0 && u.y < a.y0 + a.h);
-  const unreachable = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss && !near(u) && !lockedIn(u)).length;
+  // (b.reach is the ground floor's; someone upstairs is reached by the stairs: interiortest / storeytest cover that.)
+  const unreachable = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss && !(u.f || 0) && !near(u) && !lockedIn(u)).length;
   let where = "";
   if (!b.raid && !b.tier && !b.setup.ambush) {
     const pc = pcOf(b), E = b.units.filter((u) => u.side === "enemy" && active(u) && !u.boss), P = b.units.filter((u) => u.side === "player");
