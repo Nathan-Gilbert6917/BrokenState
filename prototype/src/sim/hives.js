@@ -33,15 +33,14 @@ import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { tacticalStyleFor } from "./breakoff.js";
-import { HIVE, BOSS_NAMES, GROWTHS } from "./hiveconst.js";
+import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
 import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay } from "./eras.js";
 import { worldScale } from "./worldsize.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
 import {
-  growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths,
+  growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths, assaultTypes, hiveMods,
   savingFor, growthsOf, growthCounts,
 } from "./hivetech.js"; // the hives' tech tree: growths around a hive and the special dead they breed
-import { battleTypes } from "./zombietypes.js";
 
 // Bigger maps (worldsize.js): border hordes and new build sites come as often per tile of land as on a Normal map
 // (days between them divided by the area), with more build sites at a time. A Normal map is untouched.
@@ -144,7 +143,7 @@ function buy(state, hive, kind, o) {
   const stats = state.hiveInfo.stats;
   stats.hordes++;
   stats.zombies += size;
-  const { mix, elite } = hiveMix(state, hive); // the special dead its growths breed (hivetech.js)
+  const { mix, elite } = hiveMix(state, hive, o.role === "guard" ? "guard" : kind); // the special dead its growths breed, by the horde's size (hivetech.js)
   return makeHorde(state, { size, hive: hive.id, mix, elite, ...o });
 }
 const biggest = (res) => (res >= HORDE_SIZES.large.cost ? "large" : res >= HORDE_SIZES.medium.cost ? "medium" : "small");
@@ -468,11 +467,15 @@ const guardOf = (state, hive) => state.hordes.find((h) => h.role === "guard" && 
 export const hiveGuard = guardOf;
 
 // The fight inside a hive: the guard's dead (tougher on red-skull ground), the special dead among them (its
-// growths, hivetech.js) and the Broodmother.
+// growths, hivetech.js: at least one of every kind it breeds, assaultTypes) and the Broodmother.
 export function hiveForce(state, hive) {
   const guard = guardOf(state, hive);
   const f = broodForce(guard ? guard.size : 0, state);
-  if (guard && guard.mix) { f.mix = guard.mix; f.types = battleTypes(guard.mix, f.count); f.elite = !!guard.elite; }
+  f.mix = (guard && guard.mix) || null;
+  f.elite = !!(guard && guard.elite) || hiveMods(state, hive).elite;
+  const a = assaultTypes(state, hive, f.count, f.mix);
+  f.count = a.count;
+  f.types = a.types;
   return f;
 }
 // The brood a hive with a guard of this size fields (also the autopilot's estimate from a guard it has seen).
@@ -591,7 +594,7 @@ export function molotovsOf(state, p) {
 // The growths around the hive (hivetech.js) and the special dead in its brood, for the hive card.
 function growthsText(state, hive, force) {
   const grown = growthsOf(state, hive, false).map((g) => `${GROWTHS[g.kind].name.toLowerCase()}${state.hour < g.ready ? " (still growing)" : ""}`);
-  const kinds = force.types ? Object.entries(force.types).map(([k, n]) => `${n} ${k}${n > 1 ? "s" : ""}`).join(", ") : "";
+  const kinds = force.types ? Object.entries(force.types).map(([k, n]) => `${n} ${(ZTYPES[k] ? ZTYPES[k].name : k).toLowerCase()}${n > 1 ? "s" : ""}`).join(", ") : "";
   return (grown.length ? ` Around it the dead have grown: ${grown.join(", ")} (burn them with the Burn the growth mission).` : "") +
     (kinds ? ` Among the brood: ${kinds}${force.elite ? ", elite" : ""}.` : "");
 }
@@ -609,7 +612,7 @@ export function assaultHive(state, p, hive) {
   if (allies.fighters) log(state, `Fighters from ${allies.names.join(", ")} storm ${hive.name} beside your squad.`, "good");
   return fightNow(state, {
     tile: hive.tile, partyId: p.id,
-    enemy: { kind: "zombies", count, power: force.power, types: battleTypes(force.mix, count), elite: !!force.elite, name: `the brood of ${hive.name}` },
+    enemy: { kind: "zombies", count, power: force.power, types: assaultTypes(state, hive, count, force.mix, count).types, elite: !!force.elite, name: `the brood of ${hive.name}` },
     ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hive",
     aiStyle: tacticalStyleFor(state, p), // played headless: the team's retreat policy as the AI's style (breakoff.js)
     context: { hiveId: hive.id, partyId: p.id },

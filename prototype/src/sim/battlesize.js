@@ -235,7 +235,7 @@ export function spawnRules(pc, people) {
 // The fight is over in all but name (CLEAR): a couple of enemies left, far off, unaware or running, out of sight.
 export function clearEnough(b) {
   if (!b || b.over || b.raid || b.phase === "deploy") return false;
-  const foes = b.units.filter((u) => u.side === "enemy" && !u.dead && !u.fled && !u.left);
+  const foes = b.units.filter((u) => u.side === "enemy" && !u.dead && !u.fled && !u.left && !u.dormant); // a Sleeper lying where it is (sleepers.js) is no straggler
   if (foes.some((u) => u.off || u.boss)) return false;
   const left = foes.filter((u) => active(u));
   if (!left.length || left.length > CLEAR.MAX_LEFT || left.length > Math.max(1, Math.floor((b.enemyStart || 0) * CLEAR.FRAC))) return false;

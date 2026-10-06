@@ -324,7 +324,11 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
   const wr = startGrowth(st, hv, "warren");
   check(hiveMix(st, hv).mix === null, "a runner warren still growing breeds nothing yet");
   wr.ready = st.hour;
-  const m = hiveMix(st, hv).mix;
+  // Each new horde brings the kinds a hive breeds at its odds (hivetech.js mixOdds): over a few hordes they come.
+  let m = null;
+  const h0 = st.hour;
+  for (let i = 0; i < 20 && !(m && m.runner); i++, st.hour++) m = hiveMix(st, hv, "large").mix;
+  st.hour = h0;
   check(!!m && m.runner > 0 && m.runner <= TECH.MIX_MAX, `a grown runner warren: its hordes carry runners (${m ? Math.round(m.runner * 100) : 0}%)`);
   for (const h of [...st.hordes]) if (h.hive === hv.id) st.hordes.splice(st.hordes.indexOf(h), 1);
   for (const h of st.hives) if (h !== hv) h.res = -999;
@@ -377,7 +381,8 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
   fill(["pit", "pit", "brood"]);
   s2.hour = 700 * 24; h2.born = 0;
   const w2 = growthWish(s2, h2, false);
-  check(["warren", "brutepit", "sac", "feeding"].includes(w2) && GROWTHS[w2].tier <= hiveTier(s2, h2), `on day 700 (tier ${hiveTier(s2, h2)}) it grows toward the special dead (${w2})`);
+  const MID = ["warren", "brutepit", "sac", "feeding", "ossuary", "scaffold", "wormpit", "cistern", "hollow"]; // middead.js: the mid game's growths
+  check(MID.includes(w2) && GROWTHS[w2].tier <= hiveTier(s2, h2), `on day 700 (tier ${hiveTier(s2, h2)}) it grows toward the special dead (${w2})`);
   fill(["warren", "brutepit", "sac", "feeding"]);
   check(growthWish(s2, h2, false) === null || GROWTHS[growthWish(s2, h2, false)].tier <= hiveTier(s2, h2), `nothing above its tier (${growthWish(s2, h2, false)})`);
   s2.hour = 1600 * 24;
@@ -391,7 +396,7 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
   h2.res = 5;
   growthStep(s2, h2);
   const saving = h2.growSave && h2.growSave.kind;
-  check(["spire", "burrow", "den", "fold"].includes(saving), `short of resources it saves for the ${h2.growSave ? GROWTHS[h2.growSave.kind].name.toLowerCase() : "?"} (no new roaming hordes meanwhile)`);
+  check(!!saving && GROWTHS[saving].tier <= hiveTier(s2, h2) && GROWTHS[saving].cost > 5 && !GROWTHS[saving].income, `short of resources it saves for the ${h2.growSave ? GROWTHS[h2.growSave.kind].name.toLowerCase() : "?"} (no new roaming hordes meanwhile)`);
   h2.res = 80;
   const started = growthStep(s2, h2);
   check(!!started && started.kind === saving && !h2.growSave, `then grows it once it has the ${GROWTHS[saving].cost}`);

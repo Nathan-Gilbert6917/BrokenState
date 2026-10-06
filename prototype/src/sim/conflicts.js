@@ -39,7 +39,8 @@ import { driveOff } from "./aiscav.js";
 import { warRaidOnPlayer } from "./diplomacy.js";
 import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
-import { battleTypes } from "./zombietypes.js";
+import { siteList } from "./zombietypes.js";
+import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -137,9 +138,16 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
     // On a hive's land the dead are tougher: +1 power, +3 on the red-skull ring around a hive (hives.js).
     const hz = zombieToughness(state, partyTile(p));
     // The armoured dead (deadsoldiers.js): by a military site, or the ones a horde picked up crossing one.
-    const mix = maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix));
+    // The bred kinds met away from a hive's hordes (hivetech.js siteSpecials: towns and cities as the years go by, a
+    // hive's land): each of the dead one of them at its share (a roll each).
+    const mix = maxMix(maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix)), horde ? null : siteSpecials(state, partyTile(p)));
     const g = { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
-    if (mix) { g.mix = mix; g.types = battleTypes(mix, g.count); }
+    if (mix) {
+      g.mix = mix;
+      g.types = {};
+      for (const k of siteList(rng, mix, g.count)) if (k) g.types[k] = (g.types[k] || 0) + 1;
+      if (!Object.keys(g.types).length) g.types = null;
+    }
     return g;
   }
   const def = FACTION_TYPES[f.type];

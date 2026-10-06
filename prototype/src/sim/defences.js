@@ -31,6 +31,7 @@ import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
+import { climberSlip } from "./middead.js"; // Climbers over the walls
 
 // A hive's special dead at the walls (hivetech.js, numbers in hiveconst.js ZTYPES): each one presses the walls by
 // its kind's `wall` weight (brutes 2.5, spitters picking off the defenders 1.4, screamers 1.2, runners 0.9,
@@ -245,8 +246,9 @@ export function hordeAttackBase(state, h, base) {
     log(state, `A horde of ${h.size} hit ${base.name}. The defences held (they stop about ${limit}) and about ${killed} of the dead were cut down.${notes.length ? ` ${notes.join(" ")}` : ""}`, "good");
     if (people.length && h.size > lim * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
     const slip = crawlerSlip(state, base, h, floodlit); // crawlers that got past the walls anyway
+    const climb = climberSlip(h, !!base.watchtower, manned(state, base)); // and Climbers that went over them (middead.js)
     if (!reduceHorde(state, h, killed)) retreat(state, h, base);
-    if (slip >= 4 && people.length) crawlersInside(state, base, h, slip);
+    if (slip + climb >= 4 && people.length) crawlersInside(state, base, h, slip, climb);
     return;
   }
   // Break-in.
@@ -276,15 +278,22 @@ export function breakInForce(state, base, through, bosses = 0, h = null) {
 
 // Crawlers that slipped past the walls of a base that held (crawlerSlip): a small fight inside, where they catch
 // your people unawares. Losing it costs a little of the stores; the people they caught are hurt in the battle.
-function crawlersInside(state, base, h, slip) {
-  const n = Math.max(2, Math.min(8, Math.round(slip / 3)));
-  const power = breakInForce(state, base, slip).power;
-  log(state, `About ${slip} crawlers slipped past the walls of ${base.name} while the horde was held.`, "danger");
+// Climbers that went over the walls (middead.js climberSlip) fight inside with them: by their numbers among the n.
+function crawlersInside(state, base, h, slip, climb = 0) {
+  const all = slip + climb;
+  const n = Math.max(2, Math.min(8, Math.round(all / 3)));
+  const power = breakInForce(state, base, all).power;
+  const cl = climb ? Math.max(1, Math.min(n, Math.round((n * climb) / all))) : 0;
+  const types = {};
+  if (n - cl > 0) types.crawler = n - cl;
+  if (cl) types.climber = cl;
+  const who = [slip ? `${slip} crawlers slipped past` : "", climb ? `${climb} Climbers went over` : ""].filter(Boolean).join(" and ");
+  log(state, `About ${who} the walls of ${base.name} while the horde was held.`, "danger");
   fightNow(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "zombies", count: n, power, types: { crawler: n }, elite: !!h.elite, name: "the crawlers inside the walls" },
-    ambush: "enemy", canRetreat: true, handler: "crawlerSlip", downedLive: 0.4,
-    context: { hordeId: h.id, baseId: base.id, slip },
+    enemy: { kind: "zombies", count: n, power, types, elite: !!h.elite, name: slip && climb ? "the crawlers and Climbers inside the walls" : climb ? "the Climbers inside the walls" : "the crawlers inside the walls" },
+    ambush: slip ? "enemy" : null, canRetreat: true, handler: "crawlerSlip", downedLive: 0.4,
+    context: { hordeId: h.id, baseId: base.id, slip: all, climb },
   });
 }
 registerCombatHandler("crawlerSlip", (state, result, setup) => {
@@ -293,9 +302,10 @@ registerCombatHandler("crawlerSlip", (state, result, setup) => {
   const base = state.bases.find((b) => b.id === c.baseId) || null;
   if (h) reduceHorde(state, h, Math.round((c.slip * (result.enemiesKilled || 0)) / Math.max(1, setup.enemy.count)));
   if (!base) return;
-  if (result.outcome === "victory") { log(state, `The crawlers inside ${base.name} were hunted down.`, "good"); return; }
+  const what = c.climb && c.climb >= c.slip ? "Climbers" : c.climb ? "crawlers and Climbers" : "crawlers";
+  if (result.outcome === "victory") { log(state, `The ${what} inside ${base.name} were hunted down.`, "good"); return; }
   for (const k of ["food", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.85);
-  log(state, `The crawlers inside ${base.name} were not stopped: they tore through the stores before they slunk off (food and meds spoiled). Watchtowers and floodlights see them coming.`, "danger");
+  log(state, `The ${what} inside ${base.name} were not stopped: they tore through the stores before they slunk off (food and meds spoiled). ${c.climb ? "Defenders inside the walls and a watchtower over the yard catch Climbers; " : ""}Watchtowers and floodlights see crawlers coming.`, "danger");
 });
 
 // The horde backs off after a fight: it falls back RETREAT_TILES from the base (on its own side) for
@@ -449,7 +459,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
     choices: [
       {
         label: "Man the defences",
