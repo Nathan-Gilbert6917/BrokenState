@@ -1115,7 +1115,17 @@ function needs(state) {
     // Late spring and summer: wanted too while the stock is under the summer plan's reserve (waterPlan).
     // Purified water (water.js) wanted too while the base cannot purify what it drinks (no boiler lit, too few filters)
     // and its un-purified water carries the worm's eggs (worm.js baseWater): trades ask for purified water.
-    water: (() => { const wo = waterOutlook(state, h); const wp = waterPlan(state, h); const d = wo.net >= 0 ? waterIn(st) / n + 10 : wo.daysLeft; return Math.max(pick(d, [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0); })(),
+    // The water filters' share (3 a day each) clogs up within weeks and is made again only from scrap: while the
+    // wells, stream and rain alone fall short, the days the stock would last without the filters count too, so a hub
+    // that lives on its filters never rates its water as plenty and sells it to a caravan (seed 17: 198 and then 240
+    // water traded away by a 40-head hub, leaving 3 days and then 1 day in store as the filters clogged up).
+    water: (() => {
+      const wo = waterOutlook(state, h); const wp = waterPlan(state, h);
+      const d = wo.net >= 0 ? waterIn(st) / n + 10 : wo.daysLeft;
+      const steadyNet = wo.net - wo.prod.filters;
+      const dSteady = steadyNet >= 0 ? Infinity : waterIn(st) / -steadyNet;
+      return Math.max(pick(Math.min(d, dSteady), [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0);
+    })(),
     // Meds: by stock per head, and wanted hard while the sick here need more doses than there are (health.js courses).
     meds: Math.max(pick(st.meds || 0, [[2, 2.5], [n * 0.6, 1.8], [n * 1.5, 1], [Infinity, 0.3]]), medsToTreatAll(state, h) > (st.meds || 0) ? 2.2 : 0),
     scrap: pick(st.scrap || 0, [[20, 2.5], [45, 1.6], [90, 0.9], [Infinity, 0.35]]),
@@ -3093,7 +3103,11 @@ function launchTrip(state, c, pool, spareHands) {
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.
   if (P.reserves && est.hours > 12 && severeSoon(state, Math.ceil(days) + 1)) return off();
-  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : h.stock[k] || 0); // water: both kinds, purified packed first (parties.js)
+  // Water: both kinds, purified packed first (parties.js). Food: fresh and preserved (storage.js edibleFood), fresh
+  // packed first: by late autumn the kitchen has turned the fresh food into the winter's preserved stores, and a hub
+  // with 0 fresh and 1700 preserved called off every trip as one that "cannot spare" the food (seed 17: no
+  // scavenging, no water hauls, no wells for 20 days while the water filters clogged up, then 21 dead of thirst).
+  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : k === "food" ? edibleFood(h) : h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
   // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission) || !!c.haul;
@@ -3150,6 +3164,9 @@ function launchTrip(state, c, pool, spareHands) {
     for (const k of ["food", "water"]) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   } else if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
+  // The rations: fresh food first, preserved food for the rest (lighter, and the team eats it the same: parties.js).
+  const freshFood = Math.floor(Math.max(0, h.stock.food || 0));
+  if (sup.food > freshFood) { sup.preserved = Math.min(Math.floor(Math.max(0, h.stock.preserved || 0)), (sup.preserved || 0) + sup.food - freshFood); sup.food = freshFood; }
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
   const cap = carryCapacity(state, crew, plannedV);
   if (supplyLoad(sup) > cap) sup.ammo = Math.min(sup.ammo, 5 * n);
@@ -3250,7 +3267,9 @@ function foodTripCands(state, h, pool, need, P) {
 // a 2-3 person team brings 60-150), then comes home. Scored above an ordinary scavenging trip, more the drier it is.
 // (The haul's hours are orders.js FETCH_WATER_HOURS, read inside waterTripCands: orders.js can still be evaluating when
 // this module loads, through the claims.js import cycle, so no import is read at module top level here.)
-const WATER_HAUL = { days: 3, reach: 6, crewMax: 3 };
+// A shore within `reach` tiles first; with none there, one within `far` (a hub in the forest 7 tiles from the
+// nearest river had no haul at all, even at a day of water: seed 17), scored a little lower for each tile past reach.
+const WATER_HAUL = { days: 3, reach: 6, far: 10, farCost: 0.3, crewMax: 3 };
 function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const want = waterNeed(state, h).total;
   if (want <= 0) return [];
@@ -3264,7 +3283,7 @@ function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const severe = days < 1.5 || prod < want * 0.6;
   if (hauling >= (maxTeams ?? (severe ? 2 : 1))) return [];
   let best = null;
-  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.reach))) {
+  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.far))) {
     if (id === h.tile || !besideWater(state, id)) continue;
     const d = state.grid.distance(id, h.tile);
     if (!best || d < best.d) best = { id, d };
@@ -3272,8 +3291,9 @@ function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   if (!best) return [];
   const size = Math.min(WATER_HAUL.crewMax, Math.max(2, P.crew));
   const shortBy = Math.max(0, want - prod);
-  return [{ mission: "move", tile: best.id, crew: size, haul: true, onSite: FETCH_WATER_HOURS, steps: [{ kind: "water" }, { kind: "home" }],
-    score: Math.min(6, 2 + shortBy / 10 + (WATER_HAUL.days - Math.min(WATER_HAUL.days, days))),
+  const far = Math.max(0, best.d - WATER_HAUL.reach);
+  return [{ mission: "move", tile: best.id, crew: size, haul: true, onSite: FETCH_WATER_HOURS, steps: [{ kind: "water" }, { kind: "home" }], reach: far ? best.d / WATER_HAUL.reach : 1,
+    score: Math.min(6, 2 + shortBy / 10 + (WATER_HAUL.days - Math.min(WATER_HAUL.days, days))) - far * WATER_HAUL.farCost,
     why: `haul water from ${tileLabel(state, best.id)} (${Math.floor(waterIn(h.stock))} in store, ${Math.round(want)} a day drunk, ${Math.round(prod)} made)` }];
 }
 
@@ -3591,9 +3611,12 @@ function outpostThirsty(state, o) {
 // Water runs from a river or lake (orders.js Fetch water): while the hub's water is short (waterRunWanted) and a shore
 // is within WATER_RUN_HOURS on foot, two to four people walk there, fill every container (up to a Heavy load each)
 // and walk home. One at a time; the shore is found once (the map does not change).
-const WATER_RUN_HOURS = 16;
+// (16 hours until seed 17's forest hub, 19 hours from the nearest shore, had no water run at all; the shores found
+// are kept with the hours they were found for, so a save from before looks again.)
+const WATER_RUN_HOURS = 24;
 function shoreFor(state, base) {
   const g = gov(state);
+  if (g.shoresHours !== WATER_RUN_HOURS) { g.shores = {}; g.shoresHours = WATER_RUN_HOURS; }
   g.shores = g.shores || {};
   if (g.shores[base.id] !== undefined) return g.shores[base.id];
   let best = null;
