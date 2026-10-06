@@ -335,6 +335,33 @@ export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched =
     });
     p.rect(19, CY - 5, 21, CY - 4, "#2e3137"); p.rect(19, CY + 2, 21, CY + 3, "#2e3137"); // shin guards
     wounds(p, rng, z.gore ? 2 : 0, 7, 22);
+  } else if (kind === "boneback") {
+    // Plates of bone over its chest and face (sim/middead.js).
+    layBody(p, { pose: "dead", skin: "#9a9483", top: "#4b4a42", pants: "#3e3d36", build: "heavy", eye, mouth: "open", pool: POOL, searched });
+    p.rect(8, CY - 3, 13, CY + 3, BONE);
+    for (const y of [CY - 2, CY, CY + 2]) p.rect(8, y, 13, y, shade(BONE, -0.28));
+    p.rect(1, CY - 2, 4, CY + 1, BONE); p.set(2, CY - 1, "#3a1412"); p.set(2, CY + 1, "#3a1412");
+  } else if (kind === "climber") {
+    // Thin, arms flung up, hooked fingers.
+    layBody(p, { pose: "dead", skin: "#a59a8c", top: "#4d4438", pants: "#3a352d", build: "slim", eye, mouth: "open", arms: "up", pool: POOL, searched });
+    for (const [x, y] of [[0, CY - 6], [1, CY - 6], [0, CY + 6], [1, CY + 6]]) p.set(x, y, BONE);
+  } else if (kind === "flinger") {
+    // Long arms reaching on, the mass of worms it held spilled beside it.
+    layBody(p, { pose: "dead", skin: "#8f9a86", top: "#3f4a3a", pants: "#353b31", build: "average", eye, mouth: "open", arms: "forward", pool: POOL, searched });
+    p.disc(3, CY + 4.5, 2.6, 1.5, "#d9cfb2"); for (const [x, y] of [[1, CY + 4], [3, CY + 5], [5, CY + 4], [2, CY + 6]]) p.set(x, y, "#f0e4c0");
+  } else if (kind === "sower") {
+    // Swollen, its egg sacs split open.
+    layBody(p, { pose: "dead", skin: "#a8a07a", top: "#5a5440", pants: "#4a4536", build: "bloated", eye, mouth: "open", pool: POOL, searched });
+    for (const [x, y] of [[9, CY - 3], [12, CY + 2], [10, CY + 3]]) { p.disc(x, y, 1.6, 1.3, "#e8dca0"); p.set(x, y, "#b4a860"); }
+    for (const [x, y] of [[6, CY + 5], [15, CY - 5], [17, CY + 5]]) p.set(x, y, "#e8dca0");
+  } else if (kind === "nightmare") {
+    // Dark and gaunt, the mouth still open on its scream.
+    layBody(p, { pose: "dead", skin: "#6e6a78", top: "#1e1c24", pants: "#1e1c24", build: "slim", eye: "#e2412f", mouth: "scream", arms: "up", pool: POOL, searched });
+  } else if (kind === "sleeper") {
+    // A body split open down the middle, the worms spilling out of it (sim/sleepers.js).
+    layBody(p, { pose: "dead", skin: "#9aa08a", top: "#4a4a44", pants: "#3c3c38", build: "average", eye: null, mouth: "open", pool: POOL, searched });
+    p.rect(8, CY - 1, 14, CY + 1, "#3a1412");
+    for (const [x, y] of [[9, CY], [11, CY - 1], [12, CY + 1], [13, CY], [7, CY + 2], [15, CY - 2], [16, CY + 3], [6, CY - 3], [10, CY + 4]]) p.set(x, y, "#f0e4c0");
   } else if (kind === "carrier") return paintDownedZombie("bloated", seed, look, searched); // burst open, the worms gone (sim/carriers.js)
   else return paintDownedZombie("walker", seed, look, searched);
   wounds(p, rng, 2, 7, 20);
@@ -422,6 +449,23 @@ export const downedZTypeCanvas = (kind, seed, look = zombieLook(), searched = fa
   return cached(`dt:${kind}:${kind === "soldier" || kind === "riot" ? s : 0}:${look.palette}:${look.gore}:${look.eyes}:${searched ? 1 : 0}`, () => paintDownedZType(kind, kind === "soldier" || kind === "riot" ? s : 0, look, searched));
 };
 export const downedBossCanvas = (kind) => cached(`db:${kind}`, () => paintDownedBoss(kind));
+// A body lying on a battle map (sim/sleepers.js b.corpses): one of the ordinary dead (a walker, now and then a bloated
+// one), a Sleeper split open, or burnt black where a fire went over it. A Sleeper not yet split looks like any other.
+export function corpseCanvas(c, look = zombieLook()) {
+  if (c.burnt) return cached(`dc:burnt:${c.seed % 7}`, () => charred(paintDownedZombie("walker", c.seed % 7, look)));
+  if (c.burst) return downedZTypeCanvas("sleeper", 0, look);
+  return downedZombieCanvas(c.seed % 5 === 0 ? "bloated" : "walker", c.seed, look);
+}
+function charred(p) {
+  for (let i = 0; i < p.px.length; i++) {
+    const v = p.px[i];
+    if (!v) continue;
+    const [r, g, b] = rgb(v);
+    const k = (r * 0.3 + g * 0.5 + b * 0.2) * 0.32;
+    p.px[i] = v.length > 7 ? "#1c1814a0" : toHex(k + 6, k + 3, k);
+  }
+  return p;
+}
 
 // The body container of a unit in a raid (sim/combat.js: kind "body", uid), if any: searched shows on the sprite.
 const bodySearched = (b, t) => !!(b && b.raid && b.raid.containers.some((c) => c.kind === "body" && c.uid === t.id && c.searched));
@@ -450,7 +494,7 @@ export function unitDownCanvas(state, b, t, salt = 0) {
 }
 
 // Size of a fallen unit's picture against a tile (its length along the body): bosses and brutes are bigger.
-export const downScale = (t) => (t.boss ? 1.45 : t.ztype === "brute" ? 1.2 : 1.05);
+export const downScale = (t) => (t.boss ? 1.45 : t.ztype === "brute" || t.ztype === "boneback" || t.ztype === "sower" ? 1.2 : 1.05);
 // Draws it flat on the floor: (X, Y) the tile's middle on screen, ax / ay the screen vectors of one tile along the
 // world's x and y (top-down: [cs, 0] and [0, cs]; isometric: the projected floor axes). The body lies along x, head
 // toward −x (facing −1: toward +x).

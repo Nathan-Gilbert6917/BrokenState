@@ -3,7 +3,7 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT,
+  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
@@ -18,7 +18,7 @@ import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
 import { SEARCH, quickable, quickRefusal, quickRadius } from "../sim/search.js";
 export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
-import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
+import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
 import { ZTYPES } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
@@ -28,7 +28,7 @@ import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, stirring } from "../sim/carriers.js"; // the Carrier: bodies that stir, the risen
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -1028,7 +1028,9 @@ function previewHtml(b) {
       const m = armorVs(t, u, { how: melee ? "melee" : "shot" });
       return ` <span class="${m >= 0.8 ? "good" : m >= 0.55 ? "warn" : "danger"}">Armour: ${Math.round(m * 100)}% of ${esc(u.weaponName)}'s damage gets through${stabsGap(u, t) ? ` (a blade from behind or unseen: all of it)` : ""}; critical hits always do.</span>`;
     })() : "";
-    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.cd > 0 ? " Spits again next turn." : ""}${ar} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
+    // A Boneback (sim/middead.js): how much of a hit from where the selected unit stands gets past its plates.
+    const bp = t.ztype === "boneback" && u && active(u) ? (() => { const m = hitMult(t, u, { how: "shot" }) / (t.armor || 1); return ` <span class="${m >= 0.8 ? "good" : "danger"}">${m >= 0.8 ? `${esc(u.name.split(" ")[0])} has its flank: every hit counts.` : `It faces ${esc(u.name.split(" ")[0])}: ${Math.round(m * 100)}% of a hit gets through. Hit it from the side or behind.`}</span>`; })() : "";
+    const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
     const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
     return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
@@ -1266,6 +1268,8 @@ export function drawCombat(state, now) {
     }
   }
 
+  // Bodies on the ground (sim/sleepers.js): drawn like the fallen, dimmer where nobody sees now.
+  for (const c of b.corpses || []) drawDowned(ctx, corpseCanvas(c), ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs + cs * 0.06, [cs, 0], [0, cs], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: v.vis[c.y * W + c.x] ? 0.92 : 0.5 });
   // Units (dead and down first).
   const order = b.units.filter((x) => !x.left && !x.fled && !x.off).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
@@ -1994,12 +1998,33 @@ function drawObject(k, px, py, cs, n, cell = null) {
   }
 }
 
+// A small word over a unit (a Flinger winding up, someone panicking, a Sleeper's letter).
+function tag(x, y, text, col, cs) {
+  ctx.font = `800 ${Math.max(9, Math.round(cs * 0.2))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = col;
+  ctx.fillText(text, x, y);
+}
 // Units are procedural sprites (ui/sprites.js) standing on a ring in their side's color.
 function drawUnit(state, b, t, cx, cy, cs, selected) {
   const r = cs * 0.34;
   const zombie = t.kind === "zombie";
   let ring = t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : zombie ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : "#b5d36a") : "#ff8f85";
   const facing = unitFacing(b, t);
+  if (t.ztype === "sleeper") {
+    // A spotted Sleeper (sim/sleepers.js): its body is drawn with the others; a dashed ring and its letter mark it.
+    if (t.dead) return;
+    ctx.strokeStyle = selected ? "#e0a84f" : ring;
+    ctx.lineWidth = selected ? 3 : 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.ellipse(cx, cy + cs * 0.08, cs * 0.46, cs * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    tag(cx - cs * 0.3, cy - cs * 0.22, t.short, ring, cs);
+    return;
+  }
   if (t.dead) {
     // The body lying where it fell (ui/downsprites.js: its own picture per kind; pockets out once searched).
     drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.06, [cs, 0], [0, cs], { facing, scale: downScale(t), alpha: 0.92 });
@@ -2035,7 +2060,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2); ctx.stroke();
   }
-  const big = t.boss ? 1.3 : t.ztype === "brute" ? 1.15 : 1; // bosses and brutes stand taller
+  const big = t.boss ? 1.3 : t.ztype === "brute" || t.ztype === "boneback" ? 1.15 : 1; // bosses, brutes and Bonebacks stand taller
   if (t.down) drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.08, [cs, 0], [0, cs], { facing, scale: downScale(t) }); // curled up, wounded or out cold
   else drawSprite(ctx, unitCanvas(state, b, t, cui.salt), cx, cy - (big - 1) * cs * 0.4, cs * big, { facing, lying: false, alpha: spent ? 0.6 : 1 });
   if (t.ztype && !t.down) {
@@ -2049,6 +2074,19 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.fillStyle = ring;
     ctx.fillText(label, cx - cs * 0.3, cy - cs * 0.3);
   }
+  // A Flinger winding up (sim/middead.js): a dashed arc to whoever it is about to throw at; someone a Nightmare's
+  // scream panicked: PANIC over their head (they run next turn).
+  if (t.windup != null) {
+    const m = b.units.find((o) => o.id === t.windup);
+    if (m) {
+      const mx = cx + (m.x - t.x) * cs, my = cy + (m.y - t.y) * cs;
+      ctx.strokeStyle = ZRING.flinger; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(cx, cy - cs * 0.3); ctx.quadraticCurveTo((cx + mx) / 2, Math.min(cy, my) - cs * 1.2, mx, my); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    tag(cx, cy - cs * 0.62, "WINDS UP", ZRING.flinger, cs);
+  }
+  if (t.terror && !t.down) tag(cx, cy - cs * 0.62, "PANIC", ZRING.nightmare, cs);
   if (t.down && t.tied) {
     // Tied up: rope around the wrists and ankles of the lying prisoner.
     ctx.strokeStyle = "#c9a74a";
