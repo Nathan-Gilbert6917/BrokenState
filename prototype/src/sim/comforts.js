@@ -6,7 +6,8 @@
 //     team (carried, or in the team's cargo): a deck of cards +0.4 a day, a harmonica +0.4, a guitar +1. Each kind
 //     counts once; all of them together at most +1.5 a day.
 //   comfort.self: for whoever carries it (pockets, hands or pack): family photos +0.6 a day (once).
-// Toiletries (GEAR groom, dur = days of use): deodorant, toothpaste, shampoo, wet wipes, lip balm, makeup, perfume.
+// Toiletries (GEAR groom, dur = days of use): deodorant, toothpaste, shampoo, soap, razor blades, wet wipes, lip balm,
+//   makeup, perfume.
 //   Each kind lifts mood a day (groom) for whoever uses it, all of them together at most +1.2 (COMFORT.groomMax).
 //   Someone uses their own (carried) first, else the shared shelf where they are (a base's armory, a team's cargo).
 //   One day of use a day each (groomDaily): a shared stick at a base of ten lasts a tenth as long. Used up, it is gone.

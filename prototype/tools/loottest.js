@@ -97,7 +97,7 @@ check(!bad((k, d) => !(Number.isFinite(d.weight) && d.weight > 0)).length, `ever
 check(!bad((k, d) => !(d.value > 0)).length, `every item has a hidden value (${bad((k, d) => !(d.value > 0)).join(", ") || "all"})`);
 check(!bad((k, d) => !d.desc).length, `every item has a description (${bad((k, d) => !d.desc).join(", ") || "all"})`);
 const vals = Object.entries(GEAR).filter(([, d]) => d.valuable);
-check(vals.length >= 30, `a full set of valuables (${vals.length})`);
+check(vals.length >= 28, `a full set of valuables (${vals.length}; soap and razors moved to toiletries 2026-10-06)`);
 const fams = new Set(vals.map(([, d]) => d.cat));
 check(["jewelry", "smokes", "liquor", "treats", "gadgets", "collectibles", "household"].every((c) => fams.has(c)), `valuables in every valuable family (${[...fams].join(", ")})`);
 check(vals.every(([, d]) => d.value / d.weight >= 6), `valuables are light for their worth (worst ${vals.map(([k, d]) => [k, d.value / d.weight]).sort((a, b) => a[1] - b[1])[0].map((x) => (typeof x === "number" ? x.toFixed(1) : x)).join(" ")} a kg)`);
