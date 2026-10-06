@@ -8,6 +8,7 @@ import { thirstAt } from "../sim/weather.js";
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, storesText, isWorking, storeOf } from "../sim/staging.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
+import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -84,9 +85,20 @@ export function firstHubCard(state) {
     <div class="small" style="margin-top:0.3rem">${intro}</div>
     ${v.camp ? campBody(state, v) : ""}
     ${d ? `<div class="kv small" style="margin-top:0.4rem"><div${tip("Days the team's food and water last at today's rate. Thirst kills in a few days: rivers and lakes (Fetch water) and shops, diners and churches have water. Workers at the camp eat from its stores once theirs run out.")}>Team lasts</div><div class="${Math.min(d.food, d.water) < 2 ? "danger" : ""}">food ${r1(d.food)} days · water ${r1(d.water)} days</div></div>` : ""}
+    ${v.p && d && d.food < 3 ? landFoodRows(state, v.p) : ""}
     ${spots.length ? `<div class="small muted" style="margin-top:0.4rem"${tip("Spots within 4 tiles of the team rated for a hub: water beside or near, sites to scavenge around, few of the dead and no hive close by.")}>Good spots nearby:</div>${spotRows}` : ""}
     <div class="row" style="margin-top:0.5rem">${v.p ? `<button class="primary" data-action="xp-open" data-id="${v.p.id}"${tip("People, gear, supplies and orders")}>Team panel</button><button data-action="center" data-tile="${v.tile}"${tip("Center the map on the team")}>Locate team</button>` : ""}${v.camp ? `<button data-action="center" data-tile="${v.camp.tile}"${tip("Center the map on the staging camp")}>Locate camp</button>` : ""}</div>
   </div>`;
+}
+
+// Food from the land around the road team when its food runs low (under 3 days): forage, hunt and fish, here and
+// within 2 tiles, with what each would bring in 8 hours (sim/foraging.js landFoodOptions).
+function landFoodRows(state, p) {
+  const seen = new Set();
+  const opts = landFoodOptions(state, p, { range: 2, walk: false, hours: FORAGE.defHours }).filter((o) => o.rations >= 1 && !seen.has(`${o.kind}:${o.dist === 0}`) && seen.add(`${o.kind}:${o.dist === 0}`)).slice(0, 4);
+  if (!opts.length) return "";
+  const name = { forage: "Forage", hunt: "Hunt", fish: "Fish" };
+  return `<div class="kv small" style="margin-top:0.4rem"><div${tip("Food from the land: what 8 hours would bring here or a short walk away (the season, the land, the team's skills and weapons). Give the order from the team panel (Land), or right-click the tile.")}>Food nearby</div><div>${opts.map((o) => `${name[o.kind]} ${o.dist === 0 ? "here" : `${o.dir} (${o.dist})`} ~${Math.round(o.rations)}`).join(" · ")}</div></div>`;
 }
 
 // One line for the Goals card (ui/diplomacy.js) while there is no base.
@@ -112,7 +124,10 @@ export function roadAlerts(state, out) {
       d.water += storeOf(v.camp, "water") / (n * thirstAt(state));
     }
     if (d.water < 1.5) out.push({ key: `roadwater:${v.p.id}`, kind: "roadwater", icon: "💧", tone: "danger", text: d.water < 0.05 ? "The team is out of water" : `The team has water for ${r1(d.water)} days`, tip: "Thirst kills in a few days. Fetch water beside a river or lake (team panel), or search a shop, diner, church or campground. Click to open the team panel.", go });
-    if (d.food < 1.5) out.push({ key: `roadfood:${v.p.id}`, kind: "roadfood", icon: "🥫", tone: d.food < 0.05 ? "danger" : "warn", text: d.food < 0.05 ? "The team is out of food" : `The team has food for ${r1(d.food)} days`, tip: "Search farms, groceries and diners, hunt or fish. Click to open the team panel.", go });
+    if (d.food < 1.5) {
+      const hint = landFoodHint(state, v.p); // "forage or hunt nearby: forest to the east, about 5 food in 8h of foraging"
+      out.push({ key: `roadfood:${v.p.id}`, kind: "roadfood", icon: "🥫", tone: d.food < 0.05 ? "danger" : "warn", text: `${d.food < 0.05 ? "The team is out of food" : `The team has food for ${r1(d.food)} days`}${hint ? `: ${hint.replace(/, about.*$/, "")}` : ""}`, tip: `${hint ? `${hint[0].toUpperCase()}${hint.slice(1)}. ` : ""}Forage, hunt or fish (team panel: the Land orders), or search farms, groceries and diners. Click to open the team panel.`, go });
+    }
   }
   if (!v.camp) {
     out.push({ key: "firsthub:0", kind: "firsthub", icon: "🏚", tone: "info", text: v.first ? "No hub yet: establish a base" : "No base left: establish one", tip: `Give a team the order ${ESTABLISH_LABEL} on a good spot (water near, sites around): a staging camp that needs ${needText(v.needs)} brought in, then the work. Click to open the team panel.`, go });

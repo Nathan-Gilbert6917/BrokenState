@@ -70,6 +70,7 @@ import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
+import { foragingDaily } from "./foraging.js";
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -603,8 +604,10 @@ function cabinTiles(state, base) {
 }
 export const ammoKeep = (state, base) => atBase(state, base.id).length * 3 + 10; // ammo the cabin's hunters leave for the walls
 const DAWN_DUSK = [6, 17, 7, 18, 5, 19]; // the hours a base's hunters and fishers are out (dawn and dusk first)
-// Daily (economy.js baseDaily): the people on the Hunt and Fish roles bring in their day's catch.
+// Daily (economy.js baseDaily): the people on the Hunt and Fish roles bring in their day's catch, and the people on
+// the Forage role their day's gathering (foraging.js).
 export function huntingDaily(state, base) {
+  foragingDaily(state, base);
   const people = atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35);
   const hunters = people.filter((s) => s.role === "hunt");
   const fishers = people.filter((s) => s.role === "fish");

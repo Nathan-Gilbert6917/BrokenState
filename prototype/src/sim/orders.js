@@ -16,6 +16,7 @@ import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
 import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
+import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -44,6 +45,7 @@ export function describeOrder(state, o) {
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
     case "hunt": return `Hunt ${huntHours(o)}h`;
     case "fish": return `Fish ${huntHours(o)}h`;
+    case "forage": return `Forage ${huntHours(o)}h`; // foraging.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
   }
   return o.type;
@@ -133,7 +135,7 @@ export function queueEstimate(state, p) {
     }
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
-    else if (o.type === "hunt" || o.type === "fish") hours = huntHours(o);
+    else if (o.type === "hunt" || o.type === "fish" || o.type === "forage") hours = huntHours(o);
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
@@ -209,8 +211,8 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "snare"]; // order types tied to the tile they were queued for
-// Hours of a hunt or fishing order: as given, within 2–24 (8 if none).
+const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "snare"]; // order types tied to the tile they were queued for
+// Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
 // Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
@@ -310,6 +312,13 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "fish", hours: huntHours(o) });
       return `The team goes fishing (${huntHours(o)}h).`;
     }
+    case "forage": {
+      // Wild food off the land (foraging.js): berries, nuts, mushrooms, greens, roots, by the terrain and the season.
+      const why = forageProblem(state, p);
+      if (why) return fail(`Forage: ${why}`);
+      startTask(state, p, { type: "forage", hours: huntHours(o) });
+      return `The team goes foraging (${huntHours(o)}h).`;
+    }
     case "snare": {
       const mode = snareMode(state, partyTile(p), o.mode);
       const why = snareProblem(state, p, partyTile(p), mode);
@@ -368,8 +377,8 @@ export function taskHour(state, p) {
   if (t.type === "camp") campHour(state, p);
   if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
   if (!state.parties.includes(p) || p.task !== t) return;
-  // Hunting and fishing roll every hour (hunting.js); with nothing left to hunt or fish with, the job ends early.
-  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p))) {
+  // Hunting, fishing and foraging roll every hour (hunting.js, foraging.js); with nothing left to do it with, the job ends early.
+  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p))) {
     if (state.parties.includes(p)) finishTask(state, p);
     return;
   }
@@ -396,7 +405,7 @@ function finishTask(state, p) {
   let text = "";
   if (t.type === "survey") text = survey(state, p, 0.25, false);
   else if (t.type === "sweep") text = sweepDone(state, p);
-  else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}`;
+  else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}${campForageNote(state, p, t)}`;
   else if (t.type === "repair") text = fieldRepair(state, p);
   else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);
   else if (t.type === "gather") text = gatherMaterials(state, p, partyTile(p));
@@ -406,6 +415,7 @@ function finishTask(state, p) {
   else if (t.type === "cross") text = landBoat(state, p);
   else if (t.type === "hunt") text = huntSummary(state, p, t);
   else if (t.type === "fish") text = fishSummary(state, p, t);
+  else if (t.type === "forage") text = forageSummary(state, p, t);
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
@@ -415,9 +425,11 @@ const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `$
 
 // Resting in camp: the hurt heal at twice the rate of a base without a hospital, spirits lift a little.
 // An infected wound does not heal in camp (it needs meds). A camp with no food or no water gives no rest:
-// nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume).
+// nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume). In daylight the fit
+// forage around the camp, part of each hour (foraging.js campForageHour): a hungry camp feeds itself a little.
 export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? (BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24 : 0);
 function campHour(state, p) {
+  campForageHour(state, p);
   if (starving(p)) return;
   for (const s of partyMembers(state, p)) {
     s.health = Math.min(100, s.health + campHealPerHour(state, p, s));

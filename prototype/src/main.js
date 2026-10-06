@@ -27,6 +27,7 @@ import { orderSweepAt, sweepOpts } from "./sim/survey.js";
 import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
+import { forageAbundance } from "./sim/foraging.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -1227,12 +1228,14 @@ function ctxBoats(teams, id) {
       return `<button data-action="ctxcross" data-id="${p.id}" data-tile="${id}" data-mode="${m}" ${plan.ok ? "" : "disabled"} data-tip="${esc(boatTip(state, plan, id))}">Boat team (${p.members.length}) across${p.vehicleId ? (m === "raft" ? ", raft vehicle" : ", leave vehicle") : ""} · ${plan.mats.scrap} scrap, ${plan.hours}h</button>`;
     })).join("");
 }
-// Right-click a land tile with a team you are in touch with: go there and hunt (or fish) 8 hours (sim/hunting.js).
+// Right-click a land tile with a team you are in touch with: go there and forage, hunt or fish 8 hours (sim/foraging.js,
+// sim/hunting.js). The team panel's low-food list uses the same action.
 function ctxLand(teams, id) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water") return "";
   const fish = !!fishSpot(state, id);
   return teams.filter((p) => p.kind !== "convoy").flatMap((p) => [
+    forageAbundance(state, id) >= 0.05 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="forage">${partyTile(p) === id ? "Forage here" : "Go and forage here"}, team (${p.members.length}) · 8h</button>` : "",
     gameAbundance(state, id) >= 0.08 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="hunt">${partyTile(p) === id ? "Hunt here" : "Go and hunt here"}, team (${p.members.length}) · 8h</button>` : "",
     fish ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="fish">${partyTile(p) === id ? "Fish here" : "Go and fish here"}, team (${p.members.length}) · 8h</button>` : "",
   ]).join("");
@@ -1241,7 +1244,7 @@ actions.ctxhunt = (d) => {
   const p = partyById(d.id);
   if (p) {
     const tile = Number(d.tile);
-    const job = { type: d.type === "fish" ? "fish" : "hunt", hours: 8 };
+    const job = { type: d.type === "fish" || d.type === "forage" ? d.type : "hunt", hours: 8 };
     let msg;
     if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
     else {
