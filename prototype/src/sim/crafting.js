@@ -12,8 +12,9 @@ import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "
 import { workFactor } from "./health.js";
 import { hasPerk } from "./skills.js";
 import { craftLock } from "./blueprints.js";
-import { stockHas, useStock, teamWaterIn, takeTeamWater, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
-import { WORM } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text)
+import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
+import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
+import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -32,6 +33,10 @@ export const CRAFTS = {
                  desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
+  // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and
+  // charcoal make it a filter again for a quarter of the scrap. spent: clogged filters it uses (at this base).
+  repackfilter: { name: "Re-packed water filter", gear: "waterfilter", in: { scrap: 1 }, spent: 1, hours: 3, skill: "mechanics", min: 1,
+                  desc: "Fresh sand and charcoal in a clogged filter's bucket (kept at the base each time one clogs there): a charcoal water filter again for 1 scrap." },
   // The worm (worm.js): a sure cure in the gut stage. Strong meds pressed into tablets at a med station.
   dewormer:    { gear: "dewormer",    in: { meds: 3, food: 1 },   hours: 8,  skill: "medicine",  min: 5, needs: "med_station" },
   // Purification tablets (worm.js): iodine from the meds pressed into a tube of 10 at a med station.
@@ -87,7 +92,7 @@ export function craftOutputText(key) {
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
-  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; bases do not use them)`); // worm.js
+  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; a base only when its boiler is cold for want of firewood and it has no water filter)`); // worm.js
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
@@ -141,6 +146,7 @@ export function canCraft(state, base, key) {
   if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
   for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(stockHas(base.stock, k))})` };
   for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
+  if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
@@ -158,7 +164,8 @@ export function queueCraft(state, base, key) {
   for (const [k, v] of Object.entries(r.in)) useStock(base.stock, k, v);
   const taken = [];
   for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) taken.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
-  craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}) });
+  if (r.spent) base.spentFilters -= r.spent;
+  craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}), ...(r.spent ? { spent: r.spent } : {}) });
   const note = crafters(state, base).length ? "" : " Nobody is on the Craft role yet.";
   return `${craftName(key)} queued at ${base.name}.${note}`;
 }
@@ -172,6 +179,7 @@ export function cancelCraft(state, base, id) {
   const full = job.progress <= 0;
   for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) { const key = k === "water" ? RAW : k; base.stock[key] = (base.stock[key] || 0) + (full ? v : Math.ceil(v / 2)); } // water comes back un-purified
   if (job.gearTaken) base.armory.push(...job.gearTaken);
+  if (job.spent) base.spentFilters = (base.spentFilters || 0) + job.spent;
   q.splice(q.indexOf(job), 1);
   return `Cancelled ${craftName(job.recipe)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
@@ -182,7 +190,7 @@ export const craftHeld = (state, job) => job.held != null && state.hour - job.he
 // Why a job is not moving (empty string when it is).
 export function craftJobStatus(state, base, job) {
   const r = CRAFTS[job.recipe];
-  if (craftHeld(state, job)) return "Waits: the tanks are full enough and a build is queued (a filter clogs up day by day, needed or not)";
+  if (craftHeld(state, job)) return "Waits: the tanks are full enough and a build is queued (its scrap goes to the build first)";
   if (!crafters(state, base).length) return "No crafters. Set someone's role to Craft.";
   if (!meetsNeeds(base, r)) return `Needs ${needsText(r)} here`;
   if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;
@@ -284,27 +292,57 @@ export function toolBonus(s, skillKey) {
   return (b && b[skillKey]) || 0;
 }
 
-// Daily: water filters make water at their base (in the armory or worn by someone there) and wear out;
-// tools used for base work (crowbar while scavenging) wear by a day.
+// A water filter job (made or re-packed), and the recipe to queue for one here: a clogged one re-packed (1 scrap)
+// while this base keeps one, else a new one (4 scrap).
+export const isFilterJob = (j) => !!j && (j.recipe === "waterfilter" || j.recipe === "repackfilter");
+export const filterRecipe = (base) => ((base.spentFilters || 0) >= CRAFTS.repackfilter.spent ? "repackfilter" : "waterfilter");
+// Water filters in use (tune-jobcaps): a filter clogs only on the days water runs through it. One always does (it
+// cleans the drinking water: dysentery four times rarer, health.js); more only while their water is wanted (the
+// tanks have room after tomorrow's wells, streams and rain, which fill them first: a filter's water above that only
+// spills over) or while the worm's eggs are in the water and the boiler or a shelter's fire leave part of the day's
+// drinking for the filters to strain (worm.js PURIFY_FILTER each). The rest stand dry in the armory and keep. Before,
+// every filter clogged day by day, needed or not: the governor's summer filters (made for a heat wave that might not
+// come, 3 weeks ahead) clogged in full tanks and were made again, 4 scrap each (a 29-person hub ~25 between days 120
+// and 200 of a 200-day run). A filter that does clog leaves its bucket at the base (base.spentFilters): re-packed for
+// 1 scrap (CRAFTS.repackfilter) before a new one is made (filterRecipe). Over 10 Balanced 200-day runs (seeds 1–9, 42)
+// the filters' scrap went 800 → 406 (days 120–200: 380 → 155; the 32-person hub of seed 8 200 → 79), 200 filters
+// queued → 154 (of them 70 re-packed), buildings 399 → 412.
+export function filtersInUse(state, base, n) {
+  if (!n) return 0;
+  const room = Math.max(0, waterCapacity(base) - waterIn(base.stock) - waterProduction(state, base).total);
+  let use = Math.ceil(room / WATER.filter - 1e-9);
+  if (rawWaterEggs(state, base).eggs > 0) {
+    const cap = purifyCap(state, base);
+    use = Math.max(use, Math.ceil(Math.max(0, cap.drink - cap.boiler - cap.fire) / WORM.PURIFY_FILTER - 1e-9));
+  }
+  return Math.min(n, Math.max(1, use));
+}
+// Daily: the water filters in use make water at their base (in the armory or held by someone there) and wear out,
+// the most worn first (filtersInUse); tools used for base work (crowbar while scavenging) wear by a day.
 export function craftingDaily(state) {
   for (const base of state.bases) {
     const people = atBase(state, base.id);
     let water = 0;
-    for (const item of [...base.armory]) {
-      const w = GEAR[item.key].water;
-      if (!w) continue;
-      water += w;
-      if (wear(item)) {
-        base.armory.splice(base.armory.indexOf(item), 1);
-        log(state, `The ${item.name} at ${base.name} clogged up for good.`, "danger");
+    const list = [
+      ...base.armory.filter((it) => it && GEAR[it.key] && GEAR[it.key].water).map((item) => ({ item })),
+      ...people.filter((s) => s.gear.tool && GEAR[s.gear.tool.key] && GEAR[s.gear.tool.key].water).map((s) => ({ item: s.gear.tool, s })),
+    ];
+    const use = filtersInUse(state, base, list.length);
+    base.filtersInUse = use;
+    for (const f of [...list].sort((a, b) => (itemDur(a.item) ?? 99) - (itemDur(b.item) ?? 99)).slice(0, use)) {
+      water += GEAR[f.item.key].water;
+      if (f.s) { if (wearSlot(state, f.s, "tool")) base.spentFilters = (base.spentFilters || 0) + 1; continue; }
+      if (wear(f.item)) {
+        base.armory.splice(base.armory.indexOf(f.item), 1);
+        base.spentFilters = (base.spentFilters || 0) + 1;
+        log(state, `The ${f.item.name} at ${base.name} clogged up: its bucket is kept, re-packed for 1 scrap (Crafting).`, "danger");
       }
     }
     for (const s of people) {
       const t = s.gear.tool;
       if (!t) continue;
       const d = GEAR[t.key];
-      if (d.water) { water += d.water; wearSlot(state, s, "tool"); }
-      else if (d.bonus && d.bonus.scavenging && s.role === "scavenge" && !s.inBed) wearSlot(state, s, "tool");
+      if (!d.water && d.bonus && d.bonus.scavenging && s.role === "scavenge" && !s.inBed) wearSlot(state, s, "tool");
     }
     if (water) base.stock.water = (base.stock.water || 0) + water;
   }

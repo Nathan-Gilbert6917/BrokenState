@@ -22,7 +22,7 @@ import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
 import { log, day, hub, baseById, factionById, addCard, atBase, survivorById } from "./world.js";
 import {
   planPath, travelHours, spawnAiParty, removeParty, partyTile, tileLabel, partyMembers, awaitOrders, startReturn, launchExpedition,
-  partySpeed, carryCapacity, supplyLoad, fuelForPath, plannedPace, paceOpts, modeSpeed, rationsFor, waterForHours,
+  partySpeed, carryCapacity, supplyLoad, fuelForPath, plannedPace, paceOpts, modeSpeed, foodForHours, waterForHours,
 } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType, baseDefense } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -290,7 +290,7 @@ export function caravanEstimate(state, form) {
   for (const [k, q] of Object.entries(form.goods || {})) if (SUPPLIES[k] && q > 0) sup[k] = (sup[k] || 0) + q;
   for (const [k, q] of Object.entries(form.travel || {})) if (SUPPLIES[k] && q > 0) sup[k] = (sup[k] || 0) + q;
   const pace = plannedPace(state, { members, supplies: sup, v, stance: form.stance || "normal" });
-  let from = h.tile, at = state.hour, total = 0, fuel = 0, ok = true, moveH = 0, rideH = 0, restH = 0, drink = 0;
+  let from = h.tile, at = state.hour, total = 0, fuel = 0, ok = true, eat = 0, drink = 0;
   const n = Math.max(1, (form.crew || []).length);
   const legs = [];
   const leg = (to) => {
@@ -298,17 +298,17 @@ export function caravanEstimate(state, form) {
     if (!r) { ok = false; return null; }
     const t = travelHours(state, r.path, { vehicle: !!v, speed: pace.speed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, startHour: at });
     fuel += v ? fuelForPath(state, r.path, pace.fuelMult) : 0;
-    // Water hour by hour at each day's thirst (weather.js: more in summer and a heat wave).
-    drink += members.length ? waterForHours(state, at, [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot], [6, n]]) : waterForHours(state, at, [[t.hours + 6, n]]);
+    // Food and water hour by hour at each day's cold and thirst (weather.js: more in winter, in summer and a heat wave).
+    const segs = members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot], [6, n]] : [[t.hours + 6, n]];
+    eat += foodForHours(state, at, segs);
+    drink += waterForHours(state, at, segs);
     at += t.hours + 6;
     total += t.hours + 6;
-    moveH += t.hours; rideH += t.rideHours; restH += 6;
     from = to;
     return t.hours;
   };
   for (const tile of form.stops || []) legs.push({ tile, name: destName(state, tile), hours: leg(tile) });
   const back = (form.stops || []).length ? leg(h.tile) : 0;
-  const eat = members.length ? rationsFor(pace, moveH, rideH, restH, n) : (n * total) / 24;
   return { legs, back, hours: total, ok, food: Math.ceil(eat * 1.25), water: Math.ceil(drink * 1.25), fuel: Math.ceil(fuel * 1.15), pace };
 }
 
@@ -418,7 +418,7 @@ export function caravanCard(state, p, text = "") {
   choices.push({ label: "Other orders…", hint: "The usual orders card: move anywhere, camp, scavenge, …", resolve: (st) => { awaitOrders(st, p, "The caravan waits for orders."); return ""; } });
   addCard(state, {
     title: `Trade caravan at ${tileLabel(state, tile)}`, partyId: p.id, isCaravan: true,
-    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(p.supplies.food || 0)}, water ${Math.floor(p.supplies.water || 0)}.`,
+    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(p.supplies.food || 0)}, water ${Math.floor((p.supplies.water || 0) + (p.supplies.rawwater || 0))}.`,
     choices,
   });
 }

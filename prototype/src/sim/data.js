@@ -36,7 +36,7 @@ export const SUPPLIES = {
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
   // Firewood (woodcutting.js): a bundle of split logs and branches, cut from the land around a base (the Cut wood job)
   // or by a team (the Cut wood order). The winter's heating: a base burns firewood before fuel, 1 firewood heating as
-  // much as 0.5 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
+  // much as 0.2 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
   wood:  { name: "Firewood", value: 0.6, weight: 3, cat: "firewood" },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
@@ -87,7 +87,7 @@ export const GEAR = {
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 14, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
-  waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 purified water a day at the base it is kept at (equipped or in the armory), and it purifies 10 un-purified water a day there (the worm's eggs strained out). A team carrying one drinks its un-purified water through it, safe.", weight: 3, cat: "tools" },
+  waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 purified water a day at the base it is kept at (equipped or in the armory), and it purifies 10 un-purified water a day there (the worm's eggs strained out). At a base it clogs only on the days it is in use (one always is; more while the tanks have room or the worm's eggs need straining): spares stand dry and keep. A team carrying one drinks its un-purified water through it, safe.", weight: 3, cat: "tools" },
   // The worm (worm.js): a sure cure in the gut stage, at a base or on the road. Loot: pharmacies, clinics, hospitals,
   // and the livestock wormer on farms and ranches; made at a med station.
   dewormer:   { name: "Dewormer",                 slot: "pack",   skill: null,       power: 0,   req: 0, value: 18, noise: 0, small: true, weight: 0.1, desc: "A blister pack of strong worm tablets (or the livestock paste from a farm). Clears the worm for sure while it is still in the gut, with no medic needed. Useless once it reaches the brain.", cat: "medical" },
@@ -96,7 +96,7 @@ export const GEAR = {
   // un-purified water drunk from infected sources (no filter carried, no camp fire lit) and that water is safe; bases
   // never use them (a team leaving packs a tube from the armory: autopilot.js launchTrip, the planner). Loot: pharmacies, clinics, hospitals, camping places, truck stops,
   // supply drops; pressed at a med station (crafting.js).
-  puritabs:   { name: "Purification tablets",     slot: "pack",   skill: null,       power: 0,   req: 0, value: 10, noise: 0, small: true, dur: 10, tabs: true, weight: 0.1, cat: "medical", desc: "A tube of 10 iodine tablets for the road: one makes 10 un-purified water safe to drink without stopping to boil it (the worm's eggs die). A team carrying them drops one in per 10 river or well water drunk from infected sources when it has no water filter and no camp fire lit. Bases do not use them: their boiler and filters purify the water; a team leaving packs a tube from the armory." },
+  puritabs:   { name: "Purification tablets",     slot: "pack",   skill: null,       power: 0,   req: 0, value: 10, noise: 0, small: true, dur: 10, tabs: true, weight: 0.1, cat: "medical", desc: "A tube of 10 iodine tablets for the road: one makes 10 un-purified water safe to drink without stopping to boil it (the worm's eggs die). A team carrying them drops one in per 10 un-purified water drunk (any of it can carry the worm) when it has no water filter and no lit camp fire with something to burn: on the move, or at a camp out of firewood. A base uses them only in an emergency (its boiler cold for want of firewood and fuel, and no water filter); otherwise a team leaving packs a tube from the armory." },
   backpack:   { name: "School backpack",          slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 kg max load.", weight: 1, cat: "packs" },
   // The stealth kit (stealth.js). Throwables and the suppressor work from a pocket or the pack; thrown, a throwable is
   // gone (throw = the key in stealth.js THROWABLES). The suppressor wears a shot at a time (dur = shots).
@@ -243,6 +243,16 @@ export const GEAR = {
   instcoffee:  { name: "Instant coffee",           slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, use: { mood: 4, buzz: { days: 1, work: 1.1, label: "Coffee buzz" } }, useVerb: "drinks", desc: "A jar of freeze-dried granules: a few good cups. Drunk: +4 mood and 10% more work for the day.", weight: 0.2, cat: "treats" },
   smokes:      { name: "Pack of cigarettes",       slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, use: { mood: 5, hp: -2 }, useVerb: "smokes", desc: "An opened pack, half full. Smoked: +5 mood, −2 health.", weight: 0.05, cat: "smokes" },
   vodka:       { name: "Bottle of cheap vodka",    slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, use: { mood: 10, buzz: { days: 1, work: 0.85, aim: -10, mood: -2, label: "Hungover" } }, useVerb: "drinks", desc: "Plastic bottle, already opened: for drinking, not trading. Drunk: +10 mood, then a day hungover (work −15%, aim −10 in battle, −2 mood).", weight: 0.8, cat: "liquor" },
+  // Toiletries (comforts.js groomLines): groom = mood a day for whoever uses it, dur = days of use in it. Carried,
+  // it is the carrier's own; in a base's armory or a team's cargo it is a shared shelf for everyone there with none
+  // of their own, and a shared one is used up a day per person. Each kind counts once; all together at most +1.2.
+  deodorant:   { name: "Stick of deodorant",       slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, small: true, groom: 0.5, dur: 30, desc: "Half-used, the cap cracked. Nobody smells good any more, but you can smell less bad: +0.5 mood a day for whoever uses it, about a month in the stick.", weight: 0.1, cat: "toiletries" },
+  toothpaste:  { name: "Toothbrush and toothpaste", slot: "pack", skill: null, power: 0, req: 0, value: 3, noise: 0, small: true, groom: 0.4, dur: 40, desc: "A travel brush and a squeezed-flat tube. Clean teeth feel like the old world: +0.4 mood a day for whoever uses it.", weight: 0.1, cat: "toiletries" },
+  shampoo:     { name: "Bottle of shampoo",        slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, groom: 0.3, dur: 25, desc: "Two-in-one, smells of fake apples. Washing your hair in a bucket still counts: +0.3 mood a day for whoever uses it.", weight: 0.4, cat: "toiletries" },
+  wetwipes:    { name: "Pack of wet wipes",        slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, small: true, groom: 0.3, dur: 10, desc: "Baby wipes, still damp. A wash on the road: +0.3 mood a day for whoever uses them, ten days to a pack.", weight: 0.2, cat: "toiletries" },
+  lipbalm:     { name: "Lip balm",                 slot: "pack", skill: null, power: 0, req: 0, value: 1,  noise: 0, small: true, groom: 0.2, dur: 45, desc: "Cherry flavour. Cracked lips are one less thing: +0.2 mood a day for whoever uses it.", weight: 0.02, cat: "toiletries" },
+  makeup:      { name: "Makeup bag",               slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, small: true, groom: 0.4, dur: 50, desc: "Mascara, a compact and a lipstick worn to a stub. Looking like yourself again: +0.4 mood a day for whoever uses it.", weight: 0.3, cat: "toiletries" },
+  perfume:     { name: "Bottle of perfume",        slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, small: true, groom: 0.5, dur: 60, desc: "A designer bottle from a department store counter. A spritz and the world is less rotten for a while: +0.5 mood a day for whoever uses it. Traders like it too.", weight: 0.2, cat: "toiletries" },
   magazines:   { name: "Stack of magazines",       slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, book: { mood: 2, hours: 3 }, desc: "Celebrity gossip from another world. +2 mood an hour read (a third of that read again). Teaches nothing.", weight: 0.4, cat: "luxury" },
   puzzlebook:  { name: "Crossword book",           slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 12 }, desc: "Half the puzzles still blank. +2 mood an hour read, and it lasts. Teaches nothing.", weight: 0.3, cat: "luxury" },
 };
@@ -284,6 +294,7 @@ export const CATEGORIES = {
   books:       { name: "books", group: "knowledge", stockBy: "key" },
   manuals:     { name: "manuals and blueprints", group: "knowledge", stockBy: "key" },
   luxury:      { name: "comforts", group: "comforts", fine: true },
+  toiletries:  { name: "toiletries", group: "comforts", fine: true },
   drugs:       { name: "drugs", group: "comforts", fine: true },
   // Valuables: barter goods with no other use.
   jewelry:     { name: "jewelry and gold", group: "valuables", fine: true },
@@ -300,7 +311,7 @@ export const CATEGORIES = {
 // charge (traders sell dear). Outsiders: merchants and explorers from visitors.js (outside raiders use "raider").
 export const TRADE_PREFS = {
   raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, optics: 1.3, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
-                  liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9,
+                  liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9, toiletries: 0.7,
                   books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6, firewood: 0.6 },
   military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, optics: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
                   gadgets: 1.15, packs: 1.2, medical: 1.15, fuel: 1.15, vehicle: 1.2, manuals: 1.15, smokes: 1.1,
@@ -308,9 +319,9 @@ export const TRADE_PREFS = {
   fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, optics: 1.15, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
                   camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8, firewood: 1.2 },
   traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, optics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
-                  drugs: 1, scrap: 0.9, firewood: 0.8 },
+                  toiletries: 1.2, drugs: 1, scrap: 0.9, firewood: 0.8 },
   commune:      { food: 1.25, water: 1.1, farming: 1.6, medical: 1.3, books: 1.35, manuals: 1.3, tools: 1.25, containers: 1.4, clothing: 1.2, camp: 1.1, treats: 1.35,
-                  household: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
+                  household: 1.3, toiletries: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
                   melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8, firewood: 1.2 },
   zealot:       { liquor: 0, drugs: 0, smokes: 0, optics: 0.8, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
                   medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2, firewood: 1.1 },
@@ -318,7 +329,7 @@ export const TRADE_PREFS = {
                   camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8, firewood: 0.9 },
   merchants:    { "*": 1.05, margin: 1.1, food: 1.35, water: 1.3, scrap: 1.4, containers: 1.5, jewelry: 1.3, collectibles: 1.4, gadgets: 1.25, liquor: 1.2, smokes: 1.2,
                   treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9, firewood: 0.6 },
-  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
+  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, toiletries: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
 };
 // Small valuables traded as goods (where they exist: gold ring, cigarettes, whiskey, coffee, batteries) are light.
 for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 1, coffee: 0.5, batteries: 0.2 })) if (GEAR[k]) GEAR[k].weight = w;

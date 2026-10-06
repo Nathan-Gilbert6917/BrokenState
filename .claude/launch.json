@@ -4,9 +4,20 @@
     {
       "name": "brokenstate",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Dev/BrokenState/prototype/server.cjs"],
+      "runtimeArgs": [
+        "C:/Dev/BrokenState/prototype/server.cjs"
+      ],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "bridges",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5181\"; require(\"C:/Dev/BrokenState/.claude/worktrees/bridges/prototype/server.cjs\")"
+      ],
+      "port": 5181
     }
   ]
 }

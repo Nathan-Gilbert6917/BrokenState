@@ -67,7 +67,7 @@ import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thi
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
-import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
+import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -442,6 +442,10 @@ export const HUNKER_DEF = 20;
 // A critical hit (shots and melee, both sides; the chances are in shotOdds / meleeOdds): × this damage, and through a
 // dead soldier's or riot cop's armour (deadsoldiers.js armorVs).
 export const CRIT_MULT = 2;
+// The critical chances (%): a shot at someone with no cover (EXPOSED), at one of the dead in the open (DEAD), at
+// anyone in cover (COVER), a melee blow (MELEE); an overwatch reaction never. Deadeye adds 15 to a shot (skills.js),
+// the Assassin perk makes a blow on the unaware always critical. Lowered from 40 / 15 / 5 / 10 (a crit is ×2).
+export const CRIT = { EXPOSED: 25, DEAD: 10, COVER: 5, MELEE: 8 };
 const BLEED_TURNS = 3;
 const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 
@@ -547,10 +551,13 @@ export const WEAPONS = {
   knife:     { name: "Kitchen knife",  melee: true, dmg: [14, 22] },
   machete:   { name: "Machete",        melee: true, dmg: [20, 30] },
   claws:     { name: "Teeth and nails", melee: true, dmg: [12, 20] },
-  // The 9mm's 14–21: a walker in the open (29 hit points at power 2) falls to two hits unless both roll 14, and to a
-  // critical (×2) unless it rolls 14, so three pistols against 16 of the dead win about 70% (combattest weapons, 6000
-  // battles); at 16–24 every pair of hits and every critical killed (72%).
-  pistol:    { name: "9mm pistol",     dmg: [14, 21], opt: 6,  fall: 4, aim: 0,  ammo: 1, noise: 2 },
+  // The 9mm: 15–22 and +4 aim. A walker in the open (29 hit points at power 2) falls to any two hits (bar two 15s)
+  // or a critical (×2), so against the dead the aim is what counts: damage alone barely moves three pistols against 16
+  // of them (14–21: 68%, 18–27: 69%), +4 aim takes them to about 72%. Against people the damage counts, and raiders
+  // carry pistols too (KITS), so every gun's odds against them move with it: at 14–21 +0 three pistols beat 4 raiders
+  // 24% to the revolver's 40%; at 15–22 +4 about 30% to its 35% (3000–4000 battles a matchup, crits 25 / 10 / 5 / 8);
+  // 16–24 +4 overtook the revolver (33% to 32%).
+  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2 },
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10 },
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10 },
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3 },
@@ -585,19 +592,19 @@ export const KITS = {
   raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete", "revolver"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards", "revolver", "nailbat", "slingbag", "molotov", "pipebomb"], pack: ["backpack", 0.15],
               finds: ["cigarettes", "cigarettes", "smokes", "smokes", "vodka", "whiskey", "goldchain", "goldring", "watch", "lighters", "molotov", "tobacco"] },
   soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "frag", "rucksack", "camonet", "binoculars", "thermal"], pack: ["assaultpack", 0.3],
-              finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "frag", "heatpack", "batteries", "cards", "photos"] },
+              finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "frag", "heatpack", "batteries", "cards", "photos", "toothpaste", "wetwipes"] },
   zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "fireaxe", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife", "fireaxe", "molotov", "compbow"], fearless: true,
               finds: ["candles", "candles", "molotov", "photos", "tea", "honey"] },
   // People of the other group types (conflicts.js KIND_OF). All human: "mixed" is only for humans plus the dead.
   fighters: { label: "Fighter", aim: 3, hp: 5,  weapons: ["pistol", "shotgun", "huntrifle", "huntrifle", "machete", "leverrifle"], strong: ["ar", "shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "huntrifle", "machete", "vest", "kneeguards", "leverrifle", "prybar", "hikingpack"], pack: ["backpack", 0.15],
-              finds: ["smokes", "chocolate", "batteries", "lighters", "photos", "cards", "flare"] },
+              finds: ["smokes", "chocolate", "batteries", "lighters", "photos", "cards", "flare", "deodorant"] },
   guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "revolver"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet", "baton", "cuffs", "riotarms"], pack: ["backpack", 0.3],
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
-              finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey"] },
+              finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey", "toothpaste"] },
   // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
-              finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries"] },
+              finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },
 };
 
 const idx = (x, y) => y * W + x;
@@ -1428,7 +1435,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (inside(t.x, t.y) && b.cells[idx(t.x, t.y)].k === "siegeladder") aim += CLIMB_AIM;
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
-  const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
+  const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
 }
 
@@ -1439,7 +1446,7 @@ export function meleeOdds(b, a, t) {
   const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up)));
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
-  return { chance, crit: 10, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
+  return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
 }
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
@@ -2403,7 +2410,7 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, o.chance + (o.crit >= 40 ? 12 : 0));
+      best = Math.max(best, o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)); // a target with no cover
     }
   }
   s += best * 0.3;
@@ -3035,7 +3042,7 @@ function endBattle(state, b, outcome) {
       if (outcome === "retreat") { lines.push(`${u.name} was left behind and is lost.`); u.lostBehind = true; }
     }
     if (dies) {
-      hurt(state, s, 9999, b.tileId, cause);
+      hurt(state, s, 9999, b.tileId, u.wormDeath ? `of the worm, in a fight with ${setup.enemy.name || setup.enemy.kind}` : cause); // carriers.js riseInBattle
       deadIds.push(s.id);
       if (!u.lostBehind) lines.push(u.roseAs != null ? turnedLine(b, u) : carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`); // carriers.js: got up as one of the dead
       continue;
@@ -3736,6 +3743,11 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     hideSome(rng, box);
     const came = quickNoise(b, u, box);
     say(b, `${u.name} rummages through the ${name} in a hurry (Heat +${SEARCH.quick.heat})${came ? `: ${came} nearby hear${came === 1 ? "s" : ""} it` : ""}.`, came ? "danger" : "info");
+    const cut = quickHurt(state, b, u); // search.js: going fast, a hand on something sharp
+    if (cut) {
+      say(b, `${u.name} cuts a hand on ${cut.what}${cut.hp ? ` (−${cut.hp} health)` : ""}: it needs dressing.`, "danger");
+      fx(b, { type: "loot", to: [box.x, box.y], text: "cut!" });
+    }
   } else if (box.hidden || box.quick) more = revealHidden(box);
   if (open) {
     const n = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;

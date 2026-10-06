@@ -24,15 +24,18 @@
 //     no heating fuel below 0°C; a shelter with its fire out): then indoors is as cold as out. Cold brings a chest cold
 //     or flu (pneumonia on top of flu), heat a fever;
 //   - hunger or thirst gauges below 25 (needs.js): a fever from weakness, dysentery from drinking whatever there is;
-//   - dirty water: at a base with no water filter SICK.water.none dysentery (with one SICK.water.filter; ×3 while
-//     thirsty, ×2 at a shelter with its fire out: nothing boiled); at a camp with no fire FIRE.raw (raw food, unboiled
-//     water); spoiled food: SICK.spoiled × the share of the fresh food stored outside in the warm (storage.js);
+//   - un-purified water and uncooked food (worm.js: the water a base or a team drinks un-purified, game, crops and
+//     forage with the worm's eggs eaten raw): an upset stomach (stomach), WORM.SICK_X times the worm's own chance, rolled
+//     where the worm is (worm.js sickRoll). It costs no health, no thirst and hardly any work: a little mood a day for
+//     two to four days, then it passes (meds shorten it; automatic care leaves it alone). Only the worm hurts.
+//     Spoiled food stays dysentery: SICK.spoiled × the share of the fresh food stored outside in the warm (storage.js);
 //   - crowding: more people than beds, flu 0.2% + 1% x overcrowding (up to 3%);
 //   - contagion: each contagious case passes it on with its own chance per person a day (×1.6 crowded, ×0.4 in
 //     quarantine, ×SICK.spread.team in a team's close quarters, ×SICK.spread.mending once on the mend); medics catch it
 //     half again as often (treating the sick);
 //   - work: farming 0.6%, building 1.2%, crafting 0.8%, workshop 0.6%, base scavenging 2%, guard 0.2% (cuts and
-//     sprains); searching a site 0.8% a cut and 0.25% a fever per person per search hour (scavenge.js);
+//     sprains); searching a site 0.8% a cut and 0.25% a fever per person per search hour (scavenge.js); a quick
+//     rummage on a raid map up to 9% a cut, 6% by day with no skill (search.js quickHurt);
 //   - wounds: a hit of 10+ health that does not kill: 25% a deep cut that needs dressing (world.hurt); an untreated
 //     cut can become an infected wound (medical.js woundInfected);
 //   - foraged mushrooms (foraging.js), the bites of the dead (combat.js: their own rules).
@@ -72,7 +75,11 @@ export const CONDITIONS = {
   flu:       { name: "Flu",        kind: "illness", icon: "🤒", sev: [30, 55], drift: -3, hp: 4,  work: 0.3,  meds: 1, treat: 35, spread: 0.035,
                desc: "Catching, and spreads fast in a crowded base. Gets worse for the first days. In the cold it can become pneumonia." },
   dysentery: { name: "Dysentery",  kind: "illness", icon: "🤢", sev: [30, 60], drift: 1,  hp: 8,  work: 0.2,  meds: 1, treat: 50, spread: 0.015, thirst: 1,
-               desc: "From dirty water or bad food. Drains health and water (+1 water a day). A water filter, boiled water and good storage make it rarer." },
+               desc: "From spoiled food or drinking whatever there is when parched. Drains health and water (+1 water a day). Good storage and full water tanks make it rarer." },
+  // From un-purified water or uncooked food (worm.js sickRoll): mild, never kills, no thirst: mood only (mood: a flat
+  // amount a day in place of SICK.mood × severity). mild: automatic care does not spend meds on it.
+  stomach:   { name: "Upset stomach", kind: "illness", icon: "🥴", sev: [20, 40], drift: -7, hp: 0, work: 0.95, meds: 1, treat: 60, spread: 0, mood: 1.5, mild: true,
+               desc: "Cramps and an uneasy gut from un-purified water or food that was not cooked: no health lost, just a low mood for a few days, then it passes. Meds shorten it. It is not the worm: the worm hurts more every day." },
   pneumonia: { name: "Pneumonia",  kind: "illness", icon: "🫁", sev: [50, 75], drift: 4,  hp: 12, work: 0,    meds: 1, treat: 30, spread: 0.01,
                desc: "Fluid in the lungs: cannot work, and it kills without meds. A hospital bed helps a lot." },
 };
@@ -143,6 +150,9 @@ export const illnessAim = (s) => (conditionsOf(s).length ? -Math.round(SICK.aim 
 // (medical.bedReason). Quarantine is left out here: it keeps people from work, not in bed.
 export const WORK_STOP = 0.35;
 export const tooIllToWork = (s) => !!s && s.alive && conditionsOf(s).length > 0 && workFactor({ conditions: conditionsOf(s) }) < WORK_STOP;
+
+// Mood a condition costs a day: its own flat amount (an upset stomach), else SICK.mood × severity.
+export const conditionMood = (c) => { const d = CONDITIONS[c.key]; return d && d.mood != null ? d.mood : SICK.mood * c.sev / 100; };
 
 // How dangerous a condition is (for "worst off first" in beds and automatic care): health it costs, pneumonia
 // above everything, and some weight for severity.
@@ -301,7 +311,7 @@ export const autoTreatOn = autoCareOn;
 // or can kill, any deep cut (it can get infected), the rest from severity 30.
 export function autoWantsCondition(c) {
   const d = CONDITIONS[c.key];
-  if (!d || !needsDose(c)) return false;
+  if (!d || !needsDose(c) || d.mild) return false; // an upset stomach passes on its own: meds by hand only
   if (c.course != null) return true;
   const urgent = d.hp * c.sev / 100 >= 6 || c.key === "pneumonia";
   return urgent || c.sev >= 30 || c.key === "cut";
@@ -365,7 +375,7 @@ export function treatConditionAnywhere(state, survivorId, key) {
 // Does the team dose this on its own tonight?
 export function teamWants(c) {
   const d = CONDITIONS[c.key];
-  if (!d || !needsDose(c)) return false;
+  if (!d || !needsDose(c) || d.mild) return false;
   if (c.course != null) return true;
   return c.key === "pneumonia" || d.hp * c.sev / 100 >= 5 || c.sev >= SICK.teamAuto || (c.key === "cut" && c.sev >= 30);
 }
@@ -492,12 +502,10 @@ export function illnessRisk(state, s, ctx = null) {
   if (h < G.below) add("fever", G.base + G.add * (G.below - h) / G.below, "hunger", `weak from hunger ${where}`);
   // Water and food.
   if (ctx.kind === "base") {
-    const b = ctx.base;
-    const dirty = (ctx.filter ? SICK.water.filter : SICK.water.none) * (t < SICK.weak.below || b.thirstDays > 0 ? SICK.water.thirsty : 1) * (ctx.coldCamp ? SICK.water.noFire : 1);
-    add("dysentery", dirty, "water", `from dirty water ${where}${ctx.filter ? "" : " (no water filter)"}`);
+    // Un-purified water: worm.js rolls an upset stomach (stomach) for the share drunk un-purified (baseWormDaily).
     if (ctx.spoil > 0) add("dysentery", SICK.spoiled * ctx.spoil, "food", `from spoiled food ${where} (food stored outside)`);
     if (ctx.crowd > 0) add("flu", Math.min(0.03, 0.002 + 0.01 * ctx.crowd), "crowding", `in the crowded bunks ${where}`);
-  } else if (ctx.fire === false) add("dysentery", FIRE.raw, "camp", "from cold food and unboiled water at a camp with no fire");
+  } // A team's un-purified water and uncooked food: worm.js rolls an upset stomach as it is drunk or eaten (drinkHour, eatRaw).
   // Contagion: the worst of what the others here carry.
   let best = 0, from = null;
   for (const src of ctx.people) {
@@ -599,7 +607,7 @@ export function healthDaily(state) {
       }
       // Health and mood: not on the day it starts. Half the health once on the mend.
       if (c.days > 0) {
-        s.mood = Math.max(0, s.mood - SICK.mood * c.sev / 100);
+        s.mood = Math.max(0, s.mood - conditionMood(c));
         if (d.hp > 0) {
           const tile = base ? base.tile : p && p.path ? p.path[p.idx] : null;
           hurt(state, s, d.hp * c.sev / 100 * (c.mending ? 0.5 : 1), tile, `of ${d.name.toLowerCase()}`, { raw: true });
@@ -775,7 +783,7 @@ export function conditionTip(state, s, c) {
   const dl = daysLeft(state, s, c);
   bits.push(dl == null ? "Getting worse at today's rate: it needs meds or rest." : `About ${dl} day${dl === 1 ? "" : "s"} left at today's rate.`);
   if (d.hp) bits.push(`Costs about ${r1(d.hp * c.sev / 100 * (c.mending ? 0.5 : 1))} health a day.`);
-  bits.push(`Can work at ${Math.round(workFactor({ conditions: [c] }) * 100)}%${illnessAim({ conditions: [c] }) ? `, aim ${illnessAim({ conditions: [c] })}` : ""}, mood −${r1(SICK.mood * c.sev / 100)} a day.`);
+  bits.push(`Can work at ${Math.round(workFactor({ conditions: [c] }) * 100)}%${illnessAim({ conditions: [c] }) ? `, aim ${illnessAim({ conditions: [c] })}` : ""}, mood −${r1(conditionMood(c))} a day.`);
   bits.push(c.mending ? "Treated: on the mend (no longer worsens)." : c.course != null ? `Treatment: ${c.dosed} of ${c.course} doses given (1 meds a day each).` : `Treatment: a course of ${dosesFor(c)} dose${dosesFor(c) === 1 ? "" : "s"}, 1 meds a day each (at a base a medic's time too); each takes about ${d.treat} severity off (more with a hospital and Medicine) and stops it worsening.`);
   if (d.spread) bits.push(c.mending ? "Barely catching now." : "Contagious.");
   return bits.join(" ");

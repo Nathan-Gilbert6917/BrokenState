@@ -16,7 +16,7 @@ import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { conditionChips, isSick } from "./health.js"; // illness chips with days left and a Treat button (the team's meds)
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
-import { weather as wxNow, travelEffects } from "../sim/weather.js";
+import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
@@ -162,7 +162,7 @@ export function renderExpedition(state, ui, p) {
         ${ord("mission", ` data-mission="survey"`, `Look around (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
         ${[[2, 12], [3, 24], [4, 48]].map(([r, h]) => ord("sweep", ` data-radius="${r}" data-hours="${h}"`, `Survey ${r} tiles, ${h}h`, `${MISSIONS.sweep.desc} From here: ${r} tiles around for ${h} hours, back here at the end.`)).join("")}
         ${CAMP_HOURS.map((h) => ord("camp", ` data-hours="${h ?? ""}"`, h ? `Camp ${h}h` : "Camp (until broken)", `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}. The hurt heal a little each hour (infected wounds need meds); nobody travels, so no road events. Supplies keep draining.`)).join("")}
-        ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Water for a base that runs short in summer.`) : ""}
+        ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Un-purified water for a base that runs short in summer: the base purifies it; on the way a filter, a lit camp fire or purification tablets make it safe to drink.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
         ${ord("claim", "", `Claim this tile (${CLAIM.HOURS}h)`, claimWhy && !queueing ? `Claim this tile: ${claimWhy}` : `Raise a marker post here (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 50% the alliance victory needs. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.`, !!claimWhy && !queueing)}
         ${claimOwner(state, claimAt) === "player" || queueing ? ord("well", "", `Dig a well (${CLAIM.WELL_HOURS}h)`, wellWhy && !queueing ? `Dig a well: ${wellWhy}` : `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): about ${wellYield(state, claimAt)} water a day here, hauled by the people at your base next to it (one well per ${CLAIM.WELL_PER_PEOPLE} people there counts). It holds 1,500–4,000 water and runs dry in time.`, !!wellWhy && !queueing) : ""}
@@ -350,9 +350,9 @@ function suppliesBlock(state, p) {
   const cap = partyCapacity(state, p);
   const load = poolLoad(p);
   const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
-  // Days at the rate it eats on the move (more under a load, sim/load.js).
+  // Days at the rate it eats on the move (more under a load, sim/load.js; food at today's cold, sim/weather.js).
   const n = Math.max(1, partyPace(state, p).eatMove);
-  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n); // water: both kinds
+  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / (n * (k === "food" ? foodNeedFactor(state) : 1))); // water: both kinds
   const t = partyLoad(state, p);
   const b = p.burden;
   const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;
@@ -408,7 +408,8 @@ function teamWaterNote(state, p) {
   if (!(raw >= 1)) return "";
   const how = teamWaterHow(state, p);
   const tabs = teamTabCount(state, p);
-  const text = how === "filter" ? "drunk through the water filter carried (safe)" : how === "fire" ? "boiled at the camp fire (safe)" : how === "tabs" ? `dropping a tablet in the river water (${tabs} purification tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER})` : how === "clean" ? "from clean ground: safe enough as it is" : "drunk as it is: it carries the worm's eggs (camp with the fire lit, or carry a filter or purification tablets)";
-  return `<div class="small ${how === "unsafe" ? "danger" : "muted"}"${tip("Purified water (bottled, boiled, filtered) is drunk first. Un-purified water (fetched from a river or lake, or a base's well water) is safe once purified: a water filter carried, a lit camp fire (it also boils some into purified water each hour), or purification tablets (one per " + WORM.TABS_WATER + " water, no need to stop and camp).")}>Water: ${n0(carriedW(p))} purified, ${n0(raw)} un-purified: ${esc(text)}.</div>`;
+  const lit = p.phase === "task" && p.task && p.task.type === "camp" && p.campFire !== false;
+  const text = how === "filter" ? "now: through the water filter carried (safe)" : how === "fire" ? "now: boiled at the camp fire (safe; no tablets used)" : how === "tabs" ? `now: purification tablets (${lit ? "the camp fire has nothing to burn" : "on the move"}; ${tabs} tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER})` : `now: drunk as it is (${(p.wormEggs || 0) > 0 ? "it carries the worm's eggs" : "it can carry the worm"}: camp with the fire lit and firewood, or carry a filter or purification tablets)`;
+  return `<div class="small ${how === "unsafe" ? "danger" : "muted"}"${tip("Purified water (bottled, boiled, filtered) is drunk first. Un-purified water (fetched from a river or lake, or a base's well water) can carry the worm and turn the stomach; it is made safe, in this order: a water filter carried; a lit camp fire with firewood carried or deadfall on the land (it also boils some into purified water each hour); purification tablets (one per " + WORM.TABS_WATER + " water: on the move, or at a camp whose fire cannot be kept going); otherwise it is drunk as it is.")}>Water: ${n0(carriedW(p))} purified, ${n0(raw)} un-purified: ${esc(text)}.</div>`;
 }
 const carriedW = (p) => Math.max(0, p.supplies.water || 0) + Math.max(0, (p.cargo && p.cargo.supplies.water) || 0);

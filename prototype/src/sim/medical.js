@@ -150,6 +150,7 @@ export function patients(state, base, h = activeHospital(state, base)) {
 // Passive heal per hour for one survivor at a base.
 export function healRatePerHour(state, base, s, hosp = activeHospital(state, base), inBed = null) {
   if (!isHurt(s)) return 0;
+  if (s.worm && s.alive) return 0; // worm.js: the worm feeds on them; nobody heals while it is in them
   const bed = inBed != null ? inBed : patients(state, base).includes(s);
   let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;
   if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)

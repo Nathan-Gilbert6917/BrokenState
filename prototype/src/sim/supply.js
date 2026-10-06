@@ -527,7 +527,7 @@ function holdUpkeep(state, p, job) {
     const fed = draw("food"), watered = draw("water");
     if (!fed) hurt(state, m, 6, dest.tile, `of hunger while holding at ${dest.name}`, { raw: true });
     if (!watered && m.alive) hurt(state, m, 8, dest.tile, `of thirst while holding at ${dest.name}`, { raw: true });
-    if (fed && watered) m.health = Math.min(100, m.health + 3);
+    if (fed && watered && !m.worm) m.health = Math.min(100, m.health + 3); // worm.js: no healing while the worm is in them
     else short = !fed && !watered ? "food and water" : !fed ? "food" : "water";
   }
   if (short) log(state, `The convoy holding at ${dest.name} (${jobName(state, job)}) has no ${short}. Send it home or stock the base.`, "danger");

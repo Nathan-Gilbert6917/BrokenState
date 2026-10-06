@@ -39,14 +39,15 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
-import { CRAFTS, canCraft, queueCraft, craftQueue } from "./crafting.js";
+import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
-import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay } from "./weather.js";
+import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
+import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy } from "./blueprints.js";
@@ -72,11 +73,11 @@ import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squa
 import { autopilotPrisoners } from "./prisoners.js";
 import { isManaged } from "./work.js";
 import {
-  HUNT, CABIN, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkCap,
+  HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
-import { woodNeed, woodWorkWhy, woodWorkCap, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, WOOD } from "./woodcutting.js";
+import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
@@ -84,7 +85,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
-import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad } from "./worm.js";
+import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -672,12 +673,13 @@ const partyFuelOf = (state, p) => {
 };
 // Rough hours until a team is home: the way left, plus (going out) the job and the same way back.
 const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 2 * hoursLeft(state, p) + 10);
-// Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js).
+// Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js; food at
+// today's cold, no camp fire on the move: weather.js foodNeedFactor).
 function carriedDays(state, p, extra = 0) {
   const n = partyMembers(state, p).length;
   const perDay = (n ? partyPace(state, p).eatMove : 0) + extra;
   const have = (k) => (k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds
-  return Math.min(have("food"), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst (weather.js)
+  return Math.min(have("food") / foodNeedFactor(state), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst, food at today's cold (weather.js)
 }
 
 // Conflict cards (conflicts.js): every option is scored from the odds the card shows.
@@ -1058,7 +1060,7 @@ export function heatFuelWant(state, base) {
   const s = wxSeason(state);
   const soon = s.key === "winter" || (s.key === "autumn" && s.dayOfSeason > 10) || (s.key === "spring" && s.dayOfSeason <= 14);
   const wn = woodNeed(state, base);
-  const cutting = !gov(state).noWood && !woodWorkWhy(state, base) && !wn.cold && woodCuttersFor(state, base, wn) <= woodWorkCap(state, base);
+  const cutting = !gov(state).noWood && !woodWorkWhy(state, base) && !wn.cold && woodCuttersFor(state, base, wn) <= woodCrewMax(atBase(state, base.id).length);
   // In the cold months the fuel is never "plenty" (0.7: not traded away) even with the winter's need in store.
   const want = !soon || need <= 0 ? 0 : have < need * 0.5 ? 1.9 : have < need ? 1.4 : 0.7;
   return { need, want: cutting ? Math.min(1.4, want) : want };
@@ -1113,7 +1115,17 @@ function needs(state) {
     // Late spring and summer: wanted too while the stock is under the summer plan's reserve (waterPlan).
     // Purified water (water.js) wanted too while the base cannot purify what it drinks (no boiler lit, too few filters)
     // and its un-purified water carries the worm's eggs (worm.js baseWater): trades ask for purified water.
-    water: (() => { const wo = waterOutlook(state, h); const wp = waterPlan(state, h); const d = wo.net >= 0 ? waterIn(st) / n + 10 : wo.daysLeft; return Math.max(pick(d, [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0); })(),
+    // The water filters' share (3 a day each) clogs up within weeks and is made again only from scrap: while the
+    // wells, stream and rain alone fall short, the days the stock would last without the filters count too, so a hub
+    // that lives on its filters never rates its water as plenty and sells it to a caravan (seed 17: 198 and then 240
+    // water traded away by a 40-head hub, leaving 3 days and then 1 day in store as the filters clogged up).
+    water: (() => {
+      const wo = waterOutlook(state, h); const wp = waterPlan(state, h);
+      const d = wo.net >= 0 ? waterIn(st) / n + 10 : wo.daysLeft;
+      const steadyNet = wo.net - wo.prod.filters;
+      const dSteady = steadyNet >= 0 ? Infinity : waterIn(st) / -steadyNet;
+      return Math.max(pick(Math.min(d, dSteady), [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0);
+    })(),
     // Meds: by stock per head, and wanted hard while the sick here need more doses than there are (health.js courses).
     meds: Math.max(pick(st.meds || 0, [[2, 2.5], [n * 0.6, 1.8], [n * 1.5, 1], [Infinity, 0.3]]), medsToTreatAll(state, h) > (st.meds || 0) ? 2.2 : 0),
     scrap: pick(st.scrap || 0, [[20, 2.5], [45, 1.6], [90, 0.9], [Infinity, 0.35]]),
@@ -1306,7 +1318,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
   // nothing boils it (worm.js: a filter makes it safe while it lasts).
   if (areas.production) {
-    const fj = craftQueue(base).some((j) => j.recipe === "waterfilter");
+    const fj = craftQueue(base).some(isFilterJob);
     if (fj && (waterRunningShort(state, base) || wormFilterUrgent(state, base))) {
       const c = ranked("craft", (x) => skill(x, CRAFTS.waterfilter.skill), (x) => !x.inBed && skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min)[0];
       if (c) give(c, "craft");
@@ -1329,12 +1341,17 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const foraging = planForage(state, base, people, foodDays, areas);
   if (foraging) for (const s of ranked("forage", foragerMult, foraging.fit).slice(0, foraging.critical)) give(s, "forage");
   if (foodDays < 4) farmTo(fw.ideal);
-  // 2b. Food from the land (hunting.js): a hunting cabin's hunters (two at 8+ people) and a fisher by the water while
-  // food is not plentiful. A hunter at a cabin in good game country brings in several farmers' worth (if it has a
-  // weapon), so they go before the comfortable farm crew and the stations.
-  if (areas.food && !gov(state).noHunting && foodDays < Math.max(40, foodTarget(state, base) * 1.5)) {
-    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, people.length >= 8 ? CABIN.hunters : 1)) give(s, "hunt");
-    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(people.length >= 8 ? 2 : 1, fishWorkCap(state, base)))) give(s, "fish");
+  // 2b. Food from the land (hunting.js): a hunting cabin's hunters and fishers by the water while food is not
+  // plentiful. A hunter at a cabin in good game country brings in several farmers' worth (if it has a weapon), so they
+  // go before the comfortable farm crew and the stations. No fixed cap (tune-jobcaps: it was two hunters at 8+ people,
+  // else one, and as many fishers): as many as close the food the land must bring in (huntWorkCap / fishWorkHands:
+  // the day's eating and the stores refilled, less the plots), up to a fifth of the people ahead of the farm
+  // (LAND_AP.share: the governor's order of work, not the job's room; one at a base under 5).
+  const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
+  if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
+    const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
+    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
 
   // The winter stores fall short (winterShort): the plots get their tenders before builders, medics and stations,
@@ -1439,8 +1456,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 10. Everyone else: more hands on the plots while food is not plentiful (bigger harvests), rest when spirits
   // are low; base scavenging rarely finds anything, so only the last few go out to pick around.
-  planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
-  if (foodDays < Math.max(40, foodTarget(state) * 1.5)) farmTo(Math.ceil(fw.ideal * 1.6));
+  // With food plentiful the teachers and readers have no head cap (skills.js planStudy: the learners and the copies
+  // are the limit) and take the hands the firewood leaves (below); before that one or two and a reader per 6, here.
+  const plenty = foodDays >= Math.max(40, foodTarget(state) * 1.5);
+  if (!plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
+  if (!plenty) farmTo(Math.ceil(fw.ideal * 1.6));
   // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
   if (foraging) {
     const have = [...want.values()].filter((w) => w.role === "forage").length;
@@ -1451,6 +1471,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const have = [...want.values()].filter((w) => w.role === "wood").length;
     for (const s of ranked("wood", wood.score, (x) => wood.fit(x) && x.mood >= 40).slice(0, Math.max(0, wood.cap - have))) give(s, "wood");
   }
+  if (plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent, plenty });
   for (const s of [...free]) give(s, s.mood < 40 ? "rest" : "scavenge");
 
   let changed = 0;
@@ -1705,7 +1726,7 @@ function buildWishes(state, base) {
   return out;
 }
 
-// The worm (worm.js): a water boiler as soon as the base's water carries its eggs (saved for unless a water filter
+// The worm (worm.js): a water boiler as soon as the base drinks un-purified water (any of it can carry the worm; saved for unless a water filter
 // covers it for now, or the land around gives too little firewood to keep it burning: then filters are the plan,
 // planCrafts, and the boiler waits its turn), and a cook fire once game, crops or forage with eggs come in, or
 // hunters, fishers, farmers and foragers work infected land.
@@ -1713,13 +1734,13 @@ function wormWishes(state, base, queued) {
   const out = [];
   if (isShelter(base)) return out; // its fire boils and cooks
   const w = baseWater(state, base);
-  if (w.raw > 0 && !count(base, "boiler") && !queued("boiler")) {
+  if (w.drawn && !count(base, "boiler") && !queued("boiler")) {
     const filter = baseFilter(state, base) && w.safe; // the filters purify the day's drinking (worm.js PURIFY_FILTER each)
     const woodShort = boilerWoodShort(state, base);
     const sick = residents(state, base.id).some(wormSeen);
     // Little firewood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
     // until someone here has caught it.
-    if (!woodShort || sick) out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
+    if (!woodShort || sick) out.push({ type: "boiler", why: `un-purified water can carry the worm${w.raw > 0 ? " (and the ground here is infected)" : ""}${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
   }
   const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
   const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
@@ -1733,7 +1754,7 @@ function wormWishes(state, base, queued) {
 // a queued water filter is crafted before anything else.
 export function wormFilterUrgent(state, base) {
   const ww = baseWater(state, base);
-  return ww.raw > 0 && (!ww.safe || boilerWoodShort(state, base));
+  return ww.drawn && (!ww.safe || boilerWoodShort(state, base));
 }
 // The land around a base gives less firewood a day (one woodcutter, woodcutting.js) than its boiler would burn, and the
 // pile is short of what the base wants (the winter's wood and the boiler's days, woodNeed): the boiler would eat the
@@ -1796,12 +1817,13 @@ function planCrafts(state, base) {
   // three), leaving the scrap to jury-rig a broken well or pump (waterPlan); on priorities, unless the water is running
   // short now, the next building's scrap too (buildKeep).
   const fw0 = filtersWanted(state, base);
-  const f0 = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
+  const f0 = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter(isFilterJob).length;
   const fKeep = f0 < fw0 && !waterRunningShort(state, base) ? buildKeep(state, base) : 0;
-  if (f0 < fw0 && (st.scrap || 0) - fKeep >= CRAFTS.waterfilter.in.scrap + waterPlan(state, base).brokenWater && canCraft(state, base, "waterfilter").ok) {
-    queueCraft(state, base, "waterfilter");
+  const fr = filterRecipe(base); // tune-jobcaps: a clogged filter kept here is re-packed for 1 scrap first
+  if (f0 < fw0 && (st.scrap || 0) - fKeep >= CRAFTS[fr].in.scrap + waterPlan(state, base).brokenWater && canCraft(state, base, fr).ok) {
+    queueCraft(state, base, fr);
     gov(state).stats.crafts++;
-    say(state, `Queued ${GEAR.waterfilter.name} at ${base.name}: water for the summer and dry spells (${f0 + 1} of ${fw0} filters).`);
+    say(state, `Queued ${fr === "waterfilter" ? GEAR.waterfilter.name : "a clogged water filter re-packed"} at ${base.name}: water for the summer and dry spells (${f0 + 1} of ${fw0} filters).`);
     return;
   }
   if (q.length >= 3) return;
@@ -1814,7 +1836,7 @@ function planCrafts(state, base) {
   const tryCraft = (keys, why, minScrap) => {
     for (const k of keys) {
       const r = CRAFTS[k];
-      if (!r || (st.scrap || 0) - (r.in.scrap || 0) - keep < Math.max(minScrap, floor, k === "waterfilter" ? 0 : waterHold(state, base))) continue; // leaves the scrap held for water (and for the next building: keep)
+      if (!r || (st.scrap || 0) - (r.in.scrap || 0) - keep < Math.max(minScrap, floor, CRAFTS[k].gear === "waterfilter" ? 0 : waterHold(state, base))) continue; // leaves the scrap held for water (and for the next building: keep)
       if (r.in.parts && (st.parts || 0) - r.in.parts < 2) continue;
       if (r.in.meds && (st.meds || 0) - r.in.meds < 3) continue;
       if (r.in.water && waterIn(st) - r.in.water < 15) continue;
@@ -1828,16 +1850,19 @@ function planCrafts(state, base) {
   };
   if (lacking("weapon") > 0 && tryCraft(["crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return;
   if (((st.meds || 0) < Math.max(3, n / 2) || (rs && rs.meds.short)) && tryCraft(["dressings"], "meds are short", 5)) return;
-  const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
-  if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "water is below the reserve", 4)) return;
+  const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter(isFilterJob).length;
+  if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "water is below the reserve", 4)) return;
   // The worm (worm.js): water with eggs and no boiler burning (none built, or nothing to burn, or the land gives too
   // little firewood for one): a filter makes it safe while it lasts, and a second is kept against the first clogging.
-  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft(["waterfilter"], baseWater(state, base).safe ? "the water carries the worm's eggs and the boiler's firewood is short" : "the water carries the worm's eggs and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
-  if (filters < 1 && tryCraft(["waterfilter"], "clean water: dysentery is four times rarer with a filter (health.js)", 8)) return;
+  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft([filterRecipe(base)], baseWater(state, base).safe ? "un-purified water can carry the worm and the boiler's firewood is short" : "un-purified water can carry the worm and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
+  // Dewormers (worm.js): the sure cure in the worm's first days, kept on hand (two at a hub, one at an outpost).
+  const dewormers = baseDewormers(state, base) + q.filter((j) => j.recipe === "dewormer").length;
+  if (dewormers < (base.type === "hub" ? 2 : 1) && (st.meds || 0) >= 8 && tryCraft(["dewormer"], "a dewormer on hand: the worm kills within a week", 4)) return;
+  if (filters < 1 && tryCraft([filterRecipe(base)], "clean water: a filter purifies 10 a day against the worm and an upset stomach (worm.js)", 8)) return;
   if (rs) floor = rs.scrap.target;
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
-  if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and clean water means less dysentery)", 15)) return;
+  if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
@@ -2715,7 +2740,7 @@ const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pul
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
   const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
-  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : (have("food") + have("preserved")) / n;
+  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : (have("food") + have("preserved")) / (n * teamCold(state, p)); // food: the cold unless by a lit camp fire (needs.js)
 };
 // What the team should still gather: what the camp lacks (or the whole need with no camp yet) less what it carries,
 // plus food and water to live on while it works there. { key: qty }.
@@ -3091,7 +3116,11 @@ function launchTrip(state, c, pool, spareHands) {
   let days = (est.hours + onSite) / 24;
   // Cautious: no trip of more than half a day with a storm or blizzard forecast while it is out.
   if (P.reserves && est.hours > 12 && severeSoon(state, Math.ceil(days) + 1)) return off();
-  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : h.stock[k] || 0); // water: both kinds, purified packed first (parties.js)
+  // Water: both kinds, purified packed first (parties.js). Food: fresh and preserved (storage.js edibleFood), fresh
+  // packed first: by late autumn the kitchen has turned the fresh food into the winter's preserved stores, and a hub
+  // with 0 fresh and 1700 preserved called off every trip as one that "cannot spare" the food (seed 17: no
+  // scavenging, no water hauls, no wells for 20 days while the water filters clogged up, then 21 dead of thirst).
+  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : k === "food" ? edibleFood(h) : h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
   // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission) || !!c.haul;
@@ -3107,11 +3136,12 @@ function launchTrip(state, c, pool, spareHands) {
   // way home is not a crawl; the rations count the way back at that load.
   const haulBand = !v && looting ? (P.reserves ? 1 : 2) : null;
   const ration = (e) => {
-    let r = e.food + (n * onSite) / 24; // the planner's rations (more on the move under a load) and the time on site
+    const cold = coldAhead(state, (e.hours + onSite) / 24); // the time on site and the heavier way home at the cold ahead (e.food has its own)
+    let r = e.food + (n * onSite * cold) / 24; // the planner's rations (more on the move under a load, the cold) and the time on site
     if (haulBand != null) {
       const b = LOAD_BANDS[haulBand];
       const haulPace = (STANCES[P.stance]?.speed || 1) * (1 - b.slow);
-      r += (n * e.hoursBack * Math.max(0, ((e.pace.footSpeed || 1) / haulPace) * (1 + b.eat) - e.pace.eatFoot / Math.max(1, n))) / 24;
+      r += (n * e.hoursBack * cold * Math.max(0, ((e.pace.footSpeed || 1) / haulPace) * (1 + b.eat) - e.pace.eatFoot / Math.max(1, n))) / 24;
     }
     return r;
   };
@@ -3147,6 +3177,9 @@ function launchTrip(state, c, pool, spareHands) {
     for (const k of ["food", "water"]) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   } else if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
+  // The rations: fresh food first, preserved food for the rest (lighter, and the team eats it the same: parties.js).
+  const freshFood = Math.floor(Math.max(0, h.stock.food || 0));
+  if (sup.food > freshFood) { sup.preserved = Math.min(Math.floor(Math.max(0, h.stock.preserved || 0)), (sup.preserved || 0) + sup.food - freshFood); sup.food = freshFood; }
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
   const cap = carryCapacity(state, crew, plannedV);
   if (supplyLoad(sup) > cap) sup.ammo = Math.min(sup.ammo, 5 * n);
@@ -3247,7 +3280,9 @@ function foodTripCands(state, h, pool, need, P) {
 // a 2-3 person team brings 60-150), then comes home. Scored above an ordinary scavenging trip, more the drier it is.
 // (The haul's hours are orders.js FETCH_WATER_HOURS, read inside waterTripCands: orders.js can still be evaluating when
 // this module loads, through the claims.js import cycle, so no import is read at module top level here.)
-const WATER_HAUL = { days: 3, reach: 6, crewMax: 3 };
+// A shore within `reach` tiles first; with none there, one within `far` (a hub in the forest 7 tiles from the
+// nearest river had no haul at all, even at a day of water: seed 17), scored a little lower for each tile past reach.
+const WATER_HAUL = { days: 3, reach: 6, far: 10, farCost: 0.3, crewMax: 3 };
 function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const want = waterNeed(state, h).total;
   if (want <= 0) return [];
@@ -3261,7 +3296,7 @@ function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const severe = days < 1.5 || prod < want * 0.6;
   if (hauling >= (maxTeams ?? (severe ? 2 : 1))) return [];
   let best = null;
-  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.reach))) {
+  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.far))) {
     if (id === h.tile || !besideWater(state, id)) continue;
     const d = state.grid.distance(id, h.tile);
     if (!best || d < best.d) best = { id, d };
@@ -3269,8 +3304,9 @@ function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   if (!best) return [];
   const size = Math.min(WATER_HAUL.crewMax, Math.max(2, P.crew));
   const shortBy = Math.max(0, want - prod);
-  return [{ mission: "move", tile: best.id, crew: size, haul: true, onSite: FETCH_WATER_HOURS, steps: [{ kind: "water" }, { kind: "home" }],
-    score: Math.min(6, 2 + shortBy / 10 + (WATER_HAUL.days - Math.min(WATER_HAUL.days, days))),
+  const far = Math.max(0, best.d - WATER_HAUL.reach);
+  return [{ mission: "move", tile: best.id, crew: size, haul: true, onSite: FETCH_WATER_HOURS, steps: [{ kind: "water" }, { kind: "home" }], reach: far ? best.d / WATER_HAUL.reach : 1,
+    score: Math.min(6, 2 + shortBy / 10 + (WATER_HAUL.days - Math.min(WATER_HAUL.days, days))) - far * WATER_HAUL.farCost,
     why: `haul water from ${tileLabel(state, best.id)} (${Math.floor(waterIn(h.stock))} in store, ${Math.round(want)} a day drunk, ${Math.round(prod)} made)` }];
 }
 
@@ -3446,9 +3482,11 @@ function claimAct(state, p) {
 // ---------- wild food and the land when food runs low (foraging.js, hunting.js) ----------
 // A base with food down to FORAGE_AP.critical days a head puts a forager or two to work before the builders and
 // stations (one, two at 6+ people), and under FORAGE_AP.low days the hands left over forage instead of picking through
-// the ruins (up to the Forage job's cap), while a forager would bring in at least FORAGE_AP.minDay a day (not in winter).
+// the ruins (as many as the food gap wants: foraging.js forageWorkCap), while a forager would bring in at least FORAGE_AP.minDay a day (not in winter).
 // gov.noForaging: the test switch (foragetest.js) that leaves foraging out of the governor's plans.
 const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
+// The land's hunters and fishers ahead of the farm (planRoles 2b): at most this share of the people (at least one).
+const LAND_AP = { share: 0.2 };
 function planForage(state, base, people, foodDays, areas) {
   // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
   foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));
@@ -3456,7 +3494,7 @@ function planForage(state, base, people, foodDays, areas) {
   if (baseForageDay(state, base) < FORAGE_AP.minDay) return null;
   const small = people.length <= 4; // a tiny hub (hardcore's first): the leader picks berries too
   return {
-    cap: forageWorkCap(state, base),
+    cap: forageWorkCap(state, base, FORAGE_AP.low), // tune-jobcaps: sized to the need (the food gap to FORAGE_AP.low days), no fixed cap (it was 3, 4 at 12+)
     critical: foodDays < FORAGE_AP.critical ? (people.length >= 6 ? 2 : 1) : 0,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 40 && !x.woundInfected,
   };
@@ -3471,19 +3509,23 @@ function planForage(state, base, people, foodDays, areas) {
 // a woodcutter at least WOOD.worth a day; the best woodcutters with axes first. gov.noWood: the test switch
 // (woodtest.js, the balance runs) that leaves it out.
 export const WOOD_AP = { autumn: 28, minDays: 5 };
-const woodCuttersFor = (state, base, w) => Math.ceil(Math.max(0, w.need - w.have) / (Math.max(0.1, baseWoodDay(state, base)) * Math.max(WOOD_AP.minDays, w.toCold)));
+// tune-jobcaps: the Cut wood job has no fixed cap (it was 2, 3 at 10+ people). The woodcutters it takes to have the pile
+// in by the cold (and keep up with the boiler) go ahead of the builders and stations up to a quarter of the people
+// (woodCrewMax: the governor's order of work); the spare hands cut toward having it in within three weeks
+// (woodcutting.js woodHandsWanted), each one past the first a little less (woodCrowd).
+const woodCuttersFor = (state, base, w) => woodHandsWanted(state, base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) });
+const woodCrewMax = (n) => (n <= 3 ? 1 : Math.ceil(n / 4));
 function planWood(state, base, people, areas) {
   if (!areas.production || gov(state).noWood || base.tier === 0 || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
-  const cap = woodWorkCap(state, base);
+  const cap = woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks
   // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
-  const boilerCutters = w.boiler > 0 ? Math.ceil(w.boiler / Math.max(0.1, baseWoodDay(state, base))) : 0;
-  const want = Math.min(cap, Math.max(woodCuttersFor(state, base, w), boilerCutters));
+  const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
   return {
     cap,
-    critical: small ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, Math.ceil(people.length / 4)) : Math.min(1, want),
+    critical: small ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, woodCrewMax(people.length)) : Math.min(1, want),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,
@@ -3493,7 +3535,7 @@ function planWood(state, base, people, areas) {
 // land around the hub gives little (a woodcutter there under 2.5 a day): the best wood land within range that a team
 // of 2–3 with the hub's axes would bring the most from in 8 hours (by a car when there is one: firewood is bulky),
 // scored by the share of the shortfall it covers. The trip takes the armory's cutting tools along.
-// When the Cut wood job at its cap (woodWorkCap × a woodcutter's day here × the days to the cold) cannot have the
+// When the Cut wood job's crew (woodCrewMax × a woodcutter's day here × the days to the cold) cannot have the
 // pile in by the winter (a big hub on farmland: three cutters bring in 2 a day against 100+ wanted), the trips are
 // the only way to stock it, and by the share alone every trip scored under routine scavenging (0.3 against 0.8) and
 // none was ever sent: then the score rises with the share of the shortfall the job will leave (WOOD_TRIP.gapScore
@@ -3506,7 +3548,9 @@ function woodTripCands(state, h, pool, P) {
   if (!woodWorkWhy(state, h) && baseWoodDay(state, h) >= 2.5) return [];
   const shortfall = Math.max(10, w.need - w.have);
   // What the base's own woodcutters (at the job's cap) will still bring in before the cold, and the gap they leave.
-  const own = woodWorkWhy(state, h) ? 0 : woodWorkCap(state, h) * baseWoodDay(state, h) * Math.max(0, w.toCold);
+  // (no fixed cap since tune-jobcaps: the crew the governor puts on it ahead of other work, woodCrewMax, each past the first a little less)
+  const crewDay = Array.from({ length: woodCrewMax(atBase(state, h.id).length) }, (_, k) => woodCrowd(k)).reduce((a, v) => a + v, 0);
+  const own = woodWorkWhy(state, h) ? 0 : crewDay * baseWoodDay(state, h) * Math.max(0, w.toCold);
   const gap = Math.max(0, w.need - w.have - own) / shortfall; // 0: the job will manage .. 1: none of it
   if (w.toCold > WOOD_AP.autumn && gap <= 0) return [];
   const crew = [...pool].sort((a, b) => woodcutterMult(b) * bestChop(b).mult - woodcutterMult(a) * bestChop(a).mult || a.id - b.id).slice(0, 3);
@@ -3541,7 +3585,7 @@ const LAND = { hours: 8, min: 4, urgentMin: 1.5, walkMore: 1.3, tries: 4, critic
 const foodDaysOf = (state, p) => {
   const n = partyMembers(state, p).length;
   const have = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0);
-  return (have("food") + have("preserved")) / Math.max(1, n ? partyPace(state, p).eatMove : 1);
+  return (have("food") + have("preserved")) / (Math.max(1, n ? partyPace(state, p).eatMove : 1) * foodNeedFactor(state)); // on the move: today's cold (weather.js)
 };
 function landFoodAct(state, p, { urgent = false, ok = () => true } = {}) {
   if (gov(state).noForaging && gov(state).noHunting) return false;
@@ -3588,9 +3632,12 @@ function outpostThirsty(state, o) {
 // Water runs from a river or lake (orders.js Fetch water): while the hub's water is short (waterRunWanted) and a shore
 // is within WATER_RUN_HOURS on foot, two to four people walk there, fill every container (up to a Heavy load each)
 // and walk home. One at a time; the shore is found once (the map does not change).
-const WATER_RUN_HOURS = 16;
+// (16 hours until seed 17's forest hub, 19 hours from the nearest shore, had no water run at all; the shores found
+// are kept with the hours they were found for, so a save from before looks again.)
+const WATER_RUN_HOURS = 24;
 function shoreFor(state, base) {
   const g = gov(state);
+  if (g.shoresHours !== WATER_RUN_HOURS) { g.shores = {}; g.shoresHours = WATER_RUN_HOURS; }
   g.shores = g.shores || {};
   if (g.shores[base.id] !== undefined) return g.shores[base.id];
   let best = null;

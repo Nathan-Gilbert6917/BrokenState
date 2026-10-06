@@ -9,7 +9,8 @@
 //   than standing still; encounters on the tiles it walks into (Monte Carlo against camping the same hours); hive
 //   land draws the dead
 // - estimates: hours, food, water and fuel of a survey trip (on foot, bikes, a car, every stance) against the real
-//   trip, to the hour when no road card delayed it; the team panel's queue estimate
+//   trip, to the hour when no road card delayed it; the team panel's queue estimate; in winter the cold's appetite
+//   (a survey, a camp by a lit fire, a camp with the fire kept out) to the hour
 // - rumours: the circle holds the place and not on its centre, fades after 20 days, struck off when found, the daily
 //   roll (radio, travellers, merchants), the news hooks; no world random numbers used
 // - optics: data (slot, kg, sources), sight radius, a base's telescope, seeing the other side first, the thermal in
@@ -21,7 +22,8 @@
 import { createWorld, tickHour, hub, day, atBase, snapshot, survivorById, baseVision } from "../src/sim/world.js";
 import { NEEDS, teamCold } from "../src/sim/needs.js";
 import { personRation } from "../src/sim/load.js";
-import { thirstAt } from "../src/sim/weather.js";
+import { thirstAt, coldAt } from "../src/sim/weather.js";
+import { teamFire } from "../src/sim/fieldheat.js";
 import { GEAR, LOCATIONS, CATEGORIES, TRADE_PREFS } from "../src/sim/data.js";
 import { hiddenSites, siteKnown, siteKnownTo, isPublicSite } from "../src/sim/discovery.js";
 import { launchExpedition, partyTile, sightRadius, removeParty, planPath, cargoLoad, STANCES, carried, onTheMove, partyMembers } from "../src/sim/parties.js";
@@ -367,6 +369,100 @@ console.log("Estimates: hours, rations and fuel");
   check(foodOk === clean, `${foodOk} of ${clean} ate and drank the planner's rations to the hour (packs plus the hunger and thirst brought home; the packs never over the rounded-up figure, under it by at most a gulp a head)`);
   check(fuelOk === fuelN, `${fuelOk} of ${fuelN} car surveys burned the estimated fuel`);
   check(queueOk === queueN && queueN > 0, `${queueOk} of ${queueN} queue estimates while surveying matched the planner's way home`);
+}
+
+// ---------- 4b. winter estimates: the cold's appetite and the camp fire ----------
+// The same trips in deep winter (weather is fixed ahead, so the planner knows each hour's cold): a survey trip eats
+// ×1.1 / ×1.2 on days below 0 / −8°C (needs.js teamCold), a camp by a lit fire does not, a camp with the fire kept out
+// does. Packs and gauges together are the planner's foodExact to the hour.
+console.log("Estimates in winter: the cold and the camp fire");
+{
+  const WINTER_DAY = 80; // campaign day index 80: mid-winter (weather.js: day 1 = spring 15, winter from index 70)
+  let clean = 0, exact = 0, foodOk = 0, cases = 0, coldTrips = 0, colder = 0, warmCamps = 0, warmOk = 0, outCamps = 0, outOk = 0;
+  for (let c = 0; c < 12; c++) {
+    const st = W(500 + c);
+    st.hour = (WINTER_DAY + (c % 6)) * 24 + 7;
+    const h = hub(st);
+    Object.assign(h.stock, { food: 500, water: 500, fuel: 200 });
+    const kind = c % 3 === 0 ? "survey" : c % 3 === 1 ? "camp" : "cold camp"; // cold camp: the fire kept out
+    const mode = kind === "survey" && c % 2 ? "bike" : "foot";
+    const crew = atBase(st, h.id).slice(0, 2);
+    for (const s of crew) { s.hunger = 100; s.thirst = 100; }
+    const v = mode === "bike" ? createVehicle(st, "bike", { kind: "base", baseId: h.id }, { count: 2, condition: 90 }) : null;
+    const vm = mode === "bike" ? "bike" : false;
+    const dist = kind === "survey" ? 3 + (c % 2) : 2 + (c % 2);
+    const target = st.tiles.filter((t) => land(st, t.id) && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, vm)).sort((a, b) => a.id - b.id)[c % 4];
+    if (!target) continue;
+    const supplies = { food: 20, water: 20, fuel: 0 };
+    const sweep = kind === "survey" ? { radius: 2, hours: 12 + 4 * (c % 3) } : null;
+    const mission = kind === "survey" ? "sweep" : "move";
+    const steps = kind === "survey" ? [{ kind: "home" }] : [{ kind: "camp", hours: 14 + (c % 4) * 3, ...(kind === "cold camp" ? { fire: false } : {}) }, { kind: "home" }];
+    const est = estimatePlan(st, { memberIds: crew.map((x) => x.id), dest: target.id, vehicle: vm, v, stance: "normal", fuel: 0, mission, steps, supplies, sweep });
+    const res = launchExpedition(st, { memberIds: crew.map((x) => x.id), dest: target.id, mission, stance: "normal", vehicleId: v ? v.id : null, supplies, ...(sweep ? { sweep } : {}), plan: { preset: kind === "survey" ? "survey" : "camp", steps, conditions: {} } });
+    if (!check(!res.error && est, `winter case ${c}: launched (${res.error || "ok"})`)) continue;
+    cases++;
+    const p = res.party;
+    const food0 = carried(p, "food"), water0 = carried(p, "water");
+    const gauge = (key) => crew.reduce((a, s) => a + s[key], 0);
+    const hunger0 = gauge("hunger"), thirst0 = gauge("thirst");
+    // The coming hour's rate (needs.js teamNeedsHour, run after the clock moves on): the cold of that hour's day
+    // unless the team sits by a lit camp fire.
+    const rateNow = () => {
+      const mv = onTheMove(p) || sweeping(p);
+      const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24;
+      const f = coldAt(st, st.hour + 1), warm = f > 1 && teamFire(st, p) === true;
+      return { food: r * (warm ? 1 : f), water: r * thirstAt(st, st.hour + 1), warm, cold: f > 1 && !warm };
+    };
+    let delay = 0, start = st.hour, eatenOut = 0, drunkOut = 0, foodHome = food0, last = { food: 0, water: 0 }, warmH = 0, coldH = 0, gulps = true;
+    for (let i = 0; i < 24 * 12 && st.parties.includes(p); i++) {
+      st.hordes.length = 0;
+      p.lastConflict = st.hour;
+      last = rateNow();
+      if (last.warm) warmH++;
+      if (last.cold) coldH++;
+      tickHour(st);
+      for (let k = st.cards.length - 1; k >= 0; k--) {
+        const card = st.cards[k];
+        st.cards.splice(k, 1);
+        if (card.isOrders) continue;
+        const before = p.progress, load = JSON.stringify([p.members, cargoLoad(p.cargo)]), during = sweeping(p) || p.phase === "task";
+        const ok = card.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled));
+        const ch = ok.find((x) => /ignore|leave|move on|pass|keep|walk on|^no|decline|^turn .*away|carry on|continue/i.test(x.label)) || ok[0];
+        if (ch) ch.resolve(st);
+        if ((p.progress < before && !during) || JSON.stringify([p.members, cargoLoad(p.cargo)]) !== load || p.phase === "engaged") delay += 1;
+      }
+      if (st.combat) { st.combat = null; delay += 1; }
+      if (st.parties.includes(p)) {
+        foodHome = carried(p, "food");
+        eatenOut = food0 - foodHome + (hunger0 - gauge("hunger")) / NEEDS.food;
+        drunkOut = water0 - carried(p, "water") + (thirst0 - gauge("thirst")) / NEEDS.water;
+        if (crew.some((s) => s.hunger < NEEDS.eat.full[0] - 1e-9)) gulps = false;
+      }
+    }
+    if (delay) continue;
+    clean++;
+    const actual = st.parties.includes(p) ? Infinity : st.hour - start;
+    if (actual === est.total) exact++;
+    else console.log(`    winter case ${c} (${kind}, ${mode}): estimate ${est.total}h, took ${actual}h`);
+    const foodTrip = eatenOut + last.food, waterTrip = drunkOut + last.water;
+    const used = food0 - foodHome;
+    const ok = Math.abs(foodTrip - est.foodExact) < 1e-6 && Math.abs(waterTrip - est.waterExact) < 1e-6 && est.food === Math.ceil(est.foodExact - 1e-9) && used <= est.food + 1e-6 && gulps;
+    if (ok) foodOk++;
+    else console.log(`    winter case ${c} (${kind}, ${mode}): ate ${foodTrip.toFixed(3)} (packs ${used.toFixed(2)}), planner ${est.foodExact.toFixed(3)} → ${est.food}; drank ${waterTrip.toFixed(3)}, planner ${est.waterExact.toFixed(3)}; ${warmH}h by the fire, ${coldH}h in the cold`);
+    // Without the cold the rations would be the water over winter's thirst (0.9): the cold hours add to that.
+    const plain = est.waterExact / 0.9;
+    if (coldH > 0) { coldTrips++; if (est.foodExact > plain + 1e-6) colder++; }
+    const campLeg = est.legs.find((l) => /^Camp/.test(l.label));
+    if (kind === "camp") { warmCamps++; if (warmH > 0 && campLeg && campLeg.warm === warmH) warmOk++; else console.log(`    winter case ${c}: camp by the fire ${warmH}h, planner ${campLeg && campLeg.warm}`); }
+    if (kind === "cold camp") { outCamps++; if (warmH === 0 && campLeg && !campLeg.warm) outOk++; }
+  }
+  check(clean >= 6, `${clean} of ${cases} winter trips had no road card that delayed them or changed their load`);
+  check(exact === clean, `${exact} of ${clean} winter trips came home on the estimated hour`);
+  check(foodOk === clean, `${foodOk} of ${clean} winter trips ate the planner's food to the hour, the cold included (packs plus the hunger brought home; the packs never over the rounded-up figure)`);
+  check(coldTrips > 0 && colder === coldTrips, `${colder} of ${coldTrips} trips with hours in the cold needed more food than the plain rations`);
+  check(warmCamps > 0 && warmOk === warmCamps, `${warmOk} of ${warmCamps} winter camps sat by the fire the hours the planner counted (no cold's appetite there)`);
+  check(outCamps === 0 || outOk === outCamps, `${outOk} of ${outCamps} camps with the fire kept out ate in the cold, as planned`);
+  console.log(`  ${clean} clean winter trips of ${cases}: ${foodOk} to the hour; ${colder}/${coldTrips} ate more for the cold; camps by the fire ${warmOk}/${warmCamps}, fire out ${outOk}/${outCamps}`);
 }
 
 // ---------- 5. rumours ----------

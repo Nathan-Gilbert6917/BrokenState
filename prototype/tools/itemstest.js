@@ -199,8 +199,8 @@ section("Purification tablets on the road: one per 10 un-purified water drunk, n
   // drinkHour runs after the hour's water left the supplies: `drink` leaves `have` − q un-purified water, all of it with
   // eggs, and drinks q of it un-purified (every unit drunk is unsafe).
   const drink = (q, have = 20) => { p.wormEggs = 1; p.supplies.water = 0; p.supplies.rawwater = have - q; drinkHour(st, p, members, q, q); };
-  // Without tablets: WATER pinned to 100%, eggs 1, every unit drunk has eggs: someone catches it within a few drinks.
-  let n = withNums(WORM, { WATER: 1 }, () => { for (let i = 0; i < 12 && caught(members) === 0; i++) drink(1); return caught(members); });
+  // Without tablets: WATER pinned (24: sure within the hour), eggs 1, every unit drunk has eggs: someone catches it within a few drinks.
+  let n = withNums(WORM, { WATER: 24 }, () => { for (let i = 0; i < 12 && caught(members) === 0; i++) drink(1); return caught(members); });
   check(n > 0, `without tablets they catch it (${n} of 2 within 12 drinks of water with eggs)`);
   clearAll(members);
   const tube = newItem("puritabs");
@@ -209,18 +209,18 @@ section("Purification tablets on the road: one per 10 un-purified water drunk, n
   const used0 = st.log.length;
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 9 && p.tabWater === 5, `5 water drunk: a tablet opened (9 left), 5 of its 10 water kept for the next drink, nobody caught it (tabWater ${p.tabWater})`);
-  check(st.log.length === used0 + 1 && /dropped a purification tablet into the river water \(9 left\)/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
+  check(st.log.length === used0 + 1 && /dropped a purification tablet into the un-purified water \(9 left\)/.test(st.log[0].text), `logged: "${st.log[0].text}"`);
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 9 && p.tabWater === 0, "5 more: the rest of that tablet, no new one");
   n = withNums(WORM, { WATER: 1 }, () => { drink(5); return caught(members); });
   check(n === 0 && tube.dur === 8 && p.tabWater === 5, "5 more: the second tablet");
   p.supplies.rawwater = 20; p.wormEggs = 1;
-  check(/dropping a tablet in the river water: 8 purification tablets carried, one per 10 water/.test(teamWormText(st, p)), `the team panel: "${teamWormText(st, p)}"`);
+  check(/dropping a tablet in it: 8 purification tablets carried, one per 10 water/.test(teamWormText(st, p)), `the team panel: "${teamWormText(st, p)}"`);
   // The whole tube: 100 water. Nobody catches it; the tube is gone when the last tablet is used.
   n = withNums(WORM, { WATER: 1 }, () => { for (let i = 0; i < 17; i++) drink(5); return caught(members); });
   check(n === 0 && teamTabCount(st, p) === 0 && members[1].pockets[2] === null && p.tabWater === 0 && p.tabsUsed === 10, `100 water drunk on the tube: 10 tablets used, the empty tube gone from the pocket, nobody caught it (tabsUsed ${p.tabsUsed}, tabWater ${p.tabWater})`);
   check(/the last of them/.test(st.log[0].text), `the last tablet's line: "${st.log[0].text}"`);
-  n = withNums(WORM, { WATER: 1 }, () => { for (let i = 0; i < 12 && caught(members) === 0; i++) drink(1); return caught(members); });
+  n = withNums(WORM, { WATER: 24 }, () => { for (let i = 0; i < 12 && caught(members) === 0; i++) drink(1); return caught(members); });
   check(n > 0, "with the tube empty the dice are back");
   clearAll(members);
   // A tube in the cargo works too, and a part-used one is treated at face value: its last tablet covers 10 of 15.

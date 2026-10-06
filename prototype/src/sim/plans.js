@@ -3,7 +3,8 @@
 // A plan is the team's order queue built before it leaves: the trip to the target with its mission, then steps
 // such as "look around", "scavenge here", "scavenge the best sites nearby", "camp N days", "gather", "wait",
 // "move to …" and "return home" (orders.js runs them one after the other). The planner shows the ETA and the
-// rations for the whole plan (estimatePlan, the same hour-by-hour stepping as the real trip).
+// rations for the whole plan (estimatePlan, the same hour-by-hour stepping as the real trip, winter's appetite
+// included: ×1.1 / ×1.2 below 0 / −8°C, except by a lit camp fire).
 //
 // Radio rule: a team in radio coverage (stations and linked relays, radio.js) takes new orders at any time. Out of
 // contact it keeps following its plan, and you can only give it orders through the cards it raises (arrival,
@@ -20,11 +21,12 @@ import { siteKnownTo } from "./discovery.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, travelHours, partySpeed, startReturn, awaitOrders,
   ordersCard, partyCapacity, cargoRoom, carried, carriedAny, sightRadius, fuelForPath, STANCES, MISSIONS,
-  plannedPace, partyPace, plannedVehicle, rationsPerHour, paceOpts, modeSpeed, waterForHours,
+  plannedPace, partyPace, plannedVehicle, rationsPerHour, paceOpts, modeSpeed, waterForHours, foodForHours,
 } from "./parties.js";
 import { travelMode } from "./vehicles.js";
 import { startOrder, FETCH_WATER_HOURS } from "./orders.js";
-import { fieldHeatHour } from "./fieldheat.js";
+import { fieldHeatHour, fireLit } from "./fieldheat.js";
+import { foodNeedFactor } from "./weather.js";
 import { sweepEstimate, sweepOpts, SURVEY } from "./survey.js";
 import { huntHours } from "./orders.js";
 import {
@@ -32,7 +34,7 @@ import {
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
-import { expectWood, chopCrew, chopPower } from "./woodcutting.js";
+import { expectWood, chopCrew, chopPower, fireLandOk, WOOD } from "./woodcutting.js";
 import { partyVehicle } from "./vehicles.js";
 import { supplyLoad, poolLoad } from "./parties.js";
 
@@ -52,7 +54,7 @@ export const STEP_KINDS = {
   nearby:   { label: "Scavenge nearby sites", desc: "Search the best known sites within a few tiles, richest first (what the team sees on the way counts). Sites are picked when the step starts, so the plan adapts." },
   camp:     { label: "Camp", desc: "Rest on the spot: the hurt heal slowly. Staying put builds Heat (a camp fire most), and Heat brings trouble." },
   gather:   { label: "Gather boat materials (3h)", desc: "Search the shore for scrap (only on a shore with a crossing)." },
-  water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: water for a dry base in summer." },
+  water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: un-purified water for a dry base in summer (the base's boiler or filters purify it; on the way a filter, a lit camp fire or purification tablets make it safe to drink)." },
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
   hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
@@ -120,7 +122,7 @@ export function stepsToOrders(state, steps, tile) {
       case "sweep": out.push({ type: "sweep", ...sweepOpts(s) }); break;
       case "scavenge": out.push({ type: "mission", mission: "scavenge", ...place }); break;
       case "nearby": out.push({ type: "nearby", radius: s.radius || 3, count: s.count || 1, center: at }); known = false; break;
-      case "camp": out.push({ type: "camp", hours: Math.max(1, Math.round(s.hours || 24)) }); break;
+      case "camp": out.push({ type: "camp", hours: Math.max(1, Math.round(s.hours || 24)), ...(s.fire != null ? { fire: !!s.fire } : {}) }); break; // fire: lit / kept out (orders.js)
       case "gather": out.push({ type: "gather", ...place }); break;
       case "water": out.push({ type: "water", ...place }); break;
       case "hunt": out.push({ type: "hunt", hours: huntHours(s), ...place }); break;
@@ -160,6 +162,8 @@ export const stepLabel = (state, s) => {
 // from / startHour / p: estimate from where a team stands now (orders.js queueEstimate), with what it knows (its
 // pace and rations from its last weighing, load.js); otherwise the pace comes from the crew and what it packs
 // (supplies) with vehicle v (an object or id; `vehicle` true = a truck, "bike" = bikes).
+// Food is counted hour by hour with the cold (the weather ahead is fixed, weather.js) and the camp fire (campWarm):
+// food / water rounded up, foodExact / waterExact the figures before rounding.
 export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mission, steps, homeBaseId, from = null, startHour = state.hour, p = null, supplies = {}, v = null, sweep = null }) {
   const home = baseById(state, homeBaseId || (hub(state) || {}).id);
   if (!home) return null; // no base left (conquest.js exiles)
@@ -190,11 +194,33 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const sp = pace.footSpeed; // on foot (a recon's two hours are paid at this pace)
   let veh = startMode, f = veh === true ? fuel ?? Infinity : 0, at = startHour, tile = from ?? home.tile, fuelUse = 0;
   let owed = 0; // hours of a recon still owed: paid by the next move, as in the real trip (parties.js survey)
-  let moveH = 0, rideH = 0, restH = 0; // for the rations: hours on the move (riding) and resting
   const n = Math.max(1, (memberIds || []).length);
-  // Water hour by hour at each day's thirst (weather.js: summer, a heat wave), as the team will drink it.
-  let drink = 0;
-  const drinkMove = (from, t) => { drink += members.length ? waterForHours(state, from, [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]]) : waterForHours(state, from, [[t.hours, n]]); };
+  // Food and water hour by hour, as the team will eat and drink them: water at each day's thirst (weather.js: summer,
+  // a heat wave), food at each day's cold (×1.1 below 0°C, ×1.2 below −8°C, needs.js teamCold) except by a lit camp
+  // fire (campWarm). Rations: more on the move under a load (load.js), at rest one a day.
+  let drink = 0, eat = 0;
+  const eatDrink = (from, segs) => { drink += waterForHours(state, from, segs); eat += foodForHours(state, from, segs); };
+  const drinkMove = (from, t) => eatDrink(from, members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]] : [[t.hours, n]]);
+  // Hours of a stay spent by a lit fire (needs.js teamCold, fieldheat.js teamFire): at the staging camp any job on the
+  // spot sits by its fire; a camp step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
+  // fire), and on bare ground only while the firewood it carries lasts (woodcutting.js campFireHour: it pays an hour's
+  // after each hour, so the fire is there for one hour more than it can pay; out, it stays out).
+  const camp0 = state.staging;
+  let woodBurnt = 0; // firewood the camp fires burn on bare ground
+  let lit = p ? fireLit(p) : true; // the team's fire habit; a camp step's own fire setting carries on (orders.js)
+  const campWarm = (kind, s, hours) => {
+    if (camp0 && camp0.tile === tile && kind !== "scavenge") return fireLit(camp0) ? hours : 0;
+    if (kind !== "camp") return 0;
+    if (s && s.fire != null) lit = !!s.fire;
+    if (!lit) return 0;
+    if (fireLandOk(state, tile)) return hours;
+    const per = WOOD.fire.camp / 24;
+    const wood = Math.max(0, (p ? carried(p, "wood") : supplies.wood || 0) + woodHaul - woodBurnt);
+    const paid = Math.min(hours, Math.floor(wood / per + 1e-9));
+    woodBurnt += paid * per;
+    if (paid < hours) lit = false;
+    return Math.min(hours, paid + 1);
+  };
   const legs = [];
   const travel = (to, label) => {
     if (to === tile) return true;
@@ -204,25 +230,30 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     if (veh === true) fuelUse += fuelForPath(state, res.path, pace.fuelMult);
     const t = travelHours(state, res.path, { vehicle: veh, speed: veh ? pace.rideSpeed ?? pace.speed : pace.footSpeed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, fuel: f, startHour: at, progress: owed });
     veh = t.vehicle; f = t.fuelLeft; owed = 0;
-    moveH += t.hours; rideH += t.rideHours; drinkMove(at, t);
+    drinkMove(at, t);
     legs.push({ label, hours: t.hours, from: tile, to, path: res.path, start: at, left: t.progress });
     at += t.hours; tile = to;
     return true;
   };
-  const stay = (label, hours) => { legs.push({ label, hours, from: tile, to: tile, start: at }); drink += waterForHours(state, at, [[hours, n]]); at += hours; restH += hours; };
+  const stay = (label, hours, kind = null, s = null) => {
+    const warm = campWarm(kind, s, hours);
+    legs.push({ label, hours, from: tile, to: tile, start: at, ...(warm ? { warm } : {}) });
+    eatDrink(at, [[warm, n, true], [hours - warm, n]]);
+    at += hours;
+  };
   // A survey (survey.js): its route is fixed when it starts, so its hours and fuel are known; it eats at the moving rate.
   const surveyLeg = (o) => {
     const sw = sweepEstimate(state, { ...sweepOpts(o || {}), center: tile, mode: veh, stance: p ? p.stance : stance, fuelMult: pace.fuelMult });
     legs.push({ label: `Survey ${sw.radius} tiles around ${tileLabel(state, tile)} (${sw.hours}h)`, hours: sw.hours, from: tile, to: tile, start: at, sweep: true, route: sw.route });
-    drink += members.length ? waterForHours(state, at, [[sw.hours, veh ? pace.eatMove : pace.eatFoot]]) : waterForHours(state, at, [[sw.hours, n]]);
-    at += sw.hours; moveH += sw.hours; if (veh) rideH += sw.hours;
+    eatDrink(at, [[sw.hours, members.length ? (veh ? pace.eatMove : pace.eatFoot) : n]]);
+    at += sw.hours;
     if (veh === true) { fuelUse += sw.fuel; f = Math.max(0, f - sw.fuel); }
   };
   if (!travel(dest, `To ${tileLabel(state, dest)}`)) return null;
   const outPath = legs[0] ? legs[0].path : [tile], hoursOut = legs[0] ? legs[0].hours : 0;
   // On site: a search 6h, a recovery or other mission 1h; a recon's 2 hours are paid by the next move.
   const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : 1;
-  if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite);
+  if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite, mission === "scavenge" ? "scavenge" : null);
   if (mission === "sweep") surveyLeg(sweep || (p && p.sweepPlan) || {});
   if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * (veh ? pace.rideSpeed ?? pace.speed : sp)); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }
   let returns = false, open = false;
@@ -230,10 +261,10 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   for (const s of steps || []) {
     if (s.kind === "survey") stay("Look around", SURVEY_STEP_HOURS);
     else if (s.kind === "sweep") surveyLeg(s);
-    else if (s.kind === "scavenge") stay(`Scavenge ${tileLabel(state, tile)}`, SEARCH_HOURS);
+    else if (s.kind === "scavenge") stay(`Scavenge ${tileLabel(state, tile)}`, SEARCH_HOURS, "scavenge");
     else if (s.kind === "gather") stay("Gather materials", GATHER_STEP_HOURS);
     else if (s.kind === "water") stay("Fetch water", FETCH_WATER_HOURS);
-    else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24);
+    else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24, "camp", s);
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
     else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
     else if (s.kind === "wood") {
@@ -241,7 +272,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
       const start = at;
       const hours = huntHours(s);
       stay(stepLabel(state, s), hours);
-      const eatenNow = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + members.length * restH) / 24 : 0;
+      const eatenNow = members.length ? eat : 0;
       const room = members.length ? Math.max(0, teamLoad(members, 0, pv0).capacity - Math.max(0, pool0 - eatenNow * 1.5) - haulKg) : Infinity;
       const got = members.length ? expectWood(state, members, tile, hours, start, room, chopPower(chopCrew(members, kitItems))).wood : 0;
       if (got > 0) {
@@ -257,7 +288,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
       stay(stepLabel(state, s), hours);
       let got = 0;
       // What still fits: the team's capacity less what it set off with, less what it has eaten, less the game so far.
-      const eatenNow = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + members.length * restH) / 24 : 0;
+      const eatenNow = members.length ? eat : 0;
       const room = members.length ? Math.max(0, teamLoad(members, 0, pv0).capacity - Math.max(0, pool0 - eatenNow * 1.5) - haulKg) : Infinity;
       if (s.kind === "hunt") {
         const t = huntTeam(state, members, ammo);
@@ -269,8 +300,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
         haul += got;
         haulKg += got * (s.kind === "forage" ? 0.5 : MEAT_KG); // foraged food weighs as packed food (foraging.js)
         legs[legs.length - 1].haul = Math.round(got * 10) / 10;
-        const eaten = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + members.length * restH) / 24 : 0;
-        reweigh(eaten);
+        reweigh(eatenNow);
       }
     }
     else if (s.kind === "move" && s.tile != null) { if (!travel(s.tile, `To ${tileLabel(state, s.tile)}`)) { open = true; break; } }
@@ -282,7 +312,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
         if (!site) break;
         chosen.push(site.tile);
         if (site.tile !== tile && !travel(site.tile, `To ${site.name}`)) break;
-        stay(`Scavenge ${site.name}`, SEARCH_HOURS);
+        stay(`Scavenge ${site.name}`, SEARCH_HOURS, "scavenge");
       }
     } else if (s.kind === "home") { returns = travel(home.tile, `Home to ${home.name}`); if (!returns) open = true; break; }
   }
@@ -295,15 +325,13 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     const bm = veh && planPath(state, tile, home.tile, veh) ? veh : false;
     const t = res ? travelHours(state, res.path, { vehicle: bm, speed: bm ? pace.rideSpeed ?? pace.speed : pace.footSpeed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, fuel: f, startHour: at }) : null;
     backHours = t ? t.hours : 0;
-    if (t) { moveH += t.hours; rideH += t.rideHours; drinkMove(at, t); }
+    if (t) drinkMove(at, t);
   }
   const total = hours + backHours;
-  // Rations: on the move each person eats more under a load (load.js), at rest one a day.
-  const eat = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + n * restH) / 24 : (n * total) / 24;
   return {
     legs, hours, hoursOut, backHours, total, returns, open, sites: chosen, endTile: tile, path: outPath, vehicle: veh, fuelLeft: f,
     haul: Math.round(haul * 10) / 10, haulKg: Math.round(haulKg * 10) / 10, wood: Math.round(woodHaul * 10) / 10,
-    food: Math.ceil(eat - 1e-9), water: Math.ceil(drink - 1e-9), waterExact: drink, pace,
+    food: Math.ceil(eat - 1e-9), foodExact: eat, water: Math.ceil(drink - 1e-9), waterExact: drink, pace,
     fuel: startMode === true ? Math.ceil(fuelUse * (returns ? 1 : 2) - 1e-9) : 0, days: total / 24,
   };
 }
@@ -402,10 +430,10 @@ function checkIn(state, p) {
 }
 
 // Days of food left at the rate the team eats on the move (more under a load, load.js), as the plan's "food falls
-// below N days" rule counts it.
+// below N days" rule counts it; in the cold, ×today's appetite (weather.js foodNeedFactor: no camp fire on the move).
 const foodDays = (state, p) => {
   const m = partyMembers(state, p);
-  const perDay = Math.max(1, partyPace(state, p).eatMove, m.length);
+  const perDay = Math.max(1, partyPace(state, p).eatMove, m.length) * foodNeedFactor(state);
   return (carried(p, "food") + carried(p, "preserved")) / perDay;
 };
 function hoursHome(state, p) {

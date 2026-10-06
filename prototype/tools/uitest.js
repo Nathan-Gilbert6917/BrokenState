@@ -355,7 +355,7 @@ section("Alerts: each kind appears and clears");
   }
   appearsClears("starve", () => { h.stock.food = 0; h.stock.preserved = 0; }, () => { h.stock.food = 500; }, "out of food");
   appearsClears("food", () => { h.stock.food = 3; h.stock.preserved = 0; }, () => { h.stock.food = 500; }, "low on food");
-  appearsClears("thirst", () => { h.stock.water = 0; }, () => { h.stock.water = 60; }, "out of water");
+  appearsClears("thirst", () => { h.stock.water = 0; h.stock.rawwater = 0; }, () => { h.stock.water = 60; }, "out of water"); // both kinds (sim/water.js)
   // Low water: a crowd at the hub drinks more than the well gives.
   const extra = [];
   appearsClears("water", () => {

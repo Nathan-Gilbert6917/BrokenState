@@ -6,9 +6,14 @@
 //   quick search  no action (the survivor needs one left, and can rummage once a turn), so it fits between two
 //                 moves. Only 30–50% of what is inside turns up (rolled each time, whole things: an item or a
 //                 supply stack); the rest stays hidden until someone does a full search there (1 action). It is
-//                 loud: Heat +3, and the unaware dead and guards within 6 tiles come to look (stealth.js noiseAt;
+//                 loud: Heat +5, and the unaware dead and guards within 7 tiles come to look (stealth.js noiseAt;
 //                 indoors every wall or closed door between counts 3 tiles more, buildingmaps.js noiseDamp). In
-//                 the dark without a light it is clumsier: 2 tiles more.
+//                 the dark without a light it is clumsier: 2 tiles more (9).
+//                 Hands going fast in the dark of a drawer: 6% a rummage to cut a hand (broken glass, a rusty can, a
+//                 needle): a few health (never down) and a cut that needs dressing (health.js "cut", milder than a
+//                 wound's: it can get infected untreated). Less with Scavenging or Stealth (the better of the two:
+//                 −2.5% of the chance a point, half at 20), +3 points in the dark without a light; never 10% (9% cap).
+//                 No gloves in GEAR yet: when there are, they belong in quickHurtChance.
 // What is hidden lives on the container (box.hidden = { sup, gear }) until the full search, so a save keeps it;
 // box.quick marks a container rummaged but not searched through (its own marker on the map). The window never says
 // how much is hidden: "a full search may turn up more".
@@ -16,10 +21,17 @@
 // The raid bot (combat.js autoRaidTurn) searches in full, and rummages when pressed: Heat at SEARCH.bot.heat or more,
 // an aware enemy within SEARCH.bot.near tiles, or on its way out. The hour-by-hour search (scavenge.js) is not this.
 import { noiseAt } from "./stealth.js";
+import { survivorById, skill } from "./world.js";
+import { addCondition } from "./health.js";
 
 export const SEARCH = {
   ap: 1, // a full search
-  quick: { reveal: [0.3, 0.5], radius: 6, dark: 2, heat: 3 },
+  quick: {
+    reveal: [0.3, 0.5], radius: 7, dark: 2, heat: 5,
+    // A cut hand: chance a rummage = (base + dark) × (1 − perSkill × best of Scavenging/Stealth, up to skillCap), at
+    // most max. hp: health lost (never below 1); sev: the cut's severity (health.js CONDITIONS.cut, a wound's 20–45).
+    hurt: { base: 0.06, dark: 0.03, perSkill: 0.025, skillCap: 20, max: 0.09, hp: [2, 5], sev: [12, 25] },
+  },
   bot: { heat: 40, near: 6 },
 };
 
@@ -70,8 +82,36 @@ export function quickRefusal(b, u, box) {
 // The containers next to the unit a quick search can go through (never opened, not locked).
 export const quickable = (near) => near.filter((c) => !c.contents);
 
+// Fumbling in the dark: night, and no flashlight or night vision.
+const inDark = (b, u) => !!b.night && !u.light && !u.nvg;
 // How far the rummage is heard (tiles), before walls.
-export const quickRadius = (b, u) => SEARCH.quick.radius + (b.night && !u.light && !u.nvg ? SEARCH.quick.dark : 0);
+export const quickRadius = (b, u) => SEARCH.quick.radius + (inDark(b, u) ? SEARCH.quick.dark : 0);
+
+// The chance this unit cuts a hand rummaging now (0–SEARCH.quick.hurt.max).
+export function quickHurtChance(state, b, u) {
+  const H = SEARCH.quick.hurt;
+  const s = u && u.sid != null ? survivorById(state, u.sid) : null;
+  const sk = s ? Math.max(skill(s, "scavenging"), skill(s, "stealth")) : 0;
+  const p = (H.base + (inDark(b, u) ? H.dark : 0)) * (1 - H.perSkill * Math.min(H.skillCap, sk));
+  return Math.max(0, Math.min(H.max, p));
+}
+// "6%": the chance as the UI shows it.
+export const quickHurtPct = (state, b, u) => `${Math.round(quickHurtChance(state, b, u) * 100)}%`;
+
+const SHARPS = ["broken glass", "the lid of a rusty can", "a loose needle", "a jagged bit of tin", "a razor blade"];
+// Roll the cut after a rummage. Returns { hp, what } when it happened (the caller says it in the battle log), else
+// null. Never puts anyone down; the cut goes on the survivor (health.js) and stays after the raid.
+export function quickHurt(state, b, u) {
+  const rng = state.rng;
+  if (!rng.chance(quickHurtChance(state, b, u))) return null;
+  const H = SEARCH.quick.hurt;
+  const what = rng.pick(SHARPS);
+  const hp = Math.min(rng.int(H.hp[0], H.hp[1]), Math.max(0, Math.floor(u.hp) - 1));
+  u.hp -= hp;
+  const s = u.sid != null ? survivorById(state, u.sid) : null;
+  if (s) addCondition(state, s, "cut", `on ${what}, rummaging in a hurry${b.place ? ` at ${b.place}` : ""}`, { sev: rng.int(H.sev[0], H.sev[1]), cause: "search" });
+  return { hp, what };
+}
 
 // The noise of a rummage: Heat, and the unaware within earshot come to look. Returns how many turned to it.
 export function quickNoise(b, u, box) {

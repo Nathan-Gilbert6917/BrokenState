@@ -65,7 +65,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { partyMembers, cargoRoom, bodyLoad } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
-import { hasWorm, catchWorm, clearWorm } from "./worm.js";
+import { hasWorm, catchWorm, clearWorm, wormRise, wormOf, dayHp } from "./worm.js";
 
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
 const first = (name) => String(name || "").split(" ")[0];
@@ -147,6 +147,7 @@ export function turn(state, b, c) {
   const named = c.side === "player" || c.side === "third" ? first(c.name) : c.name;
   z.name = `${named} (turned)`;
   z.x = at[0]; z.y = at[1];
+  z.f = c.f ?? z.f; // on the body's own storey (buildingmaps.js), not the one being looked at
   z.face = c.face;
   // What they wore: armour still takes its share; one of yours by what they have on (not the Tough trait).
   const s = c.sid != null && world ? survivorById(world, c.sid) : null;
@@ -183,10 +184,11 @@ export function stirBodies(state, b) {
   dropIfDown(b);
 }
 // The start of each enemy turn (combat.js endPlayerTurn, before the enemy's queue is made: the risen act at once):
-// bodies with the worm in them and bodies within a Carrier's reach get up (or burn), and the swarms sink a turn
-// closer to the ground.
+// the worm's hour for your infected people (wormBattleRound), bodies with the worm in them and bodies within a
+// Carrier's reach get up (or burn), and the swarms sink a turn closer to the ground.
 export function carrierRound(state, b) {
   bind(state);
+  wormBattleRound(state, b);
   burnUnderFire(b);
   dropIfDown(b);
   for (const c of [...b.units]) if (wormable(c) && c.wormed) turn(state, b, c);
@@ -666,12 +668,48 @@ export function walkingDaily(state) {
   }
 }
 
+// ---------- the worm in your people during a battle ----------
+// Each battle hour (6 turns: combat.js raid hours) an infected unit loses a 24th of the coming day's damage (worm.js
+// dayHp; kept on w.paid and taken off that day's damage at midnight). The worm that kills them gets them up at once
+// (riseInBattle).
+export function wormBattleRound(state, b) {
+  if (!b || !b.turn || b.turn % 6 !== 0 || b.wormTurn === b.turn) return;
+  b.wormTurn = b.turn;
+  for (const u of [...b.units]) {
+    if (u.side !== "player" || u.dead || u.off || u.left || u.fled || u.away || u.sid == null) continue;
+    const s = survivorById(state, u.sid);
+    const w = wormOf(s);
+    if (!w) continue;
+    const dmg = dayHp(w.day + 1) / 24;
+    w.paid = (w.paid || 0) + dmg;
+    u.hp -= dmg;
+    if (u.hp <= 0) riseInBattle(state, b, u);
+  }
+}
+// One of your people dies of the worm in the middle of a battle: the unit dies, and one of the dead takes its place on
+// the same cell and floor, aware and up at once (the enemy phase it rises in). Returns the risen.
+export function riseInBattle(state, b, u) {
+  bind(state);
+  u.hp = 0;
+  u.dead = true;
+  u.down = false;
+  u.wormed = true;
+  u.wormDeath = true; // combat.js endBattle: "of the worm"
+  if (u.carrying != null) putDown(b, u, true);
+  say(b, `${u.name} collapses: the worm has eaten the last of them.`, "death");
+  const z = turn(state, b, u);
+  if (z) { z.f = u.f ?? z.f; z.aware = true; }
+  return z;
+}
+
 // ---------- someone with the worm dies on the State Map or at a base (world.js killSurvivor) ----------
-// Not in a battle (the battle raises them itself). With others there, they tear at one before they are put down (the
-// things stay where killSurvivor put them); alone on the road, they walk off with their things into the walking loot.
+// Not in a battle (the battle raises them itself). worm.js wormRise handles it by where they are (your base, the road's
+// card, a city block, another group's base, an errand); alone on the road, they walk off with their things into the
+// walking loot (here).
 export function riseOnMap(state, s, tileId) {
   if (!hasWorm(s)) return false;
   if (state.combat && state.combat.units && state.combat.units.some((u) => u.sid === s.id)) return false;
+  if (wormRise(state, s, tileId)) return true;
   const rng = state.rng;
   const party = s.location && s.location.kind === "party" ? state.parties.find((p) => p.id === s.location.partyId) : null;
   const base = s.location && s.location.kind === "base" ? baseById(state, s.location.baseId) : null;

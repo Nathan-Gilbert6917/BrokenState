@@ -666,6 +666,9 @@ function measure(style) {
         state.tiles[tile.id] = fake;
         base.stock.ammo = 200; base.stock.meds = 3;
         base.armory = [...armoryAt];
+        // The risen of earlier test battles (carriers.js walkingLoot: people who died and turned, still walking) stay
+        // out: the first of the pair would meet one near the tile and put it down, and the second would not.
+        state.walkingLoot = [];
         rng.state = rngAt;
         const setup = { tile: tile.id, baseId: base.id, fighterIds: crew.map((s) => s.id), enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: true, handler: "rt", layout: m.layout, context: {} };
         const b = (state.combat = createBattle(state, setup));
@@ -687,6 +690,7 @@ function measure(style) {
       const playNum = (crew, pol) => {
         state.survivors.push(...crew);
         base.stock.ammo = 200;
+        state.walkingLoot = [];
         rng.state = rngAt;
         const res = autoResolveCombat(state, { tile: tile.id, baseId: base.id, fighterIds: crew.map((s) => s.id), enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: true, handler: "rt", context: {}, breakOff: true, retreatPolicy: pol });
         state.survivors = state.survivors.filter((s) => !crew.includes(s));

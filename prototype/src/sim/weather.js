@@ -25,7 +25,9 @@
 //                                            a hot day (hotDay: a heat wave, or 30 °C and up)
 //   exposureRisk(state, { sheltered })    -> { chance, kind: "cold"|"heat"|null, reason, temp } per person per day outdoors
 //   hordeSpeedFactor(state)               -> 0.5..1 (the dead are slower in deep cold and snow)
-//   foodNeedFactor(state)                 -> 1..1.2 (people eat more in the cold; optional hook)
+//   foodNeedFactor(state)                 -> 1..1.2 (people eat more in the cold; optional hook); coldAt(state, hour)
+//                                            the same for the hour a team eats in, coldAhead(state, days) the highest
+//                                            over the coming days (trip estimates and packing, as thirstAt/thirstAhead)
 //   weatherDaily(state) / weatherHour(state)  tick hooks (world.js tickHour)
 // `crop` is a crop key ("potato", "corn"...) or an object with any of { seasons, hardy, thirst, tMin, tOpt, tall }.
 // A crop defined in data.js as CROPS[key] may carry the same fields (or a `climate` object); registerCrop adds one.
@@ -469,6 +471,15 @@ export function foodNeedFactor(state, dayIdx = dayIndex(state)) {
   const d = rec(state, dayIdx);
   const mean = (d.hi + d.lo) / 2;
   return mean < -8 ? 1.2 : mean < 0 ? 1.1 : 1;
+}
+// The factor for the hour a team eats in (as thirstAt: parties.js consume runs after the clock moves on), and the
+// highest over the next `days` days, today included (packing with a margin, as thirstAhead).
+export const coldAt = (state, hour = state.hour) => foodNeedFactor(state, dayIndex(state, hour));
+export function coldAhead(state, days = 1) {
+  const today = dayIndex(state);
+  let f = 0;
+  for (let i = 0; i < Math.max(1, Math.ceil(days)); i++) f = Math.max(f, foodNeedFactor(state, today + i));
+  return f;
 }
 
 // ---------- ticks ----------

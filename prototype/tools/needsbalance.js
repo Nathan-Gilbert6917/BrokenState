@@ -1,6 +1,7 @@
 // Needs balance sample: autopilot campaigns (normal or hardcore) to a day, with what the needs model touches:
 // survival, people alive, deaths by hunger, thirst and cold (and all deaths), hub fuel on days 60, 75 and 90 (winter is
-// about campaign days 71-98), days a base went without heating fuel, days a team member's hunger or thirst was empty.
+// about campaign days 71-98), days a base went without heating fuel, days a team member's hunger or thirst was empty,
+// firewood cut (the base job and teams) and burned for heating, fuel burned for heating (woodcutting.js, needs.js heatDaily).
 // Read-only (it changes no rule): every run plays out as it would without it.
 // Usage: node tools/needsbalance.js [days=100] [runs=20] [normal|hardcore] [style=balanced] [firstSeed=1] [--json path]
 import { writeFileSync } from "node:fs";
@@ -38,8 +39,10 @@ for (let i = 0; i < RUNS; i++) {
   const deaths = { hunger: 0, thirst: 0, cold: 0, other: 0 };
   for (const m of state.memorial || []) deaths[bucket(m.cause || "")]++;
   const left = (state.survivors || []).filter((s) => s.left).length;
-  rows.push({ seed, survived: !state.gameOver, day: lastDay, alive: alive(state).length, deaths, left, fuel, coldDays, emptyH: emptyH / 4, emptyT: emptyT / 4, rationDays });
-  console.log(`seed ${seed}: ${state.gameOver ? `fell day ${lastDay}` : `day ${lastDay}`} · ${alive(state).length} alive · deaths hunger ${deaths.hunger} thirst ${deaths.thirst} cold ${deaths.cold} other ${deaths.other} · left ${left} · fuel d60/75/90 ${fuel[60] ?? "-"}/${fuel[75] ?? "-"}/${fuel[90] ?? "-"} · cold base-days ${coldDays} · empty hunger/thirst person-days ${emptyH / 4}/${emptyT / 4} · rationing base-days ${rationDays}`);
+  const es = state.econStats || {};
+  const wood = { cut: Math.round((es.woodCut || 0) + (es.woodField || 0)), burned: Math.round(es.heatWood || 0), fuel: Math.round(es.heatFuel || 0) };
+  rows.push({ seed, survived: !state.gameOver, day: lastDay, alive: alive(state).length, deaths, left, fuel, coldDays, emptyH: emptyH / 4, emptyT: emptyT / 4, rationDays, wood });
+  console.log(`seed ${seed}: ${state.gameOver ? `fell day ${lastDay}` : `day ${lastDay}`} · ${alive(state).length} alive · deaths hunger ${deaths.hunger} thirst ${deaths.thirst} cold ${deaths.cold} other ${deaths.other} · left ${left} · fuel d60/75/90 ${fuel[60] ?? "-"}/${fuel[75] ?? "-"}/${fuel[90] ?? "-"} · cold base-days ${coldDays} · empty hunger/thirst person-days ${emptyH / 4}/${emptyT / 4} · rationing base-days ${rationDays} · firewood cut ${wood.cut}, burned ${wood.burned}, heating fuel ${wood.fuel}`);
 }
 const sum = (f) => rows.reduce((a, r) => a + f(r), 0);
 const avg = (f) => Math.round((sum(f) / rows.length) * 10) / 10;
@@ -47,4 +50,5 @@ const fuelAvg = (k) => { const v = rows.filter((r) => r.fuel[k] != null); return
 console.log(`\n${MODE} ${STYLE}, ${RUNS} runs to day ${DAYS} (${Math.round((Date.now() - t0) / 1000)}s)`);
 console.log(`survived ${rows.filter((r) => r.survived).length}/${rows.length} · alive avg ${avg((r) => r.alive)} · deaths avg ${avg((r) => r.deaths.hunger + r.deaths.thirst + r.deaths.cold + r.deaths.other)} (hunger ${sum((r) => r.deaths.hunger)}, thirst ${sum((r) => r.deaths.thirst)}, cold ${sum((r) => r.deaths.cold)} in all) · deserters avg ${avg((r) => r.left)}`);
 console.log(`hub fuel avg day 60 ${fuelAvg(60)}, day 75 ${fuelAvg(75)}, day 90 ${fuelAvg(90)} · cold base-days ${sum((r) => r.coldDays)} · empty-gauge person-days hunger ${sum((r) => r.emptyH)}, thirst ${sum((r) => r.emptyT)} · rationing base-days ${sum((r) => r.rationDays)}`);
+console.log(`heating a game: firewood cut ${avg((r) => r.wood.cut)}, burned ${avg((r) => r.wood.burned)}, fuel burned ${avg((r) => r.wood.fuel)}`);
 if (jsonAt > 0) writeFileSync(process.argv[jsonAt + 1], JSON.stringify(rows, null, 1));
