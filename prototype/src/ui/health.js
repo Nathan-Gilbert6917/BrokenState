@@ -2,27 +2,59 @@
 // Treat button per condition, the base's care settings (automatic care, meds reserve, admit line, medic time),
 // and per patient: bed status, health per day and when they can next be treated. Actions are merged into main.js
 // (HEALTH_ACTIONS, HEALTH_CHANGE).
-import { CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick, medsToTreatAll } from "../sim/health.js";
+import {
+  CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick, medsToTreatAll,
+  daysLeftText, courseText, needsDose, fieldDoseInfo, treatConditionAnywhere, sickMedsWeek, illnessRisk, baseRiskCtx, isIll, teamMeds,
+} from "../sim/health.js";
 import { baseById, residents, day } from "../sim/world.js";
 import {
   admitBelow, medsReserve, medicTime, bedReason, dailyHealthChange, autoCare, treatAtBaseInfo, isHurt, nextDayText,
   AUTO_BELOW, ADMIT_MIN, ADMIT_MAX, ADMIT_STEP, TREATS_PER_MEDIC, UNTRAINED_TREATS, SURGERY_LOAD,
 } from "../sim/medical.js";
+import { contactable } from "../sim/orders.js";
+import { commandable } from "../sim/plans.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
 const sign = (v) => `${v >= 0 ? "+" : "−"}${n1(Math.abs(v))}`;
 const noDot = (t) => String(t || "").replace(/\.$/, "");
+const pct = (p) => `${Math.round(p * 1000) / 10}%`;
 
 export { isSick };
 
-// Chips for someone's conditions (empty string when well).
-export function conditionChips(state, s) {
+// One condition as a chip: its icon, name and days left ("🤒 Flu · 4 days left"), the course in the tooltip.
+export function condChip(state, s, c) {
+  const d = CONDITIONS[c.key];
+  if (!d) return "";
+  const left = daysLeftText(state, s, c);
+  return `<span class="chip ${c.mending ? "" : "off"}"${tip(conditionTip(state, s, c))}>${d.icon || ""} ${esc(d.name)} · ${esc(left)}${c.mending ? " · mending" : c.course != null ? ` · dose ${c.dosed}/${c.course}` : ""}</span>`;
+}
+
+// The Treat button for one condition wherever the person is: their base's meds (a medic's time too) or their team's
+// (the best at Medicine gives it; the team must be in contact). "" when there is nothing to do from here.
+export function condTreatButton(state, s, c) {
+  if (!needsDose(c)) return "";
+  const d = CONDITIONS[c.key];
+  if (s.location.kind === "party") {
+    const p = state.parties.find((x) => x.id === s.location.partyId);
+    if (!p || p.owner !== "player" || !contactable(p) || !commandable(state, p)) return "";
+    const info = fieldDoseInfo(state, p, s, c.key);
+    return `<button class="mini" data-action="treatcond-any" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Give a dose from the team's meds (${Math.floor(teamMeds(p))} carried): 1 meds, takes about ${info.amount} off the severity${info.medic ? ` (${info.medic.name.split(" ")[0]} gives it)` : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.` : info.reason)}>Treat (1 meds)</button>`;
+  }
+  const b = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
+  if (!b) return "";
+  const info = treatConditionInfo(state, b, s, c.key);
+  const by = info.medic ? `${info.medic.name.split(" ")[0]}'s` : "a medic's";
+  return `<button class="mini" data-action="treatcond" data-base="${b.id}" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds and one of ${by} treatments for today: takes about ${info.amount} off the severity${info.cures ? " (enough to end it)" : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.` : info.reason)}>Treat (${d.meds} meds)</button>`;
+}
+
+// Chips for someone's conditions (empty string when well), with Treat buttons when treat is on.
+export function conditionChips(state, s, { treat = true } = {}) {
   const list = conditionsOf(s);
   if (!list.length) return "";
   const wf = workFactor(s);
-  return list.map((c) => `<span class="chip off"${tip(conditionTip(state, s, c))}>${esc(CONDITIONS[c.key].name)} ${Math.round(c.sev)}</span>`).join("") +
+  return list.map((c) => `${condChip(state, s, c)}${treat ? condTreatButton(state, s, c) : ""}`).join(" ") +
     (wf < 1 ? `<span class="chip"${tip("How much of a normal day's work they can do while ill or hurt")}>works at ${Math.round(wf * 100)}%</span>` : "");
 }
 
@@ -30,13 +62,29 @@ export function conditionChips(state, s) {
 export function conditionTreatRow(state, b, s) {
   const list = conditionsOf(s);
   if (!list.length) return "";
-  return `<div class="row small" style="flex-wrap:wrap">${list.map((c) => {
-    const info = treatConditionInfo(state, b, s, c.key);
-    const d = CONDITIONS[c.key];
-    const by = info.medic ? `${info.medic.name.split(" ")[0]}'s` : "a medic's";
-    return `<span class="chip off"${tip(conditionTip(state, s, c))}>${esc(d.name)} ${Math.round(c.sev)}</span><button class="mini" data-action="treatcond" data-base="${b.id}" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds and one of ${by} treatments for today: takes about ${info.amount} off the severity${info.cures ? " (enough to end it)" : ""}. Once a day per condition.` : info.reason)}>Treat (${d.meds} meds)</button>`;
-  }).join(" ")}</div>`;
+  return `<div class="row small" style="flex-wrap:wrap">${list.map((c) => `${condChip(state, s, c)}${condTreatButton(state, s, c)}<span class="muted">${esc(courseText(c))}</span>`).join(" ")}</div>`;
 }
+
+// The base's illness line (Bases tab and Overview): who is ill, meds spent on illness this week, today's risk.
+export function illnessRowHtml(state, b) {
+  const people = residents(state, b.id);
+  const ill = people.filter(isIll);
+  const week = sickMedsWeek(state, b);
+  let avg = 0;
+  const why = {};
+  if (people.length) {
+    const ctx = baseRiskCtx(state, b);
+    for (const s of people) {
+      const r = illnessRisk(state, s, ctx);
+      avg += r.total / people.length;
+      for (const x of r.parts) why[x.cause] = (why[x.cause] || 0) + x.p / people.length;
+    }
+  }
+  const causes = Object.entries(why).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => `${CAUSE_NAMES[k] || k} ${pct(v)}`).join(", ");
+  const noMeds = (b.stock.meds || 0) < 1 && ill.length;
+  return `<div${tip(`Illness here: the ill, the meds spent on illness and injuries over the last 7 days (1 meds a dose, a course of 1-3 doses an illness), and today's chance a person falls ill${causes ? ` (${causes})` : ""}. Warmth, clean water, full stomachs, room to sleep and a hospital lower it.`)}>Illness</div><div class="${noMeds ? "danger" : ill.length ? "warn" : ""}">${ill.length ? `${ill.length} ill` : "nobody ill"} · ${week} meds this week · risk ${pct(avg)}/day${noMeds ? " · no meds!" : ""}</div>`;
+}
+export const CAUSE_NAMES = { weather: "weather", common: "colds going round", hunger: "hunger and thirst", water: "dirty water", food: "spoiled food", crowding: "crowding", contagion: "contagion", camp: "no camp fire", work: "work", search: "searching", wound: "wounds", worsened: "worsened", mushroom: "mushrooms" };
 
 // Medical tab: the base's care settings (one rule for every automatic dose), medic time today, and the illness
 // summary.
@@ -67,8 +115,9 @@ export function illnessCard(state, b) {
     </div>
     <h3>Illness</h3>
     <div class="card small">
-      <div>${sick.length ? `${sick.length} ill or injured${contagious ? `, <span class="danger">${contagious} contagious</span>` : ""}${q ? " · quarantine on" : ""} · ${medsToTreatAll(state, b)} meds to treat everyone once` : "<span class='muted'>Nobody here is ill or injured.</span>"}</div>
-      <div class="muted" style="margin-top:0.3rem">Work brings cuts and sprains, cold and heat bring flu and fever, dirty water dysentery (a water filter helps), hunger and thirst weaken everyone, and flu, dysentery and pneumonia spread in a crowded base. Rest and a hospital bed speed recovery.</div>
+      <div>${sick.length ? `${sick.length} ill or injured${contagious ? `, <span class="danger">${contagious} contagious</span>` : ""}${q ? " · quarantine on" : ""} · ${medsToTreatAll(state, b)} meds to finish everyone's courses` : "<span class='muted'>Nobody here is ill or injured.</span>"}</div>
+      <div class="kv" style="margin-top:0.3rem">${illnessRowHtml(state, b)}</div>
+      <div class="muted" style="margin-top:0.3rem">An illness is treated with a course of 1-3 doses (1 meds a day each, by severity): it stops worsening and ends sooner. Untreated it lasts longer, can turn to pneumonia and kill the weak. Automatic care gives the doses each night (the medic, or the best at Medicine here); the Treat buttons give one now. Cold (no heating, the fire out), dirty water (a water filter helps), spoiled food, hunger and thirst, hard work and crowding make people ill; flu, chest colds, dysentery and pneumonia spread. Rest and a hospital bed speed recovery.</div>
     </div>`;
 }
 
@@ -120,6 +169,18 @@ export const HEALTH_ACTIONS = {
     const b = baseOf(state, d);
     if (!b) return;
     const msg = treatCondition(state, b, Number(d.id), d.key);
+    if (ui.baseView) ui.baseMsg = msg;
+    else state.log.unshift({ hour: state.hour, text: msg, kind: "info" });
+  },
+  // A dose wherever they are (a team member: from the team's meds, only while the team is in contact).
+  "treatcond-any": (state, ui, d) => {
+    const s = state.survivors.find((x) => x.id === Number(d.id));
+    if (!s) return;
+    if (s.location.kind === "party") {
+      const p = state.parties.find((x) => x.id === s.location.partyId);
+      if (!p || !contactable(p) || !commandable(state, p)) return;
+    }
+    const msg = treatConditionAnywhere(state, s.id, d.key);
     if (ui.baseView) ui.baseMsg = msg;
     else state.log.unshift({ hour: state.hour, text: msg, kind: "info" });
   },

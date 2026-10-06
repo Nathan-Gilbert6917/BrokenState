@@ -294,6 +294,7 @@ function team(st, n, supplies) {
   const st = W();
   quietHub(st);
   for (let i = 0; i < 30; i++) tickHour(st);
+  st.cards.length = 0; // a card's choices cannot be saved (a stranger at the gate on some rolls)
   const s = atBase(st, hub(st).id)[0];
   s.hunger = 33.5; s.thirst = 44.25;
   const st2 = loadFromString(saveToString(st));

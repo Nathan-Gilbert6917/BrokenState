@@ -34,7 +34,7 @@ import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the g
 import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
-import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll } from "./health.js";
+import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
@@ -1071,7 +1071,8 @@ function needs(state) {
     // Water by days left at the current rate (economy.waterOutlook), or by stock per person.
     // Late spring and summer: wanted too while the stock is under the summer plan's reserve (waterPlan).
     water: (() => { const wo = waterOutlook(state, h); const wp = waterPlan(state, h); const d = wo.net >= 0 ? (st.water || 0) / n + 10 : wo.daysLeft; return Math.max(pick(d, [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), wp.near && wp.short && (st.water || 0) < wp.reserve ? 1.4 : 0); })(),
-    meds: pick(st.meds || 0, [[2, 2.5], [n * 0.6, 1.8], [n * 1.5, 1], [Infinity, 0.3]]),
+    // Meds: by stock per head, and wanted hard while the sick here need more doses than there are (health.js courses).
+    meds: Math.max(pick(st.meds || 0, [[2, 2.5], [n * 0.6, 1.8], [n * 1.5, 1], [Infinity, 0.3]]), medsToTreatAll(state, h) > (st.meds || 0) ? 2.2 : 0),
     scrap: pick(st.scrap || 0, [[20, 2.5], [45, 1.6], [90, 0.9], [Infinity, 0.35]]),
     parts: pick(st.parts || 0, [[2, 2], [6, 1.2], [12, 0.6], [Infinity, 0.2]]),
     ammo: pick(st.ammo || 0, [[n * 6, 2], [n * 15, 0.9], [n * 40, 0.35], [Infinity, 0.1]]),
@@ -1702,6 +1703,7 @@ function planCrafts(state, base) {
   if (((st.meds || 0) < Math.max(3, n / 2) || (rs && rs.meds.short)) && tryCraft(["dressings"], "meds are short", 5)) return;
   const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "water is below the reserve", 4)) return;
+  if (filters < 1 && tryCraft(["waterfilter"], "clean water: dysentery is four times rarer with a filter (health.js)", 8)) return;
   if (rs) floor = rs.scrap.target;
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if ((st.water || 0) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and clean water means less dysentery)", 15)) return;
@@ -1787,11 +1789,13 @@ function planTreatment(state, base) {
   // Illness and work injuries (health.js): anything that can kill at once, the rest while meds allow.
   const reserve = Math.ceil(people.length / 4) + 1;
   base.medsReserve = reserve; // the base's own daily treatment keeps this many back too
+  // A dose a day per illness (a course of 1-3 doses, health.js): courses once started are finished first, then
+  // whatever can kill, then the rest from severity 35 while the reserve allows.
   const sick = [];
-  for (const s of people) for (const c of conditionsOf(s)) sick.push({ s, c, d: CONDITIONS[c.key] });
-  sick.sort((a, b) => b.d.hp * b.c.sev - a.d.hp * a.c.sev || b.c.sev - a.c.sev);
+  for (const s of people) for (const c of conditionsOf(s)) if (autoWantsCondition(c)) sick.push({ s, c, d: CONDITIONS[c.key] });
+  sick.sort((a, b) => (b.c.course != null) - (a.c.course != null) || b.d.hp * b.c.sev - a.d.hp * a.c.sev || b.c.sev - a.c.sev);
   for (const { s, c, d } of sick) {
-    const urgent = c.key === "pneumonia" || d.hp * c.sev / 100 >= 5 || (c.key === "cut" && !s.woundInfected);
+    const urgent = c.course != null || c.key === "pneumonia" || d.hp * c.sev / 100 >= 5 || (c.key === "cut" && !s.woundInfected);
     if (!urgent && c.sev < 35) continue;
     const info = treatConditionInfo(state, base, s, c.key);
     if (!info.ok || (base.stock.meds || 0) - info.cost < (urgent ? 0 : reserve)) continue;
