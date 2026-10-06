@@ -56,7 +56,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
-import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
+import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
@@ -1632,8 +1632,8 @@ function startPlayerTurn(state, b) {
       u.bleed--;
       if (u.bleed <= 0) {
         u.dead = true;
-        const pile = dropHaul(b, u); // raidloot.js: what they carried stays where they fell, for the others to pick up
-        say(b, `${u.name} bled out.${pile ? " What they carried lies where they fell." : ""}`, "death");
+        const pile = dropHaul(b, u); // raidloot.js: their body, with what they carried loose on it for the others to pick up
+        say(b, `${u.name} bled out.${dropHeld(pile) ? " What they carried lies where they fell." : ""}`, "death");
       }
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
@@ -1880,6 +1880,7 @@ function aiMelee(b, u) {
       const prey = u.kind === "zombie" && u.stuck >= 3 ? b.units.find((o) => o.side === "player" && o.down && !o.dead && !o.left && adjacent(u, o)) : null;
       if (prey) {
         prey.dead = true;
+        dropHaul(b, prey); // raidloot.js: a body like anyone killed in a raid, what they carried loose on it
         u.stuck = 0;
         say(b, `${u.name} tears into ${prey.name}, lying in the way.`, "death");
         fx(b, { type: "melee", from: [u.x, u.y], to: [prey.x, prey.y], hit: true, crit: false, dmg: 0, side: u.side, text: "KILLED" });
