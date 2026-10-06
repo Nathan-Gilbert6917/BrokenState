@@ -13,6 +13,7 @@ import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
+import { baseWater } from "../sim/worm.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -78,8 +79,11 @@ export function waterLine(state, b) {
   const p = o.prod;
   const ins = [`well ${n1(p.own)}`, p.stream ? `stream ${n1(p.stream)}` : "", p.wells ? `wells ${n1(p.wells)}` : "", p.rain ? `rain ${n1(p.rain)}` : "", p.filters ? `filters ${p.filters}` : ""].filter(Boolean).join(", ");
   const why = `In: ${ins} (${n1(o.inflow)}/day; the well and rain only fill up to the capacity of ${o.cap}). Out: ${waterUseText(o.need)} (${drinkNote(o.need)}), crops ${n1(o.need.crops)} (none on a rainy day${o.need.season === "summer" ? ", a fifth more in summer" : ""}). On a dry day the balance is ${o.dryNet >= 0 ? "+" : ""}${n1(o.dryNet)}. People drink 1 a day in spring and autumn, ${THIRST.summer} in summer, ${THIRST.winter} in winter and at least ${THIRST.heat} on a hot day. A base that runs dry goes thirsty: everyone loses health every day and nobody heals. Wells, rain catchers and cisterns (Construction) help; a water filter adds ${WATER.filter} a day and cuts dysentery.`;
-  const cls = o.daysLeft < 5 ? "danger" : o.net < 0 ? "" : "good";
-  return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}`, tip: why };
+  // The worm (sim/worm.js): water from infected ground carries its eggs unless it is boiled or filtered.
+  const ww = baseWater(state, b);
+  const worm = ww.raw > 0 ? ` The worm: this ground and its water carry the worm's eggs, and the water here is ${ww.safe ? `safe (${ww.why})` : `not safe (${ww.why}): build a water boiler or keep a water filter here`}.` : "";
+  const cls = o.daysLeft < 5 || !ww.safe ? "danger" : o.net < 0 ? "" : "good";
+  return { cls, short: `${o.net >= 0 ? "+" : ""}${n1(o.net)}/day · ${n0(o.stock)}/${o.cap}${isFinite(o.daysLeft) ? ` · ${days(o.daysLeft)}d left` : ""}${ww.safe ? "" : " · unboiled (the worm)"}`, tip: why + worm };
 }
 const drinkNote = (need) => {
   const pct = Math.round((need.rate - 1) * 100);

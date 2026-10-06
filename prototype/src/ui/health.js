@@ -2,7 +2,8 @@
 // Treat button per condition, the base's care settings (automatic care, meds reserve, admit line, medic time),
 // and per patient: bed status, health per day and when they can next be treated. Actions are merged into main.js
 // (HEALTH_ACTIONS, HEALTH_CHANGE).
-import { CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick, medsToTreatAll } from "../sim/health.js";
+import { CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick as hasCondition, medsToTreatAll } from "../sim/health.js";
+import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM } from "../sim/worm.js";
 import { baseById, residents, day } from "../sim/world.js";
 import {
   admitBelow, medsReserve, medicTime, bedReason, dailyHealthChange, autoCare, treatAtBaseInfo, isHurt, nextDayText,
@@ -15,22 +16,44 @@ const n1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
 const sign = (v) => `${v >= 0 ? "+" : "−"}${n1(Math.abs(v))}`;
 const noDot = (t) => String(t || "").replace(/\.$/, "");
 
-export { isSick };
+// Ill, hurt by a condition, or known to carry the worm (sim/worm.js: only once it has been spotted).
+export const isSick = (s) => hasCondition(s) || wormSeen(s);
+
+// The worm's chip, once it has been spotted (sim/worm.js).
+const wormChip = (state, s) => (wormSeen(s) ? `<span class="chip off"${tip(wormTip(state, s))}>${esc(wormLabel(s))}</span>` : "");
 
 // Chips for someone's conditions (empty string when well).
 export function conditionChips(state, s) {
   const list = conditionsOf(s);
-  if (!list.length) return "";
+  if (!list.length && !wormSeen(s)) return "";
   const wf = workFactor(s);
-  return list.map((c) => `<span class="chip off"${tip(conditionTip(state, s, c))}>${esc(CONDITIONS[c.key].name)} ${Math.round(c.sev)}</span>`).join("") +
+  return wormChip(state, s) + list.map((c) => `<span class="chip off"${tip(conditionTip(state, s, c))}>${esc(CONDITIONS[c.key].name)} ${Math.round(c.sev)}</span>`).join("") +
     (wf < 1 ? `<span class="chip"${tip("How much of a normal day's work they can do while ill or hurt")}>works at ${Math.round(wf * 100)}%</span>` : "");
+}
+
+// Medical tab: the worm's treatments for someone at this base (a dewormer, a purge, surgery), once it is spotted.
+function wormTreatRow(state, b, s) {
+  if (!wormSeen(s)) return "";
+  const w = wormOf(s);
+  const kinds = w.stage === "gut" ? ["dewormer", "purge"] : ["surgery"];
+  const label = { dewormer: "Dewormer", purge: `Purge (${WORM.PURGE_MEDS} meds)`, surgery: `Surgery (${WORM.SURGERY_MEDS} meds)` };
+  const what = {
+    dewormer: () => `Give ${s.name.split(" ")[0]} a dewormer from ${b.name}'s armory: a sure cure while the worm is in the gut. No medic needed.`,
+    purge: (i) => `Use ${WORM.PURGE_MEDS} of ${b.name}'s meds and one of ${i.treater ? `${i.treater.s.name.split(" ")[0]}'s` : "a medic's"} treatments: ${Math.round(i.chance * 100)}% it passes the worm (costs ${WORM.PURGE_HP} health), otherwise it holds on (−${WORM.PURGE_FAIL_HP}; try again tomorrow). Better Medicine and a hospital raise the odds.`,
+    surgery: (i) => `Cut the larvae out (${WORM.SURGERY_MEDS} meds, most of ${i.treater ? `${i.treater.s.name.split(" ")[0]}'s` : "a medic's"} day): ${Math.round(i.chance * 100)}% they live (at a heavy cost in health); otherwise they die on the table.`,
+  };
+  return `<div class="row small" style="flex-wrap:wrap">${wormChip(state, s)}${kinds.map((k) => {
+    const info = wormTreatInfo(state, b, s, k);
+    return `<button class="mini" data-action="treatworm" data-base="${b.id}" data-id="${s.id}" data-kind="${k}" ${info.ok ? "" : "disabled"}${tip(info.ok ? what[k](info) : info.reason)}>${label[k]}</button>`;
+  }).join(" ")}</div>`;
 }
 
 // Medical tab: Treat buttons per condition for someone at this base.
 export function conditionTreatRow(state, b, s) {
   const list = conditionsOf(s);
-  if (!list.length) return "";
-  return `<div class="row small" style="flex-wrap:wrap">${list.map((c) => {
+  const worm = wormTreatRow(state, b, s);
+  if (!list.length) return worm;
+  return worm + `<div class="row small" style="flex-wrap:wrap">${list.map((c) => {
     const info = treatConditionInfo(state, b, s, c.key);
     const d = CONDITIONS[c.key];
     const by = info.medic ? `${info.medic.name.split(" ")[0]}'s` : "a medic's";
@@ -69,7 +92,15 @@ export function illnessCard(state, b) {
     <div class="card small">
       <div>${sick.length ? `${sick.length} ill or injured${contagious ? `, <span class="danger">${contagious} contagious</span>` : ""}${q ? " · quarantine on" : ""} · ${medsToTreatAll(state, b)} meds to treat everyone once` : "<span class='muted'>Nobody here is ill or injured.</span>"}</div>
       <div class="muted" style="margin-top:0.3rem">Work brings cuts and sprains, cold and heat bring flu and fever, dirty water dysentery (a water filter helps), hunger and thirst weaken everyone, and flu, dysentery and pneumonia spread in a crowded base. Rest and a hospital bed speed recovery.</div>
+      ${wormWaterLine(state, b)}
     </div>`;
+}
+
+// The worm (sim/worm.js): whether the water here is safe, and how it is caught and cured.
+function wormWaterLine(state, b) {
+  const w = baseWater(state, b);
+  const water = w.raw > 0 ? (w.safe ? `<span class="good">safe</span> (${esc(w.why)})` : `<span class="danger">carries the worm's eggs</span> (${esc(w.why)})`) : "clean (the ground here is clean enough)";
+  return `<div style="margin-top:0.3rem"${tip(`The worm: people catch it from water drunk unboiled from infected ground, from game from infected land that was not cooked through, and from camping on badly infested land. A water boiler or a water filter makes the water safe, a cook fire or a preserving kitchen cooks the game. A medic spots it in the gut stage (better Medicine sooner), where a dewormer or a purge (${WORM.PURGE_MEDS} meds) clears it; in the brain only surgery in a Clinic.`)}>Water: ${water}</div>`;
 }
 
 // Medical tab, per patient: the bed chip with the reason they are (or are not) in one.
@@ -122,6 +153,13 @@ export const HEALTH_ACTIONS = {
     const msg = treatCondition(state, b, Number(d.id), d.key);
     if (ui.baseView) ui.baseMsg = msg;
     else state.log.unshift({ hour: state.hour, text: msg, kind: "info" });
+  },
+  // The worm (sim/worm.js): a dewormer, a purge or surgery. treatWorm logs the result itself.
+  treatworm: (state, ui, d) => {
+    const b = baseOf(state, d);
+    if (!b) return;
+    const msg = treatWorm(state, b, Number(d.id), d.kind);
+    if (ui.baseView) ui.baseMsg = msg;
   },
   "health-auto": (state, ui, d) => {
     const b = baseOf(state, d);

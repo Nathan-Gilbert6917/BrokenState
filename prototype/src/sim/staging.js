@@ -46,6 +46,7 @@ import {
   partyMembers, partyTile, carried, takeSupply, tileLabel, teamName, awaitOrders, outpostName, settleInto, cargoRoom,
 } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
+import { sourceEggs, addWormWater } from "./worm.js";
 
 export const STAGING = {
   // What the shelter (tier 0) takes, by who founds it. Hardcore's first: the camp's old cost (30 scrap, 4 parts, 15
@@ -381,7 +382,11 @@ export function stagingHour(state) {
 // it drinks from it first (a day's worth when it runs low).
 function feed(state, p, camp) {
   const n = partyMembers(state, p).length;
-  if (besideWaterSource(state, camp.tile) && carried(p, "water") < (n * thirstAt(state)) / 12) p.supplies.water = (p.supplies.water || 0) + Math.ceil(n * thirstAt(state));
+  if (besideWaterSource(state, camp.tile) && carried(p, "water") < (n * thirstAt(state)) / 12) {
+    const q = Math.ceil(n * thirstAt(state));
+    p.supplies.water = (p.supplies.water || 0) + q;
+    addWormWater(state, p, q, sourceEggs(state, camp.tile)); // worm.js: river water on infected land (the camp fire boils it)
+  }
   const food = carried(p, "food") + carried(p, "preserved"), water = carried(p, "water");
   if (food < n / 12) {
     for (const k of ["food", "preserved"]) {

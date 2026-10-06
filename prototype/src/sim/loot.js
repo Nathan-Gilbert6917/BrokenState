@@ -63,7 +63,7 @@ export const ITEM_TAGS = {
   slingbag: ["home", "school", "mall", "office", "travel", "crash", "crime", "shop"], backpack: ["school", "home", "mall", "travel", "crime", "camp"],
   hikingpack: ["camp", "outdoor", "mall", "travel", "crash", "shop"], assaultpack: ["military", "crash", "camp"], rucksack: ["military", "camp", "crash", "outdoor"],
   // tools and kits
-  nvg: ["military", "crash"], milradio: ["military", "crash"], surgkit: ["medical", "crash"],
+  nvg: ["military", "crash"], milradio: ["military", "crash"], surgkit: ["medical", "crash"], dewormer: ["medical", "farm"], // dewormer: worm.js (a farm's livestock wormer)
   bandagekit: ["medical", "church", "fire", "outdoor", "camp", "home"], crowbar: ["garage", "tools", "industry", "fire"],
   monocular: ["hunt", "outdoor", "guns", "camp", "home", "military", "travel"], binoculars: ["hunt", "outdoor", "guns", "military", "police", "home", "sport", "farm", "tech", "crash", "camp", "tools"],
   spotscope: ["hunt", "guns", "military", "outdoor"], thermal: ["military", "crash"], telescope: ["school", "tech", "home"],

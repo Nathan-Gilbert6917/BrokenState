@@ -18,6 +18,7 @@ import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel }
 import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
+import { sourceEggs, addWormWater } from "./worm.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -356,7 +357,11 @@ export function fetchWater(state, p) {
   const units = Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight);
   if (units < 1) return "No room left to carry any water.";
   p.cargo.supplies.water = (p.cargo.supplies.water || 0) + units;
-  return `Filled the containers: ${units} water to carry home.`;
+  // worm.js: river water on infected land carries the worm's eggs (a filter carried cleans it; a camp fire boils it).
+  const eggs = sourceEggs(state, partyTile(p));
+  addWormWater(state, p, units, eggs);
+  const worm = eggs > 0 ? (p.wormWater > 0 ? " The land here is infected: boil it at a camp fire before drinking it." : " The land here is infected, but the team's water filter strains out the worm's eggs.") : "";
+  return `Filled the containers: ${units} water to carry home.${worm}`;
 }
 
 // Work on the spot: the team stays on its tile until the task is done (or you stop it).

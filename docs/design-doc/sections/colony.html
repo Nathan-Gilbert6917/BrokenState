@@ -176,7 +176,7 @@
     <li><b>Infected wounds:</b> at a base, someone below 40 health has a 5% chance a day of infection (not in a Field hospital bed or better); on the road 8% a day. An infected wound halves healing and costs 2 health a day more at a base, and drains 3 health a day on the road.</li>
     <li><b>Clearing:</b> on its own 10% a day once health is 50+; a treatment with 1 extra meds cleans it with a chance of 25% + 15% per hospital tier + 3% per point of the treater's Medicine and kit (max 90%), or always from the Clinic up.</li>
     <li><b>Untreated cuts</b> become infected wounds 3% a day.</li>
-    <li><b>Bites:</b> a bite is only a wound: nobody turns from one (see <a href="#setting">What the dead are: the worm</a>). People turn from the worm. A travel event, <i>The worm</i> (on badly infected tiles, teams of 2+), finds that someone on the team has swallowed its eggs: "Purge it" (2 meds and a Medicine 10 check: survives at −50 health, else turns and dies), "End it quickly" (dies; everyone −8 mood) or "Hope it passes on its own" (turns 75% of the time, hurting a teammate).</li>
+    <li><b>Bites:</b> a bite is only a wound: nobody turns from one (see <a href="#setting">What the dead are: the worm</a>). People turn from the worm: see <a href="#worm">The worm</a> below.</li>
   </ul>
   <aside class="note"><b>Changed from Draft 1:</b> Draft 1 planned injuries per body part, bleeding and scars. The build uses one health number plus named conditions; body parts, bleeding and scars are <span class="status planned">Planned</span>.</aside>
 
@@ -210,6 +210,27 @@
     <li><b>Medic time:</b> each Medic-role survivor gives 3 + Medicine ÷ 4 treatments a day (× their work factor; Triage +1). With nobody on the role, the best treater there gives 2 a day. Surgery takes 3 treatments of one medic's day.</li>
     <li><b>Automatic care:</b> each night, worst off first: wounds below 70 health or infected, and illnesses that matter (deep cuts, anything costing 6+ health a day, pneumonia, severity 30+). It keeps the base's meds reserve and never exceeds medic time. It can be switched off per base.</li>
     <li><b>Kits:</b> a bandage and splint kit in the off hand adds +2 Medicine to every treatment (wears a use each time); a surgical kit +4 (full at Medicine 10, nothing below 3).</li>
+  </ul>
+
+  <h3 id="worm">The worm <span class="status built">Built</span></h3>
+  <p>The worm is not one of the conditions above: it has its own stages, its own spotting and its own cures (<code>worm.js</code>, numbers in <code>WORM</code>). Eggs = (Infection − 10%) / 90%, nothing on cleaner land.</p>
+  <table class="data"><thead><tr><th>Source</th><th>Chance per person</th><th>Made safe by</th></tr></thead><tbody>
+    <tr><td>Water at a base</td><td>2% a day × eggs × the share drawn from the ground (well, springs, streams, prisoners hauling it)</td><td>a Water boiler burning, a water filter there, a shelter's fire lit; rain water is clean</td></tr>
+    <tr><td>Water on the road</td><td>2% a day × the eggs of what the team drinks</td><td>a camp fire (6 water an hour, 12 with a smokeless stove), a water filter carried</td></tr>
+    <tr><td>Raw meat</td><td>4% a ration eaten (game, fish and snares from land at 25%+ Infection; infested animals always)</td><td>a Cook fire or a preserving kitchen; drying racks and a smoke house take it first; a camp fire (12 an hour)</td></tr>
+    <tr><td>Camping</td><td>3% × Infection a day on land at 50%+</td><td>half with the fire lit; better: camp a tile or two away</td></tr>
+  </tbody></table>
+  <p>Uncooked meat with eggs waits in the stores and is eaten last, when nothing else is left; a team eats it raw only as the last resort.</p>
+  <table class="data"><thead><tr><th>Stage</th><th>Days</th><th>Effects</th><th>Spotted</th><th>Cure</th></tr></thead><tbody>
+    <tr><td>Eggs</td><td>6–10</td><td>none</td><td>never</td><td>—</td></tr>
+    <tr><td>Gut</td><td>18–26</td><td>+1 ration a day, −0.4 health a day, works at 85%</td><td>at a base 4% + 1.2% per Medicine point a day (×1.5 with someone on the Medic role); a team from day 7, 2% + 0.5% per point</td><td>a dewormer (sure, −10 health); a purge: 2 meds and a medic's treatment, 50% + 4% per Medicine point + 8% per hospital tier (at most 95%), −25 health, or −10 and try again tomorrow</td></tr>
+    <tr><td>Brain</td><td>4–6</td><td>−4 health a day, works at 30%, then they turn</td><td>60% a day (fits); at once if already known</td><td>surgery in a staffed Clinic or better: 4 meds, 3 of a medic's treatments, 35% + 4% per Medicine point (at most 90%); otherwise they die on the table</td></tr>
+  </tbody></table>
+  <ul>
+    <li><b>Care:</b> the Medical tab shows a carrier once spotted (a chip on the survivor screen, buttons for the dewormer, the purge or surgery), the night's automatic care does the same (a dewormer from the armory first, then a purge, even below the meds reserve: the worm kills for sure), and an alert lists everyone known to carry it.</li>
+    <li><b>The team's card, <i>The worm</i></b> (when a team notices): give them the dewormer (if carried), purge it (2 meds, a Medicine 10 check: passed at −50 health, else −15 and it holds on), end it quickly (everyone −8 mood), or hope it passes (25%; otherwise get them home). In the brain stage the card comes again with the purge disabled (hope: 8%).</li>
+    <li><b>The base's card</b> when the brain stage shows: try surgery, lock them away (8% they pass it; otherwise they turn alone and everyone loses 4 mood) or end it quickly (everyone −8 mood).</li>
+    <li><b>Turning:</b> unseen at a base, they go for the nearest people: one hurt by 10–35 (a second half the time), each killed 12% of the time (half that with a guard on duty), everyone −8 mood. On the road they turn in the night and hurt a teammate.</li>
   </ul>
 
   <h3>Death</h3>
@@ -428,6 +449,16 @@
       <p>+150 water capacity (the hub holds 80 without one, an outpost 40).</p>
       <dl><dt>Cost</dt><dd>25 scrap</dd><dt>Build</dt><dd>30</dd><dt>Max</dt><dd>3</dd><dt>Unlock</dt><dd>Water Treatment Schematics</dd></dl>
     </article>
+    <article class="card">
+      <h4>Water boiler <span class="status built">Built</span></h4>
+      <p>A drum over a fire pit: everything the base draws from its well, springs and streams is boiled, so the worm's eggs in infected ground water die (<a href="#worm">The worm</a>). It burns junk wood the people gather (nothing from the stores; <code>WORM.BOILER_SCRAP</code> and <code>BOILER_FUEL</code> can give it an upkeep). A water filter does the same job while it lasts.</p>
+      <dl><dt>Cost</dt><dd>10 scrap</dd><dt>Build</dt><dd>10</dd><dt>Max</dt><dd>1</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
+    <article class="card">
+      <h4>Cook fire <span class="status built">Built</span></h4>
+      <p>A stone-lined fire pit with spits and a big pot: all the game and fish the base eats is cooked through, killing the worm's eggs. Without it (or a preserving kitchen) meat from infected land waits in the stores and is eaten last, half-raw.</p>
+      <dl><dt>Cost</dt><dd>6 scrap</dd><dt>Build</dt><dd>6</dd><dt>Max</dt><dd>1</dd><dt>Workers</dt><dd>none</dd></dl>
+    </article>
     <article class="card" data-sprite="building/kitchen">
       <h4>Preserving kitchen <span class="status built">Built</span></h4>
       <p>Workshop station: one operator jars 9 food + 3 water + 1 scrap + 4 empty jars into 8 preserved food a day (9 with Farming 8+). Hot meals: +1 mood a day for everyone.</p>
@@ -619,7 +650,8 @@
     <tr><td>Bandage and splint kit</td><td>2 scrap, 1 meds</td><td>Any base, field</td><td>4</td><td>Medicine 2</td><td></td></tr>
     <tr><td>Boiled-rag dressings (1 meds)</td><td>2 scrap, 2 water</td><td>Any base, field</td><td>6</td><td>Medicine 3</td><td>A supply, not gear.</td></tr>
     <tr><td>Crowbar and lockpicks</td><td>4 scrap</td><td>Any base</td><td>5</td><td>Mechanics 1</td><td></td></tr>
-    <tr><td>Charcoal water filter</td><td>4 scrap</td><td>Any base</td><td>6</td><td>Mechanics 2</td><td></td></tr>
+    <tr><td>Charcoal water filter</td><td>4 scrap</td><td>Any base, field</td><td>6</td><td>Mechanics 2</td><td>Strains out the worm's eggs.</td></tr>
+    <tr><td>Dewormer</td><td>3 meds, 1 food</td><td>Med station</td><td>8</td><td>Medicine 5</td><td>Cures the worm in the gut stage, one use.</td></tr>
     <tr><td>School backpack</td><td>3 scrap</td><td>Any base</td><td>5</td><td>Mechanics 0</td><td></td></tr>
     <tr><td>Sling bag</td><td>2 scrap</td><td>Any base</td><td>3</td><td>Mechanics 0</td><td></td></tr>
     <tr><td>Noise maker</td><td>2 scrap</td><td>Any base, field</td><td>3</td><td>Mechanics 1</td><td></td></tr>
@@ -748,6 +780,7 @@
 
   <h3>Hunting, snares and fishing <span class="status built">Built</span></h3>
   <p>Food from the land: game abundance depends on terrain (forest 1 → city 0.03), water nearby, infection and hives, and drops as it is hunted (recovering with a 20-day half-life; fish 10). Teams hunt big game (deer 30 rations, wild hog 16) and small game (2 rations) with rifles, bows, shotguns or pistols; gunshots cost ammo and add Heat. Snare lines (8 snares) catch about a rabbit a day. Fishing gives about 0.6 rations an hour with a rod, 1.2 with a net worked by two. At a base, the Hunting cabin and the Hunt and Fish jobs do the same 3 hours a day. Fresh game weighs 1 kg a ration when carried.</p>
+  <p><b>Infested animals</b> <span class="status built">Built</span>: game on badly infected land catches the worm too (<a href="#worm">The worm</a>). A share of the game is infested, (Infection − 35%) / 50% (at most 80%), +50% where an infested herd stands. Each infested kill gives a quarter of its food, all of it with the worm's eggs; any game, fish or snare catch from land at 25%+ Infection carries eggs until cooked. Herds (state.herds) are born on land at 60%+ Infection (at most 2 per 1,000 tiles; 3–8 deer or hogs; 60–120 days), do not attack, wander a tile on 70% of days (toward the cleanest land next to them 60% of the time) and seed the ground they stand on (its own infection level +0.006 × size / 6 a day, up to 35%). Each infested kill on a herd's tile takes one from it; hunted out, it is gone. The tile panel shows the infested share and a herd in sight, the State Map draws herds in sight, and hunt estimates count the smaller yield.</p>
   <aside class="note"><b>Changed from Draft 1:</b> Draft 1 had farms as buildings and Cooking as a skill. The build has a full crop-and-season model, food storage and preserving, and hunting and fishing; Cooking is folded into Farming.</aside>
 </section>
 
@@ -861,7 +894,8 @@
     <article class="card"><h4>Military encrypted radio <span class="status built">Built</span></h4><p>Off hand: hears what others cannot.</p><dl><dt>Req</dt><dd>Scouting 6</dd><dt>Weight</dt><dd>1 kg</dd><dt>Value</dt><dd>160</dd></dl></article>
     <article class="card"><h4>Flashlight <span class="status built">Built</span></h4><p>Off hand on a night raid: full search speed, see 9 tiles not 7, but guards notice the light 3 tiles further.</p><dl><dt>Weight</dt><dd>0.3 kg</dd><dt>Value</dt><dd>8</dd></dl></article>
     <article class="card"><h4>Crowbar and lockpicks <span class="status built">Built</span></h4><p>Off hand: +2 Scavenging for base scavenging; picks locks.</p><dl><dt>Uses</dt><dd>30 days</dd><dt>Weight</dt><dd>2 kg</dd><dt>Value</dt><dd>6</dd></dl></article>
-    <article class="card"><h4>Charcoal water filter <span class="status built">Built</span></h4><p>+3 water a day at its base (armory or worn); cuts dysentery risk.</p><dl><dt>Uses</dt><dd>20 days</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Charcoal water filter <span class="status built">Built</span></h4><p>+3 water a day at its base (armory or worn); cuts dysentery risk and strains out the worm's eggs (the base's water is safe; a team carrying one drinks safe water).</p><dl><dt>Uses</dt><dd>20 days</dd><dt>Weight</dt><dd>3 kg</dd><dt>Value</dt><dd>10</dd></dl></article>
+    <article class="card"><h4>Dewormer <span class="status built">Built</span></h4><p>Worm tablets, or a farm's livestock paste: cures the worm for sure while it is in the gut, no medic needed (<a href="#worm">The worm</a>). Found at pharmacies, clinics, hospitals, farms and ranches; made at a med station.</p><dl><dt>Uses</dt><dd>1</dd><dt>Weight</dt><dd>0.1 kg</dd><dt>Value</dt><dd>18</dd></dl></article>
     <article class="card"><h4>Handcuffs <span class="status built">Built</span></h4><p>Tying up someone knocked out takes no action.</p><dl><dt>Weight</dt><dd>0.2 kg</dd><dt>Value</dt><dd>5</dd></dl></article>
     <article class="card"><h4>Bicycle <span class="status built">Built</span></h4><p>Bulky cargo; joins the base's bikes: faster on roads, no fuel, a 15 kg rack.</p><dl><dt>Weight</dt><dd>12 kg</dd><dt>Value</dt><dd>25</dd></dl></article>
     <article class="card"><h4>Fishing rod <span class="status built">Built</span></h4><p>About 0.6 food an hour on a shore.</p><dl><dt>Weight</dt><dd>0.8 kg</dd><dt>Value</dt><dd>12</dd></dl></article>

@@ -42,6 +42,7 @@ import { tripDone } from "./relations.js";
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
+import { wormMeatIn, eatRawCargo, drinkHour, wormTeamHour, packWater } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
@@ -490,6 +491,7 @@ export function launchExpedition(state, opts) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  packWater(state, p, home); // worm.js: water from a base whose water is not safe carries the worm's eggs
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as
   // much as the crew can carry on top of its supplies; opts.siegeKit false: none).
   const siegeKit = mission === "assault" && opts.siegeKit !== false ? packSiegeKit(home, p.cargo, members, Math.max(0, cap - load)) : [];
@@ -653,6 +655,7 @@ function playerPartyHour(state, p) {
   consume(state, p, members);
   if (!state.parties.includes(p)) return;
   gameSpoilHour(state, p); // hunting.js: fresh game in the cargo spoils by the temperature
+  wormTeamHour(state, p, members); // worm.js: a camp fire boils water and cooks game; camping on infested land
   // Heat from staying put, the plan's conditions and finds, check-ins out of contact (plans.js, fieldheat.js).
   fieldHour(state, p);
   if (!state.parties.includes(p)) return;
@@ -690,10 +693,12 @@ export const waterPerHour = (state, p, members = partyMembers(state, p), hour = 
 function consume(state, p, members) {
   const n = rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)); // rations a day at this hour's rate (a survey walks about: survey.js)
   const s = p.supplies;
-  // Fresh game in the cargo is eaten first: it is the food that spoils (hunting.js).
-  const game = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, n / 24) : 0;
+  // Fresh game in the cargo is eaten first: it is the food that spoils (hunting.js). Game with the worm's eggs is
+  // eaten last, half-raw, when nothing else is left (worm.js; a camp fire cooks it first).
+  const game = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, n / 24, { clean: true }) : 0;
   s.food = (s.food || 0) - n / 24 + game;
-  s.water = (s.water || 0) - (n / 24) * thirstAt(state); // more in summer and on a hot day (weather.js)
+  const drank = (n / 24) * thirstAt(state);
+  s.water = (s.water || 0) - drank; // more in summer and on a hot day (weather.js)
   // Found food and water in the cargo is used once packed supplies run out. Preserved food (storage.js: jarred,
   // dried, canned) is a ration like food: packed preserved food after the packed food, then found food and found
   // preserved food.
@@ -703,8 +708,9 @@ function consume(state, p, members) {
     s.food += take;
   }
   for (const k of ["food", "water"]) {
-    if (s[k] < 0 && (p.cargo.supplies[k] || 0) > 0) {
-      const take = Math.min(-s[k], p.cargo.supplies[k]);
+    const have = (p.cargo.supplies[k] || 0) - (k === "food" ? wormMeatIn(p.cargo) : 0);
+    if (s[k] < 0 && have > 0) {
+      const take = Math.min(-s[k], have);
       p.cargo.supplies[k] -= take;
       s[k] += take;
     }
@@ -714,6 +720,8 @@ function consume(state, p, members) {
     p.cargo.supplies.preserved -= take;
     s.food += take;
   }
+  if (s.food < 0) s.food += eatRawCargo(state, p, members, -s.food); // worm.js: the last resort, a risk
+  drinkHour(state, p, members, drank); // worm.js: unboiled water with the worm's eggs
   // Out of food or water this hour (orders.js: no camp healing while it lasts). Hunger and thirst are not
   // softened by armor or toughness (world.js hurt, raw).
   p.noFood = s.food < 0;

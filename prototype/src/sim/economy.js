@@ -23,6 +23,7 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
+import { cookAtBase, wormDaily } from "./worm.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -336,6 +337,7 @@ export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
   summerWarningDaily(state); // the end of spring: bases whose water would not hold through the summer
   healthDaily(state);
+  wormDaily(state); // worm.js: catching the worm (water, raw meat), its stages, spotting, care, turning; infested herds
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
   shipFromOutposts(state);
@@ -364,6 +366,7 @@ function baseDaily(state, base) {
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
+  cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
