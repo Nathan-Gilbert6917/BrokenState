@@ -21,7 +21,7 @@
 // center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
-import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
+import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
@@ -125,7 +125,10 @@ function sceneFor(b) {
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
-  const key = `${b.w}x${b.h}:${sig}`;
+  // On an upper floor the ground outside the footprint is the ground floor's (floors change the key too).
+  const fl = floorNo(b);
+  if (fl) for (const c of b.floors[0].cells) fsig = (Math.imul(fsig, 31) + (c.f ? c.f.charCodeAt(0) + c.f.length : 0)) | 0;
+  const key = `${b.w}x${b.h}:${fl}:${sig}`;
   if (sceneCache && sceneCache.b === b && sceneCache.key === key) return sceneCache;
   const n = b.w * b.h, comp = new Int16Array(n).fill(-1), blds = [];
   for (let i = 0; i < n; i++) {
@@ -147,12 +150,30 @@ function sceneFor(b) {
     blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: Math.floor(hash3(i, b.w, 7) * 4) });
   }
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
-  sceneCache = { b, key, comp, blds, sig, groundKey: `${b.w}x${b.h}:${fsig}` };
+  sceneCache = { b, key, comp, blds, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
+// ---------- floors (docs/multi-storey-crawl.md) ----------
+// A building with real storeys: b.floors[f] = { cells, reach, losCache, name }, every floor the size of the ground
+// map, b.floor the active one (b.cells aliases it), `void` cells outside the footprint on the upper floors, u.f a
+// unit's floor. The scene is built for the active floor: inside the footprint every cell is raised b.floor levels
+// (the floor you see into), the storeys below are the building's outer wall mass, the storeys above are cut away
+// and the roof is drawn only on the top floor; outside the footprint the ground stays at level 0, dimmed. A battle
+// without b.floors (every other fight) has no lift anywhere and draws as it always did.
+export const floorsOf = (b) => (b && b.floors && b.floors.length > 1 ? b.floors : null);
+export const floorNo = (b) => (floorsOf(b) ? Math.max(0, Math.min(b.floors.length - 1, b.floor | 0)) : 0);
+export const liftOf = (b) => floorNo(b) * LV; // art px the active floor is raised
+const isVoid = (c) => c.k === "void";
+const liftAt = (b, i) => (floorNo(b) && !isVoid(b.cells[i]) ? floorNo(b) * LV : 0);
+// A unit on the active floor (or any unit when the battle has no floors).
+export const onFloor = (b, t) => !floorsOf(b) || t.f == null || t.f === b.floor;
+// A cell's rules, with a stand-in for `void` until sim/combat.js knows it.
+const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
+const cdef = (c) => CELL[c.k] || VOIDDEF;
+const hAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? cdef(c).h ?? 0; };
 // The height a unit stands at, and how tall a cell's block is drawn (for picking, fading and labels).
-const standZ = (b, x, y) => heightAt(b, x, y) * LV;
+const standZ = (b, x, y) => hAt(b, x, y) * LV + liftAt(b, y * b.w + x);
 
 // ---------- the pixel painter ----------
 // Primitives in tile-local view space (u, v from 0 to 1 across the tile, z in art px up), painted per pixel in the
@@ -559,6 +580,27 @@ function roofSprite(mat, top, edges, fog) {
   return s;
 }
 
+// The storeys below the active floor (floorsOf): the building's outer wall mass under one footprint cell, from the
+// ground up to the floor's base, no interior. faces: 1 the east (+u) side, 2 the south (+v) side, only where the
+// neighbour in that direction is outside the footprint (the faces inside are hidden by the raised floor in front).
+// A darker course marks each storey.
+function massSprite(mat, lift, faces, fog) {
+  const key = `mass|${mat}|${lift}|${faces}|${fog ? 1 : 0}`;
+  let s = spriteCache.get(key);
+  if (s === undefined) {
+    const face = wallFace(mat & 3, 0);
+    const m = (f, sx, t, X, Y) => {
+      if (f === "top" || (f === "east" && !(faces & 1)) || (f === "south" && !(faces & 2))) return null;
+      const c = face(f, sx, t, X, Y);
+      return t % LV < 1 || t % LV >= LV - 1 ? mul(c, 0.55) : c;
+    };
+    s = faces ? paint([{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: lift, m }], { fog }) : null;
+    iso.builds.sprites++;
+    spriteCache.set(key, s);
+  }
+  return s;
+}
+
 // ---------- the ground ----------
 const FLOORC = {
   grass: hex("#4a5834"), field: hex("#6a6238"), dirt: hex("#5c4f3e"), gravel: hex("#5c5a57"), road: hex("#37393d"),
@@ -604,7 +646,10 @@ function groundFor(b, scene) {
   const r = iso.rot, key = `${r}:${scene.groundKey}`;
   if (groundCache && groundCache.b === b && groundCache.key === key) return groundCache;
   const [Wv, Hv] = viewDims(b, r);
-  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH;
+  // An upper floor (floorsOf): the canvas grows by the lift at the top (oy rows) and is painted twice: the ground
+  // floor's surface at level 0, dimmed (looking down from the windows), then the footprint's cells raised.
+  const lift = liftOf(b);
+  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH + lift;
   const buf = new Uint8ClampedArray(gw * gh * 4);
   // Mud and blood around the hive's flesh.
   const mud = new Float32Array(b.w * b.h);
@@ -612,23 +657,26 @@ function groundFor(b, scene) {
     const x = i % b.w, y = (i / b.w) | 0;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
-  for (let py = 0; py < gh; py++) for (let px = 0; px < gw; px++) {
-    const ax = px + 0.5 - Hv * HW, ay = py + 0.5;
+  const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
+  for (const [cells, up, dim, footOnly] of passes) for (let py = 0; py < gh; py++) for (let px = 0; px < gw; px++) {
+    const ax = px + 0.5 - Hv * HW, ay = py + 0.5 - lift + up;
     const u = (ay / HH + ax / HW) / 2, v = (ay / HH - ax / HW) / 2;
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
     const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
     const [x, y] = fromView(iu, iv, r, b.w, b.h);
     const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
-    const c = b.cells[y * b.w + x];
+    const c = cells[y * b.w + x];
+    if (footOnly && isVoid(c)) continue;
     let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x]);
     if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
+    if (dim < 1) col = mul(col, dim);
     const i = (py * gw + px) * 4;
     buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
   }
   const cv = mkCanvas(gw, gh), c = cv.getContext("2d"), img = c.createImageData(gw, gh);
   img.data.set(buf);
   c.putImageData(img, 0, 0);
-  groundCache = toBitmap({ b, key, cv, gw, gh, Hv });
+  groundCache = toBitmap({ b, key, cv, gw, gh, Hv, oy: lift });
   iso.builds.ground++;
   return groundCache;
 }
@@ -644,10 +692,10 @@ function toBitmap(o) {
 function fogFor(b, vis) {
   let sig = 0;
   for (let i = 0; i < vis.length; i++) sig = (Math.imul(sig, 31) + vis[i] + i * 3) | 0;
-  const r = iso.rot, key = `${b.w}x${b.h}:${r}:${sig}:${b.night ? 1 : 0}`;
+  const r = iso.rot, lift = liftOf(b), key = `${b.w}x${b.h}:${r}:${floorNo(b)}:${sig}:${b.night ? 1 : 0}`;
   if (fogCache && fogCache.b === b && fogCache.key === key) return fogCache;
   const [Wv, Hv] = viewDims(b, r);
-  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH;
+  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH + lift; // an upper floor: the footprint's diamonds raised (oy rows on top)
   const cv = fogCache && fogCache.canvas.width === gw && fogCache.canvas.height === gh ? fogCache.canvas : mkCanvas(gw, gh);
   const c = cv.getContext("2d");
   c.clearRect(0, 0, gw, gh);
@@ -656,11 +704,11 @@ function fogFor(b, vis) {
   for (let i = 0; i < vis.length; i++) {
     if (vis[i]) continue;
     const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h);
-    const x = (u - v) * HW + Hv * HW, y = (u + v) * HH;
+    const x = (u - v) * HW + Hv * HW, y = (u + v) * HH + lift - liftAt(b, i);
     c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); c.closePath();
   }
   c.fill();
-  fogCache = toBitmap({ b, key, cv, canvas: cv });
+  fogCache = toBitmap({ b, key, cv, canvas: cv, oy: lift });
   iso.builds.fog++;
   return fogCache;
 }
@@ -679,7 +727,7 @@ const JOINS = {
 const CUT_R = 6;
 function lookOf(b, scene, x, y, cut, focus = null) {
   const i = y * b.w + x, c = b.cells[i], k = c.k === "siegeladder" ? "palisade" : c.k; // a siege ladder leans on its wall (drawn on top: drawSiegeIso)
-  if (k === "open" || k === "water") return null;
+  if (k === "open" || k === "water" || k === "void") return null; // void: outside the footprint on an upper floor
   const r = iso.rot, o = { v: Math.floor(hash3(x, y, 17) * 4), alt: hash3(x, y, 99) < 0.35 ? 1 : 0, j: 0, n: null, top: WALL1, mat: 0, dmg: 0, dir: null };
   const js = JOINS[k];
   if (js) for (const [dx, dy] of VD) {
@@ -720,11 +768,11 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
-    let best = -1, bh = heightAt(b, x, y);
+    let best = -1, bh = hAt(b, x, y);
     VD.forEach(([dx, dy]) => {
       const nx = x + dx, ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !CELL[b.cells[ny * b.w + nx].k].walk) return;
-      const hh = heightAt(b, nx, ny);
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !cdef(b.cells[ny * b.w + nx]).walk) return;
+      const hh = hAt(b, nx, ny);
       if (hh > bh) { bh = hh; best = viewDir(dx, dy, r); }
     });
     o.dir = best < 0 ? 0 : best;
@@ -835,8 +883,8 @@ function drawEdgeMarkers(ctx, b, cw, ch, v) {
   if (b.over) return;
   const m = 22, cx = cw / 2, cy = ch / 2;
   const spots = [];
-  for (const t of b.units) if (t.side === "enemy" && active(t) && v.seen.has(t.id)) spots.push([t.x, t.y, 1]);
-  for (const q of v.ghosts || []) spots.push([q.x, q.y, 0.45]);
+  for (const t of b.units) if (t.side === "enemy" && active(t) && onFloor(b, t) && v.seen.has(t.id)) spots.push([t.x, t.y, 1]);
+  for (const q of v.ghosts || []) if (onFloor(b, q)) spots.push([q.x, q.y, 0.45]);
   for (const [x, y, a] of spots) {
     const [X, Y] = project(x + 0.5, y + 0.5, standZ(b, x, y) + UNIT_H / 2);
     if (X >= m && Y >= m && X <= cw - m && Y <= ch - m) continue;
@@ -858,7 +906,7 @@ function centerAt(b, wx, wy, z) {
 function clampCam(b) {
   const [Wv, Hv] = viewDims(b);
   iso.cx = Math.max(-Hv * HW, Math.min(Wv * HW, iso.cx));
-  iso.cy = Math.max(-2 * LV, Math.min((Wv + Hv) * HH, iso.cy));
+  iso.cy = Math.max(-2 * LV - liftOf(b), Math.min((Wv + Hv) * HH, iso.cy));
 }
 // Smoothly to a unit (V, or picking one that is off screen).
 export function isoCenterOn(b, x, y, smooth = true) {
@@ -947,15 +995,16 @@ export function isoPick(b, px, py, opts = {}) {
   // Roofs and the walls of buildings do not stop the ray (they are cut away for whatever the mouse points at inside:
   // picking never depends on the cutaway, so it cannot flicker); raised floors and every other block do.
   const scene = sceneFor(b), looks = looksFor(b, scene, NOCUT, "pick");
+  // On an upper floor (floorsOf) the footprint's cells sit at their raised height; outside it the ground is at 0.
   const topOf = (x, y) => {
     const i = y * b.w + x, c = b.cells[i];
-    if (CELL[c.k].walk && !SOLIDWALK.has(c.k)) return standZ(b, x, y);
+    if (cdef(c).walk && !SOLIDWALK.has(c.k)) return standZ(b, x, y);
     const L = looks[i];
-    if (!L) return 0;
-    return scene.comp[i] >= 0 && WALLISH.has(L.k) ? STUB : L.top;
+    if (!L) return liftAt(b, i);
+    return (scene.comp[i] >= 0 && WALLISH.has(L.k) ? STUB : L.top) + liftAt(b, i);
   };
   // March along the ray from the front (high z) to the back (the ground).
-  const zMax = WALL2 + 8;
+  const zMax = WALL2 + 8 + liftOf(b);
   let best = null;
   for (let z = zMax; z >= 0; z -= 1) {
     const u = u0 + z / (2 * HH), v = v0 + z / (2 * HH);
@@ -1047,7 +1096,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const cut = new Set();
   const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) cut.add(bid); };
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
-  for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
+  for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
   if (H.hover) cutAt(H.hover.x, H.hover.y);
   const peeks = (b.peeks || []).filter((p) => p.turn === b.turn); // a peek through a door (sim/buildingmaps.js) lifts the roof too
   for (const p of peeks) cutAt(p.x, p.y);
@@ -1056,7 +1105,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   let focus = null;
   if (b.raid && b.raid.interior && iso.roofs) {
     focus = [];
-    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
     if (H.hover) focus.push([H.hover.x, H.hover.y]);
     for (const p of peeks) focus.push([p.x, p.y]);
   }
@@ -1066,10 +1115,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
 
   // The ground and the fog.
   const g = groundFor(b, scene);
+  const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
-  ctx.drawImage(g.cv, gx, gy, g.gw * S, g.gh * S);
+  ctx.drawImage(g.cv, gx, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
   const vis = v.vis;
-  ctx.drawImage(fogFor(b, vis).cv, gx, gy, g.gw * S, g.gh * S);
+  const fg = fogFor(b, vis);
+  ctx.drawImage(fg.cv, gx, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
 
   // Highlights on the ground: the floodlit area, the evac strip, a raid's zones, the deploy cells, the move range.
   const N = b.w * b.h;
@@ -1176,18 +1227,18 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Units by where they stand (sliding along their last move).
   const shown = [];
   for (const t of b.units) {
-    if (t.left || t.fled || t.off) continue;
+    if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
     if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : vis[t.y * b.w + t.x])) continue; // the enemy and the third side (sim/thirdside.js) under the fog
     const [wx, wy] = H.animPos(t, now);
     const [uu, vv] = ptView(wx, wy, r, b.w, b.h);
     const tx = Math.max(0, Math.min(b.w - 1, Math.floor(wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(wy)));
     shown.push({ t, wx, wy, z: standZ(b, tx, ty), d: Math.floor(uu) + Math.floor(vv) });
   }
-  const ghosts = (v.ghosts || []).filter((q) => !vis[q.y * b.w + q.x]);
+  const ghosts = (v.ghosts || []).filter((q) => !vis[q.y * b.w + q.x] && onFloor(b, q));
   // Cells close in front of one of your people are drawn faded, so nobody is lost behind a wall.
   const fade = new Set();
   for (const p of players) {
-    if (!active(p)) continue;
+    if (!active(p) || !onFloor(b, p)) continue;
     const [pu, pv] = toView(p.x, p.y, r, b.w, b.h);
     const pz = standZ(b, p.x, p.y);
     for (const [du, dv] of [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2], [2, 2], [3, 2], [2, 3], [3, 3]]) {
@@ -1196,7 +1247,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const [x, y] = fromView(nu, nv, r, b.w, b.h);
       const L = looks[y * b.w + x];
       const bid = scene.comp[y * b.w + x];
-      const top = Math.max(L ? L.top : 0, bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0);
+      const top = Math.max(L ? L.top : 0, bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0) + liftAt(b, y * b.w + x);
       if (top - pz > (du + dv) * HH - 6) fade.add(y * b.w + x);
     }
   }
@@ -1205,18 +1256,36 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const gh = new Map(); for (const q of ghosts) { const [gu, gv] = toView(q.x, q.y, r, b.w, b.h); const d = gu + gv; const a = gh.get(d); if (a) a.push(q); else gh.set(d, [q]); }
   // Bodies on the ground (sim/sleepers.js), by the same depth as the units.
   const bodies = new Map();
-  for (const c of b.corpses || []) { const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
+  for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
+  // An upper floor: which sides of a footprint cell face the outside (the wall mass below is drawn there).
+  const massFaces = (uu, vv) => {
+    let faces = 0;
+    for (const [du, dv, bit] of [[1, 0, 1], [0, 1, 2]]) {
+      const nu = uu + du, nv = vv + dv;
+      if (nu >= Wv || nv >= Hv) { faces |= bit; continue; }
+      const [nx, ny] = fromView(nu, nv, r, b.w, b.h);
+      if (isVoid(b.cells[ny * b.w + nx])) faces |= bit;
+    }
+    return faces;
+  };
+  const topFloor = !F || floorNo(b) === F.length - 1; // the roof is drawn only on the top floor (the storeys above are cut away)
   iso.rects = [];
   for (let d = 0; d <= Wv + Hv - 2; d++) {
     const uLo = Math.max(0, d - (Hv - 1)), uHi = Math.min(Wv - 1, d);
     const fronts = [];
     for (let uu = uLo; uu <= uHi; uu++) {
       const vv = d - uu;
-      const sx = (uu - vv) * HW * S + FR.X0, sy = (uu + vv) * HH * S + FR.Y0;
-      if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
+      const sx = (uu - vv) * HW * S + FR.X0, sy0 = (uu + vv) * HH * S + FR.Y0;
+      if (sx < -margin || sx > cw + margin || sy0 < -margin || sy0 > ch + margin * 2) continue;
       const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x;
       const L = looks[i];
       const fog = !vis[i], faded = fade.has(i);
+      const up0 = lift && !isVoid(b.cells[i]) ? lift : 0, sy = sy0 - up0 * S; // raised with the active floor
+      if (up0) {
+        const faces = massFaces(uu, vv);
+        const mass = faces ? massSprite(scene.comp[i] >= 0 ? scene.blds[scene.comp[i]].mat : 0, lift, faces, fog) : null;
+        if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
+      }
       if (L) {
         const spr = sprOf(L, fog);
         const up = L.o.raise || 0; // furniture on an upper floor: the floor's slab under it, the piece raised
@@ -1250,12 +1319,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
       ctx.globalAlpha = 1;
     }
-    // Roofs over the buildings that are not cut away.
-    for (let uu = uLo; uu <= uHi; uu++) {
+    // Roofs over the buildings that are not cut away (none below the top floor of a building with storeys).
+    if (topFloor) for (let uu = uLo; uu <= uHi; uu++) {
       const vv = d - uu;
       const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x, bid = scene.comp[i];
       if (bid < 0 || cut.has(bid)) continue;
-      const sx = (uu - vv) * HW * S + FR.X0, sy = (uu + vv) * HH * S + FR.Y0;
+      const sx = (uu - vv) * HW * S + FR.X0, sy = (uu + vv) * HH * S + FR.Y0 - liftAt(b, i) * S;
       if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
       let edges = 0;
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
@@ -1266,6 +1335,36 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
   }
 
+  // A building with storeys (floorsOf): units on other floors are not drawn; a faint marker at their x, y says
+  // ▲ / ▼ and the floor (clicking it jumps to that floor: iso.rects). The stairwells carry an arrow for the way
+  // up or down, lit when the selected unit stands on them.
+  iso.markers = [];
+  if (F) {
+    for (const t of b.units) {
+      if (t.left || t.fled || t.off || t.dead || t.f == null || t.f === b.floor) continue;
+      if (t.side !== "player" && !v.seen.has(t.id)) continue;
+      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
+      const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); diamond(ctx, t.x, t.y, standZ(b, t.x, t.y), 2); ctx.stroke(); ctx.setLineDash([]);
+      const text = `${t.f > b.floor ? "▲" : "▼"}${t.f + 1}`;
+      ctx.globalAlpha = 0.75;
+      tag(ctx, text, X, Y - 2 * S, col.replace("0.7", "1"), Math.max(10, 3.4 * S));
+      ctx.globalAlpha = 1;
+      iso.markers.push({ id: t.id, f: t.f, x: t.x, y: t.y });
+      iso.rects.push({ x0: X - 10 * S, x1: X + 10 * S, y0: Y - 8 * S, y1: Y + 5 * S, x: t.x, y: t.y, id: t.id, f: t.f });
+    }
+    const sel = H.sel != null ? b.units.find((q) => q.id === H.sel) : null;
+    for (let i = 0; i < N; i++) {
+      if (b.cells[i].k !== "stairs") continue;
+      const x = i % b.w, y = (i / b.w) | 0;
+      if (!vis[i] && !(sel && sel.x === x && sel.y === y)) continue;
+      const here = !!(sel && sel.x === x && sel.y === y && onFloor(b, sel));
+      const up = floorNo(b) < F.length - 1, down = floorNo(b) > 0;
+      const [X, Y] = project(x + 0.5, y + 0.5, standZ(b, x, y) + LV / 2 + 4);
+      isoTag(ctx, X, Y, `${up ? "▲" : ""}${down ? "▼" : ""}`, here ? "#ffe296" : "rgba(255,226,150,0.55)", S * 0.8);
+    }
+  }
   // A ladder carried on someone's back (sim/siege.js).
   for (const c of OV.carried) {
     const sh = shown.find((q) => q.t.id === c.unit);
@@ -1327,15 +1426,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (b.raid) {
     ctx.textAlign = "center";
     for (const a of b.raid.areas) {
-      if (a.noLabel) continue; // halls and corridors (sim/buildingmaps.js)
-      // A room of a building whose roof is off: its name low over its floor; else over the roof.
-      const bid = a.outdoor ? -1 : scene.comp[(a.y0 + 1) * b.w + a.x0 + 1];
-      const low = !a.outdoor && b.raid.interior && bid >= 0 && cut.has(bid);
-      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12);
+      if (a.noLabel || !onFloor(b, a)) continue; // halls and corridors (sim/buildingmaps.js); rooms of other floors
+      // A room of a building whose roof is off: its name low over its floor; else over the roof (no roof below the
+      // top floor of a building with storeys: low).
+      const ai = (a.y0 + 1) * b.w + a.x0 + 1, bid = a.outdoor ? -1 : scene.comp[ai];
+      const low = !a.outdoor && b.raid.interior && bid >= 0 && (cut.has(bid) || !topFloor);
+      const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, (a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12) + (a.outdoor ? 0 : liftAt(b, ai)));
       tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
     for (const c of b.raid.containers) {
-      const L = looks[c.y * b.w + c.x], top = L ? L.top : 4;
+      if (!onFloor(b, c)) continue; // b.raid.containers holds every floor's
+      const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
       const [X, Y] = project(c.x + 0.5, c.y + 0.5, top + 4);
       const s = Math.max(7, 3.2 * S);
       // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
@@ -1361,7 +1462,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (let i = 0; i < N; i++) {
     const c = b.cells[i];
     if (!c.mhp || !(c.hp < c.mhp || c.k === "gate") || !vis[i] && !(b.deploy)) continue;
-    const x = i % b.w, y = (i / b.w) | 0, L = looks[i], top = L ? L.top : 0;
+    const x = i % b.w, y = (i / b.w) | 0, L = looks[i], top = (L ? L.top : 0) + liftAt(b, i);
     const [X, Y] = project(x + 0.5, y + 0.5, top + 3), f = Math.max(0, c.hp / c.mhp), w = 18 * S * 0.6;
     ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(X - w / 2, Y - 3, w, 4);
     ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
@@ -1414,14 +1515,14 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
 
   // The hovered cell: a cursor on top of everything, the cover around it, the line of fire to an enemy.
   if (h && h.x >= 0 && h.y >= 0 && h.x < b.w && h.y < b.h) {
-    const L = looks[h.y * b.w + h.x];
-    const zt = CELL[b.cells[h.y * b.w + h.x].k].walk ? tileTop(b, h.x, h.y) : L ? L.top : 0;
+    const hi = h.y * b.w + h.x, L = looks[hi];
+    const zt = cdef(b.cells[hi]).walk ? tileTop(b, h.x, h.y) : (L ? L.top : 0) + liftAt(b, hi);
     ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1.5;
     ctx.beginPath(); diamond(ctx, h.x, h.y, zt, 0.5); ctx.stroke();
-    if (CELL[b.cells[h.y * b.w + h.x].k].walk) {
+    if (cdef(b.cells[hi]).walk) {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const x = h.x + dx, y = h.y + dy;
-        if (x < 0 || y < 0 || x >= b.w || y >= b.h || !CELL[b.cells[y * b.w + x].k].walk) continue;
+        if (x < 0 || y < 0 || x >= b.w || y >= b.h || !cdef(b.cells[y * b.w + x]).walk) continue;
         if ((dx || dy) && H.unitAt(x, y)) continue;
         shieldsIso(ctx, b, x, y, dx || dy ? 0.55 : 1);
       }
@@ -1662,7 +1763,7 @@ function drawLabels(ctx, b, s, H) {
     ctx.fillStyle = i < t.ap ? "#8fc1ff" : "#2c3139";
     ctx.beginPath(); ctx.arc(X + bw / 2 + 5 + i * 7, by + 1, 2.8, 0, Math.PI * 2); ctx.fill();
   }
-  const hh = heightAt(b, t.x, t.y);
+  const hh = hAt(b, t.x, t.y);
   const tags = [];
   if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? "#6cc48a" : "#e2685f"]);
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
@@ -1693,7 +1794,7 @@ function drawLabels(ctx, b, s, H) {
 function drawFxIso(ctx, b, now, H) {
   const S = FR.S;
   for (const f of b.fx) {
-    if (f.type === "move" || f.seq < b.fxSeq - 8) continue;
+    if (f.type === "move" || f.seq < b.fxSeq - 8 || !onFloor(b, f)) continue;
     const el = H.fxAge(f, now);
     if (el > 1400) continue;
     const zTo = f.to ? standZ(b, f.to[0], f.to[1]) : 0, zFrom = f.from ? standZ(b, f.from[0], f.from[1]) : 0;
