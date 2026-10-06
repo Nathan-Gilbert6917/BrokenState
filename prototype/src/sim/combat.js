@@ -908,7 +908,11 @@ export function reachable(b, u, maxCost, opts = {}) {
   const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
   const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
-  for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
+  // thirdside.js: your people squeeze past the survivors and soldiers who are not fighting them (as over the downed:
+  // through, not stopping there), so a squad that stopped in a corridor never shuts your team in (the raid that never
+  // ended, wanderertest.js).
+  const pastThird = u.side === "player";
+  for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) && !(pastThird && o.side === "third") ? 1 : 2;
   const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
   // A Climber (middead.js climbOver) goes over walls, fences and the like, a level up or down anywhere, never
   // stopping on one of them.
