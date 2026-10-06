@@ -214,7 +214,7 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
     const seesOut = los(b, sx, sy, 0, 0) !== undefined;
     check(seesOut && b.floors[0].cells !== b.cells, "sight is worked out on this floor's grid");
     // Containers: an upper-floor one is searchable only when standing next to it on that floor.
-    const box = R.containers.find((c) => c.f === 1 && !c.searched);
+    const box = R.containers.find((c) => c.f === 1 && !c.searched && !(c.lock && !c.lock.open)); // an unlocked one: locks are another check (locks.js)
     check(!!box, "a container on floor 2 to search");
     if (box) {
       const side = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [box.x + dx, box.y + dy]).find(([x, y]) => CELL[b.floors[1].cells[y * b.w + x].k].walk);

@@ -122,7 +122,8 @@ section("Grenades over walls: no line of sight needed to a cell a teammate sees,
   const hp0 = [e1.hp, e2.hp, e3.hp];
   const err2 = combatAct(st, { type: "throw", unit: g.id, item: "frag", x: 15, y });
   const hurt = [e1, e2, e3].filter((e, i) => e.hp < hp0[i] || e.dead).length;
-  check(!err2 && throwablesOf(st, b, g).frag === 1 && hurt >= 1, `a frag grenade over the wall: ${hurt} of the 3 raiders hit (${b.log.slice(-1)[0].text.slice(0, 120)})`);
+  const offTile = /lands a tile off/.test(b.log.slice(-1)[0].text); // a blind throw may scatter (throwables.js): a legitimate miss
+  check(!err2 && throwablesOf(st, b, g).frag === 1 && (hurt >= 1 || offTile), `a frag grenade over the wall: ${hurt} of the 3 raiders hit (${b.log.slice(-1)[0].text.slice(0, 120)})`);
   // Scatter by aim: Monte Carlo of where it comes down.
   const T = THROWABLES.frag;
   const off = (aim, blind) => { let n = 0; const u = { ...g, aim }; for (let i = 0; i < 3000; i++) if (throwLanding(b, u, T, 15, y, blind)[2]) n++; return n / 3000; };

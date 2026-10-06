@@ -37,7 +37,7 @@
 // and the fight is held at the first tier where they match the attackers.
 import {
   CELL, active, unitAt, transformBattle, say, reachable, pathTo, distField, moveAlong, resizeBattle, floodReach,
-  coverAgainst, isRanged, WEAPONS,
+  coverAgainst, isRanged, WEAPONS, placeCar, CAR_LEN,
 } from "./combat.js";
 import { count, countAll } from "./buildings.js";
 import { Rng } from "./rng.js";
@@ -295,7 +295,8 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     // The base's own clutter as cover: wells, rain barrels, crates, a car from the garage; fields for the farm plots.
     scatter(countAll(base, "well"), "well", I.YARD_X - 2, I.WALL_X - 3, (x, y) => free(x, y) && x >= 4);
     scatter(Math.min(4, countAll(base, "rain_catcher")), "barrel", 3, I.WALL_X - 3, (x, y) => free(x, y));
-    if (countAll(base, "garage")) scatter(1, "car", I.YARD_X, I.WALL_X - 3);
+    // The garage's car in the yard: 2 × 3–4 cells (combat.js placeCar), where it fits.
+    if (countAll(base, "garage")) for (let t = 0; t < 16; t++) if (placeCar(cells, W, H, rng.int(I.YARD_X, I.WALL_X - 6), rng.int(0, H - 1), rng.chance(0.5) ? "x" : "y", rng.pick(CAR_LEN.car), "car", yardFree, rng.int(0, 1e6), { ring: false })) break;
     const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.tier === 0 ? 2 : base.type === "hub" ? 6 : 2)) / 4));
     for (let i = 0; i < plots; i++) {
       for (let t = 0; t < 20; t++) {

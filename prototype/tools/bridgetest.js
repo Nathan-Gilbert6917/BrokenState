@@ -10,10 +10,15 @@
 // Usage: node tools/bridgetest.js [seed] [runs]
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
-import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { LOCKS, openOdds, lockedNear } from "../src/sim/locks.js";
 import { GEAR } from "../src/sim/data.js";
+import { atVehicle } from "../src/sim/raidloot.js";
+import { newItem } from "../src/sim/inventory.js";
+import { addBuilding } from "../src/sim/buildings.js";
+import { DEPLOY } from "../src/sim/deploy.js";
+import { makeHorde, hordesHour } from "../src/sim/hordes.js";
 
 const seed0 = Number(process.argv[2] || 11);
 const runs = Number(process.argv[3] || 6);
@@ -237,6 +242,177 @@ for (let i = 0; i < runs; i++) {
       console.log(`  AI groups hold ${taken} of ${nb} bridges after 150 days`);
     }
   }
+}
+
+// ---- the team's vehicle on the map: 2 × 3–4 cells, driven about, the loot and the ram in it; extraction follows it ----
+{
+  const state = createWorld({ seed: seed0 + 77, factionCount: 7 });
+  const h = hub(state);
+  const rt = state.tiles.find((t) => t.road && !t.bridge && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1);
+  if (rt && state.vehicles[0]) {
+    const b = raidOn(state, rt.id, true);
+    const v = b.vehicle;
+    check(!!v && v.w * v.h >= 6 && (v.kind === "car" || v.kind === "truck"), `the team's ${v ? v.kind : "vehicle"} covers ${v ? v.w + "×" + v.h : "?"} cells in the entry zone`);
+    if (v) {
+      const vcells = b.cells.filter((c) => c.k === "vehicle");
+      check(vcells.length === v.w * v.h && vcells.every((c) => c.car && c.car.kind === "vehicle"), `its cells are one vehicle (${vcells.length})`);
+      check(b.raid.hasVehicle && b.raid.vehicleZone === 0 && b.raid.zones[0].vehicle, "it stands at the entry zone");
+      const u = b.units.find((x) => x.side === "player" && atVehicle(b, x));
+      check(!!u, "someone starts next to it");
+      if (u) {
+        // The rest of the team steps out of the way first (they start in the zone beside it), then drive it east along
+        // the road a few cells, and back to the zone.
+        const park = [];
+        for (let y = 0; y < b.h && park.length < 6; y++) for (let x = v.x + 10; x < Math.min(b.w, v.x + 16) && park.length < 6; x++) if (CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o.x === x && o.y === y)) park.push([x, y]);
+        for (const o of b.units.filter((o) => o.side === "player" && o !== u)) { const s = park.shift(); if (s) { o.x = s[0]; o.y = s[1]; } }
+        let drove = "";
+        const x0 = v.x, y0 = v.y;
+        for (const dx of [4, 3, 5, 2, 6]) { u.ap = 2; drove = combatAct(state, { type: "drive", unit: u.id, x: x0 + dx + Math.floor((v.w - 1) / 2), y: y0 + Math.floor((v.h - 1) / 2) }); if (!drove) break; }
+        check(!drove, `it can be driven (${drove || "ok"})`);
+        if (!drove) {
+          check(v.x !== x0 && b.cells.filter((c) => c.k === "vehicle").length === v.w * v.h && b.cells[y0 * b.w + x0].k !== "vehicle", `it moved (${x0},${y0} → ${v.x},${v.y}) and its old cells are open`);
+          check(atVehicle(b, u) && u.ap === 0, "the driver rides along and steps off next to it, both actions spent");
+          check(b.raid.vehicleZone === -1 || b.raid.zones[b.raid.vehicleZone].vehicle, `the vehicle zone follows it (${b.raid.vehicleZone})`);
+          check(b.raid.heat > 5, `the engine is loud (Heat ${b.raid.heat})`);
+          let back = "";
+          for (let i = 0; i < 4 && v.x !== x0; i++) { u.ap = 2; back = combatAct(state, { type: "drive", unit: u.id, x: x0 + Math.floor((v.w - 1) / 2), y: y0 + Math.floor((v.h - 1) / 2) }); if (back) break; }
+          check(!back && v.x === x0 && v.y === y0 && b.raid.vehicleZone === 0, `driven back to the zone (${back || "ok"}, zone ${b.raid.vehicleZone})`);
+          // Extracting from the zone it stands at keeps it.
+          const z = b.raid.zones[0];
+          const spot = [];
+          for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) if (CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o.x === x && o.y === y)) spot.push([x, y]);
+          if (spot.length) { u.x = spot[0][0]; u.y = spot[0][1]; u.ap = 2; const e = combatAct(state, { type: "extract", unit: u.id }); check(!e && u.left && u.exitVehicle, `extracting there is extracting with the vehicle (${e || "ok"})`); }
+        }
+      }
+    }
+    state.combat = null;
+  } else console.log("  (no road tile or vehicle for the drive check)");
+}
+
+// ---- the ram rides in the vehicle on an assault, unloaded next to it ----
+{
+  const state = createWorld({ seed: seed0 + 78, factionCount: 7 });
+  const h = hub(state);
+  const tile = state.tiles.find((t) => t.road && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1) || state.tiles.find((t) => t.id !== h.tile && t.terrain !== "water");
+  const crew = atBase(state, h.id).slice(0, 4).map((s) => s.id);
+  const res = launchExpedition(state, { memberIds: crew, dest: tile.id, mission: "move", stance: "normal", vehicleId: state.vehicles[0] ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
+  if (!res.error && state.vehicles[0]) {
+    const p = res.party;
+    p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+    p.cargo = p.cargo || { supplies: {}, gear: [] };
+    p.cargo.gear.push(newItem("ram", 1));
+    const b = state.combat = createBattle(state, { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 4, power: 3, walls: 2 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseAssault", context: {} });
+    check(!!b.vehicle, "the team's vehicle stands on the assault map");
+    const r = (b.rams || []).find((x) => x.side === "player");
+    check(!!r && r.inVehicle && !r.crew.length, `the ram rides in the vehicle (${r ? (r.inVehicle ? "in it" : "carried by " + r.crew.length) : "no ram"})`);
+    const u = b.units.find((x) => x.side === "player" && b.vehicle && atVehicle(b, x)) || b.units.find((x) => x.side === "player");
+    if (u && b.vehicle && r) {
+      if (!atVehicle(b, u)) { u.x = b.vehicle.x - 1; u.y = b.vehicle.y; }
+      u.ap = 2;
+      const e1 = combatAct(state, { type: "unloadRam", unit: u.id });
+      check(!e1 && r.dropped && !r.inVehicle && r.x === u.x && r.y === u.y, `unloaded next to the vehicle (${e1 || "ok"})`);
+      u.ap = 2;
+      const e2 = combatAct(state, { type: "loadRam", unit: u.id });
+      check(!e2 && r.inVehicle && !r.dropped, `loaded back in (${e2 || "ok"})`);
+      check(!b.units.some((x) => x.side === "player" && x.ram != null), "nobody is slowed by carrying it");
+    }
+    state.combat = null;
+  } else console.log(`  (ram check skipped: ${res.error || "no vehicle"})`);
+}
+
+// ---- a bridge barricade's battle map: the wall across the deck only, tank traps in front that can be battered down ----
+{
+  const state = createWorld({ seed: seed0 + 79, factionCount: 6 });
+  const h = hub(state);
+  const bt = state.tiles.filter((t) => t.bridge).sort((a, c) => state.grid.distance(a.id, h.tile) - state.grid.distance(c.id, h.tile))[0];
+  if (bt) {
+    const base = baseOn(state, bt.id);
+    for (const t of ["walls", "walls", "gate"]) addBuilding(base, t);
+    for (const s of atBase(state, h.id).slice(0, 5)) s.location = { kind: "base", baseId: base.id };
+    globalThis.window = {};
+    let b;
+    try { b = state.combat = createBattle(state, { tile: bt.id, baseId: base.id, enemy: { kind: "zombies", count: 12, power: 3 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseDefence", deploy: true, context: { through: 50 } }); } finally { delete globalThis.window; }
+    const X = DEPLOY.WALL_X;
+    const col = (x) => { const out = []; for (let y = 0; y < b.h; y++) out.push(b.cells[y * b.w + x]); return out; };
+    const wallCol = col(X);
+    const walls = wallCol.filter((c) => c.k === "palisade" || c.k === "gate" || c.k === "breach");
+    const water = wallCol.filter((c) => c.k === "water").length;
+    check(walls.length > 0 && walls.every((c) => c.deck), `the wall stands on the deck only (${walls.length} sections, ${water} river cells in the line)`);
+    check(water >= b.h / 3, "the river is the rest of the line");
+    check(wallCol.some((c) => c.k === "gate" && c.deck), "the gate is on the deck");
+    const traps = b.cells.filter((c) => c.k === "tanktrap");
+    check(traps.length >= 4 && traps.every((c) => c.deck && c.hp > 0), `tank traps on the deck in front (${traps.length})`);
+    const inFront = traps.every((c) => (b.cells.indexOf(c) % b.w) > X);
+    check(inFront, "the traps are in front of the wall");
+    check(traps.every((c) => CELL[c.k].walk), "people walk between them");
+    // Battered down from next to it: open ground again.
+    const t0 = traps[0];
+    if (t0) {
+      const i = b.cells.indexOf(t0), tx = i % b.w, ty = Math.floor(i / b.w);
+      const fake = { id: 9999, side: "player", kind: "human", name: "Tester", x: tx + 1, y: ty, hp: 100, armor: 1, ap: 2, weapon: null, mob: 5 };
+      let n = 0;
+      while (t0.hp > 0 && n++ < 20) bash(b, fake, tx, ty);
+      check(t0.hp <= 0 && t0.k === "rubble" && n < 20, `a tank trap is battered down in ${n} blows (now ${t0.k})`);
+    }
+    state.combat = null;
+  } else console.log("  (no bridge for the barricade map check)");
+}
+
+// ---- hordes: a barricaded bridge stops them and they attack the barricade instead ----
+{
+  const state = createWorld({ seed: seed0 + 80, factionCount: 6 });
+  const h = hub(state);
+  let done = false;
+  for (const bt of state.tiles.filter((t) => t.bridge && t.roadLinks.length === 2)) {
+    const [a, c] = bt.roadLinks;
+    const before = planPath(state, a, c, false, undefined);
+    if (!before || !before.path.includes(bt.id)) continue;
+    baseOn(state, bt.id);
+    const other = planPath(state, a, c, false, "nobody"); // any way round that avoids the barricade?
+    const hd = makeHorde(state, { tile: a, size: 60, target: c, role: "roam" });
+    state.hordes.push(hd);
+    hd.move = 1000;
+    state.autoCombat = true;
+    hordesHour(state);
+    const h2 = state.hordes.find((x) => x.id === hd.id);
+    if (h2 && h2.tile !== a) { // it stepped: the way must not run through the barricade unless the barricade is its goal
+      check(h2.tile !== bt.id || h2.role === "attack", `a horde never steps onto a barricade on its way (role ${h2.role}, target ${h2.target})`);
+    }
+    const otherWay = other && other.path.every((id) => id === bt.id ? false : true) && other.path.length > 1;
+    if (!otherWay) check(h2 && h2.role === "attack" && h2.target === bt.id && h2.goal && h2.goal.tile === bt.id, `with no way round, the horde turns on the barricade (role ${h2 && h2.role}, target ${h2 && h2.target})`);
+    else check(h2 && (h2.role !== "attack" || h2.target === bt.id), `with a way round the horde takes it or attacks (role ${h2 && h2.role})`);
+    state.hordes.splice(state.hordes.indexOf(h2), 1);
+    state.bases.pop();
+    done = true;
+    break;
+  }
+  if (!done) console.log("  (no bridge on a road between two banks for the horde check)");
+}
+
+// ---- every car on every kind of map is 2 × 3–4 cells (street maps of buildings too) ----
+{
+  const state = createWorld({ seed: seed0 + 81, factionCount: 7 });
+  const h = hub(state);
+  let single = 0, multi = 0, maps = 0;
+  for (const type of ["town", "autoshop", "gas", "police", "apartments", "truckstop", "airport"]) {
+    const t = state.tiles.find((x) => x.loc && x.loc.type === type && x.id !== h.tile);
+    if (!t) continue;
+    for (const s of atBase(state, h.id)) if (s.location.kind !== "base") s.location = { kind: "base", baseId: h.id };
+    const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
+    if (crew.length < 1) break;
+    const res = launchExpedition(state, { memberIds: crew, dest: t.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
+    if (res.error) continue;
+    const p = res.party;
+    p.path = [t.id]; p.idx = 0; p.phase = "engaged";
+    const b = state.combat = createBattle(state, { mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "bridgetest", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(state, t.id) }, raid: { heat0: 5 }, context: {} });
+    maps++;
+    const all = b.floors ? b.floors.flatMap((F) => F.cells) : b.cells;
+    for (const c of all) if (c.k === "car" || c.k === "truck") { if (c.car) multi++; else single++; }
+    state.combat = null;
+    state.parties.splice(state.parties.indexOf(p), 1);
+    for (const id of crew) { const s = state.survivors.find((x) => x.id === id); if (s) s.location = { kind: "base", baseId: h.id }; }
+  }
+  check(maps > 0 && single === 0 && multi > 0, `cars on ${maps} site maps: ${multi} cells of 2 × 3–4 cars, ${single} single-cell cars`);
 }
 
 console.log(`\n${bridgesSeen} worlds with bridges; ${carBoxes} road cars as containers, ${lockedCars} locked (${carBoxes ? Math.round((100 * lockedCars) / carBoxes) : 0}%); glass broken ${glassTries}×, woke the dead ${glassWoke}×; AI bridge barricades ${aiBridges} in ${worldsWithAiBridge} world(s)`);

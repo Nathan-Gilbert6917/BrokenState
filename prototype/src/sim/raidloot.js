@@ -54,7 +54,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 export const raidParty = (state, b) => (b && b.setup ? state.parties.find((x) => x.id === b.setup.partyId) || null : null);
 export function raidVehicle(state, b) {
   const p = raidParty(state, b);
-  return p && b.raid && b.raid.vehicleZone >= 0 ? partyVehicle(state, p) : null;
+  return p && b.raid && (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? partyVehicle(state, p) : null;
 }
 
 // When the raid starts: everyone's share of what the team brought, and an empty load of finds.
@@ -129,6 +129,9 @@ export function trunkInfo(state, b) {
 
 // Can this survivor reach the vehicle: in its zone, or right next to it.
 export function atVehicle(b, u) {
+  if (!u) return false;
+  // The team's car or truck covers cells of its own (combat.js b.vehicle, driven about): next to any of them.
+  if (b.vehicle) { const v = b.vehicle; return !(u.f || 0) && u.x >= v.x - 1 && u.x <= v.x + v.w && u.y >= v.y - 1 && u.y <= v.y + v.h; }
   const R = b.raid;
   if (!R || R.vehicleZone < 0 || !u) return false;
   const z = R.zones[R.vehicleZone];

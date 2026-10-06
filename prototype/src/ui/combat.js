@@ -2,7 +2,7 @@
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
-  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, AREAS, areaHint, HEAT_NAMES,
+  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
@@ -198,7 +198,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -225,6 +225,10 @@ export function combatClick(state, px, py) {
   const v = view(b);
   const u = selUnit(b);
   const who = unitAt(b, c.x, c.y);
+  // The team's vehicle (sim/combat.js driveTo): Drive, then click where it goes.
+  if (u && active(u) && u.ap > 0 && cui.mode === "drive") return void act(state, { type: "drive", unit: u.id, x: c.x, y: c.y });
+  // A tank trap next to the unit (sim/combat.js CELL.tanktrap, a bridge barricade's): a blow at it.
+  if (u && active(u) && u.ap > 0 && cui.mode === "move" && !who && b.cells[c.y * W + c.x].k === "tanktrap" && Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1) return void act(state, { type: "melee", unit: u.id, x: c.x, y: c.y });
   // The stealth kit (sim/stealth.js): throw at a tile, drag a body (pick it, then where to), tie up the knocked out.
   if (u && active(u) && u.ap > 0 && cui.mode === "throw") return void act(state, { type: "throw", unit: u.id, item: cui.throwKey, x: c.x, y: c.y });
   if (u && active(u) && u.ap > 0 && cui.mode === "drag") {
@@ -260,7 +264,7 @@ export function combatClick(state, px, py) {
   if (b.raid && u && active(u)) {
     const box = boxAt(b, c.x, c.y);
     if (box && box.contents && nearBox(u, box) && (!CDEF(b.cells[c.y * W + c.x]).walk || (u.x === c.x && u.y === c.y))) return void openSearch(state, b, u, box);
-    if (b.cells[c.y * W + c.x].k === "vehicle" && b.raid.vehicleZone >= 0) {
+    if (b.cells[c.y * W + c.x].k === "vehicle" && (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0)) {
       if (atVehicle(b, u)) { cui.lootReq = { uid: u.id, box: null }; return; }
       cui.msg = "Walk to the vehicle to load or unload it.";
       return;
@@ -577,8 +581,15 @@ export function combatAction(state, key, d) {
   const v = d.v;
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
+  if (v === "drive") { // sim/combat.js driveTo: pick where it goes
+    if (!b.vehicle) { cui.msg = "You came on foot: there is no vehicle here."; return; }
+    if (!atVehicle(b, u)) { cui.msg = "Stand next to the vehicle to drive it."; return; }
+    if (u.ap < DRIVE.AP) { cui.msg = "Driving takes both actions."; return; }
+    cui.mode = "drive"; cui.msg = `Click where to drive the ${b.vehicle.kind === "truck" ? "truck" : "car"} (open ground, up to ${DRIVE.RANGE} cells).`;
+    return;
+  }
   if (v === "vehicle" && b.raid) {
-    if (b.raid.vehicleZone < 0) { cui.msg = "You came on foot: there is no vehicle here."; return; }
+    if (!(b.raid.hasVehicle ?? b.raid.vehicleZone >= 0)) { cui.msg = "You came on foot: there is no vehicle here."; return; }
     if (!atVehicle(b, u)) { cui.msg = "Walk to the vehicle (its zone, or next to it) to load or unload it."; return; }
     cui.lootReq = { uid: u.id, box: null };
     return;
@@ -748,6 +759,7 @@ export function renderCombatPanel(state) {
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
+      ${b.vehicle ? btn("drive", "Drive", `Both actions, from next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it (open ground only, up to ${DRIVE.RANGE} cells, nobody in the way; tank traps, railings, cars and walls stop it). Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. What is loaded in it rides along, the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && atVehicle(b, u), "V") : ""}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
       ${floorButtons(b, u, btn)}
       ${bodyButtons(state, b, u, btn)}
@@ -858,7 +870,7 @@ function raidHead(state, b, phase) {
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
-    ${R.vehicleZone >= 0 ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map.">Your vehicle is in the entry zone. Extract there to keep it.</div>` : ""}
+    ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
     ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
     ${raidKeyLine(state, b)}
   </div>`;
@@ -875,9 +887,9 @@ function raidButtons(b, u, btn) {
   const Q = SEARCH.quick;
   const qWhy = quickRefusal(b, u, qb || near[0]);
   const quickTip = `Rummage in a hurry: no action (needs one left; once a turn), so it fits between two moves. Only ${Math.round(Q.reveal[0] * 100)}–${Math.round(Q.reveal[1] * 100)}% of what is inside turns up; a full search there later finds the rest. Loud: Heat +${Q.heat}, and the unaware dead and guards within ${quickRadius(b, u)} tiles come to look${b.raid.interior ? " (walls and closed doors muffle it)" : ""}${quickRadius(b, u) > Q.radius ? "; fumbling in the dark without a light carries further" : ""}.${qWhy ? ` ${qWhy}` : ""}`;
-  const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
+  const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
-  const veh = b.raid.vehicleZone >= 0;
+  const veh = b.raid.hasVehicle ?? b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
   let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧S")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
@@ -962,6 +974,10 @@ function siegeButtons(b, u, btn) {
   const r = ramOf(b, u);
   if (r && r.lead === u.id) html += btn("ram", "Swing ram", `Bring the ram's crew to bear on the barred gate or door right in front: ${RAM.DMG[0]}–${RAM.DMG[1]} damage per carrier next to the lead (${RAM.MIN}–${RAM.CREW}). Ends the crew's turn.`, ap > 0 && ramTargets(b, u).length > 0);
   if (r) html += btn("dropRam", "Set ram down", "Let go of the ram: the crew can shoot and take cover again. Anyone can take it up again with someone next to them.", true);
+  if (b.vehicle && atVehicle(b, u)) { // the ram into or out of the team's vehicle (sim/siege.js loadRam / unloadRam)
+    if (r || (b.rams || []).some((x) => x.dropped && x.side === u.side && Math.max(Math.abs(x.x - u.x), Math.abs(x.y - u.y)) <= 1)) html += btn("loadRam", "Load ram", "1 action: the ram into the vehicle (the crew is free of it). It rides along wherever the vehicle is driven.", ap > 0);
+    if ((b.rams || []).some((x) => x.inVehicle && x.side === u.side)) html += btn("unloadRam", "Unload ram", `1 action: the ram out of the vehicle onto the ground next to you; then Take up ram with ${RAM.MIN}+ people standing together.`, ap > 0);
+  }
   else if ((b.rams || []).some((x) => x.dropped && x.side === u.side && Math.max(Math.abs(x.x - u.x), Math.abs(x.y - u.y)) <= 1)) html += btn("takeRam", "Take up ram", `Take the ram up with whoever of yours stands next to you (it needs ${RAM.MIN}). It moves at ${RAM.MOB} tiles an action.`, ap > 0);
   const dt = dropTargets(b, u);
   if (dt.length) html += `<button data-action="cb-act" data-v="drop" data-id="${dt[0].id}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`Drop a rock from the wall on ${dt[0].name} below (${DROP.CHANCE}%: ${DROP.DMG[0]}–${DROP.DMG[1]}; on a ram's crew one more of them is hit). Ends the turn.`)}">Drop rock on ${esc(dt[0].name)}</button>`;
@@ -1981,13 +1997,14 @@ function drawObject(k, px, py, cs, n, cell = null) {
       ctx.strokeStyle = "#45423e"; ctx.stroke();
       break;
     }
-    case "car": case "truck": {
+    case "car": case "truck": case "vehicle": {
       const colors = ["#7a3b34", "#3b5a7a", "#6b6b6b", "#7a6a34", "#3f6b4a"];
       if (cell && cell.car) {
         // One cell's share of a 2 × 3–4 cell car (sim/combat.js placeCar): the body in car-local units (a along, c across),
-        // clipped to this cell, so the cells meet into one car; glass over the cabin, wheels at the corners.
-        const { i, j, L, ax, kind, v } = cell.car, big = kind === "truck";
-        const body = big ? "#5a4030" : colors[v % colors.length];
+        // clipped to this cell, so the cells meet into one car; glass over the cabin, wheels at the corners. The team's
+        // own vehicle ("vehicle", combat.js placeVehicle) is the blue one.
+        const { i, j, L, ax, kind, v, body: bodyKind } = cell.car, big = kind === "truck" || bodyKind === "truck";
+        const body = kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length];
         const parts = big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
         for (const a of big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
@@ -2000,12 +2017,26 @@ function drawObject(k, px, py, cs, n, cell = null) {
         }
         break;
       }
+      if (k === "vehicle") { // a one-cell vehicle (bikes, or no room for the car in the zone)
+        ctx.fillStyle = "#2f5d8a";
+        roundRect(px + cs * 0.05, py + cs * 0.15, cs * 0.9, cs * 0.7, cs * 0.14); ctx.fill();
+        ctx.strokeStyle = "#a9cbff"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = "#cfe3f7"; ctx.fillRect(px + cs * 0.6, py + cs * 0.25, cs * 0.2, cs * 0.5);
+        break;
+      }
       ctx.fillStyle = k === "truck" ? "#4a3a2e" : colors[Math.floor(n * colors.length)];
       roundRect(px + cs * 0.08, py + cs * 0.18, cs * 0.84, cs * 0.64, cs * 0.12); ctx.fill();
       ctx.strokeStyle = "#1f1f1f"; ctx.stroke();
       ctx.fillStyle = k === "truck" ? "#2a221c" : "#9fc0d8";
       ctx.fillRect(px + cs * 0.55, py + cs * 0.26, cs * 0.18, cs * 0.48);
       if (k === "truck") { ctx.fillStyle = "rgba(255,120,40,0.25)"; ctx.fillRect(px + cs * 0.15, py + cs * 0.3, cs * 0.3, cs * 0.4); }
+      break;
+    }
+    case "tanktrap": { // a bridge barricade's tank trap (sim/deploy.js): a steel hedgehog
+      ctx.strokeStyle = "#5e626a"; ctx.lineWidth = Math.max(2, cs * 0.12); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(px + cs * 0.2, py + cs * 0.2); ctx.lineTo(px + cs * 0.8, py + cs * 0.8); ctx.moveTo(px + cs * 0.8, py + cs * 0.2); ctx.lineTo(px + cs * 0.2, py + cs * 0.8); ctx.moveTo(cx, py + cs * 0.15); ctx.lineTo(cx, py + cs * 0.85); ctx.stroke();
+      ctx.lineCap = "butt";
+      if (cell && cell.hp > 0 && cell.mhp && cell.hp < cell.mhp) { ctx.fillStyle = "#ffd166"; ctx.fillRect(px + cs * 0.1, py + cs - 3, cs * 0.8 * (cell.hp / cell.mhp), 2); }
       break;
     }
     case "rail": // a bridge's railing (sim/combat.js layRoad): steel rails on a kerb
@@ -2049,12 +2080,6 @@ function drawObject(k, px, py, cs, n, cell = null) {
     case "cabinet": case "counter":
       ctx.fillStyle = k === "counter" ? "#7a6a58" : "#6a5440"; ctx.fillRect(px + cs * 0.1, py + cs * 0.25, cs * 0.8, cs * 0.5);
       ctx.strokeStyle = "#3a2c20"; ctx.strokeRect(px + cs * 0.1, py + cs * 0.25, cs * 0.8, cs * 0.5);
-      break;
-    case "vehicle":
-      ctx.fillStyle = "#2f5d8a";
-      roundRect(px + cs * 0.05, py + cs * 0.15, cs * 0.9, cs * 0.7, cs * 0.14); ctx.fill();
-      ctx.strokeStyle = "#a9cbff"; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = "#cfe3f7"; ctx.fillRect(px + cs * 0.6, py + cs * 0.25, cs * 0.2, cs * 0.5);
       break;
     // Base defences and the inside of a hive (sim/defences.js, sim/hives.js).
     case "barricade":

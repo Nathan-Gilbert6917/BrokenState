@@ -28,6 +28,7 @@
 //   with kit faces less of its walls (assaultCut: −15% a ladder, −20% the ram, −4% a grenade of the walls' share of
 //   their defence, at most −60%: conquest.js assaultForce).
 // Everything that is on the map is data any renderer can draw: battleOverlays.
+import { atVehicle } from "./raidloot.js"; // the team's vehicle on the map (loadRam / unloadRam)
 import { CELL, active, unitAt, unitById, say, fx, reachable, pathTo, distField, moveAlong, damage, heightAt, barredCell, breakCell, structureName, alertNear } from "./combat.js";
 import { throwAt, THROWABLES, throwablesOf } from "./stealth.js";
 import { blastSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
@@ -138,6 +139,12 @@ export function siegeSetup(state, b) {
   }
 }
 function hand(b, people, kit, walls, enemy) {
+  // The team's ram rides in its vehicle when it brought one (combat.js b.vehicle): nobody is slowed by it until it is
+  // unloaded next to the wall (unloadRam); the crew takes it up from there.
+  if (kit.ram && !enemy && b.vehicle) {
+    b.rams.push({ id: b.nextId++, side: "player", lead: null, crew: [], x: b.vehicle.x, y: b.vehicle.y, dropped: false, inVehicle: true, hits: 0 });
+    kit = { ...kit, ram: 0 };
+  }
   const left = people.slice().sort((a, c) => strength(c) - strength(a) || a.id - c.id);
   if (kit.ram && left.length >= RAM.MIN && (walls || b.cells.some((c) => barredCell(c)))) {
     const crew = left.splice(0, Math.min(RAM.CREW, left.length >= 4 || !enemy ? RAM.CREW : RAM.MIN));
@@ -338,7 +345,7 @@ function leaveCrew(b, r, o, why) {
 }
 // A ram with too few left to carry it is dropped where it is; a dead lead hands it on.
 export function checkRam(b, r) {
-  if (!r || r.dropped) return;
+  if (!r || r.dropped || r.inVehicle) return; // in the team's vehicle: nobody carries it
   const alive = r.crew.map((id) => unitById(b, id)).filter((o) => o && active(o));
   for (const id of r.crew.slice()) { const o = unitById(b, id); if (!o || !active(o)) leaveCrew(b, r, o || { id }, ""); }
   if (alive.length < RAM.MIN) {
@@ -414,6 +421,27 @@ function dropRocks(b, u, t) {
 // ladder (x, y: the wall section), push (ladder: id), ram (x, y: the gate or door), dropRam, takeRam, drop (target).
 export function siegeAct(state, b, u, t, act) {
   switch (act.type) {
+    case "loadRam": { // the ram into the team's vehicle (combat.js b.vehicle): the one this crew carries, or one lying next to you
+      if (!b.vehicle) return "There is no vehicle here.";
+      if (!atVehicle(b, u)) return "Stand next to the vehicle.";
+      const r = ramOf(b, u) || (b.rams || []).find((x) => x.dropped && x.side === u.side && cheb(x.x, x.y, u.x, u.y) <= 1);
+      if (!r) return "No ram carried or lying next to you.";
+      for (const id of r.crew.slice()) { const o = unitById(b, id); if (o) leaveCrew(b, r, o, ""); }
+      r.crew = []; r.lead = null; r.dropped = false; r.inVehicle = true; r.x = b.vehicle.x; r.y = b.vehicle.y;
+      u.ap = Math.max(0, u.ap - 1);
+      say(b, `${u.name} heaves the ram into the ${b.vehicle.kind === "truck" ? "truck" : "car"}.`, "info");
+      return "";
+    }
+    case "unloadRam": { // the ram out of the vehicle onto the ground next to you (then Take up ram)
+      if (!b.vehicle) return "There is no vehicle here.";
+      if (!atVehicle(b, u)) return "Stand next to the vehicle.";
+      const r = (b.rams || []).find((x) => x.inVehicle && x.side === u.side);
+      if (!r) return "No ram in the vehicle.";
+      r.inVehicle = false; r.dropped = true; r.x = u.x; r.y = u.y;
+      u.ap = Math.max(0, u.ap - 1);
+      say(b, `${u.name} drags the ram out of the ${b.vehicle.kind === "truck" ? "truck" : "car"}: it lies here for a crew to take up.`, "info");
+      return "";
+    }
     case "ladder": {
       const tg = act.x != null ? [Number(act.x), Number(act.y)] : ladderTargets(b, u)[0];
       if (!tg) return u.ladder > 0 || lyingNear(b, u) ? "Stand at the foot of a wall section, right next to it." : "Nobody here carries a ladder.";
@@ -640,7 +668,7 @@ export function battleOverlays(b) {
     flares: (b.flares || []).map((f) => ({ x: f.x, y: f.y, r: f.r, turns: f.turns })),
     decoys: (b.lures || []).filter((l) => l.turns > 0).map((l) => ({ x: l.x, y: l.y, key: l.key, radius: l.radius, turns: l.turns, sense: l.sense || (THROWABLES[l.key] && THROWABLES[l.key].sense) || ["noise"], decoy: !!(THROWABLES[l.key] && THROWABLES[l.key].decoy) })),
     ladders: (b.ladders || []).map((l) => ({ id: l.id, side: l.side, up: l.up, x: l.up ? l.x : l.fx, y: l.up ? l.y : l.fy, fx: l.fx, fy: l.fy, wx: l.x, wy: l.y, dir: [l.x - l.fx, l.y - l.fy], climber: l.up && unitAt(b, l.x, l.y) ? unitAt(b, l.x, l.y).id : null })),
-    rams: (b.rams || []).map((r) => { const L = lead(r); return { id: r.id, side: r.side, x: L ? L.x : r.x, y: L ? L.y : r.y, lead: r.lead, crew: r.crew.slice(), dropped: !!r.dropped, target: r.target || null, face: L && L.face ? L.face.slice() : [1, 0] }; }),
+    rams: (b.rams || []).map((r) => { const L = lead(r); return { id: r.id, side: r.side, x: r.inVehicle ? -1 : L ? L.x : r.x, y: r.inVehicle ? -1 : L ? L.y : r.y, inVehicle: !!r.inVehicle, lead: r.lead, crew: r.crew.slice(), dropped: !!r.dropped, target: r.target || null, face: L && L.face ? L.face.slice() : [1, 0] }; }),
     carried: b.units.filter((u) => active(u) && u.ladder > 0).map((u) => ({ unit: u.id, x: u.x, y: u.y, item: "ladder" })),
     auras: shepherdsOf(b).map((s) => ({ unit: s.id, x: s.x, y: s.y, r: (ZTYPES.shepherd && ZTYPES.shepherd.aura) || SHEPHERD.AURA })),
   };

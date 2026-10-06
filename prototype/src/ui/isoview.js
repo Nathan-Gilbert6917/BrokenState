@@ -316,8 +316,8 @@ const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u
 // the cells' pieces meet into one car: a low body, a cabin of glass in the middle (a van's longer, a pickup's bed
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
 function carPieces(car, r) {
-  const { i, j, L, ax, kind, v } = car, big = kind === "truck";
-  const body = big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
+  const { i, j, L, ax, kind, v } = car, big = kind === "truck" || car.body === "truck"; // "vehicle": the team's own (blue), a truck or a car by car.body
+  const body = kind === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
   const paint = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return big && q < 0.35 ? mul(PAL.tire, 1.4) : q > 0.93 ? mul(PAL.rust, 1.1) : mul(body, f === "top" ? 1 : 0.95); };
   const glass = (f) => (f === "top" ? mul(body, 0.8) : PAL.glass);
   const boxM = flatM(mul(PAL.tire, 1.6)), tire = flatM(PAL.tire);
@@ -348,7 +348,7 @@ function carPieces(car, r) {
 }
 function prims(k, o) {
   const v = o.v || 0;
-  if (o.car && (k === "car" || k === "truck")) return carPieces(o.car, iso.rot);
+  if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
   switch (k) {
     case "wall": case "window": case "door": case "idoor": {
       const top = o.stub ? STUB : o.top;
@@ -484,6 +484,17 @@ function prims(k, o) {
       if (k === "vehicle") out.push(L(0.08, 0.26, 0.22, 0.78, 10, 13, paint));
       for (const [a, c] of [[0.2, 0.72], [0.8, 0.72]]) out.push({ ...L(a - 0.08, a + 0.08, c, c + 0.08, 0, 5, wheel.m) });
       return out;
+    }
+    case "tanktrap": {
+      // A bridge barricade's tank trap (sim/deploy.js, conquest.js): a steel hedgehog, three bars crossed on a post.
+      const m = tex(PAL.metalDk, 0.14, 11);
+      return [
+        { u0: 0.42, u1: 0.58, v0: 0.42, v1: 0.58, z0: 0, z1: 12, m },
+        run("u", 0.44, 0.56, 4, 6, m, 0.1, 0.9),
+        run("v", 0.44, 0.56, 4, 6, m, 0.1, 0.9),
+        run("u", 0.3, 0.42, 8, 10, m, 0.2, 0.8),
+        run("v", 0.58, 0.7, 8, 10, m, 0.2, 0.8),
+      ];
     }
     case "rail": {
       // A bridge's railing (sim/combat.js layRoad): concrete kerb, steel posts and two rails along the deck's edge.
@@ -829,7 +840,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
     });
     o.dir = best < 0 ? 0 : best;
   }
-  if (c.car && (k === "car" || k === "truck")) o.car = c.car; // one piece of a 2 × 3–4 cell car (sim/combat.js placeCar): carPieces draws its share
+  if (c.car && (k === "car" || k === "truck" || k === "vehicle")) o.car = c.car; // one piece of a 2 × 3–4 cell car (sim/combat.js placeCar): carPieces draws its share
   else if (k === "car" || k === "truck" || k === "vehicle") {
     // Cars lie along the road, or as their dice say; the axis turns with the view.
     const roadX = (x > 0 && b.cells[i - 1].f === "road") || (x < b.w - 1 && b.cells[i + 1].f === "road");
@@ -856,11 +867,11 @@ function blockTop0(k, o) {
     case "hivewall": return 30;
     case "truck": return o.car ? 17 : 23;
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
-    case "vehicle": return 16;
+    case "vehicle": return o.car ? (o.car.body === "truck" ? 17 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
-    case "rock": return 10; case "wire": return 10; case "rail": return 13;
+    case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     default: return 0;
   }
 }

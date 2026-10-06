@@ -5,6 +5,7 @@
 // meets that are on the same errand, and can split while each part keeps at least 10 of the dead. Its score
 // (hordeScore, from its size) is how tough it is when met and how much it adds to a new hive.
 import { newId, atBase, day } from "./world.js";
+import { bridgeHolder } from "./parties.js"; // a bridge barricaded with a base (nextStep)
 import { findPath } from "./hex.js";
 import { mannedStations } from "./buildings.js";
 import { generatorHeat } from "./power.js";
@@ -123,11 +124,27 @@ const isLand = (state, id) => { const t = state.tiles[id]; return t.terrain !== 
 
 // The next tile toward a horde's target over land (rivers are crossed at bridges). The way is planned once per
 // target and kept on the horde; a target it cannot reach is dropped (its job then falls back to wandering).
+// A bridge barricaded with a base (parties.js bridgeHolder: yours or a group's) is no way over for a horde unless the
+// base is where it is going: a horde whose way needs that bridge turns on the barricade instead (role attack, the base
+// its goal) and attacks it when it gets there (onHordeEnter), like any base.
+const barricaded = (state, id) => !!state.tiles[id].bridge && bridgeHolder(state, id) != null;
 function nextStep(state, h) {
   const g = state.grid;
   if (!h.path || h.pathTo !== h.target || h.path[0] !== h.tile) {
-    const res = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) ? 1 : Infinity), 120);
+    const res = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) && (b === h.target || !barricaded(state, b)) ? 1 : Infinity), 120);
     if (!res || res.path.length < 2) {
+      const over = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) ? 1 : Infinity), 120);
+      const stop = over && over.path.length >= 2 ? over.path.findIndex((id, i) => i > 0 && barricaded(state, id)) : -1;
+      if (stop > 0) { // only a barricade in the way: the horde goes for it
+        const tile = over.path[stop];
+        const base = state.bases.find((x) => x.tile === tile);
+        const f = base ? null : state.factions.find((x) => x.alive && x.bases.includes(tile));
+        h.role = "attack"; h.site = null;
+        h.goal = base ? { baseId: base.id, tile } : { factionId: f ? f.id : null, tile };
+        h.target = tile; h.pathTo = tile; h.path = over.path.slice(0, stop + 1);
+        h.path.shift();
+        return h.path[0] ?? null;
+      }
       h.path = null;
       h.target = null;
       // A build site its hive cannot reach by land: that hive stops sending hordes there (hives.js supportSite).

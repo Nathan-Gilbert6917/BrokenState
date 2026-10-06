@@ -46,6 +46,7 @@ export const DEPLOY = {
   // The wall's hit points: a section 40 + 12 × wall strength, the gate 100 (+80 reinforced). The walkway (column 11)
   // and its ladders (column 10, these rows).
   WALL_HP: 40, WALL_HP_PER: 12, GATE_HP: 100, GATE_HP_REINFORCED: 80, LADDER_ROWS: [2, 4, 8, 10], WORN: 0.002, WORN_MAX: 0.85,
+  TRAP_HP: 25, // a bridge barricade's tank traps (combat.js CELL.tanktrap)
 };
 // The attack's front on a long wall (a big base: sim/battlesize.js): whatever the wall's length, the attackers come at
 // the FRONT rows either side of the gate (the old 13-row wall), the breaches are cut there and the watchtower's two
@@ -108,7 +109,11 @@ export function deployMap(b, ctx, base, c) {
   const through = c.through || 0;
   const people = b.setup.enemy.kind !== "zombies";
   const want = people || c.raidId != null || c.rescue ? 1 : (c.bosses || 0) + (through >= 120 ? 1 : 0) + (through >= 250 ? 1 : 0);
-  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2) && inFront(H, y)));
+  // A base on a bridge (combat.js layRoad: the river across the map, the road on a deck): its wall stands across the
+  // deck only, between the railings; the river is the rest of the line.
+  const bridge = !!(ctx.state.tiles[b.tileId] && ctx.state.tiles[b.tileId].bridge);
+  const onDeck = (y) => !bridge || (!!ctx.cellAt(X, y).deck && ctx.cellAt(X, y).k !== "rail");
+  const rows = rng.shuffle([...Array(H).keys()].filter((y) => y >= 1 && y <= H - 2 && (y <= mid - 3 || y >= mid + 2) && inFront(H, y) && onDeck(y)));
   const breaches = [];
   for (const y of rows) {
     if (breaches.length >= Math.min(DEPLOY.MAX_BREACH, want)) break;
@@ -121,6 +126,7 @@ export function deployMap(b, ctx, base, c) {
   const worn = people ? 0 : Math.min(DEPLOY.WORN_MAX, through * DEPLOY.WORN);
   const walkway = [];
   for (let y = 0; y < H; y++) {
+    if (!onDeck(y)) continue; // a bridge barricade: the river either side of the deck
     const k = gate.includes(y) ? "gate" : breaches.includes(y) ? "breach" : "palisade";
     ctx.put(X, y, k);
     const cell = ctx.cellAt(X, y);
@@ -129,8 +135,15 @@ export function deployMap(b, ctx, base, c) {
     if (k !== "palisade") { ctx.put(X - 1, y, k === "breach" ? "rubble" : "open"); ctx.put(X + 1, y, "open"); }
     else { ctx.put(X - 1, y, "walkway"); ctx.cellAt(X - 1, y).h = 1; walkway.push([X - 1, y]); }
   }
+  // A bridge barricade: tank traps on the deck in front of the wall, two staggered rows people walk between but no
+  // vehicle gets past (combat.js CELL.tanktrap, DEPLOY.TRAP_HP: battered down from next to them).
+  if (bridge) for (let y = 0; y < H; y++) {
+    if (!onDeck(y)) continue;
+    const x = X + 2 + (y % 2);
+    if (ctx.free(x, y)) { ctx.put(x, y, "tanktrap"); const cell = ctx.cellAt(x, y); cell.mhp = DEPLOY.TRAP_HP; cell.hp = DEPLOY.TRAP_HP; }
+  }
   const towers = [];
-  if (count(base, "watchtower")) for (const y of [Math.max(1, mid - FRONT.TOWER), Math.min(H - 2, mid + FRONT.TOWER)]) if (!breaches.some((o) => Math.abs(o - y) < 2)) { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
+  if (count(base, "watchtower")) for (const y of [Math.max(1, mid - FRONT.TOWER), Math.min(H - 2, mid + FRONT.TOWER)]) if (onDeck(y) && !breaches.some((o) => Math.abs(o - y) < 2)) { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
   // Ladders up to the walkway (and the towers, which have their own).
   const ladders = [];
   // By the front (the rows of the old 13-row wall: DEPLOY.LADDER_ROWS), then every 6 rows along a longer wall.

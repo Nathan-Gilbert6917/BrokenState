@@ -36,7 +36,7 @@
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { interiorOccupants } from "./wanderers.js";
-import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod, setFloor } from "./combat.js";
+import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod, setFloor, placeVehicle, placeCar, removeCar, CAR_LEN } from "./combat.js"; // placeCar: cars are 2 × 3–4 cells
 import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
@@ -1043,7 +1043,12 @@ export function assemble(rng, spec, opts = {}) {
   const reserved = new Uint8Array(W * H);
   for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (inside(x, y)) reserved[I(x, y)] = 1;
   if (!upper) for (let y = by0 - 1; y <= by1 + 1; y++) for (let x = bx0 - 1; x <= bx1 + 1; x++) if (inside(x, y)) reserved[I(x, y)] = 1; // a clear ring around the building
-  if (!upper && opts.withVehicle) { const z = zones[0]; z.vehicle = true; const c = cells[I(z.x0 + 1, z.y0 + 1)]; c.k = "vehicle"; c.f = "road"; }
+  let vehicle = null; // the team's car or truck in the entry zone, 2 × 3–4 cells (combat.js placeVehicle; a bike or no room: one cell)
+  if (!upper && opts.withVehicle) {
+    const z = zones[0]; z.vehicle = true;
+    if (opts.withVehicle !== "bike") vehicle = placeVehicle(cells, W, H, z, opts.withVehicle, (x, y) => inside(x, y) && cells[I(x, y)].k === "open");
+    if (!vehicle) { const c = cells[I(z.x0 + 1, z.y0 + 1)]; c.k = "vehicle"; c.f = "road"; }
+  }
   // A path from each outer door to the map edge (its zone), so the lot is never cut by the dressing.
   const pathCells = new Uint8Array(W * H);
   for (const d of doors) if (d.ext) {
@@ -1137,6 +1142,16 @@ export function assemble(rng, spec, opts = {}) {
       rng, room, x0, y0, x1, y1, w: room.iw, h: room.ih, free,
       kinds: () => (room.type && AREAS[room.type] ? AREAS[room.type].boxes : ["shelf"]),
       block: (x, y, k) => free(x, y) && block(x, y, k, room),
+      // A car or a truck in the room (a garage bay, a hangar): 2 × 3–4 cells (combat.js placeCar) when it fits without
+      // cutting the room in two.
+      car: (x, y, kind) => {
+        const L = rng.pick(CAR_LEN[kind]), ax = rng.chance(0.5) ? "x" : "y";
+        const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => free(cx, cy) && rid[I(cx, cy)] === room.id, rng.int(0, 1e6), { ring: false });
+        if (!rect) return false;
+        total -= rect.w * rect.h;
+        if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; return false; }
+        return true;
+      },
       keep: keepAt,
       box: (x, y, k) => free(x, y) && box(room, x, y, k || rng.pick(room.type && AREAS[room.type] ? AREAS[room.type].boxes : ["shelf"])),
       wallSpots: () => rng.shuffle(all().filter(([x, y]) => wallNext(x, y))),
@@ -1147,10 +1162,20 @@ export function assemble(rng, spec, opts = {}) {
   // ---------- the outside ----------
   const outdoor = [];
   const outsideFree = (x, y) => inside(x, y) && rid[I(x, y)] === -2 && !reserved[I(x, y)] && !pathCells[I(x, y)] && cells[I(x, y)].k === "open";
+  // A car or a truck on the lot: 2 × 3–4 cells (combat.js placeCar), turned as its dice say, never cutting the lot in two.
+  const carAt = (x, y, kind, test = () => true) => {
+    const L = rng.pick(CAR_LEN[kind]), ax = rng.chance(0.5) ? "x" : "y";
+    const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => outsideFree(cx, cy) && test(cx, cy), rng.int(0, 1e6), { ring: false });
+    if (!rect) return null;
+    total -= rect.w * rect.h;
+    if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; return null; }
+    return rect;
+  };
   const scatter = (k, n, test = () => true) => {
     let placed = 0;
     for (let t = 0; t < n * 12 && placed < n; t++) {
       const x = rng.int(0, W - 1), y = rng.int(0, H - 1);
+      if (k === "car" || k === "truck") { if (carAt(x, y, k, test)) placed++; continue; }
       if (outsideFree(x, y) && test(x, y) && block(x, y, k)) placed++;
     }
     return placed;
@@ -1175,7 +1200,8 @@ export function assemble(rng, spec, opts = {}) {
     const want = rng.int(1, 2);
     for (let t = 0; t < 40 && placed < want; t++) {
       const x = rng.int(1, W - 2), y = rng.int(by1 + 2, H - 1);
-      if (outsideFree(x, y) && box(null, x, y, "car", a)) placed++;
+      const rect = outsideFree(x, y) ? carAt(x, y, "car") : null; // a wrecked car of 2 × 3–4 cells, searched from any side
+      if (rect) { containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: a.id, kind: "car", searched: false, label: `${a.name}: car` }); placed++; }
     }
     if (placed) {
       const cs = containers.filter((c) => c.area === a.id);
@@ -1235,7 +1261,7 @@ export function assemble(rng, spec, opts = {}) {
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, storeys };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, storeys };
 }
 
 // ======================================================================================
@@ -1328,13 +1354,12 @@ const FURNISH = {
   },
   bays(c) {
     const cars = Math.max(1, Math.floor(c.w / 5));
-    for (let i = 0; i < cars; i++) { const [x, y] = c.innerSpots()[0] || []; if (x != null) c.block(x, y, c.rng.chance(0.3) ? "truck" : "car"); }
+    for (let i = 0; i < cars; i++) { const kind = c.rng.chance(0.3) ? "truck" : "car"; for (const [x, y] of c.innerSpots().slice(0, 8)) if (c.car(x, y, kind)) break; } // 2 × 3–4 cells each (combat.js placeCar)
     rowOf(c, c.y0, c.x0, c.x1, "counter", 3);
   },
   hangar(c) {
     const cx = c.x0 + Math.floor(c.w / 2), cy = c.y0 + Math.floor(c.h / 2);
-    for (let x = cx - 2; x <= cx + 2; x++) c.block(x, cy, "truck");
-    c.block(cx, cy - 1, "truck"); c.block(cx, cy + 1, "truck");
+    for (const [x, y] of [[cx - 2, cy - 1], [cx - 2, cy + 1], [cx + 2, cy - 1], [cx - 3, cy]]) c.car(x, y, "truck"); // the trucks parked inside, 2 × 4 cells each
     rowOf(c, c.y0, c.x0, c.x1, "crate", 4);
   },
   classroom(c) {
@@ -1367,7 +1392,7 @@ const FURNISH = {
   barn(c) {
     for (const [x, y] of c.wallSpots().slice(0, 4)) c.block(x, y, "hay");
     for (let y = c.y0; y <= c.y0 + Math.min(2, c.h - 3); y++) c.block(c.x1 - 2, y, "fence");
-    if (c.w * c.h > 40) { const [x, y] = c.innerSpots()[0] || []; if (x != null) c.block(x, y, "truck"); }
+    if (c.w * c.h > 40) for (const [x, y] of c.innerSpots().slice(0, 8)) if (c.car(x, y, "truck")) break; // a truck of 2 × 4 cells (combat.js placeCar)
   },
   hay(c) {
     for (const [x, y] of c.wallSpots().slice(0, Math.max(1, Math.floor(c.w / 2)))) c.block(x, y, "hay");

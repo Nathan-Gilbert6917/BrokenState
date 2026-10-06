@@ -75,7 +75,7 @@ import { thirstAhead } from "./weather.js";
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
-  WALLS: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], WALL_FACTOR: 0.05, GATE_HP: [60, 10], WALL_HP: [40, 8],
+  WALLS: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], WALL_FACTOR: 0.05, TRAP_HP: 30, GATE_HP: [60, 10], WALL_HP: [40, 8],
   STOCK_SHARE: 0.5, FLEE: 0.4, JOIN: 0.25, JOIN_MAX: 3, PRISON: 0.2, PRISON_MAX: 3, ATTACK_GW: -30, MEMBER_GW: -5,
   FALLOUT: { pact: -8, pactDefeat: -15, friend: -4, friendDefeat: -8, enemy: 2, enemyDefeat: 4, friendRel: 28, enemyRel: -42 },
   INFAMY: { hostile: 2, other: 15, defeatHostile: 0, defeatOther: 10, fade: 0.1, max: 100, wary: 20, drift: 1 / 200, inviteDiv: 2, inviteMax: 90 },
@@ -271,12 +271,22 @@ registerBattleLayout("baseAssault", (b, ctx) => {
   const walls = e.walls || 0;
   const X = assaultWallX(ctx), mid = Math.floor(ctx.H / 2);
   if (ctx.phase === "map") {
+    // Their base on a bridge (combat.js layRoad): the wall across the deck only, the river either side, and tank traps on
+    // the deck in front of it so no vehicle gets near (combat.js CELL.tanktrap; battered down from next to them).
+    const bridge = !!(ctx.state.tiles[b.tileId] && ctx.state.tiles[b.tileId].bridge);
+    const onDeck = (y) => !bridge || (!!ctx.cellAt(X, y).deck && ctx.cellAt(X, y).k !== "rail");
     if (walls >= 1) {
       const nBreach = walls <= 2 ? 3 : walls <= 5 ? 2 : 1;
-      const rows = ctx.rng.shuffle([...Array(ctx.H).keys()].filter((y) => y >= 1 && y <= ctx.H - 2 && (y <= mid - 3 || y >= mid + 2)));
+      const rows = ctx.rng.shuffle([...Array(ctx.H).keys()].filter((y) => y >= 1 && y <= ctx.H - 2 && (y <= mid - 3 || y >= mid + 2) && onDeck(y)));
       const breaches = [];
       for (const y of rows) { if (breaches.length >= nBreach) break; if (!breaches.some((o) => Math.abs(o - y) < 3)) breaches.push(y); }
+      if (bridge) for (let y = 0; y < ctx.H; y++) {
+        if (!onDeck(y)) continue;
+        const x = X - 2 - (y % 2);
+        if (ctx.free(x, y)) { ctx.put(x, y, "tanktrap"); const cell = ctx.cellAt(x, y); cell.hp = cell.mhp = CONQUEST.TRAP_HP; }
+      }
       for (let y = 0; y < ctx.H; y++) {
+        if (!onDeck(y)) continue;
         const k = y === mid - 1 || y === mid ? "gate" : breaches.includes(y) ? "breach" : "palisade";
         ctx.put(X, y, k);
         // Their gate is barred and their wall sections have hit points (CONQUEST.GATE_HP / WALL_HP + per wall point):
