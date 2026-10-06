@@ -1046,7 +1046,7 @@ export function assemble(rng, spec, opts = {}) {
   let vehicle = null; // the team's car or truck in the entry zone, 2 × 3–4 cells (combat.js placeVehicle; a bike or no room: one cell)
   if (!upper && opts.withVehicle) {
     const z = zones[0]; z.vehicle = true;
-    if (opts.withVehicle !== "bike") vehicle = placeVehicle(cells, W, H, z, opts.withVehicle, (x, y) => inside(x, y) && cells[I(x, y)].k === "open");
+    vehicle = placeVehicle(cells, W, H, z, opts.withVehicle, (x, y) => inside(x, y) && cells[I(x, y)].k === "open"); // a bike: 2 x 1
     if (!vehicle) { const c = cells[I(z.x0 + 1, z.y0 + 1)]; c.k = "vehicle"; c.f = "road"; }
   }
   // A path from each outer door to the map edge (its zone), so the lot is never cut by the dressing.

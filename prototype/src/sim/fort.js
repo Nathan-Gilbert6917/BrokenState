@@ -26,6 +26,7 @@ export const FORT = {
   LADDER_EVERY: 7,    // a ladder up to the walkway about every this many cells of wall
   COVER: 0.035,       // share of the margin's cells with a rock or a tree on them (not right by the wall)
   SPREAD: 0.25,       // share of the AI's attackers that come round onto the sides next to the one they came from
+  HORDE_SIDES: [1, 6, 12, 18], // a horde of at least this many of the dead can come from 1, 2, 3, 4 sides (how many: its dice)
   GATE_HOLD: 7, GATE_HOLD_TWO: 9, // defenders needed before one, two hold the gate facing the attack (DEPLOY.GATE_ONE / TWO)
   TRAP_HP: 25,
 };
@@ -184,10 +185,20 @@ export function fortDefence(b, ctx, base, c) {
   const enemies = b.units.filter((u) => u.side === "enemy");
   for (const u of enemies) u.x = -100;
   const anchors = new Map();
-  const bands = { [side]: margin(F, side).filter(([x, y]) => okCell(x, y)) };
-  for (const s of NEXT_TO[side]) bands[s] = margin(F, s).filter(([x, y]) => okCell(x, y));
+  // A horde comes at the walls from 1 to 4 sides (more the bigger it is: HORDE_SIDES), the side it came from first, then
+  // the sides next to it, then the far one; half of it on its own side. People come from one side, a few round the next.
+  const horde = b.setup.enemy.kind === "zombies";
+  const most = horde ? FORT.HORDE_SIDES.filter((n) => enemies.length >= n).length : 1;
+  const nSides = horde ? rng.int(1, Math.max(1, most)) : 1;
+  const sides = [side, ...rng.shuffle(NEXT_TO[side].slice()), OPPOSITE[side]].slice(0, nSides);
+  F.sides = sides;
+  const bands = {};
+  for (const s of new Set([...sides, ...NEXT_TO[side]])) bands[s] = margin(F, s).filter(([x, y]) => okCell(x, y));
   enemies.forEach((u, i) => {
-    const s = i < Math.round(enemies.length * (1 - FORT.SPREAD)) || !bands[NEXT_TO[side][i % 2]].length ? side : NEXT_TO[side][i % 2];
+    let s;
+    if (horde) s = sides.length > 1 && i % 2 === 1 ? sides[1 + (Math.floor(i / 2) % (sides.length - 1))] : side; // the dead: only the sides they came from
+    else s = i < Math.round(enemies.length * (1 - FORT.SPREAD)) || !bands[NEXT_TO[side][i % 2]].length ? side : NEXT_TO[side][i % 2];
+    if (!bands[s] || !bands[s].length) s = side;
     const cells = bands[s].filter(([x, y]) => !unitAt(b, x, y));
     if (!cells.length) return;
     let c0;
@@ -207,7 +218,9 @@ export function fortDefence(b, ctx, base, c) {
   finishFort(b, F, side, { attackers: "enemy", base, floodlit, night, deploy: !!b.setup.deploy });
   if (b.setup.deploy) {
     b.phase = "deploy";
-    say(b, `The attack comes from the ${side}. Place your defenders anywhere inside the walls: on the walkway (▲, shoot down over the wall) and the towers (▲▲), in the gates and the breaches to hold them, in the yard behind cover, in the buildings at the windows and on the roofs.`, "info");
+    const from = (F.sides || [side]).length > 1 ? `The dead come from ${(F.sides).length} sides: ${F.sides.join(", ").replace(/, ([^,]*)$/, " and $1")}` : `The attack comes from the ${side}`;
+    say(b, `${from}. Place your defenders anywhere inside the walls: on the walkway (▲, shoot down over the wall) and the towers (▲▲), in the gates and the breaches to hold them, in the yard behind cover, in the buildings at the windows and on the roofs.`, "info");
+    b.deploy.sides = F.sides || [side];
   }
 }
 

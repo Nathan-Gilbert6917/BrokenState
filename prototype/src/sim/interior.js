@@ -420,14 +420,29 @@ export function interiorUnits(b, ctx, base, c) {
   const enemies = b.units.filter((u) => u.side === "enemy");
   for (const u of enemies) u.x = -100;
   const anchors = new Map();
+  // A horde comes over the open yard from 1 to 4 sides (fort.js HORDE_SIDES: more the bigger it is): the front (east on
+  // this layout), then north and south, then the back (west, never onto the way out).
+  const horde = b.setup.enemy.kind === "zombies";
+  const most = horde ? [1, 6, 12, 18].filter((n) => enemies.length >= n).length : 1;
+  const extra = ctx.rng.shuffle(["north", "south"]).concat(b.evacCols ? [] : ["west"]).slice(0, Math.max(0, ctx.rng.int(1, Math.max(1, most)) - 1));
+  const sideCells = (s) => {
+    const out = [];
+    for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) {
+      if (!okCell(x, y)) continue;
+      if (s === "east" ? x >= W0 - 3 && Math.abs(y - H0 / 2) <= 8 : s === "north" ? y <= 1 && x >= 4 : s === "south" ? y >= H0 - 2 && x >= 4 : x <= 1) out.push([x, y]);
+    }
+    return out;
+  };
+  let ei = 0;
   for (const u of enemies) {
-    const cells = [];
-    for (let y = 0; y < H0; y++) for (let x = W0 - 3; x < W0; x++) if (okCell(x, y) && Math.abs(y - H0 / 2) <= 8) cells.push([x, y]); // the front: the middle 16 rows, however long the base
+    const s = extra.length && ei++ % 2 === 1 ? extra[Math.floor(ei / 2) % extra.length] : "east";
+    let cells = sideCells(s);
+    if (!cells.length) cells = sideCells("east");
     if (!cells.length) continue;
     let c0;
     if (u.pod != null) {
-      if (!anchors.has(u.pod)) anchors.set(u.pod, ctx.rng.pick(cells));
-      const a = anchors.get(u.pod);
+      if (!anchors.has(`${u.pod}|${s}`)) anchors.set(`${u.pod}|${s}`, ctx.rng.pick(cells));
+      const a = anchors.get(`${u.pod}|${s}`);
       c0 = cells.reduce((m, p) => (Math.hypot(p[0] - a[0], p[1] - a[1]) < Math.hypot(m[0] - a[0], m[1] - a[1]) ? p : m), cells[0]);
     } else c0 = ctx.rng.pick(cells);
     u.x = c0[0]; u.y = c0[1];

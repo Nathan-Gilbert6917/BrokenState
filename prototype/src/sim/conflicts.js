@@ -24,10 +24,10 @@ import {
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
-import { perceptionChance } from "./markers.js";
+import { perceptionChance, markAbandonedVehicle } from "./markers.js";
 import { registerCombatHandler, startCombat, battlePending, winOdds } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -466,7 +466,7 @@ function factionEncounter(state, p, f, spotted, aiParty) {
   const type = forcedTypeFor(state, p, f);
   if (!type) return null;
   const scale = aiParty && aiParty.kind === "raid" ? 1.5 : 1;
-  return forcedCard(state, p, makeConflict(state, p, type, f, enemyGroup(state, p, f, scale)));
+  return forcedCard(state, p, makeConflict(state, p, type, f, enemyGroup(state, p, f, scale), { aiPartyId: aiParty ? aiParty.id : null })); // aiPartyId: their vehicle on the battle map (startFight)
 }
 
 function zombieEncounter(state, p, spotted, force = false) {
@@ -513,7 +513,7 @@ function observedConflict(state, p, f, type, aiParty) {
     scale = 1.1;
   }
   if (aiParty) extra.aiPartyId = aiParty.id;
-  return makeConflict(state, p, type, f, enemyGroup(state, p, f, scale), extra);
+  return makeConflict(state, p, type, f, enemyGroup(state, p, f, scale), { ...extra, aiPartyId: aiParty ? aiParty.id : null });
 }
 
 // ---------- the cards ----------
@@ -754,9 +754,11 @@ function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
   bump(state, "outcomes", `fight-${c.type}`);
   const f = factionById(state, c.factionId);
   const enemy = extra.enemy || c.enemy;
+  // Their party drove here (aiscav.js vehicleType): the vehicle stands on their side of the map, theirs to lose.
+  const theirs = state.parties.find((q) => q.owner !== "player" && (q.id === c.aiPartyId || q.id === c.scavPartyId) && q.vehicleType);
   startCombat(state, {
     tile: partyTile(p), partyId: p.id,
-    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
+    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
     ambush, canRetreat: true, handler: "conflict",
     context: { ...c, lead, goodwillHit, resumePhase: p.conflictResume || "out", ...extra },
   });
@@ -1054,6 +1056,18 @@ export function afterFight(state, p, c, text) {
   });
 }
 
+// Their scavenging party's vehicle (aiscav.js), left on the field when you beat them: an abandoned vehicle where the fight
+// was, marked on the map for any team to recover ("Recover vehicle"), with a little fuel in it and the wear of the fight.
+function takeTheirVehicle(state, p, f, ev) {
+  const rng = state.rng;
+  const type = VEHICLE_TYPES[ev.type] ? ev.type : "truck";
+  const tile = partyTile(p);
+  const v = createVehicle(state, type, { kind: "abandoned", tile, since: state.hour }, { fuel: rng.int(2, 8), condition: rng.int(40, 75) });
+  markAbandonedVehicle(state, v, `left by ${f ? f.name : "them"} after the fight`);
+  const q = state.parties.find((x) => x.id === ev.partyId);
+  if (q) { q.vehicle = false; q.vehicleType = null; }
+  return `Their ${v.name} stands where they left it (${Math.round(v.condition)}%, ${v.fuel} fuel): marked on the map, any team can recover it (Recover vehicle).`;
+}
 function onConflictCombat(state, result, setup) {
   const c = setup.context;
   const p = state.parties.find((x) => x.id === c.partyId);
@@ -1077,6 +1091,9 @@ function onConflictCombat(state, result, setup) {
   if (result.outcome === "victory") {
     lines.push(`You won. ${result.enemiesKilled || "Several"} of ${c.enemy.name} are down.`);
     lines.push(...victoryRewards(state, p, c, result));
+    // The vehicle their party came in: from the battle map, or a fight resolved by the numbers against a party that drove.
+    const ev = result.enemyVehicle || (setup.enemy && setup.enemy.vehicle ? { type: setup.enemy.vehicle, partyId: setup.enemy.vehiclePartyId } : null);
+    if (ev) lines.push(takeTheirVehicle(state, p, f, ev));
   } else if (result.outcome === "retreat") {
     const lost = cargoLoad(p.cargo) > 0 ? rob(state, p, 0.25, f, false, true) : "";
     if (result.summary) lines.push(result.summary); // broken off by the numbers (breakoff.js): who got out, carried, taken
