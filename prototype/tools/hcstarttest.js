@@ -13,12 +13,13 @@ import { stagingDanger, setFire, noteGunfire, CAMP_HEAT, nextHeat, heatInfo, tea
 import { startOrder } from "../src/sim/orders.js";
 import { rainWater } from "../src/sim/weather.js";
 import { fromTeamRow } from "../src/ui/hardcore.js";
-import { GEAR, SUPPLIES, TRAITS } from "../src/sim/data.js";
+import { GEAR, SUPPLIES, TRAITS, SKILLS as SKILLS_ALL } from "../src/sim/data.js";
 import { partyTile, partyMembers, orderOptions, giveOrder, orderMove, carried, MISSIONS, planPath } from "../src/sim/parties.js";
 import { packSize } from "../src/sim/inventory.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
-import { HC_START, playerTile, roadTeam, firstHubPending, hubSites } from "../src/sim/hardcore-start.js";
+import { HC_START, BACKGROUNDS, playerTile, roadTeam, firstHubPending, hubSites, applyArchetype } from "../src/sim/hardcore-start.js";
+import { VEHICLE_TYPES, partyVehicle, isCar } from "../src/sim/vehicles.js";
 import {
   STAGING, ESTABLISH_LABEL, needText, establishProblem, establishOption, stagingMissing, workCap, stagingPct, stagingStage, daysLeft, crewRate,
   tierInfo, waterSource, waterText, campWater, storeOf,
@@ -41,6 +42,7 @@ const hc = (seed, extra = {}) => createWorld({ seed, factionCount: 7, mode: "har
 section("Spawn: three survivors on the road, no hub, a reasonable place");
 const SEEDS = [11, 23, 42, 77, 101, 202, 303, 404, 505, 606, 707, 808];
 const worlds = SEEDS.map((s) => hc(s));
+let spawnsClose = 0;
 for (const st of worlds) {
   const g = st.grid;
   const p = roadTeam(st);
@@ -53,18 +55,21 @@ for (const st of worlds) {
   check(playerTile(st) === tile.id, `${tag}: playerTile is the team's tile`);
   check(tile.terrain !== "water" && tile.terrain !== "mountain" && tile.terrain !== "city" && !tile.loc && !tile.hive, `${tag}: open land (${tile.terrain}${tile.loc ? `, ${tile.loc.type}` : ""})`);
   check(g.distance(tile.id, st.originId) >= HC_START.SPAWN.origin[1], `${tag}: away from the outbreak origin (${g.distance(tile.id, st.originId)})`);
-  check(!g.neighbors(tile.id).some((n) => st.tiles[n].terrain === "city") && st.cityIds.every((c) => g.distance(tile.id, c) >= HC_START.SPAWN.city[1]), `${tag}: not in or next to a city`);
+  check(st.cityIds.every((c) => g.distance(tile.id, c) >= HC_START.SPAWN.city[1]), `${tag}: not in a city centre`);
   check(st.factions.every((f) => !f.bases.includes(tile.id)), `${tag}: not on a group's base`);
   const e = HC_START.SPAWN.edge[1];
   check(tile.x >= g.width * e && tile.x < g.width * (1 - e) && tile.y >= g.height * e && tile.y < g.height * (1 - e), `${tag}: not in a corner (${tile.x},${tile.y})`);
-  const town = st.tiles.some((t) => t.loc && t.loc.type === "town" && g.distance(t.id, tile.id) <= HC_START.SPAWN.townReach);
-  const sites = st.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(t.id, tile.id) <= HC_START.SPAWN.siteReach).length;
-  check(town || sites >= HC_START.SPAWN.sitesNear, `${tag}: a town or ${HC_START.SPAWN.sitesNear}+ sites within reach (town ${town}, sites ${sites})`);
+  const near = st.tiles.filter((t) => (t.loc || t.terrain === "city") && g.distance(t.id, tile.id) <= HC_START.SPAWN.poi[1]);
+  const close = near.filter((t) => g.distance(t.id, tile.id) <= HC_START.SPAWN.poi[0]);
+  check(near.length > 0, `${tag}: a town, city or POI within ${HC_START.SPAWN.poi[0]} tiles (${close.length}; within ${HC_START.SPAWN.poi[1]}: ${near.length}: ${near.slice(0, 3).map((t) => t.loc ? t.loc.type : "city").join(", ")})`);
+  spawnsClose += close.length > 0 ? 1 : 0;
   check(hubSites(st, tile.id, 6).length > 0, `${tag}: somewhere to found a hub nearby`);
   check(!!waterSource(st, tile.id, HC_START.SPAWN.water[1]), `${tag}: a river or lake within ${HC_START.SPAWN.water[1]} tiles (${waterText(st, tile.id)})`);
-  check(st.vehicles.length === 0 || st.vehicles.every((v) => v.loc.kind !== "party" && !(v.loc.kind === "base")), `${tag}: no vehicle of yours`);
+  check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1 && p.vehicle === true && isCar(partyVehicle(st, p)), `${tag}: one car, the team's`);
   check(st.cards.length >= 1 && st.cards[0].isOrders && st.cards[0].partyId === p.id && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the team's orders card`);
 }
+
+check(spawnsClose >= worlds.length - 1, `the strict rule (a site within ${HC_START.SPAWN.poi[0]} tiles) held on ${spawnsClose} of ${worlds.length} seeds`);
 
 // ---------- what they grabbed ----------
 section("What they grabbed: bags or pockets, household things, very low supplies");
@@ -83,13 +88,15 @@ for (const st of worlds) {
       for (const it of c.filter(Boolean)) { itemKinds.add(it.key); check(!!GEAR[it.key] && !packSize(it) && !GEAR[it.key].bulky, `seed ${st.seed}: ${it.key} fits in a pack`); }
     }
     for (const k of ["weapon", "tool", "backpack"]) if (s.gear[k]) check(GEAR[s.gear[k].key] && GEAR[s.gear[k].key].slot === k, `seed ${st.seed}: ${s.gear[k].key} in its slot`);
-    check(!s.gear.armor, `seed ${st.seed}: nobody fled in body armor`);
+    check(!s.gear.armor || (HC_START.ARCHETYPES[s.background] || {}).armor, `seed ${st.seed}: body armor only on a background that wears it (${s.background})`);
   }
-  // The other two carried 1–3 days for three (TEAM_MIN..TEAM_MAX); the prepper's five days (PREPPER.FOOD / WATER) come on top.
+  // The others carried 1–3 days for three (TEAM_MIN..TEAM_MAX); a prepper's five days (PREPPER.FOOD / WATER) come on top.
   const sup = p.supplies, n = partyMembers(st, p).length, P = HC_START.PREPPER;
-  check(sup.food >= HC_START.TEAM_MIN + P.FOOD && sup.food <= HC_START.TEAM_MAX + P.FOOD && sup.water >= HC_START.TEAM_MIN + P.WATER && sup.water <= HC_START.TEAM_MAX + P.WATER, `seed ${st.seed}: the others' 1–3 days plus the prepper's five (${sup.food} food, ${sup.water} water)`);
-  check(sup.food / n <= 3 + P.FOOD / n && sup.water / n <= 3 + P.WATER / n, `seed ${st.seed}: no more than 3 days each beyond the bag`);
-  check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 36 + P.AMMO && (sup.meds || 0) <= 3 + P.MEDS, `seed ${st.seed}: no fuel, scrap or parts, little ammo (${sup.ammo || 0}) or meds beyond the bag`);
+  const prep = partyMembers(st, p).some((x) => x.background === "prepper");
+  const pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
+  check(sup.food >= HC_START.TEAM_MIN + pf && sup.food <= HC_START.TEAM_MAX + pf && sup.water >= HC_START.TEAM_MIN + pw && sup.water <= HC_START.TEAM_MAX + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
+  check(sup.food / n <= 3 + pf / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each beyond a prepper's bag`);
+  check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 72 + (prep ? P.AMMO : 0) && (sup.meds || 0) <= 6 + (prep ? P.MEDS : 0), `seed ${st.seed}: no fuel, scrap or parts in the packs, little ammo (${sup.ammo || 0}) or meds beyond the bags`);
   check(Object.values(sup).every((v) => Number.isFinite(v) && v >= 0), `seed ${st.seed}: clean supply numbers`);
 }
 check(bags > 0 && pocketsOnly > 0, `some fled with a bag, some with only pockets (${bags} bags, ${pocketsOnly} pockets only)`);
@@ -97,19 +104,23 @@ check(armed > 0 && unarmed > 0, `some grabbed a weapon, some did not (${armed} a
 check(bagKinds.size >= 2 && itemKinds.size >= 8, `the rolls vary (${bagKinds.size} kinds of bag, ${itemKinds.size} kinds of thing)`);
 
 // ---------- the prepper ----------
-section("The prepper: one of the three fled with a duffle bag packed for five days (2026-10-06)");
+section("The prepper: when one of the three is a prepper, they fled with a duffle bag packed for five days (2026-10-06)");
 {
   const P = HC_START.PREPPER;
+  // The backgrounds are drawn by seed: the worlds with a prepper among the three, topped up to six from further seeds.
+  const prepWorlds = worlds.filter((st) => st.hardcore.start.prepper != null);
+  for (let seed = 1000; prepWorlds.length < 6 && seed < 1200; seed++) { const st = hc(seed); if (st.hardcore.start.prepper != null) prepWorlds.push(st); }
+  check(prepWorlds.length >= 6, `${prepWorlds.length} starts with a prepper found`);
   check(!!GEAR.duffle && GEAR.duffle.slot === "backpack" && GEAR.duffle.slots > GEAR.hikingpack.slots && GEAR.duffle.carry > GEAR.hikingpack.carry, `the duffle bag is a pack bigger than a hiking pack (${GEAR.duffle && GEAR.duffle.slots} slots, +${GEAR.duffle && GEAR.duffle.carry} kg)`);
   check(!!TRAITS.prepper && !Object.keys(TRAITS).includes("prepper"), "the Prepper trait resolves for the roster but is never rolled at birth (not enumerable)");
   check(P.FOOD === 15 && P.WATER === 15, `the bag holds five days for three: ${P.FOOD} food, ${P.WATER} water`);
   let withTrait = 0, guns = 0, knives = 0, ammoOk = 0, preppersAt = new Set();
   const kitKinds = new Set();
-  for (const st of worlds) {
+  for (const st of prepWorlds) {
     const p = roadTeam(st);
     const hc0 = st.hardcore.start;
     const pr = st.survivors.find((s) => s.id === hc0.prepper);
-    if (!check(!!pr && partyMembers(st, p).includes(pr), `seed ${st.seed}: the start names a prepper on the team`)) continue;
+    if (!check(!!pr && partyMembers(st, p).includes(pr) && pr.background === "prepper", `seed ${st.seed}: the start names the prepper on the team`)) continue;
     preppersAt.add(st.survivors.indexOf(pr));
     const bag = pr.gear.backpack;
     check(!!bag && bag.key === P.BAG, `seed ${st.seed}: ${pr.name.split(" ")[0]} carries the ${P.BAG}`);
@@ -129,15 +140,17 @@ section("The prepper: one of the three fled with a duffle bag packed for five da
     const line = st.log.find((l) => /was a prepper/.test(l.text));
     check(!!line && line.text.startsWith(pr.name.split(" ")[0]) && Math.floor(line.hour / 24) === 0 && (traited || /no room for the trait/.test(line.text)), `seed ${st.seed}: day 1's log names the prepper (${line ? line.text.slice(0, 60) : "no line"}…)`);
     check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 food, 15 water/.test(hc0.grabbed[0]) && /15 food, 15 water/.test(st.cards[0].text), "the orders card tells the bag's contents first");
+    check(/15 food, 15 water/.test(st.cards[0].text), "the orders card tells the bag's contents");
     check(p.supplies.meds >= P.MEDS, `seed ${st.seed}: the bag's meds are pooled (${p.supplies.meds})`);
     check(!p.burden || p.burden.band <= 1, `seed ${st.seed}: the team still walks (load band ${p.burden && p.burden.band})`);
   }
-  check(guns === ammoOk && guns > 0 && knives > 0, `across ${worlds.length} seeds: ${guns} guns (each with ${P.AMMO}+ rounds), ${knives} knives`);
-  check(withTrait > 0 && withTrait < worlds.length, `the trait fits some and not others (${withTrait} of ${worlds.length})`);
+  check(guns === ammoOk && guns + knives === prepWorlds.length, `across ${prepWorlds.length} preppers: ${guns} guns (each with ${P.AMMO}+ rounds), ${knives} knives`);
+  check(withTrait > 0, `the trait fits some (${withTrait} of ${prepWorlds.length})`);
   check(preppersAt.size >= 2, `the prepper is not always the same one of the three (slots ${[...preppersAt].sort().join(", ")})`);
   check(kitKinds.size >= P.KIT.length + 3, `the kits vary beyond the fixed part (${kitKinds.size} kinds)`);
   // Deterministic by seed, and it survives a save.
-  const a = hc(606), b = hc(606);
+  const pseed = prepWorlds[0].seed;
+  const a = hc(pseed), b = hc(pseed);
   const who = (st) => { const pr = st.survivors.find((s) => s.id === st.hardcore.start.prepper); return JSON.stringify([pr.name, pr.traits, pr.gear, roadTeam(st).supplies]); };
   check(who(a) === who(b), "same seed, same prepper and kit");
   a.cards.length = 0; // the opening card is answered before a save
@@ -146,6 +159,60 @@ section("The prepper: one of the three fled with a duffle bag packed for five da
   check(!!prL && prL.name === prA.name && prL.traits.join() === prA.traits.join() && prL.gear.backpack.key === P.BAG && JSON.stringify(prL.gear.backpack.contents) === JSON.stringify(prA.gear.backpack.contents) && prL.gear.tool.key === "waterfilter", "a save brings the prepper, the trait and the bag's contents back");
   check(JSON.stringify(roadTeam(ld).supplies) === JSON.stringify(roadTeam(a).supplies), "and the pooled five days");
   check(ld.log.some((l) => /was a prepper/.test(l.text)), "and the log line");
+}
+// ---------- who they were, and the car ----------
+section("Who they were: three backgrounds, no two alike; one car between them with a tank at least half full");
+{
+  const A = HC_START.ARCHETYPES;
+  check(Object.keys(A).length >= 10 && ["prepper", "veteran", "student", "office", "bluecollar"].every((k) => A[k]) && Object.keys(BACKGROUNDS).join() === Object.keys(A).join(), `${Object.keys(A).length} backgrounds: ${Object.values(A).map((x) => x.name).join(", ")}`);
+  for (const [k, a] of Object.entries(A)) {
+    check(Object.keys(a.cars).every((t) => VEHICLE_TYPES[t] && VEHICLE_TYPES[t].motor), `${k}: its cars exist (${Object.keys(a.cars).join(", ")})`);
+    check(Object.keys(a.trunk.gear || {}).every((g) => GEAR[g]) && Object.keys(a.trunk).filter((x) => x !== "gear" && x !== "n").every((x) => SUPPLIES[x]), `${k}: everything in its trunk exists`);
+    check(Object.keys(a.skills).every((x) => SKILLS_ALL.includes(x)) && Object.keys(a.traits || {}).every((t) => TRAITS[t]), `${k}: its skills and traits exist`);
+  }
+  check(["suv", "hummer", "van"].every((t) => VEHICLE_TYPES[t] && VEHICLE_TYPES[t].motor && VEHICLE_TYPES[t].tank > 0 && VEHICLE_TYPES[t].payload > 0), "the SUV, the Hummer and the work van are cars (vehicles.js)");
+  const seen = {}, carKinds = {}, owners = {};
+  const many = [...worlds, ...Array.from({ length: 24 }, (_, i) => hc(2000 + i))];
+  for (const st of many) {
+    const p = roadTeam(st), m = partyMembers(st, p), hc0 = st.hardcore.start;
+    const kinds = m.map((x) => x.background);
+    check(kinds.every((k) => A[k]) && new Set(kinds).size === m.length, `seed ${st.seed}: three backgrounds, no two alike (${kinds.join(", ")})`);
+    for (const k of kinds) seen[k] = (seen[k] || 0) + 1;
+    check(m.every((x) => hc0.backgrounds[x.id] === x.background), `seed ${st.seed}: the start records who each was`);
+    const v = partyVehicle(st, p);
+    const owner = st.survivors.find((x) => x.id === hc0.carOwner);
+    if (!check(!!v && v.id === hc0.car && !!owner && m.includes(owner), `seed ${st.seed}: the team's car and its owner`)) continue;
+    carKinds[v.type] = (carKinds[v.type] || 0) + 1;
+    owners[owner.background] = (owners[owner.background] || 0) + 1;
+    check(!!A[owner.background].cars[v.type], `seed ${st.seed}: a ${v.type} for a ${owner.background} (${Object.keys(A[owner.background].cars).join(" / ")})`);
+    const T = VEHICLE_TYPES[v.type];
+    check(v.fuel >= T.tank * HC_START.CAR.FUEL[0] - 1e-9 && v.fuel <= T.tank && v.condition >= HC_START.CAR.CONDITION[0] && v.condition <= HC_START.CAR.CONDITION[1], `seed ${st.seed}: the tank at least half full (${v.fuel} of ${T.tank}), condition ${v.condition}`);
+    const TR = A[owner.background].trunk;
+    const cs = p.cargo.supplies;
+    check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]), `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)})`);
+    check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
+    const line = hc0.grabbed[hc0.grabbed.length - 1];
+    check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the orders card says whose car and what is in the back`);
+    check(st.log.some((l) => /set off in .*: tank \d+% full/.test(l.text) && Math.floor(l.hour / 24) === 0), `seed ${st.seed}: day 1's log says they set off in it`);
+    check(m.every((x) => new RegExp(`${x.name.split(" ")[0]} \\(${A[x.background].name.toLowerCase()}`).test(st.cards[0].text)), `seed ${st.seed}: the card names each one's background`);
+    check(!p.burden || p.burden.band <= 2, `seed ${st.seed}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
+  }
+  console.log(`  backgrounds over ${many.length} starts: ${JSON.stringify(seen)}; cars: ${JSON.stringify(carKinds)}; owners: ${JSON.stringify(owners)}`);
+  check(Object.keys(A).every((k) => seen[k] > 0), "every background turns up");
+  check(Object.keys(carKinds).length >= 4 && (carKinds.truck || 0) > (carKinds.sedan || 0) * 0.3, `several kinds of car (${Object.keys(carKinds).join(", ")})`);
+  // A background bumps the skills it says, on a fresh survivor.
+  const st0 = hc(31);
+  const fresh = makeSurvivor(st0, 1);
+  const before = { ...fresh.skills };
+  applyArchetype(st0, fresh, "nurse");
+  check(fresh.background === "nurse" && fresh.skills.medicine >= Math.min(20, before.medicine + A.nurse.skills.medicine[0]), `a nurse's Medicine: ${before.medicine} → ${fresh.skills.medicine}`);
+  // Deterministic, and the car survives a save.
+  const a = hc(909), b = hc(909);
+  const car = (st) => { const v = partyVehicle(st, roadTeam(st)); return JSON.stringify([v.type, v.fuel, v.condition, roadTeam(st).cargo, st.survivors.map((x) => x.background)]); };
+  check(car(a) === car(b), "same seed, same backgrounds and car");
+  a.cards.length = 0;
+  const ld = loadFromString(saveToString(a));
+  check(car(ld) === car(a) && ld.hardcore.start.car === a.hardcore.start.car && roadTeam(ld).vehicle === true, "a save brings the backgrounds, the car and its cargo back");
 }
 {
   const a = hc(4242), b = hc(4242);
@@ -177,6 +244,7 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
   const st = hc(77);
   st.noWanderers = true;
   const p = roadTeam(st);
+  p.cargo = { supplies: {}, gear: [] }; // the car's trunk emptied: this section counts the materials trip by trip
   const opt = () => orderOptions(st, p).find((o) => o.mission === "establish");
   check(opt() && opt().label === ESTABLISH_LABEL && !opt().disabled, `the order ${ESTABLISH_LABEL} is offered on open land (${opt() && opt().disabled})`);
   check(!orderOptions(st, p).some((o) => o.mission === "outpost"), "no instant founding (Build outpost / Found your hub here) with no base");
@@ -229,7 +297,7 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
   const h = hub(st);
   check(!!h && st.bases.length === 1 && h.type === "hub" && !st.parties.includes(p) && !st.staging, `the camp becomes the hub (after ${st.hour - t2}h more), the team moves in`);
   check(h && /Holdout/.test(h.name), `named as a holdout (${h && h.name})`);
-  check(h && h.buildings.length === 0 && h.construction.length === 0 && st.vehicles.length === 0, "it starts bare: no buildings, no truck");
+  check(h && h.buildings.length === 0 && h.construction.length === 0 && st.vehicles.length === 1 && st.vehicles[0].loc.kind === "base" && st.vehicles[0].loc.baseId === h.id && st.vehicles[0].id === st.hardcore.start.car, "it starts bare: no buildings; the car they fled in is parked there");
   check(h && h.stock.scrap >= 0 && h.stock.scrap <= 1 && h.stock.parts === 1, `the scrap and parts are used by the building (left: ${h && h.stock.scrap} scrap, ${h && h.stock.parts} parts)`);
   check(h && h.stock.food + h.stock.preserved >= STAGING.HARDCORE.needs.food && h.stock.water >= STAGING.HARDCORE.needs.water, `the food and water are its stores (${h && h.stock.food} food, ${h && h.stock.water} water)`);
   check(h && h.armory.some((it) => it.key === "crowbar"), "the team's finds go to its armory");

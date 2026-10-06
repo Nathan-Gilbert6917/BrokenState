@@ -5,6 +5,7 @@ import { survivorById, skill } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
+import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -79,7 +80,7 @@ function crewCard(state, ui, s) {
         <div class="row" style="margin-top:0.3rem">
           <button class="mini ${s.leader ? "active" : ""}" data-action="pickleader" data-id="${s.id}"${tip("The leader's Leadership lifts morale at their base. If they die, you pick a new one.")}>${s.leader ? "★ Leader" : "Make leader"}</button>
           <span class="small muted">${s.gear.weapon ? esc(s.gear.weapon.name) : ""}${s.gear.armor ? `, ${esc(s.gear.armor.name)}` : ""}${s.gear.backpack ? `${s.gear.weapon || s.gear.armor ? ", " : ""}${esc(s.gear.backpack.name)}` : ""}</span></div>
-        <div class="small" style="margin-top:0.2rem">${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+        <div class="small" style="margin-top:0.2rem">${s.background && BACKGROUNDS[s.background] ? `<span class="chip"${tip(`Who they were before Calder fell (Hardcore): ${BACKGROUNDS[s.background].blurb}. It shaped their skills, what they grabbed and the car.`)}>${esc(BACKGROUNDS[s.background].name)}</span>` : ""}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
       </div>
     </div>
     <div class="spread small" style="margin-top:0.35rem"><span class="muted">Skills</span><span${tip("Points can be moved between skills. Randomizing skills keeps the same total, so nobody gets better or worse overall.")}>Points left <b class="${left > 0 ? "warn" : ""}">${left}</b> / ${budgetOf(ui, s)}</span></div>

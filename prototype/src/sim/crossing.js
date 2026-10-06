@@ -23,6 +23,7 @@ export const BOAT = {
   raft: {                                                // floating a vehicle across
     truck: { scrap: 14, parts: 2, hours: 4 },
     sedan: { scrap: 9, parts: 1, hours: 3 },
+    suv: { scrap: 12, parts: 2, hours: 4 }, hummer: { scrap: 16, parts: 2, hours: 5 }, van: { scrap: 15, parts: 2, hours: 4 }, // the hardcore start's cars (vehicles.js)
     bike:  { scrap: 1, parts: 0, hours: 0.5 },          // bikes ride in the boat (a little more frame)
   },
 };

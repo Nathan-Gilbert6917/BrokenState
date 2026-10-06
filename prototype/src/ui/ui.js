@@ -60,6 +60,7 @@ import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLines } from "./tradewindow.js";
 import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
+import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start)
 import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { diaryModal } from "./diary.js";
@@ -234,7 +235,7 @@ function personCard(state, s) {
     ${gaugeRows(s, { mood: false })}
     <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}</div>` : ""}` :
     isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
-    <div>${topSkills}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+    <div>${topSkills}${s.background && BACKGROUNDS[s.background] ? `<span class="chip"${tip(`Who they were before Calder fell: ${BACKGROUNDS[s.background].blurb}`)}>${esc(BACKGROUNDS[s.background].name)}</span>` : ""}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
   </div>`;
 }
 

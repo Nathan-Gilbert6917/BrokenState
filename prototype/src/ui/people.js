@@ -5,6 +5,7 @@ import { SKILL_NAMES, TRAITS, GEAR } from "../sim/data.js";
 import { day, hourOfDay, skill } from "../sim/world.js";
 import { recruitView, daysText } from "../sim/recruits.js";
 import { crowdInfo, moodRisk, MOOD_RISK_TIP, CROWD, LEADER_LIFT } from "../sim/morale.js";
+import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were before Calder fell (hardcore)
 import { survivorURL, spriteImg } from "./sprites.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -18,7 +19,8 @@ function candidateCard(state, c) {
   const s = c.s;
   const skills = Object.keys(s.skills).sort((a, b) => skill(s, b) - skill(s, a)).slice(0, 5)
     .map((k) => `<span class="chip">${esc(SKILL_NAMES[k])} ${skill(s, k)}</span>`).join("");
-  const traits = s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${esc(TRAITS[t].name)}</span>`).join("");
+  const bg = s.background && BACKGROUNDS[s.background] ? `<span class="chip"${tip(`Who they were before Calder fell: ${BACKGROUNDS[s.background].blurb}`)}>${esc(BACKGROUNDS[s.background].name)}</span>` : ""; // hardcore-start.js
+  const traits = bg + s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${esc(TRAITS[t].name)}</span>`).join("");
   const gear = c.items.length ? c.items.map((g) => `<span class="chip"${tip(GEAR[g.key] ? GEAR[g.key].desc || GEAR[g.key].name : g.name)}>${esc(g.name)}${g.quality != null && g.quality < 1 ? ` ${Math.round(g.quality * 100)}%` : ""}</span>`).join("") : `<span class="muted small">No gear</span>`;
   return `<div class="card small">
     <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${esc(s.name)}</b>${s.pending ? "" : `<span class="muted small">answered</span>`}</div>
