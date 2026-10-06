@@ -532,8 +532,33 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
   console.log(`  record totals: trips ${tot("trips")}, sites ${tot("sites")}, dead put down ${tot("killsZ")}, people killed ${tot("killsH")}, treated ${tot("treated")}, built ${tot("built")}, harvested ${Math.round(tot("harvested"))}, hives ${tot("hives")}, downed ${tot("downed")}, rescues ${tot("rescues")} (${Math.round(performance.now() - t0)} ms)`);
   check(tot("trips") > 0 && tot("built") > 0 && tot("harvested") > 0, "the long run fills the service record");
   check(memorialList(st).every((m) => m.name && finite(m.died) && finite(m.days) && Array.isArray(m.grievedBy)), "memorial entries are complete");
+  // The long run's common room is the governor's call against the run's scrap: it wants one when spirits sag below
+  // 75, between 75 and 85 only with 35 scrap to spare, and saves for one at 15+ people behind water, defences, beds and
+  // food stores (autopilot.js buildWishes). On a hub that lives at 0-15 scrap (filters for the dry days, spike pits
+  // dug again after each horde, bunkhouses, weapons for the newcomers) with spirits in the 90s it never comes, and
+  // need not; the governor's rule itself is checked on a set-up hub below.
   const hb = st.bases.find((b) => b.type === "hub");
-  check(!hb || hb.buildings.some((b) => b.type === "common_room") || al.length < 8, "the autopilot builds a common room once the hub is big enough");
+  const hbHere = hb ? atBase(st, hb.id) : [];
+  const hbMood = hbHere.length ? hbHere.reduce((a, s) => a + s.mood, 0) / hbHere.length : 100;
+  const hasCommon = !!hb && (hb.buildings.some((b) => b.type === "common_room") || hb.construction.some((c) => c.type === "common_room"));
+  if (hb && !hasCommon) console.log(`  no common room at day ${longDays}: ${hbHere.length} at the hub, their mood ${hbMood.toFixed(0)}, ${Math.round(hb.stock.scrap || 0)} scrap`);
+  check(!hb || hasCommon || al.length < 8 || hbMood >= 75, `a big hub with low spirits has a common room (or one going up)${hb && !hasCommon ? ` (none: mood ${hbMood.toFixed(0)})` : ""}`);
+  // The rule: a hub of 10 whose spirits stay low (mood held at 60), with the scrap for it, gets a common room within
+  // two weeks: behind water, beds, food stores and the infirmary (two building slots), about a week in on seed 42.
+  {
+    const s2 = createWorld({ seed, factionCount: 8 });
+    s2.started = true;
+    s2.cards.length = 0;
+    const h2 = hub(s2);
+    while (atBase(s2, h2.id).length < 10) addPerson(s2, h2, 60);
+    for (const p of atBase(s2, h2.id)) p.mood = 60;
+    Object.assign(h2.stock, { scrap: 400, parts: 40, food: 400, water: 300, meds: 20 });
+    setAutopilot(s2, true, "balanced");
+    let hours = 0;
+    const wants = () => h2.buildings.some((b) => b.type === "common_room") || h2.construction.some((c) => c.type === "common_room");
+    while (hours < 24 * 14 && !wants() && !s2.gameOver) { for (const p of atBase(s2, h2.id)) p.mood = Math.min(p.mood, 60); tickHour(s2); hours++; }
+    check(wants(), `the autopilot builds a common room once the hub is big enough and spirits are low (10 people at mood 60: ${wants() ? `queued on day ${Math.ceil(hours / 24)}` : "not in 14 days"})`);
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

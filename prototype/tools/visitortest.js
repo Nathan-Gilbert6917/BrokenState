@@ -430,9 +430,14 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   V.openVisitorTrade(st, hostile, { baseId: h.id });
   check(attitude(hostile) === "Hostile" && !tradeVerdict(st).ok, "at −90: hostile, no trade");
   st.trade = null;
-  V.visitorInfo(st).rep = -80;
-  tick(st, 24 * 4);
-  check(V.merchantRep(st) > -80 && V.merchantRep(st) <= -78.9, `reputation recovers 0.25 a day (${V.merchantRep(st)})`);
+  // The daily drift, in a world of its own: the auto-resolved fight above is the combat dice's, and when the hub's
+  // six lose it to the guards the run is over and no day passes (visitorsDaily stops at game over). Days 2–6: no
+  // merchants have come yet (first ones on days 8–14), so none leaving can lift it either.
+  const sd = world();
+  tick(sd, 24);
+  V.visitorInfo(sd).rep = -80;
+  tick(sd, 24 * 4);
+  check(!sd.gameOver && V.merchantRep(sd) > -80 && V.merchantRep(sd) <= -78.9, `reputation recovers 0.25 a day (−80 → ${V.merchantRep(sd)} in 4 days)`);
 }
 
 // ======================================================================================
