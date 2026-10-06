@@ -30,7 +30,7 @@ import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
-import { mouthsAt, foodUse } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
+import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
@@ -45,7 +45,7 @@ import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun
 import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
-import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST } from "./weather.js";
+import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay } from "./weather.js";
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy } from "./blueprints.js";
@@ -1002,6 +1002,61 @@ function handleTrade(state) {
 // ======================================================================================
 // Bases: roles, buildings, crafting, gear, medicine
 // ======================================================================================
+// needs-gauges: heating fuel for the winter (upkeep.js heatUse: 0.1 fuel a head a day below 0°C). The fuel a base will
+// burn from today to the end of the cold (the share of freezing days by part of the year, about 30 days a year: late
+// autumn 13%, winter 92%, early spring 16%; bitter days a little more), with a quarter more to spare. want: the weight
+// for needs() (2.4 under half of it, 1.7 under it; from the second half of autumn), 0 otherwise.
+const FREEZE_SHARE = { "autumn-late": 0.13, "winter-early": 0.92, "winter-late": 0.92, "spring-early": 0.16 };
+export function heatFuelWant(state, base) {
+  if (!base) return { need: 0, want: 0 };
+  const today = Math.floor(state.hour / 24);
+  let days = 0;
+  for (let d = today; d < today + 60; d++) {
+    const s = seasonOfDay(d);
+    const f = FREEZE_SHARE[`${s.key}-${s.dayOfSeason > 14 ? "late" : "early"}`] || 0;
+    if (!f && days > 0) break; // the cold is over (or not begun: keep looking)
+    days += f;
+  }
+  const heads = mouthsAt(state, base).heads + returning(state, base); // teams out come home to it
+  const need = Math.ceil(heads * HEAT.fuel * 1.05 * days * 1.25);
+  const have = base.stock.fuel || 0;
+  const s = wxSeason(state);
+  const soon = s.key === "winter" || (s.key === "autumn" && s.dayOfSeason > 10) || (s.key === "spring" && s.dayOfSeason <= 14);
+  // In the cold months the fuel is never "plenty" (0.7: not traded away) even with the winter's need in store.
+  return { need, want: !soon || need <= 0 ? 0 : have < need * 0.5 ? 2.4 : have < need ? 1.7 : 0.7 };
+}
+
+// The heating fuel a base holds back from cars and the generator in the cold months (what heatFuelWant says the rest
+// of the cold will burn, at most what is there).
+export const heatHold = (state, base) => { const hw = heatFuelWant(state, base); return hw.want ? Math.min(Math.max(0, base.stock.fuel || 0), hw.need) : 0; };
+// Fills a car's tank from the base without touching `keep` of its fuel.
+function refuelKeeping(state, base, v, keep) {
+  const held = Math.min(Math.max(0, base.stock.fuel || 0), keep);
+  base.stock.fuel -= held;
+  refuel(state, base, v);
+  base.stock.fuel += held;
+}
+// Fuel runs before and through the winter (planTrip): known sites with fuel in their loot (gas stations, truck stops,
+// farms, feed stores …) that still hold something, nearest and richest first, scored above an ordinary scavenging trip
+// while the heating fuel is short (heatFuelWant).
+function heatFuelCands(state, h, need, P) {
+  const hw = heatFuelWant(state, h);
+  if (hw.want < 1.5) return [];
+  const out = [];
+  for (const id of state.grid.within(h.tile, P.range + 6)) {
+    const t = state.tiles[id];
+    const def = t.loc ? LOCATIONS[t.loc.type] : null;
+    if (!def || !def.loot || !(def.loot.fuel > 0) || id === h.tile || !siteKnown(state, id)) continue;
+    if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
+    const s = siteScore(state, id, need, P);
+    if (!s || s.loot < 0.15 || (P.reserves && s.risk > 0.8)) continue;
+    const share = def.loot.fuel / Object.values(def.loot).reduce((a, v) => a + v, 0);
+    out.push({ mission: "scavenge", tile: id, score: hw.want * (1 + share * 2) * s.loot * Math.max(0.3, 1 - s.risk) / (1 + state.grid.distance(id, h.tile) / 8),
+      crew: s.risk > 0.45 || s.hostile ? 3 : P.crew, why: `fuel for the winter's heating (${Math.floor(h.stock.fuel || 0)} of ${hw.need} needed)`, reach: 1.3, known: !!intel(state, id), loot: s.loot });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
 function needs(state) {
   const h = hub(state);
@@ -1019,7 +1074,7 @@ function needs(state) {
     scrap: pick(st.scrap || 0, [[20, 2.5], [45, 1.6], [90, 0.9], [Infinity, 0.35]]),
     parts: pick(st.parts || 0, [[2, 2], [6, 1.2], [12, 0.6], [Infinity, 0.2]]),
     ammo: pick(st.ammo || 0, [[n * 6, 2], [n * 15, 0.9], [n * 40, 0.35], [Infinity, 0.1]]),
-    fuel: vehicle ? pick(st.fuel || 0, [[12, 1.6], [35, 0.8], [Infinity, 0.2]]) : 0.15,
+    fuel: Math.max(vehicle ? pick(st.fuel || 0, [[12, 1.6], [35, 0.8], [Infinity, 0.2]]) : 0.15, heatFuelWant(state, h).want), // needs-gauges: winter heating
     // Empty jars for the preserving kitchen (storage.js), once there is one.
     jars: count(h, "kitchen") ? pick(st.jars || 0, [[4, 1.3], [12, 0.7], [Infinity, 0.1]]) : 0,
   };
@@ -1108,7 +1163,9 @@ export function reserveStatus(state, base = hub(state)) {
   out.ammo = row(st.ammo || 0, fight * battles, null, `${battles} break-in battles at about ${fight} each (threat ${threat})`);
   out.ammo.battles = Math.round(((st.ammo || 0) / fight) * 10) / 10;
   const flood = count(base, "floodlights") ? 4 : 0;
-  out.fuel = row(st.fuel || 0, DECOY_FUEL + flood + (vehicle ? 6 : 0), null, `decoy fire${flood ? ", floodlights" : ""}${vehicle ? ", the truck" : ""}`);
+  const heat = heatFuelWant(state, base); // needs-gauges: heating through the winter
+  const heatFuel = heat.want ? heat.need : 0;
+  out.fuel = row(st.fuel || 0, DECOY_FUEL + flood + (vehicle ? 6 : 0) + heatFuel, null, `decoy fire${flood ? ", floodlights" : ""}${vehicle ? ", the truck" : ""}${heatFuel ? `, ${heatFuel} heating for the winter` : ""}`);
   out.scrap = row(st.scrap || 0, Math.min(70, 20 + 1.5 * n + 10 * threat), null, `repairs and defences (threat ${threat})`);
   out.parts = row(st.parts || 0, 3 + (vehicle ? 2 : 0), null, vehicle ? "repairs and the truck" : "repairs");
   reserveMemo.map.set(base.id, out);
@@ -1372,7 +1429,7 @@ function stationWorth(state, base, recipe, station = null) {
   return false;
 }
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
-const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10);
+const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10 + (heatFuelWant(state, base).want ? heatFuelWant(state, base).need : 0)); // needs-gauges: winter heating first
 // The ethanol still (power.js): only the surplus, never while the winter stores fall short.
 function stillWorth(state, base) {
   const st = base.stock;
@@ -1928,6 +1985,7 @@ function planTrip(state) {
     if (target) cands.push({ ...target, mission: "recon", why: `look for ${short.filter((k) => gives(state.tiles[target.tile]) && (LOCATIONS[state.tiles[target.tile].loc.type].loot[k] || 0) >= 1).join(" and ")} (none known nearby)` });
   }
   cands.push(...foodTripCands(state, h, pool, need, P)); // hunting and fishing trips when food runs short (hunting.js)
+  cands.push(...heatFuelCands(state, h, need, P)); // needs-gauges: fuel for the winter's heating
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
   cands.sort((a, b) => b.score - a.score);
 
@@ -2699,9 +2757,9 @@ function launchTrip(state, c, pool, spareHands) {
   if (cand && dist >= 3 && c.mission !== "outpost" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, supplies: roughSupplies(n, 2) });
-    if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4)) v = cand;
+    if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4 - heatHold(state, h))) v = cand; // needs-gauges: not the heating fuel
   }
-  if (v) refuel(state, h, v);
+  if (v) refuelKeeping(state, h, v, heatHold(state, h)); // needs-gauges: the winter's heating fuel stays home
   // No car: bikes, one each, for anything past the next couple of tiles (no fuel, faster on roads, racks for the haul).
   if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
     const stack = parkBikes(state, h);
@@ -2752,7 +2810,7 @@ function launchTrip(state, c, pool, spareHands) {
     const r = ration(est);
     sup.food = Math.ceil(r * 1.25) + 1 + (c.mission === "outpost" ? 6 : 0);
     sup.water = Math.ceil(r * 1.25 * thirstAhead(state, (est.hours + onSite) / 24)) + 1 + (c.mission === "outpost" ? 4 : 0); // summer, heat waves (weather.js)
-    sup.fuel = isCar(v) ? Math.max(0, Math.min(stock("fuel"), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0;
+    sup.fuel = isCar(v) ? Math.max(0, Math.min(stock("fuel") - heatHold(state, h), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0; // needs-gauges: not the heating fuel
     if (pass === 0) est = estimateTrip(state, tripOpts({ ...sup, ...(c.supplies || {}) })) || est;
   }
   days = (est.hours + onSite) / 24;

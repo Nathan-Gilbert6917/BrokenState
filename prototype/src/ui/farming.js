@@ -7,7 +7,8 @@ import {
   cropForecast, winterOutlook,
 } from "../sim/farming.js";
 import { foodOutlook, waterOutlook, RATION, RATION_DAYS, WATER, summerWater, summerWaterOk, summerFixText, SUMMER } from "../sim/economy.js";
-import { useText, perHeadText } from "../sim/upkeep.js";
+import { useText, perHeadText, heatUse, HEAT } from "../sim/upkeep.js";
+import { COLD } from "../sim/needs.js";
 import { THIRST } from "../sim/weather.js";
 import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
@@ -42,11 +43,14 @@ export function upkeepLine(state, b) {
   const fo = foodOutlook(state, b);
   const need = waterOutlook(state, b).need;
   const food = foodUseText(fo), water = waterUseText(need);
+  const heat = heatUse(state, b); // needs-gauges: heating fuel per head below 0°C
+  const heating = heat.each > 0 ? `Heating: ${heat.text}` : "";
   const cold = fo.use.cold > 1 ? ` The cold: everyone eats ${Math.round((fo.use.cold - 1) * 100)}% more today.` : "";
-  const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's. Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
-  return { food, water, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)} a day`, tip: tipText };
+  const heatTip = ` Heating: on a day below 0°C everyone here burns ${HEAT.fuel} fuel a day (×${HEAT.bitter} below ${HEAT.bitterAt}°C) from the base's fuel; a shelter with its camp fire lit needs none. Without the fuel everyone is cold (mood −${COLD.mood} and health −${COLD.hp} a day, and illness as outdoors).${heating ? ` Today: ${heat.text}${b.stock.fuel != null ? `, ${n0(b.stock.fuel)} fuel in store` : ""}.` : " No heating needed today."}${b.cold ? ` ${b.name} is cold now: it ran short of fuel.` : ""}`;
+  const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's; someone on a personal errand takes a day's food and water a day with them.${heatTip} Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
+  return { food, water, heating, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 ? ` · fuel ${n1(heat.total)}` : ""} a day`, tip: tipText };
 }
-export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div></div>`; };
+export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of fuel" : ""}</div>` : ""}</div>`; };
 
 // Food: the forecast line that replaces "food per day".
 export function foodLine(state, b) {

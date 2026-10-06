@@ -18,6 +18,7 @@ import { makeCandidate, recruitCard } from "./recruits.js";
 import { foodOutlook } from "./economy.js";
 import { allItems } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
+import { packErrand, unpackErrand } from "./needs.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -28,6 +29,8 @@ const here = (s, base) => s.alive && s.location.kind === "base" && s.location.ba
 export const FIRE = { water: 15, burnable: ["bunkhouse", "ammo_bench", "med_station", "machine_shop", "garage", "watchtower", "rain_catcher"] };
 export const DOG = { food: 0.5, mood: 0.5 };
 export const WELL_DOWN = { days: 5, water: 6 };
+// An errand takes about a day's food and water a day away from the base (needs.js packErrand: food, water = the least it
+// needs to set off) and eats it on the way (their hunger and thirst gauges); what is left comes back with them.
 export const ERRAND = { food: 3, water: 3, minDays: 3, maxDays: 5, lost: 0.08, find: 0.5, mood: 25, refuse: -12 };
 export const THEFT = { share: 0.06, min: 4, max: 25, lockScrap: 4, lockDays: 30, easyDays: 20 };
 
@@ -367,17 +370,17 @@ export const HUB_EVENTS = {
         text: `${s.name} wants to ${why}, and asks for ${ERRAND.minDays}–${ERRAND.maxDays} days away from ${c.base.name}.`,
         choices: [
           {
-            label: `Let them go (${ERRAND.food} food, ${ERRAND.water} water for the road)`,
-            hint: `Away ${ERRAND.minDays}–${ERRAND.maxDays} days (no work, does not eat here); back with mood +${ERRAND.mood}, ${pct(ERRAND.find)} chance they bring something back, ${pct(ERRAND.lost)} they never come back`,
+            label: `Let them go (about 1 food and 1 water a day for the road)`,
+            hint: `Away ${ERRAND.minDays}–${ERRAND.maxDays} days (no work, does not eat here): they take about a day's food and water for each day and bring back what is left; back with mood +${ERRAND.mood}, ${pct(ERRAND.find)} chance they bring something back, ${pct(ERRAND.lost)} they never come back`,
             disabled: () => !can() || !here(s, c.base),
             ai: () => (s.mood < 50 && c.n >= 6 ? 6 : 2),
             resolve: (s2) => {
               if (!here(s, c.base)) return `${s.name} is no longer here.`;
-              c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - ERRAND.food); // never below zero, even taken when it was short
-              c.base.stock.water = Math.max(0, (c.base.stock.water || 0) - ERRAND.water);
-              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + s2.rng.int(ERRAND.minDays, ERRAND.maxDays) };
+              const days = s2.rng.int(ERRAND.minDays, ERRAND.maxDays);
+              const pack = packErrand(s2, c.base, s, days); // needs.js: a day's food and water a day, never below zero
+              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days, pack };
               s.station = null;
-              return `${firstName(s)} sets off at dawn.`;
+              return `${firstName(s)} sets off at dawn with ${pack.food} food and ${pack.water} water.`;
             },
           },
           { label: "Ask them to stay", hint: `${firstName(s)} mood ${ERRAND.refuse}`, ai: () => 1, resolve: () => { moodAll([s], ERRAND.refuse); return `${firstName(s)} stays, unhappily.`; } },
@@ -480,14 +483,15 @@ export function hubUpkeepDaily(state) {
       killSurvivor(state, s, null, "far from home on a personal errand (never came back)");
       continue;
     }
+    const back = unpackErrand(base, s.location.pack); // needs.js: what is left of their food and water
     s.location = { kind: "base", baseId: base.id };
     s.mood = clamp(s.mood + ERRAND.mood, 0, 100);
-    let found = "";
+    let found = back.food || back.water ? ` (bringing back ${back.food} food and ${back.water} water they did not need)` : "";
     if (rng.chance(ERRAND.find)) {
       const [k, lo, hi] = rng.pick([["scrap", 3, 8], ["food", 3, 6], ["meds", 1, 2]]);
       const q = rng.int(lo, hi);
       base.stock[k] = (base.stock[k] || 0) + q;
-      found = ` with ${q} ${k}`;
+      found = ` with ${q} ${k}${found}`;
     }
     log(state, `${s.name} is back at ${base.name}${found}, in better spirits.`, "good");
   }
