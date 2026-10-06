@@ -45,7 +45,9 @@ import { GEAR } from "./data.js";
 import { COMFORT, applyUse } from "./comforts.js";
 import { packOf, removeAt, personPlace, placeOfLoc } from "./inventory.js";
 import { teamFire } from "./fieldheat.js";
-import { heatUse } from "./upkeep.js";
+import { heatUse, HEAT } from "./upkeep.js";
+import { shelterFire } from "./woodcutting.js";
+import { econStats } from "./farming.js";
 import { conditionsOf } from "./health.js";
 
 export const NEEDS = {
@@ -339,27 +341,40 @@ export function teamTreats(state, p) {
 }
 
 // ---------- heating (daily, economy.js baseDaily) ----------
-// Burns the day's heating fuel (upkeep.js heatUse) from the stock. Short of it, everyone there is cold: base.cold = the
-// share missing (0..1, false when warm): mood −COLD.mood and health −COLD.hp × that a day, and the cold reaches indoors
-// (health.js baseOnsets: illness risk as outdoors).
+// Burns the day's heating (upkeep.js heatUse) from the stock: firewood first (1 firewood = HEAT.wood fuel of heat),
+// then fuel for the rest. Short of both, everyone there is cold: base.cold = the share missing (0..1, false when
+// warm): mood −COLD.mood and health −COLD.hp × that a day, and the cold reaches indoors (health.js baseOnsets: illness
+// risk as outdoors). A shelter's fire on bare ground burns firewood first (woodcutting.js shelterFire).
 export function heatDaily(state, base) {
+  shelterFire(state, base);
   const use = heatUse(state, base);
   const st = base.stock;
-  base.heat = { need: r1(use.total), each: use.each, n: use.n, fire: use.fire, burned: 0 };
+  base.heat = { need: r1(use.total), each: use.each, n: use.n, fire: use.fire, burned: 0, wood: 0 };
   if (!(use.total > 0)) { base.cold = false; return; }
-  // An outpost short of fuel gets it from the hub over its supply line, as its food (economy.js shipFromOutposts):
-  // what the hub can spare beyond its own two days of heating, less what the line loses.
+  const heatIn = () => Math.max(0, st.wood || 0) * HEAT.wood + Math.max(0, st.fuel || 0);
+  // An outpost short of heating gets it from the hub over its supply line, as its food (economy.js shipFromOutposts):
+  // firewood, then fuel, from what the hub can spare beyond its own two days of heating, less what the line loses.
   const h = base.type === "outpost" ? hub(state) : null;
   const strength = base.supplyLine ? base.supplyLine.strength : 0.5;
-  if (h && h !== base && (st.fuel || 0) < use.total && strength > 0) {
-    const spare = Math.max(0, (h.stock.fuel || 0) - 2 * heatUse(state, h).total);
-    const send = Math.min(spare, (use.total - Math.max(0, st.fuel || 0)) / strength);
+  if (h && h !== base && heatIn() < use.total && strength > 0) {
+    const hu = heatUse(state, h);
+    const spareWood = Math.max(0, (h.stock.wood || 0) - 2 * hu.wood);
+    const sendWood = Math.min(spareWood, (use.total - heatIn()) / HEAT.wood / strength);
+    if (sendWood > 0) { h.stock.wood -= sendWood; st.wood = Math.max(0, st.wood || 0) + sendWood * strength; }
+    const spare = Math.max(0, (h.stock.fuel || 0) - Math.max(0, 2 * hu.total - Math.max(0, h.stock.wood || 0) * HEAT.wood));
+    const send = Math.min(spare, Math.max(0, use.total - heatIn()) / strength);
     if (send > 0) { h.stock.fuel -= send; st.fuel = Math.max(0, st.fuel || 0) + send * strength; }
   }
-  const burn = Math.min(Math.max(0, st.fuel || 0), use.total);
+  const wood = Math.min(Math.max(0, st.wood || 0), use.wood);
+  st.wood = Math.max(0, (st.wood || 0) - wood);
+  const burn = Math.min(Math.max(0, st.fuel || 0), Math.max(0, use.total - wood * HEAT.wood));
   st.fuel = Math.max(0, (st.fuel || 0) - burn);
   base.heat.burned = r1(burn);
-  const short = 1 - burn / use.total;
+  base.heat.wood = r1(wood);
+  const es = econStats(state);
+  es.heatWood = (es.heatWood || 0) + wood;
+  es.heatFuel = (es.heatFuel || 0) + burn;
+  const short = Math.max(0, 1 - (burn + wood * HEAT.wood) / use.total);
   if (short < 0.02) { base.cold = false; return; }
   base.cold = Math.round(short * 100) / 100;
   const people = residents(state, base.id);
@@ -367,7 +382,8 @@ export function heatDaily(state, base) {
     s.mood = Math.max(0, s.mood - COLD.mood * short);
     hurt(state, s, Math.round(COLD.hp * short * 10) / 10, base.tile, `of cold at ${base.name}`, { raw: true });
   }
-  log(state, `${base.name} has ${burn > 0 ? "too little" : "no"} fuel to keep warm (needs ${r1(use.total)} a day: ${use.text}): everyone there is cold (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
+  es.coldDays = (es.coldDays || 0) + 1; // base-days with someone cold (the balance runs)
+  log(state, `${base.name} has ${burn > 0 || wood > 0 ? "too little" : "no"} firewood or fuel to keep warm (needs ${use.text}): everyone there is cold (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
 }
 
 // ---------- errands ----------

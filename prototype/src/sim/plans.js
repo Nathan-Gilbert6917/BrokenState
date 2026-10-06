@@ -15,7 +15,7 @@
 // running short of the way home. The plan's "If … then come home" conditions turn the team home by themselves
 // (anyone hurt below N health, food below N days, cargo full) and say so on a card that can undo it.
 import { log, addCard, baseById, hub, snapshot, survivorById } from "./world.js";
-import { LOCATIONS, siteDanger } from "./data.js";
+import { LOCATIONS, siteDanger, SUPPLIES } from "./data.js";
 import { siteKnownTo } from "./discovery.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, travelHours, partySpeed, startReturn, awaitOrders,
@@ -32,6 +32,7 @@ import {
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
+import { expectWood, chopCrew, chopPower } from "./woodcutting.js";
 import { partyVehicle } from "./vehicles.js";
 import { supplyLoad, poolLoad } from "./parties.js";
 
@@ -56,6 +57,7 @@ export const STEP_KINDS = {
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
   hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
   forage:   { label: "Forage", desc: "Gather wild food around the target for some hours (foraging.js): berries, nuts, mushrooms, greens, roots and apples. Anyone can; Farming and Scouting help. Forest is best, farmland good, towns little; summer and autumn plentiful, spring some, winter almost nothing. Quiet, but time on one spot builds Heat." },
+  wood:     { label: "Cut wood", desc: "Cut firewood around the target for some hours (woodcutting.js): the winter's heating. Forest is best, hills fair, farmland and suburbs little, a city next to nothing. An axe (or a machete or sledgehammer) cuts much faster; daylight only. Firewood is bulky (3 kg each): a vehicle carries far more home. Loud: time on one spot builds Heat faster than most work." },
   fish:     { label: "Fish", desc: "Fish a river or lake shore for some hours with a fishing rod or net (the hub's goes along if nobody carries one). Quiet. Ice fishing in a freeze needs a crowbar, machete or axe and catches half." },
   snare:    { label: "Snares (2h)", desc: "Set a line of 8 snares (snare wire, or 2 scrap of fence wire), or check a line of yours already there (1h): collect the catch and leave it set. Quiet; a rabbit a day or so in good country; come back within 2–3 days." },
   searcharea: { label: "Search the area", desc: "Find a downed aircraft or supply drop in its search circle: look around at the spots that clear the most unsearched ground (2h each, up to 8), then search the wreck when it turns up (crashes.js)." },
@@ -124,6 +126,7 @@ export function stepsToOrders(state, steps, tile) {
       case "hunt": out.push({ type: "hunt", hours: huntHours(s), ...place }); break;
       case "fish": out.push({ type: "fish", hours: huntHours(s), ...place }); break;
       case "forage": out.push({ type: "forage", hours: huntHours(s), ...place }); break;
+      case "wood": out.push({ type: "wood", hours: huntHours(s), ...place }); break;
       case "snare": out.push({ type: "snare", ...(s.mode ? { mode: s.mode } : {}), ...place }); break;
       case "wait": out.push({ type: "wait", hours: Math.max(1, Math.round(s.hours || 6)) }); break;
       case "move": if (s.tile != null) { out.push({ type: "move", tile: s.tile }); at = s.tile; known = true; } break;
@@ -143,6 +146,7 @@ export const stepLabel = (state, s) => {
     case "hunt": return `Hunt ${huntHours(s)}h`;
     case "fish": return `Fish ${huntHours(s)}h`;
     case "forage": return `Forage ${huntHours(s)}h`;
+    case "wood": return `Cut wood ${huntHours(s)}h`;
     case "snare": return s.mode === "check" ? "Check the snares" : s.mode === "set" ? "Set snares" : "Snares: set (or check)";
     case "move": return `Move to ${tileLabel(state, s.tile)}`;
     default: return STEP_KINDS[s.kind]?.label || s.kind;
@@ -171,7 +175,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const pv0 = p ? partyVehicle(state, p) : pv;
   const pool0 = p ? poolLoad(p) : supplyLoad(supplies);
   const worn = members.reduce((a, s) => a + wornLoad(s), 0);
-  let haul = 0, haulKg = 0;
+  let haul = 0, haulKg = 0, woodHaul = 0; // woodHaul: firewood (woodcutting.js), not food
   const reweigh = (eaten) => {
     if (!members.length || haulKg <= 0) return;
     const cap = teamLoad(members, 0, pv0).capacity;
@@ -232,6 +236,21 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24);
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
     else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
+    else if (s.kind === "wood") {
+      // Firewood (woodcutting.js): what fits on top of the load so far; it weighs the team down on the way home.
+      const start = at;
+      const hours = huntHours(s);
+      stay(stepLabel(state, s), hours);
+      const eatenNow = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + members.length * restH) / 24 : 0;
+      const room = members.length ? Math.max(0, teamLoad(members, 0, pv0).capacity - Math.max(0, pool0 - eatenNow * 1.5) - haulKg) : Infinity;
+      const got = members.length ? expectWood(state, members, tile, hours, start, room, chopPower(chopCrew(members, kitItems))).wood : 0;
+      if (got > 0) {
+        woodHaul += got;
+        haulKg += got * SUPPLIES.wood.weight;
+        legs[legs.length - 1].wood = Math.round(got * 10) / 10;
+        reweigh(eatenNow);
+      }
+    }
     else if (s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage") {
       const start = at;
       const hours = s.kind === "snare" ? snareHours(state, tile, s.mode) : huntHours(s);
@@ -283,7 +302,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const eat = members.length ? (pace.eatMove * rideH + pace.eatFoot * (moveH - rideH) + n * restH) / 24 : (n * total) / 24;
   return {
     legs, hours, hoursOut, backHours, total, returns, open, sites: chosen, endTile: tile, path: outPath, vehicle: veh, fuelLeft: f,
-    haul: Math.round(haul * 10) / 10, haulKg: Math.round(haulKg * 10) / 10,
+    haul: Math.round(haul * 10) / 10, haulKg: Math.round(haulKg * 10) / 10, wood: Math.round(woodHaul * 10) / 10,
     food: Math.ceil(eat - 1e-9), water: Math.ceil(drink - 1e-9), waterExact: drink, pace,
     fuel: startMode === true ? Math.ceil(fuelUse * (returns ? 1 : 2) - 1e-9) : 0, days: total / 24,
   };
@@ -297,6 +316,7 @@ export function applyPlan(state, p, plan) {
   // A hunting or fishing trip is named for it (teamName).
   if (p.mission === "move" && steps.some((s) => s.kind === "hunt")) p.teamMission = "hunt";
   else if (p.mission === "move" && steps.some((s) => s.kind === "fish")) p.teamMission = "fish";
+  else if (p.mission === "move" && steps.some((s) => s.kind === "wood")) p.teamMission = "wood"; // woodcutting.js
   // Fishing and snares: the hub's rod or net and its snare wire go along when nobody carries one (hunting.js).
   const home = baseById(state, p.homeBaseId) || hub(state);
   const members = partyMembers(state, p);

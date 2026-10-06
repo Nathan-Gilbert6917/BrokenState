@@ -7,7 +7,8 @@
 // Numbers (all per hour on the spot):
 //   gain  = activity × place × hive land × team size × night × stance
 //     activity: fishing 0.7, setting or checking snares 0.8, waiting / holding / look around / treating 1.0,
-//               hunting 1.2 (and +6 a gunshot, hunting.js), gathering / crafting / repairs 1.5,
+//               hunting 1.2 (and +6 a gunshot, hunting.js), cutting wood 1.3 (axes carry: woodcutting.js),
+//               gathering / crafting / repairs 1.5,
 //               building a boat 1.8 (hammering); a camp and the staging camp: the camp danger model below instead
 //     place:    countryside 1.0, suburbs 1.4, city 1.8, then × (1 + 0.6 × infection)
 //     hive land ×1.4, the red ring around a hive ×2
@@ -51,8 +52,8 @@ export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
 // stage and camp: only where campSite does not apply (it always does for them: the camp danger model, CAMP_HEAT).
-const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, stage: 1.6, cross: 1.8, camp: 2 };
-const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
+const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, stage: 1.6, cross: 1.8, camp: 2 };
+const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {
@@ -418,7 +419,7 @@ export function nextHeat(state, p, activity, heat, hour = state.hour) {
 function heatLead(state, p, activity) {
   const site = campSite(state, p, activity);
   if (site) return `${site.fire ? "The camp's fire" : "The camp"}${site.vehicles.length ? " and the vehicles parked there" : ""}${shotsNear(state, site.tile).w >= 3 ? " (and the gunfire lately)" : ""} drew attention at ${tileLabel(state, partyTile(p))}.`;
-  const what = { camp: "The camp's fire and cooking smells", cross: "The hammering on the shore", gather: "The noise on the shore", craft: "The noise of the work", hunt: "The hunt (and its gunshots)" }[activity] || "Too long in one place";
+  const what = { wood: "The sound of the axes", camp: "The camp's fire and cooking smells", cross: "The hammering on the shore", gather: "The noise on the shore", craft: "The noise of the work", hunt: "The hunt (and its gunshots)" }[activity] || "Too long in one place";
   return `${what} drew attention at ${tileLabel(state, partyTile(p))}.`;
 }
 

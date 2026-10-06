@@ -350,10 +350,15 @@ export function offerCard(state, f) {
     const k = wants[0];
     const qty = Math.max(3, Math.min(hubSpare(state, k), Math.ceil((REF_QTY[k] || 10) * rng.range(0.6, 1.2))));
     const value = qty * sellPrice(state, f, k, speech, qty);
-    const pay = maxBuyable(state, f, payKey, speech, value);
-    if (pay < 1) return null;
-    deal = { offer: { [k]: qty }, ask: { [payKey]: pay } };
-    text = `"We need ${qty} ${k}. We can pay ${pay} ${payKey}, delivered to ${base.name}."`;
+    let pay = maxBuyable(state, f, payKey, speech, value);
+    // A cheap, bulky surplus (firewood, scrap) pays for little: the caravan brings at most two lots of it and asks for
+    // what that is worth, not hundreds of units for a few jars.
+    const cap = (REF_QTY[payKey] || 10) * 2;
+    let want = qty;
+    if (pay > cap) { pay = cap; want = Math.min(qty, Math.floor((pay * buyPrice(state, f, payKey, speech, pay)) / sellPrice(state, f, k, speech, qty))); }
+    if (pay < 1 || want < 1) return null;
+    deal = { offer: { [k]: want }, ask: { [payKey]: pay } };
+    text = `"We need ${want} ${k}. We can pay ${pay} ${payKey}, delivered to ${base.name}."`;
   } else {
     // An offer: their surplus for something you have.
     const qty = Math.max(5, Math.min(available(f, payKey), Math.ceil((REF_QTY[payKey] || 10) * rng.range(0.8, 1.5))));
@@ -389,7 +394,7 @@ export function offerCard(state, f) {
     ],
   };
 }
-const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20 };
+const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 20 }; // wood: woodcutting.js
 
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has

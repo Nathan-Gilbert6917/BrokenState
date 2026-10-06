@@ -5,7 +5,7 @@
 // knocks the severity down and stops it worsening for a day.
 // Infected wounds stay the woundInfected flag of medical.js (shown as "Infected wound"); an untreated deep cut can
 // become one. Where people get sick or hurt (chances per person per day unless noted):
-//   - work at a base: farming 0.6%, building 1.2%, crafting 0.8%, workshop 0.6%, base scavenging 2%, guard 0.2%
+//   - work at a base: farming 0.6%, building 1.2%, cutting wood 1.2%, crafting 0.8%, workshop 0.6%, base scavenging 2%, guard 0.2%
 //     (cuts and sprains);
 //   - searching a site: 0.8% a cut and 0.25% a fever per person per search hour (scavenge.js);
 //   - wounds: a hit of 10+ health that does not kill: 25% a deep cut that needs dressing (world.hurt);
@@ -256,8 +256,9 @@ const coldNow = (state) => {
 };
 const exposure = (state, sheltered) => (Weather.exposureRisk ? Weather.exposureRisk(state, { sheltered }) : { chance: 0, kind: null, reason: "" });
 
-const WORK_RISK = { farm: 0.006, build: 0.012, craft: 0.008, operate: 0.006, scavenge: 0.02, guard: 0.002, medic: 0, rest: 0 };
-const OUTDOORS = new Set(["farm", "scavenge", "guard", "build"]);
+// wood: felling and splitting (woodcutting.js): axes slip, limbs fall.
+const WORK_RISK = { farm: 0.006, build: 0.012, craft: 0.008, operate: 0.006, scavenge: 0.02, guard: 0.002, wood: 0.012, medic: 0, rest: 0 };
+const OUTDOORS = new Set(["farm", "scavenge", "guard", "build", "wood"]);
 
 export function hasWaterFilter(state, base) {
   if (base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].water)) return true;
@@ -291,7 +292,7 @@ function baseOnsets(state, base) {
     // Work accidents.
     if (working && rng.chance((WORK_RISK[role] || 0) * workFactor(s))) {
       const key = rng.chance(role === "scavenge" ? 0.65 : 0.55) ? "cut" : "sprain";
-      const what = { farm: "in the fields", build: "on the building site", craft: "at the workbench", operate: "at a workshop station", scavenge: "scavenging around the base", guard: "on watch" }[role] || "at work";
+      const what = { farm: "in the fields", wood: "cutting wood", build: "on the building site", craft: "at the workbench", operate: "at a workshop station", scavenge: "scavenging around the base", guard: "on watch" }[role] || "at work";
       addCondition(state, s, key, `${what} ${where}`);
       if (role === "scavenge") hurt(state, s, rng.int(4, 12), base.tile, `scavenging near ${base.name}`);
       continue;

@@ -18,6 +18,7 @@ import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel }
 import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
+import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.js";
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -47,6 +48,7 @@ export function describeOrder(state, o) {
     case "hunt": return `Hunt ${huntHours(o)}h`;
     case "fish": return `Fish ${huntHours(o)}h`;
     case "forage": return `Forage ${huntHours(o)}h`; // foraging.js
+    case "wood": return `Cut wood ${huntHours(o)}h`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
   }
   return o.type;
@@ -136,7 +138,7 @@ export function queueEstimate(state, p) {
     }
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
-    else if (o.type === "hunt" || o.type === "fish" || o.type === "forage") hours = huntHours(o);
+    else if (o.type === "hunt" || o.type === "fish" || o.type === "forage" || o.type === "wood") hours = huntHours(o);
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
@@ -212,7 +214,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "snare"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -321,6 +323,13 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "forage", hours: huntHours(o) });
       return `The team goes foraging (${huntHours(o)}h).`;
     }
+    case "wood": {
+      // Firewood for the winter (woodcutting.js): by the land, the tools and the people.
+      const why = woodProblem(state, p);
+      if (why) return fail(`Cut wood: ${why}`);
+      startTask(state, p, { type: "wood", hours: huntHours(o) });
+      return `The team cuts wood (${huntHours(o)}h).`;
+    }
     case "snare": {
       const mode = snareMode(state, partyTile(p), o.mode);
       const why = snareProblem(state, p, partyTile(p), mode);
@@ -380,7 +389,7 @@ export function taskHour(state, p) {
   if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
   if (!state.parties.includes(p) || p.task !== t) return;
   // Hunting, fishing and foraging roll every hour (hunting.js, foraging.js); with nothing left to do it with, the job ends early.
-  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p))) {
+  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p)) || (t.type === "wood" && !woodHour(state, p))) {
     if (state.parties.includes(p)) finishTask(state, p);
     return;
   }
@@ -418,6 +427,7 @@ function finishTask(state, p) {
   else if (t.type === "hunt") text = huntSummary(state, p, t);
   else if (t.type === "fish") text = fishSummary(state, p, t);
   else if (t.type === "forage") text = forageSummary(state, p, t);
+  else if (t.type === "wood") text = woodSummary(state, p, t);
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;
@@ -433,6 +443,7 @@ export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected &
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);
+  campFireHour(state, p); // woodcutting.js: a fire on bare ground burns carried firewood, or goes out
   if (starving(p)) return;
   const mood = fireLit(p) ? FIRE.campMood : FIRE.campMoodOut;
   for (const s of partyMembers(state, p)) {

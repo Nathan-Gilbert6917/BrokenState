@@ -53,11 +53,12 @@ import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js
 import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse } from "./upkeep.js";
+import { woodWorkWhy, woodWorkCap, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
 // Assignments a queued build may take one hand from (no station, lesson, book or repair job to give back).
-const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage"];
+const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage", "wood"];
 export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
@@ -297,6 +298,21 @@ export const WORK_TYPES = {
     },
     rank: (s) => foragerMult(s) * 10,
   },
+  // Firewood for the winter's heating (woodcutting.js): felled trees, deadfall, fence rails, by the land around.
+  wood: {
+    name: "Cut wood", ing: "Cutting wood", short: "Wood", role: "wood", skill: "farming",
+    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the coming cold needs (0.2 a head a day below freezing): forest best (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. Up to 2 people (3 at 10+). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
+    open(ctx) {
+      const why = woodWorkWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      const w = woodNeed(ctx.state, ctx.base);
+      if (!w.short) return { cap: 0, why: w.need > 0 ? `enough firewood for the cold ahead (${Math.floor(w.have)} of ${w.need})` : "no heating needed here" };
+      const burn = Math.max(0.1, w.heads * 0.2);
+      const urg = w.cold ? (w.have < burn * 5 ? 7 : 4.5) : w.toCold <= 14 ? 5 : w.soon ? 3 : 1;
+      return { cap: woodWorkCap(ctx.state, ctx.base), urg };
+    },
+    rank: (s) => woodcutterMult(s) * 10 * bestChop(s).mult,
+  },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
 
@@ -426,15 +442,15 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
-  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
-  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
-  { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, scavenge: 4 }) },
+  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
+  { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, wood: 3, scavenge: 4 }) },
   { name: "Hunting party", kind: "crew", pri: P({ hunt: 2, fish: 2, farm: 3, build: 4 }), crew: { field: { hunt: 1, fish: 2, recover: 3 }, size: 2, rules: { hurt: 45, food: 1, cargo: true } } },
 ];
 

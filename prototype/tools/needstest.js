@@ -251,8 +251,12 @@ function team(st, n, supplies) {
   st.hour = cold * 24 + 1;
   const u = heatUse(st, h);
   check(near(u.each, HEAT.fuel) && near(u.total, n * HEAT.fuel), `below 0°C: ${u.text}`);
-  check(upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} fuel a day`, `the base panel: "${upkeepLine(st, h).heating}"`);
-  h.stock.fuel = 10;
+  check(upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${r1(n * 0.2).toFixed(1)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the base panel: "${upkeepLine(st, h).heating}"`);
+  // woodcutting.js: firewood burns first (1 firewood = HEAT.wood fuel of heat); the fuel figures below are without any.
+  h.stock.wood = 10; h.stock.fuel = 10;
+  heatDaily(st, h);
+  check(near(h.stock.wood, 10 - n * HEAT.fuel / HEAT.wood) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * HEAT.fuel / HEAT.wood)} firewood, no fuel`);
+  h.stock.wood = 0;
   heatDaily(st, h);
   check(near(h.stock.fuel, 10 - n * HEAT.fuel) && !h.cold, `a day's heating burns ${r1(n * HEAT.fuel)} fuel`);
   if (bitter != null) {

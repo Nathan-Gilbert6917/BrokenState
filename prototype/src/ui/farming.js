@@ -7,7 +7,8 @@ import {
   cropForecast, winterOutlook,
 } from "../sim/farming.js";
 import { foodOutlook, waterOutlook, RATION, RATION_DAYS, WATER, summerWater, summerWaterOk, summerFixText, SUMMER } from "../sim/economy.js";
-import { useText, perHeadText, heatUse, HEAT } from "../sim/upkeep.js";
+import { useText, perHeadText, heatUse, HEAT, woodFor } from "../sim/upkeep.js";
+import { woodNeed, baseWoodHint } from "../sim/woodcutting.js";
 import { COLD } from "../sim/needs.js";
 import { THIRST } from "../sim/weather.js";
 import { storeLine } from "../sim/storage.js";
@@ -43,14 +44,28 @@ export function upkeepLine(state, b) {
   const fo = foodOutlook(state, b);
   const need = waterOutlook(state, b).need;
   const food = foodUseText(fo), water = waterUseText(need);
-  const heat = heatUse(state, b); // needs-gauges: heating fuel per head below 0°C
+  const heat = heatUse(state, b); // needs-gauges: heating per head below 0°C (woodcutting.js: firewood first, then fuel)
   const heating = heat.each > 0 ? `Heating: ${heat.text}` : "";
   const cold = fo.use.cold > 1 ? ` The cold: everyone eats ${Math.round((fo.use.cold - 1) * 100)}% more today.` : "";
-  const heatTip = ` Heating: on a day below 0°C everyone here burns ${HEAT.fuel} fuel a day (×${HEAT.bitter} below ${HEAT.bitterAt}°C) from the base's fuel; a shelter with its camp fire lit needs none. Without the fuel everyone is cold (mood −${COLD.mood} and health −${COLD.hp} a day, and illness as outdoors).${heating ? ` Today: ${heat.text}${b.stock.fuel != null ? `, ${n0(b.stock.fuel)} fuel in store` : ""}.` : " No heating needed today."}${b.cold ? ` ${b.name} is cold now: it ran short of fuel.` : ""}`;
+  const wn = woodNeed(state, b);
+  const woodNote = ` ${n0(b.stock.wood)} firewood and ${n0(b.stock.fuel)} fuel in store${wn.need > 0 && wn.soon ? `; the cold ahead (about ${Math.round(wn.days)} freezing days) needs about ${wn.need} firewood` : ""}.`;
+  const heatTip = ` Heating: on a day below 0°C everyone here needs ${HEAT.fuel} fuel's worth of heat a day (×${HEAT.bitter} below ${HEAT.bitterAt}°C). The base burns firewood first (1 firewood heats as much as ${HEAT.wood} fuel: ${woodFor(HEAT.fuel)} firewood a head), then fuel for what the wood does not cover; a shelter with its camp fire lit needs neither. Without them everyone is cold (mood −${COLD.mood} and health −${COLD.hp} a day, and illness as outdoors). Cut wood on the Work tab (the Cut wood job), send a team to cut it, or trade for it.${heating ? ` Today: ${heat.text}.` : " No heating needed today."}${woodNote}${b.cold ? ` ${b.name} is cold now: it ran short of firewood and fuel.` : ""}`;
   const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's; someone on a personal errand takes a day's food and water a day with them.${heatTip} Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
-  return { food, water, heating, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 ? ` · fuel ${n1(heat.total)}` : ""} a day`, tip: tipText };
+  return { food, water, heating, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 ? ` · firewood ${n1(heat.wood)}` : ""} a day`, tip: tipText };
 }
-export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of fuel" : ""}</div>` : ""}</div>`; };
+export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}</div>`; };
+
+// Firewood (sim/woodcutting.js) for the top bar and the base panel: days of heating left in the cold, else what is in
+// store against what the coming cold needs. { short, cls, tip }.
+export function woodLine(state, b) {
+  const w = woodNeed(state, b);
+  const heat = heatUse(state, b);
+  const burning = heat.total > 0;
+  const short = burning ? `${days(w.have / Math.max(0.01, heat.wood))}d` : w.soon && w.need > 0 ? `${n0(w.have)}/${w.need}` : "";
+  const cls = !w.soon || !w.short ? "good" : w.cold || w.toCold <= 14 ? "danger" : "";
+  const tipText = `Firewood: the winter's heating. Below 0°C everyone here needs ${woodFor(HEAT.fuel)} firewood a day (${woodFor(HEAT.fuel * HEAT.bitter)} below ${HEAT.bitterAt}°C); fuel covers what the wood does not (1 firewood = ${HEAT.wood} fuel of heat).${burning ? ` Today: ${heat.text}.` : ""}${w.need > 0 ? ` The cold ahead: about ${Math.round(w.days)} freezing days for ${w.heads} ${w.heads === 1 ? "person" : "people"}, about ${w.need} firewood with a fifth to spare (${n0(w.have)} in store${w.short ? `, ${Math.ceil(w.need - w.have)} short` : ""}).` : ""} ${baseWoodHint(state, b)[0].toUpperCase()}${baseWoodHint(state, b).slice(1)}: put people on Cut wood (Work tab), send a team to cut wood (team panel, Land), or trade for it. Cut it in late summer and autumn.`;
+  return { short, cls, tip: tipText };
+}
 
 // Food: the forecast line that replaces "food per day".
 export function foodLine(state, b) {

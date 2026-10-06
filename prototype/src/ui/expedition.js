@@ -22,6 +22,7 @@ import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
+import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -203,9 +204,14 @@ function landBlock(state, p, at, queueing) {
   const fi = forageInfo(state, at, { members, hours: FORAGE.defHours, room: cargoRoom(state, p) });
   const fgp = queueing ? "" : forageProblem(state, p, at);
   const forageBtns = [4, 8, 12].map((h) => ord("forage", ` data-hours="${h}"`, `Forage ${h}h`, fgp ? `Forage: ${fgp}` : `Gather wild food here for ${h} hours: berries, nuts, mushrooms, greens, roots, apples (${fi.seasonKey}: ${fi.word})${fi.est && h === FORAGE.defHours ? `; about ${Math.round(fi.est.rations * 10) / 10} food expected in ${h}h` : ""}. Forest is best, farmland and old orchards good, towns little; summer and autumn plentiful, winter almost nothing. Quiet, but time on one spot builds Heat; now and then herbs (meds) or honey, rarely a bad mushroom.`, !!fgp)).join("");
-  return `<div style="margin-top:0.5rem"><b${tip("Food from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore) or set snares. The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}</span></div>
+  // Firewood (sim/woodcutting.js): cut wood here, with what it would bring (as far as the team can carry it).
+  const wi = woodInfo(state, at, { members, spare: p.cargo.gear, hours: WOOD.defHours, room: cargoRoom(state, p) });
+  const wp = queueing ? "" : woodProblem(state, p, at);
+  const woodWood = carried(p, "wood");
+  const woodBtns = [4, 8].map((h) => ord("wood", ` data-hours="${h}"`, `Cut wood ${h}h`, wp ? `Cut wood: ${wp}` : `Cut firewood here for ${h} hours (daylight only): wood ${wi.word}${wi.est && h === WOOD.defHours ? `; about ${Math.round(wi.est.wood)} firewood expected in ${h}h, as much as the team can carry (3 kg each)${wi.est.all > wi.est.wood + 0.5 ? `: about ${Math.round(wi.est.all)} cut, the rest left` : ""}` : ""}. ${wi.tools ? `${wi.tools} with an axe or blade` : "No axe: deadfall by hand, far slower"}. The winter's heating: a base burns firewood before fuel. Loud (Heat), and axes slip now and then.`, !!wp)).join("");
+  return `<div style="margin-top:0.5rem"><b${tip("Food and firewood from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore), set snares, or cut wood (an axe helps). The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} firewood` : ""}</span></div>
     ${lowFoodBlock(state, p, at, queueing)}
-    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}</div>`;
+    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}</div>`;
 }
 
 // Short of food (under 2 days): the best food from the land here and around (sim/foraging.js landFoodOptions), with

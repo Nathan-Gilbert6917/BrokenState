@@ -78,6 +78,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const map = generateMap(rng, sdef, { hives: clampHives(hives) });
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
+    woodcutting: 1, // a world with firewood (save.js: older saves are given it on load)
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -117,8 +118,9 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
-    // town hall's cellar (storage.js); water for the first dry days while the sown fields get going.
-    stock: { food: 80, water: 50, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12 },
+    // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
+    // (woodcutting.js: the winter's heating is cut later).
+    stock: { food: 80, water: 50, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 10 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
