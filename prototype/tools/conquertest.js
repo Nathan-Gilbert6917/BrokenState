@@ -631,7 +631,7 @@ section("Base battles: a way out on the side away from the attack, and what pull
   const o = outpost(st, t, 3);
   for (const fromSide of [1, -1]) {
     const from = st.grid.within(t, 6).find((x) => st.grid.distance(x, t) === 5 && (st.grid.toPixel(x, 1)[0] - st.grid.toPixel(t, 1)[0]) * fromSide > 3);
-    const setup = { tile: t, baseId: o.id, enemy: { kind: "raiders", count: 5, power: 4, factionId: f.id, name: "x" }, ambush: null, canRetreat: true, handler: "none", layout: "baseDefence", deploy: true, context: { baseId: o.id, factionId: f.id, fromTile: from } };
+    const setup = { tile: t, baseId: o.id, enemy: { kind: "raiders", count: 5, power: 4, factionId: f.id, name: "x" }, ambush: null, canRetreat: true, handler: "none", layout: "baseDefence", deploy: true, context: { strip: true, baseId: o.id, factionId: f.id, fromTile: from } };
     const b = createBattle(st, setup);
     const evac = [];
     for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) if (inEvac(b, x, y)) evac.push([x, y]);
@@ -644,7 +644,7 @@ section("Base battles: a way out on the side away from the attack, and what pull
   // raidDefense: pulling out abandons the base to the raiders.
   const raid = { id: newId(), owner: f.id, kind: "raid", path: [t], idx: 0, strength: 50, target: { kind: "player", baseId: o.id, tile: t } };
   st.parties.push(raid);
-  const setup = { tile: t, baseId: o.id, enemy: { kind: "raiders", count: 5, power: 4, factionId: f.id }, canRetreat: true, handler: "raidDefense", layout: "baseDefence", deploy: true, context: { raidId: raid.id, baseId: o.id, factionId: f.id } };
+  const setup = { tile: t, baseId: o.id, enemy: { kind: "raiders", count: 5, power: 4, factionId: f.id }, canRetreat: true, handler: "raidDefense", layout: "baseDefence", deploy: true, context: { strip: true, raidId: raid.id, baseId: o.id, factionId: f.id } };
   const raze = RAIDS.RAZE; RAIDS.RAZE = {}; // what is checked is that they take it (burning it down instead is its own roll)
   finishCombat(st, setup, { outcome: "retreat", enemiesKilled: 1, enemiesLeft: 4, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] }, tactical: true, worn: true });
   RAIDS.RAZE = raze;

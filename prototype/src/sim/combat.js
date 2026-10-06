@@ -2476,6 +2476,23 @@ function aiUnit(b, u) {
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
     const mv = bestMove(b, u, foes, field);
     if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); continue; }
+    // An attacker outside a fort's wall (fort.js) with no fair shot: on toward the nearest opening (a gate, a breach)
+    // rather than trading long shots with whoever stands on the wall.
+    if (b.tier && b.tier.map === "fort" && b.tier.stage === "wall" && u.side !== (b.holders || "player") && !b.tier.interior[idx(u.x, u.y)] && (!shot || shot.o.chance < 45) && b.tier.openings && b.tier.openings.length) {
+      // At the gate (or a wall section) with no fair shot: batter it rather than plink at whoever stands behind it.
+      const gate = siegeTarget(b, u, field);
+      if (gate) { bash(b, u, gate[0], gate[1]); u.ap = 0; return; }
+      const fo = distField(b, b.tier.openings, u);
+      const r = reachable(b, u, u.mob);
+      const hereD = fo[idx(u.x, u.y)];
+      let best = -1, bestV = Infinity;
+      for (let i = 0; i < W * H; i++) {
+        if (!isFinite(r.dist[i]) || r.dist[i] <= 0 || !isFinite(fo[i]) || unitAt(b, i % W, (i / W) | 0)) continue;
+        const v = fo[i] - (coverSides(b, i % W, (i / W) | 0).some((c) => c) ? 0.5 : 0);
+        if (v < bestV) { bestV = v; best = i; }
+      }
+      if (best >= 0 && fo[best] < hereD) { u.ap -= 1; moveAlong(b, u, pathTo(r, best % W, (best / W) | 0)); continue; }
+    }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
@@ -2497,8 +2514,9 @@ const STICKY = new Set(["tower", "perch", "inside", "door"]);
 function holdPost(b, u) {
   const foes = foesOf(b, u);
   if (!foes.some((f) => canSee(b, u, f) || dist(u.x, u.y, f.x, f.y) <= 6)) {
-    const walls = b.tier && b.tier.map === "wall" && (u.post === "wall" || u.post === "tower") && !foes.some((f) => b.tier.interior && b.tier.interior[idx(f.x, f.y)]);
-    const inside = b.tier && b.tier.map === "interior" && STICKY.has(u.post);
+    const onWalls = b.tier && (b.tier.map === "wall" || (b.tier.map === "fort" && b.tier.stage === "wall")); // fort.js: one map, the same posts
+    const walls = onWalls && (u.post === "wall" || u.post === "tower") && !foes.some((f) => b.tier.interior && b.tier.interior[idx(f.x, f.y)]);
+    const inside = b.tier && (b.tier.map === "interior" || b.tier.map === "fort") && STICKY.has(u.post);
     if (!walls && !inside) { u.post = null; return false; }
     if (canFire(b, u)) u.ow = true;
     u.ap = 0;

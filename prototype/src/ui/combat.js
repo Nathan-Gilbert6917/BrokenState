@@ -992,6 +992,17 @@ function siegeButtons(b, u, btn) {
 function deployPanel(state, b, u) {
   const D = b.deploy || {};
   if (D.interior) return interiorDeployPanel(state, b, u, D);
+  if (D.attackers) { // the fort map (sim/fort.js): staging an assault on their walls
+    let html = `<h3>Stage the assault</h3>
+      <div class="small muted">Click one of your people, then a green cell: anywhere in the open ground round their walls, on any side. The gates are in the middle of each wall (barred: the ram, or batter them); ladders go up the wall sections; grenades over it. Your vehicle can be driven up to the wall and rammed through light obstacles.</div>
+      <div class="cbactions" style="margin-top:0.4rem"><button data-action="cb-deploy" data-v="defaults" data-tip="Back to where they started: the west side.">Default positions</button></div>`;
+    html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+    if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+    html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
+    html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the assault begins. (Enter)">Start the assault</button>
+      ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
+    return html;
+  }
   const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
   let html = `<h3>Deploy · the attack comes from the ${esc(D.side || "east")}</h3>
@@ -1019,8 +1030,9 @@ function deployPanel(state, b, u) {
 export function tierHtml(b) {
   const T = b.tier;
   if (!T) return "";
-  const foes = b.units.filter((u) => u.side === "enemy" && active(u));
-  if (T.map === "wall") {
+  const attSide = T.map === "fort" && T.attackers === "player" ? "player" : "enemy"; // the fort map (sim/fort.js): on an assault the attackers are yours
+  const foes = b.units.filter((u) => u.side === attSide && active(u));
+  if (T.map === "wall" || (T.map === "fort" && T.stage === "wall")) {
     let gate = 0, gateMax = 0, wall = 0, wallMax = 0, low = 1, breaches = 0;
     for (const c of b.cells) {
       if (c.k === "gate" && c.mhp) { gate += c.hp || 0; gateMax += c.mhp; if (!barredCell(c)) breaches++; }
@@ -1562,7 +1574,7 @@ function drawBanner(b, cw, cs) {
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? (b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "deploy" ? (b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;

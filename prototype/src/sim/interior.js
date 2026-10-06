@@ -640,6 +640,23 @@ export function tierPlayerTurn(state, b) {
     if (inside >= need || (inside > 0 && !onWall)) toInterior(state, b, { why: "breach" });
     return;
   }
+  // The fort map (fort.js): the same tiers on one map. The wall stage ends once enough attackers are inside the ring
+  // (or any are and nobody holds the wall); then the yard, and for your own base the last stand in the buildings.
+  if (T.map === "fort") {
+    const att = T.attackers === "player" ? "player" : "enemy", def = att === "player" ? "enemy" : "player";
+    const attackers = b.units.filter((u) => u.side === att && active(u));
+    if (T.stage === "wall") {
+      const inside = attackers.filter((f) => T.interior[f.y * b.w + f.x]).length;
+      const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(attackers.length * INTERIOR.BREACH_FRAC));
+      const onWall = b.units.some((u) => u.side === def && active(u) && ["walkway", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
+      if (inside >= need || (inside > 0 && !onWall)) {
+        T.stage = "yard"; T.fellBackTurn = b.turn; T.why = "breach";
+        say(b, att === "enemy" ? "They are through the wall! Hold the yard, and the buildings if it falls." : "You are through their wall! Into the yard.", att === "enemy" ? "danger" : "good");
+      }
+      return;
+    }
+    if (att === "player") return; // their yard: their people hold what they hold
+  }
   if (T.stage === "yard" && T.indoor) {
     const mine = b.units.filter((u) => u.side === "player" && active(u));
     const out = mine.filter((u) => !T.indoor[u.y * b.w + u.x]).length;
@@ -676,7 +693,7 @@ export function tierEnemyTurn(state, b) {
 // unit moved (it may still act with what is left).
 export function tierAI(b, u) {
   const T = b.tier;
-  if (!T || T.map !== "interior" || T.stage !== "buildings" || !T.indoor) return false;
+  if (!T || !(T.map === "interior" || T.map === "fort") || T.stage !== "buildings" || !T.indoor) return false;
   if (T.indoor[u.y * b.w + u.x]) return false;
   const free = [];
   for (let i = 0; i < b.w * b.h; i++) {

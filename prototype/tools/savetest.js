@@ -283,7 +283,7 @@ console.log("Saved at awkward moments");
     const [x0, y0] = st.grid.xy(h.tile);
     globalThis.window = {}; // a battle on the map, as in the browser (deploy.js)
     try {
-      st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 12, power: 3, name: "the horde" }, ambush: null, canRetreat: false, handler: "savetest", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { through: 150, fromTile: st.grid.id(x0, Math.max(0, y0 - 2)) } });
+      st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 12, power: 3, name: "the horde" }, ambush: null, canRetreat: false, handler: "savetest", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, through: 150, fromTile: st.grid.id(x0, Math.max(0, y0 - 2)) } });
     } finally { delete globalThis.window; }
     check(st.combat.phase === "deploy", `the break-in opens on the deploy step (${st.combat.w}×${st.combat.h}, attack from the ${st.combat.side})`);
     branch("a break-in saved on the deploy step, fought to the end", st, fight, battleTail);

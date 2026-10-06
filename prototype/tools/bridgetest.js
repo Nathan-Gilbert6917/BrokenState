@@ -17,9 +17,10 @@ import { GEAR } from "../src/sim/data.js";
 import { atVehicle } from "../src/sim/raidloot.js";
 import { newItem } from "../src/sim/inventory.js";
 import { addBuilding } from "../src/sim/buildings.js";
-import { DEPLOY } from "../src/sim/deploy.js";
+import { DEPLOY, endDeploy } from "../src/sim/deploy.js";
+import { FORT } from "../src/sim/fort.js";
 import { makeHorde, hordesHour } from "../src/sim/hordes.js";
-import { yardDims, structuresOf } from "../src/sim/interior.js";
+import { yardDims, structuresOf, tierPlayerTurn } from "../src/sim/interior.js";
 import { baseSide } from "../src/sim/battlesize.js";
 
 const seed0 = Number(process.argv[2] || 11);
@@ -330,6 +331,8 @@ for (let i = 0; i < runs; i++) {
     p.cargo = p.cargo || { supplies: {}, gear: [] };
     p.cargo.gear.push(newItem("ram", 1));
     const b = state.combat = createBattle(state, { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 4, power: 3, walls: 2 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseAssault", context: {} });
+    check(b.tier && b.tier.map === "fort" && b.phase === "deploy" && b.deploy.attackers, `their walled base is a fort with a staging step (${b.tier && b.tier.map}, ${b.phase})`);
+    endDeploy(b); // the staging step over: the assault begins
     check(!!b.vehicle, "the team's vehicle stands on the assault map");
     const r = (b.rams || []).find((x) => x.side === "player");
     check(!!r && r.inVehicle && !r.crew.length, `the ram rides in the vehicle (${r ? (r.inVehicle ? "in it" : "carried by " + r.crew.length) : "no ram"})`);
@@ -465,7 +468,22 @@ for (let i = 0; i < runs; i++) {
   globalThis.window = {};
   let b;
   try { b = state.combat = createBattle(state, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 10, power: 3 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseDefence", deploy: true, context: { through: 50 } }); } finally { delete globalThis.window; }
-  check(b.w === 18 && b.h >= yh - 3 - 1 && b.h <= yh + 20, `the hub's wall map keeps 18 columns and takes the yard's rows (${b.w} × ${b.h})`);
+  // The hub's battle is the fort map (fort.js): the yard, the walkway and wall rings and the margin all round.
+  check(b.tier && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN && b.h >= yh + 4 + 2 * FORT.MARGIN, `the hub fights on the fort map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${yw} × ${yh} yard)`);
+  const gatesN = b.cells.filter((c) => c.k === "gate").length, towersN = b.cells.filter((c) => c.k === "tower").length;
+  check(gatesN === 4 * FORT.GATE && towersN >= 4, `a gate in the middle of each wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
+  const inside = b.units.filter((u) => u.side === "player" && b.tier.interior[u.y * b.w + u.x]).length, outside = b.units.filter((u) => u.side === "enemy" && !b.tier.interior[u.y * b.w + u.x]).length;
+  check(inside === b.units.filter((u) => u.side === "player").length && outside === b.units.filter((u) => u.side === "enemy").length, `defenders inside the ring, the dead in the margin on the ${b.tier.side} (${inside} in, ${outside} out)`);
+  check(b.phase === "deploy" && b.deploy.zone.reduce((a, v) => a + v, 0) > 1000 && !b.deploy.zone[0], "the deploy step: the whole inside is theirs to stand in, not the margin");
+  // The tiers on the one map: enough of the dead inside the ring and the wall stage is over, no fall back to another map.
+  endDeploy(b);
+  check(b.phase === "player" && b.tier.map === "fort" && b.tier.stage === "wall", "the fight opens at the wall on the same map");
+  const yardCells = [];
+  for (let y = 0; y < b.h && yardCells.length < 4; y++) for (let x = 0; x < b.w && yardCells.length < 4; x++) if (b.tier.interior[y * b.w + x] && !b.tier.indoor[y * b.w + x] && b.cells[y * b.w + x].k === "open" && !b.units.some((u) => u.x === x && u.y === y)) yardCells.push([x, y]);
+  const dead = b.units.filter((u) => u.side === "enemy").slice(0, 4);
+  dead.forEach((z, i) => { z.x = yardCells[i][0]; z.y = yardCells[i][1]; z.aware = true; });
+  tierPlayerTurn(state, b);
+  check(b.tier.stage === "yard" && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN, `four of the dead inside the ring: the yard stage, still on the fort map (${b.tier.stage}, ${b.w} × ${b.h})`);
   const yard = { w: yw, h: yh };
   check(yard.w * yard.h <= LOS_DENSE ? b.losCache instanceof Int8Array : true, "a small map keeps the typed sight cache");
   const big = makeLosCache(100, 100);

@@ -43,7 +43,7 @@ function fortHub(st, list = BUILT, extra = 2) {
 function baseBattle(st, h, enemy = { kind: "zombies", count: 14, power: 3, name: "the horde" }, context = { through: 150 }) {
   globalThis.window = {};
   try {
-    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: false, ...context } });
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, night: false, ...context } });
   } finally { delete globalThis.window; }
   return st.combat;
 }
@@ -373,7 +373,7 @@ section("The tiers by the numbers");
   for (let i = 0; i < 40; i++) {
     const w = world(seed + i);
     const hh = fortHub(w, BUILT, 0);
-    const res = autoResolveCombat(w, { tile: hh.tile, baseId: hh.id, enemy: { kind: "raiders", count: 5, power: 3 }, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", context: { night: false } });
+    const res = autoResolveCombat(w, { tile: hh.tile, baseId: hh.id, enemy: { kind: "raiders", count: 5, power: 3 }, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", context: { strip: true, night: false } });
     n++; if (res.outcome === "victory") wins++; if (res.tier === "wall") walls++;
     if (!res.tier) { walls = -99; break; }
   }
@@ -399,7 +399,7 @@ section("The battle AI");
   const h2 = fortHub(st2);
   const hd = makeHorde(st2, { tile: h2.tile, size: 300, role: "attack" });
   st2.combat = null;
-  fightNow(st2, { tile: h2.tile, baseId: h2.id, enemy: { kind: "zombies", count: 16, power: 3.5, name: "the horde" }, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", downedLive: 0.4, deploy: true, context: { hordeId: hd.id, through: 250 } });
+  fightNow(st2, { tile: h2.tile, baseId: h2.id, enemy: { kind: "zombies", count: 16, power: 3.5, name: "the horde" }, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", downedLive: 0.4, deploy: true, context: { strip: true, hordeId: hd.id, through: 250 } });
   check(!st2.combat, "headless, a break-in is fought to the end on both maps");
 }
 

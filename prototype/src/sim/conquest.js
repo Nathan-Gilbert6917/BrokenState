@@ -62,6 +62,7 @@ import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
+import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -261,7 +262,10 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
 
 // Their base's map: Medium for a small group up to Extra-large for a big one (battlesize.js SIZES.ASSAULT, by the people
 // living there).
-registerBattleSize("baseAssault", (state, setup) => assaultDims(setup.enemy));
+// Their walled base on land: the fort map (fort.js), sized for the stand-in base built for it; a bridge barricade or a
+// base without walls keeps the wall-line map below.
+const fortAssaultable = (state, setup) => !!(setup.enemy && setup.enemy.walls >= 1) && !(state.tiles[typeof setup.tile === "object" ? setup.tile.id : setup.tile] || {}).bridge && !(setup.context && setup.context.strip);
+registerBattleSize("baseAssault", (state, setup) => (fortAssaultable(state, setup) ? fortSize(assaultBase(state, setup), {}) : assaultDims(setup.enemy)));
 // Their wall line: column 10 of the old 18-wide map, scaled, but never further from your people than the usual
 // distance between the sides (battlesize.js CONTACT): on a big map the base's grounds go on behind it.
 const assaultWallX = (ctx) => Math.min(Math.round((10 * ctx.W) / 18), CONTACT.PLAYER_X + CONTACT.HUMANS[0]);
@@ -270,6 +274,7 @@ const assaultWallX = (ctx) => Math.min(Math.round((10 * ctx.W) / 18), CONTACT.PL
 registerBattleLayout("baseAssault", (b, ctx) => {
   const e = b.setup.enemy || {};
   const walls = e.walls || 0;
+  if (fortAssaultable(ctx.state, b.setup)) return fortAssault(b, ctx, b.setup.context || {}); // fort.js: both phases
   const X = assaultWallX(ctx), mid = Math.floor(ctx.H / 2);
   if (ctx.phase === "map") {
     // Their base on a bridge (combat.js layRoad): the wall across the deck only, the river either side, and tank traps on

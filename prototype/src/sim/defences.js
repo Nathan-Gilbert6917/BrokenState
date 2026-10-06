@@ -28,6 +28,7 @@ import { BOSS_NAMES, ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { siegeWallCut } from "./siege.js";
 import { DECOY_KEYS, THROWABLES } from "./stealth.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
+import { fortable, fortDefence, fortSize } from "./fort.js"; // a walled base on land: the whole battle on one fort map
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
@@ -552,11 +553,13 @@ export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
 // battle opens on the yard map, which sets its own size.
 registerBattleSize("baseDefence", (state, setup) => {
   const base = state.bases.find((x) => x.id === setup.baseId) || null;
+  if (fortable(state, base, setup.context)) return fortSize(base, setup.context || {}); // fort.js: the margin, the wall ring and the yard
   return base && count(base, "walls") > 0 ? [MAP_W, wallMapRows(base)] : [MAP_W, MAP_H];
 });
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
+  if (fortable(ctx.state, base, c)) return fortDefence(b, ctx, base, c); // fort.js: both phases (a bridge barricade keeps the deck map below)
   if (ctx.phase === "map") return deployMap(b, ctx, base, c);
   // Units: the Wallbreakers come in with the dead; then the defenders' posts and the turn of the map.
   for (let i = 0; i < (setup.enemy.bosses || 0); i++) {

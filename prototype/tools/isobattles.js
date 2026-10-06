@@ -81,7 +81,7 @@ export function battles(seed = 42, only = null) {
     const h = hub(st);
     if (!walls) h.buildings = h.buildings.filter((x) => x.type !== "walls" && x.type !== "gate");
     for (const t of build) addBuilding(h, t);
-    st.combat = inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 16, power: 3, name: "the horde" }, ambush: null, canRetreat: true, handler: "isotest", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night, through: 150, floodlit: true } }));
+    st.combat = inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 16, power: 3, name: "the horde" }, ambush: null, canRetreat: true, handler: "isotest", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, night, through: 150, floodlit: true } }));
     return st.combat;
   };
   add("base-wall-night", (st) => {

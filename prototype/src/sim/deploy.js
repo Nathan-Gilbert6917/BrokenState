@@ -31,6 +31,7 @@
 // next to a breach), close fighters wait a few tiles behind the openings and any other shooters stand back in
 // columns 2–6, about 8 tiles from the openings.
 import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say } from "./combat.js";
+import { setFortLit } from "./fort.js"; // the fort map's floodlights (setLit)
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
 import { armoryDefence } from "./defences.js";
@@ -309,6 +310,7 @@ function defaultPositions(b, plan, okCell, W0, H0) {
 // Light a third of the approach (zone: left / center / right as the defenders see it).
 export function setLit(b, zone) {
   if (!b.deploy || !LIT_ROWS[zone]) return;
+  if (b.tier && b.tier.map === "fort") return setFortLit(b, zone); // fort.js: a third of the attack side's margin
   const fr = b.deploy.frame || { w0: MAP_W, h0: MAP_H, fromX: DEPLOY.FLOOD_FROM_X };
   const tf = sideTf(b.deploy.side, fr.w0, fr.h0);
   const lit = new Uint8Array(b.w * b.h);
@@ -328,7 +330,7 @@ const postAt = (b, x, y) => {
   if (k === "gate" || k === "breach") return "gate";
   if (k === "tower") return "tower";
   if (k === "walkway") return "wall";
-  if (b.tier && b.tier.map === "interior") return k === "loft" || k === "roof" ? "perch" : b.tier.indoor && b.tier.indoor[y * b.w + x] ? "inside" : null;
+  if (b.tier && (b.tier.map === "interior" || b.tier.map === "fort")) return k === "loft" || k === "roof" ? "perch" : b.tier.indoor && b.tier.indoor[y * b.w + x] ? "inside" : null;
   return null;
 };
 export function canPlace(b, x, y) {

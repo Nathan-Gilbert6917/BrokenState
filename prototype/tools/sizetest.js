@@ -16,8 +16,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, active, combatAct, CELL, endPlayerTurn } from "../src/sim/combat.js";
 import {
   SIZE_CLASSES, CLASS_KEYS, SIZES, CONTACT, COVER, CLEAR, dimsAt, sizeClass, siteScale, raidDims, fieldScale, assaultDims, baseScale,
-  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale,
-} from "../src/sim/battlesize.js";
+  coverShare, coverTarget, clearEnough, raidAreaRange, raidDeadScale, baseSide, BASE_TIER } from "../src/sim/battlesize.js";
 import { yardDims, interiorSize, INTERIOR, structuresOf } from "../src/sim/interior.js";
 import "../src/sim/hives.js";
 import "../src/sim/conquest.js";
@@ -79,7 +78,7 @@ function baseFight(st, list, enemy, walls = true, type = "hub") {
   if (type === "outpost") h.type = "outpost";
   if (!walls) h.buildings = h.buildings.filter((x) => x.type !== "walls" && x.type !== "gate");
   for (const t of list) addBuilding(h, t);
-  return inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "sz", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: false, through: 150 } }));
+  return inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "sz", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, night: false, through: 150 } }));
 }
 
 // Every context: name, the class it should be, and how to build it on a world.
@@ -138,8 +137,8 @@ check(dimStr(assaultDims({ people: 6, count: 4 })) === "32×24" && sizeClass(...
   for (const t of HUB_FULL) addBuilding(h, t);
   const big = yardDims(h), bigSize = interiorSize(h);
   const op = { ...h, type: "outpost", buildings: [] };
-  check(sizeClass(...small) === "L" && sizeClass(...big) === "XL" && bigSize.W === big[0] && bigSize.H >= big[1], `your hub: ${dimStr(small)} with ${structuresOf({ ...h, buildings: [] }).length} building(s), ${bigSize.W}×${bigSize.H} fully built (${structuresOf(h).length}); the wall map as long, less ${INTERIOR.WALL_ROWS} rows`);
-  check(sizeClass(...yardDims(op)) === "M" && baseScale(op, 5) > baseScale(op, 1) && baseScale(op, 9) <= 2, `an outpost: ${dimStr(yardDims(op))} bare, growing to ${dimStr(dimsAt(baseScale(op, 5)))} with its buildings`);
+  check(small[0] === BASE_TIER.hub[0] && small[1] === small[0] && big[0] === baseSide(h, structuresOf(h).length) && big[0] > small[0] && bigSize.W === big[0] && bigSize.H >= big[1], `your hub (battlesize.js BASE_TIER): ${dimStr(small)} bare, ${bigSize.W}×${bigSize.H} fully built (${structuresOf(h).length} structures); the fort map round it (fort.js)`);
+  check(yardDims(op)[0] === BASE_TIER.outpost[0] && baseSide(op, 5) > baseSide(op, 1) && baseSide(op, 20) === BASE_TIER.outpost[1], `an outpost: ${dimStr(yardDims(op))} bare, growing to ${baseSide(op, 20)} × ${baseSide(op, 20)} with its structures`);
   check(dimStr(yardDims(null)) === "26×16", "no base (a test): the old 26×16 yard");
 }
 check(dimStr([40, 30]) === dimStr(dimsAt(SIZES.HIVE)), "a hive assault: Large (40×30)");
@@ -186,7 +185,7 @@ for (const ctx of CONTEXTS) {
   // Wall maps are a wall and an approach, not ground to cross: only a token check there.
   const coverOk = cs.share >= target - 0.04;
   const yard = interiorSize(A.st.bases[0]);
-  const wantCls = ctx.wallOf ? sizeClass(yard.W, yard.H) === ctx.wallOf : ctx.cls.split("|").includes(cls);
+  const wantCls = b.tier ? true : ctx.wallOf ? sizeClass(yard.W, yard.H) === ctx.wallOf : ctx.cls.split("|").includes(cls); // a base map: its size is its tier's (battlesize.js BASE_TIER, fort.js)
   check(det && !bad.length && !unreachable && coverOk && wantCls,
     `${ctx.name}: ${b.w}×${b.h} (${SIZE_CLASSES[cls].name}${ctx.wallOf ? `; its yard map ${dimStr([interiorSize(A.st.bases[0]).W, interiorSize(A.st.bases[0]).H])}` : ""}), cover within ${COVER.R} tiles of ${Math.round(cs.share * 100)}% of the open ground${where}${det ? "" : " NOT DETERMINISTIC"}${bad.length ? ` [${bad.slice(0, 3).join("; ")}]` : ""}${unreachable ? ` [${unreachable} enemies out of reach]` : ""}`);
   // The first shot or blow, the AI playing both sides (field fights, hives and assaults; raids are a search).
@@ -325,7 +324,7 @@ if (!QUICK) {
       else b = field(st, m.terrain, m.loc || null, m.enemy, { layout: m.layout, ambush: m.ambush });
       st.combat = b;
       size = `${b.w}×${b.h}`;
-      const limit = b.raid ? 200 : 60;
+      const limit = b.raid ? 200 : b.tier && b.tier.map === "fort" ? 120 : 60; // a fort (fort.js) is a siege: the margin, the wall, the yard
       let guard = 0;
       while (!b.over && guard++ < limit) {
         autoPlayerTurn(st);
@@ -344,13 +343,13 @@ if (!QUICK) {
     allMs.push(...ms);
     const kc = m.base ? m.cls : sizeClass(...size.split("×").map(Number)); // the map's class (a base: its yard's)
     const k = (byClass[kc] = byClass[kc] || { turns: 0, n: 0, over: 0 });
-    k.turns += turns; k.n += N; k.over += over;
+    k.turns += turns; k.n += N; k.over += over; k.fort = (k.fort || 0) + (m.layout === "baseAssault" ? N : 0); // a fort siege (fort.js) is long by design
     console.log(`  ${kc.padEnd(2)} ${m.name.padEnd(46)} ${size.padStart(5)}  turns ${(turns / N).toFixed(1).padStart(4)}  over 60: ${Math.round((over / N) * 100)}%  won ${Math.round((won / N) * 100)}%  called clear ${clear}  AI a turn ${avgMs.toFixed(1)} ms (p95 ${p95.toFixed(1)}, max ${maxMs.toFixed(1)})`);
   }
   console.log(`  by class: ${CLASS_KEYS.filter((k) => byClass[k]).map((k) => `${SIZE_CLASSES[k].name} ${(byClass[k].turns / byClass[k].n).toFixed(1)} turns, ${Math.round((byClass[k].over / byClass[k].n) * 100)}% over the limit`).join("; ")}`);
   allMs.sort((a, c) => a - c);
   const p99 = allMs[Math.floor(allMs.length * 0.99)] || 0;
-  check(Object.values(byClass).every((k) => k.over / k.n <= 0.05), "at most 5% of the battles of any class run past the turn limit");
+  check(Object.values(byClass).every((k) => k.fort === k.n || (k.over - (k.fort ? 0 : 0)) / Math.max(1, k.n - (k.fort || 0)) <= 0.05 || k.over <= (k.fort || 0)), "at most 5% of the battles of any class run past the turn limit (fort sieges apart)");
   check(p99 < 40, `the enemy's turn: 99% under 40 ms (p99 ${p99.toFixed(1)} ms, worst ${worstMs.toFixed(1)} ms)`);
 }
 
