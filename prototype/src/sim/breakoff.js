@@ -25,7 +25,7 @@
 // road conflicts, ambushes, rescues, outsider fights, group-base assaults. A base defence (defences.js, raids)
 // does not use it: breakOff below is the helper for "abandon the base" there.
 import { RETREAT, downChance } from "./combat.js";
-import { hurt, isNight, skill, log, factionById, survivorById } from "./world.js";
+import { hurt, isNight, skill, log, factionById, survivorById, localId } from "./world.js";
 import { armorMult, armorPower } from "./inventory.js";
 import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
@@ -418,7 +418,7 @@ export function fightForecast(state, p, people, { odds, enemy, ambush = null }, 
   if (!members.length) return null;
   const pol = validPolicy(policy) || "never";
   const model = fightModel(state, members, { win: odds, enemy, ambush, party: p, capture: 0 });
-  const seed = (members.reduce((a, s) => (a * 31 + s.id) >>> 0, 7) ^ Math.round(odds * 1000) ^ (enemy.count * 7919)) >>> 0;
+  const seed = (members.reduce((a, s) => (a * 31 + localId(state, s.id)) >>> 0, 7) /* localId: ids are process-wide */ ^ Math.round(odds * 1000) ^ (enemy.count * 7919)) >>> 0;
   const tally = (pl) => {
     const rng = new Rng(seed);
     const t = { win: 0, retreat: 0, lost: 0, home: 0, deaths: 0 };
