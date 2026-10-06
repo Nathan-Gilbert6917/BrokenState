@@ -138,7 +138,7 @@ export const bossBattleCanvas = (kind) => cached(`boss:${kind}`, () => (kind ===
 
 // ---------- a hive's growths on the map (sim/hivetech.js) ----------
 // Small organic structures in the hive's flesh and bone, each with one thing that tells it apart: the pit's
-// bubbling pool, the brood chamber's amber egg sacs, the feeding grounds' bones, the warren's holes with red eyes,
+// bubbling pool, the brood chamber's amber egg sacs, the worm cyst's pale veined bladder, the feeding grounds' bones, the warren's holes with red eyes,
 // the brute pit's grey hulk in a deep hole, the spitter sac's green bladders, the screamer spire's tower with its
 // open mouth, the crawler burrow's low mound of holes and grasping hands, the den's arch of ribs over a dark cave,
 // the mutation vat's glowing magenta brew. Withered (its hive destroyed): grey and black.
@@ -159,6 +159,15 @@ function paintGrowth(kind) {
       p.disc(8, 10, 6.5, 3, FLESH);
       for (const [x, y, r] of [[5, 7, 2.6], [10, 6, 3], [8, 9, 2.4]]) { p.disc(x, y, r, r, "#e8b46a"); p.set(x - 1, y - 1, "#fff0c0"); p.set(x, y + 1, "#b07a3a"); }
       p.set(3, 10, "#8a1c22"); p.set(13, 10, "#8a1c22");
+      break;
+    }
+    case "cyst": {
+      // The worm cyst: a pale, swollen bladder veined red, worms coiled on its skin and in the pool round it.
+      base();
+      p.disc(8, 10, 6, 2.6, FLESH);
+      p.disc(8, 7, 5, 4.5, "#c9c0a0"); p.disc(7, 6, 2.5, 2, "#e2dcc0");
+      for (const [x, y] of [[5, 8], [10, 5], [11, 9]]) { p.set(x, y, "#8a1c22"); p.set(x + 1, y + 1, "#8a1c22"); }
+      for (const [x, y] of [[3, 11], [6, 12], [12, 11], [9, 3]]) { p.set(x, y, "#f0e4c0"); p.set(x + 1, y, "#cdbf94"); }
       break;
     }
     case "feeding": {
@@ -246,7 +255,7 @@ function wither(p) {
 }
 export const growthCanvas = (kind, withered = false) => cached(`growth:${kind}:${+!!withered}`, () => (withered ? wither(paintGrowth(kind)) : paintGrowth(kind)));
 
-// ---------- the special dead on the battle map (sim/zombietypes.js; runners and brutes are sprites.js variants) ----------
+// ---------- the special dead on the battle map (sim/zombietypes.js; runners and brutes are sprites.js variants; the Carrier and its worm swarm sim/carriers.js) ----------
 function paintSpitter() {
   const p = painter(22, 26);
   const SKIN = "#8ea36b", DARK = "#5f7046", ACID = "#9ad63a", ACID_D = "#4a7a18", CLOTH = "#4a4f44";
@@ -303,4 +312,31 @@ function paintShepherd() {
   for (const [x, y] of [[1, 2], [0, 8], [21, 9], [2, 14]]) p.set(x, y, EYE);           // its pull on the pack
   return p;
 }
-export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (kind === "spitter" ? paintSpitter() : kind === "screamer" ? paintScreamer() : kind === "shepherd" ? paintShepherd() : paintCrawler()));
+// The Carrier (sim/carriers.js): bloated and pale, the belly split where the worms push out, the head small and
+// sunk on the swollen body, worms trailing from the splits and the mouth.
+function paintCarrier() {
+  const p = painter(22, 26);
+  const SKIN = "#c9c0a0", DARK = "#9a8e6c", LIT = "#e2dcc0", SPLIT = "#5c1e1a", WORM = "#f0e4c0", WORM_D = "#cdbf94", CLOTH = "#5a5648";
+  p.rect(7, 20, 9, 24, CLOTH); p.rect(12, 20, 14, 24, shade(CLOTH, -0.25));          // short legs under the weight
+  p.rect(6, 25, 9, 25, "#2a2622"); p.rect(12, 25, 15, 25, "#2a2622");
+  p.disc(11, 14, 8, 7.5, SKIN); p.disc(9, 12, 4.5, 4, LIT); p.rect(16, 11, 18, 19, DARK); // the swollen body
+  for (const [x, y] of [[6, 16], [12, 17], [15, 12]]) { p.rect(x, y, x + 2, y, SPLIT); p.set(x + 1, y - 1, SPLIT); } // splits in the skin
+  for (const [x, y] of [[7, 17], [13, 18], [16, 13], [5, 15]]) { p.set(x, y, WORM); p.set(x - 1, y + 1, WORM_D); } // worms pushing out
+  p.rect(8, 2, 13, 7, SKIN); p.rect(8, 2, 13, 2, DARK);                                // a small head sunk on it
+  p.set(9, 4, "#e8e07a"); p.set(12, 4, "#e8e07a");
+  p.rect(9, 6, 12, 6, SPLIT); p.set(10, 7, WORM); p.set(10, 8, WORM_D); p.set(12, 7, WORM); // worms from the mouth
+  p.rect(2, 11, 4, 17, SKIN); p.set(2, 18, DARK); p.rect(18, 12, 20, 16, DARK);      // stubby arms
+  return p;
+}
+// A worm swarm: a low, writhing mass of pale worms with a few raised heads.
+function paintSwarm() {
+  const p = painter(22, 26);
+  const WORM = "#f0e4c0", WORM_D = "#c4b48a", WORM_L = "#fff8e0", SLIME = "#7a6a48";
+  p.disc(11, 22, 9.5, 3, SLIME);
+  p.disc(11, 21, 8, 2.6, WORM_D);
+  for (let i = 0; i < 14; i++) { const x = 3 + ((i * 7) % 17), y = 19 + ((i * 3) % 5); p.set(x, y, WORM); p.set(x + 1, y, i % 2 ? WORM_L : WORM); }
+  for (const [x, h] of [[5, 4], [9, 6], [13, 5], [17, 3], [11, 3]]) { p.rect(x, 21 - h, x, 20, WORM); p.set(x + 1, 21 - h, WORM); p.set(x + 1, 20 - h, "#5c1e1a"); } // raised heads
+  return p;
+}
+const ZPAINT = { spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm };
+export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (ZPAINT[kind] || paintCrawler)());

@@ -1,6 +1,6 @@
 <section id="the-dead">
   <h2>Enemy types: the dead</h2>
-  <p class="lede">The dead are the constant pressure of Broken State: they swarm out of the ground on the road, guard every hive, roam the State Map as hordes and batter your walls. Ordinary dead get tougher with the infection of the ground they stand on. From the end of the first year, the hives also breed <b>special dead</b> (runners, brutes, spitters, screamers, crawlers) that each need a different answer. Two <b>bosses</b> top the threat: the Wallbreaker that leads hordes against bases, and the Broodmother inside every hive.</p>
+  <p class="lede">The dead are the constant pressure of Broken State: they swarm out of the ground on the road, guard every hive, roam the State Map as hordes and batter your walls. Ordinary dead get tougher with the infection of the ground they stand on. From their first months the hives also breed <b>special dead</b> (Carriers first, then runners, brutes, spitters, screamers, crawlers) that each need a different answer. Two <b>bosses</b> top the threat: the Wallbreaker that leads hordes against bases, and the Broodmother inside every hive.</p>
 
   <h3>Ordinary dead <span class="status built">Built</span></h3>
   <p>Every zombie on a battle map is one unit type. Its strength is a single number called <b>power</b> (p). Power is set by where you meet it:</p>
@@ -53,6 +53,26 @@
   <h3>The special dead (hive-bred) <span class="status built">Built</span></h3>
   <p>A hive that has grown the right structure (see <i>Hives &amp; spread</i>) puts special dead into every horde it makes. Each special is an ordinary zombie of the same power with multipliers on top. In battle they get a coloured ground ring and a letter. In fights resolved by the numbers each counts by its <b>weight</b>; at your walls each presses by its <b>wall</b> weight. The numbers below are at power 2 (a typical break-in).</p>
   <div class="cards">
+    <article class="card" data-sprite="special/carrier">
+      <h4>Carrier <span class="status built">Built</span></h4>
+      <p>The dead carry the worm; a Carrier is one of them so full of it that it is swollen. The first special dead a hive breeds. A human body (anyone killed: your people, raiders, soldiers, neutrals; never one of the dead, never someone only down) within 2 tiles of it stirs, and gets up as one of the dead at the start of the enemy turn after your next turn: named after the person ("Dana (turned)"), still wearing what they wore (armour takes its share of every hit; no guns), going for every living thing. An aware Carrier walks to a body within 8 tiles when none of the living is next to it. Killed, it bursts into a <b>worm swarm</b> (below). AI target priority ×2.</p>
+      <dl>
+        <dt>Health</dt><dd>×1.5 (44 at p2)</dd><dt>Damage</dt><dd>×0.8 (8–13)</dd><dt>Speed</dt><dd>2.5 tiles an action</dd>
+        <dt>Share</dt><dd>6%</dd><dt>Wall / fight weight</dt><dd>1.1 / 1.5</dd>
+        <dt>Bred by</dt><dd>Worm cyst (tier 0, after the hive's first pit)</dd>
+        <dt>Counter</dt><dd>Shoot it before it reaches the bodies, and not next to your people. A stirring body (a pale "!") burns on a fire, or one of yours next to it crushes the skull (U, 1 action, silent).</dd>
+        <dt>Their things</dt><dd>Never duplicated or lost. One of yours who got up keeps their things as anyone who dies (the death site, or the armory at a base): put down and the battle won, their body is looted as usual; still walking at the end, the things stay at the death site. Anyone else is one body, the risen one's, with the person's kit. In a raid the body's container goes with the risen.</dd>
+      </dl>
+    </article>
+    <article class="card" data-sprite="special/swarm">
+      <h4>Worm swarm <span class="status built">Built</span></h4>
+      <p>What comes out of a Carrier that dies, on the tile where it fell. Quick and weak, but most bullets go straight through it. Anyone it kills gets up as one of the dead after a turn, Carrier or no Carrier (one of yours it brings down only if they bleed out). With no one to go to it sinks into the ground after 6 enemy turns, and it leaves no body. No hive breeds it.</p>
+      <dl>
+        <dt>Health</dt><dd>×0.7 (20 at p2)</dd><dt>Damage</dt><dd>×0.6 (6–10)</dd><dt>Melee aim</dt><dd>+15</dd><dt>Speed</dt><dd>4 tiles</dd>
+        <dt>What a hit does</dt><dd>bullets and bolts 35%, blades 90%, blows 125%, blasts 150%; fire burns it 2.5× as hot</dd>
+        <dt>Counter</dt><dd>Fire, a blast, clubs and boots; or keep away until it sinks.</dd>
+      </dl>
+    </article>
     <article class="card" data-sprite="zombie/runner">
       <h4>Runner <span class="status built">Built</span></h4>
       <p>Very fast: crosses the battle map in a turn. A horde with 10%+ runners moves a quarter faster on the State Map.</p>
@@ -303,6 +323,11 @@
       <p>Swollen amber sacs where the dead are kept.</p>
       <dl><dt>Tier</dt><dd>0</dd><dt>Cost / days</dt><dd>20 / 15</dd><dt>Effect</dt><dd>guard kept 40 bigger; from tier 2, one more horde out at once</dd></dl>
     </article>
+    <article class="card" data-sprite="growth/cyst">
+      <h4>Worm cyst <span class="status built">Built</span></h4>
+      <p>A pale, swollen bladder of the worm, veined red. The first special dead a hive breeds: a young hive grows its first biomass pit, then the cyst (about the second month).</p>
+      <dl><dt>Tier</dt><dd>0</dd><dt>Cost / days</dt><dd>18 / 15</dd><dt>Breeds</dt><dd>Carriers</dd></dl>
+    </article>
     <article class="card" data-sprite="growth/feeding">
       <h4>Feeding grounds <span class="status built">Built</span></h4>
       <p>A field of bones and offal.</p>
@@ -344,21 +369,21 @@
       <dl><dt>Tier</dt><dd>4</dd><dt>Cost / days</dt><dd>60 / 60</dd><dt>Effect</dt><dd>the hive's special dead are elite (×1.3 health, ×1.2 damage)</dd></dl>
     </article>
   </div>
-  <div class="gallery" data-sprites="growth/pit-withered growth/brood-withered growth/feeding-withered growth/warren-withered growth/brutepit-withered growth/sac-withered growth/spire-withered growth/burrow-withered growth/den-withered growth/vat-withered"></div>
+  <div class="gallery" data-sprites="growth/pit-withered growth/brood-withered growth/cyst-withered growth/feeding-withered growth/warren-withered growth/brutepit-withered growth/sac-withered growth/spire-withered growth/burrow-withered growth/den-withered growth/vat-withered"></div>
 
   <h3>Tiers: when each growth opens <span class="status built">Built</span></h3>
   <p>A hive may grow up to its tier. Tier t opens once the game day passes TIER_DAY[t] × (1 to 1.35, fixed per hive) <i>and</i> the hive is TIER_AGE[t] days old, so a hive that rises late starts again at the bottom.</p>
   <table class="data">
     <thead><tr><th>Tier</th><th>Game day</th><th>Hive age</th><th>Opens</th><th>Roughly</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td>0</td><td>0</td><td>Biomass pit, Brood chamber</td><td>from the start</td></tr>
+      <tr><td>0</td><td>0</td><td>0</td><td>Biomass pit, Brood chamber, Worm cyst (Carriers)</td><td>from the start (the cyst after the first pit)</td></tr>
       <tr><td>1</td><td>120–162</td><td>20</td><td>Feeding grounds, Runner warren</td><td>month 4–5</td></tr>
       <tr><td>2</td><td>450–608</td><td>90</td><td>Brute pit, Spitter sac</td><td>year 1.2–1.7</td></tr>
       <tr><td>3</td><td>1,100–1,485</td><td>200</td><td>Screamer spire, Crawler burrow, Wallbreaker den</td><td>year 3–4</td></tr>
       <tr><td>4</td><td>2,200–2,970</td><td>400</td><td>Mutation vat</td><td>year 6–8</td></tr>
     </tbody>
   </table>
-  <p><b>The hive's mind.</b> Each day after its income, a hive first rebuilds its guard, then picks what to grow (a little random): income while it is young (under 180 days) or poor (3 a day or less); the brood chamber strongly when it was attacked in the last 60 days (fires, a storm, a growth burned); feeding grounds more when its cluster is small; a kind of dead its cluster-mates do not breed yet over one they do; the den and the vat high once open. A growth it cannot afford yet it saves for, sending out no new roamers for up to 20 days. Border hordes carry the special dead of the era from day 900.</p>
+  <p><b>The hive's mind.</b> Each day after its income, a hive first rebuilds its guard, then picks what to grow (a little random): income while it is young (under 180 days) or poor (3 a day or less); the brood chamber strongly when it was attacked in the last 60 days (fires, a storm, a growth burned); feeding grounds more when its cluster is small; a kind of dead its cluster-mates do not breed yet over one they do; a spawner of tier 0 (the worm cyst) only after its first pit; the den and the vat high once open. A growth it cannot afford yet it saves for, sending out no new roamers for up to 20 days. Border hordes carry the special dead of the era from day 900.</p>
 
   <h3>Fighting growths <span class="status built">Built</span></h3>
   <p>The <b>Burn the growth</b> mission (a team on a growth's tile) offers:</p>

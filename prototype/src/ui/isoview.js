@@ -27,6 +27,7 @@ import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
+import { stirring } from "../sim/carriers.js"; // a body the worm is in
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1538,7 +1539,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0" };
 const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
@@ -1555,7 +1556,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (!cv) return;
   let facing = unitFacing(b, t);
   if (FR.r === 1 || FR.r === 2) facing = -facing;
-  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" ? 1.15 : t.ztype === "crawler" ? 0.8 : 1;
+  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1;
   const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -1607,7 +1608,16 @@ function drawGhost(ctx, state, b, q, H) {
 // Health, action pips, status tags, the kind of a hive's special dead, height, the hit chance.
 function drawLabels(ctx, b, s, H) {
   const t = s.t;
-  if (t.dead) return;
+  if (t.dead) {
+    // A body the worm is in (sim/carriers.js): a pale "!" over it until it gets up, burns or its skull is crushed.
+    if (stirring(t)) {
+      const [X, Y0] = feet(s);
+      ctx.font = `800 ${Math.max(12, Math.round(5 * FR.S))}px Segoe UI, sans-serif`;
+      ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
+      ctx.strokeText("!", X, Y0 - 8 * FR.S); ctx.fillStyle = ZRING.carrier; ctx.fillText("!", X, Y0 - 8 * FR.S);
+    }
+    return;
+  }
   const S = FR.S, [X, Y0] = feet(s);
   const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1;
   const top = t.down ? Y0 - 10 * S : Y0 - UNIT_H * big * S;
