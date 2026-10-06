@@ -52,6 +52,16 @@ export const SIZES = {
   // Your own base's yard map: [scale, from, per] by type: the scale grows a step from `from` buildings over `per` more.
   BASE: { hub: [L, 3, 6], outpost: [M, 1, 4] },
 };
+// Your own base's yard map by its tier (interior.js yardDims): a square, [from, to, structuresFrom, structuresSpan]: a
+// shelter 25 × 25; an outpost 40 × 40 growing to 60 × 60 over its first 10 structures; the main hub 64 × 64 growing to
+// 100 × 100 as it fills with buildings. The wall map (deploy.js) keeps its 18 columns and takes the yard's rows.
+export const BASE_TIER = { shelter: [25, 25, 0, 1], outpost: [40, 60, 1, 10], hub: [64, 100, 3, 14] };
+export function baseSide(base, nStructures) {
+  if (!base) return BASE_TIER.outpost[0];
+  const [from, to, n0, span] = BASE_TIER[base.tier === 0 ? "shelter" : base.type === "hub" ? "hub" : "outpost"];
+  const side = from + (to - from) * clamp((nStructures - n0) / span, 0, 1);
+  return from === to ? from : even(side);
+}
 
 // Where the two sides start (combat.js createBattle): your people within PLAYER_X columns of the west edge, the
 // enemy HUMANS (people) or DEAD tiles from their middle, at most CONE off the line east (dx ≥ CONE × distance); an

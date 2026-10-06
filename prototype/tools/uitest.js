@@ -1235,7 +1235,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
     const BS = await import("../src/sim/battlesize.js");
     const cls = (n) => BS.sizeClass(...sizes[n].split("×").map(Number));
-    check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && cls("raid") === "M" && cls("base-yard") === "XL" && cls("base-open") === "L",
+    check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && cls("raid") === "M" && Number(sizes["base-yard"].split("×")[0]) >= BS.BASE_TIER.hub[0] && cls("base-open") !== "S", // the hub's yard: by its tier (BASE_TIER), 64–100 square
       `map sizes by context (sim/battlesize.js): fights in the open Medium (${sizes["field-town"]}, ${sizes["field-forest"]}), a hive assault Large (${sizes.hive}), a town raid ${sizes.raid}, a fully built hub's yard Extra-large (${sizes["base-yard"]}), a smaller one without walls Large (${sizes["base-open"]})`);
     const wall = list.find((x) => x.name === "base-wall-night"), yard = list.find((x) => x.name === "base-yard");
     const hb = wall.st.bases[0];

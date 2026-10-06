@@ -45,7 +45,7 @@ import { attackSide, fromTileOf, sideTf, sideUntf, setLit, DEPLOY, gateHp, wallH
 import { armoryDefence, tierMults, TIERS } from "./defences.js";
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
-import { dimsAt, baseScale, densify } from "./battlesize.js";
+import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
@@ -55,6 +55,7 @@ import { siegeWallCut } from "./siege.js";
 // that the yard is topped up to (crates, barrels, hay: battlesize.js densify).
 export const INTERIOR = {
   W: 26, H: 16, H_GROW: 2, H_TRIES: 7, WALL_ROWS: 3, WALL_X: 24, YARD_X: 15, BUILD_X: [2, 19], EVAC: 2, SHIFT_X: 12, YARD_COVER: 0.72,
+  MIN_SIDE: 25, // a base's yard is never smaller than this (a shelter: battlesize.js BASE_TIER)
   DOOR_HP: 45, WIDE_DOOR_HP: 60, WINDOW_HP: 20,
   BREACH_MIN: 3, BREACH_FRAC: 0.25, WAVE: 3, WAVE_PER_OPENING: 2, YARD_LOST: 1.5,
   REDEPLOY: 12, REDEPLOY_GAP: 3,
@@ -122,8 +123,9 @@ export function yardGeom(W, wide = false) {
 // A base's yard map before it grows for its buildings: its size class's (battlesize.js baseScale), never under 26 × 16.
 export function yardDims(base) {
   if (!base) return [INTERIOR.W, INTERIOR.H];
-  const [w, h] = dimsAt(baseScale(base, structuresOf(base).length));
-  return [Math.max(INTERIOR.W, w), Math.max(INTERIOR.H, h)];
+  // By the base's tier (battlesize.js BASE_TIER): a shelter 25 × 25, an outpost 40–60, the main hub 64–100, square.
+  const side = baseSide(base, structuresOf(base).length);
+  return [Math.max(INTERIOR.MIN_SIDE, side), Math.max(INTERIOR.MIN_SIDE, side)];
 }
 // The map's size for a base: its class's, as many H_GROW rows taller as it takes to hold all its buildings (the same
 // base and buildings, the same size). { W, H }.

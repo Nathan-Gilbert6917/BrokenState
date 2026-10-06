@@ -10,7 +10,7 @@
 // Usage: node tools/bridgetest.js [seed] [runs]
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
-import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash, LOS_DENSE, makeLosCache } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { LOCKS, openOdds, lockedNear } from "../src/sim/locks.js";
 import { GEAR } from "../src/sim/data.js";
@@ -19,6 +19,8 @@ import { newItem } from "../src/sim/inventory.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { DEPLOY } from "../src/sim/deploy.js";
 import { makeHorde, hordesHour } from "../src/sim/hordes.js";
+import { yardDims, structuresOf } from "../src/sim/interior.js";
+import { baseSide } from "../src/sim/battlesize.js";
 
 const seed0 = Number(process.argv[2] || 11);
 const runs = Number(process.argv[3] || 6);
@@ -413,6 +415,36 @@ for (let i = 0; i < runs; i++) {
     for (const id of crew) { const s = state.survivors.find((x) => x.id === id); if (s) s.location = { kind: "base", baseId: h.id }; }
   }
   check(maps > 0 && single === 0 && multi > 0, `cars on ${maps} site maps: ${multi} cells of 2 × 3–4 cars, ${single} single-cell cars`);
+}
+
+// ---- base yard maps by tier (battlesize.js BASE_TIER): a shelter 25 × 25, an outpost 40 → 60, the main hub 64 → 100 ----
+{
+  const state = createWorld({ seed: seed0 + 82, factionCount: 6 });
+  const h = hub(state);
+  const camp = { ...h, id: 7777, tier: 0, buildings: [], construction: [] };
+  const [cw, ch] = yardDims(camp);
+  check(cw === 25 && ch === 25, `a shelter's yard is 25 × 25 (${cw} × ${ch})`);
+  const outpost = { ...h, id: 7778, type: "outpost", buildings: [], construction: [] };
+  const [ow, oh] = yardDims(outpost);
+  check(ow === 40 && oh === 40, `a bare outpost's yard is 40 × 40 (${ow} × ${oh})`);
+  check(baseSide(outpost, 11) === 60 && baseSide(outpost, 6) === 50, `an outpost's yard grows to 60 × 60 over its first 10 structures (${baseSide(outpost, 6)} at 6, ${baseSide(outpost, 11)} at 11)`);
+  const [hw, hh] = yardDims({ ...h, buildings: [], construction: [] });
+  check(hw === 64 && hh === 64, `a bare main hub's yard is 64 × 64 (${hw} × ${hh})`);
+  check(baseSide(h, 17) === 100 && baseSide(h, 10) === 82, `the main hub's yard grows to 100 × 100 as it fills (${baseSide(h, 10)} at 10 structures, ${baseSide(h, 17)} at 17)`);
+  // The hub's wall map keeps 18 columns and takes the yard's rows; a yard over 5,000 cells gets a sparse sight cache.
+  for (const s of atBase(state, h.id)) s.health = 100;
+  for (const t of ["walls", "walls", "gate", "watchtower", "bunkhouse", "storehouse", "infirmary", "well", "garage", "radio", "common_room", "cellar", "ammo_bench", "cistern", "rain_catcher", "floodlights"]) addBuilding(h, t);
+  const [yw, yh] = yardDims(h);
+  check(yw >= 80 && yw === yh, `a well built hub's yard is big and square (${yw} × ${yh}, ${structuresOf(h).length} structures)`);
+  globalThis.window = {};
+  let b;
+  try { b = state.combat = createBattle(state, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 10, power: 3 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseDefence", deploy: true, context: { through: 50 } }); } finally { delete globalThis.window; }
+  check(b.w === 18 && b.h >= yh - 3 - 1 && b.h <= yh + 20, `the hub's wall map keeps 18 columns and takes the yard's rows (${b.w} × ${b.h})`);
+  const yard = { w: yw, h: yh };
+  check(yard.w * yard.h <= LOS_DENSE ? b.losCache instanceof Int8Array : true, "a small map keeps the typed sight cache");
+  const big = makeLosCache(100, 100);
+  check(big instanceof Map && typeof big.fill === "function", "a 100 × 100 map gets a sparse sight cache with fill()");
+  state.combat = null;
 }
 
 console.log(`\n${bridgesSeen} worlds with bridges; ${carBoxes} road cars as containers, ${lockedCars} locked (${carBoxes ? Math.round((100 * lockedCars) / carBoxes) : 0}%); glass broken ${glassTries}×, woke the dead ${glassWoke}×; AI bridge barricades ${aiBridges} in ${worldsWithAiBridge} world(s)`);

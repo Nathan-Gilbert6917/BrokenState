@@ -524,7 +524,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   const litCount = () => fb.lit.reduce((a, v) => a + v, 0);
   const center = litCount();
   combatAct(fw, { type: "flood", zone: "left" });
-  check(fb.floodAim === DEPLOY.FLOOD_NIGHT && center > 0 && fb.deploy.lit === "left" && fb.lit[0 * fb.w + 15] === 1 && fb.lit[12 * fb.w + 15] === 0, `floodlights: +${fb.floodAim} at night in the lit third, aimed left now`);
+  check(fb.floodAim === DEPLOY.FLOOD_NIGHT && center > 0 && fb.deploy.lit === "left" && fb.lit[0 * fb.w + 15] === 1 && fb.lit[Math.floor(fb.h / 2) * fb.w + 15] === 0, `floodlights: +${fb.floodAim} at night in the lit third, aimed left now`);
   // Headless and the autopilot: default posts, straight to the fight.
   const hw = world(seed + 22);
   const hhb = hub(hw);

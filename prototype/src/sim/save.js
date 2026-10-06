@@ -24,6 +24,7 @@ import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
+import { makeLosCache, SparseLos } from "./combat.js"; // the line-of-sight cache of a loaded battle (sparse on a big yard)
 
 export const SAVE_FORMAT = "broken-state-save";
 // Bump when the state changes in a way an older save cannot just be loaded into, and add a migration below.
@@ -119,10 +120,13 @@ export function deserializeState(save) {
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points
   // them all the same (a save edited by hand, an older encoder), and the "away" flags follow the active floor.
   const b = state.combat;
+  // A big yard's sparse line-of-sight cache (combat.js SparseLos) comes back as a plain Map: a fresh one (it is only a cache).
+  if (b && b.losCache instanceof Map && !(b.losCache instanceof SparseLos)) b.losCache = makeLosCache(b.w, b.h);
+  for (const F of (b && b.floors) || []) if (F.losCache instanceof Map && !(F.losCache instanceof SparseLos)) F.losCache = null;
   if (b && Array.isArray(b.floors) && b.floors.length) {
     const F = b.floors[b.floor || 0] || b.floors[0];
     b.floor = b.floors.indexOf(F);
-    if (!F.losCache) F.losCache = new Int8Array(b.w * b.h * b.w * b.h);
+    if (!F.losCache) F.losCache = makeLosCache(b.w, b.h);
     b.cells = F.cells; b.reach = F.reach; b.losCache = F.losCache;
     for (const u of b.units || []) u.away = (u.f || 0) !== b.floor;
   }

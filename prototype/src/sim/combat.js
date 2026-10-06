@@ -113,7 +113,7 @@ export function transformBattle(b, side) {
   for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) { const [nx, ny] = tf(x, y); cells[ny * nw + nx] = b.cells[y * W0 + x]; }
   W = nw; H = nh;
   b.w = nw; b.h = nh; b.cells = cells;
-  b.losCache = new Int8Array(W * H * W * H);
+  b.losCache = makeLosCache(W, H);
   for (const u of b.units) { const [nx, ny] = tf(u.x, u.y); u.x = nx; u.y = ny; }
   const p = b.units.find((u) => u.side === "player");
   b.reach = flood(cells, p ? p.x : 0, p ? p.y : 0);
@@ -125,7 +125,7 @@ export function transformBattle(b, side) {
 export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   W = w; H = h;
   b.w = w; b.h = h; b.cells = cells;
-  b.losCache = new Int8Array(W * H * W * H);
+  b.losCache = makeLosCache(W, H);
   b.reach = flood(cells, rx, ry);
   b.acid = []; // acid pools (acid.js) stay on the old map
   b.corpses = []; // and the bodies lying about (sleepers.js)
@@ -145,7 +145,7 @@ export function setFloor(b, f) {
   bindDims(b);
   b.floor = f;
   const F = b.floors[f];
-  if (!F.losCache) F.losCache = new Int8Array(W * H * W * H); // made when a floor is first looked at (saves stay smaller)
+  if (!F.losCache) F.losCache = makeLosCache(W, H); // made when a floor is first looked at (saves stay smaller)
   b.cells = F.cells; b.reach = F.reach; b.losCache = F.losCache;
   for (const u of b.units) u.away = (u.f || 0) !== f;
   return true;
@@ -1017,10 +1017,22 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 // line passes below its top: a blocking cell's top is its tall (1 by default; a base's wall c.t), a raised floor's
 // its height (a walkway, a roof). So someone on a walkway or a roof sees over a wall near them, but not into the
 // dead ground right behind a wall near the target; a watchtower sees over almost everything one storey high.
+// The line-of-sight cache: (W·H)² entries, 0 unknown, 1 clear, 2 blocked. A typed array up to LOS_DENSE cells; a
+// bigger map (the main hub's yard, up to 100 × 100: battlesize.js BASE_TIER) gets a sparse one with the same fill().
+export const LOS_DENSE = 5000;
+// The sparse one is a Map with the typed array's fill() (every `losCache.fill(0)` clears it). A save writes it as a
+// plain Map; save.js makes a fresh one on load (it is only a cache).
+export class SparseLos extends Map { fill() { this.clear(); } }
+export function makeLosCache(w, h) {
+  const n = w * h;
+  return n <= LOS_DENSE ? new Int8Array(n * n) : new SparseLos();
+}
+const losGet = (cache, i) => (cache instanceof Map ? cache.get(i) || 0 : cache[i]);
+const losSet = (cache, i, v) => { if (cache instanceof Map) cache.set(i, v); else cache[i] = v; };
 export function los(b, x0, y0, x1, y1) {
   bindDims(b);
   const a = idx(x0, y0), c = idx(x1, y1);
-  const v = b.losCache[a * W * H + c];
+  const v = losGet(b.losCache, a * W * H + c);
   if (v) return v === 1;
   const dx = x1 - x0, dy = y1 - y0;
   const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
@@ -1036,7 +1048,8 @@ export function los(b, x0, y0, x1, y1) {
     const fx = px - cx, fy = py - cy;
     if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) clear = false;
   }
-  b.losCache[a * W * H + c] = b.losCache[c * W * H + a] = clear ? 1 : 2;
+  losSet(b.losCache, a * W * H + c, clear ? 1 : 2);
+  losSet(b.losCache, c * W * H + a, clear ? 1 : 2);
   return clear;
 }
 
@@ -1453,7 +1466,7 @@ export function createBattle(state, setup) {
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
     ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
-    losCache: new Int8Array(W * H * W * H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
+    losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
   b.reinfMax = Math.round(b.infection * 5);
   b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
@@ -3281,7 +3294,7 @@ export function createRaid(state, setup) {
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
     ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: 0, over: false, result: null, acted: true, queue: [],
-    losCache: new Int8Array(W * H * W * H), rng,
+    losCache: makeLosCache(W, H), rng,
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off

@@ -26,7 +26,7 @@ import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName,
 } from "./parties.js";
-import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor } from "./combat.js";
+import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec } from "./buildingmaps.js";
 import { raidEnemies } from "./scavenge.js";
 import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
@@ -537,7 +537,7 @@ export function restoreBuilding(state, b, snap) {
     setFloor(b, 0);
   } else {
     b.cells = snap.cells.map((x) => ({ ...x }));
-    b.losCache = new Int8Array(b.w * b.h * b.w * b.h);
+    b.losCache = makeLosCache(b.w, b.h);
     floodReach(b, z.x0 + 1, z.y0 + 1);
   }
   b.enemyStart = b.units.filter((u) => u.side === "enemy" && !u.dead).length;
