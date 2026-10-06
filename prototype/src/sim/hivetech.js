@@ -6,14 +6,15 @@
 // resources when it is started and takes days to grow (GROWTHS: a biomass pit 12 for 10 days ... a mutation vat 60
 // for 60), one at a time, at least TECH.GAP days apart, TECH.MAX per hive. A grown one gives its hive: income (pits
 // +1 a day, feeding grounds ×1.5), a bigger guard and one more horde out (the brood chamber), a kind of special dead
-// in its hordes (runner warren, brute pit, spitter sac, screamer spire, crawler burrow), Wallbreakers (the den:
+// in its hordes (worm cyst, runner warren, brute pit, spitter sac, screamer spire, crawler burrow, Shepherd's fold), Wallbreakers (the den:
 // with HIVE.BOSS_DEN they come from nowhere else), elite special dead (the mutation vat). A screamer spire also
 // lets its hive attack bases TECH.SPIRE_RANGE farther away and calls wandering dead within TECH.SPIRE_CALL into its
 // guard.
 //
 // The hive's mind (growthWish, every day after its income): what it may grow is set by its tier (hiveTier: the game
 // day and the hive's own age, TECH.TIER_DAY / TIER_AGE, stretched per hive by up to TECH.JITTER), so a 10–15 year
-// game sees runners in the first year, brutes and spitters in the second, screamers, crawlers and Wallbreakers
+// game sees Carriers from the first months (the worm cyst is tier 0: the first special dead, after the hive's first
+// pit), runners in the first year, brutes and spitters in the second, screamers, crawlers and Wallbreakers
 // from about the third and elite dead late. Among those it weighs: income first while it is young or poor, the
 // brood chamber when it was attacked within TECH.THREAT_DAYS (fires, a storm, a growth burned), a kind of dead its
 // cluster-mates do not breed yet over one they do, the den and the vat above the rest once open. Its guard comes
@@ -213,7 +214,7 @@ export function growthWish(state, hive, rand = true) {
     if (G.income) s = (age < 180 || (hive.income || 0) <= 3 ? 3 : 1.2) / (1 + have);
     else if (G.guard) s = 1.5 + (threat ? 4 : 0);
     else if (G.incomeMult) s = 1.5 + (clusterSize(state, hive) <= 2 ? 1.5 : 0);
-    else if (G.unlocks) s = 2.5 + (mateHas(k) ? -1 : 1) + (G.tier >= 2 ? 0.5 : 0);
+    else if (G.unlocks) s = 2.5 + (mateHas(k) ? -1 : 1) + (G.tier >= 2 ? 0.5 : 0) - (G.tier === 0 ? 1 : 0); // the worm cyst (tier 0): after the first pit
     else if (G.boss) s = 3.5;
     else if (G.elite) s = 3 + (spawners >= 2 ? 1 : 0);
     if (rand) s *= rollRange(state, 0.8, 1.2, "wish", hive.id, k);

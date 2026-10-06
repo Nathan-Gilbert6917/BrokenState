@@ -16,6 +16,7 @@
 import { ZTYPES, TECH } from "./hiveconst.js";
 import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUnit, ZOMBIE_MOVE } from "./combat.js";
 import { flareLit } from "./throwables.js";
+import { carrierTurn } from "./carriers.js";
 
 export const ZKINDS = Object.keys(ZTYPES);
 const round = (v, n = 1000) => Math.round(v * n) / n;
@@ -155,6 +156,7 @@ export function zombieTurn(b, u) {
   if (u.ztype === "brute") return bruteTurn(b, u);
   if (u.ztype === "spitter") return spitterTurn(b, u);
   if (u.ztype === "shepherd") return shepherdTurn(b, u);
+  if (u.ztype === "carrier") return carrierTurn(b, u); // carriers.js: to the bodies
   return false;
 }
 

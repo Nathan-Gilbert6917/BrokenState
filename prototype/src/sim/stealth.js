@@ -362,7 +362,7 @@ export function throwAt(b, u, key, x, y, blind = false) {
   return [lx, ly];
 }
 
-export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
+export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
   t.x = x; t.y = y;
@@ -470,7 +470,7 @@ export function spotBodies(b, e) {
   if (e.kind !== "human" || e.aware || !active(e)) return false;
   const range = b.night ? STEALTH.BODY_SIGHT_NIGHT : STEALTH.BODY_SIGHT;
   for (const o of b.units) {
-    if (o === e || o.side !== "enemy" || o.kind !== "human" || o.found || o.fled || !(o.dead || o.ko)) continue;
+    if (o === e || o.side !== "enemy" || o.kind !== "human" || o.found || o.fled || o.off || !(o.dead || o.ko)) continue; // off: a body that got up (carriers.js)
     if (dist(e.x, e.y, o.x, o.y) > range || !los(b, e.x, e.y, o.x, o.y)) continue;
     o.found = true;
     if (b.raid) b.raid.heat = Math.min(100, b.raid.heat + STEALTH.BODY_HEAT);
