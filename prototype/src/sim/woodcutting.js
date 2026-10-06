@@ -46,6 +46,7 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { econStats } from "./farming.js";
 import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor } from "./upkeep.js";
+import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -320,14 +321,18 @@ export function woodSeason(state, hour = state.hour) {
 }
 // The firewood a base wants for the rest of the coming cold: everyone fed there (+ extra heads, e.g. teams coming
 // home) × 0.2 a day × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire.
+// The water boiler (worm.js boilerUse) burns the same a head every day its water needs boiling, in every season:
+// WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
-// cold is here), toCold (days until it is) }.
+// cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn) }.
 export function woodNeed(state, base, extraHeads = 0) {
   const days = coldDaysAhead(state);
   const heads = mouthsAt(state, base).heads + extraHeads;
-  const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare);
+  const boil = base.tier === 0 ? null : boilerUse(state, base);
+  const boiler = boil && boil.active ? r1(boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) : 0;
+  const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare + boiler * WORM.BOILER_DAYS);
   const have = Math.max(0, base.stock.wood || 0);
-  return { need, have, days: r1(days), soon: woodSeason(state), short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads };
+  return { need, have, days: r1(days), soon: woodSeason(state) || boiler > 0, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler };
 }
 // A base the winter will catch short of firewood (the alert, the Upkeep line): in the stocking season, with less than
 // the coming cold needs and less heat in store (firewood and fuel) than that. null when it is fine.

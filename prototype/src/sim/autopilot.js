@@ -76,7 +76,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
-import { WORM, baseWater, baseFilter, baseCooks, wormMeatAt, wormSeen } from "./worm.js";
+import { WORM, baseWater, baseFilter, baseCooks, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -541,7 +541,7 @@ export function droughtWater(state, base, n) {
 // summer is close (the last SUMMER_LEAD days of spring, or summer itself), and the scrap and parts held back for
 // water (`hold`: repairing a broken well or pump comes before any other repair, building or crafting; and the
 // filters still wanted). planBuilds, planCrafts, the reserves, the newcomer rule and the water runs read it.
-const AP_FILTER_SHARE = 0.75, SUMMER_HEADROOM = 2, SUMMER_LEAD = 21, FILTER_CAP = 18, BOILER_HOLD_DAYS = 15;
+const AP_FILTER_SHARE = 0.75, SUMMER_HEADROOM = 2, SUMMER_LEAD = 21, FILTER_CAP = 18;
 let waterMemo = { state: null, hour: -1, map: new Map() };
 export function waterPlan(state, base) {
   if (waterMemo.state !== state || waterMemo.hour !== state.hour) waterMemo = { state, hour: state.hour, map: new Map() };
@@ -564,9 +564,8 @@ export function waterPlan(state, base) {
   const crafter = atBase(state, base.id).some((x) => skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min);
   // Scrap for filters is held only while it matters: summer near and short, or the water running low now.
   const urgent = (near && (sw.net < 0 || sw.reserve > sw.cap)) || dryGap > 0;
-  // The water boiler (worm.js): a few days of junk wood held for it while it is the only thing making the water safe.
-  const boil = count(base, "boiler") && !have && baseWater(state, base).raw > 0 ? Math.ceil(WORM.BOILER_SCRAP * BOILER_HOLD_DAYS) : 0;
-  const hold = { scrap: brokenWater * 3 + boil + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
+  // The water boiler (worm.js) burns firewood, not scrap: its wood is planned with the heating (woodcutting.js woodNeed).
+  const hold = { scrap: brokenWater * 3 + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
   const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap };
   waterMemo.map.set(base.id, out);
   return out;
@@ -1093,7 +1092,7 @@ function needs(state) {
     // Empty jars for the preserving kitchen (storage.js), once there is one.
     jars: count(h, "kitchen") ? pick(st.jars || 0, [[4, 1.3], [12, 0.7], [Infinity, 0.1]]) : 0,
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
-    wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(),
+    wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
   return persona(state).reserves ? reserveNeeds(state, h, out) : out;
 }
@@ -1272,10 +1271,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
   low.forEach((s, i) => { if (s.mood < 18 || (i < Math.floor(people.length / 3) && foodDays >= 3)) give(s, "rest"); });
 
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
-  // (thirst kills in days; a hungry base still has its stock).
+  // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
+  // nothing boils it (worm.js: a filter makes it safe while it lasts).
   if (areas.production) {
     const fj = craftQueue(base).some((j) => j.recipe === "waterfilter");
-    if (fj && waterRunningShort(state, base)) {
+    if (fj && (waterRunningShort(state, base) || wormFilterUrgent(state, base))) {
       const c = ranked("craft", (x) => skill(x, CRAFTS.waterfilter.skill), (x) => !x.inBed && skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min)[0];
       if (c) give(c, "craft");
     }
@@ -1674,19 +1674,41 @@ function buildWishes(state, base) {
 }
 
 // The worm (worm.js): a water boiler as soon as the base's water carries its eggs (saved for unless a water filter
-// covers it for now), and a cook fire once game with eggs comes in, or hunters and fishers work infected land.
+// covers it for now, or the land around gives too little firewood to keep it burning: then filters are the plan,
+// planCrafts, and the boiler waits its turn), and a cook fire once game, crops or forage with eggs come in, or
+// hunters, fishers, farmers and foragers work infected land.
 function wormWishes(state, base, queued) {
   const out = [];
   if (isShelter(base)) return out; // its fire boils and cooks
   const w = baseWater(state, base);
   if (w.raw > 0 && !count(base, "boiler") && !queued("boiler")) {
     const filter = baseFilter(state, base);
-    out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (a filter covers it while it lasts)" : ""}`, save: !filter || residents(state, base.id).some(wormSeen) });
+    const woodShort = boilerWoodShort(state, base);
+    const sick = residents(state, base.id).some(wormSeen);
+    // Little firewood around: the boiler would burn the winter's wood for nothing, so filters are the plan (planCrafts)
+    // until someone here has caught it.
+    if (!woodShort || sick) out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (a filter covers it while it lasts)" : ""}`, save: !filter || sick });
   }
   const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
   const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
+  const growing = atBase(state, base.id).some((s) => s.role === "farm" || s.role === "forage");
+  const cropBad = cropLandBad(state, base.tile) || state.grid.within(base.tile, 2).some((id) => cropLandBad(state, id));
   if (!baseCooks(base) && !queued("cookhouse") && (wormMeatAt(base) > 0 || base.rawWarned || (working && landBad))) out.push({ type: "cookhouse", why: "game from infected land has to be cooked through (the worm)", save: true });
+  else if (!baseCooks(base) && !queued("cookhouse") && (wormVegAt(base).all > 0 || base.rawVegWarned || (growing && cropBad))) out.push({ type: "cookhouse", why: "crops and forage from infected ground have to be boiled (the worm)", save: true });
   return out;
+}
+// The water carries the worm's eggs and nothing boils it today (no boiler, a cold one, or one the land cannot feed):
+// a queued water filter is crafted before anything else.
+function wormFilterUrgent(state, base) {
+  const ww = baseWater(state, base);
+  return ww.raw > 0 && (!ww.safe || boilerWoodShort(state, base));
+}
+// The land around a base gives less firewood a day (one woodcutter, woodcutting.js) than its boiler would burn, and the
+// pile is short of what the base wants (the winter's wood and the boiler's days, woodNeed): the boiler would eat the
+// winter's heating, so a water filter (4 scrap, 3 water a day, safe water while it lasts) is the better buy.
+function boilerWoodShort(state, base) {
+  const need = mouthsAt(state, base).heads * WORM.BOILER_WOOD_HEAD;
+  return need > 0 && baseWoodDay(state, base) < need && woodNeed(state, base).short;
 }
 
 // Food storage and preserving (storage.js), before it is needed: room for the winter stock (the fresh food now
@@ -1776,6 +1798,9 @@ function planCrafts(state, base) {
   if (((st.meds || 0) < Math.max(3, n / 2) || (rs && rs.meds.short)) && tryCraft(["dressings"], "meds are short", 5)) return;
   const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "water is below the reserve", 4)) return;
+  // The worm (worm.js): water with eggs and no boiler burning (none built, or nothing to burn, or the land gives too
+  // little firewood for one): a filter makes it safe while it lasts, and a second is kept against the first clogging.
+  if (wormFilterUrgent(state, base) && filters < 2 && tryCraft(["waterfilter"], baseWater(state, base).safe ? "the water carries the worm's eggs and the boiler's firewood is short" : "the water carries the worm's eggs and nothing boils it", 4)) { q.unshift(q.pop()); return; } // to the front of the queue
   if (filters < 1 && tryCraft(["waterfilter"], "clean water: dysentery is four times rarer with a filter (health.js)", 8)) return;
   if (rs) floor = rs.scrap.target;
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
@@ -3037,11 +3062,13 @@ function planWood(state, base, people, areas) {
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
   const cap = woodWorkCap(state, base);
-  const want = Math.min(cap, woodCuttersFor(state, base, w));
+  // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
+  const boilerCutters = w.boiler > 0 ? Math.ceil(w.boiler / Math.max(0.1, baseWoodDay(state, base))) : 0;
+  const want = Math.min(cap, Math.max(woodCuttersFor(state, base, w), boilerCutters));
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
   return {
     cap,
-    critical: small ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn ? Math.min(want, Math.ceil(people.length / 4)) : Math.min(1, want),
+    critical: small ? Math.min(1, want) : w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 ? Math.min(want, Math.ceil(people.length / 4)) : Math.min(1, want),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,

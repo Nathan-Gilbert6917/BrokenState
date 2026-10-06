@@ -27,7 +27,7 @@ import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
 import { meatAt, baseGameDaily } from "./hunting.js";
-import { wormMeatAt, smokeWormMeat } from "./worm.js";
+import { wormMeatAt, wormVegAt, smokeWormMeat } from "./worm.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150 };
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
@@ -115,7 +115,8 @@ export function eatFromStore(base, amount) {
   const st = base.stock;
   let need = Math.max(0, amount);
   const raw = wormMeatAt(base);
-  const fresh = Math.min(need, Math.max(0, (st.food || 0) - raw));
+  const veg = wormVegAt(base); // worm.js: crops and forage from infected ground, eaten after the clean food (before the raw meat)
+  const fresh = Math.min(need, Math.max(0, (st.food || 0) - raw - veg.all));
   if (base.meat) base.meat = Math.max(raw, meatAt(base) - fresh); // fresh game is cooked first
   st.food = (st.food || 0) - fresh;
   need -= fresh;
@@ -124,6 +125,16 @@ export function eatFromStore(base, amount) {
     jarsBack(base, take);
     st.preserved -= take;
     need -= take;
+  }
+  if (need > 0 && veg.all > 0) {
+    const c = Math.min(need, veg.crop);
+    const f = Math.min(need - c, veg.forage);
+    base.wormCrop = veg.crop - c;
+    base.wormForage = veg.forage - f;
+    st.food -= c + f;
+    base.rawCropEaten = (base.rawCropEaten || 0) + c;
+    base.rawForageEaten = (base.rawForageEaten || 0) + f;
+    need -= c + f;
   }
   if (need > 0 && raw > 0) {
     const take = Math.min(need, raw);

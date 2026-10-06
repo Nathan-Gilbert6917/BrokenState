@@ -38,6 +38,7 @@ import { rollAreaFind } from "./loot.js";
 import { findCarried } from "./stealth.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { searchHazards } from "./health.js";
+import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
@@ -580,6 +581,7 @@ function afterPlace(state, result, setup, battle) {
   const got = [...Object.entries(result.loot.supplies || {}).map(([k, v]) => `${v} ${k}`), ...(result.loot.gear || []).map((g) => g.name)];
   say2(c, `${line} ${got.length ? `Found ${got.join(", ")}.` : "Found nothing."}${(result.survivorsDead || []).length ? ` Lost: ${(result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).join(", ")}.` : ""} Alert +${Math.round(gained * CRAWL.ALERT.fromHeat)}.`, result.outcome === "extracted" ? "good" : "danger", state.hour);
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), c.city);
+  wormSearch(state, p, c.tile, r.hours || 1); // worm.js
   passHours(state, p, r.hours || 1);
   if (state.parties.includes(p) && !partyMembers(state, p).length) crawlWiped(state, p, "");
 }
@@ -621,6 +623,7 @@ export function quickSearch(state, p, place) {
   lines.push(`Searched by the numbers: ${text}.`);
   say2(c, `${place.name}: ${lines.join(" ")}`, "good", state.hour);
   for (let i = 0; i < Q.hours; i++) searchHazards(state, partyMembers(state, p), c.city);
+  wormSearch(state, p, c.tile, Q.hours); // worm.js
   passHours(state, p, Q.hours);
   return lines.join(" ");
 }

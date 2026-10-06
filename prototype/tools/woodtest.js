@@ -28,6 +28,7 @@ import { setAutopilot, heatFuelWant, autopilotStats } from "../src/sim/autopilot
 import { FIELD_TYPES } from "../src/sim/crews.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { heatUse, HEAT } from "../src/sim/upkeep.js";
+import { boilerUse } from "../src/sim/worm.js";
 import { heatDaily } from "../src/sim/needs.js";
 import { stationaryActivity, heatGain } from "../src/sim/fieldheat.js";
 import { baseHeat } from "../src/sim/hordes.js";
@@ -350,22 +351,23 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     setAutopilot(st, true, "balanced");
     st.governor.noWood = off;
     const winter = dayIn(st, "winter", 1);
-    let woodDays = 0, earliest = null;
+    let woodDays = 0, earliest = null, boiled = false;
     while (day(st) <= winter && !st.gameOver) {
       tickHour(st);
       if (st.hour % 24 === 12) {
         const n = atBase(st, hub(st).id).filter((s) => s.role === "wood").length;
         woodDays += n;
         if (n && earliest == null) earliest = Weather.season(st);
+        if (boilerUse(st, hub(st)).active) boiled = true; // the water boiler (worm.js) burns firewood in every season
       }
     }
     const h = hub(st);
-    return { wood: Math.round(h.stock.wood || 0), need: Wd.woodNeed(st, h).need, woodDays, earliest, fuel: Math.round(h.stock.fuel || 0), trips: st.governor.stats.woodTrips || 0, cut: Math.round((st.econStats.woodCut || 0) + (st.econStats.woodField || 0)) };
+    return { wood: Math.round(h.stock.wood || 0), need: Wd.woodNeed(st, h).need, woodDays, earliest, boiled, fuel: Math.round(h.stock.fuel || 0), trips: st.governor.stats.woodTrips || 0, cut: Math.round((st.econStats.woodCut || 0) + (st.econStats.woodField || 0)) };
   };
   for (const seed of [SEED, SEED + 1]) {
     const on = run(seed, false), off = run(seed, true);
     note(`seed ${seed}: at the start of winter the hub has ${on.wood} firewood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} firewood, fuel ${off.fuel}`);
-    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn"), "woodcutters go out from late summer or autumn");
+    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.boiled), `woodcutters go out from late summer or autumn${on.boiled ? " (earlier here: the water boiler burns firewood all year, worm.js)" : ""}`);
     check(on.wood >= on.need * 0.6, `the woodpile is mostly in by the winter (${on.wood} of ${on.need})`);
     check(off.woodDays === 0 && off.cut === 0, "gov.noWood: nobody cuts wood");
   }
