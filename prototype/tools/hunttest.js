@@ -473,7 +473,18 @@ section("The hunting cabin, the Hunt and Fish jobs");
   check(canBuild(state, base, "huntcabin").ok, "a hunting cabin where the land has game");
   check(/no hunting cabin/.test(H.huntWorkWhy(state, base)) && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap === 0, "no cabin: no Hunt work");
   addBuilding(base, "huntcabin");
-  check(H.huntWorkWhy(state, base) === "" && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap === 2, "a cabin: Hunt work for 2");
+  {
+    // tune-jobcaps: no fixed cap (it was 2): the hunters it takes to bring in the food the land must (foraging.js
+    // landFoodGap), at least one while the job is open; more with the stores empty.
+    const c1 = WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap;
+    const keep = { food: base.stock.food, preserved: base.stock.preserved };
+    base.stock.food = 0; base.stock.preserved = 0;
+    const extra = Array.from({ length: 20 }, () => { const s = makeSurvivor(state, 1); s.location = { kind: "base", baseId: base.id }; state.survivors.push(s); return s; });
+    const c0 = WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 0 }).cap;
+    for (const s of extra) state.survivors.splice(state.survivors.indexOf(s), 1);
+    Object.assign(base.stock, keep);
+    check(H.huntWorkWhy(state, base) === "" && c1 >= 1 && c0 > 2 && c0 >= c1, `a cabin: Hunt work sized to the food the land must bring in, no fixed cap (${c1} now, ${c0} with 20 more mouths and the stores empty)`);
+  }
   check(WORK_KEYS.includes("hunt") && WORK_KEYS.includes("fish"), "Hunt and Fish are work types");
   workState(state);
   check(state.work.roles.some((r) => r.name === "Hunter" && r.pri.hunt === 1) && state.work.roles.some((r) => r.name === "Hunting party" && r.kind === "crew" && r.crew.field.hunt === 1), "a Hunter role and a Hunting party crew by default");

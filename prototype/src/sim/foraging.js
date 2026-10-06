@@ -38,7 +38,9 @@ import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
 import { workFactor, addCondition } from "./health.js";
 import { SUPPLIES } from "./data.js";
-import { econStats } from "./farming.js";
+import { econStats, farmFoodPerDay } from "./farming.js";
+import { foodUse } from "./upkeep.js"; // landFoodGap: everyone fed here
+import { edibleFood } from "./storage.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot } from "./hunting.js";
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 
@@ -53,7 +55,11 @@ export const FORAGE = {
   hurt: 40, hurtMult: 0.5,   // under this health a forager counts half
   camp: { share: 0.4, health: 50, below: 1 }, // a camp short of food (under `below` days) forages: its fit people, in daylight, a share of each hour
   herbs: 0.01, honey: 0.004, honeyFood: 2, mushroom: 0.0025, mushroomSev: [12, 28],
-  base: { radius: 2, hours: 6, cap: 3, capBig: 4, bigAt: 12 }, // the Forage job: hours a day, foragers a base wants
+  // The Forage job: hours a day; no head-count cap (tune-jobcaps: it was 3, 4 at 12+ people). Each forager takes the
+  // best tile left and strips it (a forest tile ~40 rations, half back in 10 days), so a crowd yields less each.
+  // How many go is sized to the need (landFoodHands): the day's eating and refilling the stores, less the plots.
+  base: { radius: 2, hours: 6 },
+  refill: 20,                // landFoodGap: the stores are refilled to the goal over this many days
 };
 export const FORAGE_TERRAIN = { forest: 1, plains: 0.8, hills: 0.6, mountain: 0.35, suburb: 0.3, city: 0.08, water: 0 };
 // What foraging turns up by season (the summary's words; the yields are all just food).
@@ -281,7 +287,23 @@ export function forageWorkWhy(state, base) {
   if (d < FORAGE_WORTH) return seasonKey(state) === "winter" ? "winter: almost nothing to gather" : "the land around is picked clean or bare";
   return "";
 }
-export const forageWorkCap = (state, base) => (atBase(state, base.id).length >= FORAGE.base.bigAt ? FORAGE.base.capBig : FORAGE.base.cap);
+// Food a day a base wants from the land (the land jobs' sizing, tune-jobcaps: hunt, fish and forage have no fixed
+// cap): the day's eating for everyone fed here (upkeep.js foodUse) plus refilling the stores to `goalDays` of it over
+// FORAGE.refill days, less what the plots bring in a day over the next month (farming.js farmFoodPerDay).
+export function landFoodGap(state, base, goalDays) {
+  const use = foodUse(state, base).total;
+  return Math.max(0, use + Math.max(0, goalDays * use - edibleFood(base)) / FORAGE.refill - farmFoodPerDay(state, base));
+}
+// Hands that bring in the land food gap at `each` a day (at most `max`): the Forage, Hunt and Fish jobs' room (work.js)
+// and the governor's crews (autopilot.js). Callers ask only while the job is open (food short of its goal), so at
+// least one while the land gives anything: the plots' coming harvests can cover the gap on paper (a summer crop due in
+// three weeks) while the stores are down to days.
+export function landFoodHands(state, base, goalDays, each, max = 40) {
+  if (!(each > 0)) return 0;
+  return Math.max(1, Math.min(max, Math.ceil(landFoodGap(state, base, goalDays) / each - 1e-9)));
+}
+// The Forage job's room: foragers to close the land food gap (no fixed cap; the land thins as they pick it).
+export const forageWorkCap = (state, base, goalDays = FORAGE_SHORT) => landFoodHands(state, base, goalDays, baseForageDay(state, base));
 // Daily (hunting.js huntingDaily, from economy.js baseDaily): the people on the Forage role bring in their day's
 // gathering from the best tiles around (each forager the best tile left, the land depleting as they go).
 export function foragingDaily(state, base) {

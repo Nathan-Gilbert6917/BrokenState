@@ -59,7 +59,12 @@ export const WOOD = {
   hurt: 40, hurtMult: 0.5,
   injury: 0.0015,            // a team order: a cut or a sprain, per person-hour of chopping (half without a tool)
   noise: { axe: 0.8, hands: 0.3 }, // base Heat a woodcutter adds (hordes.js baseHeat)
-  base: { radius: 2, hours: 6, cap: 2, capBig: 3, bigAt: 10 }, // the Cut wood job: hours a day, woodcutters a base wants
+  // The Cut wood job: hours a day; no head-count cap (tune-jobcaps: it was 2, 3 at 10+ people). Each woodcutter past
+  // the first brings in `crowd` less (the k-th × max(crowdFloor, 1 − crowd × k): the near deadfall and the easy trees
+  // go first, the rest is a longer haul), on top of the land thinning (a forest tile holds ~250, so a day's cutting
+  // barely dents it). How many go is sized to the need (woodHandsWanted): the shortfall over `stockDays` (or the days
+  // to the cold, if sooner; at least minDays), plus the boiler's.
+  base: { radius: 2, hours: 6, crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
   worth: 0.4,                // a woodcutter must be expected to bring in this much a day for the job to be open
   fire: { land: 0.15, shelter: 0.6, camp: 0.3 }, // deadfall enough for a fire, firewood a lit fire burns a day without it
   bitter: 1.05, spare: 1.2,  // the winter's need: bitter days a little more, and a fifth to spare
@@ -257,9 +262,28 @@ export function woodWorkWhy(state, base) {
   if (baseWoodDay(state, base) < WOOD.worth) return "the land around is cut bare";
   return "";
 }
-export const woodWorkCap = (state, base) => (atBase(state, base.id).length >= WOOD.base.bigAt ? WOOD.base.capBig : WOOD.base.cap);
+// The k-th woodcutter's share at a base (0 = the first): WOOD.base.crowd less for each one before them.
+export const woodCrowd = (k) => Math.max(WOOD.base.crowdFloor, 1 - WOOD.base.crowd * k);
+// Hands it takes to bring in `perDay` firewood a day here (each extra one at woodCrowd; 0 when nothing is wanted or
+// the land gives nothing). `each`: one woodcutter's day (baseWoodDay).
+export function handsForDay(perDay, each, crowd = woodCrowd, max = 40) {
+  if (!(perDay > 0) || !(each > 0)) return 0;
+  let k = 0, got = 0;
+  while (got + 1e-9 < perDay && k < max) got += each * crowd(k++);
+  return k;
+}
+// The woodcutters a base wants (no fixed cap: sized to the need): enough to cut what the coming cold still needs
+// (woodNeed) within `days` (default: WOOD.base.stockDays, or the days to the cold if sooner; at least minDays) and to
+// keep up with the water boiler's daily firewood. 0 when the pile holds it.
+export function woodHandsWanted(state, base, { w = woodNeed(state, base), days = null } = {}) {
+  if (!w.short || w.need <= 0) return 0;
+  const each = baseWoodDay(state, base);
+  const d = days ?? Math.max(WOOD.base.minDays, Math.min(WOOD.base.stockDays, w.toCold));
+  return handsForDay(Math.max(0, w.need - w.have) / d + (w.boiler > 0 ? w.boiler : 0), each);
+}
 // Daily (economy.js baseDaily): the people on the Cut wood role bring in their day's firewood from the best tiles
-// around (each the best tile left, the land thinning as they go), with their own tools or the armory's.
+// around (each the best tile left, the land thinning as they go), with their own tools or the armory's; each one past
+// the first a little less (woodCrowd).
 export function woodDaily(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "wood" && !s.inBed && workFactor(s) >= 0.35);
   base.woodNoise = 0;
@@ -267,10 +291,10 @@ export function woodDaily(state, base) {
   const dayStart = state.hour - 24;
   const crew = chopCrew(people, (base.armory || []).filter(isChopTool));
   const got = { wood: 0, tools: 0 };
-  for (const c of crew) {
+  for (const [k, c] of crew.entries()) {
     const tile = (baseWoodTiles(state, base, dayStart + 12)[0] || {}).id;
     if (tile == null) break;
-    const m = c.mult * Math.min(1, workFactor(c.s));
+    const m = c.mult * Math.min(1, workFactor(c.s)) * woodCrowd(k);
     let r = 0;
     for (let i = 0; i < WOOD.base.hours; i++) r += woodRate(state, tile, dayStart + 8 + i * 2, m);
     const amount = Math.round(r * (0.7 + 0.6 * state.rng.next()) * 100) / 100;

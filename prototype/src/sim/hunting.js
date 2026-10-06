@@ -55,7 +55,8 @@
 //   (× 0.6). A hunting cabin smokes up to 6 a day into 5 preserved food.
 //
 // Hunting cabin (buildings.js "huntcabin", any base with game land within 2 tiles: abundance there adding up to 3):
-//   up to 2 people on the Hunt work type / role hunt the land within 2 tiles 3 hours a day (dawn and dusk) with
+//   the people on the Hunt work type / role (no fixed cap: as many as the food the land must bring in wants,
+//   CABIN above) hunt the land within 2 tiles 3 hours a day (dawn and dusk) with
 //   their own weapons and the base's ammo (never its last 3 a head + 10: those are for the walls), the same rolls and
 //   depletion as a team; a hunter without a weapon tends
 //   snares there (two lines' worth). Fish work / role: a base on a river or a lake shore, one rod or net a fisher
@@ -70,7 +71,7 @@ import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
-import { foragingDaily } from "./foraging.js";
+import { foragingDaily, landFoodHands } from "./foraging.js";
 import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYieldMult, WORM } from "./worm.js";
 
 // ---------- numbers ----------
@@ -87,7 +88,11 @@ export const ANIMALS = {
 };
 export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2 };
 export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5 };
-export const CABIN = { radius: 2, hunters: 2, hours: 3, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2 };
+// The cabin's Hunt job has no head-count cap (tune-jobcaps: it was 2): hunters are sized to the food the land must
+// bring in (foraging.js landFoodHands), each takes the best tile left and a kill thins it hard (a deer −0.3), so a
+// crowd soon hunts poor ground. Fishers likewise (one rod or net each: the tools are the cap); the base's one spot
+// gives each fisher past the first fishCrowd less (fishers' bank space and spooked fish; at least fishCrowdFloor).
+export const CABIN = { radius: 2, hours: 3, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2, fishCrowd: 0.1, fishCrowdFloor: 0.4 };
 export const MEAT_KG = 1;                                    // a ration of fresh game as carried
 export const MEAT_EXTRA = MEAT_KG - SUPPLIES.food.weight;    // what it adds over packed food
 export const GAME_TERRAIN = { forest: 1, hills: 0.8, mountain: 0.5, plains: 0.55, suburb: 0.12, city: 0.03, water: 0 };
@@ -620,7 +625,38 @@ export function fishWorkWhy(state, base) {
   if (!k.rods && !k.nets) return "no fishing rod or net here";
   return "";
 }
-export const fishWorkCap = (state, base) => { const k = fishTools(state, base); return Math.min(2, k.rods + 2 * k.nets); };
+// The Fish job's tools: one rod or net each (a net worked by two). No other cap (tune-jobcaps: it was at most 2).
+export const fishWorkCap = (state, base) => { const k = fishTools(state, base); return k.rods + 2 * k.nets; };
+// The share each of n fishers at the base's one spot counts (the k-th max(fishCrowdFloor, 1 − fishCrowd × k)).
+export const fishCrowdShare = (n) => {
+  if (n <= 1) return 1;
+  let a = 0;
+  for (let k = 0; k < n; k++) a += Math.max(CABIN.fishCrowdFloor, 1 - CABIN.fishCrowd * k);
+  return a / n;
+};
+// Expected food a day for one hunter at this base now (an average one with a hunting rifle: the job's sizing), from
+// the best tile around, CABIN.hours at dawn and dusk.
+export function baseHuntDay(state, base, hour = state.hour) {
+  const tile = cabinTiles(state, base)[0];
+  if (tile == null) return 0;
+  const m = 0.82, team = { big: m * HUNT_CAT.rifle.big, small: m * HUNT_CAT.rifle.small };
+  const dayStart = hour - (hour % 24);
+  let r = 0;
+  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) { const o = huntOdds(state, team, tile, dayStart + hh); r += o.big * bigAvg(o.deer) + o.small * ANIMALS.small.rations; }
+  return r;
+}
+// Expected food a day for one fisher with a rod at this base now (an average one: the job's sizing).
+export function baseFishDay(state, base, hour = state.hour) {
+  const kit = { rods: 1, nets: 0, ice: true, power: FISH.rod * 0.85, used: 1 };
+  const dayStart = hour - (hour % 24);
+  let r = 0;
+  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) r += fishRate(state, kit, base.tile, dayStart + hh);
+  return r;
+}
+// The Hunt job's room (no fixed cap): hunters to close the land food gap to goalDays (foraging.js landFoodHands).
+export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
+// The Fish job's room: fishers to close it, at most one a rod (two a net).
+export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
 // The best hunting tiles around a base, by what they hold now.
 function cabinTiles(state, base) {
   return state.grid.within(base.tile, CABIN.radius).filter((id) => gameAbundance(state, id) > 0.02)
@@ -686,12 +722,14 @@ export function huntingDaily(state, base) {
   }
   base.huntNoise = Math.round(noise * 10) / 10; // hordes.js baseHeat: gunshots around the base
   if (fishers.length && !fishWorkWhy(state, base)) {
-    const kit = fishTools(state, base, fishers);
+    const k0 = fishTools(state, base, fishers);
+    const kit = { ...k0, power: k0.power * fishCrowdShare(k0.used) }; // one spot: each fisher past the first a little less
     const hours = CABIN.hours;
     for (const hh of DAWN_DUSK.slice(0, hours)) {
-      const rate = Math.min(3, fishRate(state, kit, base.tile, dayStart + hh));
+      const rate = fishRate(state, kit, base.tile, dayStart + hh);
+      const rolls = Math.max(3, Math.ceil(rate)); // three rolls an hour (more for a big crew, no fixed ceiling)
       let n = 0;
-      for (let i = 0; i < 3; i++) if (state.rng.chance(rate / 3)) n++;
+      for (let i = 0; i < rolls; i++) if (state.rng.chance(Math.min(1, rate / rolls))) n++;
       if (n) { got.fish = (got.fish || 0) + n; cabinKill(state, got, base.tile, n, true); lower(state, "fish", base.tile, n / FISH.deplete); }
     }
     for (const s of fishers) gainXp(state, s, "scouting", 3);
