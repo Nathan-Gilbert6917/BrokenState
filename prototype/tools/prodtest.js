@@ -9,13 +9,13 @@
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
 // Usage: node tools/prodtest.js [days for the long runs] [seeds...]
-import { createWorld, tickHour, hub, atBase, makeSurvivor, newId, day, hourOfDay } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, makeSurvivor, newId, day, hourOfDay, RADIO_RANGE } from "../src/sim/world.js";
 import { addBuilding, stations, stationStatus, runStations, mannedStations, RECIPES, BUILDINGS } from "../src/sim/buildings.js";
 import {
   setStationOrder, clearStationOrder, stationOrder, orderHold, productionHour, rackLimit, RACK, addCraftOrder, setCraftOrder,
   craftOrders, craftOrderStatus, craftOrderHave,
 } from "../src/sim/production.js";
-import { POWER, powerStatus, refreshPower, isPowered, poweredType, generatorHeat } from "../src/sim/power.js";
+import { POWER, powerStatus, refreshPower, isPowered, poweredType, generatorHeat, RADIO_BOOST } from "../src/sim/power.js";
 import { stewardOf, setSteward, setStewardArea, setPinned, stewardHour, STEWARD_LOG_HOUR } from "../src/sim/steward.js";
 import { setAutopilot, autopilotHour, stewardRun } from "../src/sim/autopilot.js";
 import { craftQueue, craftingHour, craftJobStatus, makeItem, craftQuality, CRAFTS } from "../src/sim/crafting.js";
@@ -263,7 +263,8 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   check(poweredType(h, "coldstore") && storeSpaces(h).find((x) => x.key === "coldstore").kind === "freezer", "the powered cold store is a freezer");
   check(storeRate("freezer", 26) === 0.002 && storeRate("cold", 26) === 0.012, `summer: 0.2% a day powered, 1.2% without`);
   const node = radioNodes(st).find((n) => n.base === h);
-  check(node && node.range === 10, `radio coverage +2 on power (${node && node.range})`);
+  // A radio station reaches RADIO_RANGE (12, world.js), +RADIO_BOOST (2) on generator power: 14.
+  check(node && poweredType(h, "radio") && !node.military && node.range === RADIO_RANGE + RADIO_BOOST, `radio coverage ${RADIO_RANGE} + ${RADIO_BOOST} on power (${node && node.range})`);
   h.stock.fuel = 0;
   check(defenceMult(st, h) > 1.09, "powered floodlights count with no fuel");
   const horde = makeHorde(st, { tile: h.tile, size: 6, role: "roam" });
