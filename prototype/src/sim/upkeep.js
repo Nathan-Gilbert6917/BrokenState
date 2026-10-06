@@ -14,8 +14,8 @@
 //               anyone (from the base first, then what the convoy carries).
 //   the dog     (hubevents.js DOG.food) when the base took one in.
 //   heating     on a day below 0°C (the day's mean) a base burns HEAT.fuel (0.1) fuel a person present (everyone
-//               fed there, the heads above) a day, ×HEAT.bitter (1.5) below −8°C: firewood first (1 firewood = 0.5
-//               fuel of heat, HEAT.wood: so 0.2 firewood a head), then fuel for what the wood does not cover (needs.js
+//               fed there, the heads above) a day, ×HEAT.bitter (1.5) below −8°C: firewood first (1 firewood = 0.2
+//               fuel of heat, HEAT.wood: so 0.5 firewood a head), then fuel for what the wood does not cover (needs.js
 //               heatDaily). A shelter (buildings.js, tier 0) with its camp fire lit is warmed by the fire (deadfall
 //               from around it, or firewood where the ground is bare: woodcutting.js). Without either everyone there
 //               is cold: needs.js COLD.
@@ -74,9 +74,12 @@ export function foodUse(state, base, dayIdx) {
 
 // ---------- heating ----------
 // The need is counted in fuel (HEAT.fuel a head a day below 0°C); a base burns firewood first (woodcutting.js: 1
-// firewood heats as much as HEAT.wood fuel, so the need in firewood is twice the fuel figure), then fuel for the rest.
-// Wood is the winter's heating; fuel is kept for the vehicles and the generator.
-export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.5 };
+// firewood heats as much as HEAT.wood fuel, so the need in firewood is five times the fuel figure), then fuel for the
+// rest. Wood is the winter's heating; fuel is kept for the vehicles and the generator.
+// HEAT.wood 0.2 (tune-winter, was 0.5): at 0.5 the autopilot's colonies never went cold (0 cold base-days in 20 games ×
+// two winters); at 0.2 a winter takes about 15 firewood a head, a forest hub's woodcutters keep up, a big hub on
+// farmland or one short of hands does not quite (about 2 cold base-days a winter on average, all on poor land).
+export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.2 };
 // Fuel one person needs heating a day (today unless dayIdx): 0 at or above 0°C, HEAT.fuel below, ×HEAT.bitter below −8°C.
 export function heatRate(state, dayIdx) {
   const t = Weather.dayMeanTemp ? (dayIdx == null ? Weather.dayMeanTemp(state) : Weather.dayMeanTemp(state, dayIdx)) : 10;

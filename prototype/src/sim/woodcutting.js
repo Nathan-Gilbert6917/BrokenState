@@ -1,5 +1,5 @@
 // Woodcutting and firewood: deadfall, felled trees, old fence rails and furniture split into firewood, the winter's
-// heating (upkeep.js heatUse: a base burns firewood first, 1 firewood heating as much as HEAT.wood = 0.5 fuel, then
+// heating (upkeep.js heatUse: a base burns firewood first, 1 firewood heating as much as HEAT.wood = 0.2 fuel, then
 // fuel for the rest). Fuel is scarce and wanted for the vehicles and the generator; wood grows back.
 // Two ways to cut it:
 //   - the base job "Cut wood" (work.js, economy.js ROLES "wood"): people cut within 2 tiles of the base 6 hours a day;
@@ -320,7 +320,7 @@ export function woodSeason(state, hour = state.hour) {
   return s.key === "autumn" || s.key === "winter" || (s.key === "summer" && s.dayOfSeason > 14) || (s.key === "spring" && s.dayOfSeason <= 14);
 }
 // The firewood a base wants for the rest of the coming cold: everyone fed there (+ extra heads, e.g. teams coming
-// home) × 0.2 a day × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire.
+// home) × 0.5 a day (woodFor(HEAT.fuel)) × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire.
 // The water boiler (worm.js boilerUse) burns the same a head every day its water needs boiling, in every season:
 // WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard

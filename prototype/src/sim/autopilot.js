@@ -46,7 +46,8 @@ import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun
 import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
-import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay } from "./weather.js";
+import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
+import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy } from "./blueprints.js";
@@ -672,12 +673,13 @@ const partyFuelOf = (state, p) => {
 };
 // Rough hours until a team is home: the way left, plus (going out) the job and the same way back.
 const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 2 * hoursLeft(state, p) + 10);
-// Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js).
+// Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js; food at
+// today's cold, no camp fire on the move: weather.js foodNeedFactor).
 function carriedDays(state, p, extra = 0) {
   const n = partyMembers(state, p).length;
   const perDay = (n ? partyPace(state, p).eatMove : 0) + extra;
   const have = (k) => (k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds
-  return Math.min(have("food"), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst (weather.js)
+  return Math.min(have("food") / foodNeedFactor(state), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst, food at today's cold (weather.js)
 }
 
 // Conflict cards (conflicts.js): every option is scored from the odds the card shows.
@@ -2715,7 +2717,7 @@ const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pul
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
   const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
-  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : (have("food") + have("preserved")) / n;
+  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : (have("food") + have("preserved")) / (n * teamCold(state, p)); // food: the cold unless by a lit camp fire (needs.js)
 };
 // What the team should still gather: what the camp lacks (or the whole need with no camp yet) less what it carries,
 // plus food and water to live on while it works there. { key: qty }.
@@ -3107,11 +3109,12 @@ function launchTrip(state, c, pool, spareHands) {
   // way home is not a crawl; the rations count the way back at that load.
   const haulBand = !v && looting ? (P.reserves ? 1 : 2) : null;
   const ration = (e) => {
-    let r = e.food + (n * onSite) / 24; // the planner's rations (more on the move under a load) and the time on site
+    const cold = coldAhead(state, (e.hours + onSite) / 24); // the time on site and the heavier way home at the cold ahead (e.food has its own)
+    let r = e.food + (n * onSite * cold) / 24; // the planner's rations (more on the move under a load, the cold) and the time on site
     if (haulBand != null) {
       const b = LOAD_BANDS[haulBand];
       const haulPace = (STANCES[P.stance]?.speed || 1) * (1 - b.slow);
-      r += (n * e.hoursBack * Math.max(0, ((e.pace.footSpeed || 1) / haulPace) * (1 + b.eat) - e.pace.eatFoot / Math.max(1, n))) / 24;
+      r += (n * e.hoursBack * cold * Math.max(0, ((e.pace.footSpeed || 1) / haulPace) * (1 + b.eat) - e.pace.eatFoot / Math.max(1, n))) / 24;
     }
     return r;
   };
@@ -3541,7 +3544,7 @@ const LAND = { hours: 8, min: 4, urgentMin: 1.5, walkMore: 1.3, tries: 4, critic
 const foodDaysOf = (state, p) => {
   const n = partyMembers(state, p).length;
   const have = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0);
-  return (have("food") + have("preserved")) / Math.max(1, n ? partyPace(state, p).eatMove : 1);
+  return (have("food") + have("preserved")) / (Math.max(1, n ? partyPace(state, p).eatMove : 1) * foodNeedFactor(state)); // on the move: today's cold (weather.js)
 };
 function landFoodAct(state, p, { urgent = false, ok = () => true } = {}) {
   if (gov(state).noForaging && gov(state).noHunting) return false;

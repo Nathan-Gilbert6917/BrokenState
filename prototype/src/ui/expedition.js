@@ -16,7 +16,7 @@ import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { conditionChips, isSick } from "./health.js"; // illness chips with days left and a Treat button (the team's meds)
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
-import { weather as wxNow, travelEffects } from "../sim/weather.js";
+import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
@@ -350,9 +350,9 @@ function suppliesBlock(state, p) {
   const cap = partyCapacity(state, p);
   const load = poolLoad(p);
   const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
-  // Days at the rate it eats on the move (more under a load, sim/load.js).
+  // Days at the rate it eats on the move (more under a load, sim/load.js; food at today's cold, sim/weather.js).
   const n = Math.max(1, partyPace(state, p).eatMove);
-  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / n); // water: both kinds
+  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / (n * (k === "food" ? foodNeedFactor(state) : 1))); // water: both kinds
   const t = partyLoad(state, p);
   const b = p.burden;
   const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;

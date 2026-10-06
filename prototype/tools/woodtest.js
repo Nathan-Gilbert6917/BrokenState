@@ -9,7 +9,7 @@
 // - Depletion and regrowth (slow: a season or more).
 // - The Cut wood order (and its plan step, the queue, the Heat it makes, the injuries), the base job (work type,
 //   role, the daily cutting, the armory's axes, the noise at the base).
-// - Heating: firewood first (twice the fuel figure), then fuel; the outpost's share from the hub; a shelter's fire on
+// - Heating: firewood first (the fuel figure / HEAT.wood), then fuel; the outpost's share from the hub; a shelter's fire on
 //   bare ground burns firewood; a team's camp fire on bare ground goes out without any.
 // - The autopilot: woodcutters from late summer until the winter's firewood is in, none with gov.noWood; the
 //   heating fuel plan counts the wood; wood trips and the crews' field job.
@@ -286,13 +286,13 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   const n = residents(st, h.id).length;
   const u = heatUse(st, h);
   check(near(u.total, n * HEAT.fuel) && near(u.wood, n * HEAT.fuel / HEAT.wood), `below 0°C: ${u.text}`);
-  check(/firewood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${r1(n * 0.2).toFixed(1)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
+  check(/firewood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${r1(n * 0.1 / HEAT.wood).toFixed(1)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
   // Enough firewood: no fuel burned.
   h.stock.wood = 50; h.stock.fuel = 10;
   heatDaily(st, h);
-  check(near(h.stock.wood, 50 - n * 0.2, 1e-6) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * 0.2)} firewood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
+  check(near(h.stock.wood, 50 - n * 0.1 / HEAT.wood, 1e-6) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * 0.1 / HEAT.wood)} firewood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
   // Half the wood it needs: the fuel covers the rest.
-  h.stock.wood = n * 0.1; h.stock.fuel = 10;
+  h.stock.wood = n * 0.05 / HEAT.wood; h.stock.fuel = 10;
   heatDaily(st, h);
   check(h.stock.wood === 0 && near(h.stock.fuel, 10 - n * 0.05, 0.051) && !h.cold, `half the firewood: fuel for the rest (${r1(10 - h.stock.fuel)} fuel)`);
   // Neither: cold.
@@ -368,7 +368,10 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     const on = run(seed, false), off = run(seed, true);
     note(`seed ${seed}: at the start of winter the hub has ${on.wood} firewood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} firewood, fuel ${off.fuel}`);
     check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.boiled), `woodcutters go out from late summer or autumn${on.boiled ? " (earlier here: the water boiler burns firewood all year, worm.js)" : ""}`);
-    check(on.wood >= on.need * 0.6, `the woodpile is mostly in by the winter (${on.wood} of ${on.need})`);
+    // At HEAT.wood 0.2 (tune-winter) a winter takes 0.5 firewood a head a freezing day: about half the plan (the
+    // whole cold with WOOD.bitter and a fifth to spare) is in by its first day, and the fuel and the woodcutters
+    // must carry the rest (a hub that falls short goes cold for a day or two late in the winter: winter bites).
+    check(on.wood >= on.need * 0.5, `the woodpile is half in by the winter or more (${on.wood} of ${on.need})`);
     check(off.woodDays === 0 && off.cut === 0, "gov.noWood: nobody cuts wood");
   }
   // The crews' field job and the governor's wood trips plan a Cut wood step.
