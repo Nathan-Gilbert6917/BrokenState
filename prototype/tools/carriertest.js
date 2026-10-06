@@ -531,13 +531,16 @@ section("Carrying a body: slower, no shooting; into the car; home to bury or bur
   check(/strip/.test(combatAct(st, { type: "stowbody", unit: A.id })), "away from the strip the car is out of reach");
   const mv = combatAct(st, { type: "move", unit: A.id, x: 1, y: 10 });
   check(mv === "" && A.x === 1, `carried onto the evac strip (${mv || "moved"})`);
+  check(A.ap === 0, `three tiles carrying a body took both actions (half the move distance: ${A.mob} tiles an action)`);
+  A.ap = 2;
   // The car must have room for it: the body weighs BODY_KG plus its things (parties.js bodyLoad).
   const room0 = cargoRoom(st, p), need = unitBodyLoad(st, b, raider);
   check(need >= CARRIER.BODY_KG && room0 >= need, `the raider's body would take ${need.toFixed(1)} kg of the ${room0.toFixed(1)} kg free in the car`);
-  p.cargo.supplies.scrap = (p.cargo.supplies.scrap || 0) + Math.ceil(room0 / SUPPLIES.scrap.weight) + 1;
+  const scrap0 = p.cargo.supplies.scrap || 0;
+  p.cargo.supplies.scrap = scrap0 + Math.ceil(room0 / SUPPLIES.scrap.weight) + 1;
   const full = combatAct(st, { type: "stowbody", unit: A.id });
   check(/No room in the car/.test(full) && A.carrying === raider.id && !raider.inVehicle, `a full car refuses the body: “${full}”`);
-  p.cargo.supplies.scrap = 0;
+  p.cargo.supplies.scrap = scrap0;
   const n0 = b.log.length;
   const sw = combatAct(st, { type: "stowbody", unit: A.id });
   check(sw === "" && raider.inVehicle && raider.off && A.carrying == null, `laid in the car (${sw || "done"}): “${logSince(b, n0)[0]}”`);
@@ -559,7 +562,8 @@ section("Carrying a body: slower, no shooting; into the car; home to bury or bur
   const cR = cb.find((x) => x.name === raider.name), cB = cb.find((x) => x.sid === sB.id);
   check(cb.length === 2 && !!cR && !!cB && cR.items.length > 0 && mineB.every((it) => cB.items.includes(it)), `two bodies ride home in the car: ${cb.map((x) => `${x.name} (${x.items.map((g) => g.name).join(", ") || "nothing"})`).join("; ")}`);
   const bl = bodiesLoad(p.cargo);
-  check(bl >= 2 * CARRIER.BODY_KG && Math.abs(cargoLoad(p.cargo) - (cargoLoad({ ...p.cargo, bodies: [] }) + bl)) < 0.01 && cargoRoom(st, p) <= room0 - bl + 0.01, `the two bodies weigh ${bl.toFixed(1)} kg of the team's load on the way home (${cargoRoom(st, p).toFixed(1)} kg free now)`);
+  const roomWith = cargoRoom(st, p), bodiesSaved = p.cargo.bodies; p.cargo.bodies = []; const roomWithout = cargoRoom(st, p); p.cargo.bodies = bodiesSaved;
+  check(bl >= 2 * CARRIER.BODY_KG && Math.abs(cargoLoad(p.cargo) - (cargoLoad({ ...p.cargo, bodies: [] }) + bl)) < 0.01 && Math.abs(roomWithout - roomWith - bl) < 0.01, `the two bodies weigh ${bl.toFixed(1)} kg of the team's load on the way home (${roomWith.toFixed(1)} kg free, ${roomWithout.toFixed(1)} without them)`);
   check(!sB.alive && allItems(sB).length === 0 && mineB.every((it) => places(st, it) === 1) && !st.deathSites.some((d) => d.tile === b.tileId && d.items.some((e) => mineB.includes(e.item))), `${first(sB.name)}'s things are on the body in the car, nowhere else`);
   closeCombat(st);
   // Home: bury one (things to the armory), burn the other (nothing kept).

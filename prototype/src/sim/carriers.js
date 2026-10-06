@@ -10,12 +10,11 @@
 //       - Crush skull (combatAct "crush", 1 action, silent, from next to it): any human body, any time; the loot stays.
 //       - Double tap (combatAct "doubletap", 1 action, ammo, the noise of a shot, line of sight): the same from range.
 //       - Fire on its tile (as it would rise, and at each turn's change): the body and everything on it are gone.
-//       - Pick up the body (combatAct "pickup", 1 action; carrying: CARRIER.CARRY × the move distance, no shooting;
-//         P again puts it down) and lay it in the team's car (combatAct "stowbody") if the car has room: the body
-//         weighs CARRIER.BODY_KG plus its things (parties.js bodyLoad) and rides home as cargo (p.cargo.bodies).
-//       - Pick up the body (combatAct "pickup", 1 action; carrying: CARRIER.CARRY_MOB tiles an action, no shooting;
-//         "dropbody" puts it down, "stowbody" puts it in the team's car: a raid's vehicle zone, a field battle's evac
-//         strip). A body carried or in the car cannot rise. Bodies in the car come home (endBodies, bodiesHome):
+//       - Pick up the body (combatAct "pickup", 1 action; carrying: CARRIER.CARRY × the move distance, half of it,
+//         and no shooting; "dropbody" puts it down, "stowbody" puts it in the team's car: a raid's vehicle zone, a
+//         field battle's evac strip, and only if the car has room: a body weighs CARRIER.BODY_KG plus its things
+//         (parties.js bodyLoad) and counts in the team's load and capacity like any cargo until it is buried or
+//         burned). A body carried or in the car cannot rise. Bodies in the car come home (endBodies, bodiesHome):
 //         bury (its things to the armory) or burn it on the Armory tab; one with the worm left unburied gets up after
 //         CARRIER.BASE_RISE nights (walkingDaily).
 //     The battle AI and the raid bot crush a body next to them when it is endangered and no enemy is next to them
