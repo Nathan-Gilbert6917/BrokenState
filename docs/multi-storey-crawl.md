@@ -104,3 +104,24 @@ storey roll for offices and apartments (+1 at block 4+, +2 at block 7+), capped 
   simulated every turn (slower, more surprises).
 - Extraction: **ground floor exits only** / also a fire escape from upper floors on some types.
 - Stairs: **free to use (1 AP)** / some stairwells blocked (collapsed, barricaded) so another route is needed.
+
+## As built (2026-10-06)
+
+All three phases are in dev: `ffb55dd` (sim and generation), `840ff17` + `16f65c0` (rendering and controls), `6608aec`
+(who is inside, by floor; `sim/floorfolk.js`). Differences from the design above:
+
+- A unit on another floor is `u.away` (kept in step by `setFloor` / `moveToFloor`); `activeAny(u)` means standing
+  anywhere in the building. `b.floors` is undefined for a single-storey building, which draws exactly as before.
+- A building with storeys is never roofed over while you look at one of its floors (the top floor shows its rooms,
+  fogged until seen); extraction zones draw on the ground floor only.
+- You cannot climb into a stairwell someone stands on ("Someone is on the stairs above"): move off the landing.
+- The dead on other floors are frozen except one aware one a turn drifting to the stairs toward you (the default
+  from the open choices); extraction is from ground-floor exits only; stairwells are always usable.
+- The block card has a **Look around (1 h)** action (Scouting) that reads each tall place's upstairs: "lights were
+  seen upstairs" (survivors), "voices and a watcher on the stairs" (raiders), "something nests above" (a nest from
+  block 4 in buildings of 4+ storeys), else "nothing stirs upstairs". Chance tables: `FOLK` in `sim/floorfolk.js`.
+- Survivors behind a barred door raise a card on contact (Talk, Ask them to join, Leave them be, Force the door);
+  a left-be group stays as a wanderers group at the city; recruits wait on the street after you extract.
+- Open: a door-panel "Force the door" for a group already met (the barricade is otherwise opened only through
+  the card); fires, smoke and acid have no floor yet (a Molotov upstairs also burns the same cell downstairs);
+  each visited floor's sight cache is saved (a fully explored 5-storey hospital adds a few MB before gzip).
