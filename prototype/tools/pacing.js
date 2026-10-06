@@ -128,7 +128,7 @@ const CRISIS = {
   raid: { card: /^Raiders heading|^Outsider raiders heading|^Raid defense|come for their people$/ },
   horde: { card: /^Horde heading for|^Overrun$|^The horde is beaten/ },
   illness: { card: /^Outbreak at/, log: /came down with pneumonia|pneumonia set in|has pneumonia/i },
-  team: { card: /^Bitten|^Held at|^Cannot go home|^Rescue at|^Your people at|^The dead surge/, log: /whole team was lost|taken captive|were captured/i },
+  team: { card: /^The worm|^Held at|^Cannot go home|^Rescue at|^Your people at|^The dead surge/, log: /whole team was lost|taken captive|were captured/i },
 };
 
 // Big moments in the log, and the cards that warn of them (or let the player act on them).

@@ -150,17 +150,20 @@ const EVENTS = [
     },
   },
   {
-    id: "bitten", weight: 1, when: (st, p, t) => t.infection > 0.4 && partyMembers(st, p).length > 1,
+    // The worm (lore: Help → The dead and the worm): the dead shed a tapeworm's eggs into the ground and water, and
+    // someone on the team has swallowed them. Bites do not spread it. The odds are the old Bitten card's.
+    id: "worm", weight: 1, when: (st, p, t) => t.infection > 0.4 && partyMembers(st, p).length > 1,
     card: (st, p) => {
       const v = st.rng.pick(partyMembers(st, p));
+      const first = v.name.split(" ")[0];
       return {
-        title: "Bitten",
-        text: `${v.name} hides a bite on their forearm. It is already turning dark.`,
+        title: "The worm",
+        text: `${v.name} has been eating like two people and getting thinner, and this morning they found pale segments in their stool. It is the worm: somewhere on this ground they swallowed its eggs, in a stream or a half-cooked meal. If it reaches the brain they will turn.`,
         survivorIds: [v.id], // the card is dropped if they die or leave the team before it is answered
         choices: [
-          paid(p, { meds: 2 }, { label: "Amputate and treat (2 meds)", hint: hint(st, p, "medicine", 10), resolve: (s) => { if (check(s, p, "medicine", 10).ok) { v.health = Math.max(10, v.health - 50); return `${v.name.split(" ")[0]} survives, badly weakened.`; } hurt(s, v, 999, partyTile(p), "after a bite"); wipeIfEmpty(s, p); return `${v.name} did not survive.`; } }),
-          { label: "End it quickly", resolve: (s) => { hurt(s, v, 999, partyTile(p), "after a bite, by their own team"); s.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 8))); wipeIfEmpty(s, p); return `The team buries ${v.name}.`; } },
-          { label: "Hope it is not infected", resolve: (s) => { if (s.rng.chance(0.75)) { hurt(s, v, 999, partyTile(p), "after turning"); if (wipeIfEmpty(s, p)) return `${v.name} turned in the night.`; return `${v.name} turned in the night. ${injureRandom(s, p, 10, 35, "when a friend turned")}`; } return "Against all odds, the fever breaks."; } },
+          paid(p, { meds: 2 }, { label: "Purge it (2 meds)", hint: hint(st, p, "medicine", 10), resolve: (s) => { if (check(s, p, "medicine", 10).ok) { v.health = Math.max(10, v.health - 50); return `The purge works: ${first} passes the worm, badly weakened.`; } hurt(s, v, 999, partyTile(p), "the worm, which had already reached the brain"); wipeIfEmpty(s, p); return `Too late: the worm had reached the brain. ${v.name} turned, and the team put them down.`; } }),
+          { label: "End it quickly", resolve: (s) => { hurt(s, v, 999, partyTile(p), "the worm, by their own team"); s.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 8))); wipeIfEmpty(s, p); return `The team buries ${v.name} and burns the grave.`; } },
+          { label: "Hope it passes on its own", resolve: (s) => { if (s.rng.chance(0.75)) { hurt(s, v, 999, partyTile(p), "after turning"); if (wipeIfEmpty(s, p)) return `${v.name} turned in the night.`; return `${v.name} turned in the night. ${injureRandom(s, p, 10, 35, "when a friend turned")}`; } return `Against all odds, ${first} passes the worm whole.`; } },
         ],
       };
     },

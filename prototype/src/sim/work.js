@@ -48,7 +48,7 @@ import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } fro
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
-import { prisonersAt } from "./prisoners.js";
+import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fisherMult, CABIN } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
@@ -115,10 +115,10 @@ export const WORK_TYPES = {
   },
   guard: {
     name: "Guard", ing: "On guard", short: "Grd", role: "guard", skill: "shooting",
-    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight or prisoners are in the cells). Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
+    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work). Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
     open(ctx) {
       const n = ctx.people.length;
-      const cap = (n >= 4 ? 1 : 0) + (n >= 12 ? 1 : 0) + (ctx.threat.standing ? 1 : 0) + (prisonersAt(ctx.state, ctx.base.id).length ? 1 : 0);
+      const cap = (n >= 4 ? 1 : 0) + (n >= 12 ? 1 : 0) + (ctx.threat.standing ? 1 : 0) + prisonGuardsWanted(ctx.state, ctx.base); // prisoners-tab: one for the cells, one per 4 prisoners out at work
       return cap ? { cap, urg: ctx.threat.standing ? 6 : 2 } : { cap: 0, why: "no lookout needed (fewer than 4 people, nothing in sight)" };
     },
     rank: (s) => combatPower(s) * 2,
