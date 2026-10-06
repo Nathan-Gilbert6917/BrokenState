@@ -160,8 +160,8 @@ export const GEAR = {
   stamps:      { name: "Stamp album",                slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, weight: 0.5, valuable: true, cat: "collectibles", desc: "A lifetime of stamps, sorted by country." },
   lighters:    { name: "Pack of lighters",           slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, small: true, weight: 0.1, valuable: true, cat: "household", desc: "Five disposable lighters on a card. Every camp wants fire." },
   toiletpaper: { name: "Toilet paper",               slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, weight: 0.6, valuable: true, cat: "household", desc: "A sealed four-pack. A luxury now." },
-  soap:        { name: "Bars of soap",               slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, weight: 0.4, valuable: true, cat: "household", desc: "Hotel soap and a few big bars." },
-  razors:      { name: "Razor blades",               slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.1, valuable: true, cat: "household", desc: "A dispenser of safety-razor blades." },
+  soap:        { name: "Bars of soap",               slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, weight: 0.4, groom: 0.4, dur: 40, cat: "toiletries", desc: "Hotel soap and a few big bars. A proper wash, even from a bucket: +0.4 mood a day for whoever uses it, about forty days in the lot." },
+  razors:      { name: "Razor blades",               slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.1, groom: 0.3, dur: 60, cat: "toiletries", desc: "A dispenser of safety-razor blades. A clean shave, or at least a tidy one: +0.3 mood a day for whoever uses them, two months of blades." },
   candles:     { name: "Candles",                    slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, weight: 0.6, valuable: true, cat: "household", desc: "Church candles and tea lights." },
 
   // More weapons (combat.js WEAPONS has their battle numbers). pry: forces locks in a raid like the crowbar
@@ -246,6 +246,7 @@ export const GEAR = {
   // Toiletries (comforts.js groomLines): groom = mood a day for whoever uses it, dur = days of use in it. Carried,
   // it is the carrier's own; in a base's armory or a team's cargo it is a shared shelf for everyone there with none
   // of their own, and a shared one is used up a day per person. Each kind counts once; all together at most +1.2.
+  // Soap and razor blades (with the household goods above) are toiletries too.
   deodorant:   { name: "Stick of deodorant",       slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, small: true, groom: 0.5, dur: 30, desc: "Half-used, the cap cracked. Nobody smells good any more, but you can smell less bad: +0.5 mood a day for whoever uses it, about a month in the stick.", weight: 0.1, cat: "toiletries" },
   toothpaste:  { name: "Toothbrush and toothpaste", slot: "pack", skill: null, power: 0, req: 0, value: 3, noise: 0, small: true, groom: 0.4, dur: 40, desc: "A travel brush and a squeezed-flat tube. Clean teeth feel like the old world: +0.4 mood a day for whoever uses it.", weight: 0.1, cat: "toiletries" },
   shampoo:     { name: "Bottle of shampoo",        slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, groom: 0.3, dur: 25, desc: "Two-in-one, smells of fake apples. Washing your hair in a bucket still counts: +0.3 mood a day for whoever uses it.", weight: 0.4, cat: "toiletries" },

@@ -23,6 +23,7 @@ const pocket = (s, it) => { const i = s.pockets.indexOf(null); s.pockets[i] = it
 
 console.log(`Toiletries: ${TOILETRIES.join(", ")}`);
 check(TOILETRIES.includes("deodorant") && TOILETRIES.length >= 5, "deodorant and at least four more toiletries exist");
+check(["soap", "razors"].every((k) => TOILETRIES.includes(k) && !GEAR[k].valuable), "soap and razor blades are toiletries, not trade-only valuables");
 check(TOILETRIES.every((k) => GEAR[k].dur > 0 && GEAR[k].groom > 0 && GEAR[k].cat === "toiletries"), "each has days of use, a mood a day and the toiletries trade category");
 
 // ---------- 1. carried: the carrier's own ----------
