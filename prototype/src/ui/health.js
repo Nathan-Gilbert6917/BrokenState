@@ -26,7 +26,7 @@ const pct = (p) => `${Math.round(p * 1000) / 10}%`;
 export const isSick = (s) => hasCondition(s) || wormSeen(s);
 
 // The worm's chip, once it has been spotted (sim/worm.js).
-export const wormChip = (state, s) => (wormSeen(s) ? `<span class="chip off"${tip(wormTip(state, s))}>${esc(wormLabel(s))}</span>` : "");
+export const wormChip = (state, s) => (wormSeen(s) ? `<span class="chip off"${tip(`${wormTip(state, s)} If they die, they get up as one of the dead.`)}>${esc(wormLabel(s))}</span>` : "");
 
 // One condition as a chip: its icon, name and days left ("🤒 Flu · 4 days left"), the course in the tooltip.
 export function condChip(state, s, c) {

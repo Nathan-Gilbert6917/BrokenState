@@ -57,7 +57,8 @@ import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // th
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
-import { stirBodies, carrierRound, burst, swarmHit, crush, botCrush, turnedBody, walksOn, turnedName, turnedLine, dropBodyBox, raidEndBodies } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm
+import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
+import { hasWorm } from "./worm.js"; // the worm in a living person
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
@@ -973,7 +974,7 @@ export function meleeOdds(b, a, t) {
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
 // Can this unit fire its gun right now (ranged weapon and, for the player, ammo)?
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo); // a ram's crew has its hands full (siege.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
@@ -1051,6 +1052,7 @@ function playerUnit(b, s) {
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
     scouting: skill(s, "scouting"), load: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
+    wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0,
   };
 }
@@ -1198,6 +1200,7 @@ export function createBattle(state, setup) {
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
   if (!setup.layout) placeBodies(b, state.seed); // sleepers.js: bodies lie about a fight in the open, Sleepers among them
+  placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
@@ -1250,6 +1253,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
+    swarmBite(b, t, by); // carriers.js: a worm swarm's bite can leave the worm in the living
     return eff;
   }
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
@@ -1270,6 +1274,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
     // swarm leaves nothing.
     else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
+    if (b.raid && t.walking) walkingBox(b, t, b.raid.containers.find((k) => k.kind === "body" && k.uid === t.id)); // carriers.js: one of the walking dead put down: its things are in the body
     say(b, t.ztype === "swarm" ? `${t.name} is crushed and scattered.` : `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
     if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
     if (t.ztype === "carrier") burst(b, t); // carriers.js: the worm swarm comes out
@@ -1383,7 +1388,7 @@ function fire(b, a, t, opts = {}) {
   if (hit) {
     const crit = rng.chance(o.crit / 100);
     const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1);
-    const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit }));
+    const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit, weapon: a.weapon })); // weapon: a shotgun's spread catches a worm swarm (carriers.js swarmArmor)
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
     text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
     fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, acid: !!w.acid });
@@ -1625,6 +1630,42 @@ export function combatAct(state, act) {
       u.hunker = false;
       break;
     }
+    case "doubletap": { // carriers.js: a round through a body's head from range (1 action, ammo, the noise of a shot)
+      const why = tapRefusal(b, u, t);
+      if (why) return why;
+      const w = WEAPONS[u.weapon];
+      take(b, "ammo", w.ammo);
+      b.ammoUsed += w.ammo;
+      const noise = shotNoise(b, u, w); // stealth.js: a suppressor halves it
+      b.noise += noise;
+      if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
+      tap(b, u, t);
+      if (noise && b.raid) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shot still carries." : "The gunshot alerts everything nearby.");
+      else if (noise && noise < w.noise) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), "The muffled shot still carries.");
+      else if (noise) alertAll(b, "The gunshot alerts everyone nearby.");
+      u.ap -= 1;
+      u.hunker = false;
+      break;
+    }
+    case "pickup": { // carriers.js: pick up a body next to the unit (1 action; slower, no shooting while carrying)
+      const err = pickUp(b, u, t);
+      if (err) return err;
+      u.ap -= 1;
+      u.hunker = false;
+      break;
+    }
+    case "dropbody": { // carriers.js: put the carried body down (1 action)
+      const err = putDown(b, u);
+      if (err) return err;
+      u.ap -= 1;
+      break;
+    }
+    case "stowbody": { // carriers.js: the carried body into the team's car (1 action): it cannot rise, and comes home
+      const err = stowBody(state, b, u);
+      if (err) return err;
+      u.ap -= 1;
+      break;
+    }
     default:
       return "Unknown action.";
   }
@@ -1647,7 +1688,7 @@ export function endPlayerTurn(state) {
   zTick(b); // zombietypes.js: spitters and screamers get ready again
   sowerRound(b); // middead.js: Sowers thicken the ground with eggs
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
-  carrierRound(state, b); // carriers.js: the bodies a Carrier stirred get up (and act this turn); worm swarms sink
+  carrierRound(state, b); // carriers.js: bodies near a Carrier and bodies with the worm in them get up (and act this turn); bodies in the flames burn; worm swarms sink
   acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
@@ -1701,7 +1742,7 @@ function startPlayerTurn(state, b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
-  stirBodies(b); // carriers.js: bodies near a Carrier (and the worm swarm's dead) stir: they get up after this turn
+  stirBodies(state, b); // carriers.js: bodies in the flames burn; a carrier who went down puts the body down
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
   for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
@@ -2348,7 +2389,7 @@ export function autoPlayerTurn(state, opts = {}) {
     if (active(u) && u.ap > 0) botDecoy(state, b, u); // decoys.js: a decoy to pull the dead off your people
     if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a grenade, a pipe bomb or a Molotov on a crowd
     if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
-    const skull = botCrush(b, u); // carriers.js: a stirring body next to them, crushed before it gets up
+    const skull = botCrush(b, u); // carriers.js: a body in danger next to them (a Carrier near, the worm in it), crushed before it gets up
     if (skull) combatAct(state, skull);
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
@@ -2430,6 +2471,9 @@ function endBattle(state, b, outcome) {
   }
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, true);
+  // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
+  // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.
+  endBodies(state, b, outcome, outcome !== "defeat");
 
   const enemies = b.units.filter((u) => u.side === "enemy");
   const original = enemies.filter((u) => !u.reinforcement);
@@ -2444,8 +2488,12 @@ function endBattle(state, b, outcome) {
   if (outcome === "victory") {
     // carriers.js: a body that got up is one body, the risen one's (with the person's kit); one of yours who got up is
     // their own body as below; a worm swarm leaves none.
+    // A burnt body or one laid in the car is no body here (carriers.js); one of the walking dead put down has the
+    // person's things on it (walkingBody).
     for (const e of enemies) {
-      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || (e.turned && e.turned.sid != null)) continue;
+      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle) continue;
+      if (e.walking) { b.bodies.push(walkingBody(state, b, e)); continue; }
+      if (e.turned && e.turned.sid != null) continue;
       b.bodies.push(e.turned ? turnedBody(rng, e) : enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
     }
     for (const e of captives) { const body = enemyBody(rng, e, KITS[e.kit] || KITS.raiders); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
@@ -2453,7 +2501,7 @@ function endBattle(state, b, outcome) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
       // carriers.js: still walking as one of the dead, there is no body here (their things stay at the death site
       // or in the armory, world.js killSurvivor); put down, the body is "Dana (turned)".
-      if (s && !walksOn(b, u)) { const body = allyBody(s, u); body.name = turnedName(b, u); b.bodies.push(body); }
+      if (s && !walksOn(b, u) && !u.burnt && !u.inVehicle) { const body = allyBody(s, u); body.name = turnedName(b, u); b.bodies.push(body); }
     }
     b.bodies = b.bodies.filter((body) => !bodyEmpty(state, body));
   }
@@ -2852,6 +2900,7 @@ export function createRaid(state, setup) {
     }
   }
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
+  placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
@@ -3093,9 +3142,9 @@ function endRaid(state, b) {
     if (!s.alive) { deadIds.push(s.id); continue; }
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
   }
-  raidEndBodies(b); // carriers.js: the bodies the risen still walk about in go back on the map (left behind)
-  raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   const vehicleKept = R.vehicleZone >= 0 && b.units.some((u) => u.side === "player" && u.left && !u.dead && u.exitZone === R.vehicleZone);
+  endBodies(state, b, extractedIds.length ? "extracted" : "defeat", vehicleKept); // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home with it
+  raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   if (R.vehicleZone >= 0 && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
   const enemies = b.units.filter((u) => u.side === "enemy");
   const original = enemies.filter((u) => !u.reinforcement);
@@ -3146,7 +3195,7 @@ function autoRaidTurn(state) {
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
       const esc = leave && R.interior ? botEscape(state, b, u, R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
       if (esc && !combatAct(state, esc)) continue;
-      const skull = botCrush(b, u); // carriers.js: a stirring body next to them, crushed before it gets up
+      const skull = botCrush(b, u); // carriers.js: a body in danger next to them, crushed before it gets up
       if (skull && !combatAct(state, skull)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));

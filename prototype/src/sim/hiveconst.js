@@ -70,24 +70,46 @@ export const TECH = {
 // The Carrier (carriers.js): one of the dead so full of the worm that it is swollen with it. Every number it and its
 // worm swarm use is here (their battle stats in ZTYPES carrier / swarm).
 // - A human body (anyone killed: your people, raiders, soldiers, neutrals; never one of the dead) within RANGE tiles
-//   of a Carrier (diagonals count as 1) stirs: the worms get into it. It gets up at the end of your next turn as one
-//   of the dead, unless it burns first (a fire on its tile) or one of yours next to it crushes the skull (1 action).
+//   of a Carrier (diagonals count as 1) gets up at once as one of the dead: on the Carrier's own turn, or at the
+//   start of the enemy turn for a body killed during yours. No warning: a body near a Carrier is a danger (the map
+//   marks it). Crush its skull from next to it (1 action, silent), shoot it from range (a double tap: 1 action, ammo,
+//   noise), burn it (fire on its tile: the body and everything on it are gone), or pick it up and carry it off.
 //   A Carrier walks to a body within SEEK tiles when none of the living is next to it.
 // - The risen keep what the person wore: worn armour still takes its share of every hit; they use no guns. Killed,
 //   the body has the person's things to take off; your own fallen get up as "Dana (turned)".
-// - Killed, a Carrier bursts: a worm swarm comes out where it fell (quick, weak, most bullets go through it; fire and
-//   blows are the answer). Anyone it kills is full of the worm and gets up the same way (one of yours it brings down
-//   rises if they bleed out). With no host to go to it sinks into the ground after SWARM_TURNS turns.
+// - Killed, a Carrier bursts: a worm swarm comes out where it fell (quick, weak; single shots go through it, SHOT;
+//   shotguns do SHOTGUN of their damage; blades, blows, blasts and fire are the answer). Each of its hits on
+//   someone living leaves the worm in them INFEST of the time (worm.js catchWorm); someone it kills always has it.
+//   Whoever has the worm and dies, anywhere and any time later, gets up. With no host to go to the swarm sinks into
+//   the ground after SWARM_TURNS turns.
+// - Carrying a body (carriers.js pickUp): CARRY_MOB tiles an action instead of 5, no shooting; put down with another
+//   action, or into the team's car (a raid's vehicle zone; a field battle's evac strip). A body in the car cannot
+//   rise and comes home: bury it (its things to the armory) or burn it (Armory tab). Left unburied with the worm in
+//   it, it gets up at the base after BASE_RISE nights.
+// - Walking loot (carriers.js walkOff / placeWalking): the gear of one of the risen still walking when a battle ends
+//   goes into state.walkingLoot with its tile. A battle made within WALK_RADIUS tiles of an entry (nearer = likelier,
+//   WALK_CHANCE at the tile itself, at most WALK_MAX a battle) has one of its ordinary dead marked as that risen
+//   person, in their armour, and its body is looted as usual. Each day an entry drifts a step (DRIFT: the chance;
+//   DRIFT_HIVE: toward the nearest hive, else at random), so the dead seem to wander.
 // - The worm cyst (GROWTHS.cyst) costs CYST_COST and grows in CYST_DAYS days. It is tier 0, so Carriers are the
 //   first special dead a hive breeds: a young hive grows its first biomass pit, then the cyst (about the second
 //   month); runners only come with tier 1 (year 2).
 export const CARRIER = {
-  RANGE: 2,        // a body this close (Chebyshev) to a Carrier stirs
+  RANGE: 2,        // a body this close (Chebyshev) to a Carrier gets up
   SEEK: 8,         // a Carrier walks to a body this close when none of the living is next to it
   RISE_AP: 1,      // the risen get up with this many actions on their first turn
   SWARM_TURNS: 6,  // the swarm sinks into the ground after this many enemy turns
-  SHOT: 0.35,      // × the damage a bullet or bolt does to the swarm (most go through)
+  SHOT: 0.15,      // × the damage a single bullet or bolt does to the swarm (pistols, rifles, carbines, bows: most of it goes through)
+  SHOTGUN: 1,      // × a shotgun's (data.js GEAR cat "shotgun": the spread catches it)
   MELEE: 0.9, BASH: 1.25, BLAST: 1.5, // × a blade's, a blow's (a club, a gun butt, a boot), a blast's
+  INFEST: 0.35,    // a swarm's hit on someone living leaves the worm in them this often (a kill always does)
+  CARRY_MOB: 3,    // tiles an action while carrying a body (combat.js MOVE is 5)
+  BASE_RISE: 1,    // a body with the worm brought home and left unburied gets up after this many nights
+  WALK_RADIUS: 8,  // walking loot is met in battles this many tiles from where it drifted to
+  WALK_CHANCE: 0.6, // ... this often on the tile itself, falling off with distance
+  WALK_MAX: 2,     // at most this many of the walking dead in one battle
+  DRIFT: 0.5,      // each day an entry moves a tile this often ...
+  DRIFT_HIVE: 0.7, // ... toward the nearest hive this often, else at random
   CYST_COST: 18, CYST_DAYS: 15,
 };
 
@@ -223,11 +245,11 @@ export const ZTYPES = {
   // The Carrier and its worm swarm (CARRIER above, carriers.js). No growth breeds the swarm (share 0): it only comes
   // out of a Carrier. swarm armor 1: what a hit does to it is by the kind of hit (carriers.js swarmArmor).
   carrier:  { name: "Carrier",  short: "Ca", hp: 1.5, dmg: 0.8, aim: 0, mob: 2.5, armor: 1, share: 0.06, wall: 1.1, weight: 1.5, priority: 2, burn: 1.3,
-              special: `Bloated with the worm and slow. A human body within ${CARRIER.RANGE} tiles of it stirs and gets up as one of the dead at the end of your next turn, wearing what the person wore. Killed, it bursts into a worm swarm. It never raises the dead.`,
-              counter: "Shoot it before it reaches the bodies, and not next to your people (the swarm). Burn a stirring body or crush its skull (U) from next to it." },
+              special: `Bloated with the worm and slow. A human body within ${CARRIER.RANGE} tiles of it gets up at once as one of the dead, wearing what the person wore. Killed, it bursts into a worm swarm. It never raises the dead.`,
+              counter: "Shoot it before it reaches the bodies, and not next to your people (the swarm). Crush a body's skull (U) from next to it, double tap it from range (J), burn it, or carry it off (P) before the Carrier gets near." },
   swarm:    { name: "Worm swarm", short: "W", hp: 0.7, dmg: 0.6, aim: 15, mob: 4, armor: 1, share: 0, wall: 1, weight: 1, burn: 2.5,
-              special: `Worms from a burst Carrier: quick and weak, but most bullets go through it (a third of the damage). Whoever it kills gets up as one of the dead. It sinks into the ground after ${CARRIER.SWARM_TURNS} turns.`,
-              counter: "Fire, a blast, or clubs and boots (blows hurt it more than blades); or keep away until it sinks." },
+              special: `Worms from a burst Carrier: quick and weak, but a single bullet or bolt goes straight through it (${Math.round(CARRIER.SHOT * 100)}% of the damage). Each bite can leave the worm in someone (${Math.round(CARRIER.INFEST * 100)}%): whoever has it gets up when they die, now or later. Whoever it kills gets up as one of the dead. It sinks into the ground after ${CARRIER.SWARM_TURNS} turns.`,
+              counter: "Single shots pass through it: use shotguns, blasts or fire; blades and blows work. Or keep away until it sinks, and watch anyone it bit for the worm." },
   shepherd: { name: "Shepherd", short: "Sh", hp: 1.6, dmg: 0.8, aim: 0, mob: 3, armor: 0.85, share: 0.02, wall: 1.6, weight: 2.6, priority: 3, keep: SHEPHERD.KEEP, senses: [], aura: SHEPHERD.AURA,
               special: `Stays behind its pack and steps around fire. The dead within ${SHEPHERD.AURA} tiles of it ignore decoys and fire, go for the living and the breaches, and keep together.`,
               counter: "Kill it first, at range: the aura ends with it. Until then decoys and fire are wasted on its pack." },
