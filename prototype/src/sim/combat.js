@@ -687,12 +687,12 @@ export const CAR_LEN = { car: [3, 3, 4], truck: [4] };
 // What a battle is called by its tile: the site, else a bridge, a road or the terrain.
 export const placeName = (tile) => (!tile ? "Open ground" : tile.loc ? tile.loc.name : tile.bridge ? "Bridge" : tile.road ? `Road (${TERRAIN[tile.terrain] ? TERRAIN[tile.terrain].name.toLowerCase() : tile.terrain})` : tile.terrain[0].toUpperCase() + tile.terrain.slice(1));
 // The rect a car at (x, y) covers: its length along ax.
-export const carRect = (x, y, ax, L) => (ax === "x" ? { x0: x, y0: y, w: L, h: 2 } : { x0: x, y0: y, w: 2, h: L });
+export const carRect = (x, y, ax, L, wide = 2) => (ax === "x" ? { x0: x, y0: y, w: L, h: wide } : { x0: x, y0: y, w: wide, h: L }); // wide: 2 for a car, 1 for a bike
 // Put a car down if its cells pass `ok` and the ring around them is open ground (or off the map). Returns the rect.
 // opts.ring: false skips the free ring (a car in a garage bay, the team's own vehicle); opts.body: what a "vehicle" cell
 // is drawn as ("car" | "truck").
 export function placeCar(cells, W, H, x, y, ax, L, kind, ok, v = 0, opts = {}) {
-  const r = carRect(x, y, ax, L);
+  const r = carRect(x, y, ax, L, opts.wide || 2);
   if (r.x0 < 0 || r.y0 < 0 || r.x0 + r.w > W || r.y0 + r.h > H) return null;
   for (let yy = r.y0 - 1; yy <= r.y0 + r.h; yy++) for (let xx = r.x0 - 1; xx <= r.x0 + r.w; xx++) {
     if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
@@ -721,10 +721,10 @@ export function removeCar(cells, W, r) {
 export const DRIVE = { RANGE: 8, AP: 2, HEAT: 5, RADIUS: 10 };
 export const nearRect = (r, x, y) => Math.max(r.x - x, x - (r.x + r.w - 1), r.y - y, y - (r.y + r.h - 1), 0) <= 1;
 export function placeVehicle(cells, W, H, zone, kind, ok) {
-  const L = kind === "truck" ? 4 : 3;
+  const L = kind === "truck" ? 4 : kind === "bike" ? 2 : 3; // a bike or a motorcycle: 2 x 1 cells
   const z = zone;
   const [x, y, ax] = z.side === "east" ? [z.x0 + 1, z.y0, "y"] : z.side === "north" ? [z.x0, z.y0, "x"] : z.side === "south" ? [z.x0, z.y0 + 1, "x"] : [z.x0, z.y0, "y"];
-  const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: kind });
+  const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: kind, wide: kind === "bike" ? 1 : 2 });
   if (!rect) return null;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) cells[yy * W + xx].f = "road";
   return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind };
@@ -737,7 +737,7 @@ export function syncVehicleZone(b) {
   for (let i = 0; i < R.zones.length; i++) R.zones[i].vehicle = i === R.vehicleZone;
 }
 // Seats: who can ride in the team's vehicle (board / disembark), by its model (vehicles.js VEHICLE_TYPES).
-export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 0 };
+export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1 }; // a bike or a motorcycle: its rider
 // Ramming (driveTo): the vehicle drives through people (any side, RAMMING.HIT damage, the dead ZOMBIE_HIT) and light
 // obstacles (WEAR: what each costs the vehicle's condition, settled when the battle ends: settleVehicle). Walls, trees,
 // other cars, water, railings and trenches stop it.
@@ -785,6 +785,15 @@ export function disembark(b, u, force = false) {
   return "";
 }
 export function landAll(b) { if (b.vehicle) for (const u of b.units) if (u.aboard && !u.dead) disembark(b, u, true); }
+// Being in the vehicle counts as getting out: everyone aboard drives off with it (left, exitVehicle; a raid keeps the
+// vehicle). Returns how many.
+export function leaveAboard(b) {
+  const riders = b.units.filter((u) => u.aboard && !u.dead);
+  if (!riders.length) return 0;
+  for (const u of riders) { u.aboard = false; u.off = false; u.left = true; u.exitVehicle = true; u.exitZone = b.raid ? b.raid.vehicleZone : undefined; u.ap = 0; u.ow = u.hunker = false; if (b.vehicle) { u.x = b.vehicle.x; u.y = b.vehicle.y; } }
+  say(b, `${riders.map((u) => u.name).join(", ")} ${riders.length === 1 ? "drives" : "drive"} off in the ${b.vehicle ? b.vehicle.kind : "vehicle"}.`, "good");
+  return riders.length;
+}
 // Turn the vehicle a quarter (1 action, from inside or next to it): its rect swaps sides at the same corner; the cells
 // it turns onto must be open with nobody on them.
 export function turnVehicle(b, u) {
@@ -822,11 +831,13 @@ export function driveTo(b, u, x, y) {
   if (!v) return "You came on foot: there is no vehicle here.";
   const tx = Math.max(0, Math.min(W - v.w, x - Math.floor((v.w - 1) / 2))), ty = Math.max(0, Math.min(H - v.h, y - Math.floor((v.h - 1) / 2)));
   if (tx === v.x && ty === v.y) return "It is already there.";
+  const canRam = v.kind !== "bike"; // a bike rides round people and obstacles, it does not run them down
   const passable = (px, py) => {
     if (px < 0 || py < 0 || px + v.w > W || py + v.h > H) return false;
     for (let cy = py; cy < py + v.h; cy++) for (let cx = px; cx < px + v.w; cx++) {
       const c = b.cells[idx(cx, cy)];
-      if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy)) || rammable(c))) return false;
+      if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy)) || (canRam && rammable(c)))) return false;
+      if (!canRam && b.units.some((o) => o !== u && !o.aboard && onMap(o) && o.x === cx && o.y === cy)) return false;
     }
     return true;
   };
@@ -917,8 +928,8 @@ export function driveTo(b, u, x, y) {
   return "";
 }
 // When a battle ends: everyone aboard back on the ground, and what ramming cost the party's vehicle (vehicles.js condition).
-export function settleVehicle(state, b) {
-  landAll(b);
+export function settleVehicle(state, b, outcome = null) {
+  if (outcome === "victory") landAll(b); else leaveAboard(b); // won: they get out on the field; else the vehicle is their way out
   const v = b.vehicle;
   if (!v || !v.wear) return;
   const party = b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) : null;
@@ -1617,10 +1628,10 @@ export function createBattle(state, setup) {
   }
   // The team's car or truck on the field (placeVehicle): by the west edge, on the road when there is one. It can be
   // driven (DRIVE) and the siege ram rides in it (siege.js), so nobody has to carry it to the wall.
-  if (party && party.vehicle && party.vehicle !== "bike" && setup.layout !== "baseDefence") {
+  if (party && party.vehicle && setup.layout !== "baseDefence") {
     const pv = partyVehicle(state, party);
-    if (!pv || !isBike(pv)) {
-      const kind = pv && pv.type === "truck" ? "truck" : "car";
+    {
+      const kind = party.vehicle === "bike" || (pv && isBike(pv)) ? "bike" : pv && pv.type === "truck" ? "truck" : "car"; // a bike: 2 x 1
       const roadRows = [];
       for (let y = 0; y < H; y++) if (b.cells[idx(1, y)].f === "road") roadRows.push(y);
       const ys = roadRows.length ? [roadRows[Math.floor(roadRows.length / 2) - 1] ?? roadRows[0], roadRows[0], roadRows[roadRows.length - 2] ?? roadRows[0]] : [Math.floor(H / 2) - 1, Math.floor(H / 2) + 1, 2, H - 4];
@@ -1628,7 +1639,7 @@ export function createBattle(state, setup) {
         const vr = placeVehicle(b.cells, W, H, { x0: 1, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
         if (vr) { b.vehicle = vr; break; }
       }
-      if (b.vehicle) { b.vehicle.seats = SEATS[(pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); }
+      if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); }
     }
   }
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -1700,6 +1711,28 @@ export function createBattle(state, setup) {
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
+  // Their vehicle (conflicts.js: a scavenging party that drove here, aiscav.js): parked behind their people, cover for them
+  // and theirs to lose (endBattle: won, it is left for you: result.enemyVehicle).
+  if (setup.enemy && setup.enemy.vehicle && !setup.layout) {
+    const foes = b.units.filter((u) => u.side === "enemy");
+    if (foes.length) {
+      const cx = Math.round(foes.reduce((a, u) => a + u.x, 0) / foes.length), cy = Math.round(foes.reduce((a, u) => a + u.y, 0) / foes.length);
+      const big = setup.enemy.vehicle === "truck" || setup.enemy.vehicle === "van";
+      const spots = [];
+      for (let y = 0; y < H; y++) for (let x = Math.max(0, cx - 2); x < W; x++) spots.push([x, y, Math.hypot(x - (cx + 2), y - cy)]);
+      spots.sort((a, c) => a[2] - c[2]);
+      for (const [x, y] of spots.slice(0, 300)) {
+        const r = placeCar(b.cells, W, H, x, y, rng.chance(0.5) ? "x" : "y", big ? 4 : 3, big ? "truck" : "car", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !!b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), rng.int(0, 1e6), { ring: false });
+        if (!r) continue;
+        const reach = flood(b.cells, 0, Math.floor(H / 2));
+        if (!b.units.every((u) => reach[idx(u.x, u.y)] || u.side !== "player")) { removeCar(b.cells, W, r); continue; }
+        b.reach = reach;
+        b.enemyVehicle = { type: setup.enemy.vehicle, partyId: setup.enemy.vehiclePartyId ?? null, x: r.x0, y: r.y0, w: r.w, h: r.h };
+        say(b, `They came in a ${setup.enemy.vehicle === "sedan" ? "car" : setup.enemy.vehicle}: it stands behind them. Win and it is yours to take.`, "info");
+        break;
+      }
+    }
+  }
   if (!setup.layout) placeBodies(b, state.seed); // sleepers.js: bodies lie about a fight in the open, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
@@ -1981,6 +2014,8 @@ export function combatAct(state, act) {
     return err;
   }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
+  if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); evacTurn(state, b); return ""; } // evacTurn: everyone to the exits or the vehicle
+  if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
   const u = unitById(b, act.unit);
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
@@ -2111,7 +2146,6 @@ export function combatAct(state, act) {
     case "extract": {
       if (!b.raid) return "Use Retreat.";
       if (u.aboard) { // everyone in the vehicle leaves with it, from the zone it stands at
-        if (b.raid.vehicleZone < 0) return "Drive the vehicle to an extraction zone first.";
         const riders = b.units.filter((o) => o.aboard && !o.dead);
         for (const o of riders) { o.aboard = false; o.off = false; o.left = true; o.exitZone = b.raid.vehicleZone; o.exitVehicle = true; o.ap = 0; o.ow = o.hunker = false; }
         say(b, `${riders.map((o) => o.name).join(", ")} extract in the ${b.vehicle.kind}.`, "good");
@@ -2318,6 +2352,7 @@ function startPlayerTurn(state, b) {
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
   offerClear(b);
+  if (b.evacOrder && !b.over) evacTurn(state, b); // the Evac order stands: the next leg toward the way out
 }
 
 // ---------- the area is clear enough (battlesize.js clearEnough) ----------
@@ -2735,6 +2770,76 @@ export const RETREAT = {
   WOUNDS: 30, ARMOR: 2, SCOUTING: 1, NIGHT: 10, CARRY: 10, MIN: 5, MAX: 95, BLOW: [18, 32],
 };
 
+// ---------- Evac (the Evac button: combatAct "evac") ----------
+// Everyone still standing heads for the way out with the actions they have: the extraction zones of a raid or the
+// evac strip of a battle, or a free seat in the team's vehicle, whichever is nearer. Whoever reaches a zone extracts,
+// whoever reaches the strip slips away, whoever reaches the vehicle gets in (and in it counts as out: leaveAboard).
+// Upstairs (buildingmaps.js storeys) they make for the stairs first. The order stands (b.evacOrder): every turn
+// starts with the next leg (startPlayerTurn) until everyone is out or it is called off ("evacStop"). The downed are
+// not carried (Sound the retreat carries them).
+export function evacRefusal(b) {
+  const exits = b.raid ? b.raid.zones.length > 0 : !!(b.evacCols || b.evacMask);
+  if (!exits && !b.vehicle) return "There is no way out of this fight: no exit and no vehicle.";
+  if (!b.units.some((u) => u.side === "player" && activeAny(u))) return "Nobody left on foot to get out.";
+  return "";
+}
+function evacTargets(b, u) {
+  const out = [];
+  if ((u.f || 0) > 0) return (b.raid && b.raid.stairs ? b.raid.stairs : []).filter(([x, y]) => cellAt(b, x, y).walk);
+  if (b.raid) for (const z of b.raid.zones) for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) { if (inside(x, y) && cellAt(b, x, y).walk) out.push([x, y]); }
+  else out.push(...evacCells(b));
+  const v = b.vehicle;
+  if (v && aboardCount(b) < (v.seats || 4)) {
+    for (let y = v.y - 1; y <= v.y + v.h; y++) for (let x = v.x - 1; x <= v.x + v.w; x++) {
+      if (!inside(x, y) || (x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h)) continue;
+      if (cellAt(b, x, y).walk && b.cells[idx(x, y)].k !== "vehicle") out.push([x, y]);
+    }
+  }
+  return out;
+}
+export function evacTurn(state, b) {
+  bindDims(b);
+  let moved = 0;
+  const seatsLeft = () => (b.vehicle ? (b.vehicle.seats || 4) - aboardCount(b) : 0);
+  const order = b.units.filter((u) => u.side === "player" && activeAny(u) && u.ap > 0);
+  // The nearest to a way out go first (they clear the way for the others).
+  const rough = (u) => { const t = evacTargets(b, u); return t.length ? Math.min(...t.map(([x, y]) => dist(u.x, u.y, x, y))) : 99; };
+  order.sort((a, c) => rough(a) - rough(c));
+  for (const u of order) {
+    for (let step = 0; step < 4 && !b.over && activeAny(u) && u.ap > 0; step++) {
+      if (b.floors && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0);
+      bindDims(b);
+      if ((u.f || 0) > 0) {
+        if (b.cells[idx(u.x, u.y)].k === "stairs") { if (combatAct(state, { type: "godown", unit: u.id })) break; moved++; continue; }
+      } else if (b.raid && zoneAt(b, u.x, u.y) >= 0) { if (!combatAct(state, { type: "extract", unit: u.id })) moved++; break; }
+      else if (!b.raid && evacAt(b, u.x, u.y)) { if (!combatAct(state, { type: "retreat", unit: u.id })) moved++; break; }
+      else if (b.vehicle && seatsLeft() > 0 && atVehicle(b, u)) { if (!combatAct(state, { type: "board", unit: u.id })) moved++; break; }
+      const targets = evacTargets(b, u);
+      if (!targets.length) break;
+      const field = distField(b, targets, u);
+      const r = reachable(b, u, u.mob * u.ap, { manual: true });
+      const here = field[idx(u.x, u.y)];
+      let best = -1;
+      for (let i = 0; i < W * H; i++) {
+        if (!isFinite(r.dist[i]) || r.dist[i] <= 0 || !isFinite(field[i]) || unitAt(b, i % W, (i / W) | 0)) continue;
+        if (best < 0 || field[i] < field[best] || (field[i] === field[best] && r.dist[i] < r.dist[best])) best = i;
+      }
+      if (best < 0 || !(field[best] < here)) break;
+      // Only as far as one action takes them when that already reaches the way out (the second action then extracts,
+      // slips away or gets in).
+      if (u.ap >= 2 && r.dist[best] > u.mob) {
+        let near = -1;
+        for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && r.dist[i] <= u.mob && field[i] === 0 && !unitAt(b, i % W, (i / W) | 0)) { near = i; break; }
+        if (near >= 0) best = near;
+      }
+      if (combatAct(state, { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 })) break;
+      moved++;
+    }
+  }
+  bump(b);
+  return moved;
+}
+
 // Why the retreat cannot be sounded now ("" when it can).
 export function retreatRefusal(b) {
   if (!b || b.over) return "The battle is over.";
@@ -2998,13 +3103,13 @@ export function afterDeploy(state, b) {
 function checkEnd(state, b) {
   if (b.over) return;
   if (b.raid) {
-    if (!b.units.some((u) => u.side === "player" && (activeAny(u) || u.aboard))) endRaid(state, b); // on any floor (buildingmaps.js storeys), or in the vehicle
+    if (!b.units.some((u) => u.side === "player" && activeAny(u))) { leaveAboard(b); endRaid(state, b); } // nobody on foot on any floor (buildingmaps.js storeys): whoever is in the vehicle drives off with it
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
   // A spotted Sleeper lying where it is (sleepers.js) does not hold the field.
   if (!b.units.some((u) => u.side === "enemy" && !u.dormant && (active(u) || (u.off && !u.dead && !u.aboard)))) return endBattle(state, b, "victory");
-  if (!b.units.some((u) => u.side === "player" && (active(u) || u.aboard))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
+  if (!b.units.some((u) => u.side === "player" && active(u))) { leaveAboard(b); endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat"); } // in the vehicle counts as out
 }
 
 // Ends the open battle now (a battle played out headless that ran too long: defences.js fightNow).
@@ -3015,7 +3120,7 @@ export function endBattleNow(state, outcome) {
 function endBattle(state, b, outcome) {
   const rng = state.rng;
   b.over = true;
-  settleVehicle(state, b); // everyone out of the vehicle; what ramming cost it
+  settleVehicle(state, b, outcome); // won: everyone out of the vehicle on the field; else they drive off in it. What ramming cost it
   b.phase = "over";
   const setup = b.setup;
   const cause = `in a fight with ${setup.enemy.name || setup.enemy.kind}`;
@@ -3097,6 +3202,7 @@ function endBattle(state, b, outcome) {
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, loot,
+    enemyVehicle: outcome === "victory" && b.enemyVehicle ? { ...b.enemyVehicle } : null, // their vehicle left on the field (conflicts.js)
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
     tactical: true, worn: true, bodies: b.bodies.length,
@@ -3288,8 +3394,8 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
   if (withVehicle) { // "car" | "truck" | "bike": the team's vehicle in the entry zone (placeVehicle: 2 × 3 or 2 × 4 cells)
     const z = zones[0];
     z.vehicle = true;
-    if (withVehicle !== "bike") vehicle = placeVehicle(cells, W, H, z, withVehicle, (x, y) => inside(x, y) && cells[idx(x, y)].k === "open");
-    if (!vehicle) put(z.x0 + 1, z.y0 + 1, "vehicle", "road"); // bikes, or no room: the old single cell
+    vehicle = placeVehicle(cells, W, H, z, withVehicle, (x, y) => inside(x, y) && cells[idx(x, y)].k === "open"); // a bike: 2 x 1
+    if (!vehicle) put(z.x0 + 1, z.y0 + 1, "vehicle", "road"); // no room: the old single cell
   }
 
   // Road across the map (layRoad: ROAD.WIDTH wide, the cars left on it; on a bridge tile the river and the deck).
@@ -3321,6 +3427,19 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
         if (!road.through()) { removeCar(cells, W, rect); continue; }
         rects.push(rect);
         containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, area: area.id, kind: "car", searched: false, label: `${def.name}: ${onDeck ? "car on the bridge" : "car"}` });
+      }
+      // A crowded road: the cars already standing on it (layRoad's) are searchable too, up to the n wanted.
+      if (rects.length < n) {
+        const seen = new Set(containers.filter((c) => c.kind === "car").map((c) => `${c.x},${c.y}`));
+        for (let i = 0; i < W * H && rects.length < n; i++) {
+          const c = cells[i];
+          if (!c.car || c.k !== "car" || c.car.i !== 0 || c.car.j !== 0 || c.f !== "road") continue;
+          const x0 = i % W, y0 = (i / W) | 0, w = c.car.ax === "x" ? c.car.L : 2, h = c.car.ax === "x" ? 2 : c.car.L;
+          if (seen.has(`${x0},${y0}`) || (onDeck && (x0 + w - 1 < road.deck.c0 || x0 > road.deck.c1))) continue;
+          seen.add(`${x0},${y0}`);
+          rects.push({ x0, y0, w, h });
+          containers.push({ id: cid++, x: x0, y: y0, w, h, area: area.id, kind: "car", searched: false, label: `${def.name}: ${onDeck ? "car on the bridge" : "car"}` });
+        }
       }
       if (!rects.length) continue;
       const xs = rects.flatMap((q) => [q.x0, q.x0 + q.w - 1]);
@@ -3488,7 +3607,7 @@ export function createRaid(state, setup) {
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
-  if (b.vehicle) b.vehicle.seats = SEATS[(pv && pv.type) || "sedan"] ?? 4; // who can ride in it (boardVehicle)
+  if (b.vehicle) b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; // who can ride in it (boardVehicle)
   b.reinfMax = 0;
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);

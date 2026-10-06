@@ -588,7 +588,7 @@ export function sendHelpSquad(state, raidParty, target) {
 
 // ---------- AI parties ----------
 export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
-  const vehicle = kind === "convoy";
+  const vehicle = kind === "convoy" || !!opts.vehicle; // opts.vehicle: a scavenging party that drives out (aiscav.js)
   let res = planPath(state, fromTile, toTile, vehicle, f.id); // a bridge barricaded by someone else is closed to them (bridgeClosedTo)
   let usesVehicle = vehicle && !!res;
   if (!res) res = planPath(state, fromTile, toTile, false, f.id);

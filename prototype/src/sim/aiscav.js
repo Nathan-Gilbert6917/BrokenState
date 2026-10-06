@@ -49,6 +49,8 @@ export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
   searchHours: 8, take: 0.03, floor: 0.03, minLoot: 0.12, eff: 0.8, perLoot: 130, crewMax: 1,
   landRate: 0.003, landEff: 0.5, newsTake: 0.12, newsRange: 15, newsGap: 10,
+  // A party drives out (VEHICLES by the dice) when the group has the fuel: FUEL in stock, FUEL_USE of it for the trip.
+  carChance: 0.5, carFuel: 6, carFuelUse: 2, VEHICLES: ["truck", "sedan", "van", "suv"],
 };
 // Share of the old production from nothing a group keeps (factions.js factionsDaily): ammo, scrap, fuel, meds.
 export const FACTION_MAKE = 0.4;
@@ -183,8 +185,12 @@ export function landSites(state, f) {
 }
 
 export function sendParty(state, f, from, site) {
-  const q = spawnAiParty(state, f, "scav", from, site, { strength: Math.max(2, Math.round(f.pop * AISCAV.share)) });
+  // The group's vehicle when it has the fuel for the trip: they drive (faster on the roads), and it stands on the battle
+  // map if you fight them (combat.js setup.enemy.vehicle: theirs to lose).
+  const drive = (f.stock.fuel || 0) >= AISCAV.carFuel && state.rng.chance(AISCAV.carChance);
+  const q = spawnAiParty(state, f, "scav", from, site, { strength: Math.max(2, Math.round(f.pop * AISCAV.share)), vehicle: drive });
   if (!q) return null;
+  if (q.vehicle) { q.vehicleType = state.rng.pick(AISCAV.VEHICLES); f.stock.fuel = Math.max(0, f.stock.fuel - AISCAV.carFuelUse); }
   q.scav = { site, home: from, left: AISCAV.searchHours, got: {}, taken: 0, str0: q.strength, met: [], band0: lootBand(state.tiles[site], state.tiles[site].loot) };
   aiScav(state).stats.trips++;
   return q;

@@ -323,7 +323,10 @@ function carPieces(car, r) {
   const boxM = flatM(mul(PAL.tire, 1.6)), tire = flatM(PAL.tire);
   const parts = []; // [a0, a1, c0, c1, z0, z1, m]
   const wheel = (a, c) => parts.push([a - 0.3, a + 0.3, c - 0.2, c + 0.2, 0, 5, tire]);
-  if (big) {
+  if (car.body === "bike") { // a bike or a motorcycle: 2 x 1 cells, wheels at each end, a low frame, a seat and the bars
+    const frame = flatM(kind === "vehicle" ? PAL.blue : mul(PAL.metal, 1.1)), dark = flatM(PAL.tire);
+    parts.push([0.15, 0.65, 0.4, 0.6, 0, 6, dark], [1.35, 1.85, 0.4, 0.6, 0, 6, dark], [0.45, 1.55, 0.44, 0.56, 4, 7, frame], [0.75, 1.15, 0.38, 0.62, 7, 9, flatM(PAL.cloth)], [1.45, 1.55, 0.2, 0.8, 9, 11, frame]);
+  } else if (big) {
     parts.push([0.1, 1.35, 0.15, 1.85, 3, 10, paint], [0.25, 1.3, 0.25, 1.75, 10, 16, glass]);  // the cab
     parts.push([1.5, L - 0.1, 0.1, 1.9, 3, 17, boxM]);                                         // the box
     for (const a of [0.7, L - 1.4, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
@@ -867,7 +870,7 @@ function blockTop0(k, o) {
     case "hivewall": return 30;
     case "truck": return o.car ? 17 : 23;
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
-    case "vehicle": return o.car ? (o.car.body === "truck" ? 17 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
+    case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" ? 17 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
