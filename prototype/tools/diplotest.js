@@ -25,13 +25,16 @@ import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
 import * as A from "../src/sim/alliance.js";
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const DIGEST = process.argv[2] === "--digest"; // child process for the determinism check: prints one world's digest
 const COLLAPSE = process.argv[2] === "--collapse"; // child process: one year with (on) or without (off) wars between groups
 const seed = Number(process.argv[DIGEST || COLLAPSE ? 3 : 2] || 42);
 const longDays = Number(process.argv[3] || 365);
-const collapseSeeds = (process.argv[4] || "1,2,3,4,5,6").split(",").map(Number).filter(Number.isFinite);
+// Twelve seeds: a year's collapses swing by ±2-4 groups a seed either way (new gangs come and go), so six seeds
+// (the old default) failed the +0.15 band on code changes far from the wars (0.26 → 0.42 at 5d2be6a, with seed 6
+// alone 2 → 9), while seeds 1–12 give +0.06 there and on 07778af. The years run 4 at a time.
+const collapseSeeds = (process.argv[4] || "1,2,3,4,5,6,7,8,9,10,11,12").split(",").map(Number).filter(Number.isFinite);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -764,10 +767,16 @@ section(`Group collapse per year, with and without wars between groups (seeds ${
 {
   // Each year in a process of its own (ids start at 1 in each, as in a real game).
   const me = fileURLToPath(import.meta.url);
-  const one = (s, noWars) => JSON.parse(execFileSync(process.execPath, [me, "--collapse", String(s), noWars ? "off" : "on"], { encoding: "utf8", maxBuffer: 1 << 26 }));
+  const one = (s, noWars) => new Promise((ok, no) => execFile(process.execPath, [me, "--collapse", String(s), noWars ? "off" : "on"], { encoding: "utf8", maxBuffer: 1 << 26 },
+    (e, out) => (e ? no(e) : ok(JSON.parse(out)))));
+  const years = collapseSeeds.flatMap((s) => [[s, false], [s, true]]);
+  const done = new Map();
+  let next = 0;
+  const worker = async () => { while (next < years.length) { const [s, noWars] = years[next++]; done.set(`${s}:${noWars}`, await one(s, noWars)); } };
+  await Promise.all(Array.from({ length: Math.min(4, years.length) }, worker));
   let onC = 0, offC = 0, span = 0, wars = 0, gone = 0, terms = { land: 0, tribute: 0, white: 0 };
   for (const s of collapseSeeds) {
-    const on = one(s, false), offR = one(s, true);
+    const on = done.get(`${s}:false`), offR = done.get(`${s}:true`);
     const until = Math.min(on.end, offR.end);
     const c1 = Object.values(on.died).filter((d) => d <= until).length, c0 = Object.values(offR.died).filter((d) => d <= until).length;
     onC += c1; offC += c0; span += until;
