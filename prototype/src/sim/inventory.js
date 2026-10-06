@@ -271,12 +271,13 @@ function taken(state, loc, item) {
   const body = battleBodies(state)[loc.id];
   if (body && body.sid != null) unlistFromSites(state, item);
 }
-function unlistFromSites(state, item) {
+// (A site whose body got up and walked off, carriers.js, stays on the map with nothing on it: site.walked.)
+export function unlistFromSites(state, item) {
   for (const site of [...state.deathSites]) {
     const i = site.items.findIndex((e) => e.item === item);
     if (i < 0) continue;
     site.items.splice(i, 1);
-    if (!site.items.length) state.deathSites.splice(state.deathSites.indexOf(site), 1);
+    if (!site.items.length && !(site.walked && site.walked.length)) state.deathSites.splice(state.deathSites.indexOf(site), 1);
   }
 }
 

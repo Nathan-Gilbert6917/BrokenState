@@ -564,7 +564,7 @@ export function deathSitesDaily(state) {
       if (f) f.lootedGear.push(taken.name);
     }
     if (state.live.has(site.tile)) log(state, `Someone looted ${taken.name} from the bodies at ${t.loc ? t.loc.name : "the death site"}.`, "danger");
-    if (!site.items.length) state.deathSites.splice(state.deathSites.indexOf(site), 1);
+    if (!site.items.length && !(site.walked && site.walked.length)) state.deathSites.splice(state.deathSites.indexOf(site), 1); // walked: the grave stays (carriers.js)
   }
 }
 

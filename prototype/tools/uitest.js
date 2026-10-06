@@ -1399,6 +1399,144 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       t.push(`${name} ${x.b.w}×${x.b.h} ${((performance.now() - a) / 30).toFixed(2)} ms`);
     }
     console.log(`  a frame's script time (stub canvas): ${t.join(", ")}`);
+
+    // Floors (docs/multi-storey-crawl.md, phase 2): until the sim makes real storeys, a fixture clones a building's
+    // single-floor interior into 3 floors (void outside the footprint, a stairwell on every floor) and the UI's own
+    // alias swap stands in for sim/combat.js setFloor. Every other battle has no b.floors and draws as before.
+    {
+      const makeFloors = (b, n = 3) => {
+        const B = b.raid.plan.building;
+        const inFoot = (x, y) => x >= B.x0 && x < B.x0 + B.w && y >= B.y0 && y < B.y0 + B.h;
+        // A stairwell: an open footprint cell nobody stands on, the same on every floor.
+        let st = -1;
+        for (let i = 0; i < b.w * b.h && st < 0; i++) { const x = i % b.w, y = (i / b.w) | 0; if (inFoot(x, y) && b.cells[i].k === "open" && !b.cells[i].h && !b.units.some((u) => u.x === x && u.y === y)) st = i; }
+        if (st >= 0) b.cells[st].k = "stairs";
+        const floors = [];
+        for (let f = 0; f < n; f++) {
+          const cells = f === 0 ? b.cells : b.cells.map((c, i) => (inFoot(i % b.w, (i / b.w) | 0) ? { ...c, h: 0, k: c.k === "loft" ? "open" : c.k } : { k: "void" }));
+          floors.push({ cells, reach: f === 0 ? b.reach : b.reach && b.reach.slice(), losCache: f === 0 ? b.losCache : b.losCache && b.losCache.slice(), name: f === 0 ? "Ground floor" : `Floor ${f + 1}` });
+        }
+        b.floors = floors; b.floor = 0; b.raid.storeys = n;
+        for (const u of b.units) u.f = 0;
+        if (!C.CELL.void) C.CELL.void = { walk: false, cover: 0, los: false, name: "Open air" }; // the sim's kind, when it lands
+        return st;
+      };
+      const rb = list.find((x) => x.name === "raid-building"), b = rb.b, st = rb.st;
+      const key = (code) => UI.combatKey(st, { code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
+      const noFloors = list.filter((x) => x !== rb).every((x) => !/cbfloor/.test(UI.viewBar(x.b)) && !UI.combatKey(x.st, { code: "PageUp", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false }) && x.b.floor === undefined);
+      check(noFloors, "a battle without b.floors: no Floor control, PageUp does nothing and leaves it alone");
+      // Real storeys from the sim when the building has them, else the fixture.
+      const real = !!ISO.floorsOf(b);
+      let stairs;
+      if (real) { const [sx, sy] = b.raid.stairs[0]; stairs = sy * b.w + sx; console.log(`  (real storeys from the sim: ${b.floors.length})`); } else stairs = makeFloors(b, 3);
+      const n = b.floors.length, top = n - 1;
+      const toFloor = (u, f) => (typeof C.moveToFloor === "function" ? C.moveToFloor(b, u, f) : (u.f = f)); // the sim keeps u.away with u.f
+      const mine = b.units.filter((u) => u.side === "player" && (C.activeAny || C.active)(u));
+      for (const u of mine) u.ap = 2;
+      check(n >= 2 && b.floors[1].cells.filter((c) => c.k === "void").length > b.w * b.h / 2 && b.floors[top].cells[stairs].k === "stairs" && b.floors[0].cells[stairs].k === "stairs" && mine.length >= 2, `${real ? "the sim's" : "the fixture's"} ${n} floors of ${b.w}×${b.h}: void outside the footprint, a stairwell on every floor`);
+      UI.setBattleView("iso");
+      ISO.iso.battle = null; UI.drawCombat(st, NOW);
+      ISO.iso.rot = 0; ISO.iso.zoom = 4; ISO.iso.target = null;
+      const n0 = nan;
+      const tour = [0, 1, top, 1, 0];
+      let errs = 0, imgs = [], builds = [], prev = 0;
+      for (const f of tour) {
+        try {
+          UI.setViewFloor(b, f);
+          const s0 = ISO.iso.builds.scene, g0 = ISO.iso.builds.ground;
+          log = []; UI.drawCombat(st, NOW);
+          imgs.push(log.filter((l) => l.startsWith("drawImage")).length);
+          UI.drawCombat(st, NOW); // the same floor again: nothing rebuilt
+          builds.push([ISO.iso.builds.scene - s0, ISO.iso.builds.ground - g0, f !== prev ? 1 : 0]);
+          prev = f;
+        } catch (e) { if (errs++ < 2) console.log(`  error drawing floor ${f}: ${e.stack}`); }
+      }
+      check(!errs && nan === n0 && imgs.every((k) => k >= 2), `a ${n}-floor building draws on each floor (${tour.join(", ")}) without errors (${errs}) or NaN, the ground and the blocks drawn (${imgs.join(", ")} images)`);
+      check(builds.every(([s, g, want]) => s === want && g === want), `the scene and ground caches are rebuilt once when the floor changes (the key carries the floor) and not again (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
+      check(b.floor === 0 && b.cells === b.floors[0].cells, "back on the ground floor the aliases point at its arrays");
+      // The upper floor is raised: a cell's top at its lifted height picks itself (or a nearer cell in front).
+      UI.setViewFloor(b, top); UI.drawCombat(st, NOW);
+      let total = 0, exact = 0, behind = 0;
+      for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+        const c = b.cells[y * b.w + x];
+        if (c.k === "void" || !C.CELL[c.k].walk) continue;
+        const [px, py] = ISO.project(x + 0.5, y + 0.5, (C.heightAt(b, x, y) + top) * ISO.LV);
+        if (px < 0 || py < 0 || px > 1600 || py > 900) continue;
+        const p = ISO.isoPick(b, px, py, { noUnits: true });
+        total++;
+        if (p && p.x === x && p.y === y) exact++;
+        else if (p && b.cells[p.y * b.w + p.x].k !== "void") behind++;
+      }
+      check(total > 20 && exact / total > 0.7 && exact + behind === total, `picking on floor ${n}: ${exact} of ${total} raised cells pick themselves at their height, the rest a nearer cell of the floor (${total - exact - behind} fell through to the ground)`);
+      const vi0 = b.cells.findIndex((c) => c.k === "void");
+      check(vi0 >= 0 && (() => { const p = ISO.isoPick(b, ...ISO.project((vi0 % b.w) + 0.5, ((vi0 / b.w) | 0) + 0.5, 0), { noUnits: true }); return p && p.x === vi0 % b.w && p.y === ((vi0 / b.w) | 0); })(), "outside the footprint the ground at level 0 still picks its own cell");
+      // Markers for units on other floors; clicking one jumps there and selects them.
+      const far = mine[0];
+      UI.setViewFloor(b, 0);
+      toFloor(far, top);
+      UI.drawCombat(st, NOW);
+      check(ISO.iso.markers.some((m) => m.id === far.id && m.f === top) && ISO.iso.rects.some((q) => q.id === far.id && q.f === top) && !ISO.iso.markers.some((m) => m.f === 0), `a unit on floor ${n} seen from the ground floor is a marker (${ISO.iso.markers.length}), not a sprite`);
+      const [mx, my] = ISO.project(far.x + 0.5, far.y + 0.5, 0);
+      UI.cui.sel = mine[1].id;
+      UI.combatClick(st, mx, my);
+      check(b.floor === top && UI.cui.sel === far.id, `clicking the marker jumps to floor ${b.floor + 1} and selects them`);
+      UI.drawCombat(st, NOW);
+      check(!ISO.iso.markers.some((m) => m.id === far.id) && ISO.iso.markers.length === mine.length - 1 + b.units.filter((u) => u.side === "player" && !(C.activeAny || C.active)(u) && !u.dead && !u.left && !u.fled && !u.off).length, "on their floor they are drawn, not marked; the rest of the team downstairs are");
+      // PageUp / PageDown change the floor through setViewFloor; selecting a unit on another floor follows it.
+      let steps = true;
+      for (let f = top - 1; f >= 0; f--) steps = steps && key("PageDown") && b.floor === f;
+      steps = steps && key("PageDown") && b.floor === 0 && /ground floor/.test(UI.cui.msg);
+      for (let f = 1; f <= top; f++) steps = steps && key("PageUp") && b.floor === f;
+      steps = steps && key("PageUp") && b.floor === top && /top floor/.test(UI.cui.msg);
+      check(steps, "PageUp / PageDown step the floor shown, stopping at the top and the ground");
+      UI.combatAction(st, "cb-view", { v: "fdown" });
+      check(b.floor === top - 1 && (UI.combatAction(st, "cb-view", { v: "fup" }), b.floor === top), "the view bar's ▲ ▼ do the same");
+      UI.combatAction(st, "cb-sel", { id: String(mine[1].id) });
+      check(b.floor === 0, "selecting a unit on the ground floor shows the ground floor");
+      UI.combatAction(st, "cb-sel", { id: String(far.id) });
+      check(b.floor === top, "and the top floor when one upstairs is picked");
+      UI.combatAction(st, "cb-sel", { id: String(mine[1].id) });
+      // The panel: the Floor control, each unit's floor in the team list, Go up on a stairwell, the hint off floor.
+      const bar = UI.viewBar(b);
+      check(new RegExp(`Floor 1 of ${n}`).test(bar) && /data-v="fup"/.test(bar) && /data-v="fdown"/.test(bar), `the view bar: Floor 1 of ${n} ▲ ▼`);
+      let html = UI.renderCombatPanel(st);
+      { const p = scan(html, "battle panel with floors"); check(!p.length, `the battle panel with floors: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+      check((html.match(/class="cbfl off"/g) || []).length === 1 && (html.match(/class="cbfl"/g) || []).length === b.units.filter((u) => u.side === "player").length - 1, `the team list shows everyone's floor (F1, and F${n} dimmed for the one upstairs)`);
+      // Hover tips: the empty stairwell, and open air (outside the footprint, off the extraction zones) upstairs.
+      UI.cui.hover = { x: stairs % b.w, y: (stairs / b.w) | 0, px: 0, py: 0 };
+      const stairTip = /Stairwell/.test(UI.renderCombatPanel(st));
+      UI.setViewFloor(b, top);
+      const vi = b.cells.findIndex((c, i) => c.k === "void" && C.zoneAt(b, i % b.w, (i / b.w) | 0) < 0);
+      UI.cui.hover = { x: vi % b.w, y: (vi / b.w) | 0, px: 0, py: 0 };
+      check(stairTip && vi >= 0 && /Open air/.test(UI.renderCombatPanel(st)), "hover tips: the stairwell, and open air outside the footprint upstairs");
+      UI.cui.hover = null;
+      UI.setViewFloor(b, 0);
+      const onStairs = mine[1];
+      onStairs.x = stairs % b.w; onStairs.y = (stairs / b.w) | 0; onStairs.ap = 2;
+      html = UI.renderCombatPanel(st);
+      check(/data-v="goup"/.test(html) && !/data-v="godown"/.test(html), "standing on the stairwell on the ground floor: a Go up button, no Go down");
+      UI.setViewFloor(b, 1);
+      html = UI.renderCombatPanel(st);
+      check(new RegExp(`Showing floor 2 of ${n}`).test(html) && /data-v="fgo"/.test(html) && !/data-v="goup"/.test(html), "looking at another floor: the panel says so with a way back, no actions for the unit");
+      UI.combatAction(st, "cb-view", { v: "fgo" });
+      check(b.floor === 0, "Go to <name> returns to their floor");
+      // The top-down view draws the active floor too (void dark, the floor in the banner).
+      UI.setBattleView("top");
+      let bad = 0;
+      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !log.some((l) => l.includes(`FLOOR ${n} OF ${n}`))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f} top-down: ${e.stack}`); } }
+      check(!bad && nan === n0, `the top-down view draws each floor, the banner naming it (FLOOR ${n} OF ${n})`);
+      check(key("PageUp") && b.floor === 1, "PageUp works in the top-down view too");
+      UI.setBattleView("iso");
+      check((await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view").html.includes("PageUp") && readme.includes("PageUp / PageDown"), "Help → Battle view and the README explain the floors and PageUp / PageDown");
+      // The fixture off again: the battle draws as a single floor.
+      if (!real) {
+        UI.setViewFloor(b, 0);
+        delete b.floors; delete b.floor; delete b.raid.storeys;
+        for (const u of b.units) { delete u.f; delete u.away; }
+        ISO.iso.battle = null; UI.drawCombat(st, NOW);
+        check(ISO.iso.markers.length === 0 && !/cbfloor/.test(UI.viewBar(b)), "without b.floors again: no markers, no Floor control");
+      }
+    }
   } finally {
     if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
   }

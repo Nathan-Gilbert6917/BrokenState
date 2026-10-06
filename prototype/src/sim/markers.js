@@ -91,7 +91,8 @@ export function perceive(state, p, members, tiles, bonus = 0) {
 
 // Marker entries for a death site and for an abandoned vehicle (cargo left inside is noted on the label).
 // A site with no names is cargo a team had to drop (parties.js shedOverload): nobody died there.
-export const deathLabel = (d) => (d.names.length ? `Death site: ${d.names.join(", ")}` : "Cargo left behind");
+// A body that got up and walked off (carriers.js walkOff) is noted: the grave stays, the things do not.
+export const deathLabel = (d) => (d.names.length ? `Death site: ${d.names.join(", ")}${d.walked && d.walked.length ? ` (${d.walked.map((n) => `${n.split(" ")[0]}'s body is gone: they rose and walked`).join("; ")})` : ""}` : "Cargo left behind");
 const deathMark = (state, d) => ({ key: `death:${d.tile}`, type: "death", tile: d.tile, hour: state.hour, label: deathLabel(d), info: { items: d.items.length } });
 const hasCargo = (v) => !!(v.cargo && (v.cargo.gear.length || Object.values(v.cargo.supplies).some((q) => q >= 1)));
 const vehicleMark = (state, v, note) => ({
@@ -110,7 +111,7 @@ export const markAbandonedVehicle = (state, v, note) => upsert(state, vehicleMar
 export function clearEmptyDeathSites(state) {
   for (let i = state.deathSites.length - 1; i >= 0; i--) {
     const d = state.deathSites[i];
-    if (d.items.length) continue;
+    if (d.items.length || (d.walked && d.walked.length)) continue; // walked: the grave stays as a note (carriers.js)
     state.deathSites.splice(i, 1);
     if (state.deathSites.some((o) => o.tile === d.tile)) continue;
     const m = state.markers.findIndex((x) => x.key === `death:${d.tile}`);

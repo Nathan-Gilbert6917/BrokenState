@@ -5,6 +5,7 @@ import {
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
+import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
@@ -20,13 +21,13 @@ export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not sea
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
-import { ZTYPES } from "../sim/hiveconst.js";
+import { ZTYPES, CARRIER } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, battleOverlays, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
-import { crushable, stirring } from "../sim/carriers.js"; // the Carrier: bodies that stir, the risen
-import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs } from "./isoview.js";
+import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
+import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -53,6 +54,41 @@ export function setBattleView(v) {
 }
 const isIso = () => cui.view !== "top";
 
+// ---------- floors (docs/multi-storey-crawl.md) ----------
+// A building with storeys: b.floors, b.floor the active one, u.f a unit's floor; sim/combat.js setFloor swaps the
+// aliases (until it lands, the same swap is done here). The view follows the selected unit's floor; PageUp /
+// PageDown and the view bar's Floor control change it by hand. Every battle without b.floors is untouched.
+export function setViewFloor(b, f) {
+  const F = floorsOf(b);
+  if (!F) return false;
+  f = Math.max(0, Math.min(F.length - 1, f | 0));
+  if (f === floorNo(b)) return false;
+  if (typeof SIM.setFloor === "function") SIM.setFloor(b, f);
+  else { b.floor = f; b.cells = F[f].cells; b.reach = F[f].reach; b.losCache = F[f].losCache; }
+  cui.cache.key = ""; // what is seen and where the selected unit can go are the floor's
+  cui.hover = null;
+  return true;
+}
+// To the selected unit's floor (or the unit given).
+function followFloor(b, u = selUnit(b)) {
+  if (u && u.f != null && floorsOf(b) && u.f !== floorNo(b)) setViewFloor(b, u.f);
+}
+// On a stairwell: which way the unit can go (the sim's stairOptions when present, else the cell's kind).
+function stairsOf(b, u) {
+  const F = floorsOf(b);
+  if (!F || !u) return { up: false, down: false };
+  if (typeof SIM.stairOptions === "function") { const o = SIM.stairOptions(b, u) || {}; return { up: !!o.up, down: !!o.down }; }
+  const onStairs = b.cells[u.y * W + u.x].k === "stairs" && onFloor(b, u);
+  return { up: onStairs && floorNo(b) < F.length - 1, down: onStairs && floorNo(b) > 0 };
+}
+const floorLabel = (b, f) => `Floor ${f + 1} of ${floorsOf(b).length}`;
+// Still in the fight, whatever floor they are on (sim/combat.js active() counts a unit on another floor as off the
+// map for the active floor; the team list, Tab and the number keys must still reach them).
+const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
+// A cell's rules, with a stand-in for `void` (outside the footprint on an upper floor) until the sim knows it.
+const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
+const CDEF = (c) => CELL[c.k] || VOIDDEF;
+
 // ---------- helpers ----------
 const players = (b) => b.units.filter((u) => u.side === "player");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -77,15 +113,16 @@ function sync(b) {
 
 function autoSelect(b) {
   const cur = cui.sel != null ? unitById(b, cui.sel) : null;
-  if (cur && cur.side === "player" && active(cur) && cur.ap > 0) return;
-  const next = players(b).find((u) => active(u) && u.ap > 0);
-  cui.sel = next ? next.id : cur && active(cur) ? cur.id : null;
+  if (cur && cur.side === "player" && alive(cur) && cur.ap > 0) return;
+  const next = players(b).find((u) => alive(u) && u.ap > 0);
+  cui.sel = next ? next.id : cur && alive(cur) ? cur.id : null;
   cui.mode = "move";
+  if (cui.sel != null && (!cur || cui.sel !== cur.id)) followFloor(b); // a new pick: the view goes to its floor
 }
 
 // Cached per battle revision: what the player sees, and where the selected unit can go.
 function view(b) {
-  const key = `${b.rev}:${cui.sel}`;
+  const key = `${b.rev}:${cui.sel}:${floorNo(b)}`;
   if (cui.cache.key === key) return cui.cache;
   // Fog of war (sim/combat.js playerVision): what your people see now, by height, light, night and optics; the
   // enemies they see; ghosts where unseen ones were last seen.
@@ -150,6 +187,7 @@ export function combatWheel(state, px, py, dy) {
 // Selecting a unit that is off screen brings the camera to it.
 function follow(b) {
   const u = selUnit(b);
+  followFloor(b, u);
   if (u && isIso() && !isoOnScreen(b, u.x, u.y)) isoCenterOn(b, u.x, u.y);
 }
 
@@ -159,7 +197,8 @@ function act(state, a) {
   cui.msg = err || "";
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace"].includes(a.type)) cui.mode = "move";
+    if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -169,6 +208,16 @@ export function combatClick(state, px, py) {
   const b = state.combat;
   if (!b || b.over) return;
   sync(b);
+  // The marker of a unit on another floor (ui/isoview.js): jump to that floor (and select them if they are yours).
+  if (isIso() && floorsOf(b)) {
+    const p = isoPick(b, px, py);
+    const t = p && p.unit != null ? unitById(b, p.unit) : null;
+    if (t && t.f != null && t.f !== floorNo(b)) {
+      setViewFloor(b, t.f);
+      if (t.side === "player" && alive(t)) { cui.sel = t.id; cui.mode = "move"; cui.msg = ""; }
+      return;
+    }
+  }
   if (b.phase === "deploy") return void deployClick(state, b, px, py);
   if (b.phase !== "player") { cui.msg = "Wait for the enemy turn to finish."; return; }
   const c = cellFromPx(px, py);
@@ -194,6 +243,12 @@ export function combatClick(state, px, py) {
     const t = b.units.find((o) => o.side === "enemy" && o.ko && !o.dead && o.x === c.x && o.y === c.y);
     if (t) return void act(state, { type: "tie", unit: u.id, target: t.id });
   }
+  // The worm (sim/carriers.js): a body clicked for Double tap, Pick up body or Crush skull.
+  if (u && active(u) && u.ap > 0 && (cui.mode === "doubletap" || cui.mode === "pickup" || cui.mode === "crush")) {
+    const body = humanBodyAt(b, c.x, c.y);
+    if (!body) { cui.msg = cui.mode === "doubletap" ? "Click a body in sight to put a round through its head." : cui.mode === "pickup" ? "Click a body right next to you to pick it up." : "Click a body right next to you to crush its skull."; return; }
+    return void act(state, { type: cui.mode, unit: u.id, target: body.id });
+  }
   if (who && who.side === "player") {
     if (cui.mode === "meds" && u && (who === u || adjacent(u, who))) return void act(state, { type: "meds", unit: u.id, target: who.id });
     cui.sel = who.id;
@@ -204,7 +259,7 @@ export function combatClick(state, px, py) {
   // Raids (sim/raidloot.js): a container already gone through, or the vehicle, opens the search window (no action).
   if (b.raid && u && active(u)) {
     const box = boxAt(b, c.x, c.y);
-    if (box && box.contents && nearBox(u, box) && (!CELL[b.cells[c.y * W + c.x].k].walk || (u.x === c.x && u.y === c.y))) return void openSearch(state, b, u, box);
+    if (box && box.contents && nearBox(u, box) && (!CDEF(b.cells[c.y * W + c.x]).walk || (u.x === c.x && u.y === c.y))) return void openSearch(state, b, u, box);
     if (b.cells[c.y * W + c.x].k === "vehicle" && b.raid.vehicleZone >= 0) {
       if (atVehicle(b, u)) { cui.lootReq = { uid: u.id, box: null }; return; }
       cui.msg = "Walk to the vehicle to load or unload it.";
@@ -227,7 +282,7 @@ export function combatClick(state, px, py) {
     // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
     if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
     const box = boxAt(b, c.x, c.y);
-    if (box && !box.searched && (!CELL[b.cells[c.y * W + c.x].k].walk || (u.x === c.x && u.y === c.y))) {
+    if (box && !box.searched && (!CDEF(b.cells[c.y * W + c.x]).walk || (u.x === c.x && u.y === c.y))) {
       if (nearBox(u, box)) return void openSearch(state, b, u, box);
       cui.msg = "Move next to it to search.";
       return;
@@ -375,12 +430,18 @@ export function retreatConfirmHtml(b, plan) {
     <button data-action="cb-retreat" data-v="cancel" data-tip="Close this and keep fighting. (Esc)">Keep fighting</button></div></div>`;
 }
 
-// The view's keys: I switches isometric / top-down; in the isometric view , and . turn it, + and − zoom, V centers on
-// the selected unit, B shows or hides the roofs, the arrow keys pan (held).
+// The view's keys: I switches isometric / top-down; PageUp / PageDown change the floor in a building with storeys
+// (both views); in the isometric view , and . turn it, + and − zoom, V centers on the selected unit, B shows or
+// hides the roofs, the arrow keys pan (held).
 const PAN_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
 function viewKey(state, b, e) {
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
   if (e.code === "KeyI" && !e.shiftKey) { setBattleView(isIso() ? "top" : "iso"); return true; }
+  if (e.code === "PageUp" || e.code === "PageDown") {
+    if (!floorsOf(b)) return false;
+    if (!setViewFloor(b, floorNo(b) + (e.code === "PageUp" ? 1 : -1))) cui.msg = e.code === "PageUp" ? "This is the top floor." : "This is the ground floor.";
+    return true;
+  }
   if (!isIso()) return false;
   if (PAN_KEYS.has(e.code)) { iso.keys.add(e.code); return true; }
   if (e.code === "Comma" || e.code === "Period") { isoRotate(b, e.code === "Period" ? 1 : -1); return true; }
@@ -408,7 +469,7 @@ export function combatKey(state, e) {
     if (e.code === "Enter" || e.code === "NumpadEnter") { act(state, { type: "start" }); return true; }
     if (e.code === "Space") { cui.msg = "Place your defenders, then press Enter or Start the fight."; return true; }
   }
-  const team = players(b).filter((u) => active(u));
+  const team = players(b).filter((u) => alive(u)); // on any floor: the view follows (followFloor)
   if (e.code === "Tab") {
     const ready = team.filter((u) => u.ap > 0);
     const list = ready.length ? ready : team;
@@ -420,7 +481,7 @@ export function combatKey(state, e) {
   }
   if (/^Digit[1-9]$/.test(e.code)) {
     const u = players(b)[Number(e.code.slice(5)) - 1];
-    if (u && active(u)) { cui.sel = u.id; cui.mode = "move"; follow(b); }
+    if (u && alive(u)) { cui.sel = u.id; cui.mode = "move"; follow(b); }
     return true;
   }
   // The retreat confirm: Enter gives the order, Space does nothing (too easy to press by habit), Esc closes it.
@@ -433,7 +494,7 @@ export function combatKey(state, e) {
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
   if (e.code === "KeyS" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; } // a quick rummage (sim/search.js)
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush" };
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush", KeyJ: "doubletap", KeyP: "pickup", KeyZ: "stowbody" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -451,7 +512,10 @@ export function combatAction(state, key, d) {
     else if (d.v === "rotl" || d.v === "rotr") isoRotate(b, d.v === "rotr" ? 1 : -1);
     else if (d.v === "roofs") setRoofs(!iso.roofs);
     else if (d.v === "zin" || d.v === "zout") isoZoom(b, d.v === "zin" ? 1 : -1);
-    else if (d.v === "center" && u) isoCenterOn(b, u.x, u.y);
+    else if (d.v === "center" && u) { followFloor(b, u); isoCenterOn(b, u.x, u.y); }
+    // A building with storeys: the Floor control (▲ ▼), or back to the selected unit's floor.
+    else if (d.v === "fup" || d.v === "fdown") { if (!setViewFloor(b, floorNo(b) + (d.v === "fup" ? 1 : -1))) cui.msg = d.v === "fup" ? "This is the top floor." : "This is the ground floor."; }
+    else if (d.v === "fgo" && u) followFloor(b, u);
     return;
   }
   if (key === "cb-auto") {
@@ -557,13 +621,36 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "drop") return void act(state, { type: "drop", unit: u.id, target: Number(d.id) }); // rocks from the walls (sim/siege.js)
-  // Crush skull (sim/carriers.js): a stirring body next to the unit first.
+  // The worm (sim/carriers.js): Crush skull and Pick up body next to the unit, Double tap in sight; the one in most
+  // danger first, or a click to choose when several are there.
   if (v === "crush") {
     const near = crushable(b, u);
-    const c = near.find(stirring) || near[0];
-    if (!c) { cui.msg = "Crush skull needs a body right next to you, while the worm is about (a Carrier, a worm swarm or a stirring body)."; return; }
-    return void act(state, { type: "crush", unit: u.id, target: c.id });
+    const c = near.find((o) => imminent(b, o)) || near.find((o) => endangered(b, o));
+    if (!near.length) { cui.msg = "Crush skull needs a body right next to you."; return; }
+    if (c || near.length === 1) return void act(state, { type: "crush", unit: u.id, target: (c || near[0]).id });
+    cui.mode = cui.mode === "crush" ? "move" : "crush";
+    cui.msg = cui.mode === "crush" ? "Click the body whose skull to crush." : "";
+    return;
   }
+  if (v === "doubletap") {
+    const seen = tappable(b, u);
+    if (!seen.length) { cui.msg = !isRanged(u) ? "Double tap needs a gun: crush the skull from next to the body instead (U)." : !canFire(b, u) ? "Double tap needs a gun with ammo and free hands." : "No body in sight that could still get up."; return; }
+    const c = seen.find((o) => imminent(b, o)) || seen.find((o) => endangered(b, o));
+    if (c || seen.length === 1) return void act(state, { type: "doubletap", unit: u.id, target: (c || seen[0]).id });
+    cui.mode = cui.mode === "doubletap" ? "move" : "doubletap";
+    cui.msg = cui.mode === "doubletap" ? "Click the body to shoot (1 action, 1 round, the noise of a shot)." : "";
+    return;
+  }
+  if (v === "pickup") {
+    if (carriedBy(b, u)) return void act(state, { type: "dropbody", unit: u.id });
+    const near = liftable(b, u);
+    if (!near.length) { cui.msg = "Pick up needs a body right next to you."; return; }
+    if (near.length === 1) return void act(state, { type: "pickup", unit: u.id, target: near[0].id });
+    cui.mode = cui.mode === "pickup" ? "move" : "pickup";
+    cui.msg = cui.mode === "pickup" ? "Click the body to pick up." : "";
+    return;
+  }
+  if (v === "stowbody") return void act(state, { type: "stowbody", unit: u.id });
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
   if (v === "peek" || v === "close" || v === "brace") {
     const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
@@ -615,7 +702,7 @@ export function renderCombatPanel(state) {
   const phase = b.over ? `<b>${b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
-  let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar()}`;
+  let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
   html += b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
@@ -627,12 +714,14 @@ export function renderCombatPanel(state) {
 
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
-    const status = p.roseAs != null ? "Turned: one of the dead" : stirring(p) ? "Dead, stirring: crush the skull (U)" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
+    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
       [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
-    const cls = ["cbunit", p.id === cui.sel ? "on" : "", !active(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
-    const pips = active(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
+    const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
+    const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
+    // A building with storeys: everyone's floor (dimmer when it is not the one shown).
+    const fl = floorsOf(b) && p.f != null ? ` <span class="cbfl${p.f === floorNo(b) ? "" : " off"}" data-tip="${esc(`${p.name.split(" ")[0]} is on ${floorLabel(b, p.f).toLowerCase()}${p.f === floorNo(b) ? " (shown)" : ": selecting them shows that floor"}.`)}">F${p.f + 1}</span>` : "";
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
-      <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b></span>${pips}</div>
+      <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
       <div class="small muted">${esc(p.weaponName)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}</div>
     </div>`;
@@ -643,6 +732,10 @@ export function renderCombatPanel(state) {
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (retreatAskOpen(b)) html += retreatConfirmHtml(b, askPlan(b)); // right under the team, where it is seen
+  // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
+  if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
+    html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
+  }
 
   if (u && active(u) && b.phase === "player") {
     const ap = u.ap;
@@ -656,7 +749,8 @@ export function renderCombatPanel(state) {
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
-      ${crushButton(b, u, btn)}
+      ${floorButtons(b, u, btn)}
+      ${bodyButtons(state, b, u, btn)}
       ${stealthButtons(state, b, u, btn)}
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
@@ -701,8 +795,9 @@ export function renderCombatPanel(state) {
   return html;
 }
 
-// The view bar: switch the view; in the isometric view turn, zoom, center, roofs.
-export function viewBar() {
+// The view bar: switch the view; in the isometric view turn, zoom, center, roofs; in a building with storeys the
+// floor shown (`Floor 2 of 5 ▲ ▼`, both views).
+export function viewBar(b = cui.battle) {
   const on = isIso();
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
   let html = `<div class="cbview">${btn(on ? "top" : "iso", on ? "▦ Top-down" : "◇ Isometric", on ? "Show the battle as the flat top-down grid (I). Options → Display → Battle view keeps it." : "Show the battle in the isometric (pseudo-3D) view (I).")}`;
@@ -712,7 +807,26 @@ export function viewBar() {
     html += btn("center", "◎", "Center on the selected unit (V). Drag the map, hold the arrow keys or push the mouse to the edge to pan.");
     html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", "Roofs on the buildings (B). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.", iso.roofs);
   }
+  const F = b && floorsOf(b);
+  if (F) {
+    const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";
+    html += `<span class="cbfloor" data-tip="${esc(`The floor shown${name}. PageUp / PageDown or ▲ ▼ change it; selecting a unit shows its floor; clicking the marker of someone on another floor jumps there. Below the floor shown the building is its outer walls; above it is cut away, the roof only on the top floor; outside, the ground lies below, dimmed.`)}">${esc(floorLabel(b, f))}</span>`;
+    html += btn("fup", "▲", f < F.length - 1 ? `Show the floor above (PageUp): ${floorLabel(b, f + 1).toLowerCase()}.` : "This is the top floor.") + btn("fdown", "▼", f > 0 ? `Show the floor below (PageDown): ${floorLabel(b, f - 1).toLowerCase()}.` : "This is the ground floor.");
+  }
   return `${html}</div>`;
+}
+
+// A building with storeys: Go up / Go down for a unit standing on a stairwell (sim/combat.js stairOptions and the
+// goup / godown actions: 1 action, the unit keeps its x, y on the floor above or below).
+function floorButtons(b, u, btn) {
+  const F = floorsOf(b);
+  if (!F) return "";
+  const s = stairsOf(b, u), f = u.f ?? floorNo(b), first = u.name.split(" ")[0];
+  if (!s.up && !s.down) return "";
+  let html = "";
+  if (f < F.length - 1) html += btn("goup", "Go up", s.up ? `1 action: ${first} climbs the stairs to ${floorLabel(b, f + 1).toLowerCase()} and the view follows. Nobody may be standing on the stairwell up there.` : "Stand on a stairwell to go up.", u.ap > 0 && s.up);
+  if (f > 0) html += btn("godown", "Go down", s.down ? `1 action: ${first} takes the stairs down to ${floorLabel(b, f - 1).toLowerCase()} and the view follows. Nobody may be standing on the stairwell down there.` : "Stand on a stairwell to go down.", u.ap > 0 && s.down);
+  return html;
 }
 
 // ---------- raid panel pieces ----------
@@ -788,13 +902,29 @@ function chooseHtml(b) {
 }
 
 // ---------- the worm (sim/carriers.js) ----------
-// Crush skull: shown while a Carrier, a worm swarm or a stirring body is on the map and a body is next to the unit.
-function crushButton(b, u, btn) {
-  const near = crushable(b, u);
-  if (!near.length) return "";
-  const c = near.find(stirring) || near[0];
-  const tip = `1 action, silent: crush the skull of ${c.side === "player" ? c.name : `${c.name}'s body`} next to ${u.name.split(" ")[0]}, so the worm cannot raise it.${stirring(c) ? " It is stirring: it gets up at the end of this turn otherwise." : " Near a Carrier, or where the worm swarm kills, a body gets up after a turn."} Fire does the same.`;
-  return btn("crush", "Crush skull", tip, u.ap > 0, "U");
+// The body buttons: Crush skull (U) and Pick up body (P) with a body next to the unit, Double tap (J) with one in
+// sight and a gun in hand; carrying a body, Put down (P) and, at the team's car, Put body in car (Z).
+function bodyButtons(state, b, u, btn) {
+  let html = "";
+  const held = carriedBy(b, u);
+  const near = crushable(b, u), seen = tappable(b, u), lift = liftable(b, u);
+  const danger = (c) => (imminent(b, c) ? " A Carrier is on it: it gets up at the end of this turn otherwise." : endangered(b, c) ? " A Carrier is near, or the worm is in it: it will get up when one reaches it." : "");
+  if (near.length) {
+    const c = near.find((o) => imminent(b, o)) || near.find((o) => endangered(b, o)) || near[0];
+    html += btn("crush", "Crush skull", `1 action, silent: crush the skull of ${bodyName(c)} next to ${u.name.split(" ")[0]}, so the worm cannot raise it. Whatever it carries stays to loot.${danger(c)}`, u.ap > 0, "U");
+  }
+  if (seen.length) {
+    const c = seen.find((o) => imminent(b, o)) || seen.find((o) => endangered(b, o)) || seen[0];
+    html += btn("doubletap", "Double tap", `1 action, 1 round, the noise of a shot: put a round through the head of ${bodyName(c)} from here (line of sight), so the worm cannot raise it.${seen.length > 1 ? ` ${seen.length} bodies in sight: the one in most danger, or click one.` : ""}${danger(c)}`, u.ap > 0, "J");
+  }
+  if (held) {
+    html += btn("pickup", "Put body down", `1 action: lay ${bodyName(held)} down in front of ${u.name.split(" ")[0]}. Carrying it: half the move distance, no shooting.`, u.ap > 0, "P");
+    html += btn("stowbody", "Put body in car", carHere(state, b, u) ? `1 action: lay ${bodyName(held)} in the team's car. It weighs ${Math.round(unitBodyLoad(state, b, held))} kg of the team's load (${Math.max(0, Math.round(carRoom(state, b)))} kg free) until it is buried or burned. It cannot get up there and comes home: bury it (its things to the armory) or burn it on the base's Armory tab.` : b.raid ? "Carry the body to the team's vehicle (its zone, or next to it) first." : "Carry the body onto the green evac strip, where the team's car waits (a team on foot or on bikes has no car).", u.ap > 0 && carHere(state, b, u), "Z");
+  } else if (lift.length) {
+    const c = lift.find((o) => imminent(b, o)) || lift.find((o) => endangered(b, o)) || lift[0];
+    html += btn("pickup", "Pick up body", `1 action: heave ${bodyName(c)} over ${u.name.split(" ")[0]}'s shoulder. Carrying it: half the move distance, no shooting; a carried body cannot get up. Put it down (P) or in the team's car (Z) to bring it home.${danger(c)}`, u.ap > 0, "P");
+  }
+  return html;
 }
 
 // ---------- the stealth kit (sim/stealth.js) ----------
@@ -1044,9 +1174,14 @@ function previewHtml(b) {
     const hh = heightAt(b, t.x, t.y);
     return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
   }
-  // A body the worm is in (sim/carriers.js): it gets up after this turn.
-  const wormy = v.vis[h.y * W + h.x] ? b.units.find((o) => stirring(o) && o.x === h.x && o.y === h.y) : null;
-  if (wormy) return `<b>${esc(wormy.side === "player" ? wormy.name : `${wormy.name}'s body`)}</b> · <span class="danger">stirring: the worm is in it</span><br><span class="muted">It gets up as one of the dead at the end of this turn, unless it burns or one of yours next to it crushes the skull (U, 1 action).</span>`;
+  // A human body (sim/carriers.js): its state, and what can be done with it.
+  const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
+  if (body) {
+    const state_ = body.burnt ? '<span class="muted">burnt: nothing left to loot</span>' : body.crushed ? '<span class="good">will not get up</span>' : imminent(b, body) ? '<span class="danger">a Carrier is on it: it gets up at the end of this turn</span>' : endangered(b, body) ? '<span class="warn">in danger: a Carrier is near, or the worm is in it</span>' : '<span class="muted">could get up if a Carrier reaches it</span>';
+    const near = u && active(u) && Math.max(Math.abs(u.x - body.x), Math.abs(u.y - body.y)) <= 1;
+    const acts = body.burnt ? "" : `<br><span class="small muted">${[!body.crushed ? `Crush skull (U${near ? "" : ", from next to it"})` : "", !body.crushed ? "Double tap (J, a gun in sight: 1 round, noise)" : "", `Pick up body (P${near ? "" : ", from next to it"})`].filter(Boolean).join(" · ")}. Fire on its tile destroys the body and everything on it; a crushed skull keeps the loot.</span>`;
+    return `<b>${esc(bodyName(body))}</b> · ${state_}${acts}`;
+  }
   // A last-seen ghost (sim/combat.js enemyGhosts): where an enemy was when your people last saw it.
   const ghost = (v.ghosts || []).find((g) => g.x === h.x && g.y === h.y && !v.vis[h.y * W + h.x]);
   if (ghost) return `<b>${esc(ghost.name)}</b> <span class="muted">last seen here on turn ${ghost.turn}. Nobody sees this tile now: it may have moved.</span>`;
@@ -1080,7 +1215,15 @@ function previewHtml(b) {
     if (z >= 0) return `<b>${b.raid.zones[z].vehicle ? "Vehicle extraction zone" : "Extraction zone"}</b><br><span class="muted">Stand here and press X to leave the raid.${b.raid.zones[z].vehicle ? " Leaving here keeps your vehicle." : b.raid.vehicleZone >= 0 ? " Leaving here without anyone taking the vehicle leaves it behind." : ""}</span>`;
   }
   const cobj = b.cells[h.y * W + h.x];
-  const cell = CELL[cobj.k];
+  const cell = CDEF(cobj);
+  // A building with storeys (floorsOf): outside the footprint on an upper floor, and the stairwells.
+  if (cobj.k === "void") return `<b>Open air</b>: outside the building, ${floorNo(b)} floor${floorNo(b) === 1 ? "" : "s"} up. The ground lies below (dimmed); the street is on the ground floor (PageDown).`;
+  if (floorsOf(b) && cobj.k === "stairs") {
+    const F = floorsOf(b), f = floorNo(b);
+    const ways = [f < F.length - 1 ? `up to ${floorLabel(b, f + 1).toLowerCase()}` : "", f > 0 ? `down to ${floorLabel(b, f - 1).toLowerCase()}` : ""].filter(Boolean).join(" or ");
+    const here = u && alive(u) && u.x === h.x && u.y === h.y && onFloor(b, u);
+    return `<b>Stairwell</b>: the same cell on every floor. ${here ? `${esc(u.name.split(" ")[0])} stands on it: <b>Go up</b> / <b>Go down</b> in the actions (1 action)` : `Stand on it to go ${ways} (1 action, the dead 2)`}. Nobody may be standing on the stairwell on the floor you go to.${!v.vis[h.y * W + h.x] ? " Not in sight right now." : ""}`;
+  }
   // A building's map (sim/buildingmaps.js): windows to climb, doors, the room under the mouse.
   const room = b.raid && b.raid.interior ? b.raid.areas.find((a) => !a.outdoor && h.x > a.x0 && h.x < a.x0 + a.w - 1 && h.y > a.y0 && h.y < a.y0 + a.h - 1) : null;
   if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
@@ -1161,6 +1304,7 @@ export function drawCombat(state, now) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = b.cells[y * W + x];
     const px = ox + x * cs, py = oy + y * cs;
+    if (c.k === "void") { ctx.fillStyle = VOID_TOP; ctx.fillRect(px, py, cs, cs); continue; } // outside the footprint on an upper floor (floorsOf)
     ctx.fillStyle = (c.f === "floor" && c.fl && ROOM_FLOOR[c.fl]) || FLOOR[c.f] || FLOOR.grass;
     ctx.fillRect(px, py, cs, cs);
     const n = hash(x, y);
@@ -1168,8 +1312,8 @@ export function drawCombat(state, now) {
     if (c.f === "road" && y % 2 === 0 && x % 2 === 0) { ctx.fillStyle = "#6b6a4a"; ctx.fillRect(px + cs * 0.2, py + cs - 1, cs * 0.6, 2); }
     drawObject(c.k === "siegeladder" ? "palisade" : c.k, px, py, cs, n, c); // a siege ladder is drawn over its wall (drawSiegeTop)
     // Raised ground (verticality): lighter the higher it is.
-    const hh = c.h ?? CELL[c.k].h ?? 0;
-    if (hh && CELL[c.k].walk) { ctx.fillStyle = `rgba(255,236,190,${0.08 * hh})`; ctx.fillRect(px, py, cs, cs); }
+    const hh = c.h ?? CDEF(c).h ?? 0;
+    if (hh && CDEF(c).walk) { ctx.fillStyle = `rgba(255,236,190,${0.08 * hh})`; ctx.fillRect(px, py, cs, cs); }
   }
   // Grid.
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
@@ -1243,14 +1387,14 @@ export function drawCombat(state, now) {
   // Hovered tile: path, cover shields.
   const h = cui.hover;
   if (h) {
-    const hc = CELL[b.cells[h.y * W + h.x].k];
+    const hc = CDEF(b.cells[h.y * W + h.x]);
     ctx.strokeStyle = "rgba(255,255,255,0.6)";
     ctx.lineWidth = 1.5;
     ctx.strokeRect(ox + h.x * cs + 1, oy + h.y * cs + 1, cs - 2, cs - 2);
     if (hc.walk) {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const x = h.x + dx, y = h.y + dy;
-        if (x < 0 || y < 0 || x >= W || y >= H || !CELL[b.cells[y * W + x].k].walk) continue;
+        if (x < 0 || y < 0 || x >= W || y >= H || !CDEF(b.cells[y * W + x]).walk) continue;
         if ((dx || dy) && unitAt(b, x, y)) continue;
         shields(b, x, y, dx || dy ? 0.55 : 1);
       }
@@ -1269,17 +1413,18 @@ export function drawCombat(state, now) {
   }
 
   // Bodies on the ground (sim/sleepers.js): drawn like the fallen, dimmer where nobody sees now.
-  for (const c of b.corpses || []) drawDowned(ctx, corpseCanvas(c), ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs + cs * 0.06, [cs, 0], [0, cs], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: v.vis[c.y * W + c.x] ? 0.92 : 0.5 });
-  // Units (dead and down first).
-  const order = b.units.filter((x) => !x.left && !x.fled && !x.off).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
+  for (const c of b.corpses || []) if (onFloor(b, c)) drawDowned(ctx, corpseCanvas(c), ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs + cs * 0.06, [cs, 0], [0, cs], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: v.vis[c.y * W + c.x] ? 0.92 : 0.5 });
+  // Units (dead and down first); on another floor of a building with storeys only a marker (below).
+  const order = b.units.filter((x) => !x.left && !x.fled && !x.off && onFloor(b, x)).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
     if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : v.vis[t.y * W + t.x])) continue;
     const pos = animPos(b, t, now);
     drawUnit(state, b, t, pos[0], pos[1], cs, t.id === cui.sel);
   }
+  if (floorsOf(b)) drawFloorMarkers(b, v, cs);
   // Last-seen ghosts (fog of war): faded where an enemy nobody sees now was last seen.
   for (const g of v.ghosts || []) {
-    if (v.vis[g.y * W + g.x]) continue;
+    if (v.vis[g.y * W + g.x] || !onFloor(b, g)) continue;
     drawGhost(state, b, g, ox + (g.x + 0.5) * cs, oy + (g.y + 0.5) * cs, cs);
   }
 
@@ -1359,14 +1504,46 @@ function hitLabels(b, v) {
   return out;
 }
 
+// The top-down view of a building with storeys: units on other floors as a faint ▲ / ▼ marker with the floor at
+// their x, y (the isometric view: ui/isoview.js), and the stairwells' arrows.
+const VOID_TOP = "#111317";
+function drawFloorMarkers(b, v, cs) {
+  const { ox, oy } = geo;
+  ctx.font = `700 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  const f0 = floorNo(b), F = floorsOf(b);
+  for (const t of b.units) {
+    const tf = t.f || 0;
+    if (t.left || t.fled || t.off || t.dead || tf === f0) continue;
+    if (t.side !== "player" && !v.seen.has(t.id)) continue;
+    const px = ox + t.x * cs, py = oy + t.y * cs;
+    ctx.strokeStyle = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
+    ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+    ctx.strokeRect(px + 3, py + 3, cs - 6, cs - 6);
+    ctx.setLineDash([]);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillText(`${tf > f0 ? "▲" : "▼"}${tf + 1}`, px + cs / 2, py + cs * 0.62);
+  }
+  const sel = selUnit(b);
+  const up = f0 < F.length - 1, down = f0 > 0;
+  ctx.font = `700 ${Math.max(8, Math.round(cs * 0.26))}px Segoe UI, sans-serif`;
+  for (let i = 0; i < W * H; i++) {
+    if (b.cells[i].k !== "stairs" || !v.vis[i]) continue;
+    const x = i % W, y = (i / W) | 0;
+    ctx.fillStyle = sel && sel.x === x && sel.y === y && onFloor(b, sel) ? "#ffe296" : "rgba(255,226,150,0.55)";
+    ctx.fillText(`${up ? "▲" : ""}${down ? "▼" : ""}`, ox + (x + 0.5) * cs, oy + (y + 0.5) * cs + cs * 0.1);
+  }
+}
+
 // The phase banner at the top of the map.
 function drawBanner(b, cw, cs) {
   const heatTag = b.raid ? ` · HEAT ${HEAT_NAMES[Math.min(3, Math.floor(b.raid.heat / 25))].toUpperCase()}` : "";
   const nightTag = b.night ? " · NIGHT" : "";
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
+  const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
     b.phase === "deploy" ? (b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
-    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}`;
+    b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center";
@@ -1401,7 +1578,7 @@ function drawRaidOverlay(b, cs) {
   });
   ctx.font = `600 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
   for (const a of R.areas) {
-    if (a.noLabel) continue; // halls and corridors (sim/buildingmaps.js)
+    if (a.noLabel || !onFloor(b, a)) continue; // halls and corridors (sim/buildingmaps.js); rooms of other floors
     // A building's rooms (sim/buildingmaps.js): the name inside the room, at its top.
     const x = ox + (a.x0 + a.w / 2) * cs, y = oy + a.y0 * cs + (a.outdoor ? cs * 0.4 : R.interior ? cs * 1.4 : -3);
     const name = a.locked && !(R.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name;
@@ -1412,6 +1589,7 @@ function drawRaidOverlay(b, cs) {
     ctx.fillText(name, x, y);
   }
   for (const c of R.containers) {
+    if (!onFloor(b, c)) continue; // R.containers holds every floor's (floorsOf)
     const px = ox + c.x * cs, py = oy + c.y * cs;
     // A fallen unit's body (uid) is its own picture (ui/downsprites.js), drawn with the units: only its marker here.
     if (c.kind === "body" && c.uid == null) {
@@ -1472,7 +1650,7 @@ function drawHeights(b, cs) {
     const c = b.cells[y * W + x];
     const hh = hOf(x, y);
     const px = ox + x * cs, py = oy + y * cs;
-    if (hh && CELL[c.k].walk) {
+    if (hh && CDEF(c).walk) {
       ctx.strokeStyle = "rgba(10,8,6,0.75)";
       ctx.beginPath();
       if (hOf(x, y + 1) < hh) { ctx.moveTo(px, py + cs - 1); ctx.lineTo(px + cs, py + cs - 1); }
@@ -2028,14 +2206,15 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   if (t.dead) {
     // The body lying where it fell (ui/downsprites.js: its own picture per kind; pockets out once searched).
     drawDowned(ctx, unitDownCanvas(state, b, t, cui.salt), cx, cy + cs * 0.06, [cs, 0], [0, cs], { facing, scale: downScale(t), alpha: 0.92 });
-    if (stirring(t)) {
-      // The worm is in it (sim/carriers.js): a pale "!" until it gets up, burns or its skull is crushed.
+    if (endangered(b, t)) {
+      // A body in danger (sim/carriers.js): a pale "!" while a Carrier is near or the worm is in it (red: it gets up
+      // at the end of this turn), until it gets up, burns or its skull is crushed.
       ctx.font = `800 ${Math.round(cs * 0.3)}px Segoe UI, sans-serif`;
       ctx.textAlign = "center";
       ctx.lineWidth = 3;
       ctx.strokeStyle = "rgba(0,0,0,0.8)";
       ctx.strokeText("!", cx, cy - cs * 0.12);
-      ctx.fillStyle = ZRING.carrier;
+      ctx.fillStyle = imminent(b, t) ? "#ff8f85" : ZRING.carrier;
       ctx.fillText("!", cx, cy - cs * 0.12);
     }
     if (t.side === "player") {
