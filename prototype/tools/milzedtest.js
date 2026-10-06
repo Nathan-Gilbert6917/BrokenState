@@ -1,7 +1,7 @@
 // The armoured dead (sim/deadsoldiers.js; ZTYPES.soldier and ZTYPES.riot in hiveconst.js) and the bodies of the fallen
 // (ui/downsprites.js; zombie bodies to search in raids). Checks:
 //   - the types exist, stronger than the ordinary dead (health, armour) and no faster; never bred by a hive
-//   - armour by weapon: pistol rounds and blades do much less, rifles and the sledge mostly get through; a critical hit,
+//   - armour by weapon: pistol rounds and blades do much less, rifles mostly get through (×0.7–0.75), the sledge fully; a critical hit,
 //     a blade from behind or on the unaware, fire and pipe bombs get through (on the battle map, through damage())
 //   - where they are: military sites, army wrecks, the cordon round a base, a fallen base (hardcore), police stations;
 //     rare elsewhere; deterministic; hordes crossing a military site pick some up; makeHorde({ mix: { soldier } })
@@ -19,7 +19,7 @@ import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
 import { applyZType, ZKINDS, battleTypes, mixList, typeStrength, mixWeight } from "../src/sim/zombietypes.js";
 import { MILDEAD, ARMORED, armorVs, siteDeadMix, hordeMilitaryPickup, bodyLoot } from "../src/sim/deadsoldiers.js";
-import { createBattle, enemyUnit, damage, WEAPONS, registerCombatHandler, autoPlayerTurn, runEnemyPhase, closeCombat, active, ZOMBIE_MOVE, combatAct, CRIT_MULT, meleeOdds, shotOdds } from "../src/sim/combat.js";
+import { createBattle, enemyUnit, damage, WEAPONS, registerCombatHandler, autoPlayerTurn, runEnemyPhase, closeCombat, active, ZOMBIE_MOVE, combatAct, CRIT_MULT, CRIT, meleeOdds, shotOdds } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { enemyBody, newItem, deadBodyFinds, allItems } from "../src/sim/inventory.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -61,7 +61,8 @@ section("Armour by weapon (deadsoldiers.js armorVs; combat.js damage)");
   const r = { ...t, ztype: "riot" };
   const vs = (u, w, how = WEAPONS[w].melee ? "melee" : "shot", extra = {}) => armorVs(u, { weapon: w, x: 4, y: 5 }, { how, ...extra });
   check(vs(t, "pistol") <= 0.5 && vs(t, "knife") <= 0.4 && vs(t, "machete") <= 0.5, `a soldier: pistol ×${vs(t, "pistol")}, knife ×${vs(t, "knife")}, machete ×${vs(t, "machete")} (a real reduction)`);
-  check(vs(t, "huntrifle") >= 0.85 && vs(t, "ar") >= 0.85 && vs(t, "sledge") >= 0.95 && vs(t, "bat") >= 0.8, `rifles and heavy blunt weapons get through: hunting rifle ×${vs(t, "huntrifle")}, assault rifle ×${vs(t, "ar")}, sledge ×${vs(t, "sledge")}, bat ×${vs(t, "bat")}`);
+  // Rifles: most of it, but not all (×0.7–0.8: the hunting rifle was ×0.9, all but a full counter).
+  check(vs(t, "huntrifle") >= 0.7 && vs(t, "huntrifle") <= 0.8 && vs(t, "ar") >= 0.7 && vs(t, "ar") <= 0.8 && vs(t, "sledge") >= 0.95 && vs(t, "bat") >= 0.8, `rifles mostly get through, heavy blunt weapons all but fully: hunting rifle ×${vs(t, "huntrifle")}, assault rifle ×${vs(t, "ar")}, sledge ×${vs(t, "sledge")}, bat ×${vs(t, "bat")}`);
   check(vs(t, "pistol", "shot", { crit: true }) === 1 && vs(t, "knife", "melee", { crit: true }) === 1, "a critical hit (a round under the helmet, a blade in a gap) ignores the armour");
   check(vs(t, "knife", "melee", { sneak: true }) === 1 && armorVs(t, null, { how: "fire" }) === 1 && armorVs(t, null, { how: "blast" }) >= 0.85, `a blade from behind / unseen, fire (×1) and a pipe bomb (×${armorVs(t, null, { how: "blast" })}) get through`);
   check(vs(r, "bat") <= 0.65 && vs(r, "knife") <= 0.5 && vs(r, "huntrifle") === 1 && vs(r, "carbine") === 1 && vs(r, "pistol") < 0.8, `a riot cop: bat ×${vs(r, "bat")}, knife ×${vs(r, "knife")}, pistol ×${vs(r, "pistol")}, but rifles ×1`);
@@ -83,7 +84,7 @@ section("Armour by weapon (deadsoldiers.js armorVs; combat.js damage)");
   me.weapon = "huntrifle";
   const e2 = damage(b, z, 20, me, false, { how: "shot", crit: false });
   const e3 = damage(b, z, 20, me, false, { how: "shot", crit: true });
-  check(r2(e1) === 20 * MILDEAD.ARMOR.soldier.w.pistol && r2(e2) === 18 && r2(e3) === 20 && r2(hp0 - z.hp) === r2(e1 + e2 + e3), `20 raw: a pistol round does ${r2(e1)}, a hunting rifle ${r2(e2)}, a critical ${r2(e3)}`);
+  check(r2(e1) === 20 * MILDEAD.ARMOR.soldier.w.pistol && r2(e2) === r2(20 * MILDEAD.ARMOR.soldier.w.huntrifle) && r2(e3) === 20 && r2(hp0 - z.hp) === r2(e1 + e2 + e3), `20 raw: a pistol round does ${r2(e1)}, a hunting rifle ${r2(e2)}, a critical ${r2(e3)}`);
   const z2 = sol[1];
   z2.hp = z2.maxHp = 200;
   z2.x = me.x + 1; z2.y = me.y; z2.face = [1, 0]; z2.aware = true; // facing away from me: I am behind it
@@ -291,8 +292,9 @@ if (!QUICK) {
   line("ordinary dead only", z);
   check(a.raids >= N * 0.8 && a.out / a.raids >= 0.6, `still doable for a prepared team: ${Math.round((a.out / a.raids) * 100)}% get out (ordinary dead: ${Math.round((z.out / z.raids) * 100)}%)`);
   // Harder? The same raids (same worlds, seeds) one with and one without the soldiers, compared pair by pair. With the
-  // hunting rifle, their counter (armour ×0.9 against it), they add only about +0.05 deaths a raid (about 450 pairs
-  // over three seeds), while one raid to the next swings by ±0.8: 60 raids cannot tell that apart from nothing, and
+  // hunting rifle (armour ×0.75 against it; it was ×0.9, all but a full counter: +0.04 ± 0.03 deaths a raid then) they
+  // add about +0.09 ± 0.03 deaths a raid (about 870 pairs over seeds 7–9, 300 raids each), while one raid to the next
+  // swings by ±0.8: 60 raids cannot tell that apart from nothing, and
   // a sample can come out the other way (seed 7: -0.12 ± 0.10, and -0.03 ± 0.09 once the meds tables changed the dice). Part of it is the bot: it walks over to search
   // their bodies (botSkip false for the armoured, combat.js damage) and a plate carrier or vest fills a survivor's
   // hands (raidloot.js personalRoom), so it heads out sooner (about 0.5 turns a raid less, fewer drawn in by the
@@ -316,7 +318,7 @@ section("Balance: a dead soldier against a walker (power 3), one weapon at a tim
   const walkerHp = 15 + 7 * 3, soldierHp = Math.round(walkerHp * ZTYPES.soldier.hp);
   for (const w of WPN) {
     const W = WEAPONS[w], avg = (W.dmg[0] + W.dmg[1]) / 2, melee = !!W.melee;
-    const crit = melee ? 0.1 : 0.15; // crit chances against the dead in the open
+    const crit = (melee ? CRIT.MELEE : CRIT.DEAD) / 100; // crit chances against the dead in the open
     // A critical hit: × CRIT_MULT (2) and the armour ignored.
     const per = (m) => avg * ((1 - crit) * m + crit * CRIT_MULT);
     const solHit = per(armorVs({ ztype: "soldier" }, { weapon: w }, { how: melee ? "melee" : "shot" }));

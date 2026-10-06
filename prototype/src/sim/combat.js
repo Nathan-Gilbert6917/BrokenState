@@ -441,6 +441,10 @@ export const HUNKER_DEF = 20;
 // A critical hit (shots and melee, both sides; the chances are in shotOdds / meleeOdds): × this damage, and through a
 // dead soldier's or riot cop's armour (deadsoldiers.js armorVs).
 export const CRIT_MULT = 2;
+// The critical chances (%): a shot at someone with no cover (EXPOSED), at one of the dead in the open (DEAD), at
+// anyone in cover (COVER), a melee blow (MELEE); an overwatch reaction never. Deadeye adds 15 to a shot (skills.js),
+// the Assassin perk makes a blow on the unaware always critical. Lowered from 40 / 15 / 5 / 10 (a crit is ×2).
+export const CRIT = { EXPOSED: 25, DEAD: 10, COVER: 5, MELEE: 8 };
 const BLEED_TURNS = 3;
 const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 
@@ -542,10 +546,13 @@ export const WEAPONS = {
   knife:     { name: "Kitchen knife",  melee: true, dmg: [14, 22] },
   machete:   { name: "Machete",        melee: true, dmg: [20, 30] },
   claws:     { name: "Teeth and nails", melee: true, dmg: [12, 20] },
-  // The 9mm's 14–21: a walker in the open (29 hit points at power 2) falls to two hits unless both roll 14, and to a
-  // critical (×2) unless it rolls 14, so three pistols against 16 of the dead win about 70% (combattest weapons, 6000
-  // battles); at 16–24 every pair of hits and every critical killed (72%).
-  pistol:    { name: "9mm pistol",     dmg: [14, 21], opt: 6,  fall: 4, aim: 0,  ammo: 1, noise: 2 },
+  // The 9mm: 15–22 and +4 aim. A walker in the open (29 hit points at power 2) falls to any two hits (bar two 15s)
+  // or a critical (×2), so against the dead the aim is what counts: damage alone barely moves three pistols against 16
+  // of them (14–21: 68%, 18–27: 69%), +4 aim takes them to about 72%. Against people the damage counts, and raiders
+  // carry pistols too (KITS), so every gun's odds against them move with it: at 14–21 +0 three pistols beat 4 raiders
+  // 24% to the revolver's 40%; at 15–22 +4 about 30% to its 35% (3000–4000 battles a matchup, crits 25 / 10 / 5 / 8);
+  // 16–24 +4 overtook the revolver (33% to 32%).
+  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2 },
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10 },
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10 },
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3 },
@@ -1074,7 +1081,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (inside(t.x, t.y) && b.cells[idx(t.x, t.y)].k === "siegeladder") aim += CLIMB_AIM;
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
-  const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? 15 : 40) : 5) + (a.critBonus || 0); // critBonus: Deadeye
+  const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
 }
 
@@ -1085,7 +1092,7 @@ export function meleeOdds(b, a, t) {
   const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up)));
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
-  return { chance, crit: 10, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
+  return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
 }
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
@@ -1998,7 +2005,7 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, o.chance + (o.crit >= 40 ? 12 : 0));
+      best = Math.max(best, o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)); // a target with no cover
     }
   }
   s += best * 0.3;

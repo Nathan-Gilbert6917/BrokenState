@@ -2,7 +2,7 @@
 // police (ZTYPES.riot, hard-shell riot gear). Their stats as special dead are in hiveconst.js ZTYPES; this module has
 // what is theirs alone (every number in MILDEAD):
 // - Armour by weapon (armorVs, called by combat.js damage): × the damage a hit does, by the weapon that struck.
-//   A soldier's plates stop pistol rounds and blades (×0.4–0.5); rifles mostly get through (×0.85–0.9); blunt blows
+//   A soldier's plates stop pistol rounds and blades (×0.4–0.5); rifles get through better (×0.7–0.75); blunt blows
 //   still break what is under the plate (bat ×0.85, sledge ×1). Fire and pipe bombs ignore it (fire ×1, blast ×0.85).
 //   A critical hit always gets through (a round under the helmet's rim, a blade in a gap), and so does a blade from
 //   behind or on one that has not noticed you (a knife to the base of the skull). Riot gear is the other way round:
@@ -27,7 +27,7 @@ export const MILDEAD = {
       shot: 0.6, melee: 0.6, bash: 0.8, fire: 1, blast: 0.85, trap: 0.8,
       w: {
         pistol: 0.5, revolver: 0.6, shotgun: 0.6, pipegun: 0.6, crossbow: 0.5, compbow: 0.45, xbow: 0.55,
-        huntrifle: 0.9, leverrifle: 0.8, carbine: 0.85, ar: 0.85, acid: 1,
+        huntrifle: 0.75, leverrifle: 0.7, carbine: 0.75, ar: 0.75, acid: 1, // rifles: was 0.9 / 0.8 / 0.85 / 0.85 (the hunting rifle all but a full counter)
         fists: 0.55, knife: 0.4, machete: 0.5, sawmachete: 0.5, pipespear: 0.45, fireaxe: 0.75,
         bat: 0.85, spikedbat: 0.8, nailbat: 0.8, prybar: 0.85, sledge: 1, baton: 0.75, claws: 0.7,
       },
