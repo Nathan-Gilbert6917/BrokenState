@@ -7,7 +7,8 @@
 //               day's thirst (weather.thirstFactor: spring and autumn 1, summer 1.3, winter 0.9, a hot day at least
 //               1.6), +1 for each case of dysentery (economy.waterNeed). Under a week of food left they go on short
 //               rations (economy.RATION, 60%).
-//   prisoners   in the cells or the shed (prisoners.js): prisoners.PRISON.FOOD each × the cold, water as anyone.
+//   prisoners   in the cells or the shed (prisoners.js): PRISON.FOOD × their rations each (Short 0.6 by default; Full
+//               1, Starvation 0.3, None 0) × the cold, water as anyone.
 //   guests      travellers you shelter (visitors.js shelter): UPKEEP.guest each × the cold, water as anyone.
 //   crew        a supply convoy holding at the base (supply.js holdUpkeep): UPKEEP.crew each × the cold, water as
 //               anyone (from the base first, then what the convoy carries).
@@ -23,7 +24,7 @@
 // treatment of someone sick or hurt (medical.js, health.js).
 import { residents } from "./world.js";
 import { partyMembers } from "./parties.js";
-import { PRISON } from "./prisoners.js";
+import { PRISON, prisonFoodAt } from "./prisoners.js";
 import { DOG } from "./hubevents.js";
 import { eatMult } from "./skills.js";
 import * as Weather from "./weather.js";
@@ -60,7 +61,8 @@ export function foodUse(state, base, dayIdx) {
   const groups = [];
   const add = (key, label, n, each) => { if (n > 0) groups.push({ key, label, n, each: r2(each), total: n * each }); };
   add("residents", m.residents === 1 ? "person" : "people", m.residents, rate);
-  add("prisoners", m.prisoners === 1 ? "prisoner" : "prisoners", m.prisoners, PRISON.FOOD * cold);
+  // prisoners-tab: each prisoner eats by their rations (prisoners.js RATIONS: Short 60% by default), so `each` is the average.
+  add("prisoners", m.prisoners === 1 ? "prisoner" : "prisoners", m.prisoners, (m.prisoners ? prisonFoodAt(state, base) / m.prisoners : PRISON.FOOD) * cold);
   add("guests", m.guests === 1 ? "guest" : "guests", m.guests, UPKEEP.guest * cold);
   add("crew", "convoy crew", m.crew, UPKEEP.crew * cold);
   add("dog", "the dog", m.dog, DOG.food);

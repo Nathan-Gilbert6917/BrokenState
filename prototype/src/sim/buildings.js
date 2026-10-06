@@ -8,6 +8,7 @@ import { refreshPower, generatorStatus, powerLine } from "./power.js";
 import { buildMult } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
+import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -280,7 +281,8 @@ export function cancelBuild(state, base, id) {
 }
 
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0); // buildMult: Handy / Master Builder (skills.js)
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0) // buildMult: Handy / Master Builder (skills.js)
+    + prisonBuildRate(state, base); // prisoners-tab: prisoners set to Build (prisoners.js labour, 12 hours a day at 50–70%)
 }
 
 // Builders work on the first job in the queue, hour by hour.

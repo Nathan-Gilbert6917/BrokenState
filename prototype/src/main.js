@@ -43,7 +43,7 @@ import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
-import { PRISON_ACTIONS } from "./ui/prisoners.js";
+import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
@@ -969,6 +969,7 @@ for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) cha
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.

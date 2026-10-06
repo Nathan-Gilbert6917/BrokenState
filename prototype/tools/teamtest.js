@@ -222,7 +222,7 @@ section("Cards never outlive their team or the person they are about (T-2, P-13)
     const c = rollTravelEvent(state, p, partyTile(p));
     if (!c) continue;
     if (c.title === "Cold feet") cold = cold || c;
-    else if (!c.conflict && c.title !== "Bitten" && c.title !== "Tempers flare") other = other || c;
+    else if (!c.conflict && c.title !== "The worm" && c.title !== "Tempers flare") other = other || c;
   }
   if (check(cold && other, "test setup: cards not rolled")) {
     // About someone who has died since: dropped, and answering it anyway does nothing.

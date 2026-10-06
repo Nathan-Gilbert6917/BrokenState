@@ -470,7 +470,7 @@ function pickChoice(state, card, opts, p) {
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }
-  if (/^Bitten/.test(t)) return find(/^Amputate/) || find(/^Hope/);
+  if (/^The worm/.test(t)) return find(/^Purge/) || find(/^Hope/);
   if (/^A hive/.test(t)) return find(/^Mark it/) || opts[opts.length - 1];
   // Storming a hive: only with the squad it was sent with (most of it still standing and healthy), by the odds.
   if (/^The hive: /.test(t)) return hiveChoice(state, card, opts, p, find);

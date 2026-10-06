@@ -19,6 +19,7 @@ import { workFactor } from "./health.js";
 import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
 import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
+import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Farm (careToday)
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
@@ -303,7 +304,7 @@ export function careToday(state, base) {
   const f = farmOf(state, base);
   const list = farmers(state, base);
   const planted = Math.max(1, f.plots.filter((p) => p.stage === "growing").length);
-  const labour = list.reduce((a, s) => a + workFactor(s), 0);
+  const labour = list.reduce((a, s) => a + workFactor(s), 0) + prisonLabour(state, base, "farm"); // prisoners-tab: prisoners set to Farm help tend (prisoners.js, 50–70% of a farmer)
   const tenders = list.slice(0, Math.max(1, planted));
   // Perks (skills.js): Early Riser counts Farming +3 when tending; Green Thumb +15% while one of the tenders.
   const avg = tenders.length ? tenders.reduce((a, s) => a + skill(s, "farming") + (hasPerk(s, "earlyriser") ? 3 : 0), 0) / tenders.length : 0;
