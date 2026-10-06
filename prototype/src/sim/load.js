@@ -162,11 +162,16 @@ export function burdenRecord(t, members, v) {
   };
 }
 
-// Food and water a team eats an hour per supply (people × their ration multiplier while moving, 1 each at rest).
-export function rationRate(burden, members, mode, moving) {
-  if (!moving || !burden) return members.length;
+// Rations a day one person eats and drinks on a team: their load band's multiplier while moving, 1 at rest (needs.js
+// gauges fall by it).
+export function personRation(burden, s, mode, moving) {
+  if (!moving || !burden) return 1;
   const eat = mode ? burden.eatRide || burden.eatFoot : burden.eatFoot;
-  return members.reduce((a, s) => a + ((eat && eat[s.id]) || 1), 0);
+  return (eat && eat[s.id]) || 1;
+}
+// Food and water a team eats a day per supply (people × their ration multiplier while moving, 1 each at rest).
+export function rationRate(burden, members, mode, moving) {
+  return members.reduce((a, s) => a + personRation(burden, s, mode, moving), 0);
 }
 
 export const bandName = (i) => (i >= 0 && LOAD_BANDS[i] ? LOAD_BANDS[i].name : "–");

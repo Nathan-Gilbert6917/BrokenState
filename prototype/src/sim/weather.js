@@ -458,6 +458,12 @@ export function hordeSpeedFactor(state, dayIdx = dayIndex(state)) {
   return r2(Math.max(0.4, f));
 }
 
+// The mean temperature of a day (°C): what heating (upkeep.js heatRate) and the cold's appetite go by.
+export function dayMeanTemp(state, dayIdx = dayIndex(state)) {
+  const d = rec(state, dayIdx);
+  return (d.hi + d.lo) / 2;
+}
+
 // People burn more food keeping warm.
 export function foodNeedFactor(state, dayIdx = dayIndex(state)) {
   const d = rec(state, dayIdx);
