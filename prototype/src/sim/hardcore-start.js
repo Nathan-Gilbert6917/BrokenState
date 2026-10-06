@@ -3,7 +3,7 @@
 //
 // - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin, the city
 //   where the first hive rises and the hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
-//   day or two's walk (somewhere to scavenge and to settle).
+//   day or two's walk (somewhere to scavenge and to settle) and a river or lake within 6 tiles (10 relaxed: a camp has no spring).
 // - What they grabbed: each survivor fled with a bag (a school backpack, a sling bag, now and then a hiking pack) and a
 //   few things in it, or with only their clothes and pockets (0–4 small things). Maybe a weapon from the house: a kitchen
 //   knife, a bat, a crowbar, a pistol with a few rounds. The team's food and water (pooled, like any team's) come from
@@ -29,7 +29,8 @@ export const HC_START = {
   // relaxed if no tile qualifies); the share of the map kept clear of the edges; a town (or SITES_NEAR sites) within
   // TOWN_REACH tiles.
   // outbreakCity: from the centre of the city where the first hive rises (hardcore-outbreak.js hcOutbreakCity).
-  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35 },
+  // water: a river or lake within this many tiles (a camp has no spring: staging.js), strict / relaxed.
+  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35, water: [6, 10] },
   // What they grabbed. PACK: the chance someone fled with a bag; which bag (weights); how many things in it.
   PACK: 0.5,
   PACKS: { backpack: 5, slingbag: 3, hikingpack: 1 },
@@ -119,6 +120,7 @@ function spawnTile(state) {
     if (within(t.id, state.cityIds || [], S.city[i]) || g.neighbors(t.id).some((n) => state.tiles[n].terrain === "city")) return false;
     if (within(t.id, state.militaryIds || [], S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
     if ((t.infection || 0) > S.maxInfection * (strict ? 1 : 1.5)) return false;
+    if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
     return sitesOk(t.id);
   };
   for (const strict of [true, false]) {

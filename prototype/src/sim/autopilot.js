@@ -2340,7 +2340,7 @@ function exileAct(state, p) {
 // tiles from the camp it searches first. Short of food or water it goes back to the camp when the stores can spare
 // some (staging.js provisionable).
 const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8, huntHours: 8, huntMin: 4 };
-const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7 };
+const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7, waterReach: 9 };
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
   const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
@@ -2381,7 +2381,10 @@ function campAct(state, p) {
     const needs = stagingNeeds(state);
     const ready = carried(p, "scrap") >= needs.scrap * CAMP.pitchShare || day(state) >= CAMP.pitchDay || !firstHubPending(state) || members.some((s) => s.health < 60);
     if (!ready) return false;
-    const sites = hubSites(state, here, ROAD.foundReach).filter((s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle)));
+    const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
+    let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
+    // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
+    if (!sites.length || sites[0].waterDist !== 1) { const wet = hubSites(state, here, CAMP.waterReach).filter((s) => s.waterDist === 1 && ok(s)); if (wet.length) sites = wet; }
     const best = sites[0];
     const atHere = sites.find((s) => s.id === here);
     if (!best) return false;
@@ -2407,6 +2410,8 @@ function campAct(state, p) {
     giveOrder(state, p, "establish");
     return true;
   }
+  // Thirsty and the camp has no water to give (no river beside it, dry stores): water first (roadAct), not the camp.
+  if (roadDays(state, p, "water") < 1 && !besideWaterSource(state, camp.tile) && storeOf(camp, "water") < partyMembers(state, p).length) return false;
   const route = planPath(state, here, camp.tile, p.vehicle) || planPath(state, here, camp.tile, false);
   if (!route) return false;
   const dist = route.path.length - 1;

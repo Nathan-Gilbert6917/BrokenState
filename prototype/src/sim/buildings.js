@@ -89,13 +89,13 @@ export const BUILDINGS = {
 // Your bases grow in three stages: a staging camp (staging.js, not a base yet) → a shelter (tier 0) → a base (tier 1,
 // the hub as it always was; outposts are tier 1 too). A shelter is a base you can live at (stores, rest and healing,
 // the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, beds for
-// four under the tarps, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
+// four under the tarps, an outpost's two crop plots, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
 // or what is brought in), and only a few survival buildings (SHELTER.build: max of each). Its Heat comes from what it
 // does (fieldheat.js shelterHeat: its fire, people, vehicles parked, shooting nearby) instead of the hub's flat 3.
 // Saves from before the tiers have no tier field: tier 1.
 export const SHELTER = {
   name: "Shelter",
-  walls: 0, beds: 4, plots: 0, vision: 1, waterCap: 40,
+  walls: 0, beds: 4, plots: 2, vision: 1, waterCap: 40, // plots: a garden patch, as an outpost's
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   build: { rain_catcher: 2, smoker: 1, barricades: 1, farm_plot: 1, hub_up: 1 },
 };
@@ -123,7 +123,7 @@ export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
 export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
-// Crop plots (farming.js plotLimit): hub 6, outpost 2, a shelter none, +2 per Farm plot building.
+// Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
 export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 

@@ -296,7 +296,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     scatter(countAll(base, "well"), "well", I.YARD_X - 2, I.WALL_X - 3, (x, y) => free(x, y) && x >= 4);
     scatter(Math.min(4, countAll(base, "rain_catcher")), "barrel", 3, I.WALL_X - 3, (x, y) => free(x, y));
     if (countAll(base, "garage")) scatter(1, "car", I.YARD_X, I.WALL_X - 3);
-    const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.tier === 0 ? 0 : base.type === "hub" ? 6 : 2)) / 4));
+    const plots = Math.min(3, Math.ceil((count(base, "farm_plot") * 2 + (base.tier === 0 ? 2 : base.type === "hub" ? 6 : 2)) / 4));
     for (let i = 0; i < plots; i++) {
       for (let t = 0; t < 20; t++) {
         const x0 = rng.int(I.BUILD_X[0], I.WALL_X - 5), y0 = rng.int(0, H - 2);

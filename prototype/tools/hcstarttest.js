@@ -5,7 +5,8 @@
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
 import { isShelter, tierName, SHELTER, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
-import { waterProduction } from "../src/sim/economy.js";
+import { waterProduction, waterNeed } from "../src/sim/economy.js";
+import { foodUse, mouthsAt, useText } from "../src/sim/upkeep.js";
 import { structuresOf } from "../src/sim/interior.js";
 import { wallHold } from "../src/sim/defences.js";
 import { stagingDanger, setFire, noteGunfire, CAMP_HEAT, nextHeat, heatInfo, teamFire, FIRE, campSite, heatGain, fireLit, tileDanger } from "../src/sim/fieldheat.js";
@@ -60,6 +61,7 @@ for (const st of worlds) {
   const sites = st.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(t.id, tile.id) <= HC_START.SPAWN.siteReach).length;
   check(town || sites >= HC_START.SPAWN.sitesNear, `${tag}: a town or ${HC_START.SPAWN.sitesNear}+ sites within reach (town ${town}, sites ${sites})`);
   check(hubSites(st, tile.id, 6).length > 0, `${tag}: somewhere to found a hub nearby`);
+  check(!!waterSource(st, tile.id, HC_START.SPAWN.water[1]), `${tag}: a river or lake within ${HC_START.SPAWN.water[1]} tiles (${waterText(st, tile.id)})`);
   check(st.vehicles.length === 0 || st.vehicles.every((v) => v.loc.kind !== "party" && !(v.loc.kind === "base")), `${tag}: no vehicle of yours`);
   check(st.cards.length >= 1 && st.cards[0].isOrders && st.cards[0].partyId === p.id && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the team's orders card`);
 }
@@ -188,6 +190,9 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
   check(h && isShelter(h) && tierName(h) === "Shelter" && tierInfo(st).stage === 1 && tierInfo(st).next === "Base", "the camp becomes a shelter (tier 0), the next stage a base");
   check(h && baseWalls(h) === SHELTER.walls && baseBeds(h) === SHELTER.beds && farmSlots(h) === SHELTER.plots && baseVision(h) === SHELTER.vision, `a shelter is small: walls ${h && baseWalls(h)}, beds ${h && baseBeds(h)}, plots ${h && farmSlots(h)}, vision ${h && baseVision(h)}`);
   check(h && waterProduction(st, h).own === 0, "no well of its own");
+  // Upkeep per head (upkeep.js): the shelter feeds and waters everyone there like any base.
+  check(h && foodUse(st, h).heads === mouthsAt(st, h).heads && mouthsAt(st, h).residents === atBase(st, h.id).length && waterNeed(st, h).heads === mouthsAt(st, h).heads && Math.abs(foodUse(st, h).residents - mouthsAt(st, h).residents * foodUse(st, h).rate) < 1e-9,
+    `the shelter's food and water go per head (${h && useText(foodUse(st, h))}; water ${h && waterNeed(st, h).total})`);
   check(h && structuresOf(h).map((s) => s.key).join() === "shack" && wallHold(h) < wallHold({ ...h, tier: undefined }), `base battles: only a shack behind the barricade (${h && structuresOf(h).map((s) => s.key).join()}), it holds back fewer of the dead`);
   if (h) {
     Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10 });
@@ -197,6 +202,7 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
     queueBuild(st, h, "farm_plot");
     check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
     h.construction.length = 0;
+    st.cards.length = 0; // the base panel sits under any open card
     const html = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } }) || "";
     check(/Shelter/.test(html) && /Build up into a base/.test(html) && /data-action="campfire"/.test(html) && /Water source/.test(html), "the base panel shows the stage, the step up (button), the water source and the fire");
     check(/queued/.test(queueBuild(st, h, "hub_up")), "Build up into a base is queued");
