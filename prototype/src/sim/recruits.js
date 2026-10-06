@@ -343,7 +343,7 @@ export function autoRecruitPick(state, card, opts, roomFor) {
   const send = kind("send").filter((c) => c.room >= n).sort((a, b) => b.room - a.room)[0];
   if (send && roomFor(n)) return send;
   const h = hub(state);
-  if (kind("part")[0] && h && (h.stock.food || 0) >= 120 && (h.stock.water || 0) >= 40) return kind("part")[0];
+  if (kind("part")[0] && h && (h.stock.food || 0) >= 120 && stockHas(h.stock, "water") >= 40) return kind("part")[0];
   return kind("away")[0] || null;
 }
 

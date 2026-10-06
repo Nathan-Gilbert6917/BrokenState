@@ -1,5 +1,6 @@
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
+import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
@@ -504,7 +505,7 @@ export function removeBase(state, base, cause = "was lost") {
   for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = h.id;
   state.bases.splice(i, 1);
   assignStations(state, h);
-  const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${k}`);
+  const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
   const bits = [];
   if (base.buildings.length) bits.push(`${base.buildings.length} building${base.buildings.length === 1 ? "" : "s"}`);
   if (stock.length) bits.push(`its stock (${stock.join(", ")})`);

@@ -31,6 +31,7 @@ const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 224);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
+const wtot = (b) => Math.round(((b.stock.water || 0) + (b.stock.rawwater || 0)) * 100) / 100; // purified and un-purified water (sim/water.js)
 const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; return st; };
 const plain = (s) => { s.traits = []; return s; };
 const addPerson = (st, base, role) => { const s = plain(makeSurvivor(st, 1)); s.location = { kind: "base", baseId: base.id }; s.role = role; st.survivors.push(s); return s; };
@@ -155,21 +156,21 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(need.people === Math.round(n * Weather.thirstFactor(st) * 10) / 10 && need.rate === 1, `everyone drinks 1 a day in spring (${need.people} for ${n} people)`);
   const prod = waterProduction(st, h);
   check(prod.own > 0 && prod.total >= prod.own, `the hub's well gives water (${prod.total} a day)`);
-  h.stock.water = 30;
+  h.stock.water = 30; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const outlook = waterOutlook(st, h);
   basesDaily(st);
   st.cards.length = 0;
   const expect = Math.min(waterCapacity(h), 30 + prod.total) - need.people;
-  check(h.stock.water <= expect + 0.11 && h.stock.water >= expect - need.crops - 0.11, `water moves by production minus drinking and crops (${h.stock.water}, expected ${expect.toFixed(1)} less up to ${need.crops} for crops)`);
+  check(wtot(h) <= expect + 0.11 && wtot(h) >= expect - need.crops - 0.11, `water moves by production minus drinking and crops (${wtot(h)}, expected ${expect.toFixed(1)} less up to ${need.crops} for crops)`);
   check(Number.isFinite(outlook.net) && Number.isFinite(outlook.dryNet), "the water outlook is a number");
   // Capacity: the well does not fill past it, water brought home is kept; a cistern holds more.
-  h.stock.water = waterCapacity(h);
+  h.stock.water = waterCapacity(h); h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const cap0 = waterCapacity(h);
   basesDaily(st);
-  check(h.stock.water <= cap0, `the well does not overfill (${h.stock.water} of ${cap0})`);
-  h.stock.water = cap0 + 100;
+  check(wtot(h) <= cap0, `the well does not overfill (${wtot(h)} of ${cap0})`);
+  h.stock.water = cap0 + 100; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   basesDaily(st);
-  check(h.stock.water > cap0, "water brought home above the capacity is kept");
+  check(wtot(h) > cap0, "water brought home above the capacity is kept");
   addBuilding(h, "cistern");
   check(waterCapacity(h) === cap0 + WATER.cistern, "a cistern adds capacity");
   addBuilding(h, "well");
@@ -240,12 +241,12 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   // The day's drinking at the base follows the rate (summer).
   setDay(st, plainDay.summer);
   bareFarm(st, h);
-  h.stock.water = 30;
+  h.stock.water = 30; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const prodS = waterProduction(st, h);
   basesDaily(st);
   st.cards.length = 0;
   const expectS = Math.min(waterCapacity(h), 30 + prodS.total) - n * T.summer;
-  check(Math.abs(h.stock.water - expectS) < 0.11, `summer: the base drinks ${T.summer} a head (${h.stock.water}, expected ${expectS.toFixed(1)})`);
+  check(Math.abs(wtot(h) - expectS) < 0.11, `summer: the base drinks ${T.summer} a head (${wtot(h)}, expected ${expectS.toFixed(1)})`);
   // Prisoners in the cells drink like anyone: counted in the outlook.
   st.prisoners = [{ id: 1, at: { kind: "base", baseId: h.id } }];
   check(Math.abs(waterNeed(st, h).prisoners - T.summer) < 0.01, `a prisoner in the cells drinks ${T.summer} in summer too`);
@@ -266,15 +267,15 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   // Evaporation: in summer, water kept above the capacity loses 5% of the overflow a day; not in spring.
   setDay(st, plainDay.summer);
   const cap = waterCapacity(h);
-  h.stock.water = cap + 100;
+  h.stock.water = cap + 100; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const nd = waterNeed(st, h);
   basesDaily(st); st.cards.length = 0;
-  check(Math.abs(h.stock.water - (cap + 100 - 100 * WATER.evaporate - nd.people - nd.crops)) < 0.2, `summer: ${Math.round(WATER.evaporate * 100)}% of the water above the capacity evaporates (${h.stock.water.toFixed(1)} of ${cap + 100})`);
+  check(Math.abs(wtot(h) - (cap + 100 - 100 * WATER.evaporate - nd.people - nd.crops)) < 0.2, `summer: ${Math.round(WATER.evaporate * 100)}% of the water above the capacity evaporates (${wtot(h).toFixed(1)} of ${cap + 100})`);
   setDay(st, plainDay.spring);
-  h.stock.water = cap + 100;
+  h.stock.water = cap + 100; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const ns = waterNeed(st, h);
   basesDaily(st); st.cards.length = 0;
-  check(Math.abs(h.stock.water - (cap + 100 - ns.people - ns.crops)) < 0.2, "spring: no evaporation");
+  check(Math.abs(wtot(h) - (cap + 100 - ns.people - ns.crops)) < 0.2, "spring: no evaporation");
   // The summer outlook: a crowd at the hub with the starting well falls short, and the outlook says what to build.
   const big = W();
   const hb = hub(big);

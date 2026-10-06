@@ -54,6 +54,7 @@ import { huntWorkWhy, fishWorkWhy, fishWorkCap, hunterMult, bestHuntWeapon, fish
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse } from "./upkeep.js";
 import { woodWorkWhy, woodWorkCap, woodNeed, woodcutterMult, bestChop, baseWoodDay } from "./woodcutting.js";
+import { waterIn } from "./water.js"; // purified and un-purified water count together
 import { wormFilterUrgent, WOOD_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
 export const PRIO_MAX = 5;
@@ -157,7 +158,7 @@ export const WORK_TYPES = {
     open(ctx) {
       const jobs = openCrafts(ctx);
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough and a build is queued" : "the queued crafts need a workshop") : "nothing in the craft queue" };
-      const water = jobs.some((j) => j.recipe === "waterfilter") && (ctx.base.stock.water || 0) < ctx.people.length * 3;
+      const water = jobs.some((j) => j.recipe === "waterfilter") && waterIn(ctx.base.stock) < ctx.people.length * 3;
       return { cap: 1, urg: 3 + (water ? 4 : 0) }; // one crafter, as the governor: a queue that empties fast gets refilled, and every craft is paid in scrap the build queue wants
     },
     // The governor's rule (autopilot.js planRoles 1b): a queued water filter gets its crafter first while the water
@@ -361,7 +362,7 @@ function holdFilters(state, base) {
   const auto = !!state.autopilot || !!(base.steward && base.steward.on && base.steward.areas && base.steward.areas.production !== false);
   // Never while the water carries the worm's eggs and nothing boils it (autopilot.js wormFilterUrgent): that filter is
   // for safe water, not more of it, and planCrafts put it at the front of the queue for the crafter the rule above spares.
-  const hold = auto && base.construction.length > 0 && (base.stock.water || 0) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base) && !wormFilterUrgent(state, base);
+  const hold = auto && base.construction.length > 0 && waterIn(base.stock) >= waterCapacity(base) * FILTER_HOLD && !waterRunningShort(state, base) && !wormFilterUrgent(state, base);
   for (const j of q) {
     if (j.recipe !== "waterfilter") continue;
     if (hold && !(j.progress > 0)) j.held = state.hour;
@@ -408,7 +409,7 @@ export function stationWork(state, base, st, opsNow = new Set()) {
     if (!(store.outside >= 1 || ((sk === "summer" || sk === "autumn") && (s.food || 0) >= Math.min(store.cap * 0.6, n * 25)))) return "nothing spoiling (no order set)";
   } else if (!hasOrder(base, st) && k === "still") {
     if (!(foodStore(state, base).outside >= 1 || edibleFood(base) / n >= 30)) return "no surplus food (no order set)";
-    if ((s.water || 0) < n * 2 + 2) return "water kept for drinking";
+    if (waterIn(s) < n * 2 + 2) return "water kept for drinking";
   }
   if (k === "power") {
     if ((s.fuel || 0) < POWER.genFuel) return "no fuel";

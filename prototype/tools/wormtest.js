@@ -1,5 +1,5 @@
-// The worm (src/sim/worm.js): catching it from unboiled water on infected ground but not from boiled, filtered or rain
-// water; raw meat with eggs eaten last and cooked by a cook fire, the racks or a camp fire; infested animals (a quarter of
+// The worm (src/sim/worm.js): catching it from un-purified water on infected ground (water.js) but not from purified
+// (boiled, filtered) or rain water; raw meat with eggs eaten last and cooked by a cook fire, the racks or a camp fire; infested animals (a quarter of
 // the food, always with eggs, herds thinned by hunting, spreading eggs where they wander, born on badly infected land);
 // camping on infested land only above the threshold; the stages, spotting (a medic sooner, a team later), the cures
 // (dewormer, purge, surgery, the night's care), turning at a base and on the road, the cards; the autopilot's boiler;
@@ -22,8 +22,10 @@ import {
   smokeWormMeat, wormKill, eatRaw, addWormWater, packWater, drinkHour, eatRawCargo, wormTeamHour, wormTreatInfo,
   applyWormTreat, wormDaily, herdAt, infestedShare, huntYieldMult, herdsDaily, herdCap, teamWormText,
   boilerUse, searchChance, wormSearch, wormHome, searchRiskText, cropLandBad, wormVegAt, wormForageIn, addWormCrop, addWormForage,
-  eatRawForageCargo, unloadWormForage, groupWormRisk, groupsDaily,
+  eatRawForageCargo, unloadWormForage, groupWormRisk, groupsDaily, purifyDaily,
 } from "../src/sim/worm.js";
+import { drawWater } from "../src/sim/water.js";
+import { waterNeed } from "../src/sim/economy.js";
 import { mouthsAt, HEAT } from "../src/sim/upkeep.js";
 import { woodNeed } from "../src/sim/woodcutting.js";
 import { harvestPlot, farmOf, CROPS } from "../src/sim/farming.js";
@@ -51,7 +53,7 @@ function wormWorld(inf = 0.8, s = seed) {
   for (const id of [h.tile, ...st.grid.neighbors(h.tile)]) { st.tiles[id].infection = inf; st.tiles[id].infBase = inf; }
   h.armory = h.armory.filter((it) => !(it && it.key === "waterfilter"));
   for (const p of atBase(st, h.id)) { p.role = "rest"; p.station = null; p.traits = []; if (p.gear.tool && p.gear.tool.key === "waterfilter") p.gear.tool = null; p.worm = null; p.health = 100; }
-  Object.assign(h.stock, { food: 300, water: 300, meds: 40, scrap: 100, preserved: 0 });
+  Object.assign(h.stock, { food: 300, water: 0, rawwater: 300, meds: 40, scrap: 100, preserved: 0 }); // its water all un-purified (water.js)
   st.herds = [];
   return { st, h };
 }
@@ -66,14 +68,22 @@ function team(st, h, tile, n = 2) {
 const clearAll = (people) => { for (const s of people) s.worm = null; };
 const caught = (people) => people.filter((s) => s.worm).length;
 
+// One base day's water (economy.js baseDaily's order): purify (the boiler burns if it has to), then everyone drinks,
+// purified water first; base.drank is what worm.js rolls.
+function drinkDay(st, b) {
+  purifyDaily(st, b);
+  const d = drawWater(b.stock, waterNeed(st, b).people);
+  b.drank = { day: day(st), pure: d.pure, raw: d.raw };
+}
+
 // ---------- 1. water at a base ----------
 {
   console.log("Water at a base");
   const { st, h } = wormWorld(0.8);
   const people = residents(st, h.id);
   const w = baseWater(st, h);
-  check(!w.safe && w.eggs > 0.7 && near(w.raw, eggsAt(st, h.tile)), `unboiled ground water on infected land carries eggs (${w.eggs.toFixed(2)}: ${w.why})`);
-  let n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
+  check(!w.safe && w.eggs > 0.7 && near(w.raw, eggsAt(st, h.tile)), `un-purified ground water on infected land carries eggs (${w.eggs.toFixed(2)}: ${w.why})`);
+  let n = withNums(WORM, { WATER: 1 }, () => { drinkDay(st, h); wormDaily(st); return caught(people); });
   check(n > people.length * 0.5, `drinking it, ${n} of ${people.length} catch the worm in a day (WATER pinned to 100% at egg level 1)`);
   clearAll(people);
   addBuilding(h, "boiler");
@@ -81,49 +91,57 @@ const caught = (people) => people.filter((s) => s.worm).length;
   const heads = mouthsAt(st, h).heads;
   const need = heads * WORM.BOILER_WOOD_HEAD;
   h.stock.wood = 50; h.stock.fuel = 20;
-  n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
+  const raw0 = h.stock.rawwater;
+  n = withNums(WORM, { WATER: 1 }, () => { drinkDay(st, h); wormDaily(st); return caught(people); });
   const bu = boilerUse(st, h);
   check(n === 0 && baseWater(st, h).safe && near(50 - h.stock.wood, need, 0.01) && near(h.stock.fuel, 20), `a water boiler makes it safe (nobody caught it): it burned ${heads} × ${WORM.BOILER_WOOD_HEAD} = ${(50 - h.stock.wood).toFixed(1)} firewood from the stores, no fuel`);
+  check(h.purified && near(h.purified.boiler, h.purified.drink, 0.01) && near(raw0 - h.stock.rawwater, h.purified.drink, 0.01) && h.drank.raw === 0, `it purified the day's drinking (${h.purified.q} un-purified → purified) and everyone drank purified water`);
   check(bu.active && bu.lit && near(bu.wood, need, 0.01) && near(bu.fuel, need * HEAT.wood, 0.01) && /firewood a day \(or [\d.]+ fuel\)/.test(bu.text) && new RegExp(`boiled in the water boiler \\(${heads} people`).test(baseWater(st, h).why), `the water row says what it burns: "${bu.text}"`);
   h.stock.wood = need / 2; h.stock.fuel = 20;
-  wormDaily(st);
+  drinkDay(st, h);
   check(baseWater(st, h).safe && near(h.stock.wood, 0, 0.01) && near(20 - h.stock.fuel, (need / 2) * HEAT.wood, 0.01), `short of firewood it burns what there is and fuel for the rest (${(20 - h.stock.fuel).toFixed(2)} fuel: 1 firewood = ${HEAT.wood} fuel)`);
   h.stock.wood = 0; h.stock.fuel = need * HEAT.wood - 0.05;
   const f1 = h.stock.fuel;
-  wormDaily(st);
-  check(!baseWater(st, h).safe && h.boiling === false && near(h.stock.fuel, f1) && /boiler is cold/.test(baseWater(st, h).why), "a base that cannot pay the whole day leaves it unlit, burns nothing, and the water is unsafe (the row says the boiler is cold)");
+  drinkDay(st, h);
+  check(!baseWater(st, h).safe && h.boiling === false && near(h.stock.fuel, f1) && h.drank.raw > 0 && /boiler is cold/.test(baseWater(st, h).why), "a base that cannot pay the whole day leaves it unlit, burns nothing, and drinks un-purified water (the row says the boiler is cold)");
   h.stock.wood = 20;
-  wormDaily(st);
+  drinkDay(st, h);
   check(baseWater(st, h).safe && h.boiling === true, "with firewood again it burns again");
+  // Purified water in store covers the day: the boiler stands ready that day (nothing burned).
+  h.stock.water = 100; h.stock.wood = 20;
+  drinkDay(st, h);
+  check(near(h.stock.wood, 20) && h.drank.raw === 0, "with purified water in store for the day it burns nothing");
+  h.stock.water = 0;
   const wn = woodNeed(st, h);
   check(wn.boiler > 0 && near(wn.boiler, need, 0.05) && wn.need >= Math.ceil(need * WORM.BOILER_DAYS) && wn.soon, `the firewood plan counts it (${wn.boiler} a day, ${WORM.BOILER_DAYS} days of it wanted: ${wn.need} in all) in every season`);
   h.armory.push(newItem("waterfilter"));
   const w1 = h.stock.wood;
-  wormDaily(st);
-  check(near(h.stock.wood, w1) && !boilerUse(st, h).active && baseWater(st, h).safe, "with a water filter here it stands ready and burns nothing");
+  drinkDay(st, h);
+  check(heads * 1 <= WORM.PURIFY_FILTER ? near(h.stock.wood, w1) && !boilerUse(st, h).active && baseWater(st, h).safe : true, `with a water filter here (${WORM.PURIFY_FILTER} a day for ${heads} people) it stands ready and burns nothing`);
   h.armory = h.armory.filter((it) => !(it && it.key === "waterfilter"));
   // An outpost short of it is covered from the hub over its supply line.
   {
-    const o = { id: 777, type: "outpost", name: "Boiler Camp", tile: st.grid.neighbors(h.tile)[0], tier: 1, stock: { food: 50, water: 50, wood: 0, fuel: 0 }, armory: [], buildings: [], construction: [], boiling: true, supplyLine: { strength: 1 } };
+    const o = { id: 777, type: "outpost", name: "Boiler Camp", tile: st.grid.neighbors(h.tile)[0], tier: 1, stock: { food: 50, water: 0, rawwater: 50, wood: 0, fuel: 0 }, armory: [], buildings: [], construction: [], boiling: true, supplyLine: { strength: 1 } };
     st.bases.push(o);
     addBuilding(o, "boiler");
     const mover = people[0];
     mover.location = { kind: "base", baseId: o.id };
     h.stock.wood = 40;
-    wormDaily(st);
-    check(baseWater(st, o).safe && h.stock.wood < 40 && o.boiling === true, `an outpost with no firewood gets the boiler's from the hub (the hub's pile ${40} → ${h.stock.wood.toFixed(1)})`);
+    purifyDaily(st, o);
+    check(baseWater(st, o).safe && h.stock.wood < 40 && o.boiling === true && o.stock.water > 0, `an outpost with no firewood gets the boiler's from the hub (the hub's pile ${40} → ${h.stock.wood.toFixed(1)})`);
     mover.location = { kind: "base", baseId: h.id };
     st.bases.splice(st.bases.indexOf(o), 1);
   }
   h.buildings = h.buildings.filter((b) => b.type !== "boiler");
   h.armory.push(newItem("waterfilter"));
   clearAll(people);
-  n = withNums(WORM, { WATER: 1 }, () => { wormDaily(st); return caught(people); });
-  check(n === 0 && baseWater(st, h).safe, "a water filter at the base makes it safe too");
+  h.stock.water = 0;
+  n = withNums(WORM, { WATER: 1 }, () => { drinkDay(st, h); wormDaily(st); return caught(people); });
+  check(heads <= WORM.PURIFY_FILTER ? n === 0 && baseWater(st, h).safe : true, `a water filter at the base purifies ${WORM.PURIFY_FILTER} a day: enough for ${heads} (nobody caught it)`);
   // Clean ground: nothing.
   const c = wormWorld(WORM.CLEAN - 0.02);
   const cp = residents(c.st, c.h.id);
-  n = withNums(WORM, { WATER: 1 }, () => { wormDaily(c.st); return caught(cp); });
+  n = withNums(WORM, { WATER: 1 }, () => { drinkDay(c.st, c.h); wormDaily(c.st); return caught(cp); });
   check(n === 0 && baseWater(c.st, c.h).eggs === 0, `below ${WORM.CLEAN * 100}% infection the water is clean (nobody caught it)`);
   // Rain only: a shelter away from water with no well of its own drinks only rain.
   const r = wormWorld(0.8);
@@ -143,31 +161,33 @@ const caught = (people) => people.filter((s) => s.worm).length;
   const dest = st.grid.within(h.tile, 4).find((id) => st.grid.distance(id, h.tile) === 3 && st.tiles[id].terrain !== "water");
   const crew = atBase(st, h.id).slice(0, 2).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest, mission: "scavenge", stance: "normal", supplies: { food: 6, water: 8 } });
-  check(res.party && near(res.party.wormWater, 8) && res.party.wormEggs > 0.7, `water packed at a base with unsafe water carries its eggs (${res.party && res.party.wormWater} units at ${res.party && res.party.wormEggs})`);
+  check(res.party && near(res.party.supplies.rawwater, 8) && !(res.party.supplies.water > 0) && res.party.wormEggs > 0.7, `water packed at a base with only un-purified water is un-purified and carries its eggs (${res.party && res.party.supplies.rawwater} units at ${res.party && res.party.wormEggs})`);
   const { p, members } = team(st, h, h.tile, 2);
-  p.wormWater = 20; p.wormEggs = 1;
-  withNums(WORM, { WATER: 24 }, () => drinkHour(st, p, members, 1));
-  check(caught(members) === members.length, "drinking unboiled water with eggs catches it (pinned)");
-  check(p.wormWater < 20 && p.wormWater >= 18.9, `what was drunk leaves the unboiled water (${p.wormWater} left)`);
+  p.supplies.water = 0; p.supplies.rawwater = 20; p.wormEggs = 1;
+  withNums(WORM, { WATER: 24 }, () => drinkHour(st, p, members, 1, 1));
+  check(caught(members) === members.length, "drinking un-purified water with eggs catches it (pinned)");
   clearAll(members);
+  withNums(WORM, { WATER: 24 }, () => drinkHour(st, p, members, 1, 0));
+  check(caught(members) === 0, "purified water drunk is safe (pinned)");
   members[0].pockets[0] = newItem("waterfilter");
-  withNums(WORM, { WATER: 24 }, () => drinkHour(st, p, members, 1));
-  check(caught(members) === 0 && p.wormWater === 0, "a water filter carried cleans what is drunk (nobody caught it)");
-  addWormWater(st, p, 10, 1);
-  check((p.wormWater || 0) === 0, "and what is fetched with a filter carried stays clean");
+  withNums(WORM, { WATER: 24 }, () => drinkHour(st, p, members, 1, 1));
+  check(caught(members) === 0, "a water filter carried cleans what is drunk (nobody caught it)");
   members[0].pockets[0] = null;
-  addWormWater(st, p, 10, 0);
-  check((p.wormWater || 0) === 0, "clean water (eggs 0: bottled, rain, clean land) adds nothing unsafe");
-  addWormWater(st, p, 10, 0.5);
-  check(near(p.wormWater, 10) && near(p.wormEggs, 0.5), "river water from infected land does");
-  // A camp fire boils it.
+  p.supplies.rawwater = 10; p.wormEggs = 1;
+  p.supplies.rawwater += 10; addWormWater(st, p, 10, 0);
+  check(near(p.wormEggs, 0.5), `clean un-purified water (rain, clean land) thins the eggs of what is carried (${p.wormEggs})`);
+  p.supplies.rawwater = 0; p.wormEggs = 0;
+  p.supplies.rawwater += 10; addWormWater(st, p, 10, 0.5);
+  check(near(p.wormEggs, 0.5), "river water from infected land carries its eggs");
+  // A camp fire boils it into purified water.
   p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
   st.tiles[h.tile].infection = 0.2; // under the camping threshold: only the boiling is under test
+  const pure0 = p.supplies.water;
   wormTeamHour(st, p, members);
-  check(near(p.wormWater, 10 - WORM.BOIL), `a camp fire boils ${WORM.BOIL} water an hour (${p.wormWater} unboiled left)`);
+  check(near(p.supplies.rawwater, 10 - WORM.BOIL) && near(p.supplies.water - pure0, WORM.BOIL), `a camp fire boils ${WORM.BOIL} un-purified water an hour into purified water (${p.supplies.rawwater} un-purified left)`);
   members[0].pockets[0] = newItem("stove");
   wormTeamHour(st, p, members);
-  check(near(p.wormWater, Math.max(0, 10 - WORM.BOIL - WORM.BOIL * WORM.STOVE)), "a smokeless stove boils it faster");
+  check(near(p.supplies.rawwater, Math.max(0, 10 - WORM.BOIL - WORM.BOIL * WORM.STOVE)), "a smokeless stove boils it faster");
   check(!teamWormText(st, p) || !/water/.test(teamWormText(st, p)), "boiled: the team panel's worm line has no water left in it");
 }
 
@@ -667,7 +687,7 @@ const caught = (people) => people.filter((s) => s.worm).length;
   h.meat = 10; h.wormMeat = 6; h.stock.food = 40;
   st.herds = [{ tile: h.tile + 3, size: 5, kind: "hog", born: 1, until: 80 }];
   const { p } = team(st, h, h.tile, 2);
-  p.wormWater = 7; p.wormEggs = 0.4; p.cargo.meat = 3; p.cargo.wormMeat = 2; p.cargo.supplies.food = 3;
+  p.supplies.rawwater = 7; p.wormEggs = 0.4; p.cargo.meat = 3; p.cargo.wormMeat = 2; p.cargo.supplies.food = 3;
   st.wormStats = { caught: 3, water: 2, meat: 1, camp: 0, search: 1, crop: 0, forage: 0, spotted: 1, cured: 0, turned: 0, killed: 0, herds: 1, herdKills: 0, groups: 2, road: 0 };
   h.wormCrop = 5; h.wormForage = 2.5; h.boiling = false; h.boilerBurn = { wood: 1.2, fuel: 0 };
   p.cargo.wormForage = 1.5; p.cargo.supplies.food += 2; p.wormHands = { day: day(st), chance: 0.02, where: "the test site" };
@@ -677,7 +697,7 @@ const caught = (people) => people.filter((s) => s.worm).length;
   const s2 = w.survivors.find((x) => x.id === s.id), h2 = w.bases.find((b) => b.id === h.id), p2 = w.parties.find((x) => x.id === p.id), f2 = w.factions.find((x) => x.id === f.id);
   check(JSON.stringify(s2.worm) === JSON.stringify(s.worm), "a carrier's worm (stage, days, seen) comes back");
   check(h2.wormMeat === 6 && JSON.stringify(w.herds) === JSON.stringify(st.herds) && JSON.stringify(w.wormStats) === JSON.stringify(st.wormStats), "the base's meat with eggs, the herds and the stats come back");
-  check(p2.wormWater === 7 && p2.wormEggs === 0.4 && wormMeatIn(p2.cargo) === 2, "a team's unboiled water and meat with eggs come back");
+  check(p2.supplies.rawwater === 7 && p2.wormEggs === 0.4 && wormMeatIn(p2.cargo) === 2, "a team's un-purified water (its eggs) and meat with eggs come back");
   check(h2.wormCrop === 5 && h2.wormForage === 2.5 && h2.boiling === false && h2.boilerBurn && h2.boilerBurn.wood === 1.2, "the base's crops and forage with eggs and the cold boiler come back");
   check(near(wormForageIn(p2.cargo), 1.5) && p2.wormHands && p2.wormHands.chance === 0.02, "a team's forage with eggs and the day's hands come back");
   check(f2.wormLost === 3 && f2.wormBoilers && f2.wormBoilers[f.bases[0]] === true, "a group's losses and its boilers come back");

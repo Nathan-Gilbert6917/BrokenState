@@ -53,7 +53,7 @@ import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
-import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, RAW } from "./water.js"; // purified and un-purified water: packing takes purified first
+import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -1477,7 +1477,7 @@ function returnHome(state, p) {
   mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   const revealed = state.knowledge.filter(Boolean).length - before;
   const newMarkers = state.markers.length - markersBefore;
-  const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${k}`);
+  const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key
   if (p.cargo.gear.length) loot.push(...p.cargo.gear.map((g) => g.name));
   if (p.routeKind === "supply") {
     supplyReturned(state, p, home, loot);

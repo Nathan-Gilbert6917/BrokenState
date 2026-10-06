@@ -422,11 +422,11 @@ section("Water must be found: no spring; a river beside, water carried in, rain 
     st.cards.length = 0;
     giveOrder(st, p, "establish");
     const camp = st.staging;
-    const w0 = camp.stores.water;
+    const w0 = storeOf(camp, "water"); // both kinds (water.js): the river water hauled in is un-purified
     check(/Water: /.test(st.log.find((l) => /pitched a staging camp/.test(l.text)).text), "the camp's log line says where its water is");
     run(st, 48, () => false, () => { if (st.parties.includes(p)) { p.supplies.food = 20; for (const s of partyMembers(st, p)) s.health = Math.max(s.health, 60); } });
-    if (wet) check(campWater(st, camp) >= 0 && camp.stores.water > w0 && waterText(st, camp.tile) === `${waterSource(st, camp.tile).kind} 1 tile away`, `beside a ${waterSource(st, camp.tile).kind}: the people there fill the stores (${w0} → ${Math.floor(camp.stores.water)}): "${waterText(st, camp.tile)}"`);
-    else check(campWater(st, camp) === 0 && camp.stores.water <= w0 && waterText(st, camp.tile) === "No water source nearby", `away from water: no water comes in by itself (${w0} → ${Math.floor(camp.stores.water)}): "${waterText(st, camp.tile)}"`);
+    if (wet) check(campWater(st, camp) >= 0 && storeOf(camp, "water") > w0 && waterText(st, camp.tile) === `${waterSource(st, camp.tile).kind} 1 tile away`, `beside a ${waterSource(st, camp.tile).kind}: the people there fill the stores (${w0} → ${storeOf(camp, "water")}): "${waterText(st, camp.tile)}"`);
+    else check(campWater(st, camp) === 0 && storeOf(camp, "water") <= w0 && waterText(st, camp.tile) === "No water source nearby", `away from water: no water comes in by itself (${w0} → ${storeOf(camp, "water")}): "${waterText(st, camp.tile)}"`);
     // Water carried in goes into the stores.
     if (!wet && st.parties.includes(p)) {
       p.path = [camp.tile]; p.idx = 0; p.dest = camp.tile; p.phase = "waiting"; p.task = null;

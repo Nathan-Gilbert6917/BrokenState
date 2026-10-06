@@ -418,7 +418,7 @@ export function caravanCard(state, p, text = "") {
   choices.push({ label: "Other orders…", hint: "The usual orders card: move anywhere, camp, scavenge, …", resolve: (st) => { awaitOrders(st, p, "The caravan waits for orders."); return ""; } });
   addCard(state, {
     title: `Trade caravan at ${tileLabel(state, tile)}`, partyId: p.id, isCaravan: true,
-    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(p.supplies.food || 0)}, water ${Math.floor(p.supplies.water || 0)}.`,
+    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(p.supplies.food || 0)}, water ${Math.floor((p.supplies.water || 0) + (p.supplies.rawwater || 0))}.`,
     choices,
   });
 }

@@ -148,6 +148,7 @@ function emergencyScenario(seed) {
   state.governor.lastLaunch = day(state);
   const want = waterNeed(state, h).total;
   h.stock.water = Math.floor(want * 0.5);
+  h.stock.rawwater = 0; // both kinds count (sim/water.js): half a day of water in all
   const prod = waterProduction(state, h).total;
   console.log(`  ${atBase(state, h.id).length} at home, ${out} teams out, water ${h.stock.water} against ${Math.round(want)} a day drunk, ${Math.round(prod)} made`);
   check(out >= 2, "two ordinary teams out (the style's limit)");

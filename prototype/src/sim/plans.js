@@ -52,7 +52,7 @@ export const STEP_KINDS = {
   nearby:   { label: "Scavenge nearby sites", desc: "Search the best known sites within a few tiles, richest first (what the team sees on the way counts). Sites are picked when the step starts, so the plan adapts." },
   camp:     { label: "Camp", desc: "Rest on the spot: the hurt heal slowly. Staying put builds Heat (a camp fire most), and Heat brings trouble." },
   gather:   { label: "Gather boat materials (3h)", desc: "Search the shore for scrap (only on a shore with a crossing)." },
-  water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: water for a dry base in summer." },
+  water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: un-purified water for a dry base in summer (the base's boiler or filters purify it; on the way a filter, a lit camp fire or purification tablets make it safe to drink)." },
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
   hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
