@@ -30,6 +30,7 @@
 // }
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
+import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
@@ -56,7 +57,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { isHardcore } from "./hardcore.js";
-import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
+import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
@@ -164,6 +165,15 @@ function dropSetup(state, setup) {
 export function finishCombat(state, setup, result) {
   const battle = state.combat && state.combat.setup === setup ? state.combat : null; // played on a map
   state.combat = null;
+  // The shots fired go on the map (fieldheat.js noteGunfire: a camp near the fight is more dangerous for a day or
+  // two): a played battle's count, else the rounds the people used and as many again from armed enemies.
+  {
+    const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
+    const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
+    const tile = battle ? battle.tileId : party ? partyTile(party) : base ? base.tile : tileIdOf(setup);
+    const armed = setup.enemy && setup.enemy.kind !== "zombies" ? Math.min(30, (setup.enemy.count || 0) * 2) : 0;
+    noteGunfire(state, tile, battle ? battle.gunshots || 0 : ((result && result.ammoUsed) || 0) + armed);
+  }
   // Makeshift gear loses durability with every fight (a raid only if someone was killed). A battle played on the
   // map has already worn what its units took the field with (wearFielded, when the battle ended); one resolved by
   // the numbers wears everyone who was counted in it.
@@ -1322,6 +1332,7 @@ function fire(b, a, t, opts = {}) {
   }
   const noise = shotNoise(b, a, w); // stealth.js: a suppressor halves it (and wears a shot)
   b.noise += noise;
+  if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
   a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
   if (a.xpT) a.xpT.shots++;
   const o = shotOdds(b, a, t, a.x, a.y, opts);
@@ -1632,8 +1643,8 @@ function startPlayerTurn(state, b) {
       u.bleed--;
       if (u.bleed <= 0) {
         u.dead = true;
-        const pile = dropHaul(b, u); // raidloot.js: what they carried stays where they fell, for the others to pick up
-        say(b, `${u.name} bled out.${pile ? " What they carried lies where they fell." : ""}`, "death");
+        const pile = dropHaul(b, u); // raidloot.js: their body, with what they carried loose on it for the others to pick up
+        say(b, `${u.name} bled out.${dropHeld(pile) ? " What they carried lies where they fell." : ""}`, "death");
       }
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
@@ -1880,6 +1891,7 @@ function aiMelee(b, u) {
       const prey = u.kind === "zombie" && u.stuck >= 3 ? b.units.find((o) => o.side === "player" && o.down && !o.dead && !o.left && adjacent(u, o)) : null;
       if (prey) {
         prey.dead = true;
+        dropHaul(b, prey); // raidloot.js: a body like anyone killed in a raid, what they carried loose on it
         u.stuck = 0;
         say(b, `${u.name} tears into ${prey.name}, lying in the way.`, "death");
         fx(b, { type: "melee", from: [u.x, u.y], to: [prey.x, prey.y], hit: true, crit: false, dmg: 0, side: u.side, text: "KILLED" });

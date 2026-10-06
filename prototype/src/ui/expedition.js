@@ -17,8 +17,10 @@ import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
-import { heatInfo } from "../sim/fieldheat.js";
+import { heatInfo, rowsText } from "../sim/fieldheat.js";
+import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
+import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -196,8 +198,28 @@ function landBlock(state, p, at, queueing) {
     ? ord("snare", ` data-mode="check"`, "Check snares (1h)", sp ? `Snares: ${sp}` : `Collect the catch (about ${Math.round(se.animals)} small game by now, if nothing got to it) and leave the line set.`, !!sp) +
       ord("snare", ` data-mode="lift"`, "Lift snares (1h)", sp ? `Snares: ${sp}` : "Collect the catch and take the line up (the snare wire comes back).", !!sp)
     : ord("snare", ` data-mode="set"`, `Set snares (${SNARE.setHours}h)`, sp ? `Snares: ${sp}` : `Lay a line of ${SNARE.count} snares here with snare wire (or ${SNARE.scrap} scrap of fence wire). Come back within 2–3 days to collect: about a rabbit a day in good country.`, !!sp);
-  return `<div style="margin-top:0.5rem"><b${tip("Food from the land: hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore) or set snares. The land runs out of game when hunted hard and grows back over weeks.")}>Land</b> <span class="muted">game ${info.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}</span></div>
-    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${hunts}${fishBtns}${snareBtns}</div>`;
+  // Wild food (sim/foraging.js): forage here, with what it would bring.
+  const fi = forageInfo(state, at, { members, hours: FORAGE.defHours, room: cargoRoom(state, p) });
+  const fgp = queueing ? "" : forageProblem(state, p, at);
+  const forageBtns = [4, 8, 12].map((h) => ord("forage", ` data-hours="${h}"`, `Forage ${h}h`, fgp ? `Forage: ${fgp}` : `Gather wild food here for ${h} hours: berries, nuts, mushrooms, greens, roots, apples (${fi.seasonKey}: ${fi.word})${fi.est && h === FORAGE.defHours ? `; about ${Math.round(fi.est.rations * 10) / 10} food expected in ${h}h` : ""}. Forest is best, farmland and old orchards good, towns little; summer and autumn plentiful, winter almost nothing. Quiet, but time on one spot builds Heat; now and then herbs (meds) or honey, rarely a bad mushroom.`, !!fgp)).join("");
+  return `<div style="margin-top:0.5rem"><b${tip("Food from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore) or set snares. The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}</span></div>
+    ${lowFoodBlock(state, p, at, queueing)}
+    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}</div>`;
+}
+
+// Short of food (under 2 days): the best food from the land here and around (sim/foraging.js landFoodOptions), with
+// what each would bring in 8 hours and the walk; a button for the best one on another tile goes there and does it.
+const KIND_NAME = { forage: "Forage", hunt: "Hunt", fish: "Fish" };
+function lowFoodBlock(state, p, at, queueing) {
+  const members = partyMembers(state, p);
+  if (!members.length) return "";
+  const days = (carried(p, "food") + carried(p, "preserved")) / members.length;
+  if (days >= 2) return "";
+  const opts = landFoodOptions(state, p, { from: at, range: 2, walk: false, hours: FORAGE.defHours }).filter((o) => o.rations >= 1);
+  const seen = new Set();
+  const top = opts.filter((o) => { const k = `${o.kind}:${o.dist === 0}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
+  const rows = top.map((o) => `<div>${KIND_NAME[o.kind]} ${o.dist === 0 ? "here" : `${o.dist} tile${o.dist === 1 ? "" : "s"} ${o.dir}`} <span class="muted">(${esc(o.terrain)})</span>: ~${Math.round(o.rations)} food in ${o.hours}h${o.dist ? ` <button class="mini" data-action="ctxhunt" data-id="${p.id}" data-tile="${o.tile}" data-type="${o.kind}"${tip(`Go there (about ${Math.round(o.travel)}h) and ${o.kind} ${o.hours} hours.`)}>Go</button>` : ""}</div>`).join("");
+  return `<div class="card small ${days < 1 ? "danger" : "warn"}" style="margin-top:0.3rem"${tip("Food for under 2 days. Food from the land around: what each would bring in 8 hours (an average: the season, the land, the team). Walking there costs time and food too.")}><b>Food for ${Math.round(days * 10) / 10} days.</b> ${top.length ? "Food from the land nearby:" : "Little to gather or hunt nearby: search farms, groceries and diners."}${rows}</div>`;
 }
 
 // Field crafting (sim/crafting.js): a timed order per recipe, made from what the team carries.
@@ -316,7 +338,9 @@ export function heatBlock(state, p) {
   const h = heatInfo(state, p);
   if (h.heat < 1 && !h.activity) return "";
   const color = h.heat < 25 ? "var(--good)" : h.heat < 50 ? "var(--accent)" : h.heat < 75 ? "#e0a84f" : "var(--danger)";
-  return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>`;
+  // At a camp (sim/fieldheat.js campSite: camping, or at the staging camp): what the Heat is made of, and the fire.
+  const camp = h.camp ? `<div class="row small muted" style="margin-top:0.2rem"${tip(h.text)}><span>Camp danger: ${esc(rowsText(h.rows || []))}</span>${fireButton(h.camp.fire, h.camp.kind === "staging" ? `data-camp="1"` : `data-team="${p.id}"`)}</div>` : "";
+  return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>${camp}`;
 }
 
 // The plan the team left with (sim/plans.js): name, steps left and its "come home" rule.

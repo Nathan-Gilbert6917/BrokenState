@@ -33,7 +33,7 @@ import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
-  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count,
+  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -74,9 +74,10 @@ import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance } from "../sim/hunting.js";
+import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard } from "./hardcore.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING } from "../sim/staging.js";
+import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, stageRows, fireButton } from "./hardcore.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -179,7 +180,7 @@ function renderBases(state) {
     const rate = buildRate(state, b);
     const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
     return `<div class="card">
-      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${b.type === "hub" ? "Main hub" : "Outpost"}</span></div>
+      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)}</span></div>
       <div class="kv small" style="margin-top:0.4rem">
         <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
         <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
@@ -444,7 +445,7 @@ export function renderRight(state, ui) {
       ${walk || base || stagingView(state) ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${stagingTileCard(state, id)}
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${base.type === "hub" ? "main hub" : "outpost"}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
       <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
@@ -475,6 +476,13 @@ function landRows(state, id, teamsHere) {
     const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || []);
     const fe = kit.power ? expectFish(state, kit, id, HUNT.defHours).rations : null;
     out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod or net; ice fishing in a freeze needs a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? ` · ~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}` : ` · <span class="muted">no rod or net ${p ? "with the team" : "at the hub"}</span>`}</div>`;
+  }
+  // Wild food (sim/foraging.js): what the land holds this season and what 8 hours of foraging would bring.
+  const fPeople = p ? Parties.partyMembers(state, p) : h ? [...atBase(state, h.id)].sort((a, b) => foragerMult(b) - foragerMult(a) || a.id - b.id).slice(0, 3) : [];
+  const fi = forageInfo(state, id, { members: fPeople, hours: FORAGE.defHours, room: p ? Parties.cargoRoom(state, p) : Infinity });
+  if (fi.abundance >= 0.02) {
+    const fWho = p ? "this team" : fPeople.length ? fPeople.map((s) => esc(shortName(s))).join(", ") : "";
+    out += `<div${tip(`Wild food here: ${fi.word} (${fi.seasonKey}). The land: ${Math.round(fi.abundance * 100)}% (forest best, farmland and old orchards good, hills some, towns little: overgrown gardens), picked down to ${Math.round(fi.level * 100)}% (it grows back over a season). Summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. Foraging is time on one spot: it builds Heat like any work there.`)}>Forage</div><div>${fi.word === "plenty" ? `<span class="good">plenty</span>` : fi.word}${fi.est ? ` · ~${Math.round(fi.est.rations * 10) / 10} food in ${FORAGE.defHours}h (${fWho})` : ""}</div>`;
   }
   const line = snareLine(state, id);
   if (line) {
@@ -596,6 +604,7 @@ export function helpText() {
     <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving kitchen</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
     <b>Water and the summer:</b> everyone at a base drinks 1 water a day in spring and autumn, <b>1.3 in summer</b>, 0.9 in winter and <b>at least 1.6 on a hot day</b> (a heat wave or 30 °C and up; the forecast marks them); prisoners and guests too, and teams in the field drink their rations times the same (the trip planner counts every hour at its own day's rate). Crops need watering on dry days, a fifth more in summer. In: the hub's well 12 a day, an outpost's spring 3, a river or lake next to the base 3, a Well +6 (less in a dry spell), a Rain catcher +2 per unit of rain, a water filter +3 (it clogs after about 20 days); the tanks hold 80 at the hub, 40 at an outpost, +150 a Cistern. From spring on the Farming tab's <i>Summer water</i> line says whether the water holds through an average summer day and a heat wave, and what would close a gap; a week before summer you are warned if it will not. A team on a tile next to a river or lake can <b>Fetch water</b> (2h: every free container filled, 1 kg a unit; a team panel order or a plan step). Thirst kills faster than hunger: build wells and filters before summer, keep the tanks full, and do not take in more people than the summer wells can carry.<br>
     <b>Hunting, fishing and snares:</b> right-click a tile for a <i>Hunting trip</i> or <i>Fishing trip</i> (the planner's presets: go, hunt or fish 8 hours, come home), or give a team on the spot <i>Hunt</i>, <i>Fish</i> or <i>Set snares</i> (team panel, Land). The tile panel shows the game there (plenty, some, scarce) and what an 8-hour hunt should bring. Forest and hills are the best hunting, farmland fair, towns, cities and hive land almost nothing; autumn is the best season, and snow shows tracks in winter. A hunting rifle or a bow is best (a pistol is poor; no weapon, no hunt: set snares); every gunshot costs ammo, adds Heat and can draw the dead nearby, bows and crossbows are silent. The land runs out of game as you hunt it and grows back over weeks. <b>Snares</b> (snare wire, or 2 scrap) catch a rabbit a day or so: check them within 2–3 days, before the catch rots or someone takes it. <b>Fishing</b> needs a rod or a net, on a river bank; in a freeze, a crowbar, machete or axe to cut the ice (half the catch). Fresh game and fish weigh twice what packed food does (a deer on foot is a slow walk home; a car carries it all) and spoil fast: the team eats it first, and at home drying racks and a <b>Hunting cabin</b> smoke it. A Hunting cabin (any base with game land around it) also lets up to 2 people on the <i>Hunt</i> job hunt the land within 2 tiles every day; a base on a river can put people with a rod or net on the <i>Fish</i> job.<br>
+    <b>Foraging:</b> anyone can gather wild food: berries, nuts, mushrooms, greens, roots, apples from abandoned orchards, now and then herbs (meds) or a wild hive's honey. Give a team <i>Forage</i> (team panel, Land; or right-click <i>Go and forage here</i>; a plan step), a team in camp short of food forages around it in daylight, and at a base the <i>Forage</i> job gathers within 2 tiles while food is short. Forest is best, farmland and old farms good, hills some, towns little; summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. It stretches the food (a forager brings in a ration or two a day in season), it does not replace the farms; the land picked hard grows back over a season. It is time on one spot (Heat), and a bad mushroom now and then makes someone ill. When food runs low the alerts and the team panel say where to forage or hunt nearby.<br>
     <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Everything has a weight: what people wear plus the packed supplies and found cargo, shared out among the team (max load 40 kg each, 28 with a Bad Back, more with a pack or Packrat). Load bands slow a team on foot and make it eat and drink more on the move: Light up to 18 kg, Medium up to 28 (−10% pace, +15% rations), Heavy up to 38 (−25%, +35%), Overloaded above (−45%, +60%). Scouting eases it (up to half at 20). A car takes the whole load off its riders (it burns more fuel the fuller it is); bikes (one each) carry 15 kg on the rack and take 55% of the rest away. Teams report only when they get home, unless a radio station is built and they are in range.<br>
     <b>Team panel:</b> click a team on the map, in the Teams tab or in the Running orders list. It shows people, gear, supplies, the vehicle and the order queue. Orders: move, return home, scavenge, look around (2h), survey the area (12, 24 or 48h), camp, roadside repair, treat someone with carried meds (1h), field crafting, boat crossings. A waiting team starts an order at once; a moving team (or queue mode) adds it to its queue. When the queue is empty the team reports in with a card.<br>
     <b>Survey and rumours:</b> the <b>Survey</b> mission (planner, right-click any tile, or a team's panel) sweeps the land around a tile (2–4 tiles, 6–48 hours) for places the old maps never showed: farms, cabins, hunting lodges, campgrounds, ranger stations and wrecks off the roads, and caches, wrecked cars and camps. The team moves from spot to spot inside the circle and ends back at its centre; the map shows the circle and its path, the team panel the hours and what it found. Each hour its odds of spotting a hidden place come from the best Scouting (and a little from each extra person), the ground (open farmland easy, forest and hills hard), how far the place is from where the team stands, daylight and the weather (night and fog are bad: a flashlight, night vision or a thermal help), how it travels (a car covers ground but sees little off the road, bikes in between) and its stance (stealthy is careful but covers less). The planner shows the odds as a word (good / fair / poor) with the reasons. It eats at the moving rate, builds Heat at half the rate of standing still, meets what the roads meet on every tile it walks into, and wears the vehicle; on hive land the tougher dead notice it. <b>Optics</b> carried by anyone on a team help: binoculars (the team sees a tile further, ×1.25 odds and a tile more reach), a pocket monocular (×1.1), a spotting scope (×1.6 and two tiles, only while it stays put: surveys, looking around, camps), a thermal monocular (no night or fog penalty; in the off hand it sees in the dark in battle), and a telescope kept in a base's armory (+1 tile of view, +2 with a watchtower). <b>Rumours:</b> radio chatter, travellers, merchants and other groups' news sometimes speak of a place nobody has found ("a hunting lodge somewhere north of Dunmore"): a dashed circle on the map that holds it for 20 days. A survey whose centre is inside it has three times the odds of finding that place.<br>
@@ -1023,7 +1032,7 @@ function baseModal(state, ui) {
   const tab = ui.baseView.tab;
   const body = { overview: baseOverview, work: workTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
-    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${b.type === "hub" ? "Main hub" : "Outpost"} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
+    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
@@ -1113,6 +1122,20 @@ function baseMedical(state, b) {
   </div>`;
 }
 
+// A shelter (tier 0, sim/buildings.js): the stages and what the step up takes (with the button), its water, its
+// fire and what its Heat is made of (sim/fieldheat.js shelterHeat).
+function shelterRows(state, b) {
+  const v = shelterView(state, b);
+  if (!v) return "";
+  const t = v.tier;
+  const up = BUILDINGS.hub_up, chk = canBuild(state, b, "hub_up");
+  const btn = t.queued ? "" : ` <button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="hub_up" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${up.desc} Pay now; the builders here do the rest (Construction tab).` : chk.reason)}>${esc(up.name)}</button>`;
+  return `${stageRows(t)}${btn ? `<div></div><div>${btn}</div>` : ""}
+    <div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+    <div${tip("A shelter's Heat in place of the hub's flat 3: its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
+    <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
+}
+
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
@@ -1127,6 +1150,7 @@ function baseOverview(state, b) {
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
+        ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         <div${tip("Where the fresh food is kept and what spoils a day (storage room: cellars, storehouse, cold store; above it, food is stored outside and spoils fast), and the preserved stock")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
@@ -1201,7 +1225,7 @@ function baseConstruction(state, b) {
     </div>
     <div>
       <h3>Build</h3>
-      ${Object.entries(BUILDINGS).map(([k, d]) => {
+      ${Object.entries(BUILDINGS).filter(([, d]) => !d.shelterOnly || isShelter(b)).sort(([ka], [kb]) => (isShelter(b) ? (kb === "hub_up") - (ka === "hub_up") : 0)).map(([k, d]) => {
         const chk = canBuild(state, b, k);
         return `<div class="card small"${tip(d.desc)}>
           <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>

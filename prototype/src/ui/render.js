@@ -996,7 +996,7 @@ export function render(state) {
   // Base tiles with a horde, a siege or a party standing beside the base: the base's name moves below them.
   const crowded = (id) => busy.has(id) || (on("hordes") && !live.has(id) && !!k[id] && k[id].hordeSize > 0);
   // Tiles drawn as a base (yours, or another group's as far as you know), with half the sprite's width.
-  baseTiles = new Map(state.bases.map((b) => [b.tile, ((b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost) * zoomBoost()) / 2]));
+  baseTiles = new Map(state.bases.map((b) => [b.tile, (placeW(b) * zoomBoost()) / 2]));
   if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // teams at the staging camp stand beside it
   spriteBoxes = [];
   besideCount = new Map();
@@ -1082,7 +1082,7 @@ export function render(state) {
   if (camp && inView(camp.tile)) {
     const px = G.x[camp.tile], py = G.y[camp.tile], s = zoomBoost();
     ownerPlate(px, py, PLAYER_COLOR, s, 15, false);
-    const cv = stagingSpriteCanvas(stagingStage(camp), PLAYER_COLOR), w = STAGING_W * s, cy = py - 4 * s;
+    const cv = stagingSpriteCanvas(stagingStage(camp), PLAYER_COLOR, camp.fire !== false), w = STAGING_W * s, cy = py - 4 * s;
     sprite(cv, px, cy, w);
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
@@ -1098,8 +1098,8 @@ export function render(state) {
   const nodes = radioNodes(state);
   for (const b of state.bases) {
     const [px, py] = g.toPixel(b.tile, HEX);
-    const s = zoomBoost(), isHub = b.type === "hub";
-    const w = (isHub ? PLACE_W.hub : PLACE_W.outpost) * s, cy = py - (isHub ? 6 : 5) * s;
+    const s = zoomBoost(), isHub = b.type === "hub" && b.tier !== 0; // a shelter (tier 0): its own smaller sprite
+    const w = placeW(b) * s, cy = py - (isHub ? 6 : 5) * s;
     const besieged = state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === b.id);
     if (besieged) animating = true;
     ownerPlate(px, py, PLAYER_COLOR, s, isHub ? 22 : 16, besieged);
@@ -1108,7 +1108,7 @@ export function render(state) {
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
-    labels.push({ text: b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
+    labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
     const node = nodes.find((n) => n.base === b);
     if (node) {
@@ -1344,7 +1344,8 @@ const SUPPLY_COLOR = "#5cc8b4";    // supply runs between your bases
 const PHASE_COLOR = { waiting: "#ffd166", task: "#9be39b" }; // ring under your teams; moving: light blue
 const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it last moved
 
-const PLACE_W = { hub: 46, outpost: 34, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
+const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
+const placeW = (b) => (b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // the staging camp's sprite width (sim/staging.js), an outpost's
 const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
@@ -1431,7 +1432,8 @@ function baseLook(b) {
   const hosp = Math.max(0, ...b.buildings.map((x) => (def(x).family === "hospital" ? def(x).tier : 0)));
   const farms = count(b, "farm_plot");
   return {
-    kind: b.type === "hub" ? "hub" : "outpost", color: PLAYER_COLOR, walls: Math.min(3, count(b, "walls")),
+    kind: b.tier === 0 ? "shelter" : b.type === "hub" ? "hub" : "outpost", color: PLAYER_COLOR, walls: Math.min(3, count(b, "walls")),
+    rain: count(b, "rain_catcher") > 0, rack: count(b, "smoker") > 0, fire: b.fire, // a shelter's look (mapsprites.js paintShelter)
     tower: !!b.watchtower, radio: !!b.radio || count(b, "relay") > 0, hosp, farms: farms >= 4 ? 2 : farms ? 1 : 0,
     workshop: b.buildings.some((x) => def(x).station), big: b.buildings.length >= 4,
   };

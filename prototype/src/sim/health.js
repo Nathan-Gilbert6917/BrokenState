@@ -24,6 +24,7 @@ import { GEAR } from "./data.js";
 import { count, baseBeds } from "./buildings.js";
 import { crowding, moodWork } from "./morale.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
+import { teamFire, FIRE } from "./fieldheat.js";
 
 // sev = starting severity [min, max]; drift = change per day untreated (before rest and care);
 // hp = health lost per day at severity 100; work = how much they can work at severity 100 (1 = fully);
@@ -272,8 +273,11 @@ function baseOnsets(state, base) {
   const crowd = over > 0 ? over : 0;
   const crowdFlu = crowd > 0 ? Math.min(0.03, 0.002 + 0.01 * crowd) : 0;
   const filter = hasWaterFilter(state, base);
-  const dirty = (filter ? 0.001 : 0.004) * (base.thirstDays > 0 ? 3 : 1);
-  const outside = exposure(state, false), inside = exposure(state, true);
+  // A shelter (tier 0) with its fire out (fieldheat.js FIRE): unboiled water (dirty-water risk ×2) and no warmth
+  // indoors (the tarps are as cold as outside).
+  const coldCamp = base.tier === 0 && base.fire === false;
+  const dirty = (filter ? 0.001 : 0.004) * (base.thirstDays > 0 ? 3 : 1) * (coldCamp ? 2 : 1);
+  const outside = exposure(state, false), inside = exposure(state, !coldCamp);
   const quarantine = (base.quarantineUntil || 0) >= day(state);
   // Contagion from today's cases (before anyone new falls ill).
   const sources = people.filter((s) => isContagious(s));
@@ -327,10 +331,15 @@ function teamOnsets(state) {
   const ex = exposure(state, false);
   for (const p of state.parties) {
     if (p.owner !== "player" || !Array.isArray(p.members)) continue;
+    // At a camp (fieldheat.js teamFire: the staging camp, or camping): a fire keeps the cold off (cold exposure × FIRE.warm);
+    // without one, cold food and unboiled water (FIRE.raw a day, a stomach bug).
+    const fire = teamFire(state, p);
+    const exChance = ex.kind === "cold" && fire ? ex.chance * FIRE.warm : ex.chance;
     for (const id of p.members) {
       const s = state.survivors.find((x) => x.id === id);
       if (!s || !s.alive || s.location.kind !== "party") continue;
-      if (ex.kind && rng.chance(ex.chance)) {
+      if (fire === false && rng.chance(FIRE.raw)) addCondition(state, s, "dysentery", "from cold food and unboiled water at a camp with no fire");
+      else if (ex.kind && rng.chance(exChance)) {
         if (ex.kind === "heat") addCondition(state, s, "fever", `from the heat on the road (${ex.reason})`);
         else addCondition(state, s, hasCondition(s, "flu") ? "pneumonia" : "flu", `in the ${ex.reason} on the road`);
       } else if ((p.noFood || p.noWater) && rng.chance(0.04)) {

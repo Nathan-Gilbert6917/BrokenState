@@ -3,7 +3,7 @@
 //
 // - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin, the city
 //   where the first hive rises and the hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
-//   day or two's walk (somewhere to scavenge and to settle).
+//   day or two's walk (somewhere to scavenge and to settle) and a river or lake within 6 tiles (10 relaxed: a camp has no spring).
 // - What they grabbed: each survivor fled with a bag (a school backpack, a sling bag, now and then a hiking pack) and a
 //   few things in it, or with only their clothes and pockets (0–4 small things). Maybe a weapon from the house: a kitchen
 //   knife, a bat, a crowbar, a pistol with a few rounds. The team's food and water (pooled, like any team's) come from
@@ -21,7 +21,7 @@ import { newItem, packOf, POCKETS } from "./inventory.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
-import { STAGING, ESTABLISH_LABEL, needText } from "./staging.js";
+import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
 export const HC_START = {
   CREW: 3,
@@ -29,7 +29,8 @@ export const HC_START = {
   // relaxed if no tile qualifies); the share of the map kept clear of the edges; a town (or SITES_NEAR sites) within
   // TOWN_REACH tiles.
   // outbreakCity: from the centre of the city where the first hive rises (hardcore-outbreak.js hcOutbreakCity).
-  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35 },
+  // water: a river or lake within this many tiles (a camp has no spring: staging.js), strict / relaxed.
+  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35, water: [6, 10] },
   // What they grabbed. PACK: the chance someone fled with a bag; which bag (weights); how many things in it.
   PACK: 0.5,
   PACKS: { backpack: 5, slingbag: 3, hikingpack: 1 },
@@ -89,7 +90,9 @@ export function hubFounded(state, base, when = "") {
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
-  const text = `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
+  const text = base.tier === 0
+    ? `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
+    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
@@ -117,6 +120,7 @@ function spawnTile(state) {
     if (within(t.id, state.cityIds || [], S.city[i]) || g.neighbors(t.id).some((n) => state.tiles[n].terrain === "city")) return false;
     if (within(t.id, state.militaryIds || [], S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
     if ((t.infection || 0) > S.maxInfection * (strict ? 1 : 1.5)) return false;
+    if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
     return sitesOk(t.id);
   };
   for (const strict of [true, false]) {
@@ -250,7 +254,9 @@ export function hardcoreStartDaily(state) {
 }
 
 // Tiles near the team worth founding on (the autopilot and the tile panel hint): open or a farm, not owned, not a hive,
-// low infection, water beside or near, sites around. Best first.
+// low infection, water beside or near, sites around. Best first. HUB_WATER: the score for the nearest river or lake
+// (beside it, 2 or 3 tiles away, none within 3).
+export const HUB_WATER = { beside: 6, two: 1.5, three: 0.5, none: -2 };
 export function hubSites(state, from, radius = 6) {
   const g = state.grid;
   const out = [];
@@ -259,12 +265,15 @@ export function hubSites(state, from, radius = 6) {
     if (t.terrain === "water" || t.terrain === "mountain" || t.terrain === "city" || t.hive) continue;
     if (t.owner != null && t.owner !== "player") continue;
     if (state.factions.some((f) => f.alive && f.bases.includes(id)) || state.bases.some((b) => b.tile === id)) continue;
-    const water = g.within(id, 1).some((n) => state.tiles[n].terrain === "water") ? 3 : g.within(id, 3).some((n) => state.tiles[n].terrain === "water") ? 1 : 0;
+    // Water decides most (staging.js: no spring, so a camp or shelter drinks only what is beside it or carried in).
+    const ws = waterSource(state, id);
+    const water = ws && ws.dist <= 1 ? 3 : ws ? 1 : 0;
+    const wScore = !ws ? HUB_WATER.none : ws.dist <= 1 ? HUB_WATER.beside : ws.dist === 2 ? HUB_WATER.two : HUB_WATER.three;
     const sites = g.within(id, 4).filter((n) => state.tiles[n].loc && state.tiles[n].loc.type !== "city").length;
     const kind = t.loc ? ({ farm: 2.5, ranch: 2, town: 1.5, church: 1.5, school: 1.2, motel: 1, barn: 1, feedstore: 1, prison: 1.5, cabin: 1, lodge: 1, ranger: 1 }[t.loc.type] ?? 0.5) : 0;
     const danger = (t.infection || 0) * 8 + (g.within(id, 3).some((n) => state.tiles[n].hive) ? 6 : 0);
-    const sc = water + Math.min(4, sites * 0.6) + kind - danger - g.distance(from, id) * 0.35;
-    out.push({ id, sc: r1(sc), water, sites });
+    const sc = wScore + Math.min(4, sites * 0.6) + kind - danger - g.distance(from, id) * 0.35;
+    out.push({ id, sc: r1(sc), water, waterDist: ws ? ws.dist : null, waterKind: ws ? ws.kind : null, sites });
   }
   return out.sort((a, b) => b.sc - a.sc || a.id - b.id);
 }

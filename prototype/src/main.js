@@ -21,12 +21,14 @@ import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
+import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
 import { orderSweepAt, sweepOpts } from "./sim/survey.js";
 import { renderRunningOrders, armedList } from "./ui/expedition.js";
 import { boatOrder, boatPlan, boatTip, crossingTo } from "./sim/crossing.js";
 import { fishSpot, gameAbundance } from "./sim/hunting.js";
+import { forageAbundance } from "./sim/foraging.js";
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -591,6 +593,13 @@ const actions = {
   "sr-release": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(releaseHeld(state, j, d.how)); },
   "sr-delete": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(deleteSupplyRun(state, j)); },
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
+  // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
+  campfire: (d) => {
+    const lit = d.lit === "1";
+    if (d.base) { ui.baseMsg = setFire(state, baseOf(d), lit); return; }
+    if (d.team) { ui.xpMsg = setFire(state, partyById(d.team), lit); return; }
+    if (state.staging) log(state, setFire(state, state.staging, lit), "info");
+  },
   // Medical: treat at a base with the base's meds. In the field it is a 1-hour team order (xp-order, type treat).
   treat: (d) => { baseSay(treatAtBase(state, baseOf(d), Number(d.id))); },
   cancelbuild: (d) => { ui.baseMsg = cancelBuild(state, baseOf(d), Number(d.id)) || "Cancelled."; },
@@ -1227,12 +1236,14 @@ function ctxBoats(teams, id) {
       return `<button data-action="ctxcross" data-id="${p.id}" data-tile="${id}" data-mode="${m}" ${plan.ok ? "" : "disabled"} data-tip="${esc(boatTip(state, plan, id))}">Boat team (${p.members.length}) across${p.vehicleId ? (m === "raft" ? ", raft vehicle" : ", leave vehicle") : ""} · ${plan.mats.scrap} scrap, ${plan.hours}h</button>`;
     })).join("");
 }
-// Right-click a land tile with a team you are in touch with: go there and hunt (or fish) 8 hours (sim/hunting.js).
+// Right-click a land tile with a team you are in touch with: go there and forage, hunt or fish 8 hours (sim/foraging.js,
+// sim/hunting.js). The team panel's low-food list uses the same action.
 function ctxLand(teams, id) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water") return "";
   const fish = !!fishSpot(state, id);
   return teams.filter((p) => p.kind !== "convoy").flatMap((p) => [
+    forageAbundance(state, id) >= 0.05 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="forage">${partyTile(p) === id ? "Forage here" : "Go and forage here"}, team (${p.members.length}) · 8h</button>` : "",
     gameAbundance(state, id) >= 0.08 ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="hunt">${partyTile(p) === id ? "Hunt here" : "Go and hunt here"}, team (${p.members.length}) · 8h</button>` : "",
     fish ? `<button data-action="ctxhunt" data-id="${p.id}" data-tile="${id}" data-type="fish">${partyTile(p) === id ? "Fish here" : "Go and fish here"}, team (${p.members.length}) · 8h</button>` : "",
   ]).join("");
@@ -1241,7 +1252,7 @@ actions.ctxhunt = (d) => {
   const p = partyById(d.id);
   if (p) {
     const tile = Number(d.tile);
-    const job = { type: d.type === "fish" ? "fish" : "hunt", hours: 8 };
+    const job = { type: d.type === "fish" || d.type === "forage" ? d.type : "hunt", hours: 8 };
     let msg;
     if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
     else {

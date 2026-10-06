@@ -28,7 +28,7 @@
 // A container only rummaged through (search.js box.quick) keeps the rest hidden (box.hidden, not in this window).
 //
 // Extraction: a survivor who comes home (walked out, or carried out while down) adds what they carry loose to the
-// team's cargo (raidHome). Someone who bleeds out drops it where they fall (dropHaul): a pile the others can search.
+// team's cargo (raidHome). Someone who dies in the raid drops it on their body (dropHaul): the others can search it.
 // Whatever is still on the map when the raid ends is lost, and not counted as found.
 // The loose supplies a survivor carries are also one of the battle's supply pools, so found ammo and meds can be
 // used at once (combat.js pools; the save keeps the shared objects).
@@ -500,18 +500,34 @@ export function autoTake(state, b, u, box) {
 }
 
 // ---------- someone falls ----------
-// A survivor who bleeds out drops what they carry loose where they lie: a pile the others can search (and take home).
+// A survivor who dies in a raid (bled out, or torn into lying down: combat.js) leaves their body like anyone killed
+// there (combat.js damage: every human, any side, is a body to search; uid ties it to the unit, so the downed
+// picture shows it searched). On it, what they carried loose (drop: things already found, the others can take home);
+// their own slots go with them as before. Carrying nothing loose, the body is there but has nothing to turn out
+// (searched from the start, so nobody walks over for it).
 export function dropHaul(b, u) {
+  if (!b.raid) return null;
   const h = u.haul;
-  if (!b.raid || !h) return null;
-  const sup = {};
-  for (const [k, v] of Object.entries(h.sup)) if (v > 0) { sup[k] = v; h.sup[k] = 0; }
-  const gear = h.gear.splice(0);
-  if (!gear.length && !Object.keys(sup).length) return null;
-  const pile = { id: b.nextId++, x: u.x, y: u.y, kind: "body", drop: true, area: null, searched: false, partial: true, label: `${u.name}'s things`, contents: { sup, gear } };
+  const sup = {}, gear = [];
+  if (h) {
+    for (const [k, v] of Object.entries(h.sup)) if (v > 0) { sup[k] = v; h.sup[k] = 0; }
+    gear.push(...h.gear.splice(0));
+  }
+  const any = gear.length > 0 || Object.keys(sup).length > 0;
+  const old = b.raid.containers.find((c) => c.kind === "body" && c.uid === u.id);
+  if (old) { // already a body (should not happen twice): add to it
+    old.contents = old.contents || { sup: {}, gear: [] };
+    for (const [k, v] of Object.entries(sup)) old.contents.sup[k] = (old.contents.sup[k] || 0) + v;
+    old.contents.gear.push(...gear);
+    if (any) { old.searched = false; old.partial = true; }
+    return old;
+  }
+  const pile = { id: b.nextId++, x: u.x, y: u.y, kind: "body", drop: true, area: null, searched: !any, partial: any, label: `${u.name}'s body`, uid: u.id, contents: { sup, gear } };
   b.raid.containers.push(pile);
   return pile;
 }
+// Did the fallen leave anything loose on their body (the bleed-out line says so)?
+export const dropHeld = (pile) => !!(pile && pile.contents && (pile.contents.gear.length || Object.values(pile.contents.sup).some((v) => v > 0)));
 
 // ---------- the end of a raid ----------
 // Those who come home add what they carry loose to the team's cargo; the rest lose it (and the raid did not find it).

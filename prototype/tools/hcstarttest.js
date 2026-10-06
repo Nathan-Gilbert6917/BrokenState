@@ -3,7 +3,16 @@
 // work, the hub; neglect, striking it, a team lost there), the hubless views, saves before, during and after the
 // camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
-import { createWorld, tickHour, hub, day, alive, atBase, hurt } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
+import { isShelter, tierName, SHELTER, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
+import { waterProduction, waterNeed } from "../src/sim/economy.js";
+import { foodUse, mouthsAt, useText } from "../src/sim/upkeep.js";
+import { structuresOf } from "../src/sim/interior.js";
+import { wallHold } from "../src/sim/defences.js";
+import { stagingDanger, setFire, noteGunfire, CAMP_HEAT, nextHeat, heatInfo, teamFire, FIRE, campSite, heatGain, fireLit, tileDanger } from "../src/sim/fieldheat.js";
+import { startOrder } from "../src/sim/orders.js";
+import { rainWater } from "../src/sim/weather.js";
+import { fromTeamRow } from "../src/ui/hardcore.js";
 import { GEAR, SUPPLIES } from "../src/sim/data.js";
 import { partyTile, partyMembers, orderOptions, giveOrder, orderMove, carried, MISSIONS, planPath } from "../src/sim/parties.js";
 import { packSize } from "../src/sim/inventory.js";
@@ -12,6 +21,7 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import { HC_START, playerTile, roadTeam, firstHubPending, hubSites } from "../src/sim/hardcore-start.js";
 import {
   STAGING, ESTABLISH_LABEL, needText, establishProblem, establishOption, stagingMissing, workCap, stagingPct, stagingStage, daysLeft, crewRate,
+  tierInfo, waterSource, waterText, campWater, storeOf,
 } from "../src/sim/staging.js";
 import { renderTopbar, renderLeft, renderRight, renderModal } from "../src/ui/ui.js";
 import { computeAlerts, renderAlerts } from "../src/ui/alerts.js";
@@ -51,6 +61,7 @@ for (const st of worlds) {
   const sites = st.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(t.id, tile.id) <= HC_START.SPAWN.siteReach).length;
   check(town || sites >= HC_START.SPAWN.sitesNear, `${tag}: a town or ${HC_START.SPAWN.sitesNear}+ sites within reach (town ${town}, sites ${sites})`);
   check(hubSites(st, tile.id, 6).length > 0, `${tag}: somewhere to found a hub nearby`);
+  check(!!waterSource(st, tile.id, HC_START.SPAWN.water[1]), `${tag}: a river or lake within ${HC_START.SPAWN.water[1]} tiles (${waterText(st, tile.id)})`);
   check(st.vehicles.length === 0 || st.vehicles.every((v) => v.loc.kind !== "party" && !(v.loc.kind === "base")), `${tag}: no vehicle of yours`);
   check(st.cards.length >= 1 && st.cards[0].isOrders && st.cards[0].partyId === p.id && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the team's orders card`);
 }
@@ -175,6 +186,154 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
   check(h && atBase(st, h.id).some((s) => s.role === "farm"), "jobs assigned by skill, as a normal start (someone farms)");
   check(!/staging/.test(MISSIONS.outpost.desc) && establishOption(st, null, far.id) === null, "with a base: no Establish base; later outposts keep Build outpost");
   try { for (let i = 0; i < 48; i++) tickHour(st); check(true, "the new hub runs"); } catch (e) { check(false, `the new hub runs: ${e.stack.split("\n").slice(0, 3).join(" | ")}`); }
+  // ---------- camp → shelter → base ----------
+  check(h && isShelter(h) && tierName(h) === "Shelter" && tierInfo(st).stage === 1 && tierInfo(st).next === "Base", "the camp becomes a shelter (tier 0), the next stage a base");
+  check(h && baseWalls(h) === SHELTER.walls && baseBeds(h) === SHELTER.beds && farmSlots(h) === SHELTER.plots && baseVision(h) === SHELTER.vision, `a shelter is small: walls ${h && baseWalls(h)}, beds ${h && baseBeds(h)}, plots ${h && farmSlots(h)}, vision ${h && baseVision(h)}`);
+  check(h && waterProduction(st, h).own === 0, "no well of its own");
+  // Upkeep per head (upkeep.js): the shelter feeds and waters everyone there like any base.
+  check(h && foodUse(st, h).heads === mouthsAt(st, h).heads && mouthsAt(st, h).residents === atBase(st, h.id).length && waterNeed(st, h).heads === mouthsAt(st, h).heads && Math.abs(foodUse(st, h).residents - mouthsAt(st, h).residents * foodUse(st, h).rate) < 1e-9,
+    `the shelter's food and water go per head (${h && useText(foodUse(st, h))}; water ${h && waterNeed(st, h).total})`);
+  check(h && structuresOf(h).map((s) => s.key).join() === "shack" && wallHold(h) < wallHold({ ...h, tier: undefined }), `base battles: only a shack behind the barricade (${h && structuresOf(h).map((s) => s.key).join()}), it holds back fewer of the dead`);
+  if (h) {
+    Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10 });
+    const ok = (k) => canBuild(st, h, k).ok;
+    check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
+    check(!ok("walls") && !ok("watchtower") && !ok("well") && !ok("bunkhouse") && !ok("infirmary"), "no walls, towers, wells, bunkhouses or the rest at a shelter");
+    queueBuild(st, h, "farm_plot");
+    check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
+    h.construction.length = 0;
+    st.cards.length = 0; // the base panel sits under any open card
+    const html = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } }) || "";
+    check(/Shelter/.test(html) && /Build up into a base/.test(html) && /data-action="campfire"/.test(html) && /Water source/.test(html), "the base panel shows the stage, the step up (button), the water source and the fire");
+    check(/queued/.test(queueBuild(st, h, "hub_up")), "Build up into a base is queued");
+    const t0 = st.hour;
+    run(st, 24 * 10, () => !isShelter(h), () => { for (const s of atBase(st, h.id)) s.role = "build"; });
+    check(!isShelter(h) && tierName(h) === "Main hub" && baseWalls(h) === 3 && baseVision(h) === 3 && waterProduction(st, h).own > 0 && canBuild(st, h, "walls").ok && tierInfo(st).stage === 2, `the builders build it up into a base in ${((st.hour - t0) / 24).toFixed(1)} days: walls, a well, vision, every building`);
+    check(!canBuild(st, h, "hub_up").ok && st.log.some((l) => /is a real base now/.test(l.text)), "once only, and the log says so");
+  }
+}
+section("Camp danger: the fire, the people, vehicles, shooting lately; the toggle");
+{
+  const st = hc(202);
+  st.noWanderers = true;
+  const p = roadTeam(st);
+  Object.assign(p.cargo.supplies, { scrap: 4, food: 30, water: 30 });
+  st.cards.length = 0;
+  giveOrder(st, p, "establish");
+  const camp = st.staging;
+  const night = st.hour - (st.hour % 24) + 22, noon = st.hour - (st.hour % 24) + 36;
+  const gain = (hour = night) => stagingDanger(st, camp, hour).gain;
+  const rows = (hour = night) => stagingDanger(st, camp, hour).rows.map((r) => r.key);
+  check(camp.fire === true && rows().includes("fire") && rows().includes("people"), `a new camp has its fire lit: ${stagingDanger(st, camp, night).text}`);
+  const lit = gain();
+  setFire(st, camp, false);
+  const out = gain();
+  check(out < lit && !rows().includes("fire"), `putting the fire out lowers it (${lit.toFixed(2)} → ${out.toFixed(2)} an hour at night)`);
+  setFire(st, camp, true);
+  check(gain(noon) < gain(night), `the fire carries further at night (${gain(noon).toFixed(2)} by day, ${gain(night).toFixed(2)} at night)`);
+  // More people: a second team at the camp.
+  const before = gain();
+  const extra = makeSurvivor(st);
+  st.survivors.push(extra);
+  p.members.push(extra.id);
+  extra.location = { kind: "party", partyId: p.id };
+  check(gain() > before, `one more person raises it (${before.toFixed(2)} → ${gain().toFixed(2)})`);
+  // A vehicle parked there.
+  const v = { id: newId(), type: "truck", name: "Pickup truck", fuel: 10, condition: 80, loc: { kind: "party", partyId: p.id } };
+  st.vehicles.push(v);
+  p.vehicleId = v.id; p.vehicle = true;
+  const withTruck = gain();
+  check(withTruck > before && rows().includes("vehicle") && tileDanger(st, p).parts.some((x) => /parked/.test(x)), `a truck parked there raises it and draws raiders (${withTruck.toFixed(2)}; ${tileDanger(st, p).parts.join(", ")})`);
+  // Shooting at the camp: a fight's shots, fading over a day or two.
+  const g0 = gain(st.hour);
+  noteGunfire(st, camp.tile, 20);
+  const g1 = gain(st.hour), g2 = gain(st.hour + 24), g3 = gain(st.hour + 72);
+  check(g1 > g0 + 1 && g2 < g1 && g3 < g2 && rows(st.hour).includes("shots") && /shots yesterday/i.test(stagingDanger(st, camp, st.hour + 30).text), `shots raise it and fade (${g0.toFixed(2)} → ${g1.toFixed(2)} now, ${g2.toFixed(2)} a day on, ${g3.toFixed(2)} three days on)`);
+  noteGunfire(st, st.grid.neighbors(camp.tile)[0], 20);
+  check(gain(st.hour) > g1, "shots next door count too");
+  // Building work adds a little noise.
+  check(CAMP_HEAT.work > 0 && CAMP_HEAT.work < CAMP_HEAT.fireNight, "the work itself adds only a little");
+  // The Heat settles instead of climbing to 100.
+  p.heat = 0;
+  for (let i = 0; i < 24 * 4; i++) { p.heat = nextHeat(st, p, "waiting", p.heat, st.hour + i); }
+  check(p.heat < 100 && p.heat > 10, `the camp's Heat levels off (${Math.round(p.heat)} after 4 days)`);
+  const info = heatInfo(st, p);
+  check(/settles near/.test(info.text) && /Fire/.test(info.text) && /people/.test(info.text), "the team panel's Heat says what it is made of");
+  // The fire's comforts: warmth (cold sickness), hot food and boiled water, spirits.
+  check(teamFire(st, p) === true && FIRE.warm < 1, "at the camp the team sits by its fire");
+  setFire(st, camp, false);
+  check(teamFire(st, p) === false, "and without it when it is out");
+  // A team's own camp uses the same model.
+  const s2 = hc(303);
+  const q = roadTeam(s2);
+  startOrder(s2, q, { type: "camp", hours: 24 });
+  const site = campSite(s2, q);
+  check(site && site.kind === "team" && site.fire, "a team's camp: its own fire");
+  const a = heatGain(s2, q, "camp", 22).gain;
+  setFire(s2, q, false);
+  const b = heatGain(s2, q, "camp", 22).gain;
+  check(b < a && fireLit(q) === false, `a team camp's fire toggles too (${a.toFixed(2)} → ${b.toFixed(2)})`);
+  const xp = renderRight(s2, { ...freshUi(), expedition: q.id });
+  check(/data-action="campfire"/.test(xp) && /Camp danger/.test(xp), "the team panel shows the camp danger and the fire toggle");
+}
+section("Water must be found: no spring; a river beside, water carried in, rain catchers");
+{
+  // A camp away from water: nothing comes in by itself.
+  const findSpot = (st, wet) => {
+    const p = roadTeam(st);
+    for (const id of st.grid.within(partyTile(p), 8)) {
+      const t = st.tiles[id];
+      if (t.terrain === "water" || t.terrain === "mountain" || t.hive || establishProblem(st, id)) continue;
+      const w = waterSource(st, id);
+      if (wet ? w && w.dist === 1 : !w) return id;
+    }
+    return null;
+  };
+  for (const wet of [false, true]) {
+    let st = null, spot = null;
+    for (const seed of [11, 23, 42, 77, 101, 202]) { st = hc(seed); spot = findSpot(st, wet); if (spot != null) break; }
+    if (!check(spot != null, `a ${wet ? "riverside" : "dry"} spot to test`)) continue;
+    st.noWanderers = true;
+    const p = roadTeam(st);
+    p.path = [spot]; p.idx = 0; p.dest = spot; p.phase = "waiting";
+    Object.assign(p.cargo.supplies, { scrap: 4 });
+    p.supplies.water = 2;
+    st.cards.length = 0;
+    giveOrder(st, p, "establish");
+    const camp = st.staging;
+    const w0 = camp.stores.water;
+    check(/Water: /.test(st.log.find((l) => /pitched a staging camp/.test(l.text)).text), "the camp's log line says where its water is");
+    run(st, 48, () => false, () => { if (st.parties.includes(p)) { p.supplies.food = 20; for (const s of partyMembers(st, p)) s.health = Math.max(s.health, 60); } });
+    if (wet) check(campWater(st, camp) >= 0 && camp.stores.water > w0 && waterText(st, camp.tile) === `${waterSource(st, camp.tile).kind} 1 tile away`, `beside a ${waterSource(st, camp.tile).kind}: the people there fill the stores (${w0} → ${Math.floor(camp.stores.water)}): "${waterText(st, camp.tile)}"`);
+    else check(campWater(st, camp) === 0 && camp.stores.water <= w0 && waterText(st, camp.tile) === "No water source nearby", `away from water: no water comes in by itself (${w0} → ${Math.floor(camp.stores.water)}): "${waterText(st, camp.tile)}"`);
+    // Water carried in goes into the stores.
+    if (!wet && st.parties.includes(p)) {
+      p.path = [camp.tile]; p.idx = 0; p.dest = camp.tile; p.phase = "waiting"; p.task = null;
+      p.cargo.supplies.water = 30;
+      const before = storeOf(camp, "water");
+      giveOrder(st, p, "establish");
+      check(storeOf(camp, "water") > before, `water carried in goes into the stores (${before} → ${storeOf(camp, "water")})`);
+    }
+    // The tile panel says it while choosing a spot.
+    const row = fromTeamRow(st, spot === camp.tile ? st.grid.neighbors(spot).find((n) => st.tiles[n].terrain !== "water") : spot) || "";
+    check(/Water/.test(row) && /(tile|tiles) away|No water source nearby/.test(row), "the tile panel rates the water when choosing a spot");
+  }
+  // A shelter: no well; a river beside it hauled, rain catchers on wet days, water brought in.
+  const st = hc(42);
+  const p = roadTeam(st);
+  const base = { id: newId(), tile: partyTile(p), type: "hub", tier: 0, fire: true, name: "Test Shelter", stock: { food: 20, water: 10, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  st.bases.push(base);
+  const prod = waterProduction(st, base);
+  const beside = st.grid.neighbors(base.tile).some((n) => st.tiles[n].terrain === "water");
+  check(prod.own === 0 && prod.stream === (beside ? SHELTER.river : 0), `a shelter's water: no well, ${beside ? `the river ${SHELTER.river} a day` : "no river beside"} (own ${prod.own}, stream ${prod.stream})`);
+  addBuilding(base, "rain_catcher");
+  const saveHour = st.hour;
+  let wetDay = null;
+  for (let d = 0; d < 112 && wetDay == null; d++) if (rainWater(st, d) > 0) wetDay = d;
+  st.hour = wetDay * 24 + 12;
+  check(waterProduction(st, base).rain > 0, `a rain catcher fills on a wet day (${waterProduction(st, base).rain} on day ${wetDay + 1})`);
+  st.hour = saveHour;
+  st.bases.length = 0;
 }
 section("The camp's work: days by crew, danger, neglect, striking it, a team lost there");
 {
@@ -188,14 +347,14 @@ section("The camp's work: days by crew, danger, neglect, striking it, a team los
   const camp = st.staging;
   const est3 = daysLeft(camp, crewRate(partyMembers(st, p)));
   const est1 = daysLeft(camp, crewRate(partyMembers(st, p).slice(0, 1)));
-  check(est3 >= 2.3 && est3 <= 3.6, `three workers: about ${est3.toFixed(1)} days of work`);
+  check(est3 >= 1.2 && est3 <= 2.2, `three workers: about ${est3.toFixed(1)} days of work`);
   check(est1 > est3 * 2.4, `one alone: about ${est1.toFixed(1)} days`);
   const est6 = daysLeft(camp, crewRate([...partyMembers(st, p), ...partyMembers(st, p)]));
   check(est6 < est3 * 0.6, `six: about ${est6.toFixed(1)} days`);
   const t0 = st.hour;
   run(st, 24 * 8, () => !!hub(st), () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) giveOrder(st, p, "establish"); });
   const took = (st.hour - t0) / 24;
-  check(!!hub(st) && took >= 2 && took <= 4.5, `built in ${took.toFixed(1)} days by three (daylight work)`);
+  check(!!hub(st) && took >= 1 && took <= 3.2, `built in ${took.toFixed(1)} days by three (daylight work)`);
   // Heat: working on one spot draws attention (fieldheat.js "stage").
   const s2 = hc(404);
   s2.noWanderers = true;
@@ -209,7 +368,7 @@ section("The camp's work: days by crew, danger, neglect, striking it, a team los
   const s3 = hc(505);
   s3.noWanderers = true;
   const p3 = roadTeam(s3);
-  Object.assign(p3.cargo.supplies, { scrap: 20, parts: 2, food: 30, water: 30 });
+  Object.assign(p3.cargo.supplies, { scrap: 8, parts: 1, food: 30, water: 30 });
   s3.cards.length = 0;
   giveOrder(s3, p3, "establish");
   const c3 = s3.staging;
@@ -265,7 +424,7 @@ function scan(html, where) {
   if (stack.length) out.push(`${where}: unclosed <${stack.join("> <")}>`);
   return out;
 }
-const freshUi = () => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, scale: 1, armed: { parties: new Map(), builds: new Set(), crafts: new Set() } });
+function freshUi() { return { started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, scale: 1, armed: { parties: new Map(), builds: new Set(), crafts: new Set() } }; }
 function views(st, label) {
   const out = [];
   const p = roadTeam(st);
@@ -391,17 +550,36 @@ section("Saves: hubless, mid-build and after founding");
     Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, food: 30, water: 35 });
     giveOrder(ld, p, "establish");
   }
-  for (let i = 0; i < 30; i++) { tickHour(ld); ld.cards.length = 0; }
+  for (let i = 0; i < 60 && ld.staging && stagingPct(ld.staging) < 0.3; i++) { tickHour(ld); ld.cards.length = 0; }
+  if (ld.staging) ld.staging.fire = false; // the fire state comes back too
   const midText = saveToString(ld);
   const mid = loadFromString(midText);
   const pm = roadTeam(mid);
   check(!!ld.staging && !!mid.staging && mid.staging.tile === ld.staging.tile && mid.staging.progress === ld.staging.progress && JSON.stringify(mid.staging.stores) === JSON.stringify(ld.staging.stores) && JSON.stringify(mid.staging.needs) === JSON.stringify(ld.staging.needs),
     `mid-build: the camp comes back (${ld.staging ? Math.round(stagingPct(ld.staging) * 100) : "-"}% built, its stores and needs)`);
+  check(!!mid.staging && mid.staging.fire === false && mid.staging.to === 0, "mid-build: its fire (out) and its target (a shelter) come back");
   check(!!pm && pm.phase === p.phase && (pm.task || {}).type === (p.task || {}).type, `the workers come back at work (${pm && pm.phase}/${pm && pm.task && pm.task.type})`);
   const finish = (w) => { for (let i = 0; i < 24 * 8 && !hub(w); i++) { tickHour(w); w.cards.length = 0; const q = roadTeam(w); if (q && q.phase === "waiting" && w.staging) giveOrder(w, q, "establish"); } return hub(w); };
   const h = finish(ld), hm = finish(mid);
   check(!!h && !!hm && h.name === hm.name && ld.hardcore.start.foundedHour === mid.hardcore.start.foundedHour, `the loaded world finishes the camp as the original does (${h && h.name}, hour ${ld.hardcore.start.foundedHour} / ${mid.hardcore.start.foundedHour})`);
+  if (h) h.fire = false;
   const l2 = loadFromString(saveToString(ld));
+  check(!!hub(l2) && isShelter(hub(l2)) && hub(l2).fire === false && tierName(hub(l2)) === "Shelter", "after founding: the shelter (tier 0) and its fire (out) come back");
+  // A save from before the tiers: a camp with no target and no fire field. It loads, its fire counts as lit, and it
+  // becomes the full hub it was promised.
+  {
+    const old = hc(404);
+    old.noWanderers = true;
+    const q = roadTeam(old);
+    Object.assign(q.cargo.supplies, { scrap: 40, parts: 5, food: 30, water: 35 });
+    old.cards.length = 0;
+    giveOrder(old, q, "establish");
+    delete old.staging.to; delete old.staging.fire;
+    const back = loadFromString(saveToString(old));
+    check(!!back.staging && back.staging.to === undefined && fireLit(back.staging) && !!stagingDanger(back, back.staging), "an old save's camp loads (no tier, no fire field: lit)");
+    const hb = finish(back);
+    check(!!hb && !isShelter(hb) && tierName(hb) === "Main hub", "and becomes the full hub it was promised");
+  }
   check(!!h && hub(l2) && hub(l2).name === h.name && !firstHubPending(l2) && !l2.staging && l2.hardcore.start.foundedDay === ld.hardcore.start.foundedDay && l2.mode === "hardcore", "after founding: the hub and the founding day come back");
   check(createWorld({ seed: 9, factionCount: 7 }).mode === "normal" && loadFromString(saveToString(createWorld({ seed: 9, factionCount: 7 }))).mode === "normal", "a normal save stays normal");
 }
@@ -414,25 +592,30 @@ section(`Autopilot: a hubless start pitches a staging camp, ferries to it, build
     const st = hc(9000 + i * 13);
     st.started = true;
     setAutopilot(st, true, "balanced");
-    let pitched = null, trips = 0, lastStores = 0;
+    let pitched = null, trips = 0, lastStores = 0, up = null, wet = null, thirst = 0;
     try {
       while (day(st) <= apDays && !st.gameOver) {
         tickHour(st);
-        if (st.staging && pitched == null) pitched = day(st);
+        if (st.staging && pitched == null) { pitched = day(st); wet = !!waterSource(st, st.staging.tile, 1); }
         if (st.staging) { const s = st.staging.stores.scrap + st.staging.stores.parts; if (s > lastStores) trips++; lastStores = s; }
+        if (up == null && hub(st) && !isShelter(hub(st))) up = day(st);
       }
     } catch (e) { check(false, `autopilot game ${i}: ${e.stack.split("\n").slice(0, 3).join(" | ")}`); }
-    res.push({ pitched, trips, founded: st.hardcore.start.foundedDay, alive: alive(st).length, hub: hub(st) });
+    thirst = st.log.filter((l) => l.kind === "death" && /thirst|dehydrat/i.test(l.text)).length;
+    res.push({ pitched, trips, founded: st.hardcore.start.foundedDay, up, wet, thirst, alive: alive(st).length, hub: hub(st) });
   }
   const founded = res.filter((r) => r.founded != null && r.founded <= 28).length;
   const living = res.filter((r) => r.alive > 0).length;
-  const days = res.filter((r) => r.founded != null).map((r) => r.founded).sort((a, b) => a - b);
-  console.log(`  camp pitched on days ${res.map((r) => r.pitched ?? "-").join(", ")}; deliveries ${res.map((r) => r.trips).join(", ")}`);
-  console.log(`  founded within 4 weeks: ${founded}/${apGames} (days ${res.map((r) => r.founded ?? "-").join(", ")}; median ${days.length ? days[days.length >> 1] : "-"}); alive at day ${apDays}: ${living}/${apGames}`);
+  const med = (a) => { a = a.filter((x) => x != null).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : "-"; };
+  console.log(`  camp pitched on days ${res.map((r) => r.pitched ?? "-").join(", ")}; beside water ${res.filter((r) => r.wet).length}/${apGames}; deliveries ${res.map((r) => r.trips).join(", ")}`);
+  console.log(`  shelter within 4 weeks: ${founded}/${apGames} (days ${res.map((r) => r.founded ?? "-").join(", ")}; median ${med(res.map((r) => r.founded))}); built up into a base: ${res.filter((r) => r.up != null).length}/${apGames} (days ${res.map((r) => r.up ?? "-").join(", ")}; median ${med(res.map((r) => r.up))})`);
+  console.log(`  alive at day ${apDays}: ${living}/${apGames}; deaths from thirst ${res.reduce((a, r) => a + r.thirst, 0)}`);
   check(res.every((r) => r.pitched != null), "every game pitches a staging camp");
-  check(founded >= Math.ceil(apGames * 0.6), "most games found a hub within four weeks");
+  check(res.filter((r) => r.wet).length >= Math.ceil(apGames * 0.6), "most camps go up beside a river or lake (no spring)");
+  check(founded >= Math.ceil(apGames * 0.6), "most games found a shelter within four weeks");
+  check(apDays < 30 || res.filter((r) => r.up != null).length >= Math.ceil(apGames * 0.5), "most build it up into a base");
   check(living >= Math.ceil(apGames * 0.5), "most games are alive at the end");
-  check(res.filter((r) => r.hub).every((r) => r.hub.type === "hub"), "what they found is a hub");
+  check(res.filter((r) => r.hub).every((r) => r.hub.type === "hub"), "what they found is a hub (a shelter first)");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

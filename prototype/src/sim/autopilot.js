@@ -30,12 +30,13 @@ import { radioTradeIfShort, hasNetwork, radioScan, dealQuote, radioDeal, refusal
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
-import { mouthsAt } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
+import { mouthsAt, foodUse } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter } from "./buildings.js";
+import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
@@ -66,12 +67,13 @@ import {
   HUNT, CABIN, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
 } from "./hunting.js";
+import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
-import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem } from "./staging.js";
+import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
@@ -192,6 +194,7 @@ export function autopilotHour(state) {
       engagementHour(state); resolvePending(state); // they search on the way (roadAct)
       idleTeams(state);
       resolvePending(state);
+      autoFires(state);
     } catch (e) { fail(state, e); } finally { g.busy = false; }
     return;
   }
@@ -208,11 +211,22 @@ export function autopilotHour(state) {
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     for (const b of state.bases) governRoles(state, b);
     resolvePending(state);
+    autoFires(state);
   } catch (e) {
     fail(state, e);
   } finally {
     g.busy = false;
   }
+}
+
+// The camp fires (fieldheat.js FIRE): the staging camp's, a shelter's and a camping team's are lit by day (cooking)
+// and put out at night unless it is cold or someone there is badly hurt (the light carries).
+function autoFires(state) {
+  const hurt = (people) => people.some((s) => s.health < ROAD.heal);
+  const camp = state.staging;
+  if (camp) camp.fire = fireWanted(state, { hurt: hurt(state.parties.filter((p) => p.owner === "player" && partyTile(p) === camp.tile).flatMap((p) => partyMembers(state, p))) });
+  for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) });
+  for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) });
 }
 
 // ---------- one base (the autopilot's hourly loop and base stewards, steward.js) ----------
@@ -756,6 +770,8 @@ function teamAct(state, p) {
   }
   // Fit, fed and with room to carry: try one more site nearby.
   if ((p.apChain || 0) < P.chain && p.mission !== "outpost" && chainNext(state, p)) return;
+  // Not food enough for the way home (held up on the road, food lost): food from the land first (landFoodAct).
+  if (back && (p.apLandFood || 0) < LAND.tries && foodDaysOf(state, p) < (hoursHome / 24) * 1.1 + 0.25 && landFoodAct(state, p, { urgent: true })) { p.apLandFood = (p.apLandFood || 0) + 1; return; }
   startReturn(state, p);
   if (p.phase === "waiting" && !p.apCutOff) {
     p.apCutOff = true;
@@ -1150,7 +1166,7 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
-const ROLE_AREA = { hunt: "food", fish: "food", farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1202,6 +1218,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
       give(s, "farm");
     }
   };
+  // 2a. Wild food (foraging.js): with food down to days a forager or two go out first: the plots take days to ripen,
+  // the berries are there now (planForage).
+  const foraging = planForage(state, base, people, foodDays, areas);
+  if (foraging) for (const s of ranked("forage", foragerMult, foraging.fit).slice(0, foraging.critical)) give(s, "forage");
   if (foodDays < 4) farmTo(fw.ideal);
   // 2b. Food from the land (hunting.js): a hunting cabin's hunters (two at 8+ people) and a fisher by the water while
   // food is not plentiful. A hunter at a cabin in good game country brings in several farmers' worth (if it has a
@@ -1310,6 +1330,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // are low; base scavenging rarely finds anything, so only the last few go out to pick around.
   planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
   if (foodDays < Math.max(40, foodTarget(state) * 1.5)) farmTo(Math.ceil(fw.ideal * 1.6));
+  // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
+  if (foraging) {
+    const have = [...want.values()].filter((w) => w.role === "forage").length;
+    for (const s of ranked("forage", foragerMult, (x) => foraging.fit(x) && x.mood >= 40).slice(0, Math.max(0, foraging.cap - have))) give(s, "forage");
+  }
   for (const s of [...free]) give(s, s.mood < 40 ? "rest" : "scavenge");
 
   let changed = 0;
@@ -1434,7 +1459,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if ((base.stock.scrap || 0) - (cost.scrap || 0) < reserve) { if (w.save) return; continue; }
     // Anything but a water building leaves the scrap and parts held for water (waterPlan); it does not save up
     // against that hold (the wishes after it, water among them, still get their turn).
-    if (!WATER_BUILDS.includes(w.type) && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts")))) continue;
+    if (!WATER_BUILDS.includes(w.type) && w.type !== "hub_up" && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts")))) continue;
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
@@ -1461,6 +1486,8 @@ function buildWishes(state, base) {
   // Water first when it is about to run out (economy.js).
   const wo0 = waterOutlook(state, base);
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
+  // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
+  if (isShelter(base) && !queued("hub_up")) add("hub_up", "build the shelter up into a base (a well, walls, room for everything)", true);
   if (people + (isHub ? 1 : 0) > beds) add("bunkhouse", `${people} people for ${beds} beds`, true);
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
@@ -2324,8 +2351,8 @@ function exileAct(state, p) {
 // farther sites from the camp count against them; workDays = days of work it brings food and water for; range =
 // tiles from the camp it searches first. Short of food or water it goes back to the camp when the stores can spare
 // some (staging.js provisionable).
-const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8, huntHours: 8, huntMin: 4 };
-const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7 };
+const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8, huntHours: 8, huntMin: 4, forageLow: 1 }; // forageLow: foraging.js (landFoodAct)
+const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7, waterReach: 9 }; // waterReach: camp sites by water (staging.js)
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
   const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
@@ -2366,7 +2393,10 @@ function campAct(state, p) {
     const needs = stagingNeeds(state);
     const ready = carried(p, "scrap") >= needs.scrap * CAMP.pitchShare || day(state) >= CAMP.pitchDay || !firstHubPending(state) || members.some((s) => s.health < 60);
     if (!ready) return false;
-    const sites = hubSites(state, here, ROAD.foundReach).filter((s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle)));
+    const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
+    let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
+    // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
+    if (!sites.length || sites[0].waterDist !== 1) { const wet = hubSites(state, here, CAMP.waterReach).filter((s) => s.waterDist === 1 && ok(s)); if (wet.length) sites = wet; }
     const best = sites[0];
     const atHere = sites.find((s) => s.id === here);
     if (!best) return false;
@@ -2386,9 +2416,14 @@ function campAct(state, p) {
   const prov = provisionable(state, p, camp);
   if (here === camp.tile) {
     if (!dep.length && !canWork(camp) && !prov.length) return false; // nothing to do here: it goes for what is missing
+    // No spring at a camp (staging.js): away from a river or lake, a team under a day of water with the stores dry goes
+    // for water first (roadAct: a shore or a site with water) instead of working itself thirsty.
+    if (!besideWaterSource(state, camp.tile) && roadDays(state, p, "water") < 1 && storeOf(camp, "water") < partyMembers(state, p).length && !dep.some(([k]) => k === "water")) return false;
     giveOrder(state, p, "establish");
     return true;
   }
+  // Thirsty and the camp has no water to give (no river beside it, dry stores): water first (roadAct), not the camp.
+  if (roadDays(state, p, "water") < 1 && !besideWaterSource(state, camp.tile) && storeOf(camp, "water") < partyMembers(state, p).length) return false;
   const route = planPath(state, here, camp.tile, p.vehicle) || planPath(state, here, camp.tile, false);
   if (!route) return false;
   const dist = route.path.length - 1;
@@ -2432,6 +2467,10 @@ function roadAct(state, p) {
     startOrder(state, p, { type: "camp", hours: ROAD.campHours });
     return;
   }
+  // Out of food (under half a day) and nothing at the staging camp to spare: food from the land before the camp's
+  // business (landFoodAct, foraging.js).
+  const campSpare = state.staging ? storeOf(state.staging, "food") + storeOf(state.staging, "preserved") : 0;
+  if (fDays < LAND.critical && campSpare < members.length && landFoodAct(state, p, { urgent: true })) return;
   // The staging camp: pitch it, ferry to it, work on it.
   if (campAct(state, p)) return;
   if (!state.parties.includes(p) || p.phase !== "waiting") return;
@@ -2446,18 +2485,12 @@ function roadAct(state, p) {
     startOrder(state, p, { type: "water" });
     return;
   }
-  // Short of food (for the camp or the road) where there is game or fish: hunt or fish a while, when that is the
-  // main thing missing or it would bring in a good haul (hunting.js).
-  if (miss.food) {
-    const room = cargoRoom(state, p);
-    const hunt = huntProblem(state, p) ? 0 : (huntInfo(state, here, { members, ammo: carried(p, "ammo"), hours: ROAD.huntHours, room }).est || { rations: 0 }).rations;
-    const fish = fishProblem(state, p) ? 0 : expectFish(state, fishKit(members, p.cargo.gear), here, ROAD.huntHours, state.hour, room).rations;
-    const got = Math.max(hunt, fish);
-    if (got >= ROAD.huntMin && ((!miss.scrap && !miss.parts) || fDays < ROAD.low || got >= ROAD.huntMin * 2)) {
-      startOrder(state, p, { type: fish > hunt ? "fish" : "hunt", hours: ROAD.huntHours });
-      return;
-    }
-  }
+  // Short of food (for the camp or the road): hunt, fish or forage here or close by, when that is the main thing
+  // missing or it would bring in a good haul (landFoodAct: hunting.js, foraging.js).
+  // Foraging is slow food: with materials still to find it waits until food is down to a day (ROAD.forageLow; in
+  // hardcore's sample, foraging under 2 days of food put the founding off by about two days).
+  const free = !miss.scrap && !miss.parts;
+  if (miss.food && landFoodAct(state, p, { urgent: fDays < ROAD.low, ok: (got, kind) => (kind === "forage" ? free || fDays < ROAD.forageLow : free || fDays < ROAD.low || got >= ROAD.huntMin * 2) })) return;
   // The best site to search: what the team lacks, by what it knows, nearer is better (and nearer the camp);
   // wider when nothing is close.
   const need = roadNeeds(state, p);
@@ -2815,6 +2848,60 @@ function foodTripCands(state, h, pool, need, P) {
   return out;
 }
 
+// ---------- wild food and the land when food runs low (foraging.js, hunting.js) ----------
+// A base with food down to FORAGE_AP.critical days a head puts a forager or two to work before the builders and
+// stations (one, two at 6+ people), and under FORAGE_AP.low days the hands left over forage instead of picking through
+// the ruins (up to the Forage job's cap), while a forager would bring in at least FORAGE_AP.minDay a day (not in winter).
+// gov.noForaging: the test switch (foragetest.js) that leaves foraging out of the governor's plans.
+const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
+function planForage(state, base, people, foodDays, areas) {
+  // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
+  foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));
+  if (!areas.food || gov(state).noForaging || foodDays >= FORAGE_AP.low || forageWorkWhy(state, base)) return null;
+  if (baseForageDay(state, base) < FORAGE_AP.minDay) return null;
+  const small = people.length <= 4; // a tiny hub (hardcore's first): the leader picks berries too
+  return {
+    cap: forageWorkCap(state, base),
+    critical: foodDays < FORAGE_AP.critical ? (people.length >= 6 ? 2 : 1) : 0,
+    fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 40 && !x.woundInfected,
+  };
+}
+// A team short of food in the field: hunt, fish or forage on its tile or one close by (landFoodOptions: the haul of
+// LAND.hours there, by food an hour with the walk), when the best promises LAND.min rations (a third more to be worth
+// a walk). urgent (under a day or two of food): it looks two tiles out, else one. ok(rations, kind): the caller's own test.
+// LAND.tries: food stops a team on its way home makes at most.
+// urgentMin: with food down to a day or two any real gain will do: 1.5 × what the team eats meanwhile (at least 1.5).
+// critical: days of food under which the road team (no base) goes for food from the land before the staging camp's
+// business, unless the camp has food to spare.
+const LAND = { hours: 8, min: 4, urgentMin: 1.5, walkMore: 1.3, tries: 4, critical: 0.5 };
+const foodDaysOf = (state, p) => {
+  const n = partyMembers(state, p).length;
+  const have = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0);
+  return (have("food") + have("preserved")) / Math.max(1, n ? partyPace(state, p).eatMove : 1);
+};
+function landFoodAct(state, p, { urgent = false, ok = () => true } = {}) {
+  if (gov(state).noForaging && gov(state).noHunting) return false;
+  const here = partyTile(p);
+  const kinds = [...(gov(state).noForaging ? [] : ["forage"]), ...(gov(state).noHunting ? [] : ["hunt", "fish"])];
+  const n = partyMembers(state, p).length;
+  const min = (o) => (urgent ? Math.max(LAND.urgentMin, (n * (o.hours + o.travel) / 24) * LAND.urgentMin) : LAND.min * (o.tile === here ? 1 : LAND.walkMore));
+  const best = landFoodOptions(state, p, { range: urgent ? 2 : 1, hours: LAND.hours, kinds }).find((o) => o.rations >= min(o) && ok(o.rations, o.kind));
+  if (!best) return false;
+  const order = { type: best.kind, hours: LAND.hours };
+  const what = best.kind === "forage" ? "forage" : best.kind;
+  if (best.tile === here) startOrder(state, p, order);
+  else {
+    orderMove(state, p, best.tile);
+    if (p.phase !== "out" || p.dest !== best.tile) return false;
+    p.orders = [{ ...order, at: best.tile }];
+  }
+  const g = gov(state);
+  const k = best.kind === "forage" ? "forageOrders" : best.kind === "hunt" ? "landHunts" : "landFish";
+  g.stats[k] = (g.stats[k] || 0) + 1;
+  say(state, `${teamName(state, p)} is short of food: it goes to ${what} ${best.tile === here ? "here" : `${best.dist === 1 ? "a tile" : `${best.dist} tiles`} to the ${best.dir}`} (${best.terrain}, about ${Math.round(best.rations)} food in ${LAND.hours}h).`);
+  return true;
+}
+
 // Food and water for a first estimate: n people for `days` with a quarter more, and some ammo (load.js weighs it).
 const roughSupplies = (n, days) => ({ food: Math.ceil(n * days * 1.25) + 1, water: Math.ceil(n * days * 1.25) + 1, ammo: 10 * n });
 
@@ -2858,9 +2945,11 @@ function planWaterRun(state) {
   const shore = shoreFor(state, h);
   if (shore == null || shore === h.tile) return;
   const home = atBase(state, h.id);
-  const spare = home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac));
-  const crew = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
-  if (crew.length < 2) return;
+  // A shelter (no well of its own) sends whoever it can spare, one at least (a lone carrier beats thirst).
+  const shelter = isShelter(h);
+  const spare = home.length - (shelter ? 1 : Math.max(2, Math.ceil(home.length * persona(state).homeFrac)));
+  const crew = home.filter((s) => s.health >= (shelter ? 50 : 70) && (!s.leader || shelter) && !s.inBed && !s.woundInfected).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
+  if (crew.length < (shelter ? 1 : 2)) return;
   const ids = crew.map((s) => s.id);
   const steps = [{ kind: "water" }, { kind: "home" }];
   const est = estimatePlan(state, { memberIds: ids, dest: shore, vehicle: false, stance: "normal", mission: "move", steps });

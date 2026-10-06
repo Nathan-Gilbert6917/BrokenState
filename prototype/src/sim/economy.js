@@ -7,7 +7,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -36,6 +36,7 @@ export const ROLES = {
   teach:    { name: "Teach",    desc: "Teaches one skill to up to 2 people at this base whose skill is at least 4 below theirs (pick the skill and learners on their survivor screen, or leave it to them). Learners gain 4 + 0.4 × the teacher's skill + 0.15 × the teacher's Leadership and Speech XP a day and keep their own jobs; the teacher does no other work." },
   hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, with their own weapon (a rifle or a bow best; firearms use the base's ammo; no weapon: snares). Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod or net (carried, or in the armory: one each). Brings in fresh fish, which spoils fast." },
+  forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -117,7 +118,11 @@ function baseScavenging(state, base, people) {
 // crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
-export const waterCapacity = (base) => (base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+export const waterCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+// camp-tier0: a shelter (buildings.js SHELTER, tier 0) has no well or spring of its own; beside a river or lake its
+// people haul SHELTER.river a day instead of the stream's 3.
+const ownWell = (base) => (isShelter(base) ? 0 : base.type === "hub" ? WATER.hubWell : WATER.spring);
+const streamWater = (base) => (isShelter(base) ? SHELTER.river : WATER.stream);
 const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
 // Water one person drinks on a campaign day (day index; today by default): the season's thirst, a hot day's at least.
 export const drinkRate = (state, dayIdx) => WATER.drink * (Weather.thirstFactor ? Weather.thirstFactor(state, dayIdx) : 1);
@@ -126,8 +131,8 @@ const prisonersHere = (state, base) => prisonersAt(state, base);
 
 export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
-  const own = (base.type === "hub" ? WATER.hubWell : WATER.spring) * factor;
-  const stream = byWater(state, base) ? WATER.stream : 0;
+  const own = ownWell(base) * factor;
+  const stream = byWater(state, base) ? streamWater(base) : 0;
   const wells = count(base, "well") * WATER.well * factor;
   const rain = count(base, "rain_catcher") * WATER.rainPerCatcher * (Weather.rainWater ? Weather.rainWater(state) : 0);
   const filters = filtersAt(base) * WATER.filter;
@@ -188,8 +193,8 @@ export function summerWater(state, base, { extra = 0, people = null, filterShare
   const T = Weather.THIRST || { summer: 1.3, heat: 1.6 };
   const r1 = (v) => Math.round(v * 10) / 10;
   const n = (people ?? residents(state, base.id).length) + prisonersHere(state, base) + extra;
-  const springs = (base.type === "hub" ? WATER.hubWell : WATER.spring) + countAll(base, "well") * WATER.well; // broken wells count: they get repaired
-  const stream = byWater(state, base) ? WATER.stream : 0;
+  const springs = ownWell(base) + countAll(base, "well") * WATER.well; // broken wells count: they get repaired
+  const stream = byWater(state, base) ? streamWater(base) : 0;
   const catchers = count(base, "rain_catcher");
   const filters = filtersAt(base) * WATER.filter * filterShare;
   // Crops: what the plots in the ground need on a dry day, an average crop (0.25) for a plot not growing now.
