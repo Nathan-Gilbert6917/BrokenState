@@ -16,7 +16,7 @@ import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
-import { SEARCH, quickable, quickRefusal, quickRadius } from "../sim/search.js";
+import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../sim/search.js";
 export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
@@ -158,7 +158,7 @@ export function combatMouse(state, px, py) {
   const c = cellFromPx(px, py);
   cui.hover = c ? { ...c, px, py } : null;
   const el = typeof document !== "undefined" && document.getElementById("cbprev");
-  if (el) el.innerHTML = previewHtml(b);
+  if (el) el.innerHTML = previewHtml(b, state);
 }
 export function combatLeave() { cui.hover = null; cui.drag = null; isoEdge(null); }
 
@@ -754,11 +754,11 @@ export function renderCombatPanel(state) {
       ${stealthButtons(state, b, u, btn)}
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
-      ${b.raid ? raidButtons(b, u, btn) + lockPanel(state, b, u) : ""}
+      ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
-  html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+  html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
 
   const v = view(b);
@@ -858,13 +858,14 @@ function raidHead(state, b, phase) {
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
+    ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+S, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${R.vehicleZone >= 0 ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map.">Your vehicle is in the entry zone. Extract there to keep it.</div>` : ""}
     ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
 
-function raidButtons(b, u, btn) {
+function raidButtons(state, b, u, btn) {
   const near = searchableNear(b, u);
   const z = zoneAt(b, u.x, u.y);
   const zone = z >= 0 ? b.raid.zones[z] : null;
@@ -874,7 +875,7 @@ function raidButtons(b, u, btn) {
   const qb = quickable(near)[0];
   const Q = SEARCH.quick;
   const qWhy = quickRefusal(b, u, qb || near[0]);
-  const quickTip = `Rummage in a hurry: no action (needs one left; once a turn), so it fits between two moves. Only ${Math.round(Q.reveal[0] * 100)}–${Math.round(Q.reveal[1] * 100)}% of what is inside turns up; a full search there later finds the rest. Loud: Heat +${Q.heat}, and the unaware dead and guards within ${quickRadius(b, u)} tiles come to look${b.raid.interior ? " (walls and closed doors muffle it)" : ""}${quickRadius(b, u) > Q.radius ? "; fumbling in the dark without a light carries further" : ""}.${qWhy ? ` ${qWhy}` : ""}`;
+  const quickTip = `Rummage in a hurry: no action (needs one left; once a turn), so it fits between two moves. Only ${Math.round(Q.reveal[0] * 100)}–${Math.round(Q.reveal[1] * 100)}% of what is inside turns up; a full search there later finds the rest. Loud: Heat +${Q.heat}, and the unaware dead and guards within ${quickRadius(b, u)} tiles come to look${b.raid.interior ? " (walls and closed doors muffle it)" : ""}${quickRadius(b, u) > Q.radius ? "; fumbling in the dark without a light carries further" : ""}. Hands going fast: ${quickHurtPct(state, b, u)} chance of cutting yourself (broken glass, a rusty can, a needle): a few health and a cut that needs dressing. Less with Scavenging or Stealth, more in the dark without a light.${qWhy ? ` ${qWhy}` : ""}`;
   const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : b.raid.vehicleZone >= 0 ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   const veh = b.raid.vehicleZone >= 0;
@@ -985,7 +986,7 @@ function deployPanel(state, b, u) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the approach: shots at anything in the light get +${b.floodAim}${D.night ? " (night)" : " (day)"}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
   }
-  html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+  html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
@@ -1040,7 +1041,7 @@ function interiorDeployPanel(state, b, u, D) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the yard: shots at anything in the light get +${b.floodAim}${D.night ? ", and at night your people see what stands in it" : ""}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
   }
-  html += `<div id="cbprev" class="cbprev">${previewHtml(b)}</div>`;
+  html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
@@ -1139,7 +1140,7 @@ function odds(b, u, t) {
   return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}` };
 }
 
-function previewHtml(b) {
+function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
   if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
@@ -1208,7 +1209,7 @@ function previewHtml(b) {
       // sim/search.js: rummaged through (more may be hidden) is its own state.
       const where = box.searched ? "searched" : box.quick ? "rummaged through in a hurry: a full search may turn up more" : box.partial ? "something left inside (no room last time)" : "not searched";
       const how = box.quick ? (near ? `Click to open what turned up (free); S searches it in full (${SEARCH.ap} action).` : "Move next to it to search it in full.")
-        : near ? `Click or press S to search (${SEARCH.ap} action, quiet, everything shows). Shift+S: a quick rummage (no action, ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of it, heard ${quickRadius(b, u)} tiles off, Heat +${SEARCH.quick.heat}).` : "Move next to it to search.";
+        : near ? `Click or press S to search (${SEARCH.ap} action, quiet, everything shows). Shift+S: a quick rummage (no action, ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of it, heard ${quickRadius(b, u)} tiles off, Heat +${SEARCH.quick.heat}${state ? `, ${quickHurtPct(state, b, u)} chance of cutting yourself` : ""}).` : "Move next to it to search.";
       return `<b>${esc(box.label)}</b> · ${where}<br><span class="muted">${hint}</span>${box.searched ? "" : `<br>${how}`}`;
     }
     const z = zoneAt(b, h.x, h.y);
