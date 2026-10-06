@@ -19,6 +19,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
+import { MEDS } from "./medfinds.js"; // how rare meds are
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -394,7 +395,7 @@ export function enemyBody(rng, u, kit) {
   }
   add("ammo", rng.int(3, 10));
   if (rng.chance(0.25)) add("food", rng.int(1, 3));
-  if (rng.chance(0.15)) add("meds", 1);
+  if (rng.chance(MEDS.BODY_HUMAN)) add("meds", 1); // medfinds.js
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
   // What they fought with, worse for wear.
   if (GEAR[u.weapon]) body.gear.weapon = newItem(u.weapon, rng.pick([0.4, 0.55, 0.7, 0.85]));

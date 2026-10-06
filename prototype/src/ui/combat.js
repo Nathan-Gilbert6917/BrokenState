@@ -3,7 +3,7 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS,
+  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT,
 } from "../sim/combat.js";
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
@@ -981,13 +981,13 @@ function odds(b, u, t) {
   }
   if ((cui.mode === "melee" || !canFire(b, u)) && adjacent(u, t)) {
     const o = meleeOdds(b, u, t);
-    return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage` };
+    return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
   }
   if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? "Out of ammo" : "No gun: move next to them and use Melee" };
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
   const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
-  return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit, ${cover}${t.hunker ? ", hunkered" : ""}` };
+  return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}` };
 }
 
 function previewHtml(b) {
