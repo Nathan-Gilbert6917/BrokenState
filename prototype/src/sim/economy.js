@@ -20,6 +20,7 @@ import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
 import { hasPerk } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
+import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily } from "./needs.js";
@@ -349,6 +350,7 @@ export function basesDaily(state) {
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
   relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
+  mentalBreaksDaily(state); // mentalbreaks.js: days at rock bottom end in a break that changes the colony
 }
 
 function baseDaily(state, base) {
