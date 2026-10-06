@@ -40,11 +40,11 @@ import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./
 export const HC_START = {
   CREW: 3,
   // Spawn: tiles from the outbreak origin, the hives, a city centre, a military site and a group's base (strict, then
-  // relaxed if no tile qualifies); the share of the map kept clear of the edges; a town (or SITES_NEAR sites) within
-  // TOWN_REACH tiles.
+  // relaxed if no tile qualifies); the share of the map kept clear of the edges; a town, a city or any other site
+  // (a POI) within POI tiles (they have a car: somewhere to drive to on day 1).
   // outbreakCity: from the centre of the city where the first hive rises (hardcore-outbreak.js hcOutbreakCity).
   // water: a river or lake within this many tiles (a camp has no spring: staging.js), strict / relaxed.
-  SPAWN: { origin: [14, 9], hive: [8, 5], city: [6, 4], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], townReach: 8, sitesNear: 3, siteReach: 6, maxInfection: 0.35, water: [6, 10] },
+  SPAWN: { origin: [14, 9], hive: [8, 5], city: [3, 2], outbreakCity: [14, 10], military: [7, 4], group: [6, 4], edge: [0.2, 0.12], poi: [5, 8], maxInfection: 0.35, water: [6, 10] },
   // What they grabbed. PACK: the chance someone fled with a bag; which bag (weights); how many things in it.
   PACK: 0.5,
   PACKS: { backpack: 5, slingbag: 3, hikingpack: 1 },
@@ -202,12 +202,10 @@ function spawnTile(state) {
   const hives = state.tiles.filter((t) => t.hive).map((t) => t.id);
   const groupBases = state.factions.flatMap((f) => f.bases || []);
   const within = (id, list, d) => list.some((x) => x != null && g.distance(id, x) <= d);
-  const towns = state.tiles.filter((t) => t.loc && t.loc.type === "town").map((t) => t.id);
   const outbreakCity = hcOutbreakCity(state); // the first hive rises there (set up after the start)
-  const sitesOk = (id) => {
-    if (towns.some((x) => g.distance(id, x) <= S.townReach)) return true;
-    return state.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(id, t.id) <= S.siteReach).length >= S.sitesNear;
-  };
+  // A town, a city or any other site within reach: somewhere to drive to on day 1.
+  const pois = state.tiles.filter((t) => t.loc || t.terrain === "city").map((t) => t.id);
+  const sitesOk = (id, reach) => pois.some((x) => g.distance(id, x) <= reach);
   const okFor = (strict) => (t) => {
     const i = strict ? 0 : 1;
     if (t.terrain === "water" || t.terrain === "mountain" || t.terrain === "city" || t.hive || t.loc) return false;
@@ -215,11 +213,11 @@ function spawnTile(state) {
     if (t.x < W * e || t.x >= W * (1 - e) || t.y < H * e || t.y >= H * (1 - e)) return false;
     if (g.distance(t.id, state.originId) < S.origin[i] || within(t.id, hives, S.hive[i])) return false;
     if (outbreakCity != null && g.distance(t.id, outbreakCity) < S.outbreakCity[i]) return false;
-    if (within(t.id, state.cityIds || [], S.city[i]) || g.neighbors(t.id).some((n) => state.tiles[n].terrain === "city")) return false;
+    if (within(t.id, state.cityIds || [], S.city[i])) return false; // not in a city centre (its blocks can be close by)
     if (within(t.id, state.militaryIds || [], S.military[i]) || within(t.id, groupBases, S.group[i])) return false;
     if ((t.infection || 0) > S.maxInfection * (strict ? 1 : 1.5)) return false;
     if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
-    return sitesOk(t.id);
+    return sitesOk(t.id, S.poi[i]);
   };
   for (const strict of [true, false]) {
     const cands = state.tiles.filter(okFor(strict));

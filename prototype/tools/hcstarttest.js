@@ -42,6 +42,7 @@ const hc = (seed, extra = {}) => createWorld({ seed, factionCount: 7, mode: "har
 section("Spawn: three survivors on the road, no hub, a reasonable place");
 const SEEDS = [11, 23, 42, 77, 101, 202, 303, 404, 505, 606, 707, 808];
 const worlds = SEEDS.map((s) => hc(s));
+let spawnsClose = 0;
 for (const st of worlds) {
   const g = st.grid;
   const p = roadTeam(st);
@@ -54,18 +55,21 @@ for (const st of worlds) {
   check(playerTile(st) === tile.id, `${tag}: playerTile is the team's tile`);
   check(tile.terrain !== "water" && tile.terrain !== "mountain" && tile.terrain !== "city" && !tile.loc && !tile.hive, `${tag}: open land (${tile.terrain}${tile.loc ? `, ${tile.loc.type}` : ""})`);
   check(g.distance(tile.id, st.originId) >= HC_START.SPAWN.origin[1], `${tag}: away from the outbreak origin (${g.distance(tile.id, st.originId)})`);
-  check(!g.neighbors(tile.id).some((n) => st.tiles[n].terrain === "city") && st.cityIds.every((c) => g.distance(tile.id, c) >= HC_START.SPAWN.city[1]), `${tag}: not in or next to a city`);
+  check(st.cityIds.every((c) => g.distance(tile.id, c) >= HC_START.SPAWN.city[1]), `${tag}: not in a city centre`);
   check(st.factions.every((f) => !f.bases.includes(tile.id)), `${tag}: not on a group's base`);
   const e = HC_START.SPAWN.edge[1];
   check(tile.x >= g.width * e && tile.x < g.width * (1 - e) && tile.y >= g.height * e && tile.y < g.height * (1 - e), `${tag}: not in a corner (${tile.x},${tile.y})`);
-  const town = st.tiles.some((t) => t.loc && t.loc.type === "town" && g.distance(t.id, tile.id) <= HC_START.SPAWN.townReach);
-  const sites = st.tiles.filter((t) => t.loc && t.loc.type !== "city" && g.distance(t.id, tile.id) <= HC_START.SPAWN.siteReach).length;
-  check(town || sites >= HC_START.SPAWN.sitesNear, `${tag}: a town or ${HC_START.SPAWN.sitesNear}+ sites within reach (town ${town}, sites ${sites})`);
+  const near = st.tiles.filter((t) => (t.loc || t.terrain === "city") && g.distance(t.id, tile.id) <= HC_START.SPAWN.poi[1]);
+  const close = near.filter((t) => g.distance(t.id, tile.id) <= HC_START.SPAWN.poi[0]);
+  check(near.length > 0, `${tag}: a town, city or POI within ${HC_START.SPAWN.poi[0]} tiles (${close.length}; within ${HC_START.SPAWN.poi[1]}: ${near.length}: ${near.slice(0, 3).map((t) => t.loc ? t.loc.type : "city").join(", ")})`);
+  spawnsClose += close.length > 0 ? 1 : 0;
   check(hubSites(st, tile.id, 6).length > 0, `${tag}: somewhere to found a hub nearby`);
   check(!!waterSource(st, tile.id, HC_START.SPAWN.water[1]), `${tag}: a river or lake within ${HC_START.SPAWN.water[1]} tiles (${waterText(st, tile.id)})`);
   check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1 && p.vehicle === true && isCar(partyVehicle(st, p)), `${tag}: one car, the team's`);
   check(st.cards.length >= 1 && st.cards[0].isOrders && st.cards[0].partyId === p.id && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the team's orders card`);
 }
+
+check(spawnsClose >= worlds.length - 1, `the strict rule (a site within ${HC_START.SPAWN.poi[0]} tiles) held on ${spawnsClose} of ${worlds.length} seeds`);
 
 // ---------- what they grabbed ----------
 section("What they grabbed: bags or pockets, household things, very low supplies");
