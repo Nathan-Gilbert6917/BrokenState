@@ -9,7 +9,7 @@ import { waterUseText } from "./farming.js";
 import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
 import { moodRisk } from "../sim/morale.js";
-import { conditionsOf, autoWantsCondition, CONDITIONS } from "../sim/health.js";
+import { conditionsOf, autoWantsCondition, CONDITIONS, noMedsList, recentNews } from "../sim/health.js";
 import { wormOf, WORM } from "../sim/worm.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
 import { needAlerts } from "../sim/needs.js";
@@ -147,6 +147,42 @@ const SECTIONS = {
       if (who.length) out.push({ key: `sick:${b.id}:${who.length}`, kind: "sick", icon: "✚", tone: "warn", text: `${who.length} untreated at ${b.name}`, tip: `Sick or hurt and not treated for two days: ${who.join(", ")}. Meds, medics and the reserve are on the Medical tab. Click to open it.`, go: { base: b.id, tab: "medical" } });
     }
   },
+  // sim/health.js: the sick with no meds where they are (a base out of meds, a team carrying none).
+  nomeds(state, out) {
+    for (const x of noMedsList(state)) {
+      const names = x.who.map(({ s, c }) => `${firstName(s.name)} (${(CONDITIONS[c.key] ? CONDITIONS[c.key].name : c.key).toLowerCase()})`);
+      if (x.base) out.push({ key: `nomeds:b${x.base.id}:${x.who.length}`, kind: "nomeds", icon: "💊", tone: "danger", text: `No meds at ${x.base.name}: ${x.who.length} sick`, tip: `${names.join(", ")} need${x.who.length === 1 ? "s" : ""} treatment and ${x.base.name} has no meds: untreated, illness lasts longer, worsens and can kill. Pharmacies, clinics and hospitals have the most; a med station makes them; traders sell them. Click to open the Medical tab.`, go: { base: x.base.id, tab: "medical" } });
+      else if (x.party.kind === "convoy" || contactable(x.party)) out.push({ key: `nomeds:p${x.party.id}:${x.who.length}`, kind: "nomeds", icon: "💊", tone: "danger", text: `No meds: ${teamLabel(state, x.party)}`, tip: `${names.join(", ")} need${x.who.length === 1 ? "s" : ""} treatment and the team carries no meds. Rest by a fire, search a pharmacy or clinic, or head home. Click to open the team panel.`, go: { team: x.party.id } });
+    }
+  },
+  // Who fell ill in the last day (one alert per base or team), and a contagious illness spreading at a base.
+  ill(state, out) {
+    const groups = new Map();
+    for (const n of recentNews(state)) {
+      const s = survivorById(state, n.id);
+      if (!s || !s.alive) continue;
+      const k = n.base != null ? `b${n.base}` : n.party != null ? `p${n.party}` : null;
+      if (!k) continue;
+      if (!groups.has(k)) groups.set(k, { n, list: [] });
+      groups.get(k).list.push({ s, n });
+    }
+    for (const [k, g] of groups) {
+      const b = g.n.base != null ? baseById(state, g.n.base) : null;
+      const p = g.n.party != null ? state.parties.find((x) => x.id === g.n.party) : null;
+      if (!b && !(p && (p.kind === "convoy" || contactable(p)))) continue;
+      const what = g.list.map(({ s, n }) => `${firstName(s.name)} (${(CONDITIONS[n.key] ? CONDITIONS[n.key].name : n.key).toLowerCase()}${n.caught ? ", caught" : ""})`);
+      const where = b ? b.name : teamLabel(state, p);
+      const caught = g.list.filter((x) => x.n.caught).length;
+      out.push({ key: `ill:${k}:${g.list.length}:${g.list[0].n.h}`, kind: "ill", icon: "🤒", tone: caught ? "danger" : "warn", text: g.list.length === 1 ? `${firstName(g.list[0].s.name)} fell ill${b ? ` at ${b.name}` : ""}` : `${g.list.length} fell ill: ${where}`, tip: `In the last day: ${what.join(", ")}.${caught ? ` ${caught} caught it from someone: it is spreading.` : ""} Click to see them${b ? " on the Medical tab" : ""}.`, go: b ? { base: b.id, tab: "medical" } : { team: p.id }, event: true });
+    }
+    for (const b of state.bases) {
+      const people = residents(state, b.id);
+      const sick = people.filter((s) => conditionsOf(s).some((c) => CONDITIONS[c.key] && CONDITIONS[c.key].spread && !c.mending));
+      const caught = recentNews(state, 72).filter((n) => n.base === b.id && n.caught).length;
+      if (sick.length < 2 || !caught) continue;
+      out.push({ key: `spread:${b.id}`, kind: "spread", icon: "🦠", tone: "danger", text: `Illness spreading at ${b.name}: ${sick.length} contagious`, tip: `${sick.map((s) => firstName(s.name)).join(", ")} can pass it on (${caught} caught it in the last 3 days). Treat them (a treated illness barely spreads), quarantine them (the outbreak card), and ease the crowding. Click to open the Medical tab.`, go: { base: b.id, tab: "medical" } });
+    }
+  },
   // The worm (sim/worm.js): everyone known to carry it, at a base or on a team.
   worm(state, out) {
     for (const s of alive(state)) {
@@ -207,7 +243,7 @@ const SECTIONS = {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "teamfood", "water", "worm", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];

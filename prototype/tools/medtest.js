@@ -446,7 +446,7 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
   h5.stock.meds = 4; h5.medsReserve = 4;
   const o5 = autoCare(s5, h5);
   check(!o5.list.length && h5.stock.meds === 4 && /reserve of 4/.test(o5.skipped[0] ? o5.skipped[0].reason : ""), `automatic care keeps the reserve even for pneumonia (${o5.skipped[0] && o5.skipped[0].reason})`);
-  check(/treated/.test(treatCondition(s5, h5, p5[0].id, "pneumonia")) && h5.stock.meds === 2, "a hand treatment may use the reserve");
+  check(/treated/.test(treatCondition(s5, h5, p5[0].id, "pneumonia")) && h5.stock.meds === 3, "a hand treatment (a dose: 1 meds) may use the reserve");
   // Automatic care off: no meds used at all at night.
   const { st: s6, h: h6, p: p6 } = scene(null, 1, 3, 0);
   h6.autoTreat = false;

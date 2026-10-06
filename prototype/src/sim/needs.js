@@ -190,6 +190,8 @@ export function teamNeedsHour(state, p, members) {
     const r = personRation(p.burden, s, p.vehicle, moving);
     s.hunger = clamp(s.hunger - (NEEDS.food / 24) * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1));
     s.thirst = clamp(s.thirst - (NEEDS.water / 24) * r * tf);
+    // health.js frailty: hours marched today and their load (the ration multiplier), not riding in a car; reset nightly.
+    if (moving && !(p.vehicle && p.vehicle.type !== "bike")) { s.marchHours = (s.marchHours || 0) + 1; s.marchLoad = (s.marchLoad || 0) + r; }
   }
   const share = SHARES[p.share] ? p.share : "hurt";
   const rule = Object.prototype.hasOwnProperty.call(NEEDS.eat, p.ration) ? NEEDS.eat[p.ration] : NEEDS.eat.full;

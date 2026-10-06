@@ -166,6 +166,9 @@ export function makeSurvivor(state, quality = 1) {
     id: newId(),
     name: freshName(state),
     skills, traits, health: 100, mood: 60, alive: true, leader: false,
+    // Hunger and thirst gauges (needs.js NEEDS.max) start full here, not at the next hourly needs pass: a survivor
+    // made in the tick before a save would otherwise come back from it with them added (save.js) and differ.
+    hunger: 100, thirst: 100,
     // Worn and held gear (inventory.js): hands, off hand, body, head, arms, legs, pack; plus 4 pockets.
     gear: { weapon: null, armor: null, tool: null, head: null, arms: null, legs: null, backpack: null },
     pockets: [null, null, null, null],

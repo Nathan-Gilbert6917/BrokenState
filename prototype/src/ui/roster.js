@@ -6,7 +6,8 @@ import { alive, skill, baseById, factionById } from "../sim/world.js";
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { ROLES } from "../sim/economy.js";
 import * as Buildings from "../sim/buildings.js";
-import { conditionsOf, CONDITIONS } from "../sim/health.js";
+import { conditionsOf } from "../sim/health.js";
+import { condChip, wormChip } from "./health.js"; // icon, name and days left; the worm once spotted
 import { moodRisk, MOOD_RISK_TIP } from "../sim/morale.js";
 import { armorPower } from "../sim/inventory.js";
 import { contactable } from "../sim/orders.js";
@@ -63,7 +64,6 @@ function where(state, s) {
   if (l.kind === "captive") { const f = factionById(state, l.factionId); return { key: "away", text: `Held by ${f && f.known ? f.name : "captors"}`, sort: "3" }; }
   return { key: "away", text: "Away", sort: "4" };
 }
-const condText = (s) => conditionsOf(s).map((c) => (CONDITIONS[c.key] ? CONDITIONS[c.key].name : c.key));
 
 // ---------- state ----------
 const prefs = (ui) => ui.rosterPrefs || (ui.rosterPrefs = { sort: "name", dir: 1, base: "all", role: "all", status: "all", sel: [], msg: "" });
@@ -118,7 +118,6 @@ export function rosterModal(state, ui) {
   const roleSel = (s) => `${roleSelect(state, s)}${taskChip(state, s)}`; // work roles and fixed jobs (ui/work.js)
   const body = rows.map(({ s, w, k }) => {
     const risk = k ? moodRisk(s) : null;
-    const conds = condText(s);
     const hp = n0(s.health);
     const skills = SKILLS.map((key) => {
       const v = skill(s, key), pr = progressOf(s, key);
@@ -135,7 +134,7 @@ export function rosterModal(state, ui) {
       <td>${k ? `<div class="ro-hp"><span class="${hp < 40 ? "danger" : hp < 70 ? "warn" : "good"}">${hp}</span><div class="bar"><i style="width:${hp}%;background:${hp < 40 ? "var(--danger)" : "var(--good)"}"></i></div></div>` : `<span class="muted"${tip("No contact: unknown until the team reports in")}>?</span>`}</td>
       <td>${k ? `${n0(s.mood)}${risk ? ` <span class="${risk.tone}"${tip(MOOD_RISK_TIP)}>${esc(risk.text)}</span>` : ""}` : `<span class="muted">?</span>`}</td>
       <td>${k ? gaugeMini(s) : `<span class="muted">?</span>`}</td>
-      <td>${k ? (conds.length ? conds.map((c) => `<span class="chip off">${esc(c)}</span>`).join("") : "") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
+      <td>${k ? wormChip(state, s) + conditionsOf(s).map((c) => condChip(state, s, c)).join("") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
       ${skills}
       <td>${esc(weapon) || `<span class="muted">none</span>`}</td>
       <td${tip(`Armor ${ap} from worn pieces`)}>${body2 ? esc(body2) : `<span class="muted">none</span>`}${ap ? ` <span class="muted">(${ap})</span>` : ""}</td>

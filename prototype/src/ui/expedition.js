@@ -14,6 +14,7 @@ import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
 import { BUILDINGS } from "../sim/buildings.js";
 import { shortName } from "./names.js";
 import { fieldTreatInfo, partyMeds } from "../sim/medical.js";
+import { conditionChips, isSick } from "./health.js"; // illness chips with days left and a Treat button (the team's meds)
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv } from "../sim/inventory.js";
 import { weather as wxNow, travelEffects } from "../sim/weather.js";
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
@@ -328,6 +329,7 @@ function memberCard(state, p, m, live, queueing) {
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
     ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}
+    ${isSick(m) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, m)}</div>` : ""}
     ${heal ? `<div class="good">Resting: +${heal.toFixed(2)} health/h</div>` : ""}` : ""}
     <div>${top}${m.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t]?.desc)}>${esc(TRAITS[t]?.name || t)}</span>`).join("")}</div>
     <div>${gear}</div>
