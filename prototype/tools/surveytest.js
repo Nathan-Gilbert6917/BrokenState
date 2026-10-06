@@ -19,9 +19,12 @@
 // - save / load mid-survey plays on the same; determinism (two worlds, one process)
 // - how fast the autopilot finds the hidden sites near the hub (≤ 12 tiles) with surveys and without (state.surveyOff)
 import { createWorld, tickHour, hub, day, atBase, snapshot, survivorById, baseVision } from "../src/sim/world.js";
+import { NEEDS, teamCold } from "../src/sim/needs.js";
+import { personRation } from "../src/sim/load.js";
+import { thirstAt } from "../src/sim/weather.js";
 import { GEAR, LOCATIONS, CATEGORIES, TRADE_PREFS } from "../src/sim/data.js";
 import { hiddenSites, siteKnown, siteKnownTo, isPublicSite } from "../src/sim/discovery.js";
-import { launchExpedition, partyTile, sightRadius, removeParty, planPath, cargoLoad, STANCES, carried } from "../src/sim/parties.js";
+import { launchExpedition, partyTile, sightRadius, removeParty, planPath, cargoLoad, STANCES, carried, onTheMove, partyMembers } from "../src/sim/parties.js";
 import { queueEstimate } from "../src/sim/orders.js";
 import { estimatePlan } from "../src/sim/plans.js";
 import { spotFirstChance } from "../src/sim/conflicts.js";
@@ -297,11 +300,22 @@ console.log("Estimates: hours, rations and fuel");
     const p = res.party;
     const fuel0 = mode === "car" ? partyFuel(st, p) : 0;
     const food0 = carried(p, "food"), water0 = carried(p, "water");
+    // Rations the gauges count (needs.js, as loadtest.js): what the team took from its supplies plus the hunger
+    // (thirst) its people bring home, in rations (waters). People eat in gulps (below 70, up to 100), so the packs
+    // alone can be under the estimate by up to a gulp a head; packs and gauges together are the planner's figure.
+    const gauge = (key) => crew.reduce((a, s) => a + s[key], 0);
+    const hunger0 = gauge("hunger"), thirst0 = gauge("thirst");
+    const eaten = () => food0 - carried(p, "food") + (hunger0 - gauge("hunger")) / NEEDS.food;
+    const drunk = () => water0 - carried(p, "water") + (thirst0 - gauge("thirst")) / NEEDS.water;
+    // The team's rate for the coming hour (needs.js teamNeedsHour), to add the arrival hour, when the packs are
+    // already unloaded and the gauges are the base's.
+    const rateNow = () => { const mv = onTheMove(p) || sweeping(p); const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24; return { food: r * teamCold(st, p), water: r * thirstAt(st, st.hour + 1) }; }; // the coming hour's day
     let delay = 0, start = st.hour, queueSeen = false, cardsSeen = 0;
-    let foodHome = null, waterHome = null, fuelHome = null;
+    let foodHome = null, waterHome = null, fuelHome = null, eatenOut = 0, drunkOut = 0, lastRate = { food: 0, water: 0 }, gulps = true;
     for (let i = 0; i < 24 * 12 && st.parties.includes(p); i++) {
       st.hordes.length = 0;
       p.lastConflict = st.hour;
+      lastRate = rateNow();
       tickHour(st);
       for (let k = st.cards.length - 1; k >= 0; k--) {
         const card = st.cards[k];
@@ -323,22 +337,34 @@ console.log("Estimates: hours, rations and fuel");
         if (q.length === 1 && q[0].hours === leg.hours) queueOk++;
         else console.log(`    case ${c} (${mode}): queue estimate ${q.map((x) => x.hours).join(",")}, planner's way home ${leg.hours}`);
       }
-      if (st.parties.includes(p)) { foodHome = carried(p, "food"); waterHome = carried(p, "water"); fuelHome = mode === "car" ? partyFuel(st, p) : 0; }
+      if (st.parties.includes(p)) {
+        foodHome = carried(p, "food"); waterHome = carried(p, "water"); fuelHome = mode === "car" ? partyFuel(st, p) : 0;
+        eatenOut = eaten(); drunkOut = drunk();
+        if (crew.some((s) => s.hunger < NEEDS.eat.full[0] - 1e-9 || s.thirst < NEEDS.drink[0] - 1e-9)) gulps = false; // fed as soon as they drop under 70
+      }
     }
     const actual = st.parties.includes(p) ? Infinity : st.hour - start;
     if (delay === 0) {
       clean++;
       if (actual === est.total) exact++;
       else console.log(`    case ${c} (${mode}, ${stance}, r${sweep.radius} ${sweep.hours}h): estimate ${est.total}h, took ${actual}h`);
+      // The whole trip's rations: the gauges' count at the last hour out plus the arrival hour (the team eats before
+      // it moves). Packs and gauges together are the planner's exact figure, to the hour (food as water: no season
+      // or cold in these spring trips); the packs alone never over it (a pack can be under it by a gulp a head, which
+      // the people bring home as hunger); nobody was let fall under 70 while the packs held food.
       const used = food0 - foodHome, wused = water0 - waterHome;
-      if (used <= est.food + 1e-6 && used > est.food - 1 - 1e-6 && Math.abs(used - wused) < 1e-6) foodOk++;
-      else console.log(`    case ${c}: food used ${used.toFixed(2)}, estimate ${est.food}`);
+      const foodTrip = eatenOut + lastRate.food, waterTrip = drunkOut + lastRate.water;
+      const toTheHour = Math.abs(waterTrip - est.waterExact) < 1e-6 && Math.abs(foodTrip - waterTrip) < 1e-6 && est.food === Math.ceil(est.waterExact - 1e-9);
+      // (The packs are read the hour before arrival, so the gulp bound is against the gauges' count at that hour.)
+      const packs = used <= est.food + 1e-6 && wused <= est.water + 1e-6 && used >= eatenOut - crew.length * (NEEDS.eat.full[1] - NEEDS.eat.full[0]) / NEEDS.food - 1e-6 && wused >= drunkOut - crew.length * (NEEDS.drink[1] - NEEDS.drink[0]) / NEEDS.water - 1e-6;
+      if (toTheHour && packs && gulps) foodOk++;
+      else console.log(`    case ${c}: rations ${foodTrip.toFixed(3)} (packs ${used.toFixed(2)}), water ${waterTrip.toFixed(3)} (packs ${wused.toFixed(2)}), planner ${est.waterExact.toFixed(3)} → ${est.food} food, ${est.water} water${gulps ? "" : "; someone fell under 70"}`);
       if (mode === "car") { fuelN++; const burned = fuel0 - fuelHome; if (Math.abs(burned - est.fuel) < 1.01 || burned <= est.fuel + 1e-6) fuelOk++; else console.log(`    case ${c}: fuel ${burned.toFixed(2)}, estimate ${est.fuel}`); }
     }
   }
   check(clean >= 8, `${clean} of ${cases} survey trips had no road card that delayed them or changed their load (a card during the survey itself costs survey time, not trip time)`);
   check(exact === clean, `${exact} of ${clean} survey trips without road cards came home on the estimated hour`);
-  check(foodOk === clean, `${foodOk} of ${clean} ate the estimated food and water (the rounded-up figure, under a ration less)`);
+  check(foodOk === clean, `${foodOk} of ${clean} ate and drank the planner's rations to the hour (packs plus the hunger and thirst brought home; the packs never over the rounded-up figure, under it by at most a gulp a head)`);
   check(fuelOk === fuelN, `${fuelOk} of ${fuelN} car surveys burned the estimated fuel`);
   check(queueOk === queueN && queueN > 0, `${queueOk} of ${queueN} queue estimates while surveying matched the planner's way home`);
 }
