@@ -1533,6 +1533,23 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     return;
   }
 }
+// The scrap the next building planBuilds would queue (or saves up for) takes, with the reserve it keeps under it:
+// the first wish it can afford, or the first it saves for (a wish it skips for want of scrap it does not wait for).
+// Even with the construction queue full: that scrap is spent as soon as a job finishes. 0 when nothing is wanted.
+function nextBuildScrap(state, base, areas = ALL_AREAS) {
+  for (const w of buildWishes(state, base)) {
+    const def = BUILDINGS[w.type];
+    if (!def || !areas[BUILD_AREA[w.type] || "building"]) continue;
+    const chk = canBuild(state, base, w.type);
+    const short = !chk.ok && /^Needs \d+ scrap/.test(chk.reason);
+    if (!chk.ok && !(short && w.save)) continue;
+    const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
+    const reserve = rs ? rs.scrap.target : w.save || base.type !== "hub" ? 0 : 10;
+    const need = (def.cost.scrap || 0) + reserve;
+    if (w.save || (base.stock.scrap || 0) >= need) return need;
+  }
+  return 0;
+}
 
 function buildWishes(state, base) {
   const g = gov(state);
@@ -1683,6 +1700,17 @@ function foodStoreWishes(state, base, people, queued) {
 // everything else, and keeps making them as they clog up.
 const filtersWanted = (state, base) => waterPlan(state, base).filters;
 const slotOf = (key) => (GEAR[key] ? GEAR[key].slot : null);
+// People here work by priorities (work.js), the craft queue among their work: the player's bases with a steward, or
+// the dev autopilot with its test switch governor.priorityRoles.
+const byPriorityHere = (state, base) => (!state.autopilot || gov(state).priorityRoles) && atBase(state, base.id).some((s) => isManaged(state, s));
+// The scrap the next building takes, kept back from crafts that can wait (scrap-hold): the governor's own roles staff a
+// crafter only with hands to spare (planRoles step 8), so its queue fills with jobs waiting for them and it queues no
+// more; on work priorities a queued job always keeps a hand (work.js planBase), the queue empties within hours and is
+// refilled from the scrap the builds wanted. Over worktest's 10 seeds × 8 rolls priorities spent 4465 scrap on crafts
+// to the governor's 2701 (filters made for the summer clog up in the armory, so more of them are made) and finished
+// 2571 buildings to its 2711; with this hold 3968 and 2664, food unchanged. A water filter while the water runs short,
+// a weapon for the unarmed and dressings for short meds still go first.
+const buildKeep = (state, base) => (byPriorityHere(state, base) ? nextBuildScrap(state, base) : 0);
 function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);
@@ -1690,10 +1718,12 @@ function planCrafts(state, base) {
   const st = base.stock;
   const n = people.length;
   // Water first: a filter for the summer and dry spells goes in ahead of everything else (and past a full queue of
-  // three), leaving the scrap to jury-rig a broken well or pump (waterPlan).
+  // three), leaving the scrap to jury-rig a broken well or pump (waterPlan); on priorities, unless the water is running
+  // short now, the next building's scrap too (buildKeep).
   const fw0 = filtersWanted(state, base);
   const f0 = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
-  if (f0 < fw0 && (st.scrap || 0) >= CRAFTS.waterfilter.in.scrap + waterPlan(state, base).brokenWater && canCraft(state, base, "waterfilter").ok) {
+  const fKeep = f0 < fw0 && !waterRunningShort(state, base) ? buildKeep(state, base) : 0;
+  if (f0 < fw0 && (st.scrap || 0) - fKeep >= CRAFTS.waterfilter.in.scrap + waterPlan(state, base).brokenWater && canCraft(state, base, "waterfilter").ok) {
     queueCraft(state, base, "waterfilter");
     gov(state).stats.crafts++;
     say(state, `Queued ${GEAR.waterfilter.name} at ${base.name}: water for the summer and dry spells (${f0 + 1} of ${fw0} filters).`);
@@ -1705,11 +1735,11 @@ function planCrafts(state, base) {
   const lacking = (slot) => people.filter((s) => !s.gear[slot] || (slot === "weapon" && !gearEffect(s, s.gear.weapon).usable)).length - inArmory(slot) - inQueue(slot);
   // Cautious: past the essentials (a weapon, dressings, a water filter) gear is made only from scrap above the reserve.
   const rs = persona(state).reserves ? reserveStatus(state, base) : null;
-  let floor = 0;
+  let floor = 0, keep = 0;
   const tryCraft = (keys, why, minScrap) => {
     for (const k of keys) {
       const r = CRAFTS[k];
-      if (!r || (st.scrap || 0) - (r.in.scrap || 0) < Math.max(minScrap, floor, k === "waterfilter" ? 0 : waterHold(state, base))) continue; // leaves the scrap held for water
+      if (!r || (st.scrap || 0) - (r.in.scrap || 0) - keep < Math.max(minScrap, floor, k === "waterfilter" ? 0 : waterHold(state, base))) continue; // leaves the scrap held for water (and for the next building: keep)
       if (r.in.parts && (st.parts || 0) - r.in.parts < 2) continue;
       if (r.in.meds && (st.meds || 0) - r.in.meds < 3) continue;
       if (r.in.water && (st.water || 0) - r.in.water < 15) continue;
@@ -1726,6 +1756,7 @@ function planCrafts(state, base) {
   const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter((j) => j.recipe === "waterfilter").length;
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "water is below the reserve", 4)) return;
   if (rs) floor = rs.scrap.target;
+  keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if ((st.water || 0) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft(["waterfilter"], "the well cannot keep up (and clean water means less dysentery)", 15)) return;
   const scav = people.filter((s) => s.role === "scavenge");
