@@ -13,7 +13,7 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { log, day, hourOfDay, hub, alive, atBase, skill, combatPower, gearEffect, factionById, snapshot } from "./world.js";
+import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
@@ -75,6 +75,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
+import { WORM, baseWater, baseFilter, baseCooks, wormMeatAt, wormSeen } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -470,7 +471,9 @@ function pickChoice(state, card, opts, p) {
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }
-  if (/^The worm/.test(t)) return find(/^Purge/) || find(/^Hope/);
+  // The worm (worm.js): a dewormer, surgery or a purge when there is one; in the brain stage, lock them away at a base
+  // or end it on the road (nobody hurt when they turn); in the gut stage, carry on and purge it at home.
+  if (/^The worm/.test(t)) return find(/^Give them the dewormer/) || find(/^Try surgery/) || find(/^Purge/) || (/reached the brain/.test(card.text || "") ? find(/^Lock them away/) || find(/^End it/) : find(/^Hope/));
   if (/^A hive/.test(t)) return find(/^Mark it/) || opts[opts.length - 1];
   // Storming a hive: only with the squad it was sent with (most of it still standing and healthy), by the odds.
   if (/^The hive: /.test(t)) return hiveChoice(state, card, opts, p, find);
@@ -537,7 +540,7 @@ export function droughtWater(state, base, n) {
 // summer is close (the last SUMMER_LEAD days of spring, or summer itself), and the scrap and parts held back for
 // water (`hold`: repairing a broken well or pump comes before any other repair, building or crafting; and the
 // filters still wanted). planBuilds, planCrafts, the reserves, the newcomer rule and the water runs read it.
-const AP_FILTER_SHARE = 0.75, SUMMER_HEADROOM = 2, SUMMER_LEAD = 21, FILTER_CAP = 18;
+const AP_FILTER_SHARE = 0.75, SUMMER_HEADROOM = 2, SUMMER_LEAD = 21, FILTER_CAP = 18, BOILER_HOLD_DAYS = 15;
 let waterMemo = { state: null, hour: -1, map: new Map() };
 export function waterPlan(state, base) {
   if (waterMemo.state !== state || waterMemo.hour !== state.hour) waterMemo = { state, hour: state.hour, map: new Map() };
@@ -560,7 +563,9 @@ export function waterPlan(state, base) {
   const crafter = atBase(state, base.id).some((x) => skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min);
   // Scrap for filters is held only while it matters: summer near and short, or the water running low now.
   const urgent = (near && (sw.net < 0 || sw.reserve > sw.cap)) || dryGap > 0;
-  const hold = { scrap: brokenWater * 3 + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
+  // The water boiler (worm.js): a few days of junk wood held for it while it is the only thing making the water safe.
+  const boil = count(base, "boiler") && !have && baseWater(state, base).raw > 0 ? Math.ceil(WORM.BOILER_SCRAP * BOILER_HOLD_DAYS) : 0;
+  const hold = { scrap: brokenWater * 3 + boil + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
   const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap };
   waterMemo.map.set(base.id, out);
   return out;
@@ -578,7 +583,7 @@ function waterRunWanted(state, base) {
   return waterTight(state, base) || (wp.near && wp.short && (base.stock.water || 0) < wp.reserve * 0.5);
 }
 // Scrap (or parts) held back for water at a base: other builds, repairs and crafts leave it alone.
-const WATER_BUILDS = ["well", "rain_catcher", "cistern"];
+const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler"]; // the boiler: safe water (worm.js)
 const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? waterPlan(state, base).hold[k] || 0 : 0);
 
 // ---------- food and the winter (the food planner) ----------
@@ -1497,6 +1502,7 @@ const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
+  boiler: "food", cookhouse: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
 };
 function planBuilds(state, base, areas = ALL_AREAS) {
@@ -1563,6 +1569,7 @@ function buildWishes(state, base) {
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
   // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
   if (isShelter(base) && !queued("hub_up")) add("hub_up", "build the shelter up into a base (a well, walls, room for everything)", true);
+  for (const w of wormWishes(state, base, queued)) out.push(w); // worm.js: a water boiler, a cook fire
   if (people + (isHub ? 1 : 0) > beds) add("bunkhouse", `${people} people for ${beds} beds`, true);
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
@@ -1642,6 +1649,22 @@ function buildWishes(state, base) {
     // Hordes are a known danger here: a second wall tier (each holds back 54 more of a horde, a Wallbreaker's 60%).
     if (rs.threat >= 1 && count(base, "walls") + queued("walls") < 2) add("walls", "hordes are near: a stronger wall", true);
   }
+  return out;
+}
+
+// The worm (worm.js): a water boiler as soon as the base's water carries its eggs (saved for unless a water filter
+// covers it for now), and a cook fire once game with eggs comes in, or hunters and fishers work infected land.
+function wormWishes(state, base, queued) {
+  const out = [];
+  if (isShelter(base)) return out; // its fire boils and cooks
+  const w = baseWater(state, base);
+  if (w.raw > 0 && !count(base, "boiler") && !queued("boiler")) {
+    const filter = baseFilter(state, base);
+    out.push({ type: "boiler", why: `the water here carries the worm's eggs${filter ? " (a filter covers it while it lasts)" : ""}`, save: !filter || residents(state, base.id).some(wormSeen) });
+  }
+  const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
+  const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
+  if (!baseCooks(base) && !queued("cookhouse") && (wormMeatAt(base) > 0 || base.rawWarned || (working && landBad))) out.push({ type: "cookhouse", why: "game from infected land has to be cooked through (the worm)", save: true });
   return out;
 }
 
@@ -2543,6 +2566,17 @@ function campAct(state, p) {
   }
   return false;
 }
+// Camping on badly infested land is a daily chance of the worm (worm.js WORM.CAMP_AT): a team that needs to rest
+// first moves a tile or two to cleaner ground when there is some that close.
+function campAt(state, p, hours) {
+  const g = state.grid, here = partyTile(p);
+  if ((state.tiles[here].infection || 0) >= WORM.CAMP_AT) {
+    const ok = (id) => { const t = state.tiles[id]; return id !== here && (t.infection || 0) < WORM.CAMP_AT && (t.terrain !== "water" || t.bridge) && !t.hive; };
+    const near = g.within(here, 2).filter(ok).sort((a, b) => g.distance(here, a) - g.distance(here, b) || state.tiles[a].infection - state.tiles[b].infection || a - b)[0];
+    if (near != null && orderMove(state, p, near) && p.phase === "out") { p.orders = [{ type: "camp", hours }]; return; }
+  }
+  startOrder(state, p, { type: "camp", hours });
+}
 function roadAct(state, p) {
   const P = persona(state);
   const g = state.grid;
@@ -2554,7 +2588,7 @@ function roadAct(state, p) {
   const wDays = roadDays(state, p, "water"), fDays = roadDays(state, p, "food");
   // Badly hurt and fed: rest a while (at the camp the workers rest at night anyway).
   if (members.some((s) => s.health < ROAD.heal) && wDays >= 1 && fDays >= 1) {
-    startOrder(state, p, { type: "camp", hours: ROAD.campHours });
+    campAt(state, p, ROAD.campHours);
     return;
   }
   // Out of food (under half a day) and nothing at the staging camp to spare: food from the land before the camp's
@@ -2611,7 +2645,7 @@ function roadAct(state, p) {
   if (!best) {
     // Nothing known worth it: look farther around (a survey finds hidden places), or rest a night.
     if (!p.apRoadSurvey || state.hour - p.apRoadSurvey > 48) { p.apRoadSurvey = state.hour; startOrder(state, p, { type: "sweep", radius: 3, hours: 12 }); return; }
-    startOrder(state, p, { type: "camp", hours: ROAD.campHours });
+    campAt(state, p, ROAD.campHours);
     return;
   }
   if (best.id === here) {
@@ -2622,7 +2656,7 @@ function roadAct(state, p) {
       gov(state).visited[here] = { day: day(state), hour: state.hour, loot: 0 };
       if ((p.apRoadRetry = (p.apRoadRetry || 0) + 1) <= 3) return roadAct(state, p);
       p.apRoadRetry = 0;
-      startOrder(state, p, { type: "camp", hours: 4 });
+      campAt(state, p, 4);
       return;
     }
     p.apRoadRetry = 0;

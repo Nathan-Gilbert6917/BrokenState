@@ -55,6 +55,7 @@ function deathBucket(m, baseNames) {
   if (/thirst/.test(c)) return "thirst";
   if (/^of (fever|flu|dysentery|pneumonia)/.test(c)) return "illness";
   if (/infected wound/.test(c)) return "infected wound";
+  if (/the worm|turned/.test(c)) return "the worm"; // worm.js: turned, put down, the table, or hurt by one who turned
   if (/at the hands of|captors/.test(c)) return "captivity";
   const atBase = baseNames.has(m.place);
   if (atBase) {

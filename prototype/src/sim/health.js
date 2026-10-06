@@ -17,7 +17,10 @@
 //   - crowding: more people than beds, flu 0.2% + 1% x overcrowding (up to 3%);
 //   - contagion: each contagious case at a base passes it on with its own chance per person (x1.6 crowded,
 //     x0.4 in quarantine); medics catch it half again as often (treating the sick).
+// The worm is not a condition here: it has its own stages, spotting and cures (worm.js), and only its work factor
+// joins the rest (workFactor).
 import { log, addCard, alive, atBase, residents, skill, hurt, day, baseById } from "./world.js";
+import { wormWork } from "./worm.js";
 import { activeHospital, careCtx, pickTreater, noTimeReason, nextDayText, spendMedicTime, autoCare, autoCareOn } from "./medical.js";
 import * as Weather from "./weather.js";
 import { GEAR } from "./data.js";
@@ -59,9 +62,10 @@ export function workFactor(s) {
   if (!s) return 1;
   const mw = moodWork(s);
   const list = conditionsOf(s);
-  if (!list.length) return mw;
+  const ww = wormWork(s); // worm.js: the worm in the gut or the brain, seen or not
+  if (!list.length) return ww < 1 ? Math.round(ww * mw * 100) / 100 : mw;
   if (s.quarantined && isContagious(s)) return 0;
-  return Math.max(0, Math.round(healthWork(s) * mw * 100) / 100);
+  return Math.max(0, Math.round(Math.min(healthWork(s), ww) * mw * 100) / 100);
 }
 // The illness part alone (0..1).
 export function healthWork(s) {

@@ -20,6 +20,7 @@ import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.j
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
+import { teamWormText } from "../sim/worm.js";
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 
@@ -204,6 +205,7 @@ function landBlock(state, p, at, queueing) {
   const fgp = queueing ? "" : forageProblem(state, p, at);
   const forageBtns = [4, 8, 12].map((h) => ord("forage", ` data-hours="${h}"`, `Forage ${h}h`, fgp ? `Forage: ${fgp}` : `Gather wild food here for ${h} hours: berries, nuts, mushrooms, greens, roots, apples (${fi.seasonKey}: ${fi.word})${fi.est && h === FORAGE.defHours ? `; about ${Math.round(fi.est.rations * 10) / 10} food expected in ${h}h` : ""}. Forest is best, farmland and old orchards good, towns little; summer and autumn plentiful, winter almost nothing. Quiet, but time on one spot builds Heat; now and then herbs (meds) or honey, rarely a bad mushroom.`, !!fgp)).join("");
   return `<div style="margin-top:0.5rem"><b${tip("Food from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore) or set snares. The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}</span></div>
+    ${teamWormText(state, p) ? `<div class="small danger"${tip("The worm (Help: The dead and the worm): its eggs die in the heat. Camp with the fire lit to boil the water and cook the game; a water filter carried cleans the water as it is drunk. Eaten raw or drunk unboiled, each day is a chance of catching it.")}>The worm: ${esc(teamWormText(state, p))}.</div>` : ""}
     ${lowFoodBlock(state, p, at, queueing)}
     <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}</div>`;
 }

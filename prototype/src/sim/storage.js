@@ -27,6 +27,7 @@ import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
 import { meatAt, baseGameDaily } from "./hunting.js";
+import { wormMeatAt, smokeWormMeat } from "./worm.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150 };
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
@@ -109,17 +110,27 @@ export const edibleFood = (base) => Math.max(0, base.stock.food || 0) + Math.max
 
 // ---------- eating ----------
 // Takes `amount` from fresh food first, then preserved (jars come back). Returns what could not be covered.
+// Game with the worm's eggs that nobody cooked (worm.js: no cook fire here) is eaten last, half-raw: base.rawEaten.
 export function eatFromStore(base, amount) {
   const st = base.stock;
   let need = Math.max(0, amount);
-  const fresh = Math.min(need, Math.max(0, st.food || 0));
-  if (base.meat) base.meat = Math.max(0, meatAt(base) - fresh); // fresh game is cooked first
+  const raw = wormMeatAt(base);
+  const fresh = Math.min(need, Math.max(0, (st.food || 0) - raw));
+  if (base.meat) base.meat = Math.max(raw, meatAt(base) - fresh); // fresh game is cooked first
   st.food = (st.food || 0) - fresh;
   need -= fresh;
   if (need > 0 && (st.preserved || 0) > 0) {
     const take = Math.min(need, st.preserved);
     jarsBack(base, take);
     st.preserved -= take;
+    need -= take;
+  }
+  if (need > 0 && raw > 0) {
+    const take = Math.min(need, raw);
+    base.meat = Math.max(0, meatAt(base) - take);
+    st.food -= take;
+    base.wormMeat = raw - take;
+    base.rawEaten = (base.rawEaten || 0) + take;
     need -= take;
   }
   return need;
@@ -155,6 +166,7 @@ export function storageDaily(state, base) {
   const st = base.stock;
   const rack = rackPlan(state, base);
   if (rack.take > 0) {
+    smokeWormMeat(base, rack.take); // worm.js: the meat with eggs goes on the racks first (dried is safe)
     if (base.meat) base.meat = Math.max(0, meatAt(base) - rack.take);
     st.food -= rack.take;
     st.preserved = (st.preserved || 0) + rack.out;

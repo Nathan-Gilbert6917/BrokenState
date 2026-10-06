@@ -10,6 +10,7 @@ import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
 import { moodRisk } from "../sim/morale.js";
 import { conditionsOf, autoWantsCondition, CONDITIONS } from "../sim/health.js";
+import { wormOf, WORM } from "../sim/worm.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
 import { needAlerts } from "../sim/needs.js";
 import { contactable } from "../sim/orders.js";
@@ -139,6 +140,19 @@ const SECTIONS = {
       if (who.length) out.push({ key: `sick:${b.id}:${who.length}`, kind: "sick", icon: "✚", tone: "warn", text: `${who.length} untreated at ${b.name}`, tip: `Sick or hurt and not treated for two days: ${who.join(", ")}. Meds, medics and the reserve are on the Medical tab. Click to open it.`, go: { base: b.id, tab: "medical" } });
     }
   },
+  // The worm (sim/worm.js): everyone known to carry it, at a base or on a team.
+  worm(state, out) {
+    for (const s of alive(state)) {
+      const w = wormOf(s);
+      if (!w || w.seen == null) continue;
+      const base = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
+      const brain = w.stage === "brain";
+      const where = base ? `at ${base.name}` : s.location.kind === "party" ? "on a team" : "away";
+      out.push({ key: `worm:${s.id}:${w.stage}`, kind: "worm", icon: "🪱", tone: brain ? "danger" : "warn", text: `${firstName(s.name)} has the worm${brain ? " in the brain" : ""} (${where})`,
+        tip: brain ? `${s.name}'s worm has reached the brain: they turn within days. Only surgery in a staffed Clinic can save them.${w.locked ? " Locked away: nobody will be hurt." : ""}` : `${s.name} carries the worm in the gut. A dewormer cures it for sure; a purge (${WORM.PURGE_MEDS} meds and a medic) usually does. ${base ? "Click for the Medical tab." : "Bring them to a base with meds and a medic."}`,
+        go: base ? { base: base.id, tab: "medical" } : { surv: s.id } });
+    }
+  },
   mood(state, out) {
     for (const s of alive(state)) {
       const r = moodRisk(s);
@@ -186,7 +200,7 @@ const SECTIONS = {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "teamfood", "water", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "food", "teamfood", "water", "worm", "sick", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];
