@@ -91,12 +91,18 @@ export function groupNeeds(f) {
 }
 
 // Goods found for `taken` loot from a site whose loot was `level` before (expected values, no dice).
+// Meds are rare away from medical sites (medfinds.js haulMult): there the meds weight of the site's table is cut to a
+// quarter and the share it loses goes to the site's other goods, so a haul brings home the same number of finds
+// (perLoot) either way, only fewer of them meds. Cutting the meds alone made every group poorer for it.
 export function haulFor(t, taken, level, eff) {
   const table = t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].loot : { scrap: 2, food: 1 };
-  const total = Object.values(table).reduce((a, v) => a + v, 0) || 1;
+  const mm = haulMult(t);
+  const weights = {};
+  for (const [k, w] of Object.entries(table)) weights[k] = w * (k === "meds" ? mm : 1);
+  const total = Object.values(weights).reduce((a, v) => a + v, 0) || 1;
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
-  for (const [k, w] of Object.entries(table)) out[k] = units * (w / total) * (MULT[k] || 1) * (k === "meds" ? haulMult(t) : 1); // medfinds.js: meds by the box only at medical sites
+  for (const [k, w] of Object.entries(weights)) out[k] = units * (w / total) * (MULT[k] || 1);
   return out;
 }
 const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(goods)) into[g] = (into[g] || 0) + q * k; };
