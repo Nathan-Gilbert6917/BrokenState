@@ -1042,6 +1042,24 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   R.initRenderer({ getContext: () => ctxStub, getBoundingClientRect: () => ({ width: 1600, height: 900 }), width: 0, height: 0 });
   const draw = (st, zoom = 1, tile = hub(st).tile) => { R.camera.zoom = zoom; R.centerOn(st, tile); R.redrawMap(true); sig = 0; nCalls = 0; R.render(st); return { sig, calls: nCalls }; };
   const origLayers = R.view.layers;
+  // Map animations (ui/render.js anim): they change the picture over time, and stop when switched off. The drawing
+  // checks below compare two drawings of the same world, so they run with the animations off.
+  {
+    const aw = createWorld({ seed: 77, factionCount: 6 });
+    aw.started = true;
+    const ah = hub(aw);
+    const far = aw.tiles.find((t) => t.terrain !== "water" && aw.grid.distance(t.id, ah.tile) === 4);
+    const res = launchExpedition(aw, { memberIds: atBase(aw, ah.id).slice(0, 2).map((x) => x.id), dest: far.id, mission: "move", stance: "normal", vehicleId: null, supplies: { food: 4, water: 4, ammo: 5, meds: 0 } });
+    for (let i = 0; i < 3; i++) tickHour(aw);
+    const team = res.party;
+    R.setMapAnim(true);
+    const sigAt = () => { const t0 = performance.now(); while (performance.now() - t0 < 140) { /* the animation clock moves on */ } return draw(aw, 2, partyTile(team)).sig; };
+    const s1 = sigAt(), s2 = sigAt();
+    check(team.phase === "out" && s1 !== s2 && R.mapStats && true, "with a team on the move the map animates (two moments draw differently)");
+    R.setMapAnim(false);
+    const s3 = sigAt(), s4 = sigAt();
+    check(s3 === s4, "Map animations off: the same moment and the next draw the same");
+  }
 
   // Layers box, Help, defaults.
   check(LAYERS.known && LAYERS.coalition, "the Known area and Coalition land layers exist");
