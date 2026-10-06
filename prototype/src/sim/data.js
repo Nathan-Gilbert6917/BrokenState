@@ -1,16 +1,18 @@
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
 
+// Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
+// off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
 export const TERRAIN = {
   water:    { name: "Water",    color: "#2c4f6b", walk: Infinity, vehicle: Infinity, traffic: 0 },
-  plains:   { name: "Farmland", color: "#7d8a4f", walk: 2,   vehicle: 1.4, traffic: 0.05 },
-  forest:   { name: "Forest",   color: "#3f5e3a", walk: 3,   vehicle: 2.8, traffic: 0.02 },
-  hills:    { name: "Hills",    color: "#7a7152", walk: 3,   vehicle: 2.6, traffic: 0.02 },
-  mountain: { name: "Mountains",color: "#6d6a66", walk: 5,   vehicle: Infinity, traffic: 0.01 },
-  suburb:   { name: "Suburbs",  color: "#8a8378", walk: 2.5, vehicle: 1.6, traffic: 0.12 },
-  city:     { name: "City",     color: "#5f5a57", walk: 3.5, vehicle: 3,   traffic: 0.2 },
+  plains:   { name: "Farmland", color: "#7d8a4f", walk: 1,   vehicle: 0.5, traffic: 0.05 },
+  forest:   { name: "Forest",   color: "#3f5e3a", walk: 1,   vehicle: 0.5, traffic: 0.02 },
+  hills:    { name: "Hills",    color: "#7a7152", walk: 1,   vehicle: 0.5, traffic: 0.02 },
+  mountain: { name: "Mountains",color: "#6d6a66", walk: 1,   vehicle: Infinity, traffic: 0.01 },
+  suburb:   { name: "Suburbs",  color: "#8a8378", walk: 1,   vehicle: 0.5, traffic: 0.12 },
+  city:     { name: "City",     color: "#5f5a57", walk: 1,   vehicle: 0.5, traffic: 0.2 },
 };
-export const ROAD_COST = { walk: 1.2, vehicle: 0.5 };
+export const ROAD_COST = { walk: 1, vehicle: 0.25 };
 
 // Supplies: value is the hidden base barter value per unit (the player never sees it: every group prices it its own
 // way, trade.js / valuation.js); weight is kg per unit (load.js: what people carry, what a vehicle hauls); a unit of food

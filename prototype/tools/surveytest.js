@@ -319,6 +319,7 @@ console.log("Estimates: hours, rations and fuel");
       p.lastConflict = st.hour;
       lastRate = rateNow();
       tickHour(st);
+      if (p.roadblock && p.roadblock.hour === st.hour && !sweeping(p)) delay += 1; // a road blockage (sim/roadblocks.js) is a delay like a card's
       for (let k = st.cards.length - 1; k >= 0; k--) {
         const card = st.cards[k];
         st.cards.splice(k, 1);
@@ -421,6 +422,7 @@ console.log("Estimates in winter: the cold and the camp fire");
       if (last.warm) warmH++;
       if (last.cold) coldH++;
       tickHour(st);
+      if (p.roadblock && p.roadblock.hour === st.hour) delay += 1; // a road blockage (sim/roadblocks.js)
       for (let k = st.cards.length - 1; k >= 0; k--) {
         const card = st.cards[k];
         st.cards.splice(k, 1);

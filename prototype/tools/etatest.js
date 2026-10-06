@@ -48,6 +48,7 @@ function runUntil(state, p, done, stats, strict = true) {
     p.lastConflict = state.hour; // road conflicts off for this check
     state.noWanderers = true; // ... and the people met on the road (wanderers.js)
     tickHour(state);
+    if (p.roadblock && p.roadblock.hour === state.hour) stats.delay += p.roadblock.mins / 60; // a road blockage (sim/roadblocks.js) is a delay like a card's
     resolveCards(state, p, stats);
     if (state.combat) state.combat = null;
     if (!state.parties.includes(p)) return { hours: state.hour - start, gone: true };

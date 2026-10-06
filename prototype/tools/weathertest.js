@@ -164,6 +164,7 @@ function runUntil(state, p, done, stats) {
     state.hordes.length = 0;
     p.lastConflict = state.hour; // road conflicts off: only movement is compared
     tickHour(state);
+    if (p.roadblock && p.roadblock.hour === state.hour) stats.delay += 1; // a road blockage (sim/roadblocks.js) is a delay like a card's
     resolveCards(state, p, stats);
     if (state.combat) state.combat = null;
     if (!state.parties.includes(p)) return { hours: state.hour - start, gone: true };

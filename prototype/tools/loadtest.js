@@ -54,6 +54,7 @@ function tickOnce(st, p, flags) {
   st.hordes.length = 0;
   if (p) p.lastConflict = st.hour;
   tickHour(st);
+  if (p && flags && p.roadblock && p.roadblock.hour === st.hour) flags.event = true; // a road blockage's delay (sim/roadblocks.js)
   for (const c of [...st.cards]) {
     st.cards.splice(st.cards.indexOf(c), 1);
     if (c.isOrders) continue;
@@ -256,7 +257,10 @@ section("Bikes: one each, racks, part of the load taken away, faster on roads");
   const dest = destFrom(st, h.tile, 6, 9, "bike");
   const tooMany = launchExpedition(st, { memberIds: four.map((s) => s.id), dest, mission: "move", stance: "normal", vehicleId: stack.id, supplies: {} });
   check(four.length <= 5 || /Not enough bikes/.test(tooMany.error || ""), `a bike each: ${tooMany.error || "launched"}`);
-  // A bike trip: the estimate is the trip, no fuel, the rest of the bikes stay.
+  // A bike trip: the estimate is the trip, no fuel, the rest of the bikes stay. No road blockages or people met on
+  // the road (a delay, or someone joining, would skip the exact checks).
+  st.noRoadblocks = true;
+  st.noWanderers = true;
   const e = estimateTrip(st, { memberIds: ids, dest, vehicle: "bike", v: { ...stack, count: 3 }, stance: "normal", supplies: sup });
   const res = launchExpedition(st, { memberIds: ids, dest, mission: "move", stance: "normal", vehicleId: stack.id, supplies: sup });
   check(!res.error, `bike launch: ${res.error}`);

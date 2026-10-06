@@ -1,7 +1,8 @@
 // Canvas renderer for the State Map. Reads the simulation; never changes it.
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE } from "../sim/world.js";
-import { partyTile, plannedTile, outpostScrap } from "../sim/parties.js";
+import { partyTile, plannedTile, outpostScrap, glideAt } from "../sim/parties.js";
+import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
@@ -35,7 +36,8 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS) };
+// hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0 };
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -852,8 +854,10 @@ function drawCoalition(n) {
 }
 
 // ---------- frame check: skip a frame when nothing on the map changed ----------
-const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false };
+const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: null, know: null, hour: NaN, x: NaN, y: NaN, zoom: NaN, dpr: 0, hover: -2, sel: -2, preview: null, plen: -1, reveal: null, layers: "", hash: NaN, at: -Infinity, anim: false, glide: false, fk: 0 };
 let forceDraw = true;
+let glidingNow = false; // a team of yours was drawn between two tiles this frame (drawPlayerParty)
+const GLIDE_STEPS = 600; // the map is drawn again each 1/600 of an hour while a team glides (30 a second at 1×)
 // A cheap fingerprint of what moves on the map between ticks (orders given while paused, a base built, a horde).
 function moverHash(state) {
   let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0) + (state.hiveGrowths ? state.hiveGrowths.length * 613 : 0);
@@ -874,12 +878,13 @@ function unchanged(state, now) {
   let layers = "";
   for (const k of view.layers) layers += k + ",";
   const live = liveSet(state), hash = moverHash(state), plen = view.preview ? view.preview.length : -1;
+  const fk = last.glide ? Math.floor((view.hourFrac || 0) * GLIDE_STEPS) : 0;
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
     last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
-    last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail;
+    last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail && last.fk === fk;
   if (same && now - last.at < (last.anim ? ANIM_MS : IDLE_MS)) return true;
-  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail });
+  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
   forceDraw = false;
   return false;
 }
@@ -990,6 +995,7 @@ export function render(state) {
   const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;
+  glidingNow = false;
 
   // Locations: other groups' bases as compound sprites in their color, plain sites as pixel sprites (one per site
   // type) on a plate in their zone's color (city, small town, countryside, landmark); picked-over sites are faded
@@ -1370,7 +1376,8 @@ export function render(state) {
     ctx.lineWidth = w;
     ctx.stroke();
   }
-  last.anim = animating;
+  last.anim = animating || glidingNow;
+  last.glide = glidingNow;
 }
 
 // ---------- party sprites ----------
@@ -1688,17 +1695,32 @@ function drawPlayerParty(state, p) {
   // Waiting or working on the spot (camp, repairs): you know where they are.
   if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
     let [px, py] = g.toPixel(partyTile(p), HEX);
+    // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
+    const gl = state.timelapse ? null : glideAt(state, p, view.hourFrac || 0);
+    const glide = gl && gl.to !== gl.from && gl.t > 0 ? gl : null;
+    const from = glide ? p.path.indexOf(glide.to, p.idx) : p.idx;
+    let gx = px, gy = py;
+    if (glide) {
+      const [ax, ay] = g.toPixel(glide.from, HEX), [bx, by] = g.toPixel(glide.to, HEX);
+      gx = ax + (bx - ax) * glide.t;
+      gy = ay + (by - ay) * glide.t;
+      glidingNow = true;
+    }
     // Remaining path.
     ctx.strokeStyle = (p.kind === "convoy" ? look.color : color) + "aa";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let i = p.idx; i < p.path.length; i++) {
+    ctx.moveTo(gx, gy);
+    for (let i = Math.max(p.idx, from); i < p.path.length; i++) {
       const [x, y] = g.toPixel(p.path[i], HEX);
-      if (i === p.idx) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      ctx.lineTo(x, y);
     }
     ctx.stroke();
-    const facing = facingOf(state, p);
+    let facing = facingOf(state, p);
+    if (glide) {
+      const dx = g.toPixel(glide.to, HEX)[0] - g.toPixel(glide.from, HEX)[0];
+      if (Math.abs(dx) > 0.5) { facing = dx > 0 ? 1 : -1; lastFacing.set(p, facing); }
+    }
     const cross = p.phase === "task" && p.task && p.task.type === "cross" ? p.task : null;
     if (cross) {
       // The planned crossing, and the boat out on the water once it is launched.
@@ -1724,7 +1746,13 @@ function drawPlayerParty(state, p) {
       }
     }
     let k2 = 1;
-    [px, py, k2] = besideBase(partyTile(p), px, py); // on a base's tile: beside the base, not on top of it
+    if (glide) { // from beside a base (or to it) as it sets off or comes in
+      const [ax, ay, ka] = besideBase(glide.from, ...g.toPixel(glide.from, HEX));
+      const [bx, by, kb] = besideBase(glide.to, ...g.toPixel(glide.to, HEX));
+      px = ax + (bx - ax) * glide.t;
+      py = ay + (by - ay) * glide.t;
+      k2 = ka + (kb - ka) * glide.t;
+    } else [px, py, k2] = besideBase(partyTile(p), px, py); // on a base's tile: beside the base, not on top of it
     const camping = p.phase === "task" && p.task && p.task.type === "camp";
     if (camping) { // tent and campfire behind the team
       const s = zoomBoost();
@@ -1738,6 +1766,7 @@ function drawPlayerParty(state, p) {
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
+    if (heldUp(state, p)) pill(px, py - 22 * zoomBoost(), "Road blocked", "#8a5a1c", zoomBoost()); // sim/roadblocks.js
     crewTag(p, px, py);
     return;
   }
@@ -1754,16 +1783,31 @@ function drawPlayerParty(state, p) {
   });
   ctx.stroke();
   ctx.setLineDash([]);
-  let est;
-  if (p.etaOut != null) est = plannedTile(state, p); // same stepping as the sim, so it reaches the end on the arrival hour
-  else {
+  let est, next = null;
+  if (p.etaOut != null) {
+    est = plannedTile(state, p); // same stepping as the sim, so it reaches the end on the arrival hour
+    if (!state.timelapse) next = plannedTile(state, p, state.hour + 1); // where it should be in an hour: glide towards it
+  } else {
     const elapsed = state.hour - p.departed;
     const half = p.plannedHours / 2;
     const frac = elapsed < half ? elapsed / half : Math.max(0, 1 - (elapsed - half) / half);
     est = plan[Math.min(plan.length - 1, Math.round(frac * (plan.length - 1)))];
   }
   const [tx, ty] = g.toPixel(est, HEX);
-  const [ex, ey, ke] = besideBase(est, tx, ty);
+  let [ex, ey, ke] = besideBase(est, tx, ty);
+  // Between this hour's estimate and the next one, along the planned way, by the minutes gone of the hour.
+  const i0 = next != null && next !== est ? plan.indexOf(est) : -1, i1 = i0 >= 0 ? plan.indexOf(next) : -1;
+  if (i0 >= 0 && i1 >= 0) {
+    const f = i0 + (i1 - i0) * Math.max(0, Math.min(1, view.hourFrac || 0)), a = Math.floor(f), b = Math.min(plan.length - 1, a + 1), k = f - a;
+    if (f > 0 && f !== i0) {
+      const [ax, ay] = g.toPixel(plan[a], HEX), [bx, by] = g.toPixel(plan[b], HEX);
+      ex = ax + (bx - ax) * k;
+      ey = ay + (by - ay) * k;
+      ke = 1;
+      if (Math.abs(bx - ax) > 0.5) lastFacing.set(p, (bx - ax) * Math.sign(i1 - i0) > 0 ? 1 : -1);
+      glidingNow = true;
+    }
+  }
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
   const cve = partySpriteCanvas(look.kind, look.color, look.count), we = spriteW(look.kind) * ke;

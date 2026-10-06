@@ -17,7 +17,7 @@
 //   determinism.
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, survivorById, makeSurvivor, setNextId, day, residents } from "../src/sim/world.js";
-import { launchExpedition, planPath, partyMembers, carried, cargoRoom } from "../src/sim/parties.js";
+import { launchExpedition, planPath, partyMembers, carried, cargoRoom, travelHours } from "../src/sim/parties.js";
 import { startOrder, queueOrder, queueEstimate, taskHour } from "../src/sim/orders.js";
 import { estimatePlan, stepsToOrders, STEP_KINDS } from "../src/sim/plans.js";
 import * as Wd from "../src/sim/woodcutting.js";
@@ -444,14 +444,16 @@ section("Save / load: old saves start with none; mid-order, and determinism");
     setNextId(1_000_000);
     const s2 = mk(SEED + 7);
     const forest = cleanTile(s2, "forest", (t) => planPath(s2, hub(s2).tile, t.id, false));
-    s2.hour = dayIn(s2, "autumn", 8) * 24 + 4;
+    // Off so as to reach the forest by about 8 in the morning: the cutting is by daylight.
+    const walk = planPath(s2, hub(s2).tile, forest.id, false).path;
+    s2.hour = dayIn(s2, "autumn", 8) * 24 + 8 - travelHours(s2, walk, { weather: false }).hours;
     const crew = atBase(s2, hub(s2).id).slice(0, 2);
     launchExpedition(s2, { memberIds: crew.map((s) => s.id), dest: forest.id, mission: "move", stance: "normal", supplies: { food: 10, water: 10 }, plan: { preset: "custom", steps: [{ kind: "wood", hours: 8 }, { kind: "home" }], conditions: {} } });
     let text = null, world = s2;
     for (let k = 0; k < 24 * 4; k++) {
       tickHour(world);
       while (world.cards.length) { const c = world.cards.shift(); (c.choices.find((x) => !x.uiAction) || c.choices[0]).resolve(world); }
-      const q = world.parties.find((x) => x.members.includes(crew[0].id));
+      const q = world.parties.find((x) => x.owner === "player" && (x.members || []).includes(crew[0].id));
       if (save && !text && q && q.phase === "task" && q.task.type === "wood" && q.task.done === 4) { text = saveToString(world); world = loadFromString(text); }
     }
     return { st: world, text };

@@ -147,7 +147,8 @@ section("A team with nobody left is always wiped: cargo to a death site, vehicle
   worn.dur = 2;
   p.cargo.gear.push(pack, worn);
   p.cargo.supplies.scrap = 40;
-  tick(state, 24 * 5, p, () => state.grid.distance(partyTile(p), f.bases[0]) <= 1 || !state.parties.includes(p));
+  // Stopped an hour short of the gates: a truck covers up to 4 road tiles an hour (a quarter of an hour each).
+  tick(state, 24 * 5, p, () => state.grid.distance(partyTile(p), f.bases[0]) <= 4 || !state.parties.includes(p));
   s.health = 3;
   tick(state, 6, p, () => !s.alive);
   check(!s.alive, "test setup: the trader was not shot at the gates");

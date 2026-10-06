@@ -315,7 +315,7 @@ const EVENTS = [
     card: (st, p) => campfireCard(st, p),
   },
   {
-    id: "coward", weight: 2, when: (st, p) => partyMembers(st, p).some((m) => m.traits.includes("coward")) && p.phase === "out",
+    id: "coward", weight: 2, when: (st, p) => partyMembers(st, p).some((m) => m.traits.includes("coward")) && p.phase === "out" && !!hub(st), // no base: no home to turn back to
     card: (st, p) => {
       const c = partyMembers(st, p).find((m) => m.traits.includes("coward"));
       const alone = partyMembers(st, p).length === 1;
@@ -335,6 +335,7 @@ const EVENTS = [
                 const why = startReturn(s, p);
                 return why ? `${c.name} wants to go home, but cannot. ${why}` : `${c.name} turns around and heads for home.`;
               }
+              if (!hub(s)) return `There is no home left to go back to. ${c.name} stays with the team.`; // the hub fell since the card came up
               p.members = p.members.filter((id) => id !== c.id);
               if (s.rng.chance(0.7)) { c.location = { kind: "base", baseId: hub(s).id }; return `${c.name} made it home.`; }
               hurt(s, c, 999, partyTile(p), "walking home alone");

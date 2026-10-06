@@ -478,9 +478,9 @@ const crewParty = (st, c) => (c.crew.out ? st.parties.find((p) => p.id === c.cre
   Crews.crewHour(st, { plan: true });
   check(c.crew.out && c.crew.out.mission === "recover", `Recover at 1 goes before Scavenge at 2 (${c.crew.out && c.crew.out.mission})`);
   ({ st, h, ppl, c } = crewWorld(7));
-  c.crew.range = 2; c.crew.maxHours = 1;
+  c.crew.range = 2; c.crew.maxHours = 0; // a tile's walk is an hour: nothing is closer than that
   Crews.crewHour(st, { plan: true });
-  check(!c.crew.out, `limits: nothing within 1 hour (${c.crew.status})`);
+  check(!c.crew.out, `limits: nothing within 0 hours (${c.crew.status})`);
   // The come-home rule: hurt below the line → home, the "Coming home" card answered.
   ({ st, h, ppl, c } = crewWorld(42));
   c.crew.range = 10; c.crew.maxHours = 40;

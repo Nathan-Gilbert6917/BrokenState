@@ -343,6 +343,7 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
         tickHour(state);
         const after = home(state, p) ? before - want : p.supplies.water + (p.cargo.supplies.water || 0) + thirst();
         if (Math.abs(before - after - want) > 1e-9) events++;
+        if (!home(state, p) && p.phase === "engaged") events++; // held up an hour by people met on the road (wanderers.js)
         drunk += want;
         for (let k = state.cards.length - 1; k >= 0; k--) {
           const c = state.cards[k];

@@ -194,6 +194,10 @@ function step(now) {
     if (ticks >= 12) acc = Math.min(acc, 1); // too slow to keep up: drop the backlog instead of running on after a speed change
     if (ticks) ui.armed = newArmed();        // time moved: nothing is waiting for the unpause any more
   }
+  // The minutes of the coming hour tick by on the clock, and your moving teams glide towards their next tile by them.
+  view.hourFrac = Math.max(0, Math.min(0.999, acc));
+  const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
+  if (mins && mins.textContent !== mm) mins.textContent = mm;
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {

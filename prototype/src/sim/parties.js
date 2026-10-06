@@ -3,6 +3,7 @@
 // it waits for orders: act here, move anywhere, or go home.
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
+import { roadblockOnEnter } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -90,9 +91,12 @@ export const MISSIONS = {
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
-// vehicle: false (on foot), true (a car) or "bike". Bikes: roads at BIKE_ROAD (faster than walking), off-road and
-// over mountains at walking cost (vehicles.js).
-export const BIKE_ROAD = 0.75;
+// vehicle: false (on foot), true (a car) or "bike". Bikes: roads at BIKE_ROAD (half an hour a tile, twice walking
+// pace), off-road and over mountains at walking cost (vehicles.js).
+export const BIKE_ROAD = 0.5;
+// The cheapest step each way of travelling: planPath's A* heuristic (hex.js findPath) uses it so it never
+// overestimates (a car on the road, a bike on the road, a walker anywhere).
+const MIN_STEP = { car: ROAD_COST.vehicle, bike: BIKE_ROAD, walk: Math.min(ROAD_COST.walk, ...Object.values(TERRAIN).map((t) => t.walk)) };
 // A barricaded bridge: a base on a bridge tile (yours or a group's) closes the only road over the river to everyone
 // but its own people and their allies (your coalition, alliance.js). Nobody passes through; the tile can still be the
 // destination (a raid, an assault, a trade visit), and the river can still be crossed by boat elsewhere (crossing.js).
@@ -130,7 +134,8 @@ export function moveCost(state, from, to, vehicle, who) {
 // who: whose way it is ("player" by default): a bridge barricaded by someone else is closed to them, except as the
 // destination itself.
 export function planPath(state, from, to, vehicle, who = "player") {
-  return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle, b === to ? undefined : who));
+  const h = vehicle === true ? MIN_STEP.car : vehicle === "bike" ? MIN_STEP.bike : MIN_STEP.walk;
+  return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle, b === to ? undefined : who), Infinity, h);
 }
 
 // Fuel a car burns along a path (road 0.6, off-road 1.5 a tile) times its load multiplier (vehicles.js fuelMultFor).
@@ -362,10 +367,11 @@ function setPlan(state, p, etaBack) {
 // Where an out-of-contact team should be by now if the plan held: same stepping as real movement along the
 // planned path, then 6 hours on site, then the same path back (if a way back was planned). Delays from
 // events are unknown at the hub, so this can run ahead of the real team.
-export function plannedTile(state, p) {
+// now: the hour to place it at (the map asks for the next hour too, to glide it between the two).
+export function plannedTile(state, p, now = state.hour) {
   const plan = p.planPath || p.path;
   const start = p.planStart ?? p.departed;
-  const t = state.hour - start;
+  const t = now - start;
   const mode = p.planVehicle === true || p.planVehicle === "bike" ? p.planVehicle : false;
   const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start };
   if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
@@ -670,6 +676,25 @@ function stepAlong(state, p, speed, hour = state.hour) {
 
 export const partyTile = (p) => p.path[p.idx];
 
+// Where a moving team is part-way through the coming hour, frac (0–1) of it gone: the map draws it gliding between
+// tiles as the minutes pass (main.js). The same stepping as stepAlong (the hour's weather, a delay paid off first),
+// on a copy: nothing in the sim changes. Returns { from, to, t }: t of the way from tile `from` to `to`.
+export function glideAt(state, p, frac) {
+  const at = partyTile(p);
+  if (!onTheMove(p)) return { from: at, to: at, t: 0 };
+  let prog = (p.progress || 0) + partySpeed(p) * Math.max(0, Math.min(1, frac));
+  const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
+  for (let i = p.idx; i < p.path.length - 1; i++) {
+    const from = p.path[i], to = p.path[i + 1];
+    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour });
+    if (!(cost > 0) || !isFinite(cost)) return { from, to: from, t: 0 };
+    if (prog < cost) return { from, to, t: Math.max(0, prog / cost) };
+    prog -= cost;
+  }
+  const end = p.path[p.path.length - 1];
+  return { from: end, to: end, t: 0 };
+}
+
 function updateRadio(state, p) {
   // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
@@ -787,7 +812,7 @@ function onEnterTile(state, p, tileId) {
       const name = v ? v.name : "vehicle";
       log(state, `The ${name} ran out of fuel near ${tileLabel(state, tileId)}. The team left it there and continues on foot. Bring fuel to recover it.`, "danger");
       leaveVehicle(state, p, tileId, "out of fuel");
-    }
+    } else if (onRoad) roadblockOnEnter(state, p, tileId, partySpeed(p), p.kind === "convoy" ? "the convoy" : teamName(state, p), tileLabel(state, tileId)); // roadblocks.js: stalled cars, a fallen tree
   }
   // Sight and perception: what the team sees is held until they return (or reported live by radio).
   const around = state.grid.within(tileId, sightRadius(state, p));

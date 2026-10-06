@@ -83,8 +83,9 @@ export class HexGrid {
   }
 }
 
-// A* over the grid. costFn(fromId, toId) returns step cost or Infinity if blocked.
-export function findPath(grid, start, goal, costFn, maxCost = Infinity) {
+// A* over the grid. costFn(fromId, toId) returns step cost or Infinity if blocked. minStep: the cheapest step there
+// is (the heuristic is the distance times it, so it never overestimates; parties.js planPath passes its mode's).
+export function findPath(grid, start, goal, costFn, maxCost = Infinity, minStep = 0.5) {
   if (start === goal) return { path: [start], cost: 0 };
   const open = new MinHeap();
   const g = new Map([[start, 0]]);
@@ -111,7 +112,7 @@ export function findPath(grid, start, goal, costFn, maxCost = Infinity) {
       if (ng < (g.get(n) ?? Infinity)) {
         g.set(n, ng);
         came.set(n, cur);
-        open.push(n, ng + grid.distance(n, goal) * 0.5);
+        open.push(n, ng + grid.distance(n, goal) * minStep);
       }
     }
   }
