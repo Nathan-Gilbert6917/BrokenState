@@ -113,3 +113,43 @@ trip under that limit, so with both teams out nothing hauled. A human player has
 All four start at once. Merge order on dev: A (contracts), B, C, D; each agent runs its own suites and the shared
 ones (tools/teamtest.js, savetest.js, uitest.js, autotest.js 120 all 3 size=huge) before reporting. Nothing is
 committed by agents; the lead commits each agent's files by name.
+
+## As built (2026-10-06)
+
+Commits on dev: `d2cfda5` (D: hardcore prepper, raid bot, census tooling), `26ca853` (A + C: coalition rule, claims,
+wells, radio, the governor's campaign / war council / emergency gathering), `5dec01e` (B: hive growth cap, groups fight
+hives). Readings and deviations from the contracts:
+
+- **Victory**: at least one member and over 50% of the land; the Accord clock follows the same rule. "You alone"
+  (no member) does not win.
+- **Claims**: `sim/claims.js` as contracted; `ownsTile` also counts the ground around your bases (so the first claim
+  can start from a base's own reach). A group's claim bordering your land can be claimed over. Claims under your own
+  bases vanish silently; under a group's base or ground they pass to that group; a hive risen or a group's base
+  founded within 2 tiles, or a hostile party or band camped a day on the tile, takes them. Team panel, right-click
+  menu and the orders card offer the order; the Territory layer colours claims lighter blue.
+- **Wells**: shore 10 a day, plains 6, forest 4, hills / suburb / city 2, mountain none; 1500–4000 water before dry
+  (half rate under 20%); hauled into the base's water at most one well per 4 people there; the base card lists them.
+- **Radio**: station 12, a base holding a "Military encrypted radio" item 24, groups' own sets 6 beyond coverage;
+  chains run through owned bases; the coalition's 8 / 12 tile neighbour and member-relay rules unchanged.
+- **Hives**: new hives per three-year span capped 5–8 on large and huge (3–5 normal, 2–3 small), first site around
+  day 300–460 and the gaps shrinking; the span renews every 1095 days (say if the cap should cover the whole run).
+  Measured over three years: huge 4–7 new (was ~16). Sites must be reachable over land from a hive. Group war
+  parties: zealots every look, military and fortresses most, traders and communes rarely, raiders never; they
+  burned 0–2 hives per three-year run by themselves (they need 40–50 people or your fires first).
+- **Autopilot**: campaign target = nearest known hive within 60 tiles; ammo to 92 before a storm; fire trips (score 5)
+  when three trips of fires would bring the odds in reach; fuel held back for them; envoys aimed at groups near the
+  target; the Goals card shows the 🤖 campaign line. War council: balanced joins wars, aggressive also marks the
+  foes' bases for assault; cautious never. Emergency trips (water under a day, food under two) ignore the team
+  limit and cooldown, at most two such teams out, three people stay home. Claim trips while the land is short,
+  wells on claims by water when water is short. In tests a 150-guard hive 20 tiles out fell by day 115–357.
+- **Hardcore**: one starter is a prepper with a duffle bag (new pack): 15 food, 15 water, 2 meds, a water filter,
+  flashlight, bandages, lighters, batteries, 2–3 extras, a gun with 20 rounds or a knife; the Prepper trait when a
+  slot is free (background only, no in-play effect). No hand-crank radio or purification tablets: neither exists.
+- **Raid bot**: leaves at Heat 40, half the squad hurt or anyone down, outnumbered in sight, or its way out growing
+  two turns running. Interior raids out 16 → 23 of 24.
+- **Census tooling**: `--size a,b,c` sweeps with a comparison table, deaths by season, coalition blockers at month
+  12 / 24 / end, hive storm rejections, `--preset`, `--fallen-grep`, `--census` (tools/census/<date>-<commit>.json).
+
+Open: a visible war party for the groups (they fight by the numbers the same day); a mechanical effect for the
+Prepper trait; a "Force the door" action for a met survivor group (multi-storey phase 3); the eras' standing-hive
+cap scaling lives in hives.js pickSite rather than eras.js.
