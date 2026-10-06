@@ -13,7 +13,9 @@ import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
+  breakDownInfo, breakDownAt, setFireMark,
 } from "../sim/inventory.js";
+import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
 import { shortName } from "./names.js";
@@ -35,7 +37,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
-const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
+const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
 function icon(key) {
   const d = GEAR[key];
   if (GUNS.has(key)) return "🔫";
@@ -130,7 +132,13 @@ function storageBox(state, ui, place, user) {
     const v = partyVehicle(state, st.party); // a car or bikes: the cargo rides in it (on a raid map its trunk is opened at the vehicle, sim/raidloot.js)
     head = `<div class="spread"><b${tip(v ? `The team's cargo rides in the ${vehicleLabel(v).toLowerCase()}${isBike(v) ? " (15 kg a rack; the rest is shared out among the people)" : ""}. Drag things from a survivor into it, or out of it onto them. On a raid map the vehicle waits in its zone: walk to it to load or unload.` : "Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>${v ? `${esc(vehicleLabel(v))} (team cargo)` : "Team cargo"}</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
       <div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap * 0.9 ? "var(--danger)" : "var(--info)"}"></i></div>`;
-  } else head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items</span></div>`;
+  } else {
+    // Junk with firewood in it (sim/woodcutting.js): the bulk button breaks it all down (marked "keep" stays).
+    const b = baseById(state, st.id);
+    const junk = b ? armoryJunk(b) : [];
+    const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
+    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>`;
+  }
   const tiles = st.list.map((it, i) => {
     const l = `${loc}:${i}`;
     return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}</div>`;
@@ -155,7 +163,24 @@ function selBar(state, ui, place) {
   return `<div class="invsel small">Selected: <b>${esc(item.name)}</b>. Click a slot, pocket or pack cell to move it there.
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
+    ${burnButtons(state, ui, item, from)}
     <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+}
+// The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (a confirm for anything
+// that is not junk), and in an armory the water boiler's mark (may burn / keep).
+function burnButtons(state, ui, item, from) {
+  const bd = breakDownInfo(state, ui.invSel);
+  if (!(bd.wood > 0) || from.o === "body") return "";
+  const confirm = ui.invBurnConfirm === ui.invSel;
+  const junk = isJunk(item);
+  const btn = `<button class="mini ${confirm ? "danger" : ""}" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood (${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: click again to confirm."}` : bd.reason)}>${confirm ? `Really break it down? (+${bd.wood})` : `Break down for firewood (+${bd.wood})`}</button>`;
+  if (from.o !== "armory") return btn;
+  const b = baseById(state, from.id);
+  const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";
+  const now = mark === "burn" ? "marked: the boiler may burn it" : mark === "keep" ? "marked: kept from the fire" : junk ? (boilerJunkOn(b) ? "junk: the boiler may burn it" : "junk (the base keeps junk from the boiler)") : "not burned unless marked";
+  const next = mark === "" ? (junk ? "keep" : "burn") : mark === "burn" ? "keep" : "";
+  const label = next === "burn" ? "Boiler may burn it" : next === "keep" ? "Keep from the fire" : "Clear the mark";
+  return `${btn} <button class="mini" data-action="inv-firemark" data-mark="${next}"${tip(`The water boiler burns firewood first, then what the base allows from the armory (cheap junk while "Boiler may burn spare wooden items and paper" is on, and anything marked to burn), then fuel. Now: ${now}.`)}>${label}</button>`;
 }
 
 // People who can trade items at a place, the place's name.
@@ -482,6 +507,16 @@ export const INV_ACTIONS = {
   "inv-cancel": (state, ui) => { ui.invSel = null; },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
+  // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks twice.
+  "inv-breakdown": (state, ui) => {
+    if (!ui.invSel) return;
+    const it = itemAt(state, ui.invSel);
+    if (it && !isJunk(it) && ui.invBurnConfirm !== ui.invSel) { ui.invBurnConfirm = ui.invSel; return; }
+    ui.invMsg = breakDownAt(state, ui.invSel);
+    ui.invSel = null; ui.invBurnConfirm = null;
+  },
+  "inv-firemark": (state, ui, d) => { if (ui.invSel) ui.invMsg = setFireMark(state, ui.invSel, d.mark || null); },
+  "inv-burnjunk": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = breakDownJunk(state, b); ui.invSel = null; },
   "loot-open": (state, ui) => { ui.inv = { sid: null, loot: true, body: null }; ui.invSel = null; ui.invMsg = ""; },
   "loot-body": (state, ui, d) => { ui.inv.body = Number(d.i); ui.invSel = null; },
   "loot-sup": (state, ui, d) => { ui.invMsg = takeSupply(state, Number(d.i), d.key, d.n ? Number(d.n) : Infinity); }, // d.n: part of the stack

@@ -253,6 +253,57 @@ export function removeAt(state, str) {
 }
 export const placeOfLoc = (state, loc) => placeOf(state, typeof loc === "string" ? parseLoc(loc) : loc);
 
+// ---------- breaking things down for firewood (data.js GEAR burn; woodcutting.js burnables) ----------
+// What breaking down the item at a location would give: { ok, reason, item, wood, place }. Items in a base's armory, a
+// team's cargo, or a pocket or pack of someone at a base or on a team (not what is worn or held: take it off first;
+// not a body's).
+export function breakDownInfo(state, str) {
+  const loc = parseLoc(str);
+  const item = itemAt(state, str);
+  const wood = item && GEAR[item.key] ? Math.max(0, GEAR[item.key].burn || 0) : 0;
+  const place = placeOf(state, loc);
+  let reason = "";
+  if (!item) reason = "Nothing there.";
+  else if (!(wood > 0)) reason = `The ${item.name} will not burn.`;
+  else if (loc.o === "body") reason = "Take it first.";
+  else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
+  else if (!place) reason = "Out of reach.";
+  return { ok: !reason, reason, item, wood, place };
+}
+// Breaks it down: the item is gone and its firewood goes into the base's stores or the team's cargo supplies (a team's
+// camp fire burns it like any firewood carried). No time: it is kindling. Returns the message.
+export function breakDownAt(state, str) {
+  const info = breakDownInfo(state, str);
+  if (!info.ok) return info.reason;
+  const [kind, idStr] = info.place.split(":");
+  const id = Number(idStr);
+  let where;
+  if (kind === "base") {
+    const b = baseById(state, id);
+    if (!b) return "Out of reach.";
+    b.stock.wood = Math.max(0, b.stock.wood || 0) + info.wood;
+    where = `${b.name}'s firewood`;
+  } else {
+    const p = state.parties.find((x) => x.id === id);
+    if (!p) return "Out of reach.";
+    p.cargo = p.cargo || { supplies: {}, gear: [] };
+    p.cargo.supplies.wood = Math.max(0, p.cargo.supplies.wood || 0) + info.wood;
+    where = "the team's firewood";
+  }
+  removeAt(state, str);
+  unlistFromSites(state, info.item);
+  return `Broke down the ${info.item.name} for firewood: +${info.wood} to ${where}.`;
+}
+// Marks an armory item for the water boiler (worm.js): "burn" (it may burn it even if it is not junk), "keep" (never),
+// or null (junk burns while the base allows it). Returns the message.
+export function setFireMark(state, str, mark) {
+  const loc = parseLoc(str);
+  const item = itemAt(state, str);
+  if (!item || loc.o !== "armory") return "";
+  if (mark === "burn" || mark === "keep") item.fire = mark; else delete item.fire;
+  return item.fire === "burn" ? `The water boiler may burn the ${item.name} when the firewood runs short.` : item.fire === "keep" ? `The ${item.name} is kept from the fire.` : `The ${item.name}: no mark (junk burns while the base allows it).`;
+}
+
 // Can a team take on `gained` kg (an item from a body) while losing `lost` kg of max load (a pack taken off)?
 // Moving things between its people and its cargo weighs nothing extra: the team's load is one pool (load.js).
 function roomCheck(st, item, gained = 0, lost = 0) {
