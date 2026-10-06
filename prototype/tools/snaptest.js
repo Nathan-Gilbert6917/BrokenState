@@ -20,6 +20,15 @@ import { addBuilding } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
 import { autopilotResolve } from "../src/sim/autopilot.js";
 import { tickHour } from "../src/sim/world.js";
+import { launchExpedition, partyMembers } from "../src/sim/parties.js";
+const sendOut = (st, n = 3, supplies = { food: 12, water: 12 }) => {
+  const h = hub(st);
+  const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, n);
+  const dest = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 5).id;
+  const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest, mission: "move", stance: "normal", supplies });
+  res.party.idx = Math.min(2, res.party.path.length - 1);
+  return res.party;
+};
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -177,6 +186,69 @@ section("The attack and the aftermath");
   check(Object.values(outcomes).every((v) => v > 0), "confine, cast out, put down and forgive each do what they say");
 }
 
+section("On the road");
+{
+  // The counter counts on a team too, and a team in a fight is left alone.
+  let st = W(), p = sendOut(st);
+  let s = partyMembers(st, p)[0];
+  s.mood = 2;
+  nextDay(st); mentalBreaksDaily(st);
+  check(s.lowDays === 1, "a morning under 10 on the road counts");
+  p.phase = "engaged";
+  nextDay(st); mentalBreaksDaily(st);
+  check(s.lowDays === 1, "a team in a fight is left alone that morning");
+  p.phase = "travel";
+  // Slipping away: gone from the team, a deserter who may come back, a little food and water with them.
+  st = W(); p = sendOut(st);
+  s = partyMembers(st, p)[0];
+  const n0 = partyMembers(st, p).length, f0 = p.supplies.food;
+  s.mood = 2;
+  const k1 = snap(st, { party: p }, s, st.rng, "runoff");
+  check(k1 === "runoff" && !s.alive && s.left && partyMembers(st, p).length === n0 - 1 && (st.deserters || []).some((e) => e.id === s.id && e.road) && p.supplies.food < f0 && /slipped away/.test(lastLog(st)), `slipped away from the team: ${n0 - 1} left, a deserter, ${f0 - p.supplies.food} food gone with them`);
+  // The packs.
+  st = W(); p = sendOut(st, 3, { food: 20, water: 20 });
+  s = partyMembers(st, p)[0];
+  snap(st, { party: p }, s, st.rng, "stores");
+  check(p.supplies.food === 17 && p.supplies.water === 17 && st.cards.some((c) => c.snapFor === s.id && c.partyId === p.id), "the packs: 15% of the team's food and water gone, the card on the team");
+  st.cards.length = 0;
+  // Shutting down: the team loses half a day.
+  st = W(); p = sendOut(st);
+  s = partyMembers(st, p)[0];
+  const pr0 = p.progress || 0;
+  snap(st, { party: p }, s, st.rng, "shutdown");
+  check(p.progress < pr0 && s.onBreak, `shut down on the road: the team's progress ${pr0} -> ${Math.round(p.progress * 10) / 10}`);
+  // Into the dead on an infected tile; a death site, not the armory.
+  st = W(); p = sendOut(st);
+  st.tiles[p.path[p.idx]].infection = 0.5;
+  s = partyMembers(st, p)[0];
+  snap(st, { party: p }, s, st.rng, "dead");
+  check(!s.alive && st.deathSites.some((d) => d.tile === p.path[p.idx] && d.names.includes(s.name)), "walked into the dead from the camp: a death site where the team stands");
+  // No fire and no car on the road.
+  st = W(); p = sendOut(st);
+  s = partyMembers(st, p)[0];
+  let odd = 0;
+  for (let i = 0; i < 30; i++) { const k = snap(st, { party: p }, s, st.rng, "fire"); if (k === "fire" || k === "car") odd++; if (!s.alive) break; s.snapCd = 0; }
+  check(odd === 0, "no fires and no cars taken on the road");
+  // An attack on a teammate and the road's answers.
+  let hurtN = 0, left = 0, guarded = 0;
+  for (let i = 0; i < 20; i++) {
+    st = W(seed + 300 + i); p = sendOut(st);
+    const m = partyMembers(st, p);
+    s = m[0];
+    const hp = Object.fromEntries(m.map((o) => [o.id, o.health]));
+    s.mood = 2;
+    if (snap(st, { party: p }, s, st.rng, "attack") !== "attack") continue;
+    const v = m.find((o) => o !== s && (!o.alive || o.health < hp[o.id]));
+    if (!v) continue;
+    hurtN++;
+    const card = st.cards.find((c) => c.snapFor === s.id);
+    if (!card || !s.alive) continue;
+    if (i % 2) { card.choices[1].resolve(st); if (!s.alive && s.left && !partyMembers(st, p).includes(s)) left++; }
+    else { card.choices[0].resolve(st); if (s.alive && s.confined && partyMembers(st, p).includes(s)) guarded++; }
+  }
+  check(hurtN > 0 && left > 0 && guarded > 0, `a teammate attacked ${hurtN} times: left behind ${left}, kept under guard ${guarded}`);
+}
+
 section("Autopilot at rock bottom");
 {
   let bad = 0, snaps = 0, open = 0;
@@ -184,7 +256,7 @@ section("Autopilot at rock bottom");
     const st = createWorld({ seed: sd, factionCount: 4 });
     st.autopilot = true;
     for (let hr = 0; hr < 24 * 300 && !st.gameOver; hr++) {
-      if (hr % 24 === 0) for (const s of alive(st)) if (s.location.kind === "base") s.mood = 2;
+      if (hr % 24 === 0) for (const s of alive(st)) if (s.location.kind === "base" || s.location.kind === "party") s.mood = 2;
       tickHour(st);
       autopilotResolve(st);
       for (const s of st.survivors) if (!Number.isFinite(s.mood) || !Number.isFinite(s.health)) bad++;
@@ -192,7 +264,7 @@ section("Autopilot at rock bottom");
     snaps += Object.values((st.relStats || {}).snaps || {}).reduce((a, v) => a + v, 0);
     open += st.cards.filter((c) => c.snapFor != null).length;
   }
-  check(bad === 0 && open === 0, `300 days on three seeds with everyone pinned at mood 2: ${snaps} breaks, no NaN, every aftermath card answered`);
+  check(bad === 0 && open === 0, `300 days on three seeds with everyone at home and on the road pinned at mood 2: ${snaps} breaks, no NaN, every aftermath card answered`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -88,7 +88,7 @@ export function moodRisk(s) {
   if (s.mood < MOOD.rearm) return { level: 0, text: "Unhappy", tone: "muted" };
   return null;
 }
-export const MOOD_RISK_TIP = `Below ${MOOD.warn1} mood someone talks about leaving (first warning), below ${MOOD.warn2} they are close to it (second warning), and below ${MOOD.desert} they may walk out any night once the second warning has been given. Under 10 mood for 3 days running they may break down: run off, go for someone, take their own life, set a fire, wreck the stores, walk out into the dead or shut down for days. Rest, a bed, food, a good leader and room to sleep lift mood; crowding, short rations, hunger and thirst lower it.`;
+export const MOOD_RISK_TIP = `Below ${MOOD.warn1} mood someone talks about leaving (first warning), below ${MOOD.warn2} they are close to it (second warning), and below ${MOOD.desert} they may walk out any night once the second warning has been given. Under 10 mood for 3 days running, at home or on the road, they may break down: run off, go for someone, take their own life, set a fire, wreck the stores, walk out into the dead or shut down for days. Rest, a bed, food, a good leader and room to sleep lift mood; crowding, short rations, hunger and thirst lower it.`;
 
 // The person best placed to talk someone round: the leader if they are at that base, else the best Speech there.
 export function talker(state, base, s) {
