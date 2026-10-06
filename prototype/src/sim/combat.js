@@ -432,7 +432,10 @@ export const WEAPONS = {
   knife:     { name: "Kitchen knife",  melee: true, dmg: [14, 22] },
   machete:   { name: "Machete",        melee: true, dmg: [20, 30] },
   claws:     { name: "Teeth and nails", melee: true, dmg: [12, 20] },
-  pistol:    { name: "9mm pistol",     dmg: [16, 24], opt: 6,  fall: 4, aim: 0,  ammo: 1, noise: 2 },
+  // The 9mm's 14–21: a walker in the open (29 hit points at power 2) falls to two hits unless both roll 14, and to a
+  // critical (×2) unless it rolls 14, so three pistols against 16 of the dead win about 70% (combattest weapons, 6000
+  // battles); at 16–24 every pair of hits and every critical killed (72%).
+  pistol:    { name: "9mm pistol",     dmg: [14, 21], opt: 6,  fall: 4, aim: 0,  ammo: 1, noise: 2 },
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10 },
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10 },
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3 },
