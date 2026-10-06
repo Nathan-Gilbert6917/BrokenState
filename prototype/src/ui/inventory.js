@@ -53,6 +53,7 @@ export function itemTip(item, s = null) {
   else if (d.book) bits.push(d.book.skill ? `book: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js
   else if (d.valuable) bits.push("a valuable: good for nothing but trade");
   else if (d.use) bits.push(`used up: ${useText(item.key)} (select it, then Use)`); // sim/comforts.js
+  else if (d.groom) bits.push(`toiletry: +${d.groom} mood a day to whoever carries it, or to everyone with none of their own where it is kept (a base's armory, a team's cargo); a day of use a day each`); // sim/comforts.js
   else if (d.comfort) bits.push(d.comfort.team ? `comfort: +${d.comfort.team} mood a day for everyone at the base or on the team that has it` : `keepsake: +${d.comfort.self} mood a day to whoever carries it`);
   else if (d.heat) bits.push("camp kit: less Heat for the team that carries it (see the team's Heat)"); // sim/fieldheat.js
   else if (d.defence) bits.push("base defence: works from a base's armory (see the base's horde defences)"); // sim/defences.js
@@ -65,7 +66,7 @@ export function itemTip(item, s = null) {
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
-  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : `makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
+  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.groom ? `${dur} of ${d.dur} days of use left` : `makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
   if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }

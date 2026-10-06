@@ -34,7 +34,7 @@ import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
 import { hasPerk } from "./skills.js";
-import { comfortLines, buzzLine, buzzDaily } from "./comforts.js";
+import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -232,6 +232,8 @@ export function relationsDaily(state) {
   }
   for (const s of alive(state)) {
     buzzDaily(s); // comforts.js: a coffee buzz wears off, drink turns into a hangover
+    const pl = placeOf(state, s);
+    if (pl && !pl.route) groomDaily(state, s, pl); // comforts.js: a day of deodorant, toothpaste and the rest used
     if (s.grief) { s.grief.days -= 1; if (s.grief.days <= 0) delete s.grief; }
     if (s.revenge && s.revenge.until < d) delete s.revenge;
     if (s.rough != null && s.rough < d) delete s.rough;
@@ -337,7 +339,7 @@ export function moodFactors(state, s) {
   }
   const ci = comfortInfo(state, s, base);
   if (ci.n > 0) add(`Something to read (${ci.text})`, Math.min(MOODF.comfortMax, ci.n * MOODF.comfortPer), true);
-  // Music, cards and keepsakes (comforts.js), and the after-effect of a treat (a coffee buzz, a hangover).
+  // Music, cards, keepsakes and toiletries (comforts.js), and the after-effect of a treat (a coffee buzz, a hangover).
   if (!pl.route) for (const c of comfortLines(state, s, pl)) add(c.label, c.v, true);
   const bz = buzzLine(s);
   if (bz) list.push({ label: bz.label, v: bz.v, own: true, tip: "" });

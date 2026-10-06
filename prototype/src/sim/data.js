@@ -243,6 +243,16 @@ export const GEAR = {
   instcoffee:  { name: "Instant coffee",           slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, use: { mood: 4, buzz: { days: 1, work: 1.1, label: "Coffee buzz" } }, useVerb: "drinks", desc: "A jar of freeze-dried granules: a few good cups. Drunk: +4 mood and 10% more work for the day.", weight: 0.2, cat: "treats" },
   smokes:      { name: "Pack of cigarettes",       slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, use: { mood: 5, hp: -2 }, useVerb: "smokes", desc: "An opened pack, half full. Smoked: +5 mood, −2 health.", weight: 0.05, cat: "smokes" },
   vodka:       { name: "Bottle of cheap vodka",    slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, use: { mood: 10, buzz: { days: 1, work: 0.85, aim: -10, mood: -2, label: "Hungover" } }, useVerb: "drinks", desc: "Plastic bottle, already opened: for drinking, not trading. Drunk: +10 mood, then a day hungover (work −15%, aim −10 in battle, −2 mood).", weight: 0.8, cat: "liquor" },
+  // Toiletries (comforts.js groomLines): groom = mood a day for whoever uses it, dur = days of use in it. Carried,
+  // it is the carrier's own; in a base's armory or a team's cargo it is a shared shelf for everyone there with none
+  // of their own, and a shared one is used up a day per person. Each kind counts once; all together at most +1.2.
+  deodorant:   { name: "Stick of deodorant",       slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, small: true, groom: 0.5, dur: 30, desc: "Half-used, the cap cracked. Nobody smells good any more, but you can smell less bad: +0.5 mood a day for whoever uses it, about a month in the stick.", weight: 0.1, cat: "toiletries" },
+  toothpaste:  { name: "Toothbrush and toothpaste", slot: "pack", skill: null, power: 0, req: 0, value: 3, noise: 0, small: true, groom: 0.4, dur: 40, desc: "A travel brush and a squeezed-flat tube. Clean teeth feel like the old world: +0.4 mood a day for whoever uses it.", weight: 0.1, cat: "toiletries" },
+  shampoo:     { name: "Bottle of shampoo",        slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, groom: 0.3, dur: 25, desc: "Two-in-one, smells of fake apples. Washing your hair in a bucket still counts: +0.3 mood a day for whoever uses it.", weight: 0.4, cat: "toiletries" },
+  wetwipes:    { name: "Pack of wet wipes",        slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, small: true, groom: 0.3, dur: 10, desc: "Baby wipes, still damp. A wash on the road: +0.3 mood a day for whoever uses them, ten days to a pack.", weight: 0.2, cat: "toiletries" },
+  lipbalm:     { name: "Lip balm",                 slot: "pack", skill: null, power: 0, req: 0, value: 1,  noise: 0, small: true, groom: 0.2, dur: 45, desc: "Cherry flavour. Cracked lips are one less thing: +0.2 mood a day for whoever uses it.", weight: 0.02, cat: "toiletries" },
+  makeup:      { name: "Makeup bag",               slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, small: true, groom: 0.4, dur: 50, desc: "Mascara, a compact and a lipstick worn to a stub. Looking like yourself again: +0.4 mood a day for whoever uses it.", weight: 0.3, cat: "toiletries" },
+  perfume:     { name: "Bottle of perfume",        slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, small: true, groom: 0.5, dur: 60, desc: "A designer bottle from a department store counter. A spritz and the world is less rotten for a while: +0.5 mood a day for whoever uses it. Traders like it too.", weight: 0.2, cat: "toiletries" },
   magazines:   { name: "Stack of magazines",       slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, book: { mood: 2, hours: 3 }, desc: "Celebrity gossip from another world. +2 mood an hour read (a third of that read again). Teaches nothing.", weight: 0.4, cat: "luxury" },
   puzzlebook:  { name: "Crossword book",           slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 12 }, desc: "Half the puzzles still blank. +2 mood an hour read, and it lasts. Teaches nothing.", weight: 0.3, cat: "luxury" },
 };
@@ -284,6 +294,7 @@ export const CATEGORIES = {
   books:       { name: "books", group: "knowledge", stockBy: "key" },
   manuals:     { name: "manuals and blueprints", group: "knowledge", stockBy: "key" },
   luxury:      { name: "comforts", group: "comforts", fine: true },
+  toiletries:  { name: "toiletries", group: "comforts", fine: true },
   drugs:       { name: "drugs", group: "comforts", fine: true },
   // Valuables: barter goods with no other use.
   jewelry:     { name: "jewelry and gold", group: "valuables", fine: true },
@@ -300,7 +311,7 @@ export const CATEGORIES = {
 // charge (traders sell dear). Outsiders: merchants and explorers from visitors.js (outside raiders use "raider").
 export const TRADE_PREFS = {
   raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, optics: 1.3, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
-                  liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9,
+                  liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9, toiletries: 0.7,
                   books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6, firewood: 0.6 },
   military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, optics: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
                   gadgets: 1.15, packs: 1.2, medical: 1.15, fuel: 1.15, vehicle: 1.2, manuals: 1.15, smokes: 1.1,
@@ -308,9 +319,9 @@ export const TRADE_PREFS = {
   fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, optics: 1.15, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
                   camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8, firewood: 1.2 },
   traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, optics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
-                  drugs: 1, scrap: 0.9, firewood: 0.8 },
+                  toiletries: 1.2, drugs: 1, scrap: 0.9, firewood: 0.8 },
   commune:      { food: 1.25, water: 1.1, farming: 1.6, medical: 1.3, books: 1.35, manuals: 1.3, tools: 1.25, containers: 1.4, clothing: 1.2, camp: 1.1, treats: 1.35,
-                  household: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
+                  household: 1.3, toiletries: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
                   melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8, firewood: 1.2 },
   zealot:       { liquor: 0, drugs: 0, smokes: 0, optics: 0.8, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
                   medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2, firewood: 1.1 },
@@ -318,7 +329,7 @@ export const TRADE_PREFS = {
                   camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8, firewood: 0.9 },
   merchants:    { "*": 1.05, margin: 1.1, food: 1.35, water: 1.3, scrap: 1.4, containers: 1.5, jewelry: 1.3, collectibles: 1.4, gadgets: 1.25, liquor: 1.2, smokes: 1.2,
                   treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9, firewood: 0.6 },
-  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
+  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, toiletries: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
 };
 // Small valuables traded as goods (where they exist: gold ring, cigarettes, whiskey, coffee, batteries) are light.
 for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 1, coffee: 0.5, batteries: 0.2 })) if (GEAR[k]) GEAR[k].weight = w;

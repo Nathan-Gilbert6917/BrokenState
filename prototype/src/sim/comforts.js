@@ -6,6 +6,10 @@
 //     team (carried, or in the team's cargo): a deck of cards +0.4 a day, a harmonica +0.4, a guitar +1. Each kind
 //     counts once; all of them together at most +1.5 a day.
 //   comfort.self: for whoever carries it (pockets, hands or pack): family photos +0.6 a day (once).
+// Toiletries (GEAR groom, dur = days of use): deodorant, toothpaste, shampoo, wet wipes, lip balm, makeup, perfume.
+//   Each kind lifts mood a day (groom) for whoever uses it, all of them together at most +1.2 (COMFORT.groomMax).
+//   Someone uses their own (carried) first, else the shared shelf where they are (a base's armory, a team's cargo).
+//   One day of use a day each (groomDaily): a shared stick at a base of ten lasts a tenth as long. Used up, it is gone.
 // Treats (GEAR use): used up when someone has them (the Use button on the inventory screen; the autopilot hands
 //   them to its glummest people). use.mood at once (a mood note), use.hp health (cigarettes cost 2, never below 1),
 //   use.buzz a lingering effect for buzz.days days: work × buzz.work, aim in battle + buzz.aim, and buzz.mood a day
@@ -14,10 +18,10 @@
 import { GEAR } from "./data.js";
 import { log, survivorById, atBase } from "./world.js";
 import { allItems, packOf, itemAt, parseLoc, removeAt, personPlace, placeOfLoc } from "./inventory.js";
-import { partyMembers } from "./parties.js";
+import { partyMembers, teamName } from "./parties.js";
 import { addMood } from "./relations.js";
 
-export const COMFORT = { teamMax: 1.5, selfMax: 1, lowMood: 35, cigHpFloor: 1 };
+export const COMFORT = { teamMax: 1.5, selfMax: 1, groomMax: 1.2, lowMood: 35, cigHpFloor: 1 };
 
 const first = (s) => s.name.split(" ")[0];
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -35,6 +39,33 @@ function sharedItems(state, place) {
   if (place.base) return [...atBase(state, place.base.id).flatMap(carriedAll), ...(place.base.armory || [])];
   if (place.party) return [...partyMembers(state, place.party).flatMap(carriedAll), ...((place.party.cargo && place.party.cargo.gear) || [])];
   return [];
+}
+
+// The shared shelf of toiletries at a place: a base's armory or a team's cargo (not other people's own).
+function shelf(place) {
+  if (!place) return [];
+  if (place.base) return place.base.armory || [];
+  if (place.party) return (place.party.cargo && place.party.cargo.gear) || [];
+  return [];
+}
+const groomOf = (it) => (it && GEAR[it.key] && GEAR[it.key].groom) || 0;
+const daysLeft = (it) => (it.dur != null ? it.dur : GEAR[it.key].dur || 1);
+
+// The toiletries someone uses today, one of each kind: Map key -> { item, own }. Their own first (the emptiest of
+// them), else the shelf's emptiest (an open bottle before a new one).
+export function groomKit(state, s, place) {
+  const out = new Map();
+  const take = (items, own) => {
+    for (const it of items) {
+      if (!groomOf(it) || daysLeft(it) <= 0) continue;
+      const cur = out.get(it.key);
+      if (!cur || (cur.own === own && daysLeft(it) < daysLeft(cur.item))) out.set(it.key, { item: it, own });
+    }
+  };
+  take(carriedAll(s), true);
+  const own = new Set(out.keys());
+  take(shelf(place).filter((it) => !own.has(it.key)), false);
+  return out;
 }
 
 // Mood lines from kept comforts for someone at a place ({ base } or { party }): [{ label, v }].
@@ -58,7 +89,33 @@ export function comfortLines(state, s, place) {
     const v = Math.min(COMFORT.selfMax, [...own.values()].reduce((a, x) => a + x, 0));
     out.push({ label: `Keepsakes (${[...own.keys()].map((k) => GEAR[k].name.toLowerCase()).join(", ")})`, v: r1(v) });
   }
+  const kit = groomKit(state, s, place);
+  if (kit.size) {
+    const v = Math.min(COMFORT.groomMax, [...kit.keys()].reduce((a, k) => a + GEAR[k].groom, 0));
+    out.push({ label: `Washed and groomed (${[...kit.keys()].map((k) => GEAR[k].name.toLowerCase()).join(", ")})`, v: r1(v) });
+  }
   return out;
+}
+
+// Daily (relations.js relationsDaily, after the day's mood): each toiletry someone used today loses a day; an empty
+// one is thrown away (theirs: from their pockets or pack; the shelf's: from the armory or cargo).
+export function groomDaily(state, s, place) {
+  for (const { item, own } of groomKit(state, s, place).values()) {
+    item.dur = daysLeft(item) - 1;
+    if (item.dur > 0) continue;
+    if (own) dropCarried(s, item);
+    else { const sh = shelf(place); const i = sh.indexOf(item); if (i >= 0) sh.splice(i, 1); }
+    if (own) log(state, `${first(s)}'s ${item.name.toLowerCase()} ran out.`, "info");
+    else if (!shelf(place).some((it) => it.key === item.key)) log(state, `The last ${item.name.toLowerCase()} ${place.base ? `at ${place.base.name}` : `with the ${teamName(state, place.party)}`} is used up.`, "info");
+  }
+}
+function dropCarried(s, item) {
+  for (const k of Object.keys(s.gear || {})) if (s.gear[k] === item) { s.gear[k] = null; return; }
+  const i = (s.pockets || []).indexOf(item);
+  if (i >= 0) { s.pockets[i] = null; return; }
+  const pk = packOf(s) || [];
+  const j = pk.indexOf(item);
+  if (j >= 0) pk[j] = null;
 }
 
 // What using an item would do, in a few words (tooltips, the Use button). "" when it cannot be used.
