@@ -293,7 +293,7 @@ if (!QUICK) {
   // Harder? The same raids (same worlds, seeds) one with and one without the soldiers, compared pair by pair. With the
   // hunting rifle, their counter (armour ×0.9 against it), they add only about +0.05 deaths a raid (about 450 pairs
   // over three seeds), while one raid to the next swings by ±0.8: 60 raids cannot tell that apart from nothing, and
-  // a sample can come out the other way (seed 7: -0.12 ± 0.10). Part of it is the bot: it walks over to search
+  // a sample can come out the other way (seed 7: -0.12 ± 0.10, and -0.03 ± 0.09 once the meds tables changed the dice). Part of it is the bot: it walks over to search
   // their bodies (botSkip false for the armoured, combat.js damage) and a plate carrier or vest fills a survivor's
   // hands (raidloot.js personalRoom), so it heads out sooner (about 0.5 turns a raid less, fewer drawn in by the
   // Heat). So the check is that they are not safer beyond chance: the paired difference no lower than 2 standard
