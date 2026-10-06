@@ -259,7 +259,7 @@ section("Foraging around a camp");
 {
   const state = mk();
   const forest = cleanTile(state, "forest");
-  const p = placeTeam(state, forest.id);
+  const p = placeTeam(state, forest.id, { food: 1.5 }); // half a day of food: short
   state.hour = dayIn(state, "summer", 10) * 24;
   state.forage = {};
   startOrder(state, p, { type: "camp", hours: 24 });
@@ -270,8 +270,15 @@ section("Foraging around a camp");
   note(`three people camping a summer day in a forest: ${r1(gathered)} food gathered around the camp (daylight, ${Math.round(F.FORAGE.camp.share * 100)}% of each hour)`);
   check(gathered > 0.8, `the fit forage around the camp in daylight (${r1(gathered)} food)`);
   check(!!card && /Foraged around the camp/.test(card.text || ""), "breaking camp says what was gathered");
+  // A well-fed camp rests (and carries home what its plan expected).
+  const fed = placeTeam(state, cleanTile(state, "forest", (t) => t.id !== forest.id).id, { food: 30 });
+  state.cards.length = 0;
+  startOrder(state, fed, { type: "camp", hours: 12 });
+  const ff = carried(fed, "food");
+  for (let i = 0; i < 12; i++) { state.hour++; taskHour(state, fed); }
+  check(carried(fed, "food") === ff, "a camp with food for days does not forage");
   // The badly hurt rest instead.
-  const q = placeTeam(state, cleanTile(state, "forest", (t) => t.id !== forest.id).id);
+  const q = placeTeam(state, cleanTile(state, "forest", (t) => t.id !== forest.id).id, { food: 1 });
   for (const s of partyMembers(state, q)) s.health = 30;
   state.cards.length = 0;
   startOrder(state, q, { type: "camp", hours: 12 });

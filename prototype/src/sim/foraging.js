@@ -1,7 +1,7 @@
 // Foraging: wild food gathered off the land: berries, nuts, mushrooms, wild greens, roots, apples from abandoned
 // orchards, now and then a wild hive's honey or a handful of medicinal herbs. Three ways to forage:
 //   - the team order "Forage" on a land tile (N hours, like Hunt; orders.js), and a plan step;
-//   - a team in camp: its fit people forage around the camp in daylight (orders.js campHour);
+//   - a team in camp short of food (under a day): its fit people forage around the camp in daylight (orders.js campHour);
 //   - the base job "Forage" (work.js, economy.js ROLES): people gather within 2 tiles of the base 6 hours a day.
 // It stretches food; it does not replace farming: a forager brings in about a ration a day around a base in summer,
 // more in autumn, little in spring and next to nothing in winter, and the land around runs out when picked hard.
@@ -50,7 +50,7 @@ export const FORAGE = {
   weights: [1, 0.9, 0.8, 0.7, 0.6, 0.5], floorWeight: 0.4,
   dusk: 0.6, night: 0.1, storm: 0.5,
   hurt: 40, hurtMult: 0.5,   // under this health a forager counts half
-  camp: { share: 0.4, health: 50, from: 7, to: 18 }, // a camp's fit people forage in daylight, a share of an hour each
+  camp: { share: 0.4, health: 50, below: 1 }, // a camp short of food (under `below` days) forages: its fit people, in daylight, a share of each hour
   herbs: 0.01, honey: 0.004, honeyFood: 2, mushroom: 0.0025, mushroomSev: [12, 28],
   base: { radius: 2, hours: 6, cap: 3, capBig: 4, bigAt: 12 }, // the Forage job: hours a day, foragers a base wants
 };
@@ -219,7 +219,10 @@ export function forageHour(state, p) {
 // A team in camp (orders.js campHour): its fit people forage around the camp in daylight, part of the hour.
 export function campForageHour(state, p) {
   if (!daylight(state.hour) || !p.task) return 0;
-  const members = partyMembers(state, p).filter((s) => s.health >= FORAGE.camp.health && !s.woundInfected && workFactor(s) >= 0.35);
+  // Only while the team is short of food: a well-fed camp rests (and carries home what its plan expected).
+  const all = partyMembers(state, p);
+  if (!all.length || (carried(p, "food") + carried(p, "preserved")) / all.length >= FORAGE.camp.below) return 0;
+  const members = all.filter((s) => s.health >= FORAGE.camp.health && !s.woundInfected && workFactor(s) >= 0.35);
   if (!members.length || forageAbundance(state, partyTile(p)) < 0.02) return 0;
   const got = p.task.forage || (p.task.forage = { rations: 0, left: 0 });
   return gatherHour(state, p, members, got, FORAGE.camp.share);
