@@ -15,6 +15,7 @@ import { cui, setConfirmEnd, setAutoRedeploy, setBattleView } from "./combat.js"
 import { helpTab } from "./help.js";
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
+import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -30,6 +31,7 @@ let API = null;
 export function initSettings(api) {
   API = api;
   if (api && api.options) setMapDetail(api.options.mapDetail !== false); // ui/terraindeco.js: the State Map's terrain detail
+  if (api && api.options) setMapAnim(api.options.mapAnim !== false); // ui/render.js: the State Map's animations
 }
 
 // sec: the Help tab's topic (a ui/help.js topic id).
@@ -160,6 +162,7 @@ function optionsTab(state, ui, api) {
     <h3>Display</h3><div class="setrow">
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often).")}>Map animations <select data-action="set-mapanim">${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label${tip("How battles are drawn: Isometric is the pseudo-3D view (walls, roofs cut away when your people are inside, heights; drag, the wheel and , . to pan, zoom and turn it); Top-down is the flat grid. I switches it in a battle.")}>Battle view <select data-action="set-battleview">${[["iso", "Isometric"], ["top", "Top-down"]].map(([v, l]) => `<option value="${v}" ${(cui.view === "top" ? "top" : "iso") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button data-action="zlook-open"${tip("Palette, gore and variants of the dead in battle")}>Zombie look…</button>
     </div>
@@ -324,6 +327,11 @@ export const SETTINGS_ACTIONS = {
 export const SETTINGS_CHANGE = {
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-battleview": (state, ui, el) => setBattleView(el.value === "top" ? "top" : "iso"),
+  "set-mapanim": (state, ui, el, api) => {
+    api.options.mapAnim = el.value !== "off";
+    setMapAnim(api.options.mapAnim);
+    saveOptions(api.options);
+  },
   "set-mapdetail": (state, ui, el, api) => {
     api.options.mapDetail = el.value !== "flat";
     setMapDetail(api.options.mapDetail);
