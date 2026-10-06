@@ -39,6 +39,7 @@ import { findCarried } from "./stealth.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
+import { FOLK, rollFolk, placeFolk, folkHint, noteFolk, folkAfterPlace } from "./floorfolk.js"; // who holds the upper floors (docs/multi-storey-crawl.md phase 3)
 import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
@@ -235,12 +236,16 @@ export function genBlock(state, c, n) {
     const street = rng.chance(0.6) ? streetA : STREETS[rng.int(0, STREETS.length - 1)];
     const id = `b${n}p${j}`;
     const raiders = n >= CRAWL.RAIDERS.from && rng.chance(Math.min(CRAWL.RAIDERS.max, CRAWL.RAIDERS.chance + CRAWL.RAIDERS.perBlock * (n - CRAWL.RAIDERS.from)));
-    places.push({
+    const place = {
       id, slot: j, key, name: `${BUILDINGS[key].name} on ${street}`, kind: BUILDINGS[key].name, rare: !!P.rare,
       dead: P.dead * (0.85 + rng.next() * 0.3), rich: P.rich, raiders,
       looted: mem.looted[id] || 0, // picked over by an earlier crawl
       blocked: null, quick: false,
-    });
+      known: false, // what the team knows of its upper floors (lookAround, or having been inside): folkHint
+    };
+    // Who holds its upper floors (floorfolk.js), by the city's dice: the same people every visit.
+    place.folk = rollFolk(rng, { key, n, storeys: placeStoreys(state, c, place, n), danger: placeDanger(state, c, place, n).level, raiders });
+    places.push(place);
   }
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
@@ -442,6 +447,8 @@ export function enterPlace(state, p, placeId, opts = {}) {
     // The special dead deeper in (zombietypes.js).
     const sp = specialChance(state, n);
     if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, crawlKind(state, state.rng), false, groups.find((g) => g.kind === "zombies")?.power || 3);
+    // Who holds the upper floors (floorfolk.js): survivors barricaded in, the raiders holed up with a watcher, a nest on top.
+    placeFolk(state, b, place, n, { kind: (rng) => crawlKind(state, rng) });
   }
   say(b, `City crawl, block ${n} (${DEPTHS[Math.min(n, DEPTHS.length - 1)]}). The city's Alert is ${alertName(c.alert)}: you start at Heat ${heat0}. Extract to come back out to the street.`, c.alert >= 60 ? "danger" : "info");
   c.inside = place.id;
@@ -492,7 +499,7 @@ export function snapshotBuilding(b) {
     w: b.w, h: b.h, cells: ground.map((x) => ({ ...x })), containers: R.containers.map((x) => ({ ...x })),
     floors: b.floors ? b.floors.map((F) => ({ cells: F.cells.map((x) => ({ ...x })), name: F.name })) : null,
     doors: R.doors ? R.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock })) : null,
-    units, occupants: R.occupants || null, heat: Math.round(R.heat),
+    units, occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk || null, // floorfolk.js: who held the upper floors, and how it went
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
   };
 }
@@ -515,6 +522,7 @@ export function restoreBuilding(state, b, snap) {
   R.containers = snap.containers.map((x) => ({ ...x, uid: x.uid != null && ids.has(x.uid) ? ids.get(x.uid) : x.uid }));
   if (snap.doors) R.doors = snap.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock }));
   if (snap.occupants) R.occupants = snap.occupants;
+  R.folk = snap.folk ? JSON.parse(JSON.stringify(snap.folk)) : null; // floorfolk.js (a met group stays met: no second card)
   const z = R.zones[0];
   if (b.floors) {
     // Every floor as it was left; the upper floors' reach floods from the first stairwell, the ground's from the front zone.
@@ -555,6 +563,7 @@ function afterPlace(state, result, setup, battle) {
       // The site remembers how picked over the place is (a later crawl finds less in it); the city a little too.
       const blk = c.blocks[ctx.block];
       const place = blk && blk.places.find((x) => x.id === ctx.place);
+      if (place) { place.known = true; noteFolk(place, battle); } // floorfolk.js: the team has been inside; the card says what is still up there
       if (place && snap.total) {
         const mem = memOf(t);
         mem.looted[ctx.place] = 1 - (1 - (place.looted || 0)) * (1 - snap.searched / snap.total);
@@ -580,6 +589,7 @@ function afterPlace(state, result, setup, battle) {
   addAlert(c, gained * CRAWL.ALERT.fromHeat);
   const got = [...Object.entries(result.loot.supplies || {}).map(([k, v]) => `${v} ${k}`), ...(result.loot.gear || []).map((g) => g.name)];
   say2(c, `${line} ${got.length ? `Found ${got.join(", ")}.` : "Found nothing."}${(result.survivorsDead || []).length ? ` Lost: ${(result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).join(", ")}.` : ""} Alert +${Math.round(gained * CRAWL.ALERT.fromHeat)}.`, result.outcome === "extracted" ? "good" : "danger", state.hour);
+  if (result.outcome === "extracted" && folkAfterPlace(state, p, battle)) say2(c, "The survivors from upstairs wait for you on the street.", "good", state.hour); // floorfolk.js: the recruit card
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), c.city);
   wormSearch(state, p, c.tile, r.hours || 1); // worm.js
   passHours(state, p, r.hours || 1);
@@ -696,6 +706,32 @@ export function lieLow(state, p) {
   say2(c, `You lie low for an hour. Alert ${alertName(c.alert)} (${Math.round(c.alert)}).`, "info", state.hour);
   return "";
 }
+
+// Look around: an hour watching the block's places from a doorway (Scouting). What the team can make out of each
+// place's upper floors (floorfolk.js: lights, voices and a watcher, something nesting) goes on the block card (place.known);
+// one look a block each visit. The Alert is unchanged (nobody moves).
+export function lookAround(state, p) {
+  const c = crawlOf(state, p);
+  if (!c) return "The team is not in a city.";
+  if (c.enc) return "Deal with what is in front of you first.";
+  const blk = blockOf(c);
+  if (blk.looked) return "You have looked this block over already.";
+  const L = FOLK.LOOK;
+  const chance = Math.min(L.max, L.base + L.perScout * bestSkill(state, p, "scouting"));
+  blk.looked = true;
+  const seen = [], missed = [];
+  for (const pl of blk.places) {
+    if (pl.blocked || placeStoreys(state, c, pl) < 2) continue;
+    if (pl.known || state.rng.chance(chance)) { pl.known = true; seen.push(pl); } else missed.push(pl);
+  }
+  gainXpAll(state, partyMembers(state, p), "scouting", USE.survey);
+  if (!passHours(state, p, L.hours)) return crawlGoneText(state, p);
+  const text = `An hour watching the block from a doorway.${seen.length ? ` ${seen.map((pl) => `${pl.name}: ${folkHint(pl)}`).join(". ")}.` : ""}${missed.length ? ` ${missed.map((x) => x.name).join(", ")}: nothing you could make out.` : ""}${!seen.length && !missed.length ? " Nothing here has an upper floor worth watching." : ""}`;
+  say2(c, text, "info", state.hour);
+  return text;
+}
+// The chance a look reads a place (the window's tip).
+export const lookChance = (state, p) => Math.min(FOLK.LOOK.max, FOLK.LOOK.base + FOLK.LOOK.perScout * bestSkill(state, p, "scouting"));
 
 // ---------- leaving ----------
 // Back out to the edge, a block at a time: each can hold trouble (exitRisk); at a high Alert from deep in, the first

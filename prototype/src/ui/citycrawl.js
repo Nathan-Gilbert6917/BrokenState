@@ -6,7 +6,9 @@ import { buildingHint } from "../sim/buildingmaps.js";
 import {
   CRAWL, EVENTS, activeCrawl, blockOf, placeLooks, placeRichness, moveRisk, exitRisk, crawlLoad, encounterOptions, alertName,
   enterPlace, quickSearch, nextBlock, leaveCity, lieLow, resolveEncounter, resolveEvent, eventChoices, continueLeaving, specialChance, placeStoreys, STOREY_BONUS,
+  lookAround, lookChance,
 } from "../sim/citycrawl.js";
+import { folkHint, FOLK } from "../sim/floorfolk.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -61,6 +63,7 @@ function blockCard(state, p, c) {
     <h3>Places</h3><div class="crawl-places" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:0.5rem">${places}</div>
     ${events ? `<h3 style="margin-top:0.6rem">On the street</h3>${events}` : `<div class="small muted" style="margin-top:0.4rem">The street is quiet.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end">
+      <button data-action="cc-look" data-id="${p.id}" ${blk.looked ? "disabled" : ""}${tip(blk.looked ? "You have looked this block over already." : `${FOLK.LOOK.hours} h watching the block's places from a doorway: what stirs on the upper floors of each (lights, voices and a watcher on the stairs, something nesting), about ${pct(lookChance(state, p))} a place by your best Scouting. The Alert does not change.`)}>Look around (${FOLK.LOOK.hours} h)</button>
       <button data-action="cc-low" data-id="${p.id}"${tip(`An hour off the street: the Alert fades by ${CRAWL.ALERT.lieLow + CRAWL.ALERT.decay * CRAWL.LIE_LOW_HOURS} (not below the city's own). Something may still find you (about ${pct(moveRisk(state, c, c.block) * 0.4)}).`)}>Lie low (1 h)</button>
       <button data-action="cc-next" data-id="${p.id}" ${c.block >= CRAWL.MAX_BLOCK || wall ? "disabled" : ""}${tip(c.block >= CRAWL.MAX_BLOCK ? "This is the heart of the city." : wall ? `${EVENTS[wall.key].title}: deal with it first.` : `Deeper: ${CRAWL.MOVE_HOURS} h on foot; about ${pct(nextRisk)} chance of trouble on the way. Block ${c.block + 1}: more and tougher dead, richer places${sp > 0 ? `, the special dead (${pct(sp)} of them)` : ""}.`)}>Go to the next block ▸</button>
       <button class="primary" data-action="cc-leave" data-id="${p.id}"${tip(c.block === 1 ? "You are at the edge: out straight away." : `${out.breakout ? "The city is roused: the first block on the way out is a fight (or a hard sneak). " : ""}About ${out.hours} h back to the edge through ${c.block - 1} block${c.block === 2 ? "" : "s"}: about ${pct(out.any)} chance of trouble on the way (${out.steps.map((s) => `block ${s.block}: ${pct(s.p)}`).join(", ")}). Die on the way and what you carry stays where you fall.`)}>Leave the city${c.block > 1 ? ` (${pct(out.any)} risk)` : ""}</button>
@@ -78,9 +81,13 @@ function placeCard(state, p, c, pl) {
   const picked = pl.looted > 0.05 ? ` · <span class="muted"${tip("Searched on an earlier visit: less is left.")}>picked over (${pct(pl.looted)})</span>` : "";
   const storeys = placeStoreys(state, c, pl);
   const storeyTip = storeys > 1 ? `${storeys} storeys: the stairs are on every floor; upper floors are less picked over (richer), the dead mostly below. Deeper blocks (${STOREY_BONUS.from1}+, ${STOREY_BONUS.from2}+) have taller offices and apartment blocks.` : "One storey.";
+  // What the team knows of the upper floors (sim/floorfolk.js): after a Look around on this block, or having been inside.
+  const up = folkHint(pl);
+  const upstairs = storeys > 1 ? `<div class="small ${up && up !== "nothing stirs upstairs" ? "" : "muted"}"${tip(up ? "What the team saw or heard of the upper floors: lights (survivors barricaded in: talk, trade, recruit, or they shoot), voices and a watcher on the stairs (raiders holed up above, their stash with them), something nesting (the special dead on the top floor, still until woken; richer pickings there)." : "Unknown until you look around this block (an hour) or go in.")}>Upstairs: ${esc(up || "unknown")}</div>` : "";
   return `<div class="card" style="margin:0">
     <div class="spread"><b>${esc(pl.name)}</b>${pl.rare ? `<span class="chip on"${tip("A rare find in a city: worth a look.")}>rare</span>` : ""}</div>
     <div class="small muted">${esc(pl.kind)} · ${esc(hint.size)}, ${hint.rooms} rooms · <span${tip(storeyTip)}>${storeys} ${storeys === 1 ? "storey" : "storeys"}</span>${picked}</div>
+    ${upstairs}
     <div class="small" style="margin:0.2rem 0">${esc(hint.hint)}</div>
     <div class="small"><span style="color:${LOOK_COLOR[looks.level]}"${tip(looks.sure ? "Your scout reads it right (Scouting 5+)." : "A guess from the street; a scout with Scouting 5+ would know.")}>Looks: ${esc(looks.text)}</span>${looks.people ? ` · <span class="danger"${tip("Someone moved behind the windows: people inside, likely armed.")}>movement inside</span>` : ""} · <span class="muted"${tip("How well stocked its shelves are likely to be (the depth, the place, how picked over it is).")}>richness ${rich.toFixed(2)}</span></div>
     ${status}
@@ -131,5 +138,6 @@ export const CRAWL_ACTIONS = {
   "cc-next": run((state, p) => nextBlock(state, p)),
   "cc-leave": run((state, p) => leaveCity(state, p)),
   "cc-low": run((state, p) => lieLow(state, p)),
+  "cc-look": run((state, p) => lookAround(state, p)),
   "cc-go": run((state, p) => continueLeaving(state, p)),
 };

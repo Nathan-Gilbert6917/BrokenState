@@ -539,6 +539,8 @@ function pickModal(state, ui) {
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)
   if (ui.inv && (ui.inv.loot || ui.inv.raid)) return [ui.inv.raid ? "rloot" : "loot", () => inventoryModal(state, ui)]; // over the battle screen
   if (!ui.started) return ["newrun", () => newRunScreen(state, ui)];
+  // A card raised over a fight (sim/floorfolk.js: the survivors barricaded upstairs) is the one card that shows during it.
+  if (state.combat && !state.combat.over && !state.gameOver && state.cards.length && state.cards[0].battle) return ["card", () => cardModal(state, state.cards[0])];
   if (state.combat) return state.gameOver && !state.combat.over ? ["over", () => gameOverScreen(state)] : null;
   // A card's result comes before "game over", so the last thing that happened is not skipped.
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];

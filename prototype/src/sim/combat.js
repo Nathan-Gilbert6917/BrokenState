@@ -63,6 +63,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
+import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
@@ -276,6 +277,7 @@ function dropSetup(state, setup) {
 export function finishCombat(state, setup, result) {
   const battle = state.combat && state.combat.setup === setup ? state.combat : null; // played on a map
   state.combat = null;
+  dropBattleCards(state); // floorfolk.js: a card raised over this fight has nothing to ask any more
   // The shots fired go on the map (fieldheat.js noteGunfire: a camp near the fight is more dangerous for a day or
   // two): a played battle's count, else the rounds the people used and as many again from armed enemies.
   {
@@ -1481,7 +1483,7 @@ export function moveAlong(b, u, path) {
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
 }
 
-function fire(b, a, t, opts = {}) {
+export function fire(b, a, t, opts = {}) {
   const w = WEAPONS[a.weapon];
   const rng = b.rng;
   if (w.cooldown) a.cd = w.cooldown; // a spitter spits every other turn (zombietypes.js zTick)
@@ -1809,6 +1811,7 @@ export function combatAct(state, act) {
   b.acted = true;
   if (b.raid && b.raid.choose) b.raid.choose = null; // acting on the street map: the street it is (buildingmaps.js)
   bump(b);
+  if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
   checkEnd(state, b);
   if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && activeAny(x) && x.ap > 0)) endPlayerTurn(state);
   return "";
@@ -1897,6 +1900,7 @@ function startPlayerTurn(state, b) {
   for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
+  if (b.raid && b.raid.folk && !b.over) folkTick(state, b); // floorfolk.js: the nest woken by the Heat or the noise of the enemy phase
   offerClear(b);
 }
 
@@ -3101,6 +3105,8 @@ export function chooseBuilding(state, id) {
 // Unaware enemies wander: guards walk a beat around their building, the dead shuffle.
 function patrol(b, u) {
   const rng = b.rng;
+  // floorfolk.js: the nest's dead keep still around their knot; a raider watcher stands his post by the stairwell (both still notice you).
+  if (u.nesting || u.watcher) { notice(b, u); if (!u.aware && u.kind === "human") spotBodies(b, u); u.ap = 0; return; }
   if (u.kind === "zombie" && !rng.chance(0.5)) { u.ap = 0; return; }
   const home = u.home || [u.x, u.y];
   if (!u.wp || (u.x === u.wp[0] && u.y === u.wp[1]) || rng.chance(0.15)) {
@@ -3205,7 +3211,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
   const scav = (s ? skill(s, "scavenging") : 0) + (u.scavBonus || 0); // scavBonus: Treasure Hunter (skills.js)
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
-  const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)); // upper storeys are less picked over (buildingmaps.js)
+  const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
   const reward = box.kind === "body" ? 1 : R.reward ?? 1; // buildingmaps.js rewardMult: city sites pay more, the countryside less
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
@@ -3353,6 +3359,7 @@ function autoRaidTurn(state) {
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   const stairCells = () => (R.stairs || []).filter(([x, y]) => cellAt(b, x, y).walk);
+  if (R.folk) resolveBattleCards(state); // floorfolk.js: a card raised over the fight (the survivors upstairs) answered by its weights
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.floors && activeAny(u) && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0); // storeys: each one acts on its own floor
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
@@ -3446,6 +3453,7 @@ function autoRaidTurn(state) {
   }
   // Storeys: the view ends on the floor of the first of your people still standing.
   if (b.floors && !b.over) { const first = b.units.find((x) => x.side === "player" && activeAny(x)); if (first && (first.f || 0) !== (b.floor || 0)) setFloor(b, first.f || 0); }
+  if (R.folk) resolveBattleCards(state); // a card its moves raised this turn
   bump(b);
   if (!b.over && b.phase === "player") endPlayerTurn(state);
 }

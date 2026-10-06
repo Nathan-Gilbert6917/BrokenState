@@ -73,6 +73,7 @@ const names = (list) => (list.length <= 1 ? list.map(first).join("") : `${list.s
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const skillChance = (s, dc) => clamp((s + 10 - dc + 1) / 10, 0.05, 0.95);
 const NUM = ["no one", "one", "two", "three", "four", "five", "six"];
+const UPSTAIRS_TYPES = new Set(["offices", "apartments", "police"]); // interiorOccupants: squatters prefer an upper floor here
 
 // ---------- state ----------
 export function wanderers(state) {
@@ -136,7 +137,8 @@ function pickKind(state, tileId, rng, site = false) {
 
 // ---------- the people ----------
 const MOOD_KEYS = Object.keys(W.MOODS);
-function newNeutralGroup(state, tileId, rng) {
+// Exported for floorfolk.js: the survivors barricaded upstairs in a city building are a group like any other met here.
+export function newNeutralGroup(state, tileId, rng) {
   const n = rng.weighted(W.NEUTRAL_SIZE, (x) => x[1])[0];
   const people = withRng(state, rng, () => Array.from({ length: n }, () => makeCandidate(state, { quality: 0.8, minHealth: 35, gearChance: 0.45 })));
   for (const s of people) { delete s.pending; s.wanderer = true; }
@@ -282,14 +284,17 @@ export function siteWanderers(state, tileId) {
 export function interiorOccupants(state, tile, plan) {
   const tileId = typeof tile === "object" && tile ? tile.id : tile;
   if (tileId == null || !state.tiles[tileId]) return [];
-  // A room away from the way in (not the entry, not locked) when the plan has one, by its id.
+  // A room away from the way in (not the entry, not locked) when the plan has one, by its id. Armed squatters in an
+  // office tower, an apartment block or a police station with storeys hole up on an upper floor (docs/multi-storey-crawl.md).
   const rooms = plan && Array.isArray(plan.rooms) ? plan.rooms.filter((r) => !r.entry && !r.locked) : [];
+  const upstairs = plan && plan.storeys > 1 && UPSTAIRS_TYPES.has(plan.key) ? rooms.filter((r) => (r.f || 0) > 0) : [];
   return siteWanderers(state, tileId).map((g, i) => {
     const kit = KITS[g.kind] || KITS.survivors;
     const rng = rngFor(state, "wander-inside", tileId, state.hour, i);
     const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp }))
       : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: rng.pick(kit.weapons), power: g.power }));
-    const room = rooms.length ? rooms[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * rooms.length)] : null;
+    const pool = !g.side || g.side === "hostile" ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
+    const room = pool.length ? pool[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * pool.length)] : null;
     return { ...g, side: g.side || "hostile", people, aware: false, room: room ? room.id : undefined };
   });
 }
