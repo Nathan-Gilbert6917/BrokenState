@@ -13,7 +13,7 @@
 //     convoy's crew by the share of their drinking the purified water left over does not cover. Each day before
 //     drinking (purifyDaily) a lit water boiler purifies the day's drinking for everyone fed there, each water filter
 //     PURIFY_FILTER a day, a shelter's lit and fed fire like the boiler; only in an emergency (the boiler cold for want
-//     of firewood and fuel, or a shelter's fire with nothing to burn, and no water filter) are the armory's
+//     of firewood, or a shelter's fire with nothing to burn, and no water filter) are the armory's
 //     purification tablets used, one per TABS_WATER water. Your people held by a group drink its water: RISE.CAPTIVE of
 //     a base's chance there (× GROUPS.BOILER on the eggs once the group boils); a group's own people are GROUPS.
 //   - water on the road (drinkHour): RAW_BASE + WATER × the eggs of the un-purified water the team drinks (p.wormEggs:
@@ -42,10 +42,12 @@
 //     land at CROP_MIN+ infection carries eggs: CROP per ration of crops eaten, FORAGE per ration of forage (base.wormCrop,
 //     base.wormForage, cargo.wormForage: like the meat, eaten last; dry crops threshed into the preserved stock are
 //     safe). A cook fire or a kitchen cooks them (boiling greens counts); a team's camp fire too.
-// The water boiler burns like heating (upkeep.js): BOILER_WOOD_HEAD firewood a head at the base a day (everyone fed
-// there), firewood first and fuel for what the wood does not cover (HEAT.wood fuel a firewood), on every day
-// un-purified water would be drunk (the purified water in store and the filters' share do not cover the day). A base
-// that cannot pay leaves it unlit that day (then the emergency tablets, if any) and drinks un-purified water.
+// The water boiler burns BOILER_WOOD_HEAD firewood's worth a head at the base a day (everyone fed there), on every day
+// un-purified water would be drunk (the purified water in store and the filters' share do not cover the day): any
+// burnable, firewood first, then the armory's burnable gear the base allows (woodcutting.js boilerBurnables: items
+// marked to burn, and cheap junk while "Boiler may burn spare wooden items and paper" is on), then fuel (HEAT.wood a
+// firewood). A base that cannot cover the day leaves it cold: the water filters and a shelter's fire purify what they
+// can, then (only with no filter) the emergency tablets, else the water is drunk un-purified.
 // The other groups (GROUPS, groupsDaily): a group base on infected ground loses people to the worm at the rate a
 // player base of its size would catch it (water WATER + crops CROP at CROP_MIN+, × eggs, × UNCURED: the half they
 // never cure), × its type (TYPE: military and fortress hubs boil their water, traders mostly, communes farm infected
@@ -55,9 +57,11 @@
 // The course (s.worm: { v: 2, stage, day, len, since, why, how, from (the cause as given), seen, treatedDay, carded,
 // locked, paid }): no silent days. From the day it is caught (day 0) each day costs DAY_HP[day − 1] health (3, 6, 10,
 // 15, 20, 24, 30: about 108 in seven days, then LATE_HP a day) and DAY_MOOD[day − 1] mood (2 … 8, through
-// relations.js addMood: the mood floor, the breaks and the notes follow). Nobody heals while it is in them
-// (medical.js, orders.js camp healing, a holding convoy, a prisoner's rations): at full health they die on day 7,
-// hurt sooner.
+// relations.js addMood: the mood floor, the breaks and the notes follow). While it is in them every healing heals
+// HEAL (half) of the usual (wormHealMult: medical.js rest, hospital beds, treatments and field treatment, orders.js
+// camp rest, a holding convoy, a prisoner's rations, a battle's patch-up): the ramp outpaces it. Untreated at full
+// health they die on day 7 with no rest (on the move), day 8 resting at a base, day 9 in a Clinic's or a Trauma
+// hospital's bed with a medic (default admit line, Medicine 6), up to day 10–11 with the best care; hurt, sooner.
 //   gut    days 1 to BRAIN_FROM − 1: they eat GUT_EAT more a day and work at GUT_WORK. A dewormer cures it surely,
 //          a purge by the odds.
 //   brain  from day BRAIN_FROM: fits and staggering (it gives itself away: BRAIN_SPOT), work at BRAIN_WORK; only
@@ -69,6 +73,12 @@
 // that spots it gets the card "The worm"; at a base the gut stage goes to the Medical tab, the brain stage is a card.
 // In a battle (carriers.js wormBattleRound) each battle hour (6 turns) costs an infected unit a 24th of the coming
 // day's damage (w.paid, taken off that day's damage at midnight).
+// Prisoners (your cells) and guests sheltering at a base are spotted the same way (spotOther) and take the same three
+// cures (otherTreatInfo, applyOtherTreat: the Medical tab, the Prisoners tab, the guests' card): a guest cured is
+// goodwill with their group (OTHERS.GUEST, a failed but honest attempt GUEST_TRIED), a prisoner's opinion of you rises
+// (OTHERS.OPINION / OPINION_TRIED) and their group's goodwill +RETURN_GOODWILL when released or traded back. The
+// night's care treats them only with the base's "Treat prisoners and guests too" on (base.wormCareOthers, default off;
+// the autopilot turns it on while guests shelter there).
 // Treating it (at a base: the Medical tab's buttons, and the night's automatic care, a dewormer first):
 //   - a dewormer (loot: pharmacies, clinics, hospitals, farms and ranches; made at a med station): a sure cure in the
 //     gut stage, DEWORM_HP health, no medic needed (a team carrying one can use it on the road);
@@ -126,7 +136,7 @@ import { canRadioGroup } from "./radio.js";
 import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city block
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
-import { fireLandOk, WOOD } from "./woodcutting.js"; // what keeps a camp fire burning
+import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
 export const WORM = {
   // Catching it
@@ -148,9 +158,15 @@ export const WORM = {
   // Spotting it (the damage shows from day 1)
   SPOT: 0.5, SPOT_MED: 0.05, SPOT_MEDIC: 1.5, TEAM_FROM: 1, TEAM_SPOT: 0.35, TEAM_SPOT_MED: 0.05, BRAIN_SPOT: 1,
   // Treating it
+  // Healing while it is in them: HEAL of the usual rate from every source (wormHealMult)
+  HEAL: 0.5,
   DEWORM_HP: 10, PURGE_MEDS: 2, PURGE: 0.5, PURGE_MED: 0.04, PURGE_TIER: 0.08, PURGE_MAX: 0.95, PURGE_HP: 25, PURGE_FAIL_HP: 10,
   SURGERY_MEDS: 4, SURGERY_LOAD: 3, SURGERY: 0.35, SURGERY_MED: 0.04, SURGERY_MAX: 0.9, SURGERY_HP: 40,
   ROAD_PURGE_HP: 50, ROAD_FAIL_HP: 15, HOPE: 0.25, HOPE_BRAIN: 0.08,
+  // Treating prisoners and guests (applyOtherTreat): a guest cured, their group's goodwill +GUEST (+GUEST_TRIED for a
+  // failed but honest attempt); a prisoner, their opinion of you +OPINION (+OPINION_TRIED), and their group's goodwill
+  // +RETURN_GOODWILL more when they are later released or traded back (prisoners.js)
+  OTHERS: { GUEST: 8, GUEST_TRIED: 3, OPINION: 12, OPINION_TRIED: 5, RETURN_GOODWILL: 3 },
   // Turning
   TURN_HURT: [10, 35], TURN_SECOND: 0.5, TURN_KILL: 0.12, TURN_MOOD: 8, LOCKED_MOOD: 4,
   // Rising away from your bases (wormRise): someone notices the last breath (the best of Medicine and Scouting); the
@@ -214,6 +230,10 @@ export const hasWorm = (s) => !!(s && s.worm);
 export function clearWorm(s) {
   if (s) s.worm = null;
 }
+// Healing while the worm is in them (rest at a base and in its hospital, a treatment's heal, camp rest, field
+// treatment, a holding convoy's rest, a prisoner's rations, a battle's patch-up): HEAL of the usual. The ramp outpaces
+// it: untreated it still kills in about a week.
+export const wormHealMult = (s) => (s && s.worm ? WORM.HEAL : 1);
 // Known to you: spotted at a base or by the team.
 export const wormSeen = (s) => { const w = wormOf(s); return !!w && w.seen != null; };
 // How much they can work (health.js workFactor): 1 unless the worm has hatched.
@@ -261,7 +281,7 @@ export function sourceEggs(state, tile) {
 // boiler. People drink purified water first, then un-purified water (economy.js baseDaily: base.drank), and the share
 // drunk un-purified is rolled (baseWormDaily): RAW_BASE + WATER × the eggs of the un-purified water here. Purification
 // tablets are kept for the teams on the road: a base uses the armory's only in an emergency, when its boiler is cold
-// for want of firewood and fuel (or a shelter's fire has nothing to burn) and it has no water filter.
+// with nothing to burn (no firewood, allowed junk or fuel; or a shelter's fire has nothing to burn) and it has no water filter.
 export const hasBoiler = (base) => count(base, "boiler") > 0;
 const isFilter = (it) => !!(it && GEAR[it.key] && GEAR[it.key].water);
 // Water filters here: in the armory, or held by someone at the base.
@@ -320,11 +340,14 @@ export function baseWater(state, base) {
   return { eggs: e.eggs * share, risk, raw: e.raw, ground: e.ground, rawShare: share, drawn, safe: false, cap, why: `${cold}${from}, not boiled or filtered: ${part} (the worm ${Math.round(risk * 1000) / 10}% a person a day)` };
 }
 
-// The base's water boiler: what it burns a day, like heating (upkeep.js heatUse): BOILER_WOOD_HEAD firewood a head
-// (everyone fed here), firewood first, then fuel for what the wood does not cover (HEAT.wood fuel a firewood).
+// The base's water boiler: what it burns a day: BOILER_WOOD_HEAD firewood a head (everyone fed here). It burns
+// anything burnable, in this order: firewood; then the armory's burnable gear the base allows (woodcutting.js
+// boilerBurnables: items marked to burn, and cheap junk with "Boiler may burn spare wooden items and paper" on), each
+// worth its GEAR `burn` in firewood; then fuel for the rest (HEAT.wood fuel a firewood, as heating).
 // { active (it has work here: the water filters do not purify the day's drinking: any un-purified water can carry the worm),
-// heads, wood (firewood on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling), text ("25 people × 0.2 = 5.0 firewood a
-// day (or 2.5 fuel)") }. On a given day it burns only when un-purified water would be drunk (boilerDaily).
+// heads, wood (firewood on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling),
+// text ("25 people × 0.2 = 5.0 firewood a day (or burnable junk, or 1.0 fuel)") }. On a given day it burns only when
+// un-purified water would be drunk (boilerDaily).
 export function boilerUse(state, base) {
   const heads = mouthsAt(state, base).heads;
   const wood = r2(heads * WORM.BOILER_WOOD_HEAD);
@@ -334,13 +357,16 @@ export function boilerUse(state, base) {
   // share: the days it burns, about (the share of the drinking the filters leave un-purified): each day it burns
   // purifies a whole day's drinking, so with filters covering part of it the purified water carries over.
   const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - cap.filters / cap.drink))) : 0;
-  const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or ${fuel.toFixed(1)} fuel)` : "nobody here";
+  const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or burnable junk, or ${fuel.toFixed(1)} fuel)` : "nobody here";
   return { active, heads, wood, fuel, share, lit: base.boiling !== false, text };
 }
-// Daily, before drinking (purifyDaily): burns the boiler's firewood (then fuel) from the stores on a day the purified
-// water in store and the filters' share do not cover the day's drinking;
-// an outpost short of it is covered from the hub over its supply line like its heating (needs.js heatDaily). A base
-// that cannot pay the whole day leaves it unlit and drinks un-purified water. Returns true when it burned.
+// Daily, before drinking (purifyDaily): on a day the purified water in store and the filters' share do not cover the
+// day's drinking, the boiler burns the day's firewood from the stores; short of it, the armory's burnable items the
+// base allows (the cheapest firewood first, whole items: what they make beyond the day stays as firewood), then fuel
+// for the rest. An outpost short of firewood and fuel is covered from the hub over its supply line like its heating
+// (needs.js heatDaily). A base that cannot cover the whole day burns nothing and leaves it cold: the filters and a
+// shelter's fire purify what they can, then (no filter) the emergency tablets, else un-purified water. A log line says
+// what it burned when it was not firewood. Returns true when it burned.
 function boilerDaily(state, base, people) {
   base.boilerBurn = { wood: 0, fuel: 0 };
   if (!hasBoiler(base) || !people.length) return false;
@@ -350,7 +376,8 @@ function boilerDaily(state, base, people) {
   const cap = purifyCap(state, base, false);
   const wanted = (st[RAW] || 0) > 0 && Math.max(0, st.water || 0) + Math.min(Math.max(0, st[RAW] || 0), cap.filters) + 1e-9 < cap.drink;
   if (!wanted) { base.boiling = true; return false; } // enough purified water today (or nothing to boil): it stands ready
-  const heatIn = () => Math.max(0, st.wood || 0) * HEAT.wood + Math.max(0, st.fuel || 0);
+  const woodIn = () => Math.max(0, st.wood || 0);
+  const heatIn = () => woodIn() * HEAT.wood + Math.max(0, st.fuel || 0);
   const h = base.type === "outpost" ? hub(state) : null;
   const strength = base.supplyLine ? base.supplyLine.strength : 0.5;
   if (h && h !== base && heatIn() < use.fuel && strength > 0) {
@@ -358,20 +385,32 @@ function boilerDaily(state, base, people) {
     const keepWood = (hb.active ? hb.wood : 0) * 2;
     const spareWood = Math.max(0, (h.stock.wood || 0) - keepWood);
     const sendWood = Math.min(spareWood, (use.fuel - heatIn()) / HEAT.wood / strength);
-    if (sendWood > 0) { h.stock.wood -= sendWood; st.wood = Math.max(0, st.wood || 0) + sendWood * strength; }
+    if (sendWood > 0) { h.stock.wood -= sendWood; st.wood = woodIn() + sendWood * strength; }
     const spareFuel = Math.max(0, (h.stock.fuel || 0) - Math.max(0, 2 * (hb.active ? hb.fuel : 0) - Math.max(0, h.stock.wood || 0) * HEAT.wood));
     const send = Math.min(spareFuel, Math.max(0, use.fuel - heatIn()) / strength);
     if (send > 0) { h.stock.fuel -= send; st.fuel = Math.max(0, st.fuel || 0) + send * strength; }
   }
-  const wood = Math.min(Math.max(0, st.wood || 0), use.wood);
-  const fuelNeed = Math.max(0, (use.wood - wood) * HEAT.wood);
+  // The plan: firewood, then whole items (the cheapest firewood first) while short, then fuel.
+  const wood = Math.min(woodIn(), use.wood);
+  const items = [];
+  let short = use.wood - wood;
+  for (const it of short > 1e-9 ? boilerBurnables(base) : []) { if (short <= 1e-9) break; items.push(it); short -= burnOf(it); }
+  const fromItems = burnablesWood(items);
+  const fuelNeed = Math.max(0, (use.wood - wood - fromItems) * HEAT.wood);
   const lit = (st.fuel || 0) + 1e-9 >= fuelNeed;
   if (lit) {
-    st.wood = Math.max(0, (st.wood || 0) - wood);
+    st.wood = Math.max(0, woodIn() - wood + Math.max(0, fromItems - (use.wood - wood))); // what the items make beyond the day stays as firewood
+    for (const it of items) base.armory.splice(base.armory.indexOf(it), 1);
     st.fuel = Math.max(0, (st.fuel || 0) - fuelNeed);
-    base.boilerBurn = { wood: r2(wood), fuel: r2(fuelNeed) };
+    base.boilerBurn = { wood: r2(wood), fuel: r2(fuelNeed), items: items.length, itemWood: fromItems };
     if (base.boiling === false) log(state, `The water boiler at ${base.name} is burning again.`, "good");
-  } else if (base.boiling !== false) log(state, `The water boiler at ${base.name} is cold: not enough firewood or fuel to burn (it needs ${use.text}). The water is drunk un-purified${filterCount(state, base) === 0 && tabStacks([], [base.armory]).length ? ", or treated with the armory's purification tablets while they last" : ""}.`, "danger");
+    if (items.length) log(state, `The water boiler at ${base.name} burned ${itemsText(items)} (${fromItems} firewood's worth)${fuelNeed > 0 ? ` and ${r2(fuelNeed)} fuel` : ""}: ${wood > 0 ? "the firewood ran short" : "no firewood left"}.`, "info");
+  } else if (base.boiling !== false) {
+    const then = filterCount(state, base) > 0 ? "The water filters purify what they can; the rest is drunk un-purified"
+      : isShelter(base) && fireLit(base) && base.fireFed !== false ? "The fire boils the water today"
+      : tabStacks([], [base.armory]).length ? "The armory's purification tablets treat the water while they last" : "The water is drunk un-purified";
+    log(state, `The water boiler at ${base.name} is cold: nothing left to burn (it needs ${use.text}). ${then}.`, "danger");
+  }
   base.boiling = lit;
   return lit;
 }
@@ -391,8 +430,8 @@ export function purifyDaily(state, base) {
   base.purified = { day: day(state), q: r2(q + tabs), boiler: cap.boiler, fire: cap.fire, filters: cap.filters, tabs, total: cap.total, drink: cap.drink };
   return q + tabs;
 }
-// The no-firewood emergency: a boiler cold for want of firewood and fuel (or a shelter whose lit fire has nothing to
-// burn) and no water filter here.
+// The no-firewood emergency: a boiler cold with nothing to burn (or a shelter whose lit fire has nothing to burn) and
+// no water filter here.
 export function tabsEmergency(state, base, cap = purifyCap(state, base)) {
   const noFire = (hasBoiler(base) && base.boiling === false) || (isShelter(base) && fireLit(base) && base.fireFed === false);
   return noFire && cap.nFilters === 0;
@@ -698,7 +737,7 @@ const findIn = (people, lists, key) => people.some((s) => [...(s.pockets || []),
 // One tablet makes WORM.TABS_WATER water safe. They are for the road: a team drops them into the un-purified water it
 // drinks when it carries no water filter and sits at no lit camp fire that can be kept going (drinkHour: a tablet is
 // opened when the last one's water is used up, the rest kept as p.tabWater for the next drink). A base uses them only
-// in the no-firewood emergency (emergencyTabs: its boiler cold for want of firewood and fuel, no water filter); else
+// in the no-firewood emergency (emergencyTabs: its boiler cold with nothing to burn, no water filter); else
 // tubes in the armory wait for a team to pack them (autopilot.js launchTrip, the planner). Tubes are found in people's pockets and packs, the team's cargo and the
 // base armory; an emptied tube is gone.
 const isTabs = (it) => !!(it && GEAR[it.key] && GEAR[it.key].tabs);
@@ -762,10 +801,15 @@ const teamHasDewormer = (state, p) => findIn(partyMembers(state, p), [(p.cargo &
 // kind: "dewormer" (gut stage, one in the armory or on someone here), "purge" (gut stage, meds and a medic) or
 // "surgery" (brain stage, a Clinic or better).
 export function wormTreatInfo(state, base, s, kind, ctx = null) {
-  const w = wormOf(s);
+  const away = !base || !residents(state, base.id).includes(s) ? `${s ? first(s) : "They"} ${s ? "is" : "are"} not at ${base ? base.name : "a base"}.` : "";
+  return courseTreatInfo(state, base, wormOf(s), s ? first(s) : "they", away, kind, ctx);
+}
+// The checks on a course w (a resident's, a prisoner's, a guest's): name for the text, away: why they cannot be
+// treated here ("" when they can).
+function courseTreatInfo(state, base, w, name, away, kind, ctx = null) {
   const out = { ok: false, reason: "", kind, cost: 0, chance: 0, treater: null, load: 1 };
-  if (!w || w.seen == null) { out.reason = `Nobody knows ${s ? first(s) : "they"} has the worm.`; return out; }
-  if (!base || !residents(state, base.id).includes(s)) { out.reason = `${first(s)} is not at ${base ? base.name : "a base"}.`; return out; }
+  if (!w || w.seen == null) { out.reason = `Nobody knows ${name} has the worm.`; return out; }
+  if (away) { out.reason = away; return out; }
   if (w.treatedDay === day(state)) { out.reason = `Already treated today. Next ${nextDayText(state)}.`; return out; }
   if (kind === "dewormer") {
     if (w.stage !== "gut") { out.reason = "Too late for a dewormer: the worm is in the brain."; return out; }
@@ -797,21 +841,26 @@ export function wormTreatInfo(state, base, s, kind, ctx = null) {
   out.ok = !out.reason;
   return out;
 }
-// Applies a checked treatment. Returns the message.
-export function applyWormTreat(state, base, s, info) {
-  const w = s.worm;
-  w.treatedDay = day(state);
-  if (info.kind === "dewormer") {
-    takeFrom(atBase(state, base.id), [base.armory], "dewormer");
-    cureWorm(state, s);
-    hurt(state, s, WORM.DEWORM_HP, base.tile, "of the worm", { raw: true });
-    return `${s.name} took a dewormer at ${base.name} and passed the worm. Weak for a few days, but clean.`;
-  }
+// Pays for a checked treatment (a dewormer from the armory or someone here; or the meds, the medic's time and the
+// practice) and rolls it. Returns true when it worked (a dewormer always does).
+function payTreat(state, base, info) {
+  if (info.kind === "dewormer") { takeFrom(atBase(state, base.id), [base.armory], "dewormer"); return true; }
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   state.medsUsed = (state.medsUsed || 0) + info.cost;
   spendMedicTime(state, base, info.treater, info.load);
   gainXp(state, info.treater.s, "medicine", USE.illness);
-  const ok = wormRng(state).chance(info.chance);
+  return wormRng(state).chance(info.chance);
+}
+// Applies a checked treatment. Returns the message.
+export function applyWormTreat(state, base, s, info) {
+  const w = s.worm;
+  w.treatedDay = day(state);
+  const ok = payTreat(state, base, info);
+  if (info.kind === "dewormer") {
+    cureWorm(state, s);
+    hurt(state, s, WORM.DEWORM_HP, base.tile, "of the worm", { raw: true });
+    return `${s.name} took a dewormer at ${base.name} and passed the worm. Weak for a few days, but clean.`;
+  }
   if (info.kind === "purge") {
     if (ok) {
       cureWorm(state, s);
@@ -839,17 +888,119 @@ export function treatWorm(state, base, survivorId, kind) {
   log(state, msg, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
   return msg;
 }
+// ---------- prisoners and guests (the same cures; WORM.OTHERS) ----------
+// Prisoners (your cells) and guests sheltering at a base with the worm, seen or not: [{ kind: "prisoner" | "guest",
+// key (for the buttons: "p<id>", "g<visitor id>:<n>"), w (the course), name, short, p | v, g }].
+// A guest's course is one entry of v.worm: { day, since, stage, seen, treatedDay }.
+export function wormOthersAt(state, base) {
+  const out = [];
+  if (!base) return out;
+  for (const p of prisonersAt(state, base.id)) if (p.s && p.s.worm) out.push({ kind: "prisoner", key: `p${p.id}`, w: migrateWorm(p.s.worm), name: `${p.name}, a prisoner`, short: first(p), p });
+  for (const v of state.visitors || []) {
+    if (v.phase !== "sheltered" || v.shelterBase !== base.id || !(v.worm && v.worm.length)) continue;
+    v.worm.forEach((g, i) => {
+      g.stage = stageFor(g.day || 0);
+      out.push({ kind: "guest", key: `g${v.id}:${i}`, w: g, name: `one of the guests (${v.name})`, short: "the guest", v, g });
+    });
+  }
+  return out;
+}
+// Known to you (spotted): the Medical tab, the Prisoners tab and the guests' card list these.
+export const wormOthersSeen = (state, base) => wormOthersAt(state, base).filter((o) => o.w.seen != null);
+const stillHere = (state, base, o) => (o.kind === "prisoner" ? prisonersAt(state, base.id).includes(o.p) && !!o.p.s.worm
+  : (state.visitors || []).includes(o.v) && o.v.phase === "sheltered" && o.v.shelterBase === base.id && (o.v.worm || []).includes(o.g));
+// What can be done for a prisoner or a guest (wormOthersAt): as for a resident (wormTreatInfo).
+export function otherTreatInfo(state, base, o, kind, ctx = null) {
+  const away = !o || !base || !stillHere(state, base, o) ? "They are no longer here." : "";
+  return courseTreatInfo(state, base, o ? o.w : null, o ? o.short : "they", away, kind, ctx);
+}
+// Applies a checked treatment to a prisoner or a guest. A prisoner's opinion of you rises (OTHERS.OPINION, or
+// OPINION_TRIED for a purge that failed) and their group remembers it when they go home (p.wormTreated: prisoners.js
+// releasePrisoner, tradeBack); a guest's group's goodwill (OTHERS.GUEST, GUEST_TRIED for a failed but honest
+// attempt). Returns the message.
+export function applyOtherTreat(state, base, o, info) {
+  const O = WORM.OTHERS;
+  const w = o.w;
+  w.treatedDay = day(state);
+  const ok = payTreat(state, base, info);
+  const by = info.treater ? first(info.treater.s) : "";
+  const what = info.kind === "dewormer" ? "a dewormer" : info.kind === "purge" ? `a purge (${info.cost} meds)` : `surgery (${info.cost} meds)`;
+  if (o.kind === "prisoner") {
+    const p = o.p, s = p.s;
+    if (info.kind === "surgery" && !ok) {
+      stats(state).killed++;
+      s.worm = null;
+      dropPrisoner(state, p);
+      return `${p.name}, a prisoner, died on the operating table at ${base.name}: the worm had gone too deep.`;
+    }
+    p.wormTreated = true;
+    if (!ok) {
+      s.health = Math.max(1, (s.health ?? 60) - WORM.PURGE_FAIL_HP);
+      p.opinion = (p.opinion || 0) + O.OPINION_TRIED;
+      return `The purge did not work: the worm holds on in ${p.name}, a prisoner at ${base.name} (${info.cost} meds). Try again ${nextDayText(state)}. They saw you try (opinion +${O.OPINION_TRIED}).`;
+    }
+    cureWorm(state, s);
+    s.health = Math.max(info.kind === "surgery" ? 5 : 1, (s.health ?? 60) - (info.kind === "dewormer" ? WORM.DEWORM_HP : info.kind === "purge" ? WORM.PURGE_HP : WORM.SURGERY_HP));
+    p.opinion = (p.opinion || 0) + O.OPINION;
+    return `${by ? `${by} treated` : "You treated"} ${p.name}, a prisoner at ${base.name}, for the worm with ${what}: it is out. ${first(p)} will not forget it (opinion +${O.OPINION}${p.factionId != null ? `; their group, goodwill +${O.RETURN_GOODWILL} when they go home` : ""}).`;
+  }
+  const v = o.v;
+  const group = v.name;
+  if (info.kind === "surgery" && !ok) {
+    stats(state).killed++;
+    v.worm.splice(v.worm.indexOf(o.g), 1);
+    v.size = Math.max(0, (v.size || 0) - 1);
+    changeGoodwill(state, v, O.GUEST_TRIED, "you tried to save one of theirs from the worm");
+    const msg = `One of the guests at ${base.name} (${group}) died on the operating table: the worm had gone too deep. The others saw you try (goodwill +${O.GUEST_TRIED}).`;
+    if (v.size <= 0) leaveMap(state, v, "wiped");
+    return msg;
+  }
+  if (!ok) {
+    changeGoodwill(state, v, O.GUEST_TRIED, "you tried to rid one of theirs of the worm");
+    return `The purge did not work: the worm holds on in one of the guests at ${base.name} (${group}; ${info.cost} meds). Try again ${nextDayText(state)}. They saw you try (goodwill +${O.GUEST_TRIED}).`;
+  }
+  v.worm.splice(v.worm.indexOf(o.g), 1);
+  stats(state).cured++;
+  changeGoodwill(state, v, O.GUEST, "you cured one of theirs of the worm");
+  return `${by ? `${by} treated` : "You treated"} one of the guests at ${base.name} (${group}) for the worm with ${what}: it is out. Their group is grateful (goodwill +${O.GUEST}).`;
+}
+// By hand (the Medical tab, the Prisoners tab, the guests' card): key from wormOthersAt. Logs and returns the message.
+export function treatOtherWorm(state, base, key, kind) {
+  const o = wormOthersAt(state, base).find((x) => x.key === key) || null;
+  const info = otherTreatInfo(state, base, o, kind);
+  if (!info.ok) return info.reason;
+  const msg = applyOtherTreat(state, base, o, info);
+  log(state, msg, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
+  return msg;
+}
+// The base's setting "Treat prisoners and guests too" (base.wormCareOthers, off by default): the night's care treats
+// their worm as well, after the residents'.
+export const othersCareOn = (base) => !!(base && base.wormCareOthers);
+
 // The night's automatic care (with the base's other care, medical.js autoCare): a dewormer first, else a purge in
-// the gut stage, surgery in the brain stage. It may dip into the meds reserve: the worm kills for sure.
+// the gut stage, surgery in the brain stage. It may dip into the meds reserve: the worm kills for sure. The residents
+// first; prisoners and guests only with the base's "Treat prisoners and guests too" on (othersCareOn).
 function wormCare(state, base) {
   if (!autoCareOn(base)) return;
+  const kinds = (w) => (w.stage === "gut" ? ["dewormer", "purge"] : ["surgery"]);
   for (const s of residents(state, base.id)) {
     const w = wormOf(s);
     if (!w || w.seen == null || w.locked) continue;
-    for (const kind of w.stage === "gut" ? ["dewormer", "purge"] : ["surgery"]) {
+    for (const kind of kinds(w)) {
       const info = wormTreatInfo(state, base, s, kind, kind === "dewormer" ? null : careCtx(state, base));
       if (!info.ok) continue;
       const msg = applyWormTreat(state, base, s, info);
+      log(state, `Night care at ${base.name}: ${msg}`, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
+      break;
+    }
+  }
+  if (!othersCareOn(base)) return;
+  for (const o of wormOthersAt(state, base)) {
+    if (o.w.seen == null) continue;
+    for (const kind of kinds(o.w)) {
+      const info = otherTreatInfo(state, base, o, kind, kind === "dewormer" ? null : careCtx(state, base));
+      if (!info.ok) continue;
+      const msg = applyOtherTreat(state, base, o, info);
       log(state, `Night care at ${base.name}: ${msg}`, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
       break;
     }
@@ -923,7 +1074,7 @@ function baseWormDaily(state, base) {
   for (const v of state.visitors || []) {
     if (v.phase !== "sheltered" || v.shelterBase !== base.id) continue;
     const list = v.worm || (v.worm = []);
-    for (let i = list.length; i < (v.size || 0); i++) if (wormRng(state).chance(other)) { list.push({ day: 0, since: day(state) }); stats(state).caught++; stats(state).water++; }
+    for (let i = list.length; i < (v.size || 0); i++) if (wormRng(state).chance(other)) { list.push({ day: 0, since: day(state), stage: "gut", seen: null, treatedDay: -99 }); stats(state).caught++; stats(state).water++; }
   }
 }
 
@@ -1001,14 +1152,19 @@ function stageDaily(state, s) {
   }
 }
 
+// A day's chance a base spots it in someone there (a resident, a prisoner, a guest): SPOT + SPOT_MED × the best
+// Medicine there, × SPOT_MEDIC with someone on the Medic role.
+function baseSpotChance(state, base) {
+  const here = atBase(state, base.id);
+  const med = Math.max(0, ...here.map((x) => skill(x, "medicine")));
+  return (WORM.SPOT + WORM.SPOT_MED * med) * (here.some((x) => x.role === "medic") ? WORM.SPOT_MEDIC : 1);
+}
 // Spotting it: a base's medic, or a team on the road (from TEAM_FROM). The damage shows from day 1.
 function spot(state, s, at) {
   const w = s.worm;
   let chance = 0;
   if (at.base && !at.holding) {
-    const here = atBase(state, at.base.id);
-    const med = Math.max(0, ...here.map((x) => skill(x, "medicine")));
-    chance = (WORM.SPOT + WORM.SPOT_MED * med) * (here.some((x) => x.role === "medic") ? WORM.SPOT_MEDIC : 1);
+    chance = baseSpotChance(state, at.base);
   } else if (at.party && w.day >= WORM.TEAM_FROM) {
     chance = WORM.TEAM_SPOT + WORM.TEAM_SPOT_MED * bestSkill(state, at.party, "medicine");
   }
@@ -1025,8 +1181,19 @@ function spot(state, s, at) {
 }
 
 // ---------- the prisoners' and the guests' course ----------
+// Spotting it in a prisoner or a guest (w: their course): as for a resident (baseSpotChance; the brain stage gives
+// itself away, BRAIN_SPOT). who: "Tom Reyes, a prisoner" / "one of the guests (…)". Logs it once.
+function spotOther(state, base, w, who) {
+  if (w.seen != null) return;
+  const chance = w.stage === "brain" ? WORM.BRAIN_SPOT : baseSpotChance(state, base);
+  if (!(chance > 0) || !wormRng(state).chance(chance)) return;
+  w.seen = day(state);
+  stats(state).spotted++;
+  log(state, `${who[0].toUpperCase()}${who.slice(1)} at ${base.name} has the worm: cramps, fever, eating like two; day ${w.day} of about ${WORM.COURSE}. ${w.stage === "gut" ? "A dewormer or a purge clears it now" : "Only surgery in a Clinic can save them now"}; left alone it kills them and they get up again. You can treat them (the Medical tab${/prisoner/.test(who) ? ", the Prisoners tab" : ", the guests' card in the Groups tab"}).`, "danger");
+}
 // A prisoner with the worm (caught from the base's water): the same days, health and mood (on the prisoner's record);
-// nobody treats them. Dead, they get up in the cells: locked away (idle in a cell) nobody is hurt.
+// spotted like a resident, treated by hand (the Medical and Prisoners tabs) or by the night's care with the base's
+// "Treat prisoners and guests too" on. Dead, they get up in the cells: locked away (idle in a cell) nobody is hurt.
 function prisonersWormDaily(state, base) {
   for (const p of [...prisonersAt(state, base.id)]) {
     const s = p.s;
@@ -1037,24 +1204,25 @@ function prisonersWormDaily(state, base) {
     w.stage = stageFor(w.day);
     s.health = Math.max(0, (s.health ?? 60) - dayHp(w.day));
     s.mood = Math.max(0, (s.mood ?? 30) - dayMood(w.day));
-    if (w.day === 1) log(state, `${p.name}, a prisoner at ${base.name}, is sick with the worm: cramps, fever, eating like two. Within the week it will kill them, and they will get up again.`, "danger");
-    if (s.health > 0) continue;
+    if (s.health > 0) { spotOther(state, base, w, `${p.name}, a prisoner`); continue; }
     const locked = inCell(state, p) && taskOf(p) === "idle";
     dropPrisoner(state, p);
     stats(state).turned++;
     riseAtBase(state, base, `${p.name}, a prisoner`, { locked, short: first(p), lockedText: "in the cells", of: true });
   }
 }
-// Guests sheltering at a base (visitors.js): v.worm, one entry a sick guest. They die on day COURSE (nobody here can
-// treat strangers) and get up among your people; the group is one fewer.
+// Guests sheltering at a base (visitors.js): v.worm, one entry a sick guest ({ day, since, stage, seen, treatedDay }).
+// Spotted like a resident and treated by hand (the Medical tab, the guests' card) or by the night's care with the
+// base's "Treat prisoners and guests too" on; untreated they die on day COURSE and get up among your people; the
+// group is one fewer.
 function guestsWormDaily(state, base) {
   for (const v of [...(state.visitors || [])]) {
     if (v.phase !== "sheltered" || v.shelterBase !== base.id || !(v.worm && v.worm.length)) continue;
     for (const g of [...v.worm]) {
       if (g.day === 0 && g.since === day(state)) continue;
       g.day += 1;
-      if (g.day === 1) log(state, `One of the guests at ${base.name} (${v.name}) is sick with the worm: cramps, fever. Within the week it will kill them, and they will get up again.`, "danger");
-      if (g.day < WORM.COURSE) continue;
+      g.stage = stageFor(g.day);
+      if (g.day < WORM.COURSE) { spotOther(state, base, g, `one of the guests (${v.name})`); continue; }
       v.worm.splice(v.worm.indexOf(g), 1);
       v.size = Math.max(0, (v.size || 0) - 1);
       stats(state).turned++;
@@ -1426,7 +1594,7 @@ export function wormTip(state, s) {
   const w = wormOf(s);
   if (!w) return "";
   const next = w.day + 1;
-  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and nobody heals while it is in them. Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
+  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and they heal at half the rate while it is in them. Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
   if (w.stage === "gut") bits.push(`In the gut: eats ${WORM.GUT_EAT} more food a day, works at ${Math.round(WORM.GUT_WORK * 100)}%.`);
   else bits.push(`In the brain: fits and staggering, works at ${Math.round(WORM.BRAIN_WORK * 100)}%.${w.locked ? " Locked away: nobody will be hurt when they turn." : ""}`);
   bits.push(wormCureText(s));

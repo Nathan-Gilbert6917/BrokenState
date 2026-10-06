@@ -27,7 +27,8 @@
 //   - un-purified water and uncooked food (worm.js: the water a base or a team drinks un-purified, game, crops and
 //     forage with the worm's eggs eaten raw): an upset stomach (stomach), WORM.SICK_X times the worm's own chance, rolled
 //     where the worm is (worm.js sickRoll). It costs no health, no thirst and hardly any work: a little mood a day for
-//     two to four days, then it passes (meds shorten it; automatic care leaves it alone). Only the worm hurts.
+//     two to four days, then it passes. Treating it is optional: one dose by hand (1 meds, the Medical tab or a team's
+//     panel) cures it at once; automatic care and the autopilot leave it alone. Only the worm hurts.
 //     Spoiled food stays dysentery: SICK.spoiled × the share of the fresh food stored outside in the warm (storage.js);
 //   - crowding: more people than beds, flu 0.2% + 1% x overcrowding (up to 3%);
 //   - contagion: each contagious case passes it on with its own chance per person a day (×1.6 crowded, ×0.4 in
@@ -77,9 +78,10 @@ export const CONDITIONS = {
   dysentery: { name: "Dysentery",  kind: "illness", icon: "🤢", sev: [30, 60], drift: 1,  hp: 8,  work: 0.2,  meds: 1, treat: 50, spread: 0.015, thirst: 1,
                desc: "From spoiled food or drinking whatever there is when parched. Drains health and water (+1 water a day). Good storage and full water tanks make it rarer." },
   // From un-purified water or uncooked food (worm.js sickRoll): mild, never kills, no thirst: mood only (mood: a flat
-  // amount a day in place of SICK.mood × severity). mild: automatic care does not spend meds on it.
-  stomach:   { name: "Upset stomach", kind: "illness", icon: "🥴", sev: [20, 40], drift: -7, hp: 0, work: 0.95, meds: 1, treat: 60, spread: 0, mood: 1.5, mild: true,
-               desc: "Cramps and an uneasy gut from un-purified water or food that was not cooked: no health lost, just a low mood for a few days, then it passes. Meds shorten it. It is not the worm: the worm hurts more every day." },
+  // amount a day in place of SICK.mood × severity). mild: automatic care (a base's and a team's) does not spend meds on
+  // it; cure: treating it is optional, and one dose (by hand: the Medical tab, a team panel) ends it at once.
+  stomach:   { name: "Upset stomach", kind: "illness", icon: "🥴", sev: [20, 40], drift: -7, hp: 0, work: 0.95, meds: 1, treat: 60, spread: 0, mood: 1.5, mild: true, cure: true,
+               desc: "Cramps and an uneasy gut from un-purified water or food that was not cooked: no health lost, just a low mood for a few days, then it passes. If you want it gone now, 1 meds cures it at once (automatic care leaves it alone). It is not the worm: the worm hurts more every day." },
   pneumonia: { name: "Pneumonia",  kind: "illness", icon: "🫁", sev: [50, 75], drift: 4,  hp: 12, work: 0,    meds: 1, treat: 30, spread: 0.01,
                desc: "Fluid in the lungs: cannot work, and it kills without meds. A hospital bed helps a lot." },
 };
@@ -202,8 +204,8 @@ export function removeCondition(s, key) {
 // Doses a course takes, set by the severity when it starts (1-3; injuries 1).
 export function dosesFor(c) {
   const d = CONDITIONS[c.key];
-  if (!d || d.kind !== "illness") return 1;
-  const n = c.sev < SICK.dose.one ? 1 : c.sev < SICK.dose.two ? 2 : 3;
+  if (!d || d.kind !== "illness" || d.cure) return 1; // cure: one dose ends it (an upset stomach)
+  const n =c.sev < SICK.dose.one ? 1 : c.sev < SICK.dose.two ? 2 : 3;
   return c.key === "pneumonia" ? Math.max(2, n) : n;
 }
 // Does it still want a dose (no course yet, or a course not finished)?
@@ -224,7 +226,7 @@ function giveDose(state, s, c, amount) {
   c.sev -= amount;
   c.treatedDay = day(state);
   if (c.dosed >= c.course) c.mending = true;
-  if (c.sev <= 0) { removeCondition(s, c.key); return true; }
+  if (c.sev <= 0 || (CONDITIONS[c.key] && CONDITIONS[c.key].cure)) { removeCondition(s, c.key); return true; } // cure: one dose ends it
   return false;
 }
 
@@ -266,7 +268,7 @@ export function conditionInfoCtx(state, base, s, key, ctx) {
   const medSkill = shown ? skill(shown.s, "medicine") : 0;
   const amount = d ? Math.round(d.treat * (hosp ? hosp.eff : 1) * (1 + medSkill * 0.02) * (shown && hasPerk(shown.s, "plaguedoctor") ? 1.5 : 1)) : 0; // Plague Doctor (skills.js)
   const course = c ? (c.course == null ? dosesFor(c) : c.course) : 0;
-  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev : false, treater: t, medic: t ? t.s : null, load: 1, treatedToday, course, dose: c ? (c.dosed || 0) + 1 : 0 };
+  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev || !!d.cure : false, treater: t, medic: t ? t.s : null, load: 1, treatedToday, course, dose: c ? (c.dosed || 0) + 1 : 0 };
 }
 
 export function treatConditionInfo(state, base, s, key, opts = {}) {
@@ -348,7 +350,7 @@ export function fieldDoseInfo(state, p, s, key) {
   else if (c.treatedDay === day(state)) reason = `Already had today's dose. Next ${nextDayText(state)}.`;
   else if (teamMeds(p) < d.meds) reason = `No meds: the team carries ${Math.floor(teamMeds(p))}.`;
   const course = c ? (c.course == null ? dosesFor(c) : c.course) : 0;
-  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, medic, value, course, dose: c ? (c.dosed || 0) + 1 : 0 };
+  return { ok: !reason, reason, cost: d ? d.meds : 0, amount, cures: c ? amount >= c.sev || !!d.cure : false, medic, value, course, dose: c ? (c.dosed || 0) + 1 : 0 };
 }
 // One dose from the team's meds (by hand: the team panel; automatically: teamCare).
 export function fieldDose(state, p, survivorId, key) {
@@ -784,7 +786,7 @@ export function conditionTip(state, s, c) {
   bits.push(dl == null ? "Getting worse at today's rate: it needs meds or rest." : `About ${dl} day${dl === 1 ? "" : "s"} left at today's rate.`);
   if (d.hp) bits.push(`Costs about ${r1(d.hp * c.sev / 100 * (c.mending ? 0.5 : 1))} health a day.`);
   bits.push(`Can work at ${Math.round(workFactor({ conditions: [c] }) * 100)}%${illnessAim({ conditions: [c] }) ? `, aim ${illnessAim({ conditions: [c] })}` : ""}, mood −${r1(conditionMood(c))} a day.`);
-  bits.push(c.mending ? "Treated: on the mend (no longer worsens)." : c.course != null ? `Treatment: ${c.dosed} of ${c.course} doses given (1 meds a day each).` : `Treatment: a course of ${dosesFor(c)} dose${dosesFor(c) === 1 ? "" : "s"}, 1 meds a day each (at a base a medic's time too); each takes about ${d.treat} severity off (more with a hospital and Medicine) and stops it worsening.`);
+  bits.push(d.cure ? `Treatment is optional: it passes on its own; ${d.meds} meds by hand (the Treat button) cures it at once. Automatic care leaves it alone.` : c.mending ? "Treated: on the mend (no longer worsens)." : c.course != null ? `Treatment: ${c.dosed} of ${c.course} doses given (1 meds a day each).` : `Treatment: a course of ${dosesFor(c)} dose${dosesFor(c) === 1 ? "" : "s"}, 1 meds a day each (at a base a medic's time too); each takes about ${d.treat} severity off (more with a hospital and Medicine) and stops it worsening.`);
   if (d.spread) bits.push(c.mending ? "Barely catching now." : "Contagious.");
   return bits.join(" ");
 }

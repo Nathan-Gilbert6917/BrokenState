@@ -3,7 +3,8 @@
 // protection lowers it (a hospital, a lit camp fire, full gauges); contagion spreads at a base and on a team; a course
 // of treatment costs 1-3 meds by severity and then the illness mends; untreated it worsens; a team doses from its own
 // meds; "no meds" is logged and alerted; the alerts for falling ill and a spreading illness; illness costs mood and aim;
-// the week's meds at a base; save and load (and conditions from an old save).
+// the week's meds at a base; save and load (and conditions from an old save); the upset stomach: mood only, left alone by
+// automatic care, a team's night care and the autopilot, and cured at once by one dose (the Medical tab's button, a team).
 // Usage: node tools/sicktest.js [seed]
 import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, hub, atBase, makeSurvivor, day, alive } from "../src/sim/world.js";
@@ -13,8 +14,11 @@ import * as Weather from "../src/sim/weather.js";
 import {
   addCondition, healthDaily, treatCondition, conditionsOf, illnessRisk, baseRiskCtx, teamRiskCtx, frailty, dosesFor,
   needsDose, conditionDrift, fieldDose, fieldDoseInfo, noMedsList, sickMedsWeek, sickStats, illnessAim, daysLeft, CONDITIONS, SICK,
-  medsToTreatAll, teamMeds,
+  medsToTreatAll, teamMeds, treatConditionInfo, autoWantsCondition, teamWants,
 } from "../src/sim/health.js";
+import { autoCare } from "../src/sim/medical.js";
+import { setAutopilot, governBase } from "../src/sim/autopilot.js";
+import { condTreatButton } from "../src/ui/health.js";
 import { computeAlerts } from "../src/ui/alerts.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 
@@ -248,6 +252,45 @@ const risk = (st, s, ctx) => illnessRisk(st, s, ctx).total;
   try { for (let d = 0; d < 5; d++) { B.hour += 24; healthDaily(B); B.cards.length = 0; } } catch (e) { err = e; }
   check(!err, `an old save's illness runs${err ? `: ${err.stack}` : ""}`);
   check(alive(B).every((s) => conditionsOf(s).every((x) => Number.isFinite(x.sev))), "no NaN severity");
+}
+
+// 7b. An upset stomach (worm.js sickRoll): mood only; treating it is optional and decisive (one dose cures it at once,
+// at a base or on a team); automatic care, a team's night care and the autopilot leave it alone.
+{
+  console.log("Upset stomach");
+  const { st, h, p } = scene(3);
+  p[0].role = "medic";
+  const s = p[1];
+  const D = CONDITIONS.stomach;
+  check(D.hp === 0 && !D.thirst && D.mood > 0 && D.mild && D.cure, "mood only: no health, no thirst; mild (no automatic care) and a one-dose cure");
+  addCondition(st, s, "stomach", "test", { sev: 40, quiet: true });
+  check(!autoWantsCondition(conditionsOf(s)[0]) && !teamWants(conditionsOf(s)[0]) && dosesFor(conditionsOf(s)[0]) === 1, "automatic care and a team's night care leave it alone; a course of one dose");
+  const plan = autoCare(st, h, { plan: true });
+  check(!plan.list.some((e) => e.s === s && e.key === "stomach"), "tonight's care plan does not include it");
+  setAutopilot(st, true, "balanced");
+  const meds0 = h.stock.meds;
+  governBase(st, h);
+  check(conditionsOf(s).some((c) => c.key === "stomach" && !c.dosed) && h.stock.meds === meds0, "the autopilot leaves it alone (no meds spent)");
+  setAutopilot(st, false);
+  const btn = condTreatButton(st, s, conditionsOf(s)[0]);
+  check(/Treat \(1 meds\)/.test(btn) && /cures the upset stomach at once/.test(btn) && !/disabled/.test(btn.split(">")[0]), "the Medical tab's button: \"Treat (1 meds)\", it cures it at once");
+  const info = treatConditionInfo(st, h, s, "stomach");
+  const msg = treatCondition(st, h, s.id, "stomach");
+  check(info.ok && info.cures && !conditionsOf(s).some((c) => c.key === "stomach") && h.stock.meds === meds0 - 1 && /It is gone/.test(msg), `one dose (1 meds) cures it at once: "${msg}"`);
+  // On a team, from its own meds.
+  const dest = st.tiles.find((t) => t.loc && t.id !== h.tile && st.grid.distance(t.id, h.tile) <= 6 && st.grid.distance(t.id, h.tile) >= 3);
+  const r = launchExpedition(st, { memberIds: [p[1].id, p[2].id], dest: dest.id, mission: "recon", stance: "normal", supplies: { food: 6, water: 6, meds: 2, ammo: 10 } });
+  const team = r.party;
+  addCondition(st, p[2], "stomach", "test", { sev: 35, quiet: true });
+  const m1 = teamMeds(team);
+  const fi = fieldDoseInfo(st, team, p[2], "stomach");
+  const fm = fieldDose(st, team, p[2].id, "stomach");
+  check(fi.ok && fi.cures && !conditionsOf(p[2]).some((c) => c.key === "stomach") && teamMeds(team) === m1 - 1 && /it is gone/.test(fm), `a team treats it on the road from its meds, at once: "${fm}"`);
+  // Untreated it costs mood, never health, and passes.
+  addCondition(st, p[0], "stomach", "test", { sev: 30, quiet: true });
+  const hp0 = p[0].health, mood0 = p[0].mood;
+  for (let d = 0; d < 8 && conditionsOf(p[0]).some((c) => c.key === "stomach"); d++) { st.hour += 24; healthDaily(st); }
+  check(p[0].health >= hp0 && p[0].mood < mood0 && !conditionsOf(p[0]).some((c) => c.key === "stomach"), "untreated: mood lost, no health, and it passes");
 }
 
 // 8. Every condition key is described and has an icon.

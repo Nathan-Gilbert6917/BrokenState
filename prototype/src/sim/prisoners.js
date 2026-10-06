@@ -38,7 +38,10 @@
 //     hold for ransom: their group (alive) is asked for goods worth 15 + 4 × their power; it answers in 2–4 days:
 //       pays (40% + goodwill / 200, −15% for aggressive groups, 10–90%; only what it can spare), goodwill −4 and the
 //       prisoner walks home; or refuses: goodwill −3 and a rescue raid is twice as likely for 10 days.
-//     trade back: free, goodwill +10 with their group. Release: goodwill +4 (they go home).
+//     trade back: free, goodwill +10 with their group. Release: goodwill +4 (they go home). Treated for the worm while
+//       held (worm.js applyOtherTreat: the Prisoners and Medical tabs' buttons): goodwill +3 more either way.
+//     the worm (worm.js): spotted and treated like a resident (a dewormer, a purge, surgery); their opinion of you
+//       rises (+12 cured, +5 for a failed purge). Prisoners heal at half the rate while it is in them.
 //     recruit (slow): a prisoner treated well grows to like you, 1 a day × (1 + 4% a point of the best talker's
 //       Speech + 3% a point of the leader's Leadership) × mood (the base's average mood / 55, 0.6–1.3) × their kind
 //       (zealots 0.35, soldiers 0.6, a loner 1.2); hungry −2 a day. At 100 they ask to join (recruits.js card):
@@ -71,6 +74,7 @@ import { coldFactor, foodUse } from "./upkeep.js";
 import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
+import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
 
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
@@ -512,16 +516,21 @@ export function tradeBack(state, id) {
   if (!p || !heldAt(state, p)) return "They are not held at a base.";
   const f = factionById(state, p.factionId);
   if (!f || !f.alive) return releasePrisoner(state, id);
-  goHome(state, p, PRISON.TRADE_BACK, "you returned their people");
-  return `${p.name} goes back to ${f.name}, unharmed. They will remember it (goodwill +${PRISON.TRADE_BACK}).`;
+  const cured = wormCured(p);
+  goHome(state, p, PRISON.TRADE_BACK + cured, cured ? "you returned their people, treated for the worm" : "you returned their people");
+  return `${p.name} goes back to ${f.name}, unharmed. They will remember it (goodwill +${PRISON.TRADE_BACK + cured}${cured ? `, ${cured} of it for treating their worm` : ""}).`;
 }
 export function releasePrisoner(state, id) {
   const p = byId(state, id);
   if (!p) return "Nobody to release.";
   const f = factionById(state, p.factionId);
-  goHome(state, p, f && f.alive ? PRISON.RELEASE : 0, "you let their people go");
-  return `${p.name} is let go${f && f.alive ? ` and heads back to ${f.name}` : ""}.`;
+  const cured = f && f.alive ? wormCured(p) : 0;
+  goHome(state, p, f && f.alive ? PRISON.RELEASE + cured : 0, cured ? "you let their people go, treated for the worm" : "you let their people go");
+  return `${p.name} is let go${f && f.alive ? ` and heads back to ${f.name}${cured ? ` (they were treated for the worm here: goodwill +${cured} more)` : ""}` : ""}.`;
 }
+// Treated for the worm while held (worm.js applyOtherTreat: p.wormTreated): their group's goodwill +RETURN_GOODWILL
+// more when they are released or traded back.
+const wormCured = (p) => (p.wormTreated && p.factionId != null ? WORM.OTHERS.RETURN_GOODWILL : 0);
 export function setMode(state, id, mode) {
   const p = byId(state, id);
   if (!p || !["hold", "recruit"].includes(mode)) return "";
@@ -643,7 +652,7 @@ export function prisonersDaily(state) {
       if (p.s) {
         const H = fed ? RD : PRISON.RATIONS.none;
         const h0 = health(p);
-        p.s.health = H.heal > 0 && p.s.worm ? h0 : H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal;
+        p.s.health = H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal * wormHealMult(p.s)) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal; // worm.js: half the healing while it is in them
         p.s.mood = clamp(mood(p) + H.mood, 0, 100);
         if (work > 0) {
           const T = PRISON.LABOUR.tire[fed ? rationOf(p) : "none"];

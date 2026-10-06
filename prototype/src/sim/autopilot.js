@@ -1929,6 +1929,12 @@ function equipFromArmory(state, base) {
 function planTreatment(state, base) {
   const g = gov(state);
   const people = atBase(state, base.id);
+  // Guests sheltering here (visitors.js): the night's care treats their worm too (worm.js "Treat prisoners and guests
+  // too"): a cured guest is goodwill, a guest who turns is one of the dead among your people.
+  if (!base.wormCareOthers && (state.visitors || []).some((v) => v.phase === "sheltered" && v.shelterBase === base.id)) {
+    base.wormCareOthers = true;
+    say(state, `${base.name}: the night's care treats the worm in prisoners and guests too (guests are sheltering here).`);
+  }
   const hurt = people.filter((s) => s.woundInfected || s.health < 50)
     .sort((a, b) => careNeed(b) - careNeed(a)); // worst off first (medical.careNeed, the same order as beds and night care)
   for (const s of hurt) {

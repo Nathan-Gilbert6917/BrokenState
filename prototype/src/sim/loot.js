@@ -249,5 +249,37 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0) {
   return key ? newItem(key, 1) : null;
 }
 
+// ---------- firewood (data.js SUPPLIES.wood) ----------
+// A woodpile, a log basket by the fireplace, split kindling in a shed, broken furniture: firewood turns up where wood is
+// burned or stored. Its own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max] units.
+// Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
+export const SITE_WOOD = {
+  farm: [0.3, 2, 5], barn: [0.35, 2, 6], ranch: [0.3, 2, 5], cabin: [0.4, 2, 6], lodge: [0.35, 2, 5], campground: [0.4, 2, 5],
+  ranger: [0.35, 2, 5], hardware: [0.25, 1, 4], feedstore: [0.2, 1, 3], town: [0.15, 1, 3], church: [0.1, 1, 3], motel: [0.08, 1, 2],
+};
+// Raid map containers (combat.js, a building's rooms too): by the room's type, × FURNITURE for wooden furniture
+// (cabinets, shelves, a counter; anything else half): a living room's log basket, a shed's kindling, a barn's woodpile.
+export const AREA_WOOD = {
+  house: [0.12, 1, 3], farmhouse: [0.2, 1, 4], barn: [0.3, 2, 5], cabin: [0.3, 2, 5], campsite: [0.35, 1, 4],
+  garage: [0.1, 1, 3], workshop: [0.15, 1, 3], chapel: [0.08, 1, 2],
+};
+const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
+// Firewood found this search hour at a site, or 0.
+export function rollSiteWood(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const w = t && t.loc ? SITE_WOOD[t.loc.type] : null;
+  if (!w) return 0;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "wood", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "woodqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
+// Firewood in a raid container of this area type (boxKind: the container's kind), or 0.
+export function rollAreaWood(state, tileId, areaType, boxKind, salt = "") {
+  const w = AREA_WOOD[areaType];
+  if (!w) return 0;
+  if (hash01(state.seed, "areawood", tileId, salt) >= w[0] * (FURNITURE[boxKind] || 0.5)) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "areawoodqty", tileId, salt) * (w[2] - w[1] + 1));
+}
+
 // Does an item fit a place (shares a theme tag)? place: tags array.
 export const fitsTags = (key, tags) => (ITEM_TAGS[key] || []).some((t) => tags.includes(t));
