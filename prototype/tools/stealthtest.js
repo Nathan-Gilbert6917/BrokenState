@@ -196,7 +196,8 @@ function prisonWorld(s, n = 2, cells = 1) {
   const food0 = h.stock.food, water0 = h.stock.water;
   st.hour = (day(st)) * 24; // midnight
   prisonersDaily(st);
-  check(food0 - h.stock.food === 2 * PRISON.FOOD && water0 - h.stock.water === 2 * PRISON.WATER, `two prisoners cost ${food0 - h.stock.food} food and ${water0 - h.stock.water} water a day`);
+  const pr = PRISON.FOOD * PRISON.RATIONS[PRISON.RATION_DEFAULT].share; // Short rations by default (prisoners.js)
+  check(Math.abs(food0 - h.stock.food - 2 * pr) < 1e-6 && water0 - h.stock.water === 2 * PRISON.WATER, `two prisoners on Short rations cost ${Math.round((food0 - h.stock.food) * 100) / 100} food and ${water0 - h.stock.water} water a day`);
   check(list.length === 2 && freeCells(st, h) === 1, `one Holding cells building holds ${PRISON.CELL_CAP} (${freeCells(st, h)} free)`);
   // Escape rates (Monte Carlo): guarded, unguarded, shed.
   const rate = (setup) => {
