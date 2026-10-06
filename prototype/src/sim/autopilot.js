@@ -36,7 +36,7 @@ import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
@@ -608,7 +608,7 @@ function waterRunWanted(state, base) {
   return waterTight(state, base) || (wp.near && wp.short && waterIn(base.stock) < wp.reserve * 0.5);
 }
 // Scrap (or parts) held back for water at a base: other builds, repairs and crafts leave it alone.
-const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler"]; // the boiler: safe water (worm.js)
+const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler", "water_barrel"]; // the boiler: safe water (worm.js)
 const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? waterPlan(state, base).hold[k] || 0 : 0);
 
 // ---------- food and the winter (the food planner) ----------
@@ -1575,7 +1575,7 @@ function roleSummaries(state) {
 const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
-  huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food",
+  huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
 };
@@ -1632,7 +1632,7 @@ function buildWishes(state, base) {
   const here = atBase(state, base.id);
   const people = here.length + returning(state, base);
   const isHub = base.type === "hub";
-  const queued = (t) => base.construction.filter((c) => c.type === t).length;
+  const queued = (t) => base.construction.filter((c) => c.type === t && !c.target).length;
   const beds = baseBeds(base) + queued("bunkhouse") * 6;
   const threat = threatAt(state, base);
   const st = base.stock;
@@ -1663,6 +1663,8 @@ function buildWishes(state, base) {
     add(f.type, `water for the summer (${wp.sw.short > 0 ? `${wp.sw.short} a day short` : `${wp.sw.reserve} to store for the heat waves`})`, wp.near && (f.type !== "well" || (st.parts || 0) >= 1));
   }
   if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && count(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max) add("cistern", "room to store more water");
+  // No building plot for a cistern (buildings.js PLOTS): a water barrel on a utility plot instead.
+  if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && !plotsFree(base, "building") && countAll(base, "water_barrel") + queued("water_barrel") < BUILDINGS.water_barrel.max) add("water_barrel", "room to store more water (no building plot for a cistern)");
   if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : 3)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
   // A hunting cabin (hunting.js) where the land around is good game country, before the winter or while food is short.
@@ -1929,6 +1931,12 @@ function equipFromArmory(state, base) {
 function planTreatment(state, base) {
   const g = gov(state);
   const people = atBase(state, base.id);
+  // Guests sheltering here (visitors.js): the night's care treats their worm too (worm.js "Treat prisoners and guests
+  // too"): a cured guest is goodwill, a guest who turns is one of the dead among your people.
+  if (!base.wormCareOthers && (state.visitors || []).some((v) => v.phase === "sheltered" && v.shelterBase === base.id)) {
+    base.wormCareOthers = true;
+    say(state, `${base.name}: the night's care treats the worm in prisoners and guests too (guests are sheltering here).`);
+  }
   const hurt = people.filter((s) => s.woundInfected || s.health < 50)
     .sort((a, b) => careNeed(b) - careNeed(a)); // worst off first (medical.careNeed, the same order as beds and night care)
   for (const s of hurt) {
@@ -3703,7 +3711,7 @@ function planSupplyRuns(state) {
       if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
       why = `${load} water (it is running dry)`;
     } else {
-      const wish = buildWishes(state, o).find((w) => BUILDINGS[w.type] && canBuild(state, o, w.type).reason !== `Limit reached (${BUILDINGS[w.type].max})`);
+      const wish = buildWishes(state, o).find((w) => { if (!BUILDINGS[w.type]) return false; const c = canBuild(state, o, w.type); return !c.noPlot && c.reason !== `Limit reached (${BUILDINGS[w.type].max})`; }); // no plot free: no scrap run for it
       const scrap = wish ? BUILDINGS[wish.type].cost.scrap || 0 : 0;
       if (wish && (o.stock.scrap || 0) < scrap && (h.stock.scrap || 0) >= scrap + 25 && home.length >= 5 && crewPool.length >= 1) {
         const deliver = [{ key: "scrap", qty: scrap + 2 }];

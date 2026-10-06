@@ -35,7 +35,7 @@ import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
-import { rollAreaFind } from "./loot.js";
+import { rollAreaFind, rollAreaWood } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { illnessAim } from "./health.js";
@@ -59,7 +59,7 @@ import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
-import { hasWorm } from "./worm.js"; // the worm in a living person
+import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
@@ -1975,7 +1975,7 @@ function heal(b, u, t) {
     if (u.miracle) t.stabSure = true; // Miracle Worker: always pulls through
     say(b, `${u.name} stabilizes ${t.name}. ${b.raid ? "They will be carried out if a teammate extracts" : "They will live if you hold the field"}.`, "good");
   } else {
-    const amt = Math.round((15 + u.medicine * 1.5) * (u.healMult || 1)); // healMult: Steady Hands
+    const amt = Math.round((15 + u.medicine * 1.5) * (u.healMult || 1) * (t.wormed ? WORM.HEAL : 1)); // healMult: Steady Hands; the worm (worm.js): half
     t.hp = Math.min(t.maxHp, t.hp + amt);
     say(b, `${u.name} patches up ${t === u ? "their own wounds" : t.name} (+${amt}).`, "good");
   }
@@ -3850,6 +3850,9 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);
       if (book) gear.push(book);
+      // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
+      const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
+      if (wood > 0) sup.wood = (sup.wood || 0) + wood;
       if (def.alarm && box.kind === "car" && rng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

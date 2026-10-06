@@ -166,6 +166,85 @@ const MAX_LEVELS = 4;      // zoom levels kept
 
 let curS = 1; // device pixels per world pixel this frame: passed to drawMapSprite so it need not read the transform
 const sprite = (cv, x, y, w, o) => drawMapSprite(ctx, cv, x, y, w, o, curS);
+// ---------- animation ----------
+// The sprites are single cached canvases; they come alive by motion and small overlays drawn each frame: teams and
+// parties on the move bob in step (vehicles rumble and raise dust), boats rock, live hordes shamble, herds graze,
+// campfires flicker and smoke, inhabited bases smoke from the hearth, a crash's smoke drifts, badges pulse. Each wants
+// frames at SLOW_MS (about 15 a second) while it is on screen (wantFrames); nothing animated on screen: the map
+// draws only when something changes (IDLE_MS). anim.on (Settings, Map animations) turns it all off.
+export const anim = { on: true };
+export const setMapAnim = (v) => { anim.on = !!v; forceDraw = true; };
+const SLOW_MS = 66;
+let animNeed = Infinity;   // this frame: the shortest frame gap an animation on screen wants
+let animNow = 0;           // this frame's clock (ms)
+const wantFrames = (ms = SLOW_MS) => { if (ms < animNeed) animNeed = ms; };
+const phaseOf = (k) => (((Math.imul(k | 0, 2654435761) >>> 0) % 1000) / 1000); // a fixed offset per thing, so they do not move in lockstep
+const animOn = () => anim.on && !lastTimelapse;
+let lastTimelapse = false;
+// A step's bob (map px, up is negative): |sin| over a step of periodMs.
+function stepBob(k, amp, periodMs = 380) {
+  if (!animOn()) return 0;
+  wantFrames();
+  const t = (animNow / periodMs + phaseOf(k)) % 1;
+  return -Math.abs(Math.sin(t * Math.PI)) * amp;
+}
+// A slow sway (radians), and a matching small bob, for the shambling dead and grazing herds.
+function sway(k, amp, periodMs) {
+  if (!animOn()) return 0;
+  wantFrames();
+  return Math.sin((animNow / periodMs + phaseOf(k)) * Math.PI * 2) * amp;
+}
+// An engine's rumble: a fraction of a pixel of jitter, a few times a second.
+function rumble(k, amp) {
+  if (!animOn()) return 0;
+  wantFrames();
+  return (Math.floor(animNow / 90 + phaseOf(k) * 7) % 2 ? amp : -amp);
+}
+// Rising smoke from (x, y): n puffs that grow, drift and fade as they climb `rise` map px.
+function smokeWisps(k, x, y, s, { n = 3, rise = 16, color = "170,170,165", alpha = 0.35, periodMs = 2400 } = {}) {
+  if (!animOn()) return;
+  wantFrames();
+  const ph = phaseOf(k);
+  for (let i = 0; i < n; i++) {
+    const t = (animNow / periodMs + i / n + ph) % 1;
+    const px = x + Math.sin(t * 5 + ph * 9) * 1.6 * s + t * 3 * s, py = y - t * rise * s, r = (0.9 + t * 2.4) * s;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${color},${(alpha * (1 - t) * Math.min(1, t * 5)).toFixed(3)})`;
+    ctx.fill();
+  }
+}
+// A fire's flicker: a warm glow that breathes, and a spark now and then rising from it.
+function fireGlow(k, x, y, s) {
+  if (!animOn()) return;
+  wantFrames();
+  const ph = phaseOf(k), f = 0.5 + 0.25 * Math.sin(animNow / 110 + ph * 20) + 0.25 * Math.sin(animNow / 47 + ph * 7);
+  ctx.beginPath();
+  ctx.ellipse(x, y, (3.2 + f) * s, (2.2 + f * 0.6) * s, 0, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,150,60,${(0.12 + f * 0.16).toFixed(3)})`;
+  ctx.fill();
+  const t = (animNow / 700 + ph) % 1;
+  if (t < 0.6) { ctx.fillStyle = `rgba(255,200,90,${(0.8 * (1 - t / 0.6)).toFixed(3)})`; ctx.fillRect(x + Math.sin(t * 9 + ph * 5) * 1.2 * s - 0.4 * s, y - (1 + t * 7) * s, 0.8 * s, 0.8 * s); }
+}
+// Dust behind a vehicle on the move (facing: +1 heading east, -1 west).
+function dustTrail(k, x, y, s, facing, w) {
+  if (!animOn()) return;
+  wantFrames();
+  for (let i = 0; i < 3; i++) {
+    const t = (animNow / 650 + i / 3 + phaseOf(k)) % 1;
+    ctx.beginPath();
+    ctx.arc(x - facing * (w / 2 + t * 9 * s), y - t * 2.5 * s, (1 + t * 2.2) * s, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(160,140,110,${(0.32 * (1 - t)).toFixed(3)})`;
+    ctx.fill();
+  }
+}
+// A point on a sprite's painter grid (gx, gy: mapsprites.js painter cells) as drawn at (cx, cy), w wide.
+function gridPoint(cv, cx, cy, w, gx, gy, facing = 1) {
+  const gw = gridW(cv) || 1, u = w / gw, h = spriteH(cv, w);
+  const lx = (gx + 0.5) * u - w / 2;
+  return [cx + (facing < 0 ? -lx : lx), cy - h / 2 + (gy + 0.5) * u];
+}
+
 
 // Per-world data that never changes (tile centers, terrain colors, bridges, which tiles are sites) plus the arrays
 // the per-frame pass fills, allocated once so a frame allocates nothing that grows with the map.
@@ -883,7 +962,7 @@ function unchanged(state, now) {
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
     last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
     last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail && last.fk === fk;
-  if (same && now - last.at < (last.anim ? ANIM_MS : IDLE_MS)) return true;
+  if (same && now - last.at < (last.anim ? ANIM_MS : Math.min(IDLE_MS, last.animMs ?? Infinity))) return true; // last.animMs: the slower animations (wantFrames)
   Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
   forceDraw = false;
   return false;
@@ -900,6 +979,7 @@ export function render(state) {
   if (!state.timelapse && unchanged(state, now)) { mapStats.skipped++; return; }
   frameNo++;
   mapStats.drawn++;
+  animNeed = Infinity; animNow = now; lastTimelapse = !!state.timelapse;
   const g = state.grid;
   setMapPx(g);
   const live = liveSet(state);
@@ -1066,7 +1146,8 @@ export function render(state) {
     const drawGrowth = (id, gi, isLive) => {
       if (!gi || !inView(id)) return;
       const s = zoomBoost(), w = (gi.growing ? 14 : 19) * s;
-      sprite(growthCanvas(gi.kind, gi.withered), G.x[id], G.y[id] + 1 * s, w, { alpha: (gi.growing ? 0.65 : 1) * (isLive ? 1 : 0.75) });
+      const swell = isLive && !gi.withered ? 1 + sway(id * 11 + 3, gi.growing ? 0.06 : 0.025, gi.growing ? 1300 : 2400) : 1;
+      sprite(growthCanvas(gi.kind, gi.withered), G.x[id], G.y[id] + 1 * s, w * swell, { alpha: (gi.growing ? 0.65 : 1) * (isLive ? 1 : 0.75) });
     };
     for (const gr of state.hiveGrowths || []) if (live.has(gr.tile)) drawGrowth(gr.tile, { kind: gr.kind, growing: gr.withered == null && state.hour < gr.ready, withered: gr.withered != null }, true);
     if (k) for (let id = 0; id < G.n; id++) if (!live.has(id) && k[id] && k[id].growth) drawGrowth(id, k[id].growth, false);
@@ -1081,6 +1162,7 @@ export function render(state) {
     if (!st) continue;
     const px = G.x[id], py = G.y[id];
     const s = zoomBoost(), w = 26 * s, started = st.started != null && st.started !== false;
+    if (started && isLive && animOn()) { wantFrames(); const f = 0.5 + 0.5 * Math.sin(animNow / 520 + phaseOf(id) * 6); ctx.beginPath(); ctx.ellipse(px, py + 6 * s, w * 0.5, w * 0.2, 0, 0, Math.PI * 2); ctx.fillStyle = `rgba(226,65,47,${(0.08 + 0.14 * f).toFixed(3)})`; ctx.fill(); }
     sprite(siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
     const bw = 24 * s, bx = px - bw / 2, by = py + 11 * s, frac = Math.max(0, Math.min(1, (st.biomass || 0) / HIVE.SITE_BIOMASS));
     ctx.fillStyle = "rgba(13,15,18,0.8)";
@@ -1096,6 +1178,7 @@ export function render(state) {
     ownerPlate(px, py, PLAYER_COLOR, s, 15, false);
     const cv = stagingSpriteCanvas(stagingStage(camp), PLAYER_COLOR, camp.fire !== false), w = STAGING_W * s, cy = py - 4 * s;
     sprite(cv, px, cy, w);
+    if (camp.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 13.5, 15); fireGlow(camp.tile * 3 + 1, fx, fy, s); smokeWisps(camp.tile * 3 + 2, fx, fy - 2 * s, s, { n: 3, rise: 14 }); } // mapsprites.js paintStaging: campfire at 12, 17
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
     const bw = 22 * s, bx = px - bw / 2, by = cy + h / 2 + 2 * s, f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
@@ -1115,11 +1198,19 @@ export function render(state) {
     const besieged = state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === b.id);
     if (besieged) animating = true;
     ownerPlate(px, py, PLAYER_COLOR, s, isHub ? 22 : 16, besieged);
-    const cv = baseSpriteCanvas(baseLook(b));
+    const look = baseLook(b), cv = baseSpriteCanvas(look);
     sprite(cv, px, cy, w);
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
-    if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s, ICON_W * s);
+    // Somebody home: smoke from the hearth (a shelter's stovepipe, with its fire pit glowing while lit).
+    if (state.survivors.some((x) => x.alive && x.location && x.location.kind === "base" && x.location.baseId === b.id)) {
+      if (look.kind === "shelter") {
+        const [sx, sy] = gridPoint(cv, px, cy, w, 23, 0);
+        smokeWisps(b.id * 3 + 1, sx, sy, s, { n: 3, rise: 15 });
+        if (look.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 12.5, 16); fireGlow(b.id * 3 + 2, fx, fy, s); }
+      } else smokeWisps(b.id * 3 + 1, px - w * 0.16, cy - h / 2 + 3 * s, s, { n: 3, rise: 17, alpha: 0.28 });
+    }
+    if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
     labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
     const node = nodes.find((n) => n.base === b);
@@ -1213,6 +1304,9 @@ export function render(state) {
       ctx.setLineDash([]);
       const cv = searchSmokeCanvas();
       sprite(cv, px, py - 6 * s, 20 * s);
+      const [fx, fy] = gridPoint(cv, px, py - 6 * s, 20 * s, 4.5, 11); // mapsprites.js paintSearchSmoke: the fire at 4, 12
+      fireGlow(c.center * 3 + 1, fx, fy, s);
+      smokeWisps(c.center * 3 + 2, fx, fy - 2 * s, s, { n: 4, rise: 30, color: "110,110,108", alpha: 0.45, periodMs: 3200 });
       pill(px + 13 * s, py - 18 * s, `? ${left}`, "#a0521c", s);
       continue;
     }
@@ -1260,9 +1354,11 @@ export function render(state) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.setLineDash([]);
-    sprite(cv, x, y, w, { facing, alpha: stale ? 0.45 : 1 });
+    const moving = !stale && target != null && target !== id;
+    const sw = stale ? 0 : sway(id * 7 + 1, moving ? 0.06 : 0.025, moving ? 1400 : 2600), hb = stale ? 0 : stepBob(id * 7 + 3, (moving ? 1.3 : 0.5) * s, moving ? 700 : 1700);
+    sprite(cv, x, y + hb, w, { facing, alpha: stale ? 0.45 : 1, angle: sw });
     // A Wallbreaker with the horde: the brute with the concrete fist stands at its head.
-    if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s, 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
+    if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s + (stale ? 0 : stepBob(id * 7 + 5, (moving ? 1.6 : 0.6) * s, moving ? 900 : 2000)), 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
     pill(x + w / 2, y - h / 2 + 2 * s, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
   }
   // Infested animals (sim/worm.js): herds you can see now, grey and gaunt on a pale ring, their number on a badge.
@@ -1277,7 +1373,7 @@ export function render(state) {
     ctx.strokeStyle = "#c9b98f";
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    sprite(cv, px, py, w);
+    sprite(cv, px, py + stepBob(hd.tile * 5 + 11, 0.7 * s, 1900), w, { angle: sway(hd.tile * 5 + 13, 0.02, 3100) });
     pill(px + w / 2, py - h / 2 + 2 * s, `${hd.size}`, "#6b5a3a", s);
   }
   // Other groups' parties you can currently see, by group type: convoys by vehicle (spiked pickup, humvee, armored
@@ -1297,6 +1393,7 @@ export function render(state) {
     if (p.phase === "siege") {
       const o = Math.min(s, BESIDE_MAX);
       sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
+      smokeWisps(p.id * 3 + 1, px - 25 * o, py + 17 * o - 8 * s, s, { n: 3, rise: 14 });
       groundRing(px + 24 * o, py + 12 * o, color, false, true);
       sprite(cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
       sprite(iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
@@ -1306,7 +1403,10 @@ export function render(state) {
     // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
-    sprite(cv, x, y - 3, w * k2, { facing: facingOf(state, p) });
+    const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
+    if (onWay && kind === "convoy") dustTrail(p.id, x, y + 4 * s, s, fo, w * k2);
+    const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 1.1 * s, 380);
+    sprite(cv, x, y - 3 + dy, w * k2, { facing: fo });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
@@ -1320,7 +1420,9 @@ export function render(state) {
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(b.tile, px, py);
     groundRing(x, y, b.color, false, false);
-    sprite(cv, x, y - 3, w * k2, { facing });
+    const onWay = next != null && next !== b.tile;
+    if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
+    sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
   }
   // Outsiders (sim/visitors.js): raiders from outside in dark red, merchants in gold, travellers in grey. Drawn where
@@ -1337,7 +1439,8 @@ export function render(state) {
     const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(v.tile, px, py);
     groundRing(x, y, color, heard, v.kind === "raiders");
-    sprite(cv, x, y - 3, w * k2, { facing, alpha: heard ? 0.55 : 1 });
+    const onWay = !heard && next != null && next !== v.tile;
+    sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
   }
@@ -1377,6 +1480,7 @@ export function render(state) {
     ctx.stroke();
   }
   last.anim = animating || glidingNow;
+  last.animMs = animNeed;
   last.glide = glidingNow;
 }
 
@@ -1601,7 +1705,17 @@ function groundRing(x, y, color, dashed, raid = false) {
 // Status icon at a sprite's top right: "alert" (waiting for orders), "work", "radio", "unknown" ("?" in color).
 function badge(x, y, kind, color) {
   const s = zoomBoost();
-  sprite(iconCanvas(kind, color), x + 12 * s, y - 12 * s, ICON_W * s);
+  const bx = x + 12 * s, by = y - 12 * s, k = Math.round(x * 7 + y * 13);
+  if (kind === "radio" && animOn()) { // the signal: a ring that grows and fades every couple of seconds
+    wantFrames();
+    const t = (animNow / 2200 + phaseOf(k)) % 1;
+    ctx.beginPath();
+    ctx.arc(bx, by, (3 + t * 9) * s, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(155,227,155,${(0.55 * (1 - t)).toFixed(3)})`;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  sprite(iconCanvas(kind, color), bx, by + (kind === "alert" ? stepBob(k, 1.6 * s, 900) : 0), ICON_W * s);
 }
 
 // Number badge (horde sizes): a pill with white text centered on (x, y).
@@ -1740,7 +1854,7 @@ function drawPlayerParty(state, p) {
         const kind = cross.mode === "raft" ? "raft" : "boat";
         const s = zoomBoost();
         sprite(wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
-        sprite(partySpriteCanvas(kind, look.color), px, py, spriteW(kind), { facing });
+        sprite(partySpriteCanvas(kind, look.color), px, py + sway(p.id * 3 + 2, 1 * s, 1500), spriteW(kind), { facing, angle: sway(p.id * 3 + 1, 0.07, 1900) }); // the boat rocks
         crewTag(p, px, py);
         return;
       }
@@ -1756,17 +1870,26 @@ function drawPlayerParty(state, p) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp";
     if (camping) { // tent and campfire behind the team
       const s = zoomBoost();
-      sprite(campSpriteCanvas(CAMP_TENT), px + 14 * s, py - 8 * s, 26 * s);
+      const cc = campSpriteCanvas(CAMP_TENT);
+      sprite(cc, px + 14 * s, py - 8 * s, 26 * s);
+      const [fx, fy] = gridPoint(cc, px + 14 * s, py - 8 * s, 26 * s, 14.5, 7); // the campfire (mapsprites.js paintCamp: campfire at 13, 9)
+      fireGlow(p.id * 5 + 1, fx, fy, s);
+      smokeWisps(p.id * 5 + 2, fx, fy - 2 * s, s, { n: 3, rise: 13 });
     }
     groundRing(px, py, ring, false);
     const cvp = partySpriteCanvas(look.kind, look.color, look.count), wp = spriteW(look.kind) * k2;
-    sprite(cvp, px, py - 3, wp, { facing });
+    // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
+    const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
+    const motor = ["truck", "sedan", "convoy", "supply"].includes(look.kind), sz = zoomBoost();
+    if (onWay && motor) dustTrail(p.id, px, py + 4 * sz, sz, facing, wp);
+    const dy = !onWay ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.8 : 1.1) * sz, look.kind.includes("cart") ? 520 : 380);
+    sprite(cvp, px, py - 3 + dy, wp, { facing });
     noteSprite(px, py - 3, wp, spriteH(cvp, wp));
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
-    if (heldUp(state, p)) pill(px, py - 22 * zoomBoost(), "Road blocked", "#8a5a1c", zoomBoost()); // sim/roadblocks.js
+    if (heldUp(state, p)) pill(px, py - (p.crewName ? 34 : 22) * zoomBoost(), "Road blocked", "#8a5a1c", zoomBoost()); // sim/roadblocks.js (above a crew's name)
     crewTag(p, px, py);
     return;
   }

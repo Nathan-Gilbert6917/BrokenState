@@ -408,3 +408,44 @@ export function baseWoodHint(state, base) {
   const t = state.tiles[best];
   return `a woodcutter brings in about ${r1(baseWoodDay(state, base))} a day here (best: ${TERRAIN_WORD[t.terrain] || t.terrain}${best === base.tile ? " around the base" : ""})`;
 }
+
+// ---------- burnables: gear made of wood, paper or cloth (data.js GEAR `burn`: the firewood it makes) ----------
+// Break down for firewood (inventory.js breakDownAt, the inventory screen; breakDownJunk, the armory's bulk button):
+// the item is gone and its `burn` firewood goes into the base's stores (from the armory, or someone's pack at a base)
+// or the team's cargo supplies (from the cargo or a member's pack: the camp fire burns it like any firewood carried).
+// It takes no time: it is kindling.
+// The water boiler (worm.js boilerDaily) burns, after the firewood, what the base allows from its armory: items marked
+// to burn (it.fire = "burn", any value) and, with the base's "Boiler may burn spare wooden items and paper" on
+// (base.boilerJunk, on by default), cheap junk (isJunk: burnable, a pack item (never a weapon, a tool, armour or a
+// bag) worth at most BURN.junkValue). An item marked to keep (it.fire = "keep") is never burned, nor anything worn or
+// held (only the armory's items are).
+export const BURN = { junkValue: 5 };
+export const burnOf = (it) => Math.max(0, (it && GEAR[it.key] && GEAR[it.key].burn) || 0);
+export const isJunk = (it) => burnOf(it) > 0 && GEAR[it.key].slot === "pack" && (GEAR[it.key].value || 0) <= BURN.junkValue;
+export const boilerJunkOn = (base) => !!base && base.boilerJunk !== false;
+export const boilerMayBurn = (base, it) => burnOf(it) > 0 && it.fire !== "keep" && (it.fire === "burn" || (boilerJunkOn(base) && isJunk(it)));
+// What the boiler may burn from this base's armory, the cheapest firewood first (value per firewood).
+export function boilerBurnables(base) {
+  const per = (it) => (GEAR[it.key].value || 0) / burnOf(it);
+  return (base.armory || []).filter((it) => boilerMayBurn(base, it)).sort((a, b) => per(a) - per(b));
+}
+export const burnablesWood = (list) => Math.round(list.reduce((a, it) => a + burnOf(it), 0) * 100) / 100;
+// The armory's junk the bulk button breaks down: burnable junk not marked to keep.
+export const armoryJunk = (base) => (base.armory || []).filter((it) => isJunk(it) && it.fire !== "keep");
+// "a broken chair and two paperback novels": what was burned or broken down.
+export function itemsText(list) {
+  const n = {};
+  for (const it of list) { const nm = ((GEAR[it.key] && GEAR[it.key].name) || it.name || it.key).toLowerCase(); n[nm] = (n[nm] || 0) + 1; }
+  const NUM = ["", "a", "two", "three", "four", "five", "six"];
+  const parts = Object.entries(n).map(([nm, k]) => (k === 1 ? `${/^[aeiou]/.test(nm) ? "an" : "a"} ${nm}` : `${NUM[k] || k} ${nm}${/s$/.test(nm) ? "" : "s"}`));
+  return parts.length <= 1 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+// The bulk button: every piece of unmarked junk in the armory into firewood. Returns the message.
+export function breakDownJunk(state, base) {
+  const list = armoryJunk(base);
+  if (!list.length) return "No junk to break down in the armory.";
+  const wood = burnablesWood(list);
+  for (const it of list) base.armory.splice(base.armory.indexOf(it), 1);
+  base.stock.wood = Math.max(0, base.stock.wood || 0) + wood;
+  return `Broke down ${itemsText(list)} for firewood at ${base.name}: +${wood} firewood.`;
+}

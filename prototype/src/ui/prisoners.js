@@ -10,6 +10,8 @@ import {
   PRISON, TASKS, prisonersAt, cellCap, prisonerView, prisonSummary, tasksAt, guardsAt, questionPrisoner, askRansom,
   tradeBack, releasePrisoner, setMode, executePrisoner, askToJoin, setRation, setAllRations, setTask, setAllTasks,
 } from "../sim/prisoners.js";
+import { wormOthersAt, WORM } from "../sim/worm.js"; // the worm in a prisoner: spotted, treated like a resident
+import { otherWormRow } from "./health.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => ` data-tip="${esc(t)}"`;
@@ -100,9 +102,13 @@ function prisonerCard(state, base, p, ui, watch) {
   const exTip = `Execute ${p.name}. Everyone here takes it hard: mood ${E.mood} (Brave or Tough ${E.hardened}, a Former Medic ${E.soft}). Goodwill ${E.goodwill} with ${E.group || "their group"} and ${E.others} with ${E.known} other group${E.known === 1 ? "" : "s"} you know. Infamy +${E.infamy} (now ${Math.round(E.infamyNow)}; above ${CONQUEST.INFAMY.wary} peaceful groups cool toward you). The others held here are cowed for ${E.fearDays} days (escapes ×${E.fear}, mood ${E.fearMood}).${confirm ? " Click again to do it." : ""}`;
   const workTxt = v.task === "idle" ? "in the cell" : v.work > 0 ? `${pctTxt(v.work)} of a survivor, ${v.watched ? "watched" : '<span class="warn">unwatched</span>'}` : `<span class="warn">not working</span> (${s.health < L.minHealth ? "too weak" : "nothing to do here now"})`;
   const hp = Math.round(s.health);
+  const wo = wormOthersAt(state, base).find((x) => x.kind === "prisoner" && x.p === p);
+  const worm = wo ? otherWormRow(state, base, wo) : ""; // "" until it is spotted
+  const cured = p.wormTreated && f ? WORM.OTHERS.RETURN_GOODWILL : 0; // treated for the worm: their group remembers it
   return `<div class="card" style="margin-top:0.5rem">
     <div class="spread"><b>${esc(p.name)}</b><span class="small muted">${esc(kind)} of ${esc(p.group)}${f ? ` (${esc(FACTION_TYPES[f.type].label)})` : ""} · held ${v.days} day${v.days === 1 ? "" : "s"}</span></div>
     <div class="small">${esc(where)} · <span class="${hp < 30 ? "danger" : hp < 50 ? "warn" : ""}">health ${hp}</span> · mood ${Math.round(s.mood)} · ${esc(top)}${traits ? ` · ${esc(traits)}` : ""}${p.unfed ? ` · <span class="danger">unfed ${p.unfed} day${p.unfed === 1 ? "" : "s"}</span>` : ""}</div>
+    ${worm}
     <div class="row small" style="margin-top:0.25rem;flex-wrap:wrap;gap:0.5rem;align-items:center">
       <label${tip(RATIONS_TIP)}>Rations <select data-action="pr-ration" data-id="${p.id}">${rationOptions(v.ration)}</select></label>
       <span class="muted">${n1(v.food)} food a day</span>
@@ -118,8 +124,8 @@ function prisonerCard(state, base, p, ui, watch) {
       <button class="mini" data-action="pr-ask" data-id="${p.id}" ${v.ask.ok ? "" : "disabled"}${tip(askTip)}>Ask to join (${pctTxt(v.ask.odds)})</button>
       <button class="mini ${p.mode === "recruit" ? "active" : ""}" data-action="pr-mode" data-id="${p.id}" data-mode="${p.mode === "recruit" ? "hold" : "recruit"}"${tip(p.mode === "recruit" ? "Stop trying to win them over: just hold them." : `Treat them well and talk: they come round slowly (1 a day × Speech, Leadership, the base's mood, who they were, rations: Full ×${R.full.recruit}, Starvation ×${R.starve.recruit}; weeks of good work up to +${pctTxt(L.recruitMax)}). At 100 they ask to join. Months, not days.`)}>${p.mode === "recruit" ? "Winning over ✔" : "Win them over"}</button>
       <button class="mini" data-action="pr-ransom" data-id="${p.id}" ${v.ransom && !p.ransom ? "" : "disabled"}${tip(rTip)}>Ask a ransom${v.ransom ? ` (${v.ransom.qty} ${esc(v.ransom.key)})` : ""}</button>
-      <button class="mini" data-action="pr-tradeback" data-id="${p.id}" ${f ? "" : "disabled"}${tip(f ? `Send ${p.name} back to ${f.name} unharmed: goodwill +${PRISON.TRADE_BACK}.` : "Their group is gone.")}>Trade back (+${PRISON.TRADE_BACK})</button>
-      <button class="mini" data-action="pr-release" data-id="${p.id}"${tip(`Let ${p.name} go${f ? `: they head back to ${f.name} (goodwill +${PRISON.RELEASE})` : ""}.`)}>Release</button>
+      <button class="mini" data-action="pr-tradeback" data-id="${p.id}" ${f ? "" : "disabled"}${tip(f ? `Send ${p.name} back to ${f.name} unharmed: goodwill +${PRISON.TRADE_BACK + cured}${cured ? " (+" + cured + " for treating their worm)" : ""}.` : "Their group is gone.")}>Trade back (+${PRISON.TRADE_BACK + cured})</button>
+      <button class="mini" data-action="pr-release" data-id="${p.id}"${tip(`Let ${p.name} go${f ? `: they head back to ${f.name} (goodwill +${PRISON.RELEASE + cured}${cured ? ", " + cured + " of it for treating their worm" : ""})` : ""}.`)}>Release</button>
       <button class="mini ${confirm ? "danger" : ""}" data-action="pr-execute" data-id="${p.id}"${tip(exTip)}>${confirm ? "Really execute?" : "Execute"}</button>
     </div>
     <div class="small muted" style="margin-top:0.2rem">Rough questioning: their health ${RQ.health}, your people's mood ${RQ.baseMood}, goodwill ${RQ.goodwill}. Execute: mood ${E.mood} here, goodwill ${E.goodwill}${E.group ? ` with ${esc(E.group)}` : ""} and ${E.others} with ${E.known} other${E.known === 1 ? "" : "s"}, infamy +${E.infamy}.</div>

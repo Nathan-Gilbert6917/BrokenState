@@ -22,6 +22,7 @@ import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, a
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
+import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -150,7 +151,6 @@ export function patients(state, base, h = activeHospital(state, base)) {
 // Passive heal per hour for one survivor at a base.
 export function healRatePerHour(state, base, s, hosp = activeHospital(state, base), inBed = null) {
   if (!isHurt(s)) return 0;
-  if (s.worm && s.alive) return 0; // worm.js: the worm feeds on them; nobody heals while it is in them
   const bed = inBed != null ? inBed : patients(state, base).includes(s);
   let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;
   if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
@@ -159,6 +159,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
   if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
+  if (perDay > 0) perDay *= wormHealMult(s); // worm.js: the worm feeds on them: half the healing while it is in them
   return perDay / 24;
 }
 
@@ -340,7 +341,7 @@ function woundInfo(state, base, s, ctx) {
   const value = shown ? shown.value : 0;
   // Perks of the one treating (skills.js): Steady Hands +25%, Miracle Worker's surgery 2× instead of 1.5×.
   const who = t ? t.s : shown ? shown.s : null;
-  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1));
+  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1) * wormHealMult(s)); // worm.js: half while infected
   const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
   const treatedToday = !!s && s.woundTreatedDay === ctx.day;
   let reason = "";
@@ -504,7 +505,7 @@ export function fieldTreatInfo(state, party, s) {
   // Perks of the team's medic (skills.js): Field Surgeon heals like a base treatment (1.5× on a severe wound) and
   // cleans infections 90% of the time; Steady Hands +25%.
   const fs = hasPerk(medic, "fieldsurgeon");
-  const heal = Math.round((fs ? (12 + value * 0.5) * (isSevere(s) ? SURGERY_MULT : 1) : FIELD_HEAL + value * 0.6) * (hasPerk(medic, "steadyhands") ? 1.25 : 1));
+  const heal = Math.round((fs ? (12 + value * 0.5) * (isSevere(s) ? SURGERY_MULT : 1) : FIELD_HEAL + value * 0.6) * (hasPerk(medic, "steadyhands") ? 1.25 : 1) * wormHealMult(s)); // worm.js: half while infected
   const cureChance = s && s.woundInfected ? (fs ? 0.9 : Math.min(0.85, 0.2 + value * 0.04)) : 0;
   const treatedToday = !!s && s.woundTreatedDay === day(state);
   let reason = "";

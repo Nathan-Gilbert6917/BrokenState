@@ -3,7 +3,9 @@
 // the food, always with eggs, herds thinned by hunting, spreading eggs where they wander, born on badly infected land);
 // camping on infested land only above the threshold; the stages, spotting (a medic sooner, a team later), the cures
 // (dewormer, purge, surgery, the night's care), turning at a base and on the road, the cards; the autopilot's boiler;
-// save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
+// half healing while infected and the death day; prisoners and guests spotted and treated (goodwill, opinion, the
+// night's-care toggle); the boiler burning any burnable (firewood, junk, fuel), breaking things down for firewood and
+// firewood in the loot; save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
 // Usage: node tools/wormtest.js [seed]
 import { createWorld, hub, atBase, residents, day, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
@@ -13,7 +15,7 @@ import { takeMeat, addMeat, expectHunt, huntTeam } from "../src/sim/hunting.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { readFileSync } from "node:fs";
-import { setAutopilot } from "../src/sim/autopilot.js";
+import { setAutopilot, governBase } from "../src/sim/autopilot.js";
 import { tickHour } from "../src/sim/world.js";
 import { workFactor } from "../src/sim/health.js";
 import { activeHospital } from "../src/sim/medical.js";
@@ -24,14 +26,17 @@ import {
   boilerUse, searchChance, wormSearch, wormHome, searchRiskText, cropLandBad, wormVegAt, wormForageIn, addWormCrop, addWormForage,
   eatRawForageCargo, unloadWormForage, groupWormRisk, groupsDaily, purifyDaily,
   purifyCap, campFireFed, teamTabCount, teamWaterHow, waterRisk, dayHp, stageFor, wormLabel, wormCureText, putDownOdds, migrateWorm,
+  wormOthersAt, wormOthersSeen, otherTreatInfo, applyOtherTreat, treatOtherWorm, othersCareOn,
 } from "../src/sim/worm.js";
 import { GEAR } from "../src/sim/data.js";
-import { fireLandOk, WOOD } from "../src/sim/woodcutting.js";
+import { fireLandOk, WOOD, campFireHour, woodHandsWanted, breakDownJunk, boilerBurnables, isJunk, BURN } from "../src/sim/woodcutting.js";
+import { breakDownAt, breakDownInfo, setFireMark } from "../src/sim/inventory.js";
+import { rollSiteWood, rollAreaWood, SITE_WOOD, AREA_WOOD } from "../src/sim/loot.js";
 import { wormBattleRound, riseInBattle } from "../src/sim/carriers.js";
 import { startCrawl, encounterOptions, resolveEncounter } from "../src/sim/citycrawl.js";
 import { createBattle } from "../src/sim/combat.js";
-import { takePrisonersAt } from "../src/sim/prisoners.js";
-import { healRatePerHour } from "../src/sim/medical.js";
+import { takePrisonersAt, prisonersDaily, releasePrisoner, PRISON } from "../src/sim/prisoners.js";
+import { healRatePerHour, treatAtBaseInfo, fieldTreatInfo, medicalHour } from "../src/sim/medical.js";
 import { campHealPerHour } from "../src/sim/orders.js";
 import { conditionsOf, CONDITIONS, addCondition, healthDaily, treatCondition, autoWantsCondition } from "../src/sim/health.js";
 import { drawWater } from "../src/sim/water.js";
@@ -106,7 +111,7 @@ function drinkDay(st, b) {
   const bu = boilerUse(st, h);
   check(n === 0 && baseWater(st, h).safe && near(50 - h.stock.wood, need, 0.01) && near(h.stock.fuel, 20), `a water boiler makes it safe (nobody caught it): it burned ${heads} × ${WORM.BOILER_WOOD_HEAD} = ${(50 - h.stock.wood).toFixed(1)} firewood from the stores, no fuel`);
   check(h.purified && near(h.purified.boiler, h.purified.drink, 0.01) && near(raw0 - h.stock.rawwater, h.purified.drink, 0.01) && h.drank.raw === 0, `it purified the day's drinking (${h.purified.q} un-purified → purified) and everyone drank purified water`);
-  check(bu.active && bu.lit && near(bu.wood, need, 0.01) && near(bu.fuel, need * HEAT.wood, 0.01) && /firewood a day \(or [\d.]+ fuel\)/.test(bu.text) && new RegExp(`boiled in the water boiler \\(${heads} people`).test(baseWater(st, h).why), `the water row says what it burns: "${bu.text}"`);
+  check(bu.active && bu.lit && near(bu.wood, need, 0.01) && near(bu.fuel, need * HEAT.wood, 0.01) && /firewood a day \(or burnable junk, or [\d.]+ fuel\)/.test(bu.text) && new RegExp(`boiled in the water boiler \\(${heads} people`).test(baseWater(st, h).why), `the water row says what it burns: "${bu.text}"`);
   h.stock.wood = need / 2; h.stock.fuel = 20;
   drinkDay(st, h);
   check(baseWater(st, h).safe && near(h.stock.wood, 0, 0.01) && near(20 - h.stock.fuel, (need / 2) * HEAT.wood, 0.01), `short of firewood it burns what there is and fuel for the rest (${(20 - h.stock.fuel).toFixed(2)} fuel: 1 firewood = ${HEAT.wood} fuel)`);
@@ -432,12 +437,50 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
   let d2 = 0;
   for (let d = 1; d <= 10 && t.alive; d++) { withNums(WORM, noSpot, () => wormDaily(st)); if (!t.alive) d2 = d; }
   check(d2 > 0 && d2 < diedOn, `someone at 40 health dies sooner (day ${d2})`);
-  // Nobody heals while it is in them.
+  // Half the healing while it is in them, from every source.
   const u = here[3];
-  u.health = 50; u.worm = course(2);
-  check(healRatePerHour(st, h, u) === 0 && campHealPerHour(st, { supplies: { food: 9 }, members: [] }, u) === 0, "nobody heals while it is in them (base and camp)");
+  u.health = 50; u.worm = null;
+  const camp = { supplies: { food: 9 }, members: [] };
+  const clean = { base: healRatePerHour(st, h, u), camp: campHealPerHour(st, camp, u), treat: treatAtBaseInfo(st, h, u).heal };
+  u.worm = course(2);
+  const sick = { base: healRatePerHour(st, h, u), camp: campHealPerHour(st, camp, u), treat: treatAtBaseInfo(st, h, u).heal };
+  check(clean.base > 0 && near(sick.base, clean.base * WORM.HEAL) && near(sick.camp, clean.camp * WORM.HEAL) && Math.abs(sick.treat - clean.treat * WORM.HEAL) <= 0.5,
+    `half the healing while it is in them (×${WORM.HEAL}): resting at a base ${(clean.base * 24).toFixed(1)} → ${(sick.base * 24).toFixed(1)} a day, camp rest ${(clean.camp * 24).toFixed(1)} → ${(sick.camp * 24).toFixed(1)}, a treatment +${clean.treat} → +${sick.treat}`);
+  {
+    // In a hospital bed, and field treatment on a team.
+    const hw = wormWorld(0.05, seed + 30);
+    const hp = atBase(hw.st, hw.h.id);
+    addBuilding(hw.h, "clinic");
+    for (const m of hp.slice(0, 3)) { m.role = "medic"; m.skills.medicine = 6; }
+    const x = hp[hp.length - 1];
+    x.health = 40;
+    const bedClean = healRatePerHour(hw.st, hw.h, x, activeHospital(hw.st, hw.h), true);
+    x.worm = course(2);
+    const bedSick = healRatePerHour(hw.st, hw.h, x, activeHospital(hw.st, hw.h), true);
+    x.worm = null;
+    const { p: tp, members: tm } = team(hw.st, hw.h, hw.h.tile, 2);
+    tp.supplies.meds = 5;
+    tm[0].health = 50;
+    const fClean = fieldTreatInfo(hw.st, tp, tm[0]).heal;
+    tm[0].worm = course(1);
+    const fSick = fieldTreatInfo(hw.st, tp, tm[0]).heal;
+    check(bedClean > 0 && near(bedSick, bedClean * WORM.HEAL) && fClean > 0 && Math.abs(fSick - fClean * WORM.HEAL) <= 0.5, `in a hospital bed ${(bedClean * 24).toFixed(1)} → ${(bedSick * 24).toFixed(1)} a day; a field treatment +${fClean} → +${fSick}`);
+    // A prisoner on Full rations heals 2 a day: 1 with the worm.
+    const f = hw.st.factions.find((y) => y.alive && y.bases.length);
+    const [pr] = takePrisonersAt(hw.st, f, hw.h, 1);
+    addBuilding(hw.h, "cells");
+    pr.ration = "full"; pr.task = "idle"; pr.s.health = 50;
+    hw.h.stock.food = 200; hw.h.stock.water = 100;
+    withNums(PRISON.ESCAPE, { guarded: 0, unguarded: 0, shed: 0, unfed: 0, lowMood: -1 }, () => withNums(PRISON.RESCUE, { chance: 0 }, () => prisonersDaily(hw.st)));
+    const h1 = pr.s.health;
+    pr.s.worm = course(1);
+    withNums(PRISON.ESCAPE, { guarded: 0, unguarded: 0, shed: 0, unfed: 0, lowMood: -1 }, () => withNums(PRISON.RESCUE, { chance: 0 }, () => prisonersDaily(hw.st)));
+    check(near(h1 - 50, PRISON.RATIONS.full.heal, 0.01) && near(pr.s.health - h1, PRISON.RATIONS.full.heal * WORM.HEAL, 0.01), `a prisoner's rations heal ${(h1 - 50).toFixed(1)} a day, ${(pr.s.health - h1).toFixed(1)} with the worm`);
+    const src = (f) => readFileSync(new URL(`../src/sim/${f}`, import.meta.url), "utf8");
+    check(/m\.health \+ 3 \* wormHealMult\(m\)/.test(src("supply.js")) && /t\.wormed \? WORM\.HEAL : 1/.test(src("combat.js")), "a holding convoy's rest (supply.js) and a battle's patch-up (combat.js) heal at half too");
+  }
   u.worm = null;
-  check(healRatePerHour(st, h, u) > 0, "and heals again once it is gone");
+  check(near(healRatePerHour(st, h, u), clean.base), "and heals at the full rate once it is gone");
   check(dayHp(9) === WORM.LATE_HP && stageFor(WORM.BRAIN_FROM - 1) === "gut" && stageFor(WORM.BRAIN_FROM) === "brain", `past day ${WORM.DAY_HP.length} it keeps on (${WORM.LATE_HP} a day)`);
   // The label and the cure text.
   u.worm = course(3, { seen: 1 });
@@ -1010,6 +1053,185 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(f.pop === 14 && party.strength === 4 && st.wormStats.road >= 1, "a party of theirs on a herd's land loses one (ROAD and the herd's eggs pinned to 1): the group is one fewer, the party weaker");
   st.parties.splice(st.parties.indexOf(party), 1);
   st.herds = [];
+}
+
+// ---------- 6e. the death day at half healing ----------
+{
+  console.log("The death day, healing at half");
+  // Untreated from full health, a day of the course then a day's healing (medicalHour), until they die.
+  const deathDay = (hosp, med = 6, admit = null) => {
+    const w = wormWorld(0.05, seed + 20);
+    w.h.autoTreat = false;
+    if (admit != null) w.h.admitBelow = admit;
+    const ppl = atBase(w.st, w.h.id);
+    for (const p of ppl) { p.role = "rest"; p.health = 100; p.skills.medicine = 0; }
+    if (hosp) { addBuilding(w.h, hosp); for (const m of ppl.slice(0, 3)) { m.role = "medic"; m.skills.medicine = med; } }
+    const s = ppl[ppl.length - 1];
+    s.worm = course(0, { seen: 0 });
+    for (let d = 1; d <= 14; d++) {
+      wormDaily(w.st);
+      if (!s.alive) return d;
+      for (let i = 0; i < 24; i++) medicalHour(w.st);
+    }
+    return 99;
+  };
+  const none = deathDay(null), clinic = deathDay("clinic"), best = deathDay("clinic", 10, 100);
+  check(none >= 7 && none <= 8, `untreated, resting at a base with no hospital, someone at full health dies on day ${none} (the ramp outpaces half-rate healing)`);
+  check(clinic > none && clinic <= 10, `in a staffed Clinic's bed with a medic (Medicine 6, the default admit line) on day ${clinic}; at best (Medicine 10, admitted at once) day ${best}`);
+}
+
+// ---------- 6f. prisoners and guests: spotted, treated, thanked ----------
+{
+  console.log("Prisoners and guests: spotted and treated");
+  const w = wormWorld(0.05, seed + 21);
+  w.h.autoTreat = false;
+  const ppl = atBase(w.st, w.h.id);
+  ppl[0].role = "medic"; ppl[0].skills.medicine = 5;
+  const f = w.st.factions.find((x) => x.alive && x.bases.length);
+  f.goodwill = 0;
+  const [pr] = takePrisonersAt(w.st, f, w.h, 1);
+  addBuilding(w.h, "cells");
+  pr.s.health = 100; pr.s.worm = course(0);
+  const gv = { id: 91010, kind: "explorers", name: "the test travellers", phase: "sheltered", shelterBase: w.h.id, size: 3, stock: {}, wares: [], goodwill: 10, known: true, alive: true, pact: null,
+    worm: [{ day: 0, since: -9, stage: "gut", seen: null, treatedDay: -99 }, { day: 0, since: -9 }] };
+  (w.st.visitors = w.st.visitors || []).push(gv);
+  const before = wormOthersSeen(w.st, w.h).length;
+  withNums(WORM, { SPOT: 1, SPOT_MED: 0 }, () => wormDaily(w.st));
+  const others = wormOthersSeen(w.st, w.h);
+  check(before === 0 && pr.s.worm.seen != null && gv.worm.every((g) => g.seen != null) && others.length === 3 && others.filter((o) => o.kind === "prisoner").length === 1
+    && w.st.log.some((l) => new RegExp(`${pr.name}, a prisoner at ${w.h.name} has the worm`).test(l.text)) && w.st.log.some((l) => /One of the guests \(the test travellers\) at .* has the worm/.test(l.text)),
+    "spotted like a resident (pinned): the prisoner and both guests, each with a log line; the Medical tab lists them (1 prisoner, 2 guests)");
+  // A guest cured by a dewormer: their group's goodwill +GUEST.
+  w.h.armory.push(newItem("dewormer"));
+  const g0 = gv.goodwill;
+  const gk = others.find((o) => o.kind === "guest").key;
+  const msg = treatOtherWorm(w.st, w.h, gk, "dewormer");
+  check(gv.worm.length === 1 && gv.goodwill === g0 + WORM.OTHERS.GUEST && new RegExp(`goodwill \\+${WORM.OTHERS.GUEST}`).test(msg), `a dewormer cures a guest: their group's goodwill +${WORM.OTHERS.GUEST} ("${msg}")`);
+  // A failed purge on the other: an honest attempt, +GUEST_TRIED; once a day.
+  const o2 = wormOthersAt(w.st, w.h).find((o) => o.kind === "guest");
+  const pi = otherTreatInfo(w.st, w.h, o2, "purge");
+  const g1 = gv.goodwill, meds0 = w.h.stock.meds;
+  applyOtherTreat(w.st, w.h, o2, { ...pi, chance: 0 });
+  check(pi.ok && gv.worm.length === 1 && gv.goodwill === g1 + WORM.OTHERS.GUEST_TRIED && near(meds0 - w.h.stock.meds, WORM.PURGE_MEDS) && !otherTreatInfo(w.st, w.h, wormOthersAt(w.st, w.h).find((o) => o.kind === "guest"), "purge").ok,
+    `a failed purge on a guest: ${WORM.PURGE_MEDS} meds, goodwill +${WORM.OTHERS.GUEST_TRIED} for trying, and only once a day`);
+  // Surgery for a guest in the brain needs a Clinic, as for anyone.
+  gv.worm[0].day = WORM.BRAIN_FROM; gv.worm[0].stage = "brain"; gv.worm[0].treatedDay = -99;
+  check(!otherTreatInfo(w.st, w.h, wormOthersAt(w.st, w.h).find((o) => o.kind === "guest"), "surgery").ok && !otherTreatInfo(w.st, w.h, wormOthersAt(w.st, w.h).find((o) => o.kind === "guest"), "dewormer").ok, "in the brain: no dewormer, and surgery needs a staffed Clinic");
+  // The prisoner: a purge that works, opinion +OPINION; released, their group's goodwill +RELEASE + RETURN_GOODWILL.
+  const op = wormOthersAt(w.st, w.h).find((o) => o.kind === "prisoner");
+  const opinion0 = pr.opinion;
+  const pm = applyOtherTreat(w.st, w.h, op, { ...otherTreatInfo(w.st, w.h, op, "purge"), chance: 1 });
+  check(!pr.s.worm && pr.opinion === opinion0 + WORM.OTHERS.OPINION && pr.wormTreated && /opinion \+/.test(pm), `a prisoner purged: their opinion of you +${WORM.OTHERS.OPINION} ("${pm}")`);
+  const fg0 = f.goodwill;
+  const rm = releasePrisoner(w.st, pr.id);
+  check(f.goodwill === fg0 + PRISON.RELEASE + WORM.OTHERS.RETURN_GOODWILL && /worm/.test(rm), `released, their group's goodwill +${PRISON.RELEASE} +${WORM.OTHERS.RETURN_GOODWILL} for the treatment ("${rm}")`);
+  // The night's care: residents only, unless the base's "Treat prisoners and guests too" is on.
+  const a = wormWorld(0.05, seed + 22);
+  a.h.autoTreat = true;
+  const av = { id: 91011, kind: "explorers", name: "the night travellers", phase: "sheltered", shelterBase: a.h.id, size: 2, stock: {}, wares: [], goodwill: 10, known: true, alive: true, pact: null, worm: [{ day: 1, since: -9, stage: "gut", seen: 0, treatedDay: -99 }] };
+  (a.st.visitors = a.st.visitors || []).push(av);
+  a.h.armory.push(newItem("dewormer"), newItem("dewormer"));
+  check(!othersCareOn(a.h), "\"Treat prisoners and guests too\" is off by default");
+  wormDaily(a.st);
+  check(av.worm.length === 1 && a.h.armory.filter((it) => it && it.key === "dewormer").length === 2, "the night's care leaves a sick guest alone while it is off");
+  a.h.wormCareOthers = true;
+  wormDaily(a.st);
+  check(av.worm.length === 0 && a.h.armory.filter((it) => it && it.key === "dewormer").length === 1 && av.goodwill === 10 + WORM.OTHERS.GUEST, "with it on, the night's care gives the guest a dewormer (goodwill too)");
+  // The autopilot turns it on while guests shelter at a base.
+  const b = wormWorld(0.05, seed + 23);
+  (b.st.visitors = b.st.visitors || []).push({ id: 91012, kind: "explorers", name: "the autopilot's guests", phase: "sheltered", shelterBase: b.h.id, size: 2, stock: {}, wares: [], worm: [] });
+  setAutopilot(b.st, true, "balanced");
+  governBase(b.st, b.h);
+  check(othersCareOn(b.h), "the autopilot turns \"Treat prisoners and guests too\" on at a base sheltering guests");
+}
+
+// ---------- 6g. the boiler burns any burnable; firewood from things and from the loot ----------
+{
+  console.log("The boiler's fuel, breaking things down, firewood in the loot");
+  const { st, h } = wormWorld(0.8, seed + 24);
+  addBuilding(h, "boiler");
+  h.armory = h.armory.filter((it) => it && !(GEAR[it.key].burn > 0) && !GEAR[it.key].tabs && !GEAR[it.key].water);
+  const need = boilerUse(st, h).wood;
+  const day0 = () => { h.stock.water = 0; h.stock.rawwater = 300; drinkDay(st, h); };
+  // Firewood first: the junk and the fuel are not touched.
+  h.stock.wood = need + 5; h.stock.fuel = 10;
+  h.armory.push(newItem("novel"), newItem("magazines"));
+  day0();
+  check(h.boiling === true && near(h.stock.wood, 5) && near(h.stock.fuel, 10) && h.armory.some((it) => it.key === "novel"), `firewood first (${need} a day): the junk and the fuel untouched`);
+  // No firewood: the allowed junk (cheapest firewood first), then fuel for the rest; a log line.
+  h.stock.wood = 0;
+  const junk = boilerBurnables(h);
+  const junkWood = junk.reduce((x, it) => x + GEAR[it.key].burn, 0);
+  const log0 = st.log.length;
+  day0();
+  check(need > junkWood && h.boiling === true && !h.armory.some((it) => it.key === "novel" || it.key === "magazines") && near(10 - h.stock.fuel, (need - junkWood) * HEAT.wood, 0.01)
+    && st.log.slice(0, st.log.length - log0).some((l) => /burned (a paperback novel and a stack of magazines|a stack of magazines and a paperback novel) \(0\.7 firewood's worth\) and [\d.]+ fuel/.test(l.text)),
+    `then the junk (${junkWood.toFixed(1)} firewood's worth), then fuel for the rest (${(10 - h.stock.fuel).toFixed(2)}): "The water boiler … burned a paperback novel and a stack of magazines"`);
+  // Marks and the toggle protect gear: a weapon only when marked; junk marked Keep never; the toggle off keeps junk.
+  h.stock.fuel = 10;
+  h.armory.push(newItem("nailbat"), newItem("comic"), newItem("puzzlebook"));
+  const loc = (key) => `armory:${h.id}:list:${h.armory.findIndex((it) => it.key === key)}`;
+  setFireMark(st, loc("comic"), "keep");
+  check(!boilerBurnables(h).some((it) => it.key === "nailbat" || it.key === "comic") && boilerBurnables(h).some((it) => it.key === "puzzlebook"), "a weapon is not burned unmarked, junk marked Keep never is; unmarked junk is");
+  h.boilerJunk = false;
+  check(!boilerBurnables(h).length, "with \"Boiler may burn spare wooden items and paper\" off, no junk");
+  setFireMark(st, loc("nailbat"), "burn");
+  check(boilerBurnables(h).length === 1 && boilerBurnables(h)[0].key === "nailbat", "a weapon marked to burn is burned even then");
+  h.stock.wood = 0;
+  day0();
+  check(!h.armory.some((it) => it.key === "nailbat") && h.armory.some((it) => it.key === "comic") && h.armory.some((it) => it.key === "puzzlebook") && near(h.stock.wood, Math.max(0, GEAR.nailbat.burn - need), 0.01), `it burns the marked bat (${GEAR.nailbat.burn} firewood's worth: what the day does not need stays as firewood)`);
+  // Nothing to burn: cold → the filter, else the tablets, else un-purified.
+  h.boilerJunk = true;
+  h.armory = h.armory.filter((it) => !(GEAR[it.key].burn > 0));
+  h.stock.wood = 0; h.stock.fuel = 0;
+  h.armory.push(newItem("puritabs"));
+  day0();
+  check(h.boiling === false && h.drank.raw === 0 && h.armory.find((it) => it.key === "puritabs").dur < GEAR.puritabs.dur, "nothing to burn (no firewood, junk or fuel): cold, and the emergency tablets treat the water");
+  h.armory.push(newItem("waterfilter"));
+  const t1 = h.armory.find((it) => it.key === "puritabs").dur;
+  day0();
+  check(h.armory.find((it) => it.key === "puritabs").dur === t1, "with a water filter the tablets are kept (the filter first)");
+  h.armory = h.armory.filter((it) => !GEAR[it.key].tabs && !GEAR[it.key].water);
+  day0();
+  check(h.boiling === false && h.drank.raw > 0, "with neither, the water is drunk un-purified");
+  // The autopilot keeps firewood for the boiler: the wood plan counts its days, and woodcutters go after it.
+  h.stock.wood = 0;
+  const wn = woodNeed(st, h);
+  check(wn.boiler > 0 && wn.need >= Math.ceil(wn.boiler * WORM.BOILER_DAYS) && wn.soon && woodHandsWanted(st, h) > 0, `the wood plan keeps ${WORM.BOILER_DAYS} days of the boiler's firewood (${wn.need} wanted, in every season) and wants woodcutters for it`);
+  // Breaking down for firewood: an armory item, the bulk button (Keep stays), a pack, a worn weapon refused.
+  h.armory.push(newItem("guitar"), newItem("novel"), newItem("magazines"), newItem("pistol"));
+  setFireMark(st, loc("magazines"), "keep");
+  const w0 = h.stock.wood;
+  const bm = breakDownAt(st, loc("guitar"));
+  check(near(h.stock.wood - w0, GEAR.guitar.burn) && !h.armory.some((it) => it.key === "guitar") && /\+2 to/.test(bm) && !isJunk(newItem("guitar")) && isJunk(newItem("novel")), `"Break down for firewood": the guitar is gone, +${GEAR.guitar.burn} firewood ("${bm}"; worth more than junk: the button asks twice)`);
+  check(!breakDownInfo(st, loc("pistol")).ok && /will not burn/.test(breakDownInfo(st, loc("pistol")).reason), "metal things will not burn");
+  const w1 = h.stock.wood;
+  const jm = breakDownJunk(st, h);
+  check(near(h.stock.wood - w1, GEAR.novel.burn) && !h.armory.some((it) => it.key === "novel") && h.armory.some((it) => it.key === "magazines") && /novel/.test(jm), `the bulk button breaks down the unmarked junk (the magazines marked Keep stay): "${jm}"`);
+  const holder = atBase(st, h.id)[0];
+  holder.gear.weapon = newItem("nailbat");
+  check(!breakDownInfo(st, `s:${holder.id}:weapon`).ok && /off first/.test(breakDownInfo(st, `s:${holder.id}:weapon`).reason), "what is held or worn: take it off first");
+  // A team on the road: a book from its cargo into firewood, and its camp fire on bare ground burns it.
+  const { p, members } = team(st, h, h.tile, 2);
+  p.cargo.gear.push(newItem("survivalbook"));
+  p.supplies.wood = 0; p.cargo.supplies.wood = 0; p.campFire = true;
+  const went = withNums(WOOD.fire, { land: 99 }, () => campFireHour(st, p)); // bare ground (pinned): no deadfall
+  p.campFire = true;
+  const tm = breakDownAt(st, `cargo:${p.id}:list:0`);
+  const had = p.cargo.supplies.wood;
+  const out = withNums(WOOD.fire, { land: 99 }, () => campFireHour(st, p));
+  check(went === true && out === false && near(had, GEAR.survivalbook.burn) && !p.cargo.gear.length && /team's firewood/.test(tm) && p.cargo.supplies.wood < had, `on bare ground with no firewood the camp fire goes out; a team breaks a book down (+${GEAR.survivalbook.burn}) and its fire burns it`);
+  void out; void members;
+  // Firewood in the loot: sites with woodpiles and rooms with furniture; none in a hospital.
+  const fake = { seed, hour: 0, tiles: [{ loc: { type: "cabin" }, loot: 1 }, { loc: { type: "hospital" }, loot: 1 }] };
+  let found = 0, max = 0, hosp = 0;
+  for (let hr = 0; hr < 400; hr++) { fake.hour = hr; const q = rollSiteWood(fake, 0); if (q > 0) { found++; max = Math.max(max, q); } hosp += rollSiteWood(fake, 1); }
+  let area = 0;
+  for (let i = 0; i < 400; i++) area += rollAreaWood(fake, 0, "barn", "shelf", `box${i}`) > 0 ? 1 : 0;
+  check(found > 400 * SITE_WOOD.cabin[0] * 0.6 && found < 400 * SITE_WOOD.cabin[0] * 1.4 && max <= SITE_WOOD.cabin[2] && hosp === 0 && area > 400 * AREA_WOOD.barn[0] * 0.6 && area < 400 * AREA_WOOD.barn[0] * 1.4,
+    `firewood in the loot: a cabin's search hour ${found} of 400 (up to ${max} a find), a barn's shelves ${area} of 400, never in a hospital`);
+  const src = (f) => readFileSync(new URL(`../src/sim/${f}`, import.meta.url), "utf8");
+  check(/rollSiteWood\(/.test(src("scavenge.js")) && /rollAreaWood\(/.test(src("combat.js")), "searching a site (scavenge.js) and a raid or building container (combat.js) roll it");
 }
 
 // ---------- 7. the old dice and the autopilot ----------

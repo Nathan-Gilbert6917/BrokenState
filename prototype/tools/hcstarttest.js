@@ -319,7 +319,8 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
     Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10 });
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
-    check(!ok("walls") && !ok("watchtower") && !ok("well") && !ok("bunkhouse") && !ok("infirmary"), "no walls, towers, wells, bunkhouses or the rest at a shelter");
+    check(!ok("walls") && !ok("well") && !ok("bunkhouse") && !ok("infirmary") && !ok("storehouse"), "no walls, wells, bunkhouses or the rest at a shelter (no building plots)");
+    check(ok("watchtower") && ok("boiler") && ok("water_barrel") && ok("crates") && ok("cookhouse"), "a shelter's two utility plots take the yard things: a watchtower, the boiler, water barrels, crates, a cook fire (buildings.js PLOTS)");
     queueBuild(st, h, "farm_plot");
     check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
     h.construction.length = 0;

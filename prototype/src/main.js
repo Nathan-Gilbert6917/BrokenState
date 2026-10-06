@@ -11,7 +11,7 @@ import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
-import { queueBuild, cancelBuild, assignStations } from "./sim/buildings.js";
+import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish } from "./sim/buildings.js";
 import { refuel, repair } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
@@ -616,6 +616,14 @@ const actions = {
   "sr-release": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(releaseHeld(state, j, d.how)); },
   "sr-delete": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(deleteSupplyRun(state, j)); },
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
+  // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (two clicks) to free its plot.
+  "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
+  demolish: (d) => {
+    const id = Number(d.id);
+    if (ui.demolishArm !== id) { ui.demolishArm = id; ui.baseMsg = "Click Confirm to pull it down (half its scrap and parts come back)."; return; }
+    ui.demolishArm = null;
+    ui.baseMsg = demolish(state, baseOf(d), id);
+  },
   // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
   campfire: (d) => {
     const lit = d.lit === "1";
@@ -974,6 +982,7 @@ const changeActions = {
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
     ui.baseMsg = `${s.name} now crafts by hand.`;
   },
+  "barrel-holds": (el) => { ui.baseMsg = setBarrelHolds(baseOf(el.dataset), Number(el.dataset.id), el.value); },
   stationop: (el) => {
     const b = baseOf(el.dataset);
     const stationId = Number(el.dataset.station);

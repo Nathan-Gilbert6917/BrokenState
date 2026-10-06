@@ -6,7 +6,8 @@ import {
   CONDITIONS, conditionsOf, conditionTip, treatConditionInfo, treatCondition, autoTreatOn, workFactor, isSick as hasCondition, medsToTreatAll,
   daysLeftText, courseText, needsDose, fieldDoseInfo, treatConditionAnywhere, sickMedsWeek, illnessRisk, baseRiskCtx, isIll, teamMeds,
 } from "../sim/health.js";
-import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM, wormCureText } from "../sim/worm.js";
+import { wormSeen, wormOf, wormLabel, wormTip, wormTreatInfo, treatWorm, baseWater, WORM, wormCureText, wormOthersSeen, otherTreatInfo, treatOtherWorm, othersCareOn, dayHp } from "../sim/worm.js";
+import { boilerJunkOn } from "../sim/woodcutting.js"; // the base's "Boiler may burn spare wooden items and paper"
 import { baseById, residents, day } from "../sim/world.js";
 import {
   admitBelow, medsReserve, medicTime, bedReason, dailyHealthChange, autoCare, treatAtBaseInfo, isHurt, nextDayText,
@@ -45,13 +46,15 @@ export function condTreatButton(state, s, c) {
     const p = state.parties.find((x) => x.id === s.location.partyId);
     if (!p || p.owner !== "player" || !contactable(p) || !commandable(state, p)) return "";
     const info = fieldDoseInfo(state, p, s, c.key);
-    return `<button class="mini" data-action="treatcond-any" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Give a dose from the team's meds (${Math.floor(teamMeds(p))} carried): 1 meds, takes about ${info.amount} off the severity${info.medic ? ` (${info.medic.name.split(" ")[0]} gives it)` : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.` : info.reason)}>Treat (1 meds)</button>`;
+    const effect = d.cure ? `cures the ${d.name.toLowerCase()} at once (optional: it passes on its own in a few days)${info.medic ? ` (${info.medic.name.split(" ")[0]} gives it)` : ""}.` : `takes about ${info.amount} off the severity${info.medic ? ` (${info.medic.name.split(" ")[0]} gives it)` : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.`;
+    return `<button class="mini" data-action="treatcond-any" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Give a dose from the team's meds (${Math.floor(teamMeds(p))} carried): 1 meds, ${effect}` : info.reason)}>Treat (1 meds)</button>`;
   }
   const b = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
   if (!b) return "";
   const info = treatConditionInfo(state, b, s, c.key);
   const by = info.medic ? `${info.medic.name.split(" ")[0]}'s` : "a medic's";
-  return `<button class="mini" data-action="treatcond" data-base="${b.id}" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds and one of ${by} treatments for today: takes about ${info.amount} off the severity${info.cures ? " (enough to end it)" : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.` : info.reason)}>Treat (${d.meds} meds)</button>`;
+  const effect = d.cure ? `cures the ${d.name.toLowerCase()} at once (optional: it passes on its own in a few days; automatic care leaves it alone).` : `takes about ${info.amount} off the severity${info.cures ? " (enough to end it)" : ""}. Dose ${info.dose} of ${info.course}: once a day, and it stops worsening.`;
+  return `<button class="mini" data-action="treatcond" data-base="${b.id}" data-id="${s.id}" data-key="${c.key}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds and one of ${by} treatments for today: ${effect}` : info.reason)}>Treat (${d.meds} meds)</button>`;
 }
 
 // Chips for someone's conditions (empty string when well), with Treat buttons when treat is on.
@@ -78,6 +81,39 @@ function wormTreatRow(state, b, s) {
     const info = wormTreatInfo(state, b, s, k);
     return `<button class="mini" data-action="treatworm" data-base="${b.id}" data-id="${s.id}" data-kind="${k}" ${info.ok ? "" : "disabled"}${tip(info.ok ? what[k](info) : info.reason)}>${label[k]}</button>`;
   }).join(" ")}<span class="muted">${esc(wormCureText(s))}</span></div>`;
+}
+
+// The worm in a prisoner or a guest (sim/worm.js wormOthersAt: o), once spotted: its chip and the three treatments,
+// as for a resident. Treating a guest wins their group's goodwill; a prisoner's opinion of you rises.
+export function otherWormRow(state, b, o) {
+  if (!o || o.w.seen == null) return "";
+  const w = o.w;
+  const O = WORM.OTHERS;
+  const d = Math.max(1, w.day);
+  const label = `Infected (day ${w.day} of about ${WORM.COURSE})${o.kind === "prisoner" ? `: −${dayHp(d)} health today` : ""}`;
+  const thanks = o.kind === "guest" ? `Cured, their group's goodwill +${O.GUEST} (a failed but honest attempt +${O.GUEST_TRIED}).` : `Cured, their opinion of you +${O.OPINION} (a failed purge +${O.OPINION_TRIED})${o.p.factionId != null ? `, and their group's goodwill +${O.RETURN_GOODWILL} more when you release them or trade them back` : ""}.`;
+  const chip = `<span class="chip off"${tip(`The worm in ${o.name}: day ${w.day} of about ${WORM.COURSE}, ${w.stage === "gut" ? "in the gut" : "in the brain"}. Untreated it kills them${o.kind === "guest" ? ` on day ${WORM.COURSE}` : " in about a week"} and they get up among your people. ${thanks}`)}>${esc(label)}</span>`;
+  const kinds = w.stage === "gut" ? ["dewormer", "purge"] : ["surgery"];
+  const name = { dewormer: "Dewormer", purge: `Purge (${WORM.PURGE_MEDS} meds)`, surgery: `Surgery (${WORM.SURGERY_MEDS} meds)` };
+  const what = {
+    dewormer: () => `A dewormer from ${b.name}'s armory: a sure cure in the gut stage. No medic needed.`,
+    purge: (i) => `${WORM.PURGE_MEDS} of ${b.name}'s meds and one of ${i.treater ? `${i.treater.s.name.split(" ")[0]}'s` : "a medic's"} treatments: ${Math.round(i.chance * 100)}% it passes the worm.`,
+    surgery: (i) => `${WORM.SURGERY_MEDS} meds and most of ${i.treater ? `${i.treater.s.name.split(" ")[0]}'s` : "a medic's"} day: ${Math.round(i.chance * 100)}% they live; otherwise they die on the table.`,
+  };
+  return `<div class="row small" style="flex-wrap:wrap">${chip}${kinds.map((k) => {
+    const info = otherTreatInfo(state, b, o, k);
+    return `<button class="mini" data-action="treatworm-other" data-base="${b.id}" data-key="${o.key}" data-kind="${k}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `${what[k](info)} ${thanks}` : info.reason)}>${name[k]}</button>`;
+  }).join(" ")}</div>`;
+}
+// Medical tab: prisoners and guests at this base known to carry the worm, under "Prisoners" and "Guests".
+export function othersWormHtml(state, b) {
+  const list = wormOthersSeen(state, b);
+  if (!list.length) return "";
+  const part = (kind, title) => {
+    const xs = list.filter((o) => o.kind === kind);
+    return xs.length ? `<h3>${title} (${xs.length})</h3>${xs.map((o) => `<div class="card small"><b>${esc(o.kind === "prisoner" ? o.p.name : o.name[0].toUpperCase() + o.name.slice(1))}</b>${otherWormRow(state, b, o)}</div>`).join("")}` : "";
+  };
+  return part("prisoner", "Prisoners") + part("guest", "Guests");
 }
 
 // Medical tab: Treat buttons per condition for someone at this base.
@@ -132,6 +168,7 @@ export function illnessCard(state, b) {
   return `<h3>Care settings</h3>
     <div class="card small">
       <label style="display:block"${tip(`Each night the injured and sick here are treated with base meds, worst off first: wounds below ${AUTO_BELOW} health or infected, and illnesses that matter. Every automatic dose keeps the reserve below and needs a medic's time. Off: only the treatments you give.`)}><input type="checkbox" data-action="health-auto" data-base="${b.id}" ${autoTreatOn(b) ? "checked" : ""}> Automatic care each night</label>
+      <label style="display:block;margin-top:0.3rem"${tip(`With automatic care on, the night's care also treats the worm in prisoners and guests here (after your own people): a dewormer, a purge or surgery, as for a resident. Curing a guest wins their group's goodwill (+${WORM.OTHERS.GUEST}); a prisoner's opinion of you rises (+${WORM.OTHERS.OPINION}). Off: only when you press the buttons.`)}><input type="checkbox" data-action="health-others" data-base="${b.id}" ${othersCareOn(b) ? "checked" : ""}> Treat prisoners and guests too</label>
       <div style="margin-top:0.3rem"${tip("Automatic care never takes the meds below this. Your own Treat buttons can still use them.")}>Keep <select data-action="health-reserve" data-base="${b.id}">${RESERVE_STEPS.map((v) => `<option value="${v}" ${reserve === v ? "selected" : ""}>${v}</option>`).join("")}${RESERVE_STEPS.includes(reserve) ? "" : `<option value="${reserve}" selected>${reserve}</option>`}</select> meds in reserve</div>
       <div style="margin-top:0.3rem"${tip("Who takes a hospital bed: people below this health, and anyone with a severe (below 30) or infected wound or too ill to work, worst off first. Everyone else keeps working and heals slowly. 100 = anyone hurt.")}>Admit below <select data-action="health-admit" data-base="${b.id}">${admitSteps.map((v) => `<option value="${v}" ${admit === v ? "selected" : ""}>${v}</option>`).join("")}</select> health to a bed</div>
       <div style="margin-top:0.3rem"${tip(`Each treatment (a wound, or one illness) takes a medic's time: ${TREATS_PER_MEDIC} + Medicine/4 a day per person on the Medic role (less while ill). With nobody on the role, the best at Medicine here gives ${UNTRAINED_TREATS} a day between other work. Surgery takes ${SURGERY_LOAD} from one medic. Resets at midnight.`)}>Medic time today: ${time.cap ? `${time.used} of ${time.cap} treatments given${who ? ` <span class="muted">(${esc(who)}${time.trained ? "" : "; nobody on the Medic role"})</span>` : ""}` : `<span class="danger">nobody can treat</span>`}</div>
@@ -222,6 +259,26 @@ export const HEALTH_ACTIONS = {
     if (!b) return;
     const msg = treatWorm(state, b, Number(d.id), d.kind);
     if (ui.baseView) ui.baseMsg = msg;
+  },
+  // The worm in a prisoner or a guest (sim/worm.js treatOtherWorm logs the result itself).
+  "treatworm-other": (state, ui, d) => {
+    const b = baseOf(state, d);
+    if (!b) return;
+    const msg = treatOtherWorm(state, b, d.key, d.kind);
+    if (ui.baseView) ui.baseMsg = msg;
+  },
+  "health-others": (state, ui, d) => {
+    const b = baseOf(state, d);
+    if (!b) return;
+    b.wormCareOthers = !othersCareOn(b);
+    ui.baseMsg = b.wormCareOthers ? `The night's care at ${b.name} treats the worm in prisoners and guests too.` : `The night's care at ${b.name} treats only your own people.`;
+  },
+  // The water boiler (sim/worm.js): may it burn the armory's cheap wooden, paper and cloth junk when the firewood runs short?
+  "boiler-junk": (state, ui, d) => {
+    const b = baseOf(state, d);
+    if (!b) return;
+    b.boilerJunk = !boilerJunkOn(b);
+    ui.baseMsg = b.boilerJunk ? `The water boiler at ${b.name} may burn spare wooden items and paper from the armory when the firewood runs short.` : `The water boiler at ${b.name} burns only firewood, items marked to burn, and fuel.`;
   },
   "health-auto": (state, ui, d) => {
     const b = baseOf(state, d);

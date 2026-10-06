@@ -7,6 +7,7 @@ import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, carryCapacity, supplyLoad, orderOptions, giveOrder,
   awaitOrders, startReturn, orderMove, removeParty, wipeIfEmpty, pruneCards, teamName, tileLabel, addGearToCargo, leaveVehicle,
   takeSupply, carried, missionProblem,
+  bridgeClosedTo,
 } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate, queueText, startOrder, resumeQueue, stopTask, campHealPerHour } from "../src/sim/orders.js";
 import { vehiclesAtBase, abandonVehicle, tank } from "../src/sim/vehicles.js";
@@ -98,14 +99,14 @@ section("Launch: carry limit, crew and mission checks (T-9, T-15, T-29, P-16)");
   const twice = launchExpedition(state, { memberIds: [c.id, c.id], dest, mission: "move", stance: "normal", supplies: {} });
   check(!twice.error && twice.party.members.length === 1, "the same survivor is on a team twice");
   // Missions the tile can never take.
-  const water = state.tiles.find((t) => t.terrain === "water" && t.bridge) || state.tiles.find((t) => t.terrain === "water");
+  const water = state.tiles.find((t) => t.terrain === "water" && !t.bridge); // open water (a bridge may be barricaded with an outpost)
   check(!!missionProblem(state, water.id, "outpost"), "an outpost on water is allowed");
   check(!!missionProblem(state, h.tile, "outpost"), "an outpost on your own base is allowed");
   const days = launchExpedition(state, { memberIds: [crewOf(state, 1)[0].id], dest, mission: "scavenge", stance: "normal", supplies: { food: 3, water: 3 } });
   check(!days.error && /back in about \d+ days?\./.test(state.log[0].text) && !/1 days/.test(state.log[0].text), `round-trip launch text: "${state.log[0].text}"`);
 }
 
-section("An outpost cannot be founded on a bridge (T-15)");
+section("An outpost on a bridge barricades it (T-15, changed: parties.js bridgeClosedTo)");
 {
   let done = false;
   for (let seed = 1; seed < 40 && !done; seed++) {
@@ -119,12 +120,14 @@ section("An outpost cannot be founded on a bridge (T-15)");
     const p = send(state, crew.map((s) => s.id), bridge.id, "move", { grant: { scrap: 20 } });
     arriveAt(state, p);
     if (!check(state.parties.includes(p) && partyTile(p) === bridge.id, "test setup: the team did not reach the bridge")) break;
-    check(!orderOptions(state, p).some((o) => o.mission === "outpost"), "Build outpost is offered on a bridge");
+    check(orderOptions(state, p).some((o) => o.mission === "outpost"), "Build outpost is not offered on a bridge");
     state.cards.length = 0;
-    giveOrder(state, p, "outpost"); // forced, as a stale card or a tool would
-    check(!state.bases.some((x) => x.tile === bridge.id), "an outpost was founded on a bridge");
-    const card = ordersCardOf(state, p);
-    check(card && !/^Done/.test(card.title), `a refused outpost is titled "${card && card.title}"`);
+    giveOrder(state, p, "outpost");
+    const base = state.bases.find((x) => x.tile === bridge.id);
+    check(!!base, "no outpost was founded on the bridge");
+    check(base && /Bridge Barricade/.test(base.name), `the barricade is named for the bridge ("${base && base.name}")`);
+    const f = state.factions.find((x) => x.alive);
+    check(!f || bridgeClosedTo(state, bridge.id, f.id), "the barricade does not close the bridge to the other groups");
   }
   check(done, "no map with a reachable bridge in seeds 1-39");
 }

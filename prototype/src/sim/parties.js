@@ -931,7 +931,7 @@ export function orderOptions(state, p) {
     if (est) out.push(est);
     const strike = strikeOption(state, p, tile);
     if (strike) out.push(strike);
-  } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && t.terrain !== "water") {
+  } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
     add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
