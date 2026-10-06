@@ -122,7 +122,7 @@ for (const [opt, def] of Object.entries(S.ZOMBIE_LOOK_OPTIONS)) {
 for (const val of ["0", "2"]) add("zombie", `brute-gore-${val}`, `Brute, Gore: ${val === "0" ? "None" : "Heavy"}`, S.zombieCanvas("brute", ZSEEDS.brute[0], { ...ZD, gore: val }), `zombieCanvas("brute", ${ZSEEDS.brute[0]}, { gore: "${val}" })`);
 
 // ---------------------------------------------------------------- special dead and bosses
-for (const k of ["spitter", "screamer", "crawler", "carrier", "swarm"]) add("special", k, HC.ZTYPES[k] ? HC.ZTYPES[k].name : cap(k), H.ztypeBattleCanvas(k), `ztypeBattleCanvas("${k}")`);
+for (const k of ["spitter", "screamer", "crawler", "carrier", "swarm", "boneback", "climber", "flinger", "sower", "nightmare"]) add("special", k, HC.ZTYPES[k] ? HC.ZTYPES[k].name : cap(k), H.ztypeBattleCanvas(k), `ztypeBattleCanvas("${k}")`);
 add("boss", "broodmother", "The Broodmother (hive queen, battle)", H.bossBattleCanvas("broodmother"), `bossBattleCanvas("broodmother")`);
 add("boss", "wallbreaker", "The Wallbreaker (battle)", H.bossBattleCanvas("wallbreaker"), `bossBattleCanvas("wallbreaker")`);
 add("boss", "wallbreaker-map", "The Wallbreaker walking with a horde (state map)", H.wallbreakerMapCanvas(), `wallbreakerMapCanvas()`);

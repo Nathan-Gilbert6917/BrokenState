@@ -1,0 +1,692 @@
+// The worm (lore: Help → The dead and the worm; the design doc's "What the dead are"). Nobody turns from a bite: the
+// dead carry a tapeworm and shed its eggs into the soil and the water, and a tile's infection is how thick they lie.
+// People catch it by swallowing the eggs, carry it unseen for a week or so, then in the gut for weeks (they eat like
+// two and grow thin), and when its larvae reach the brain they turn. Heat kills the eggs: boiled water and meat
+// cooked through are safe.
+//
+// Catching it (chances per person; eggs = (infection − CLEAN) / (1 − CLEAN), nothing on cleaner land):
+//   - water at a base: WATER × eggs a day × the share of its water drawn from the ground (its well or spring, wells,
+//     a stream, prisoners hauling it; rain catchers and filters give clean water). Nothing with the water boiler
+//     burning, a water filter there, or a shelter's fire lit (it boils the water).
+//   - water on the road: WATER × the eggs of what the team drinks, a day. Water packed at a base whose water is not
+//     safe, fetched from a river or drunk from it at the staging camp carries the eggs of where it came from (the
+//     team's p.wormWater units at p.wormEggs). A water filter carried cleans what is fetched and drunk; a camp fire
+//     boils BOIL water an hour (× STOVE with a smokeless stove).
+//   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
+//     infection carry eggs, and infested animals always do (base.wormMeat, cargo.wormMeat: the share of the fresh
+//     game that has them). A base with a cook fire or a preserving kitchen (a shelter with its fire lit) cooks it;
+//     drying racks and a hunting cabin's smoke house take it first (smoked is safe). Otherwise it waits in the stores
+//     and is eaten last, raw, when the other food runs out. A team cooks it at a camp fire (COOK an hour) and eats it
+//     raw only when nothing else is left.
+//   - camping on land at CAMP_AT+ infection: CAMP × infection a day (dirty hands, dust, the ground water), half that
+//     with the fire lit.
+// The stages (s.worm: { stage, day, len, since, why, how, from (the cause as given), seen, treatedDay, carded, locked }):
+//   eggs   EGGS days: nothing shows.
+//   gut    GUT days: they eat GUT_EAT more a day, lose GUT_HP health a day and work at GUT_WORK.
+//   brain  BRAIN days: BRAIN_HP health a day, work at BRAIN_WORK; then they turn.
+// Spotting it: at a base, each day of the gut stage SPOT + SPOT_MED × the best Medicine there (× SPOT_MEDIC with
+// someone on the Medic role); on a team, from day TEAM_FROM of the gut stage, TEAM_SPOT + TEAM_SPOT_MED × the best
+// Medicine. The brain stage gives itself away (fits, staggering) BRAIN_SPOT a day. A team that spots it gets the card
+// "The worm"; at a base the gut stage goes to the Medical tab, the brain stage is a card.
+// Treating it (at a base: the Medical tab's buttons, and the night's automatic care, a dewormer first):
+//   - a dewormer (loot: pharmacies, clinics, hospitals, farms and ranches; made at a med station): a sure cure in the
+//     gut stage, DEWORM_HP health, no medic needed (a team carrying one can use it on the road);
+//   - a purge (gut stage): PURGE_MEDS meds and a medic's treatment, PURGE + PURGE_MED × Medicine + PURGE_TIER a
+//     hospital tier (at most PURGE_MAX): passed at PURGE_HP health, or it holds on (PURGE_FAIL_HP; again tomorrow);
+//   - surgery (brain stage, a Clinic or better): SURGERY_MEDS meds and SURGERY_LOAD of one medic's treatments,
+//     SURGERY + SURGERY_MED × Medicine (at most SURGERY_MAX): cured at SURGERY_HP health, or they die on the table.
+// Turning: at a base, unseen or kept among the others, they die and go for the nearest people first: one hurt by
+// TURN_HURT (a second one TURN_SECOND of the time), each killed TURN_KILL of the time (half that with a guard on
+// duty), and everyone there loses TURN_MOOD mood. Locked away (the brain-stage card) nobody is hurt. On a team: like
+// the old card's "turned in the night", a teammate is hurt.
+//
+// Infested animals (state.herds, HERD): game living on land at BORN_AT+ infection catches it too: thin deer and hogs
+// that do not attack, carrying the eggs to cleaner ground. While there are fewer than PER_1000 herds per 1,000 tiles,
+// one is born SPAWN a day on such land. A herd moves on MOVE of the days (to a land tile next to it, the cleanest one
+// DOWNHILL of the time: they wander out of the dead land to graze, toward farms and bases) and seeds the land it
+// stands on: the tile's own infection level +SEED × its size / 6 a day, up to SEED_CAP. It lives LIFE days.
+// Infested share of a tile's game: (infection − SHARE_AT) / SHARE_SPAN (at most SHARE_MAX), + HERD_SHARE with a herd
+// there. Each kill there is infested at that share: YIELD of its food, all of it with eggs, and on a herd's tile one
+// animal fewer in the herd (a herd hunted out is gone: a reason to hunt them).
+import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, survivorById } from "./world.js";
+import { GEAR } from "./data.js";
+import { Rng } from "./rng.js";
+import { count, isShelter } from "./buildings.js";
+import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel } from "./parties.js";
+import { activeHospital, careCtx, pickTreater, spendMedicTime, autoCareOn, noTimeReason, nextDayText } from "./medical.js";
+import { waterProduction } from "./economy.js";
+import { eatFromStore } from "./storage.js";
+import { teamFire, teamKit, fireLit } from "./fieldheat.js";
+import { packOf } from "./inventory.js";
+import { gainXp, USE } from "./skills.js";
+
+export const WORM = {
+  // Catching it
+  CLEAN: 0.1, WATER: 0.02, RAW: 0.04, MEAT_AT: 0.25, CAMP_AT: 0.5, CAMP: 0.03, CAMP_FIRE: 0.5,
+  // The stages (days) and what they cost
+  EGGS: [6, 10], GUT: [18, 26], BRAIN: [4, 6], GUT_EAT: 1, GUT_HP: 0.4, GUT_WORK: 0.85, BRAIN_HP: 4, BRAIN_WORK: 0.3,
+  // Spotting it
+  SPOT: 0.04, SPOT_MED: 0.012, SPOT_MEDIC: 1.5, TEAM_FROM: 7, TEAM_SPOT: 0.02, TEAM_SPOT_MED: 0.005, BRAIN_SPOT: 0.6,
+  // Treating it
+  DEWORM_HP: 10, PURGE_MEDS: 2, PURGE: 0.5, PURGE_MED: 0.04, PURGE_TIER: 0.08, PURGE_MAX: 0.95, PURGE_HP: 25, PURGE_FAIL_HP: 10,
+  SURGERY_MEDS: 4, SURGERY_LOAD: 3, SURGERY: 0.35, SURGERY_MED: 0.04, SURGERY_MAX: 0.9, SURGERY_HP: 40,
+  ROAD_PURGE_HP: 50, ROAD_FAIL_HP: 15, HOPE: 0.25, HOPE_BRAIN: 0.08,
+  // Turning
+  TURN_HURT: [10, 35], TURN_SECOND: 0.5, TURN_KILL: 0.12, TURN_MOOD: 8, LOCKED_MOOD: 4,
+  // Clean water and cooked meat: a camp fire an hour, the base's water boiler a day
+  BOIL: 6, STOVE: 2, COOK: 12, BOILER_SCRAP: 0, BOILER_FUEL: 0,
+};
+export const HERD = {
+  BORN_AT: 0.6, PER_1000: 2, SPAWN: 0.08, SIZE: [3, 8], LIFE: [60, 120], MOVE: 0.7, DOWNHILL: 0.6,
+  SEED: 0.006, SEED_CAP: 0.35, SHARE_AT: 0.35, SHARE_SPAN: 0.5, SHARE_MAX: 0.8, HERD_SHARE: 0.5, YIELD: 0.25,
+};
+export const STAGE_NAMES = { eggs: "swallowed the eggs", gut: "gut stage", brain: "in the brain" };
+const HERD_LAND = { forest: 1, hills: 1, plains: 1, mountain: 1, suburb: 0.5 };
+
+const first = (s) => s.name.split(" ")[0];
+const r2 = (v) => Math.round(v * 100) / 100;
+const stats = (state) => state.wormStats || (state.wormStats = { caught: 0, water: 0, meat: 0, camp: 0, spotted: 0, cured: 0, turned: 0, killed: 0, herds: 0, herdKills: 0 });
+// The worm's own dice (state.wormRng, keyed by the seed): the world's rng sequence is untouched by it, so a world where
+// nobody catches it plays out as it would without the worm.
+export const wormRng = (state) => state.wormRng || (state.wormRng = new Rng((((state.seed || 1) * 2654435761) ^ 0x5eed) >>> 0));
+const len = (state, range) => wormRng(state).int(range[0], range[1]);
+
+// ---------- people ----------
+export const wormOf = (s) => (s && s.alive && s.worm) || null;
+// Carries it, at any stage, alive or just dead (the Carrier's worm swarm, carriers.js: a carrier who dies rises).
+export const hasWorm = (s) => !!(s && s.worm);
+// Gone without a cure (put down, died of it, a test): no stats.
+export function clearWorm(s) {
+  if (s) s.worm = null;
+}
+// Known to you: spotted at a base or by the team.
+export const wormSeen = (s) => { const w = wormOf(s); return !!w && w.seen != null; };
+// How much they can work (health.js workFactor): 1 unless the worm has hatched.
+export function wormWork(s) {
+  const w = wormOf(s);
+  if (!w || w.stage === "eggs") return 1;
+  return w.stage === "brain" ? WORM.BRAIN_WORK : WORM.GUT_WORK;
+}
+
+// Swallowed the eggs: the worm starts, unseen. why: the cause, in words or a key ("swarm": a Carrier's worm swarm in
+// battle, carriers.js); how: water, meat or camp (for the stats). Returns true if new.
+export function catchWorm(state, s, why = "", how = "") {
+  if (!s || !s.alive || s.worm) return false;
+  const from = why;
+  if (why === "swarm") { why = "from a worm swarm in a fight"; how = how || "swarm"; }
+  s.worm = { stage: "eggs", day: 0, len: len(state, WORM.EGGS), since: day(state), why, how, from, seen: null, treatedDay: -99, carded: "" };
+  const st = stats(state);
+  st.caught++;
+  if (how) st[how] = (st[how] || 0) + 1;
+  return true;
+}
+export function cureWorm(state, s) {
+  if (!s || !s.worm) return;
+  s.worm = null;
+  stats(state).cured++;
+}
+
+// Eggs in a tile's ground and water: 0 below CLEAN infection, 1 at full.
+export function eggsAt(state, tile) {
+  const t = state.tiles[tile];
+  if (!t) return 0;
+  return Math.max(0, Math.min(1, ((t.infection || 0) - WORM.CLEAN) / (1 - WORM.CLEAN)));
+}
+
+// Water drawn on a tile (its ground water, or the river or lake beside it): the worst of them.
+export function sourceEggs(state, tile) {
+  const wet = state.grid.neighbors(tile).filter((id) => state.tiles[id] && state.tiles[id].terrain === "water");
+  return Math.max(eggsAt(state, tile), ...wet.map((id) => eggsAt(state, id)));
+}
+
+// ---------- water at a base ----------
+export const hasBoiler = (base) => count(base, "boiler") > 0;
+export function baseFilter(state, base) {
+  if (base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].water)) return true;
+  return atBase(state, base.id).some((s) => s.gear.tool && GEAR[s.gear.tool.key] && GEAR[s.gear.tool.key].water);
+}
+// What the base drinks: { eggs (0..1 after boiling and filters), ground (share from the ground), safe, why }.
+export function baseWater(state, base) {
+  const raw = sourceEggs(state, base.tile);
+  if (!(raw > 0)) return { eggs: 0, raw: 0, ground: 0, safe: true, why: "the ground here is clean enough" };
+  if (hasBoiler(base) && base.boiling !== false) return { eggs: 0, raw, ground: 1, safe: true, why: "boiled in the water boiler" };
+  if (baseFilter(state, base)) return { eggs: 0, raw, ground: 1, safe: true, why: "through a water filter" };
+  if (isShelter(base) && fireLit(base)) return { eggs: 0, raw, ground: 1, safe: true, why: "boiled on the fire" };
+  const prod = waterProduction(state, base);
+  const ground = prod.own + prod.stream + prod.wells + prod.hauled;
+  const all = ground + prod.rain + prod.filters;
+  const share = all > 0 ? ground / all : 0;
+  return { eggs: raw * share, raw, ground: share, safe: !(share > 0), why: share > 0 ? `drawn from infected ground${share < 1 ? ` (${Math.round(share * 100)}% of it; the rain water is clean)` : ""}, not boiled or filtered` : "no ground water drawn here (rain only)" };
+}
+
+// The base's water boiler: burns BOILER_SCRAP scrap a day, or BOILER_FUEL fuel, while its water has eggs and no filter
+// does the job (0: its junk wood is gathered like any camp fire's, nothing from the stores); with nothing to
+// burn it goes cold.
+function boilerDaily(state, base, people) {
+  if (!hasBoiler(base) || !people.length) return;
+  const raw = sourceEggs(state, base.tile);
+  if (!(raw > 0) || baseFilter(state, base)) { base.boiling = true; return; } // nothing to kill, or a filter does it: it stands ready
+  const st = base.stock;
+  let lit = false;
+  if ((st.scrap || 0) >= WORM.BOILER_SCRAP) { st.scrap -= WORM.BOILER_SCRAP; lit = true; }
+  else if ((st.fuel || 0) >= WORM.BOILER_FUEL) { st.fuel -= WORM.BOILER_FUEL; lit = true; }
+  if (!lit && base.boiling !== false) log(state, `The water boiler at ${base.name} is cold: no scrap or fuel to burn. The water is drunk unboiled.`, "danger");
+  base.boiling = lit;
+}
+
+// ---------- meat ----------
+// A base cooks what it eats: a cook fire, a preserving kitchen, or a shelter with its fire lit.
+export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || (isShelter(base) && fireLit(base));
+export const wormMeatAt = (base) => Math.max(0, Math.min(base.wormMeat || 0, base.meat || 0, base.stock.food || 0));
+export const wormMeatIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.wormMeat || 0, cargo.meat || 0, (cargo.supplies && cargo.supplies.food) || 0)) : 0);
+// Before a base eats (economy.js): its cook fire cooks the meat with eggs; it is ordinary fresh game after that.
+export function cookAtBase(state, base) {
+  if (!(base.wormMeat > 0)) return 0;
+  const m = wormMeatAt(base);
+  if (!baseCooks(base)) { base.wormMeat = m; return 0; }
+  base.wormMeat = 0;
+  return m;
+}
+// Smoked or dried meat (the racks, the hunting cabin): the eggs die first, the meat with eggs goes first.
+export function smokeWormMeat(base, qty) {
+  if (base.wormMeat > 0) base.wormMeat = Math.max(0, wormMeatAt(base) - Math.max(0, qty));
+}
+// Fresh game lost (spoiled): the meat with eggs goes in proportion.
+export function shrinkWormMeat(holder, before, after) {
+  if (!(holder.wormMeat > 0)) return;
+  holder.wormMeat = before > 0 ? Math.max(0, holder.wormMeat * Math.max(0, after) / before) : 0;
+}
+// A kill on a tile (hunting.js): { rations, worm (rations with eggs), infested }. Rolls only where there are infested
+// animals, so clean land hunts exactly as before.
+export function wormKill(state, tile, rations, { fish = false } = {}) {
+  const t = state.tiles[tile];
+  if (!fish) {
+    const share = infestedShare(state, tile);
+    if (share > 0 && wormRng(state).chance(share)) {
+      const herd = herdAt(state, tile);
+      if (herd) {
+        herd.size -= 1;
+        stats(state).herdKills++;
+        if (herd.size <= 0) {
+          state.herds.splice(state.herds.indexOf(herd), 1);
+          log(state, `The infested herd near ${tileLabel(state, tile)} is gone: the last of them was killed.`, "good");
+        }
+      }
+      const r = rations * HERD.YIELD;
+      return { rations: r, worm: r, infested: true };
+    }
+  }
+  return { rations, worm: t && (t.infection || 0) >= WORM.MEAT_AT ? rations : 0, infested: false };
+}
+// Eaten raw: RAW per ration with eggs, spread over the people who ate. how/why for the record.
+export function eatRaw(state, people, rations, why) {
+  if (!(rations > 0) || !people.length) return 0;
+  const per = 1 - Math.pow(1 - WORM.RAW, rations / people.length);
+  let n = 0;
+  for (const s of people) if (wormRng(state).chance(per) && catchWorm(state, s, why, "meat")) n++;
+  return n;
+}
+
+// ---------- teams ----------
+const hasFilter = (state, p) => teamKit(state, p).some((it) => it && GEAR[it.key] && GEAR[it.key].water);
+const hasStove = (state, p) => teamKit(state, p).some((it) => it && it.key === "stove");
+const waterCarried = (p) => carried(p, "water");
+// Water with eggs coming into the team's stores: `units` at `eggs` (0..1), mixed with what it carries.
+export function addWormWater(state, p, units, eggs) {
+  if (!(units > 0) || !(eggs > 0) || hasFilter(state, p)) return;
+  const have = Math.min(p.wormWater || 0, Math.max(0, waterCarried(p) - units));
+  const total = have + units;
+  p.wormEggs = r2(((p.wormEggs || 0) * have + eggs * units) / total);
+  p.wormWater = Math.round(total * 10) / 10;
+}
+// Packing at a base (parties.js launchExpedition): its water is what the base drinks.
+export function packWater(state, p, base) {
+  const w = baseWater(state, base);
+  p.wormWater = 0;
+  p.wormEggs = 0;
+  if (w.eggs > 0) addWormWater(state, p, carried(p, "water"), w.eggs);
+}
+// An hour's drinking (parties.js consume): the share with eggs is drunk in proportion. A water filter carried cleans
+// what is drunk.
+export function drinkHour(state, p, members, drank) {
+  if (!(p.wormWater > 0)) return;
+  if (hasFilter(state, p)) { p.wormWater = 0; return; }
+  const left = waterCarried(p);
+  const total = left + drank;
+  const share = total > 0 ? Math.min(1, p.wormWater / total) : 0;
+  p.wormWater = Math.max(0, Math.min(left, p.wormWater - drank * share));
+  const chance = (WORM.WATER * (p.wormEggs || 0) * share) / 24;
+  if (chance > 0) for (const s of members) if (wormRng(state).chance(chance)) catchWorm(state, s, `drinking unboiled water on the road`, "water");
+}
+// An hour's eating raw (parties.js consume): meat with eggs from the cargo, when nothing else is left. Returns rations.
+export function eatRawCargo(state, p, members, need) {
+  const m = wormMeatIn(p.cargo);
+  const q = Math.max(0, Math.min(m, need));
+  if (!(q > 0)) return 0;
+  p.cargo.supplies.food -= q;
+  p.cargo.meat = Math.max(0, (p.cargo.meat || 0) - q);
+  p.cargo.wormMeat = m - q;
+  eatRaw(state, members, q, "eating half-raw game on the road");
+  return q;
+}
+// Hourly for a team (parties.js playerPartyHour): a camp fire boils water and cooks meat; camping on badly infected
+// land is a risk in itself.
+export function wormTeamHour(state, p, members) {
+  const fire = teamFire(state, p);
+  if (fire == null) return;
+  if (fire) {
+    if (p.wormWater > 0) p.wormWater = Math.max(0, p.wormWater - WORM.BOIL * (hasStove(state, p) ? WORM.STOVE : 1));
+    if (p.cargo && p.cargo.wormMeat > 0) p.cargo.wormMeat = Math.max(0, wormMeatIn(p.cargo) - WORM.COOK);
+  }
+  const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
+  if (inf < WORM.CAMP_AT) return;
+  const chance = (WORM.CAMP * inf * (fire ? WORM.CAMP_FIRE : 1)) / 24;
+  for (const s of members) if (wormRng(state).chance(chance)) catchWorm(state, s, `camping on infested ground near ${tileLabel(state, partyTile(p))}`, "camp");
+}
+
+// ---------- items ----------
+// Takes one item of `key` from a list of holders' pockets, packs, the given lists. Returns it or null.
+function takeFrom(people, lists, key) {
+  for (const s of people) {
+    for (const where of [s.pockets || [], (packOf(s) && packOf(s).contents) || []]) {
+      const i = where.findIndex((it) => it && it.key === key);
+      if (i >= 0) { const it = where[i]; where[i] = null; return it; }
+    }
+  }
+  for (const list of lists) {
+    const i = list.findIndex((it) => it && it.key === key);
+    if (i >= 0) return list.splice(i, 1)[0];
+  }
+  return null;
+}
+const findIn = (people, lists, key) => people.some((s) => [...(s.pockets || []), ...((packOf(s) && packOf(s).contents) || [])].some((it) => it && it.key === key)) || lists.some((l) => l.some((it) => it && it.key === key));
+export const baseDewormers = (state, base) => base.armory.filter((it) => it && it.key === "dewormer").length + atBase(state, base.id).reduce((a, s) => a + [...(s.pockets || []), ...((packOf(s) && packOf(s).contents) || [])].filter((it) => it && it.key === "dewormer").length, 0);
+const teamHasDewormer = (state, p) => findIn(partyMembers(state, p), [(p.cargo && p.cargo.gear) || []], "dewormer");
+
+// ---------- treatment at a base ----------
+// What can be done for someone at this base now: { ok, reason, kind, cost, chance, treater, load }.
+// kind: "dewormer" (gut stage, one in the armory or on someone here), "purge" (gut stage, meds and a medic) or
+// "surgery" (brain stage, a Clinic or better).
+export function wormTreatInfo(state, base, s, kind, ctx = null) {
+  const w = wormOf(s);
+  const out = { ok: false, reason: "", kind, cost: 0, chance: 0, treater: null, load: 1 };
+  if (!w || w.seen == null) { out.reason = `Nobody knows ${s ? first(s) : "they"} has the worm.`; return out; }
+  if (!base || !residents(state, base.id).includes(s)) { out.reason = `${first(s)} is not at ${base ? base.name : "a base"}.`; return out; }
+  if (w.treatedDay === day(state)) { out.reason = `Already treated today. Next ${nextDayText(state)}.`; return out; }
+  if (kind === "dewormer") {
+    if (w.stage !== "gut") { out.reason = "Too late for a dewormer: the worm is in the brain."; return out; }
+    if (!baseDewormers(state, base)) { out.reason = `No dewormer at ${base.name}.`; return out; }
+    out.ok = true;
+    out.chance = 1;
+    return out;
+  }
+  ctx = ctx || careCtx(state, base);
+  const hosp = activeHospital(state, base);
+  if (kind === "purge") {
+    if (w.stage !== "gut") { out.reason = "Too late for a purge: the worm is in the brain. Only surgery in a Clinic can save them."; return out; }
+    out.cost = WORM.PURGE_MEDS;
+    out.treater = pickTreater(ctx, 1);
+    const med = out.treater ? skill(out.treater.s, "medicine") : 0;
+    out.chance = Math.min(WORM.PURGE_MAX, WORM.PURGE + WORM.PURGE_MED * med + WORM.PURGE_TIER * (hosp.tier || 0));
+  } else {
+    if (w.stage !== "brain") { out.reason = "Surgery is for the brain stage. A purge or a dewormer clears it now."; return out; }
+    if (!hosp.surgery) { out.reason = "Only surgery can save them now, and that needs a staffed Clinic or better."; return out; }
+    out.cost = WORM.SURGERY_MEDS;
+    out.load = WORM.SURGERY_LOAD;
+    out.treater = pickTreater(ctx, WORM.SURGERY_LOAD);
+    const med = out.treater ? skill(out.treater.s, "medicine") : 0;
+    out.chance = Math.min(WORM.SURGERY_MAX, WORM.SURGERY + WORM.SURGERY_MED * med);
+  }
+  if (!out.treater) out.reason = noTimeReason(state, ctx);
+  else if (ctx.meds < out.cost) out.reason = `Needs ${out.cost} meds (have ${Math.floor(ctx.meds)}).`;
+  else if (ctx.auto && ctx.meds - out.cost < ctx.reserve) out.reason = `Would take the meds below the reserve of ${ctx.reserve}.`;
+  out.ok = !out.reason;
+  return out;
+}
+// Applies a checked treatment. Returns the message.
+export function applyWormTreat(state, base, s, info) {
+  const w = s.worm;
+  w.treatedDay = day(state);
+  if (info.kind === "dewormer") {
+    takeFrom(atBase(state, base.id), [base.armory], "dewormer");
+    cureWorm(state, s);
+    hurt(state, s, WORM.DEWORM_HP, base.tile, "of the worm", { raw: true });
+    return `${s.name} took a dewormer at ${base.name} and passed the worm. Weak for a few days, but clean.`;
+  }
+  base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
+  state.medsUsed = (state.medsUsed || 0) + info.cost;
+  spendMedicTime(state, base, info.treater, info.load);
+  gainXp(state, info.treater.s, "medicine", USE.illness);
+  const ok = wormRng(state).chance(info.chance);
+  if (info.kind === "purge") {
+    if (ok) {
+      cureWorm(state, s);
+      hurt(state, s, WORM.PURGE_HP, base.tile, "of the worm", { raw: true });
+      return `${first(info.treater.s)} purged ${s.name}'s worm at ${base.name} (${info.cost} meds). It is out, and ${first(s)} is badly weakened.`;
+    }
+    hurt(state, s, WORM.PURGE_FAIL_HP, base.tile, "of the worm", { raw: true });
+    return `The purge did not work: ${s.name}'s worm holds on (${info.cost} meds). Try again ${nextDayText(state)}.`;
+  }
+  if (ok) {
+    cureWorm(state, s);
+    s.health = Math.max(5, s.health - WORM.SURGERY_HP);
+    return `${first(info.treater.s)} cut the worm's larvae out of ${s.name} at ${base.name} (${info.cost} meds). ${first(s)} lives, barely.`;
+  }
+  stats(state).killed++;
+  s.worm = null;
+  hurt(state, s, 999, base.tile, "on the operating table (the worm)");
+  return `${s.name} died on the operating table at ${base.name}: the worm had gone too deep.`;
+}
+export function treatWorm(state, base, survivorId, kind) {
+  const s = survivorById(state, Number(survivorId));
+  const info = wormTreatInfo(state, base, s, kind);
+  if (!info.ok) return info.reason;
+  const msg = applyWormTreat(state, base, s, info);
+  log(state, msg, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
+  return msg;
+}
+// The night's automatic care (with the base's other care, medical.js autoCare): a dewormer first, else a purge in
+// the gut stage, surgery in the brain stage. It may dip into the meds reserve: the worm kills for sure.
+function wormCare(state, base) {
+  if (!autoCareOn(base)) return;
+  for (const s of residents(state, base.id)) {
+    const w = wormOf(s);
+    if (!w || w.seen == null || w.locked) continue;
+    for (const kind of w.stage === "gut" ? ["dewormer", "purge"] : ["surgery"]) {
+      const info = wormTreatInfo(state, base, s, kind, kind === "dewormer" ? null : careCtx(state, base));
+      if (!info.ok) continue;
+      const msg = applyWormTreat(state, base, s, info);
+      log(state, `Night care at ${base.name}: ${msg}`, /died/.test(msg) ? "death" : /did not work/.test(msg) ? "danger" : "good");
+      break;
+    }
+  }
+}
+
+// ---------- the daily tick (economy.js basesDaily, after the day's illness) ----------
+export function wormDaily(state) {
+  for (const base of state.bases) baseWormDaily(state, base);
+  for (const s of alive(state)) if (s.worm) stageDaily(state, s);
+  for (const base of state.bases) wormCare(state, base);
+  herdsDaily(state);
+}
+
+function baseWormDaily(state, base) {
+  const people = residents(state, base.id);
+  boilerDaily(state, base, people);
+  if (!people.length) { base.rawEaten = 0; return; }
+  // Raw meat eaten today (storage.js eatFromStore: the meat with eggs, eaten last when nothing else was left).
+  if (base.rawEaten > 0) {
+    eatRaw(state, people, base.rawEaten, `eating game that was not cooked through at ${base.name}`);
+    if (!base.rawWarned) log(state, `${base.name} ate game from infected land that was not cooked through. Build a cook fire: the worm's eggs die in the heat.`, "danger");
+    base.rawWarned = true;
+    base.rawEaten = 0;
+  }
+  const w = baseWater(state, base);
+  // Once per base: the first day its people drink water with the worm's eggs.
+  if (w.eggs > 0 && !base.wormWaterWarned) {
+    base.wormWaterWarned = true;
+    log(state, `The water at ${base.name} is drawn from infected ground and carries the worm's eggs. Build a water boiler or keep a water filter here; until then every day is a chance of catching it.`, "danger");
+  }
+  if (w.eggs > 0) for (const s of people) if (wormRng(state).chance(WORM.WATER * w.eggs)) catchWorm(state, s, `drinking unboiled water at ${base.name}`, "water");
+}
+
+function where(state, s) {
+  if (s.location.kind === "base") return { base: baseById(state, s.location.baseId) };
+  if (s.location.kind === "route") return { base: state.bases.find((b) => b.type === "hub") || null };
+  if (s.location.kind === "party") return { party: state.parties.find((p) => p.id === s.location.partyId) || null };
+  return {};
+}
+function tileOf(state, s) {
+  const at = where(state, s);
+  return at.base ? at.base.tile : at.party && at.party.path ? partyTile(at.party) : null;
+}
+
+function stageDaily(state, s) {
+  const w = s.worm;
+  const at = where(state, s);
+  w.day += 1;
+  if (w.stage === "eggs") {
+    if (w.day >= w.len) { w.stage = "gut"; w.day = 0; w.len = len(state, WORM.GUT); }
+    return;
+  }
+  const tile = tileOf(state, s);
+  if (w.stage === "gut") {
+    // Eats like two: the extra food comes out of the base's stores or the team's packs.
+    if (at.base) eatFromStore(at.base, WORM.GUT_EAT);
+    else if (at.party) takeSupply(at.party, "food", WORM.GUT_EAT);
+    hurt(state, s, WORM.GUT_HP, tile, "of the worm", { raw: true });
+    if (!s.alive) return;
+    if (w.seen == null) spot(state, s, at);
+    if (w.day >= w.len) {
+      w.stage = "brain"; w.day = 0; w.len = len(state, WORM.BRAIN);
+      if (w.seen != null) log(state, `${s.name}'s worm has reached the brain: fits and staggering. Only surgery in a Clinic can save them now.`, "danger");
+    }
+    return;
+  }
+  // The brain stage.
+  hurt(state, s, WORM.BRAIN_HP, tile, "of the worm", { raw: true });
+  if (!s.alive) return;
+  if (w.carded !== "brain" && (w.seen != null || wormRng(state).chance(WORM.BRAIN_SPOT))) {
+    if (w.seen == null) { w.seen = day(state); stats(state).spotted++; }
+    w.carded = "brain";
+    if (at.base) baseBrainCard(state, s, at.base);
+    else if (at.party) teamCard(state, at.party, s);
+  }
+  if (w.day >= w.len) turn(state, s, at);
+}
+
+// Spotting the gut stage: a base's medic, or a team on the road (later).
+function spot(state, s, at) {
+  const w = s.worm;
+  let chance = 0;
+  if (at.base) {
+    const here = atBase(state, at.base.id);
+    const med = Math.max(0, ...here.map((x) => skill(x, "medicine")));
+    chance = (WORM.SPOT + WORM.SPOT_MED * med) * (here.some((x) => x.role === "medic") ? WORM.SPOT_MEDIC : 1);
+  } else if (at.party && w.day >= WORM.TEAM_FROM) {
+    chance = WORM.TEAM_SPOT + WORM.TEAM_SPOT_MED * bestSkill(state, at.party, "medicine");
+  }
+  if (!(chance > 0) || !wormRng(state).chance(chance)) return;
+  w.seen = day(state);
+  stats(state).spotted++;
+  if (at.base) {
+    const medic = atBase(state, at.base.id).filter((x) => x !== s).sort((a, b) => skill(b, "medicine") - skill(a, "medicine"))[0];
+    log(state, `${medic ? `${first(medic)} found` : "Someone found"} pale segments in ${s.name}'s stool at ${at.base.name}: it is the worm (${w.why}). A purge or a dewormer clears it now; once it reaches the brain only surgery will. See the Medical tab.`, "danger");
+  } else if (at.party) {
+    w.carded = "gut";
+    teamCard(state, at.party, s);
+  }
+}
+
+// ---------- turning ----------
+function turn(state, s, at) {
+  const w = s.worm;
+  const tile = tileOf(state, s);
+  stats(state).turned++;
+  const locked = !!w.locked;
+  s.worm = null;
+  hurt(state, s, 999, tile, "of the worm (turned)");
+  if (at.base) {
+    const base = at.base;
+    const others = residents(state, base.id);
+    for (const x of others) x.mood = Math.max(0, x.mood - (locked ? WORM.LOCKED_MOOD : WORM.TURN_MOOD));
+    if (locked) { log(state, `${s.name} turned behind a locked door at ${base.name}. They were put down without anyone else hurt.`, "death"); return; }
+    const guard = atBase(state, base.id).some((x) => x.role === "guard");
+    const victims = [];
+    const pool = [...others];
+    const n = Math.min(pool.length, 1 + (wormRng(state).chance(WORM.TURN_SECOND) ? 1 : 0));
+    for (let i = 0; i < n; i++) victims.push(pool.splice(wormRng(state).int(0, pool.length - 1), 1)[0]);
+    const hurtNames = [];
+    for (const v of victims) {
+      const kill = wormRng(state).chance(WORM.TURN_KILL * (guard ? 0.5 : 1));
+      hurt(state, v, kill ? 999 : wormRng(state).int(WORM.TURN_HURT[0], WORM.TURN_HURT[1]), base.tile, `when ${first(s)} turned (the worm)`);
+      hurtNames.push(v.alive ? `${first(v)} was hurt` : `${v.name} was killed`);
+    }
+    log(state, `${s.name} turned at ${base.name}: the worm reached the brain and nobody saw it coming. ${hurtNames.length ? `${hurtNames.join(" and ")} before ${guard ? "the guards" : "they"} put ${first(s)} down.` : "They put the body down."}`, "death");
+    return;
+  }
+  if (at.party) {
+    const p = at.party;
+    const mates = partyMembers(state, p);
+    for (const x of mates) x.mood = Math.max(0, x.mood - WORM.TURN_MOOD);
+    if (mates.length) {
+      const v = wormRng(state).pick(mates);
+      hurt(state, v, wormRng(state).int(WORM.TURN_HURT[0], WORM.TURN_HURT[1]), partyTile(p), `when ${first(s)} turned (the worm)`);
+      log(state, `${s.name} turned in the night near ${tileLabel(state, partyTile(p))}. ${v.alive ? `${first(v)} was hurt` : `${v.name} was killed`} before the team put them down.`, "death");
+    } else log(state, `${s.name} turned in the night near ${tileLabel(state, partyTile(p))}.`, "death");
+    wipeIfEmpty(state, p);
+  }
+}
+
+// ---------- cards ----------
+// A team finds out (the gut stage after a week or so, or the brain stage giving itself away): the card "The worm".
+function teamCard(state, p, s) {
+  const w = s.worm;
+  const brain = w.stage === "brain";
+  const name = first(s);
+  const purgeChance = () => Math.max(0.05, Math.min(0.95, (bestSkill(state, p, "medicine") + 1) / 10)); // events.js: a Medicine 10 check
+  const card = {
+    title: "The worm",
+    where: tileLabel(state, partyTile(p)),
+    partyId: p.id,
+    survivorIds: [s.id],
+    text: brain
+      ? `${s.name} had a fit this morning and cannot walk straight. It is the worm, and it has reached the brain (${w.why}). A purge cannot help now; only surgery in a Clinic, and that is far away. When it is done with them, they will turn.`
+      : `${s.name} has been eating like two people and getting thinner, and this morning they found pale segments in their stool. It is the worm: they swallowed its eggs ${w.why}. If it reaches the brain they will turn. A dewormer clears it for sure; at a base, meds and a medic can purge it.`,
+    choices: [],
+  };
+  const live = (fn) => (st) => (cardStale(st, card) || !s.worm ? "Too late: nothing to decide any more." : fn(st));
+  if (!brain && teamHasDewormer(state, p)) card.choices.push({ label: "Give them the dewormer", hint: "A sure cure", resolve: live((st) => {
+    if (!takeFrom(partyMembers(st, p), [(p.cargo && p.cargo.gear) || []], "dewormer")) return "The dewormer is gone. Nothing was done.";
+    cureWorm(st, s);
+    hurt(st, s, WORM.DEWORM_HP, partyTile(p), "of the worm", { raw: true });
+    return `${name} takes the dewormer and passes the worm by evening. Weak, but clean.`;
+  }) });
+  card.choices.push({
+    label: `Purge it (${WORM.PURGE_MEDS} meds)`,
+    get hint() { return brain ? "Too late: the worm is in the brain" : `Medicine check, ${Math.round(purgeChance() * 100)}%`; },
+    get disabled() { return brain || carried(p, "meds") < WORM.PURGE_MEDS; },
+    resolve: live((st) => {
+      if (carried(p, "meds") < WORM.PURGE_MEDS) return `The team no longer has ${WORM.PURGE_MEDS} meds to spare. Nothing was done.`;
+      takeSupply(p, "meds", WORM.PURGE_MEDS);
+      if (wormRng(st).chance(purgeChance())) {
+        cureWorm(st, s);
+        s.health = Math.max(10, s.health - WORM.ROAD_PURGE_HP);
+        return `The purge works: ${name} passes the worm, badly weakened.`;
+      }
+      hurt(st, s, WORM.ROAD_FAIL_HP, partyTile(p), "of the worm", { raw: true });
+      return `The purge does not work: the worm holds on, and ${name} is weaker for it. A base with a medic can try again.`;
+    }),
+  });
+  card.choices.push({ label: "End it quickly", resolve: live((st) => {
+    s.worm = null;
+    hurt(st, s, 999, partyTile(p), "of the worm, by their own team");
+    st.survivors.filter((x) => x.alive).forEach((x) => (x.mood = Math.max(0, x.mood - 8)));
+    wipeIfEmpty(st, p);
+    return `The team buries ${s.name} and burns the grave.`;
+  }) });
+  card.choices.push({
+    label: "Hope it passes on its own",
+    hint: brain ? `${Math.round(WORM.HOPE_BRAIN * 100)}%; otherwise they turn within days` : `${Math.round(WORM.HOPE * 100)}%; otherwise get them to a base with meds before it reaches the brain`,
+    resolve: live((st) => {
+      if (wormRng(st).chance(brain ? WORM.HOPE_BRAIN : WORM.HOPE)) { cureWorm(st, s); return `Against all odds, ${name} passes the worm whole.`; }
+      return brain ? `They keep ${name} close and wait. It will not be long.` : `The worm stays. ${name} keeps going; a purge at a base can still clear it.`;
+    }),
+  });
+  addCard(state, card);
+}
+// At a base, the brain stage shows: surgery if there is a Clinic, or lock them away until it is over.
+function baseBrainCard(state, s, base) {
+  const name = first(s);
+  const info = () => wormTreatInfo(state, base, s, "surgery");
+  const live = (fn) => (st) => (!s.alive || !s.worm || !residents(st, base.id).includes(s) ? "Too late: nothing to decide any more." : fn(st));
+  addCard(state, {
+    title: `The worm: ${s.name}`,
+    survivorIds: [s.id],
+    wormBase: base.id,
+    text: `${s.name} had a fit at ${base.name} and cannot walk straight. It is the worm, and it has reached the brain (${s.worm.why}). In a few days they will turn. Only surgery in a Clinic can save them.`,
+    choices: [
+      {
+        label: `Try surgery (${WORM.SURGERY_MEDS} meds)`,
+        get hint() { const i = info(); return i.ok ? `${Math.round(i.chance * 100)}% they live; otherwise they die on the table` : i.reason; },
+        get disabled() { return !info().ok; },
+        resolve: live((st) => { const i = info(); if (!i.ok) return i.reason; const msg = applyWormTreat(st, base, s, i); log(st, msg, /died/.test(msg) ? "death" : "good"); return msg; }),
+      },
+      { label: "Lock them away", hint: `Nobody is hurt when they turn; everyone loses ${WORM.LOCKED_MOOD} mood. ${Math.round(WORM.HOPE_BRAIN * 100)}% they pass it`, resolve: live((st) => {
+        if (wormRng(st).chance(WORM.HOPE_BRAIN)) { cureWorm(st, s); return `Locked away, ${name} sweats through the fits and passes the worm. Nobody can quite believe it.`; }
+        s.worm.locked = true;
+        s.role = "rest";
+        return `${name} is locked in a room at ${base.name}. The others take turns at the door.`;
+      }) },
+      { label: "End it quickly", hint: `Everyone loses ${WORM.TURN_MOOD} mood`, resolve: live((st) => {
+        s.worm = null;
+        hurt(st, s, 999, base.tile, "of the worm, by their own people");
+        residents(st, base.id).forEach((x) => (x.mood = Math.max(0, x.mood - WORM.TURN_MOOD)));
+        return `${s.name} is put to rest at ${base.name} before the worm can take them. The grave is burned.`;
+      }) },
+    ],
+  });
+}
+
+// ---------- infested animals ----------
+export const herdAt = (state, tile) => (state.herds || []).find((h) => h.tile === tile) || null;
+// The share of a tile's game that carries the worm (herd: count a herd there; the map panel leaves out one you
+// cannot see).
+export function infestedShare(state, tile, { herd = true } = {}) {
+  const t = state.tiles[tile];
+  if (!t) return 0;
+  let share = Math.max(0, Math.min(HERD.SHARE_MAX, ((t.infection || 0) - HERD.SHARE_AT) / HERD.SHARE_SPAN));
+  if (herd && herdAt(state, tile)) share += HERD.HERD_SHARE;
+  return Math.min(0.95, share);
+}
+// What a hunt here brings on average, as a share of clean land's (hunting.js estimates).
+export const huntYieldMult = (state, tile) => 1 - infestedShare(state, tile) * (1 - HERD.YIELD);
+const herdLand = (state, id) => { const t = state.tiles[id]; return !!t && (t.terrain !== "water" || t.bridge) && HERD_LAND[t.terrain] != null && !state.bases.some((b) => b.tile === id); };
+export const herdCap = (state) => Math.max(1, Math.round((state.tiles.length / 1000) * HERD.PER_1000));
+
+export function herdsDaily(state) {
+  const list = state.herds || (state.herds = []);
+  const rng = wormRng(state);
+  const d = day(state);
+  for (const h of [...list]) {
+    if (d >= h.until) { list.splice(list.indexOf(h), 1); continue; }
+    // Seed the land: the tile's own infection level creeps up (hives.js radiate moves the tile toward it).
+    const t = state.tiles[h.tile];
+    const base = t.infBase ?? t.infection;
+    if (base < HERD.SEED_CAP) t.infBase = Math.min(HERD.SEED_CAP, base + HERD.SEED * h.size / 6);
+    if (!rng.chance(HERD.MOVE)) continue;
+    const next = state.grid.neighbors(h.tile).filter((id) => herdLand(state, id) && !herdAt(state, id));
+    if (!next.length) continue;
+    h.tile = rng.chance(HERD.DOWNHILL) ? next.reduce((a, b) => ((state.tiles[b].infection || 0) < (state.tiles[a].infection || 0) ? b : a)) : rng.pick(next);
+  }
+  if (list.length >= herdCap(state) || !rng.chance(HERD.SPAWN)) return;
+  const land = state.tiles.filter((t) => (t.infection || 0) >= HERD.BORN_AT && !t.hive && herdLand(state, t.id) && (HERD_LAND[t.terrain] || 0) >= 1 && !herdAt(state, t.id));
+  if (!land.length) return;
+  const t = rng.pick(land);
+  list.push({ tile: t.id, size: rng.int(HERD.SIZE[0], HERD.SIZE[1]), kind: rng.chance(t.terrain === "hills" || t.terrain === "mountain" ? 1 : 0.6) ? "deer" : "hog", born: d, until: d + rng.int(HERD.LIFE[0], HERD.LIFE[1]) });
+  stats(state).herds++;
+}
+
+// ---------- text for the UI ----------
+export function wormLabel(s) {
+  const w = wormOf(s);
+  if (!w) return "";
+  return w.stage === "brain" ? "The worm (brain)" : "The worm (gut)";
+}
+export function wormTip(state, s) {
+  const w = wormOf(s);
+  if (!w) return "";
+  const bits = [`Caught ${w.why || "somewhere on infected land"}; found on day ${w.seen}.`];
+  if (w.stage === "gut") bits.push(`In the gut: eats ${WORM.GUT_EAT} more food a day, loses ${WORM.GUT_HP} health a day, works at ${Math.round(WORM.GUT_WORK * 100)}%. Left alone it reaches the brain within weeks. Cure: a dewormer (sure), or a purge (${WORM.PURGE_MEDS} meds and a medic: better Medicine and a hospital help).`);
+  else bits.push(`In the brain: loses ${WORM.BRAIN_HP} health a day, works at ${Math.round(WORM.BRAIN_WORK * 100)}%, and turns within days. Only surgery in a staffed Clinic or better can save them (${WORM.SURGERY_MEDS} meds).${w.locked ? " Locked away: nobody will be hurt when they turn." : ""}`);
+  return bits.join(" ");
+}
+// A team's water and meat, for the team panel: "" when clean.
+export function teamWormText(state, p) {
+  const bits = [];
+  const ww = Math.min(p.wormWater || 0, carried(p, "water"));
+  if (ww >= 1) bits.push(`${Math.floor(ww)} of the water carried is unboiled from infected ground (a camp fire boils it; a water filter cleans it)`);
+  const wm = wormMeatIn(p.cargo);
+  if (wm >= 1) bits.push(`${Math.floor(wm)} of the game carries the worm's eggs (cook it at a camp fire or a base's cook fire)`);
+  return bits.join("; ");
+}

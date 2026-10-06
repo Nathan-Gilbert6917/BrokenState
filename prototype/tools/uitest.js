@@ -743,6 +743,27 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   d = L.newDangerAlerts(d.seen, [{ key: "a", tone: "danger" }, { key: "c", tone: "warn" }, { key: "x", tone: "danger" }]);
   check(eq(d.fresh, ["x"]), "a new danger alert is new; a new warning or one seen before is not");
 
+  // Closed completely: a step past folded (no strip). Its key, its button or a pick opens it; map only leaves it.
+  const c = L.defaultLayout();
+  check(eq(L.SHUT_KEYS, ["left", "right", "log"]) && L.SHUT_KEYS.every((p) => !L.isShut(c, p)), "no panel is closed at first; the three around the map can be");
+  check(L.setShut(c, "left") && L.isShut(c, "left") && c.left === true && !L.setShut(c, "nope") && !L.setShut(c, "alerts", true) && !L.isShut(c, "alerts"), "closing the left panel folds it too; the alerts and boxes only fold");
+  check(L.setFolded(c, "left") && !L.isShut(c, "left") && c.left === false, "its key ([ flips the fold) opens a closed panel");
+  L.setShut(c, "left", true);
+  check(!L.setFolded(c, "left", true) && L.isShut(c, "left") && L.setFolded(c, "left", false) && !L.isShut(c, "left"), "folding a closed panel changes nothing; showing it opens it");
+  L.setShut(c, "right", true); L.setFolded(c, "log", true);
+  check(L.toggleAll(c) && L.isShut(c, "right") && !L.toggleAll(c) && L.isShut(c, "right") && c.right && c.log && !c.left, "map only and back leave a closed panel closed (the folded log folded)");
+  check(eq(L.autoReveal(c, pick(), pick({ sel: 5 })), ["right"]), "a tile picked opens a closed right panel");
+  check(L.setShut(c, "right", false) && !c.right && !L.isShut(c, "right") && !L.setShut(c, "right", false), "the button opens it again; opening an open panel changes nothing");
+  L.setShut(c, "log", true);
+  const ss = mem();
+  check(L.saveLayout(c, ss) && eq(L.loadLayout(ss), c) && L.isShut(L.loadLayout(ss), "log"), "a closed panel is saved and loaded closed");
+  ss.setItem(L.LAYOUT_KEY, JSON.stringify({ shut: { left: true, right: "yes" } }));
+  const lc = L.loadLayout(ss);
+  check(L.isShut(lc, "left") && lc.left === true && !L.isShut(lc, "right") && !lc.right, "a closed panel loaded is folded too; odd values ignored");
+  check(/^Open the left panel \(\[, or Alt\+\[\)/.test(L.shutTip(lc, "left")) && /^Close the right panel completely/.test(L.shutTip(lc, "right")) && / or L$/.test(L.shutTip(lc, "log")) && L.shutTip(lc, "alerts") === "", "the buttons' hover text says open or close, with the key");
+  L.resetLayout(lc);
+  check(eq(lc, L.defaultLayout()) && !L.isShut(lc, "left"), "reset opens a closed panel");
+
   // Folded alerts: one button with the count, red with an urgent one; real alerts from a hungry base.
   const w = createWorld({ seed: seed + 13, factionCount: 6 });
   w.started = true;
@@ -802,12 +823,14 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   check(huge.w === 1280 && huge.h === 720, "a window remembered bigger than the screen fits it");
 
   // On a page: the classes and widths on the body (a stand-in for the browser's document).
-  const cls = new Set(), props = new Map(), tips = {};
+  const cls = new Set(), props = new Map(), tips = {}, lit = {};
   let mapOnly = null;
   globalThis.document = {
     body: { classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } },
     documentElement: { style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) } },
-    getElementById: (id) => (id === "tb-maponly" ? { classList: { toggle: (c, on) => { mapOnly = on; } } } : id.startsWith("gut-") ? { dataset: (tips[id] = tips[id] || {}) } : null),
+    getElementById: (id) => (id === "tb-maponly" ? { classList: { toggle: (c, on) => { mapOnly = on; } } } :
+      id.startsWith("tb-panel-") ? { classList: { toggle: (c, on) => { lit[id] = on; } }, dataset: (tips[id] = tips[id] || {}) } :
+      id.startsWith("gut-") || id.startsWith("tab-") ? { dataset: (tips[id] = tips[id] || {}) } : null),
   };
   try {
     const { applyLayout } = await import("../src/ui/windows.js");
@@ -821,8 +844,11 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
     check(cls.has("map-only") && cls.has("fold-right") && mapOnly === true, "map only: every fold class and the top bar button lit");
     L.toggleAll(pl); applyLayout(pl);
     check(!cls.has("map-only") && !cls.has("fold-right") && cls.has("fold-left"), "and back as it was");
+    check(!cls.has("shut-left") && lit["tb-panel-left"] === true && /^Close the left panel/.test(tips["tb-panel-left"].tip), "a folded panel is not closed: its top-bar button is lit and offers to close it");
+    L.setShut(pl, "right", true); applyLayout(pl);
+    check(cls.has("shut-right") && cls.has("fold-right") && lit["tb-panel-right"] === false && /^Open the right panel/.test(tips["tb-panel-right"].tip) && /^Open the right panel/.test(tips["tab-right"].tip), "a closed panel: the shut class (no strip), its button dark, the button and the edge tab offer to open it");
     L.resetLayout(pl); applyLayout(pl);
-    check(!cls.size && !props.size, "reset: nothing folded, usual widths");
+    check(!cls.size && !props.size && lit["tb-panel-right"] === true, "reset: nothing folded or closed, usual widths");
   } finally { delete globalThis.document; }
 
   // The menu's new controls, main.js's handlers and keys, the README and the Help topic.
@@ -835,13 +861,15 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   check(/data-action="set-opt" data-k="autoOpen"/.test(html) && /data-action="win-reset"/.test(html) && /data-sec="windows-and-panels"/.test(html), "Options has Auto-open, Reset window sizes and a ? to the help");
   SETTINGS_ACTIONS["set-opt"](w, u3, { k: "autoOpen" }, api);
   check(opts.autoOpen === false && /✗ Auto-open panels on select/.test(settingsModal(w, u3, api)), "the option switches off");
-  check(["panel-toggle", "panel-all", "win-reset"].every(inMain), "main.js handles panel-toggle, panel-all and win-reset");
+  check(["panel-toggle", "panel-close", "panel-all", "win-reset"].every(inMain) && /setShut\(layout, p, v\)/.test(mainSrc), "main.js handles panel-toggle, panel-close (closing completely), panel-all and win-reset");
+  check(/e\.altKey && !e\.ctrlKey[\s\S]{0,400}"BracketLeft" \? "left"[\s\S]{0,200}actions\["panel-close"\]\(\{ p: shut \}\)/.test(mainSrc) && /Alt\+\[/.test(readme) && /Alt\+\]/.test(L.shutTip(lc, "right")), "Alt+[ / Alt+] / Alt+L close a panel completely (keydown → panel-close); README and the tips say so");
   check(["BracketLeft", "BracketRight", "\"KeyL\"", "Backslash"].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ])");
   check(/windowFrame\(renderModal\(state, ui\), modalKind\(state, ui\)\)/.test(mainSrc) && /fitWindows\(\)/.test(mainSrc), "every window on screen goes through the frame and gets its remembered size");
   check(/mapClicked = true/.test(mainSrc) && /autoReveal\(layout, picked, now/.test(mainSrc) && /options\.autoOpen/.test(mainSrc), "main.js opens panels on a map click, a pick and the option");
-  check(["| [ / ] |", "| L |", "| Shift+[ / Shift+] |", "| \\ (backslash)", "Window edges, corners, title", "Reset window sizes", "Auto-open panels on select"].every((k) => readme.includes(k)), "the README lists the panel keys, window drags and the options");
+  check(["| [ / ] |", "| L |", "| ✕ on a folded strip, or ◧ ◨ ⬓ in the top bar |", "| Shift+[ / Shift+] |", "| \\ (backslash)", "Window edges, corners, title", "Reset window sizes", "Auto-open panels on select"].every((k) => readme.includes(k)), "the README lists the panel keys, closing a panel completely, window drags and the options");
   const topic = helpTopics().find((t) => t.id === "windows-and-panels");
-  check(topic && ["<b>[</b>", "<b>]</b>", "<b>L</b>", "<b>Shift+]</b>", "<b>Shift+[</b>", "<b>\\</b>", "Reset window sizes", "Auto-open panels on select"].every((k) => topic.html.includes(k)), "Help → Windows and panels lists the keys and options");
+  check(topic && ["<b>[</b>", "<b>]</b>", "<b>L</b>", "<b>Shift+]</b>", "<b>Shift+[</b>", "<b>\\</b>", "Closing a panel completely", "Reset window sizes", "Auto-open panels on select"].every((k) => topic.html.includes(k)), "Help → Windows and panels lists the keys, closing completely and the options");
+  check(settingsModal(w, u3, api).includes("◧ ◨ ⬓ in the top bar"), "the menu's key list has the close controls");
   if (topic) htmlOk(topic.html, "Help → Windows and panels");
 }
 

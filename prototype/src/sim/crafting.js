@@ -6,7 +6,7 @@
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
-import { count } from "./buildings.js";
+import { count, BUILDINGS } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "./inventory.js";
 import { workFactor } from "./health.js";
@@ -29,7 +29,9 @@ export const CRAFTS = {
   dressings:   { name: "Boiled-rag dressings", supplies: { meds: 1 }, in: { scrap: 2, water: 2 }, hours: 6, skill: "medicine", min: 3, field: true,
                  desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
-  waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2 },
+  waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
+  // The worm (worm.js): a sure cure in the gut stage. Strong meds pressed into tablets at a med station.
+  dewormer:    { gear: "dewormer",    in: { meds: 3, food: 1 },   hours: 8,  skill: "medicine",  min: 5, needs: "med_station" },
   backpack:    { gear: "backpack",    in: { scrap: 3 },           hours: 5,  skill: "mechanics", min: 0 },
   // The stealth kit (stealth.js).
   noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
@@ -67,7 +69,7 @@ export function meetsNeeds(base, r) {
   if (r.needs === "workshop") return hasWorkshop(base);
   return count(base, r.needs) > 0;
 }
-const needsText = (r) => (r.needs === "workshop" ? "a workshop (ammo bench or machine shop)" : r.needs);
+const needsText = (r) => (r.needs === "workshop" ? "a workshop (ammo bench or machine shop)" : BUILDINGS[r.needs] ? `a ${BUILDINGS[r.needs].name.toLowerCase()}` : r.needs);
 
 // Short description of what a recipe makes (for the UI).
 export function craftOutputText(key) {
@@ -80,11 +82,12 @@ export function craftOutputText(key) {
   else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
+  else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
-    if (d.water) fx.push(`+${d.water} water a day at its base`);
+    if (d.water) fx.push(`+${d.water} water a day at its base, strains out the worm's eggs`);
     // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
     if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
     if (d.siege) fx.push(d.siege === "ladder" ? "set against a wall in battle to climb onto its walkway" : "carried by 2–3 to smash a barred gate or door, 16–24 a carrier a turn");

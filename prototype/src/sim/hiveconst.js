@@ -37,8 +37,9 @@ export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother" };
 // TIER_DAY[t] (stretched by up to JITTER per hive, so the hives do not all evolve on the same day) and the hive
 // itself is TIER_AGE[t] days old (a young hive starts at the bottom). The years are the game's 112-day years
 // (eras.js). With the defaults: pits, a brood chamber and the worm cyst (Carriers, the first special dead a hive
-// breeds: CARRIER below) from the start, runners and feeding grounds from year 2
-// (the early game), brutes and spitters from year 5–6 (the mid game), screamers, crawlers and the Wallbreaker den
+// breeds: CARRIER below) from the start, runners and feeding grounds from year 2 (the early game), brutes, spitters,
+// Bonebacks, Climbers, Flingers, Sowers and Nightmares from year 5–6 (the mid game: middead.js), screamers, crawlers
+// and the Wallbreaker den
 // from year 10–13 (the late game: no Wallbreakers before), the mutation vat (elite dead) from year 14. Every number
 // the tree uses is here.
 export const TECH = {
@@ -122,6 +123,69 @@ export const GROWTHS = {
   // (TIER_DAY[3] = day 1100); a hive weighs it like its other late spawners.
   fold:     { name: "Shepherd's fold", tier: 3, cost: 45, days: 45, max: 1, unlocks: "shepherd", danger: 4.5,
               desc: "A ring of standing bodies around one that watches: the hive's hordes are led by Shepherds that are not fooled by decoys or fire." },
+  // The mid game's special dead (middead.js, MIDDEAD below): tier 2, from game year 5, beside the brute pit and the
+  // spitter sac. A hive grows only some of them (TECH.MAX growths), so no two hives field quite the same hordes.
+  ossuary:  { name: "Ossuary",         tier: 2, cost: 35, days: 30, max: 1, unlocks: "boneback", danger: 3,
+              desc: "A heap of fused bones the dead lie in until plates grow over their chests: the hive's hordes bring Bonebacks, armoured in front and soft behind." },
+  scaffold: { name: "Sinew scaffold",  tier: 2, cost: 35, days: 30, max: 1, unlocks: "climber", danger: 3.5,
+              desc: "A frame of stretched sinew the dead climb day and night: the hive's hordes bring Climbers that go over walls and fences." },
+  wormpit:  { name: "Worm pit",        tier: 2, cost: 35, days: 30, max: 1, unlocks: "flinger", danger: 3.5,
+              desc: "A pit seething with the worm, and long-armed dead scooping at it: the hive's hordes bring Flingers that throw worm swarms." },
+  cistern:  { name: "Egg cistern",     tier: 2, cost: 30, days: 30, max: 1, unlocks: "sower", danger: 3,
+              desc: "A pool of rot thick with the worm's eggs: the hive's hordes bring Sowers that seed the land they cross with eggs." },
+  hollow:   { name: "Dread hollow",    tier: 2, cost: 40, days: 40, max: 1, unlocks: "nightmare", danger: 4,
+              desc: "A pit in the ground that screams at night: the hive's hordes bring Nightmares whose scream sends your people running." },
+};
+
+// ---------- the mid game's special dead (middead.js) and the Sleepers (sleepers.js) ----------
+// Bonebacks: a hit from the half a Boneback faces does FRONT of its damage (a critical one CRIT_FRONT), from the side
+// or behind all of it; fire gets round the plates, a blast BLAST. Hit, it turns to face whoever hit it.
+// Climbers: go over the cells in CLIMB (a wall section, a fence, a barricade, cars, crates...) at COST extra moves a
+// cell, never stopping on one, and up or down a level without a ladder; at a base's walls SLIP of them get over even
+// when the horde is held, less TOWER with a watchtower and MANNED with the defences manned.
+// Flingers: wind up for a turn (WINDUP), then throw a worm swarm up to RANGE tiles: it lands next to whoever it was
+// thrown at. COOLDOWN turns between throws, THROWS a battle. A hit of DROP or more while it winds up (or any blow
+// from next to it) makes it drop the mass at its own feet; killed while winding up, the same.
+// Sowers: on the State Map each tile a horde with Sowers crosses gets PER × (the Sowers in it) Infection, at most
+// PASS a pass and never above CAP; it fades back as Infection always does (hives.js radiate). In battle, each enemy
+// turn a Sower is on its feet the battle's infection (more dead drawn by noise, faster Heat) rises BATTLE, at most
+// BATTLE_MAX over where it started.
+// Nightmares: every EVERY turns (from the first time they see your people) a scream: Heat + HEAT in a raid, NOISE in
+// any battle (the dead it draws), every one of the dead within WAKE tiles wakes, and your people within RANGE tiles
+// who fail their nerve (HOLD + their own: brave, cowardly) panic and spend their next turn running.
+export const MIDDEAD = {
+  BONEBACK: { FRONT: 0.3, CRIT_FRONT: 0.5, BLAST: 0.7 },
+  CLIMBER: {
+    CLIMB: ["palisade", "fence", "barricade", "sandbag", "crate", "hay", "car", "truck", "rock", "boulder", "well", "barrel", "pump", "counter", "table", "bed"],
+    COST: 1, SLIP: 0.5, TOWER: 0.4, MANNED: 0.3,
+  },
+  FLINGER: { RANGE: 7, WINDUP: 1, COOLDOWN: 2, THROWS: 3, DROP: 10 },
+  SOWER: { PER: 0.015, PASS: 0.2, CAP: 0.95, BATTLE: 0.05, BATTLE_MAX: 0.3, NOTE_RANGE: 1 },
+  NIGHTMARE: { EVERY: 3, RANGE: 6, WAKE: 12, HEAT: 15, NOISE: 4, HOLD: 0.3, BRAVE: 0.3, COWARD: -0.2, NEAR: 0.1 },
+};
+// Sleepers (sleepers.js): bodies lie about every battle map in the open and every raid (COUNT by the map's area, more
+// on infected ground: PER_INF), at least AWAY tiles from where your people start. Each is a Sleeper at ODDS (+
+// ODDS_INF × the tile's Infection, at most ODDS_MAX): a body so full of the worm that it splits open when anyone
+// living comes next to it, and SWARMS worm swarms pour out (the first bites at once unless it was spotted). Your
+// people spot one within SPOT_RANGE tiles in sight at SPOT + SPOT_PER × Scouting (at most SPOT_MAX), once a turn a
+// body: spotted, it can be shot from afar (it splits where it lies) or burned (the worms cook: no swarm).
+export const SLEEPER = { COUNT: 4, AREA: 32 * 24, PER_INF: 4, MAX: 9, AWAY: 6, ODDS: 0.15, ODDS_INF: 0.25, ODDS_MAX: 0.45, SWARMS: 1, SPOT_RANGE: 3, SPOT: 0.2, SPOT_PER: 0.03, SPOT_MAX: 0.8 };
+
+// The special dead in a hive's new horde (hivetech.js hiveMix): each kind the hive breeds comes along at ODDS of the
+// horde's size (+ TIER a tier the hive is past the growth's own, + BROOD with a brood chamber, at most MAX), no more
+// than KINDS kinds (+1 at tier 3, +1 at tier 4); its guard brings every kind at GUARD. A hive fights its assault with
+// at least ASSAULT of every kind it breeds (hives.js hiveForce), never more than ASSAULT_SHARE of the brood.
+export const HORDEMIX = {
+  ODDS: { small: 0.3, medium: 0.5, large: 0.7 }, KINDS: { small: 2, medium: 3, large: 4 },
+  TIER: 0.08, BROOD: 0.1, MAX: 0.95, GUARD: 0.85, ASSAULT: 1, ASSAULT_SHARE: 0.6,
+};
+// The special dead met away from a hive's hordes (zombietypes.js ambientMix): in towns and cities they grow more
+// common with every game year (PER_YEAR, at most MAX by the kind of place), of the kinds the hives have grown by then
+// (the calendar's tier); on a hive's land TERRITORY more, and on the red-skull ring around a hive RED more of the kinds
+// that hive breeds. All together at most CAP of the dead.
+export const AMBIENT = {
+  PER_YEAR: { city: 0.035, town: 0.025, other: 0.012 }, MAX: { city: 0.3, town: 0.22, other: 0.1 },
+  TERRITORY: 0.1, RED: 0.3, CAP: 0.5,
 };
 
 // The Shepherd: a smarter dead thing that keeps behind its pack (KEEP tiles from your people), steps around fire,
@@ -167,6 +231,26 @@ export const ZTYPES = {
   shepherd: { name: "Shepherd", short: "Sh", hp: 1.6, dmg: 0.8, aim: 0, mob: 3, armor: 0.85, share: 0.02, wall: 1.6, weight: 2.6, priority: 3, keep: SHEPHERD.KEEP, senses: [], aura: SHEPHERD.AURA,
               special: `Stays behind its pack and steps around fire. The dead within ${SHEPHERD.AURA} tiles of it ignore decoys and fire, go for the living and the breaches, and keep together.`,
               counter: "Kill it first, at range: the aura ends with it. Until then decoys and fire are wasted on its pack." },
+  // The mid game (MIDDEAD above, middead.js). front: × the damage a hit from the front does to a Boneback.
+  boneback: { name: "Boneback", short: "Bb", hp: 1.4, dmg: 1.1, aim: 5, mob: 2.5, armor: 1, share: 0.08, wall: 1.6, weight: 1.8, senses: ["noise"],
+              special: `Plates of bone grown over its chest and face: a hit from the front does ${Math.round(MIDDEAD.BONEBACK.FRONT * 100)}% of its damage, from the side or behind all of it. Hit, it turns to face whoever hit it. Slow.`,
+              counter: "Flank it: two shooters from different sides, or hit it from behind while it turns on someone else. Fire gets round the plates." },
+  climber:  { name: "Climber", short: "Cl", hp: 0.8, dmg: 1.0, aim: 5, mob: 3.5, armor: 1, share: 0.08, wall: 1.3, weight: 1.4, slip: MIDDEAD.CLIMBER.SLIP, senses: ["noise", "light"],
+              special: "Thin, with hooked fingers: it goes over walls, fences, barricades, cars and crates instead of breaking them, and climbs onto walkways without a ladder. At a base's walls some of them get over even when the horde is held.",
+              counter: "Defenders inside the walls as well as on them, a watchtower over the yard, overwatch. A building with its doors shut keeps them out." },
+  flinger:  { name: "Flinger", short: "Fl", hp: 1.1, dmg: 0.9, aim: 0, mob: 2.5, armor: 1, share: 0.05, wall: 1.3, weight: 1.7, priority: 2.2, keep: 5, senses: ["noise"],
+              special: `Scoops up a writhing mass of the worm and winds up for a turn (you see it coming), then throws it up to ${MIDDEAD.FLINGER.RANGE} tiles: it lands as a worm swarm next to whoever it was thrown at. Hit it for ${MIDDEAD.FLINGER.DROP} or more while it winds up and it drops the mass at its own feet.`,
+              counter: "Shoot it while it winds up, or move whoever it is aiming at out of reach or out of sight. Fire and clubs for the swarms." },
+  sower:    { name: "Sower", short: "Se", hp: 1.2, dmg: 0.7, aim: 0, mob: 2.5, armor: 1, share: 0.06, wall: 1.0, weight: 1.2, priority: 1.3, senses: ["noise", "light"],
+              special: "Swollen with the worm's eggs and weak in a fight, but every tile its horde crosses on the State Map is seeded: the land's Infection climbs (tougher dead, more of them drawn by noise, the worm caught more easily), around your bases too. In battle, while it stands, the ground thickens with eggs and the noise draws more of the dead.",
+              counter: "Catch its horde before it reaches your land, and kill it early in a fight. Fire cleans the ground." },
+  nightmare: { name: "Nightmare", short: "Nm", hp: 1.3, dmg: 1.0, aim: 5, mob: 3, armor: 0.9, share: 0.03, wall: 1.5, weight: 2.2, priority: 2.6, keep: 5, senses: [],
+              special: `Hangs back and screams every ${MIDDEAD.NIGHTMARE.EVERY} turns: the Heat climbs, the dead around wake and come, and your people within ${MIDDEAD.NIGHTMARE.RANGE} tiles who lose their nerve panic and spend their next turn running (to the way out if there is one, else away from the dead). Ignores decoys.`,
+              counter: "Kill it first, at range, and keep the team out of its reach. The brave hold their nerve better, and so does someone with a friend beside them." },
+  // Not bred: a body full of the worm lying among the others on the map (SLEEPER above, sleepers.js). It never walks.
+  sleeper:  { name: "Sleeper", short: "Sl", hp: 0.6, dmg: 0, aim: 0, mob: 0, armor: 1, share: 0, wall: 1, weight: 1, senses: [],
+              special: `A body like any other on the ground, so full of the worm that it splits open when anyone comes next to it: a worm swarm pours out and bites. Spotted (Scouting), it shows.`,
+              counter: "Keep away from the bodies you have not checked. Shoot a spotted one from afar (it splits where it lies) or burn it (the worms cook)." },
   // Not bred by hives (no growth unlocks them, share 0): the dead who were soldiers or riot police and still wear their
   // armour, found at military sites, police stations and in hordes that crossed them (deadsoldiers.js MILDEAD, where
   // the armour by weapon lives). armor here: the rough average the AI and fights by the numbers use; mob null: the

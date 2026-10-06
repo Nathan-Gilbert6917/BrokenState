@@ -36,6 +36,7 @@ import { siteKnown } from "./discovery.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
 import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT } from "./hunting.js";
 import { crewSurveyCands, surveySent } from "./survey.js";
+import { woodNeed, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, bestChop, woodcutterMult, WOOD } from "./woodcutting.js";
 import { packTripKit } from "./kit.js";
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
@@ -158,6 +159,31 @@ FIELD_TYPES.fish = {
       .map((x) => ({ tile: x.tile, mission: "move", fit: fishFit, onSite: HUNT.defHours, fishGear: true, why: `fish for food (~${Math.round(x.est.rations)} expected)`,
         steps: [{ kind: "fish", hours: HUNT.defHours }, { kind: "home" }],
         score: (need.food || 0) * Math.min(2.5, x.est.rations / 10) / (1 + x.dist / 6) }));
+  },
+};
+// Firewood (woodcutting.js): a trip to cut wood 8 hours on the best wood land within range and come home, from late
+// summer while the hub's woodpile is short of what the coming cold needs. The hub's axes go along.
+const woodFit = (s) => woodcutterMult(s) * bestChop(s).mult;
+FIELD_TYPES.wood = {
+  name: "Cut wood", desc: "Woodcutting trips (8 hours) to the best wood land within range from late summer, while the hub's woodpile is short of what the coming cold needs. Takes the hub's axes along; a vehicle carries far more home.",
+  cands(ctx) {
+    const { state, base, crew, role } = ctx;
+    const w = woodNeed(state, base);
+    if (!w.short || !w.soon || w.need <= 0) return [];
+    const team = [...crewReady(state, role)].sort((a, b) => woodFit(b) - woodFit(a) || a.id - b.id).slice(0, Math.max(1, crew.size || 1));
+    if (!team.length) return [];
+    const power = chopPower(chopCrew(team, (base.armory || []).filter(isChopTool)));
+    const out = [];
+    for (const id of state.grid.within(base.tile, crew.range)) {
+      if (id === base.tile || targeted(state, id) || woodAbundance(state, id) * woodLevel(state, id) < 0.45) continue;
+      const e = expectWood(state, team, id, WOOD.defHours, state.hour + 24, Infinity, power);
+      if (e.all < 6) continue;
+      const dist = state.grid.distance(base.tile, id);
+      out.push({ tile: id, mission: "move", fit: woodFit, onSite: WOOD.defHours, chopGear: true, why: `cut firewood (~${Math.round(e.all)}; ${Math.floor(w.have)} of ${w.need} for the winter)`,
+        steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
+        score: Math.min(2.5, e.all / 8) * (w.cold ? 1.4 : 1) / (1 + dist / 6) });
+    }
+    return out.sort((a, b) => b.score - a.score || a.tile - b.tile).slice(0, 3);
   },
 };
 export const FIELD_KEYS = Object.keys(FIELD_TYPES);
@@ -288,6 +314,8 @@ function launchTeam(ctx, c) {
   const p = res.party;
   // Fishing: the hub's rod or net goes along when nobody carries one.
   if (c.fishGear && !fishKit(team, p.cargo.gear).power) packFishingGear(state, base, p);
+  // Woodcutting: the hub's axes go along for those without one (woodcutting.js).
+  if (c.chopGear) for (let i = team.filter((x) => !bestChop(x).item).length; i > 0; i--) { const j = (base.armory || []).findIndex(isChopTool); if (j < 0) break; p.cargo.gear.push(base.armory.splice(j, 1)[0]); }
   p.crewRole = ctx.role.id;
   p.crewName = ctx.role.name;
   p.crewChain = 0;

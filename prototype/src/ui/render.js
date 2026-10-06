@@ -24,7 +24,7 @@ import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapspr
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
-  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
+  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 
@@ -854,6 +854,7 @@ function moverHash(state) {
   let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0) + (state.hiveGrowths ? state.hiveGrowths.length * 613 : 0);
   for (const p of state.parties) h = (h * 31 + (p.idx | 0) * 17 + (p.path ? p.path.length * 5 : 0) + (p.phase ? p.phase.length : 0) + (p.radioLive ? 3 : 0) + (p.planPath ? 7 : 0)) % 2147483647;
   for (const x of state.hordes) h = (h * 31 + x.tile * 13 + (x.size | 0)) % 2147483647;
+  for (const x of state.herds || []) h = (h * 31 + x.tile * 5 + x.size) % 2147483647; // infested herds (sim/worm.js)
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
@@ -1237,6 +1238,21 @@ export function render(state) {
     // A Wallbreaker with the horde: the brute with the concrete fist stands at its head.
     if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s, 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
     pill(x + w / 2, y - h / 2 + 2 * s, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
+  }
+  // Infested animals (sim/worm.js): herds you can see now, grey and gaunt on a pale ring, their number on a badge.
+  for (const hd of on("hordes") ? state.herds || [] : []) {
+    if (!live.has(hd.tile) || !inView(hd.tile)) continue;
+    const s = zoomBoost(), px = G.x[hd.tile] - 14 * Math.min(s, BESIDE_MAX), py = G.y[hd.tile] + 10 * Math.min(s, BESIDE_MAX);
+    const cv = herdSpriteCanvas(hd.kind, hd.size >= 6 ? 3 : hd.size >= 4 ? 2 : 1), w = gridW(cv) * 1.1 * s, h = spriteH(cv, w);
+    ctx.beginPath();
+    ctx.ellipse(px, py + h / 2 - 1.5 * s, w * 0.52, 3.5 * s, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(150,140,120,0.3)";
+    ctx.fill();
+    ctx.strokeStyle = "#c9b98f";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    sprite(cv, px, py, w);
+    pill(px + w / 2, py - h / 2 + 2 * s, `${hd.size}`, "#6b5a3a", s);
   }
   // Other groups' parties you can currently see, by group type: convoys by vehicle (spiked pickup, humvee, armored
   // truck, caravan, tractor…), raids and convoys on foot in the group's colors. Raids stand on a red-tinted ring; a

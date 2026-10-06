@@ -10,6 +10,7 @@ import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
 import { moodRisk } from "../sim/morale.js";
 import { conditionsOf, autoWantsCondition, CONDITIONS, noMedsList, recentNews } from "../sim/health.js";
+import { wormOf, WORM } from "../sim/worm.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
 import { needAlerts } from "../sim/needs.js";
 import { contactable } from "../sim/orders.js";
@@ -23,6 +24,7 @@ import { openRoster } from "./roster.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
 import { baseFoodHint, landFoodHint } from "../sim/foraging.js";
+import { woodShortfall } from "../sim/woodcutting.js";
 import { carried } from "../sim/parties.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -60,6 +62,12 @@ const SECTIONS = {
           const hint = o.daysLeft < 3 ? baseFoodHint(state, b) : "";
           out.push({ key: `food:${b.id}`, kind: "food", icon: "🥫", tone: o.daysLeft < 2 ? "danger" : "warn", text: `${b.name}: food for ${Math.max(0, Math.floor(o.daysLeft))} day${Math.floor(o.daysLeft) === 1 ? "" : "s"}${hint ? `: ${hint.replace(/ \(.*\)$/, "")}` : ""}`, tip: `About ${Math.floor(o.stock)} food in store; ${useText(o.use)} eaten a day${o.spoil >= 0.05 ? ` and ${Math.round(o.spoil * 10) / 10} spoiling` : ""}, not counting harvests to come.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}: put people on the Forage job (Work tab or their role), or send a team to hunt or forage.` : ""} Click to open the base's Farming tab.`, go: { base: b.id, tab: "farming" } });
         }
+      }
+      // Firewood (sim/woodcutting.js): the cold within a month (or here) and less heat in store than it needs.
+      const ws = woodShortfall(state, b);
+      if (ws && (ws.cold || ws.toCold <= 28)) {
+        const hint = ws.why ? `${ws.why}: send a team to cut wood, or trade for it` : `a woodcutter brings in about ${ws.perDay} a day here`;
+        out.push({ key: `wood:${b.id}`, kind: "wood", icon: "🪵", tone: ws.cold || ws.toCold <= 7 ? "danger" : "warn", text: `${b.name}: ${ws.cold ? "cold, and" : "winter is coming:"} firewood ${Math.floor(ws.have)} of ${ws.need}`, tip: `The cold ahead (about ${Math.round(ws.days)} freezing days${ws.cold ? "" : `, from about ${ws.toCold} days from now`}) needs about ${ws.need} firewood for the ${ws.heads} fed here (0.2 a head a day; fuel covers what the wood does not, 0.1 a head). In store: ${Math.floor(ws.have)} firewood and ${Math.floor(b.stock.fuel || 0)} fuel. Without them everyone is cold: mood and health a day, and illness. ${hint[0].toUpperCase()}${hint.slice(1)}: put people on Cut wood (Work tab). Click to open the base.`, go: { base: b.id, tab: "farming" } });
       }
       if (b.thirstDays > 0 || (b.stock.water || 0) < 1) out.push({ key: `thirst:${b.id}`, kind: "thirst", icon: "🚱", tone: "danger", text: `${b.name} is out of water`, tip: "Thirst kills faster than hunger: everyone there loses health every day. Wells, rain catchers, filters or a supply run. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {
@@ -175,6 +183,19 @@ const SECTIONS = {
       out.push({ key: `spread:${b.id}`, kind: "spread", icon: "🦠", tone: "danger", text: `Illness spreading at ${b.name}: ${sick.length} contagious`, tip: `${sick.map((s) => firstName(s.name)).join(", ")} can pass it on (${caught} caught it in the last 3 days). Treat them (a treated illness barely spreads), quarantine them (the outbreak card), and ease the crowding. Click to open the Medical tab.`, go: { base: b.id, tab: "medical" } });
     }
   },
+  // The worm (sim/worm.js): everyone known to carry it, at a base or on a team.
+  worm(state, out) {
+    for (const s of alive(state)) {
+      const w = wormOf(s);
+      if (!w || w.seen == null) continue;
+      const base = s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
+      const brain = w.stage === "brain";
+      const where = base ? `at ${base.name}` : s.location.kind === "party" ? "on a team" : "away";
+      out.push({ key: `worm:${s.id}:${w.stage}`, kind: "worm", icon: "🪱", tone: brain ? "danger" : "warn", text: `${firstName(s.name)} has the worm${brain ? " in the brain" : ""} (${where})`,
+        tip: brain ? `${s.name}'s worm has reached the brain: they turn within days. Only surgery in a staffed Clinic can save them.${w.locked ? " Locked away: nobody will be hurt." : ""}` : `${s.name} carries the worm in the gut. A dewormer cures it for sure; a purge (${WORM.PURGE_MEDS} meds and a medic) usually does. ${base ? "Click for the Medical tab." : "Bring them to a base with meds and a medic."}`,
+        go: base ? { base: base.id, tab: "medical" } : { surv: s.id } });
+    }
+  },
   mood(state, out) {
     for (const s of alive(state)) {
       const r = moodRisk(s);
@@ -222,7 +243,7 @@ const SECTIONS = {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];

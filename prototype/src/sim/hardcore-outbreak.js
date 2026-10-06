@@ -385,7 +385,7 @@ function militaryDaily(state, O) {
   let size = Math.max(30, Math.round(need * k * state.rng.range(0.85, 1.15)));
   M.sent++;
   M.dead += size;
-  const { mix, elite } = hiveMix(state, hive);
+  const { mix, elite } = hiveMix(state, hive, "large"); // a war host: the odds of a large horde (hivetech.js)
   const out = state.grid.neighbors(hive.tile).filter((id) => isLand(state.tiles[id]));
   const from = out.length ? state.rng.pick(out) : hive.tile;
   while (size >= 10) {

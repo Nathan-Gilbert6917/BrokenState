@@ -17,7 +17,8 @@ import { itemLoad, newItem } from "./inventory.js";
 import { rollFind, rollHuntFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
-import { siteDeadMix, bodyLoot, MILDEAD } from "./deadsoldiers.js";
+import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
+import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { mixWeight } from "./zombietypes.js";
 import { searchMeds } from "./medfinds.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -53,7 +54,8 @@ export function raidEnemies(state, tileId) {
   const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1));
   // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
-  const mix = siteDeadMix(state, tileId);
+  // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
+  const mix = maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId));
   if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : "the dead", mix });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
@@ -70,6 +72,9 @@ export function raidEnemies(state, tileId) {
   groups.push(...siteWanderers(state, tileId));
   return groups;
 }
+
+// The special dead met searching hour by hour (hivetech.js siteSpecials): their extra weight, as the armoured dead's.
+const specialThreat = (state, tile) => { const sp = siteSpecials(state, tile); return sp ? (mixWeight(sp) - 1) * MILDEAD.SEARCH_THREAT : 0; };
 
 // Registered as this module loads (not on the first raid), so a raid finishes correctly however it was started.
 registerCombatHandler("scavenge", afterRaid);
@@ -224,7 +229,7 @@ export function searchHour(state) {
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
-    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0);
+    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile);
     const ammoUse = e.approach === "loud" ? members.length * 6 : members.length * 2;
     p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - ammoUse);
     const power = members.reduce((a, m) => a + combatPower(m), 0) * ((p.supplies.ammo || 0) > 0 ? 1 : 0.6);

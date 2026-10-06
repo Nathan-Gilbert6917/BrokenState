@@ -40,7 +40,11 @@
 // scavenging, foraging) or a long march under a load (needs.js counts the hours) up to ×SICK.march.cap, sleeping rough
 // on a team ×SICK.rough; both gauges at 75+ ×SICK.fed. A base's hospital (×(1 − SICK.hospital × tier): cleaner, the sick kept apart) lowers everything but
 // the weather and work.
+// The worm is not a condition here: it has its own stages, spotting and cures (worm.js), and only its work factor
+// joins the rest (workFactor). The UI shows it beside these (ui/health.js wormChip, the Illness line, the alerts).
 import { log, addCard, alive, atBase, residents, skill, hurt, day, baseById } from "./world.js";
+import { wormWork } from "./worm.js";
+import { fireWarmed } from "./upkeep.js"; // a shelter's fire warms only while lit and fed (woodcutting.js shelterFire)
 import { activeHospital, careCtx, pickTreater, noTimeReason, nextDayText, spendMedicTime, autoCare, autoCareOn } from "./medical.js";
 import * as Weather from "./weather.js";
 import { GEAR } from "./data.js";
@@ -83,7 +87,7 @@ export const SICK = {
   weak: { below: 50, max: 1 },             // hunger / thirst below 50: risk × (1 + max × how far below), each
   fed: 75, fedMult: 0.85,                  // both gauges at 75+: risk ×0.85
   frailHealth: { below: 50, mult: 1.3 },   // below 50 health: risk ×1.3
-  hardWork: { build: 1.25, scavenge: 1.25, forage: 1.15, farm: 1.1 }, // exhaustion at a base by role
+  hardWork: { build: 1.25, scavenge: 1.25, wood: 1.25, forage: 1.15, farm: 1.1 }, // exhaustion at a base by role
   march: { per: 0.08, long: 10, perLong: 0.03, cap: 2.5 }, // a team's day: 1 + per × load-hours over a light load + perLong × hours marched past 10
   gauge: { below: 25, base: 0.01, add: 0.04, addThirst: 0.05 }, // hunger / thirst below 25: fever / dysentery a day
   water: { none: 0.004, filter: 0.001, thirsty: 3, noFire: 2 },
@@ -115,9 +119,10 @@ export function workFactor(s) {
   if (!s) return 1;
   const mw = moodWork(s);
   const list = conditionsOf(s);
-  if (!list.length) return mw;
+  const ww = wormWork(s); // worm.js: the worm in the gut or the brain, seen or not
+  if (!list.length) return ww < 1 ? Math.round(ww * mw * 100) / 100 : mw;
   if (s.quarantined && isContagious(s)) return 0;
-  return Math.max(0, Math.round(healthWork(s) * mw * 100) / 100);
+  return Math.max(0, Math.round(Math.min(healthWork(s), ww) * mw * 100) / 100);
 }
 // The illness part alone (0..1).
 export function healthWork(s) {
@@ -391,8 +396,9 @@ const coldNow = (state) => {
 };
 const exposure = (state, sheltered) => (Weather.exposureRisk ? Weather.exposureRisk(state, { sheltered }) : { chance: 0, kind: null, reason: "" });
 
-const WORK_RISK = { farm: 0.006, build: 0.012, craft: 0.008, operate: 0.006, scavenge: 0.02, guard: 0.002, medic: 0, rest: 0 };
-const OUTDOORS = new Set(["farm", "scavenge", "guard", "build", "forage"]);
+// wood: felling and splitting (woodcutting.js): axes slip, limbs fall.
+const WORK_RISK = { farm: 0.006, build: 0.012, craft: 0.008, operate: 0.006, scavenge: 0.02, guard: 0.002, wood: 0.012, medic: 0, rest: 0 };
+const OUTDOORS = new Set(["farm", "scavenge", "guard", "build", "forage", "wood"]);
 
 export function hasWaterFilter(state, base) {
   if (base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].water)) return true;
@@ -404,8 +410,9 @@ export function baseRiskCtx(state, base) {
   const people = residents(state, base.id);
   const over = Math.max(0, crowding(state, base) - 1);
   const filter = hasWaterFilter(state, base);
-  // A shelter (tier 0) with its fire out (fieldheat.js FIRE): unboiled water and no warmth indoors.
-  const coldCamp = base.tier === 0 && base.fire === false;
+  // A shelter (tier 0) whose fire does not warm it (out, or nothing left to burn: upkeep.js fireWarmed): unboiled
+  // water and no warmth indoors.
+  const coldCamp = base.tier === 0 && !fireWarmed(base);
   const hosp = activeHospital(state, base);
   // Spoiled food: the share of the fresh food stored outside, as fast as it rots there (storage.js).
   let spoil = 0;
@@ -551,7 +558,7 @@ export function conditionDrift(state, s, c) {
       if (s.inBed && hosp && hosp.tier > 0) drift -= 4 + hosp.tier * 2;
       drift -= (hosp ? hosp.baseSkill : 0) * 0.15;
       if (base.hungerDays > 0 || base.thirstDays > 0 || weak) drift += 4;
-      if (RESPIRATORY.has(c.key) && (base.cold || (base.tier === 0 && base.fire === false)) && coldNow(state)) drift += 1.5;
+      if (RESPIRATORY.has(c.key) && (base.cold || (base.tier === 0 && !fireWarmed(base))) && coldNow(state)) drift += 1.5;
     }
   }
   if (c.treatedDay >= today - 1) drift = Math.min(drift, -2);
@@ -649,7 +656,7 @@ function baseOnsets(state, base) {
     // Work accidents.
     if (working && rng.chance((WORK_RISK[role] || 0) * workFactor(s))) {
       const key = rng.chance(role === "scavenge" ? 0.65 : 0.55) ? "cut" : "sprain";
-      const what = { farm: "in the fields", build: "on the building site", craft: "at the workbench", operate: "at a workshop station", scavenge: "scavenging around the base", guard: "on watch" }[role] || "at work";
+      const what = { farm: "in the fields", wood: "cutting wood", build: "on the building site", craft: "at the workbench", operate: "at a workshop station", scavenge: "scavenging around the base", guard: "on watch" }[role] || "at work";
       addCondition(state, s, key, `${what} ${ctx.where}`, { cause: "work" });
       if (role === "scavenge") hurt(state, s, rng.int(4, 12), base.tile, `scavenging near ${base.name}`);
       continue;

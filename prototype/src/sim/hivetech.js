@@ -30,7 +30,7 @@
 // The hives' own choices (what to grow, where, the mix of a horde, the spire calling, rumours) roll their own dice
 // (roll: a hash of the seed, the hour and what is rolled for), so they never shift the world's random numbers
 // (state.rng) that everything else draws from; a team's fire at a growth uses state.rng. A seed plays out the same.
-import { TECH, GROWTHS, ZTYPES, HIVE } from "./hiveconst.js";
+import { TECH, GROWTHS, ZTYPES, HIVE, HORDEMIX } from "./hiveconst.js";
 import { log, day, addCard, snapshot, combatPower, hurt, hub } from "./world.js";
 import { ensureHives, hiveById, zombieToughness, hiveGuard, molotovsOf, clusterSize } from "./hives.js";
 import { reduceHorde } from "./hordes.js";
@@ -38,7 +38,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./
 import { partyFuel, useFuel } from "./vehicles.js";
 import { registerCombatHandler, registerBattleLayout } from "./combat.js";
 import { fightNow } from "./defences.js";
-import { battleTypes, mixText } from "./zombietypes.js";
+import { battleTypes, mixText, ambientMix } from "./zombietypes.js";
 import { rampDay } from "./eras.js"; // the game day the eras' ramps count by (hardcore: from the normal start)
 
 const hash = (n) => { let x = (n >>> 0) ^ 0x85ebca6b; x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); x = Math.imul(x ^ (x >>> 16), 0x45d9f3b); return (x ^ (x >>> 16)) >>> 0; };
@@ -108,17 +108,62 @@ export const attackRange = (state, hive) => HIVE.ATTACK_RANGE + (hiveMods(state,
 // May this hive raise a Wallbreaker? With HIVE.BOSS_DEN only once it has grown a den.
 export const canRaiseBoss = (state, hive) => !HIVE.BOSS_DEN || hiveMods(state, hive).boss;
 
-// The special dead in a new horde from this hive: each kind it breeds at about its share (× 0.6–1.4), together at
-// most TECH.MIX_MAX. { mix: { runner: 0.14, ... } | null, elite }.
-export function hiveMix(state, hive) {
+// The tier a kind of special dead is bred from (its growth's).
+const kindTier = (k) => { for (const G of Object.values(GROWTHS)) if (G.unlocks === k) return G.tier; return 0; };
+// The odds that a new horde of this size (HORDE_SIZES key: "small" | "medium" | "large", or "guard") brings each kind
+// the hive breeds (HORDEMIX): by the horde's size, + TIER a tier the hive is past the kind's own, + BROOD with a brood
+// chamber, at most MAX; a guard GUARD. { kinds: { runner: 0.62, ... }, most: kinds at most }.
+export function mixOdds(state, hive, size = "medium") {
+  const m = hiveMods(state, hive);
+  const tier = hiveTier(state, hive);
+  const brood = growthsOf(state, hive).some((g) => GROWTHS[g.kind] && GROWTHS[g.kind].guard);
+  const H = HORDEMIX;
+  const kinds = {};
+  for (const k of m.unlocks) {
+    kinds[k] = size === "guard" ? H.GUARD : Math.min(H.MAX, (H.ODDS[size] ?? H.ODDS.medium) + H.TIER * Math.max(0, tier - kindTier(k)) + (brood ? H.BROOD : 0));
+  }
+  const most = size === "guard" ? m.unlocks.length : (H.KINDS[size] ?? H.KINDS.medium) + (tier >= 3 ? 1 : 0) + (tier >= 4 ? 1 : 0);
+  return { kinds, most };
+}
+// The special dead in a new horde from this hive: each kind it breeds comes along at its odds (mixOdds: the horde's
+// size, the hive's tier and growths), at most `most` kinds (the likeliest win a tie for a place), then at about its
+// share (× 0.6–1.4), together at most TECH.MIX_MAX. The hive's own dice (roll). { mix: { runner: 0.14, ... } | null,
+// elite }.
+export function hiveMix(state, hive, size = "medium") {
   const m = hiveMods(state, hive);
   if (!m.unlocks.length) return { mix: null, elite: false };
+  const { kinds, most } = mixOdds(state, hive, size);
+  const seq = state.hordes.length;
+  const came = m.unlocks.filter((k) => roll(state, "come", hive.id, k, seq) < kinds[k])
+    .sort((a, b) => kinds[b] - kinds[a] || roll(state, "order", hive.id, a, seq) - roll(state, "order", hive.id, b, seq)).slice(0, most);
+  if (!came.length) return { mix: null, elite: m.elite };
   const mix = {};
   let total = 0;
-  for (const k of m.unlocks) { const v = ZTYPES[k].share * rollRange(state, 0.6, 1.4, "mix", hive.id, k, state.hordes.length); mix[k] = v; total += v; }
+  for (const k of came) { const v = ZTYPES[k].share * rollRange(state, 0.6, 1.4, "mix", hive.id, k, seq); mix[k] = v; total += v; }
   const f = total > TECH.MIX_MAX ? TECH.MIX_MAX / total : 1;
   for (const k in mix) mix[k] = Math.round(mix[k] * f * 1000) / 1000;
   return { mix, elite: m.elite };
+}
+// The kinds a hive's brood fights an assault with (hives.js hiveForce): the guard's mix, and at least HORDEMIX.ASSAULT
+// of every kind the hive breeds, the special dead together at most ASSAULT_SHARE of the brood (the brood grows to
+// make room, up to `cap`). { count, types, mix } (types: unit counts).
+export function assaultTypes(state, hive, count, mix, cap = 20) {
+  const kinds = hiveMods(state, hive).unlocks;
+  const H = HORDEMIX;
+  count = Math.min(cap, Math.max(count, Math.ceil((kinds.length * H.ASSAULT) / H.ASSAULT_SHARE)));
+  const types = { ...(battleTypes(mix, count) || {}) };
+  for (const k of kinds) types[k] = Math.max(types[k] || 0, H.ASSAULT);
+  // Too many for the brood: the kinds with the most give one up first (never below ASSAULT).
+  const room = Math.floor(count * H.ASSAULT_SHARE);
+  let n = Object.values(types).reduce((a, v) => a + v, 0);
+  while (n > room) {
+    const k = Object.keys(types).sort((a, b) => types[b] - types[a])[0];
+    if (!k || types[k] <= H.ASSAULT) break;
+    types[k]--; n--;
+  }
+  // Still more kinds than room (the cap): the newest kinds of the hive stay, the oldest give way.
+  if (n > count) for (const k of Object.keys(types).sort((a, b) => kindTier(a) - kindTier(b))) { if (n <= count) break; n -= types[k]; delete types[k]; }
+  return { count, types: Object.keys(types).length ? types : null };
 }
 // A border horde late in the game: the kinds of the era (by the calendar) at TECH.BORDER_SHARE of their share.
 export function borderMix(state) {
@@ -127,6 +172,21 @@ export function borderMix(state) {
   const mix = {};
   for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= era) mix[G.unlocks] = Math.round(ZTYPES[G.unlocks].share * TECH.BORDER_SHARE * rollRange(state, 0.5, 1.5, "border", G.unlocks) * 1000) / 1000;
   return Object.keys(mix).length ? mix : null;
+}
+
+// The special dead met exploring a tile away from a hive's hordes (zombietypes.js ambientMix): more in towns and
+// cities every game year, of the kinds of the era; on a hive's land more, and on its red-skull ring the kinds the
+// nearest hive breeds. Shares ({ climber: 0.04, ... }) or null.
+export function siteSpecials(state, tileId) {
+  const t = state.tiles[tileId];
+  if (!t) return null;
+  const tough = state.hives && state.hives.length ? zombieToughness(state, tileId) : 0;
+  let hiveKinds = null;
+  if (tough >= 3) {
+    const hv = state.hives.reduce((a, h) => (!a || state.grid.distance(h.tile, tileId) < state.grid.distance(a.tile, tileId) ? h : a), null);
+    if (hv) { hiveKinds = {}; for (const k of hiveMods(state, hv).unlocks) hiveKinds[k] = ZTYPES[k].share; }
+  }
+  return ambientMix(t, { years: rampDay(state) / 112, era: eraTier(state), toughness: tough, hiveKinds });
 }
 
 // ---------- threat ----------

@@ -48,6 +48,23 @@ body.fold-left #app { --left-w: 0px; --lgut: var(--strip); }
 body.fold-right #app { --right-w: 0px; --rgut: var(--strip); }
 body.fold-log #app { --log-h: 0px; --bgut: 1.7rem; }
 body.fold-left #left, body.fold-right #right, body.fold-log #log { display: none; }
+/* Closed completely (body.shut-*: ui/layout.js setShut): no panel, no strip; the map takes the room. The way back is a
+   slim tab at that edge of the map (.edgetab), the panel's top-bar button (#tb-panels) or its key. */
+body.shut-left #app { --lgut: 0px; }
+body.shut-right #app { --rgut: 0px; }
+body.shut-log #app { --bgut: 0px; }
+body.shut-left #gut-left, body.shut-right #gut-right, body.shut-log #gut-log { display: none; }
+.edgetab { display: none; position: absolute; z-index: 5; padding: 0; align-items: center; justify-content: center; background: rgba(27,30,35,0.9); color: var(--muted); border: 1px solid var(--line); border-radius: 0; font-size: 0.85rem; line-height: 1; opacity: 0.75; }
+.edgetab:hover { opacity: 1; color: var(--accent); background: var(--panel-2); }
+.edgetab-left { left: 0; top: 50%; transform: translateY(-50%); width: 1.15rem; height: 4.5rem; border-left: none; border-radius: 0 6px 6px 0; }
+.edgetab-right { right: 0; top: 50%; transform: translateY(-50%); width: 1.15rem; height: 4.5rem; border-right: none; border-radius: 6px 0 0 6px; }
+.edgetab-log { bottom: 0; left: 50%; transform: translateX(-50%); width: 4.5rem; height: 1.15rem; border-bottom: none; border-radius: 6px 6px 0 0; }
+body.shut-left #tab-left, body.shut-right #tab-right, body.shut-log #tab-log { display: flex; }
+#tb-panels { gap: 0.2rem; }
+#tb-panels button { padding: 0.15rem 0.4rem; }
+#tb-panels button:not(.active) { opacity: 0.55; }
+.gut-close { padding: 0 0.3rem; line-height: 1.2; font-size: 0.75rem; color: var(--muted); background: transparent; border-color: transparent; writing-mode: horizontal-tb; }
+.gut-close:hover { color: var(--danger); border-color: var(--danger); }
 .gut { position: relative; display: flex; align-items: center; justify-content: center; background: var(--panel); color: var(--muted); user-select: none; overflow: hidden; font-size: 0.78rem; line-height: 1; }
 .gut:hover { background: var(--panel-2); color: var(--accent); }
 #gut-left { grid-area: lgut; cursor: col-resize; border-right: 1px solid var(--line); }
@@ -264,9 +281,22 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 #orders .ro .bar { margin-top: 0.2rem; }
 .xpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; margin-top: 0.4rem; }
 .xpgrid button { text-align: left; }
+/* The order queue (ui/expedition.js queueBlock): the move under way first, then the queued orders, which can be
+   dragged onto one another or selected and moved with the arrows. */
 .xpqueue { margin: 0.2rem 0 0.35rem; padding-left: 1.2rem; }
 .xpqueue li { margin: 0.1rem 0; }
-.xpqueue li > span { display: inline-block; width: calc(100% - 2rem); }
+.xpqueue li[draggable] { user-select: none; }
+.xpqueue li.now { list-style: "▶ "; color: var(--accent); }
+.xpqueue li.now .qlabel { color: var(--text, inherit); }
+.xpqueue .qrow { display: flex; align-items: center; gap: 0.3rem; padding: 0.05rem 0.25rem; border-radius: 4px; border: 1px solid transparent; }
+.xpqueue .qlabel { flex: 1; min-width: 0; }
+.xpqueue li[draggable] .qlabel { cursor: pointer; }
+.xpqueue .qgrip { cursor: grab; color: var(--muted); letter-spacing: -0.15em; font-size: 0.8rem; }
+.xpqueue .qbtns { display: flex; gap: 0.15rem; flex: none; }
+.xpqueue .qbtns button.mini { padding: 0 0.3rem; line-height: 1.2; font-size: 0.75rem; }
+.xpqueue li.sel .qrow { background: #2e2a20; border-color: var(--accent); }
+.xpqueue li.over .qrow { border-top-color: var(--accent); box-shadow: 0 -2px 0 var(--accent); }
+.xpqueue li.dragging .qrow { opacity: 0.45; }
 #right .result { background: var(--panel); border-left: 3px solid var(--accent); padding: 0.3rem 0.5rem; }
 
 /* Inventory and loot screens (ui/inventory.js): paper doll, slots, pockets, pack, storage. */
@@ -328,7 +358,7 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 /* Timelapse viewer (ui/timelapse.js): the map fills the window, panels float over it */
 body.tl-on #app { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 minmax(0, 1fr) 0 0; }
 body.tl-on #topbar, body.tl-on #left, body.tl-on #right, body.tl-on #log, body.tl-on #legend, body.tl-on #orders,
-body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on #alerts { display: none !important; }
+body.tl-on #devpanel, body.tl-on #ctxmenu, body.tl-on #tooltip, body.tl-on #banner, body.tl-on .gut, body.tl-on .edgetab, body.tl-on #alerts { display: none !important; }
 #timelapse { position: absolute; inset: 0; pointer-events: none; z-index: 7; font-size: 0.82rem; }
 #timelapse > div { pointer-events: auto; position: absolute; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.6rem; }
 #timelapse .tl-info { left: 0.6rem; top: 0.6rem; width: 19rem; max-height: calc(100% - 7.5rem); overflow-y: auto; }

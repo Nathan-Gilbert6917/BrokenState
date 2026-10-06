@@ -82,7 +82,11 @@ section("The hive tech tree: the worm cyst comes first");
   check(hiveMix(st, hv).mix === null, "with only a pit its hordes are ordinary dead");
   hv.res = 80;
   const cy = startGrowth(st, hv, "cyst"); cy.ready = st.hour;
-  const m = hiveMix(st, hv).mix;
+  // Each new horde brings the kinds a hive breeds at its odds (hivetech.js mixOdds): over a few hordes they come.
+  let m = null;
+  const h0 = st.hour;
+  for (let i = 0; i < 20 && !(m && m.carrier); i++, st.hour++) m = hiveMix(st, hv, "large").mix;
+  st.hour = h0;
   check(!!m && m.carrier > 0 && m.carrier <= 0.1, `a grown cyst: its hordes carry Carriers (${m ? Math.round(m.carrier * 100) : 0}%)`);
   check(typeStrength({ count: 10, types: { carrier: 2 } }) > 1.05 && mixWeight({ carrier: 0.1 }, "wall") > 1, `a fight by the numbers weighs 2 Carriers in 10 at ${typeStrength({ count: 10, types: { carrier: 2 } }).toFixed(2)}×; at the walls ${mixWeight({ carrier: 0.1 }, "wall").toFixed(2)}×`);
   check(ZTYPES.swarm.share === 0 && !Object.values(GROWTHS).some((G) => G.unlocks === "swarm"), "no hive breeds the swarm: it only comes out of a Carrier");

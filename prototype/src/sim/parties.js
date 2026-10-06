@@ -43,6 +43,7 @@ import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { teamNeedsHour } from "./needs.js";
+import { wormTeamHour, packWater } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
@@ -80,6 +81,7 @@ export const MISSIONS = {
   strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
+  wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts firewood.", hidden: true },
   caravan:     { name: "Trade caravan",    desc: "Caravan stop: trade here, unload, stay a day, go on to the next destination or return home (caravans.js).", hidden: true },
 };
 
@@ -491,6 +493,7 @@ export function launchExpedition(state, opts) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  packWater(state, p, home); // worm.js: water from a base whose water is not safe carries the worm's eggs
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as
   // much as the crew can carry on top of its supplies; opts.siegeKit false: none).
   const siegeKit = mission === "assault" && opts.siegeKit !== false ? packSiegeKit(home, p.cargo, members, Math.max(0, cap - load)) : [];
@@ -654,6 +657,7 @@ function playerPartyHour(state, p) {
   consume(state, p, members);
   if (!state.parties.includes(p)) return;
   gameSpoilHour(state, p); // hunting.js: fresh game in the cargo spoils by the temperature
+  wormTeamHour(state, p, members); // worm.js: a camp fire boils water and cooks game; camping on infested land
   // Heat from staying put, the plan's conditions and finds, check-ins out of contact (plans.js, fieldheat.js).
   fieldHour(state, p);
   if (!state.parties.includes(p)) return;

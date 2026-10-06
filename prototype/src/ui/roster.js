@@ -7,7 +7,7 @@ import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { ROLES } from "../sim/economy.js";
 import * as Buildings from "../sim/buildings.js";
 import { conditionsOf } from "../sim/health.js";
-import { condChip } from "./health.js"; // icon, name and days left
+import { condChip, wormChip } from "./health.js"; // icon, name and days left; the worm once spotted
 import { moodRisk, MOOD_RISK_TIP } from "../sim/morale.js";
 import { armorPower } from "../sim/inventory.js";
 import { contactable } from "../sim/orders.js";
@@ -134,7 +134,7 @@ export function rosterModal(state, ui) {
       <td>${k ? `<div class="ro-hp"><span class="${hp < 40 ? "danger" : hp < 70 ? "warn" : "good"}">${hp}</span><div class="bar"><i style="width:${hp}%;background:${hp < 40 ? "var(--danger)" : "var(--good)"}"></i></div></div>` : `<span class="muted"${tip("No contact: unknown until the team reports in")}>?</span>`}</td>
       <td>${k ? `${n0(s.mood)}${risk ? ` <span class="${risk.tone}"${tip(MOOD_RISK_TIP)}>${esc(risk.text)}</span>` : ""}` : `<span class="muted">?</span>`}</td>
       <td>${k ? gaugeMini(s) : `<span class="muted">?</span>`}</td>
-      <td>${k ? conditionsOf(s).map((c) => condChip(state, s, c)).join("") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
+      <td>${k ? wormChip(state, s) + conditionsOf(s).map((c) => condChip(state, s, c)).join("") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
       ${skills}
       <td>${esc(weapon) || `<span class="muted">none</span>`}</td>
       <td${tip(`Armor ${ap} from worn pieces`)}>${body2 ? esc(body2) : `<span class="muted">none</span>`}${ap ? ` <span class="muted">(${ap})</span>` : ""}</td>

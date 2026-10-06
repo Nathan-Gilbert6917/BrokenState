@@ -23,7 +23,9 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily } from "./needs.js";
+import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
+import { cookAtBase, wormDaily } from "./worm.js";
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -38,6 +40,7 @@ export const ROLES = {
   hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, with their own weapon (a rifle or a bow best; firearms use the base's ammo; no weapon: snares). Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod or net (carried, or in the armory: one each). Brings in fresh fish, which spoils fast." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
+  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 0.2 a head a day below freezing). Forest gives most (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -338,6 +341,7 @@ export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
   summerWarningDaily(state); // the end of spring: bases whose water would not hold through the summer
   healthDaily(state);
+  wormDaily(state); // worm.js: catching the worm (water, raw meat), its stages, spotting, care, turning; infested herds
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
   shipFromOutposts(state);
@@ -366,6 +370,8 @@ function baseDaily(state, base) {
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
+  cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
+  woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);

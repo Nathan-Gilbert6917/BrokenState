@@ -13,10 +13,12 @@
 // On the State Map a horde carries its special dead as a mix: the share of each kind (h.mix, hordes.js), turned
 // into unit counts for a battle (battleTypes) and weighed in fights by the numbers (mixWeight, typeStrength).
 // Everything here is deterministic: the battle's rng only.
-import { ZTYPES, TECH } from "./hiveconst.js";
+import { ZTYPES, TECH, GROWTHS, AMBIENT } from "./hiveconst.js";
+import { LOCATIONS } from "./data.js";
 import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUnit, ZOMBIE_MOVE } from "./combat.js";
 import { flareLit } from "./throwables.js";
 import { carrierTurn } from "./carriers.js";
+import { flingerTurn, nightmareTurn } from "./middead.js"; // the mid game's special dead
 
 export const ZKINDS = Object.keys(ZTYPES);
 const round = (v, n = 1000) => Math.round(v * n) / n;
@@ -86,6 +88,65 @@ export function nextOfMix(b, mix = b && b.zmix) {
 }
 // The kinds of n of the dead made at once, in a mix by shares (battleTypes then typeList, spread through them).
 export const mixList = (mix, n) => typeList(battleTypes(mix, n), n);
+// The kinds of n of the dead at a site (createRaid, buildingmaps.js placeInterior): the armoured dead by their shares
+// as before (mixList, no dice), then each of the others is one of the bred kinds at that kind's share (a roll each:
+// a handful of the dead in a house still meets a Climber now and then). rng: the battle's.
+export function siteList(rng, mix, n) {
+  if (!mix) return new Array(n).fill(null);
+  const mil = {}, bred = [];
+  for (const k in mix) if (ZTYPES[k] && mix[k] > 0) { if (ZTYPES[k].military) mil[k] = mix[k]; else bred.push(k); }
+  const out = mixList(Object.keys(mil).length ? mil : null, n);
+  if (!bred.length) return out;
+  const tot = bred.reduce((a, k) => a + mix[k], 0);
+  for (let i = 0; i < n; i++) {
+    if (out[i] || !rng.chance(Math.min(1, tot))) continue;
+    let r = rng.next() * tot;
+    for (const k of bred) { r -= mix[k]; if (r < 0) { out[i] = k; break; } }
+    if (!out[i]) out[i] = bred[bred.length - 1];
+  }
+  return out;
+}
+
+// ---------- the special dead away from a hive's hordes ----------
+// The kinds the hives have grown by the era's tier (the calendar, hivetech.js eraTier), by their shares.
+export function eraKinds(tier) {
+  const out = {};
+  for (const G of Object.values(GROWTHS)) if (G.unlocks && G.tier <= tier && ZTYPES[G.unlocks]) out[G.unlocks] = ZTYPES[G.unlocks].share;
+  return out;
+}
+// The kind of place a tile is for the special dead met there: "city" (a city, its blocks and big-town sites: data.js
+// LOCATIONS cat "urban"), "town" (a small town and its shops: cat "town", the suburbs) or "other".
+export function placeKind(t) {
+  const L = t && t.loc ? LOCATIONS[t.loc.type] : null;
+  if (t && ((L && L.cat === "urban") || t.terrain === "city")) return "city";
+  if (t && ((L && L.cat === "town") || t.terrain === "suburb")) return "town";
+  return "other";
+}
+// The special dead among the dead met on a tile when exploring it (scavenge.js raidEnemies, conflicts.js, a city
+// crawl), as shares: AMBIENT.PER_YEAR a game year (at most MAX) by the kind of place, of the kinds of the era; on a
+// hive's land + TERRITORY, on the red-skull ring + RED of the kinds the nearest hive breeds (the era's if it breeds
+// none). All together at most CAP. o: { years, era, toughness, hiveKinds } (hivetech.js / hives.js work them out:
+// scavenge.js siteSpecials). null: none.
+export function ambientMix(t, o) {
+  const A = AMBIENT, kind = placeKind(t);
+  const parts = [];
+  const time = Math.min(A.MAX[kind], A.PER_YEAR[kind] * (o.years || 0));
+  const era = eraKinds(o.era || 0);
+  if (time > 0) parts.push([time, era]);
+  if (o.toughness >= 3) parts.push([A.RED, o.hiveKinds && Object.keys(o.hiveKinds).length ? o.hiveKinds : era]);
+  else if (o.toughness >= 1) parts.push([A.TERRITORY, era]);
+  const out = {};
+  for (const [share, kinds] of parts) {
+    const tot = Object.values(kinds).reduce((a, v) => a + v, 0);
+    if (!tot) continue;
+    for (const k in kinds) out[k] = (out[k] || 0) + (share * kinds[k]) / tot;
+  }
+  const sum = Object.values(out).reduce((a, v) => a + v, 0);
+  if (!sum) return null;
+  const f = sum > A.CAP ? A.CAP / sum : 1;
+  for (const k in out) out[k] = round(out[k] * f);
+  return out;
+}
 
 // A fight by the numbers (combat.js autoResolveCombat): × the enemy's strength for the special dead among them.
 export function typeStrength(enemy) {
@@ -118,6 +179,9 @@ export function applyZType(u, kind, elite = false, power = 2) {
   if (kind === "crawler") u.low = true;
   if (kind === "screamer") u.screamCd = 0;
   if (kind === "shepherd") u.sight = Math.max(u.sight || 0, 11); // it watches
+  if (kind === "flinger") { u.cd = 0; u.throws = 0; u.windup = null; } // middead.js
+  if (kind === "nightmare") { u.screamCd = 0; u.sight = Math.max(u.sight || 0, 11); }
+  if (kind === "sleeper") { u.mob = 0; u.dormant = true; } // sleepers.js: a body on the ground until it splits
   return u;
 }
 
@@ -157,6 +221,8 @@ export function zombieTurn(b, u) {
   if (u.ztype === "spitter") return spitterTurn(b, u);
   if (u.ztype === "shepherd") return shepherdTurn(b, u);
   if (u.ztype === "carrier") return carrierTurn(b, u); // carriers.js: to the bodies
+  if (u.ztype === "flinger") return flingerTurn(b, u); // middead.js: winds up, throws a worm swarm
+  if (u.ztype === "nightmare") return nightmareTurn(b, u); // middead.js: screams, your people panic
   return false;
 }
 
@@ -215,7 +281,7 @@ function screamerTurn(b, u) {
 }
 
 // Keeps about `keep` tiles from the nearest of your people (one move), where it can shriek or spit again.
-function hangBack(b, u, foes, keep) {
+export function hangBack(b, u, foes, keep) {
   const near = (x, y) => foes.reduce((m, f) => Math.min(m, Math.hypot(f.x - x, f.y - y)), 99);
   const r = reachable(b, u, u.mob);
   let best = null;

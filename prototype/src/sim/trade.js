@@ -44,12 +44,14 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export { itemValue };
 
 // Stock per head at which a group is comfortable (need 1 at the reference, 0.5 at 1.5× it, 2.2 at none).
-// Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve.
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1 };
+// Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
+// (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 4 };
 // Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0, preserved: 0.5, jars: 0 };
-// Groups always have some water (wells, rain barrels): with no figure yet they count as comfortable.
-const stockOf = (f, key) => Math.max(0, f.stock[key] ?? (key === "water" ? f.pop * REF.water : 0));
+const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 2 };
+// Groups always have some water (wells, rain barrels) and firewood (they cut their own: woodcutting.js): with no figure
+// yet they count as comfortable.
+const stockOf = (f, key) => Math.max(0, f.stock[key] ?? (key === "water" || key === "wood" ? (f.pop || 0) * REF[key] : 0));
 
 // How much this group values one unit at a given stock level (default: what they hold now).
 export function need(f, key, stock = stockOf(f, key)) {
@@ -152,7 +154,9 @@ export function autoSellGear(state, needs) {
   if (!items.length) return "";
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = [...items]; t.askGear = []; t.deal = null;
-  const want = Object.keys(needs).filter((k) => SUPPLIES[k] && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a] || a.localeCompare(b))[0];
+  // Firewood (woodcutting.js) only when the base is really short of it: it is cheap, so a deal balanced with it fills
+  // the woodpile with hundreds the base does not need.
+  const want = Object.keys(needs).filter((k) => SUPPLIES[k] && (ctx.theirHave[k] || 0) > 0 && (k !== "wood" || needs[k] >= 1.2)).sort((a, b) => needs[b] - needs[a] || a.localeCompare(b))[0];
   if (want) balanceWith(state, want);
   const v = tradeVerdict(state);
   if (!v.ok || !Object.values(t.ask).some((q) => q > 0)) { t.offer = {}; t.ask = {}; t.offerGear = []; return ""; }
@@ -174,7 +178,7 @@ export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
 // Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
-export const LOT = { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 };
+export const LOT = { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 20 };
 export const wantQty = (f, k) => Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[k] * f.pop - stockOf(f, k)));
 export function marketLists(state, f, speech = 0) {
   const wants = [], surplus = [], prices = {};
@@ -611,12 +615,12 @@ export function executeTrade(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    theirSup[k] = (theirSup[k] || 0) + q;
+    theirSup[k] = (theirSup[k] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
     gave.push(`${q} ${k}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    theirSup[k] = (theirSup[k] || 0) - q;
+    theirSup[k] = (theirSup[k] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) - q;
     if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;
     got.push(`${q} ${k}`);

@@ -29,6 +29,10 @@ export const SUPPLIES = {
   // in them is eaten at a base.
   preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
+  // Firewood (woodcutting.js): a bundle of split logs and branches, cut from the land around a base (the Cut wood job)
+  // or by a team (the Cut wood order). The winter's heating: a base burns firewood before fuel, 1 firewood heating as
+  // much as 0.5 fuel (upkeep.js HEAT.wood). Bulky and cheap: anyone with an axe can cut it.
+  wood:  { name: "Firewood", value: 0.6, weight: 3, cat: "firewood" },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 
@@ -78,7 +82,10 @@ export const GEAR = {
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 14, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
-  waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 water a day at the base it is kept at (equipped or in the armory).", weight: 3, cat: "tools" },
+  waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 water a day at the base it is kept at (equipped or in the armory). It strains out the worm's eggs too: a base with one drinks safe water, and a team carrying one cleans what it fetches and drinks.", weight: 3, cat: "tools" },
+  // The worm (worm.js): a sure cure in the gut stage, at a base or on the road. Loot: pharmacies, clinics, hospitals,
+  // and the livestock wormer on farms and ranches; made at a med station.
+  dewormer:   { name: "Dewormer",                 slot: "pack",   skill: null,       power: 0,   req: 0, value: 18, noise: 0, small: true, weight: 0.1, desc: "A blister pack of strong worm tablets (or the livestock paste from a farm). Clears the worm for sure while it is still in the gut, with no medic needed. Useless once it reaches the brain.", cat: "medical" },
   backpack:   { name: "School backpack",          slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 kg max load.", weight: 1, cat: "packs" },
   // The stealth kit (stealth.js). Throwables and the suppressor work from a pocket or the pack; thrown, a throwable is
   // gone (throw = the key in stealth.js THROWABLES). The suppressor wears a shot at a time (dur = shots).
@@ -243,6 +250,7 @@ export const CATEGORIES = {
   food:        { name: "food", group: "food" },
   water:       { name: "water", group: "food" },
   fuel:        { name: "fuel", group: "survival" },
+  firewood:    { name: "firewood", group: "survival" },
   parts:       { name: "spare parts", group: "survival" },
   scrap:       { name: "scrap", group: "survival" },
   containers:  { name: "jars and containers", group: "survival" },
@@ -274,24 +282,24 @@ export const CATEGORIES = {
 export const TRADE_PREFS = {
   raider:       { melee: 1.15, pistol: 1.3, shotgun: 1.3, rifle: 1.2, automatic: 1.4, optics: 1.3, explosive: 1.3, gunmod: 1.2, ammo: 1.25, armor: 1.1, fuel: 1.4, vehicle: 1.3,
                   liquor: 1.6, drugs: 1.7, smokes: 1.6, jewelry: 1.5, luxury: 1.15, treats: 1.1, gadgets: 1.1, collectibles: 0.8, household: 0.9,
-                  books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6 },
+                  books: 0.45, manuals: 0.6, farming: 0.5, containers: 0.6, firewood: 0.6 },
   military:     { pistol: 1.2, shotgun: 1.15, rifle: 1.35, automatic: 1.5, optics: 1.5, gunmod: 1.3, explosive: 1.25, ammo: 1.3, armor: 1.35, electronics: 1.5, household: 1.3,
                   gadgets: 1.15, packs: 1.2, medical: 1.15, fuel: 1.15, vehicle: 1.2, manuals: 1.15, smokes: 1.1,
-                  melee: 0.7, bow: 0.75, luxury: 0.6, liquor: 0.7, drugs: 0.4, jewelry: 0.7, collectibles: 0.6, farming: 0.7, containers: 0.7, scrap: 0.8 },
+                  melee: 0.7, bow: 0.75, luxury: 0.6, liquor: 0.7, drugs: 0.4, jewelry: 0.7, collectibles: 0.6, farming: 0.7, containers: 0.7, scrap: 0.8, firewood: 0.75 },
   fortress:     { scrap: 1.5, parts: 1.4, defence: 1.6, optics: 1.15, armor: 1.35, tools: 1.3, containers: 1.2, manuals: 1.25, shotgun: 1.1, rifle: 1.1, explosive: 1.1, household: 1.15,
-                  camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8 },
+                  camp: 0.9, luxury: 0.75, liquor: 0.8, jewelry: 0.8, collectibles: 0.7, gadgets: 0.8, firewood: 1.2 },
   traders:      { "*": 1.1, margin: 1.1, electronics: 1.2, optics: 1.2, luxury: 1.2, liquor: 1.2, jewelry: 1.3, smokes: 1.25, treats: 1.25, gadgets: 1.3, collectibles: 1.4, household: 1.2,
-                  drugs: 1, scrap: 0.9 },
+                  drugs: 1, scrap: 0.9, firewood: 0.8 },
   commune:      { food: 1.25, water: 1.1, farming: 1.6, medical: 1.3, books: 1.35, manuals: 1.3, tools: 1.25, containers: 1.4, clothing: 1.2, camp: 1.1, treats: 1.35,
                   household: 1.3, luxury: 1.1, jewelry: 0.6, collectibles: 0.6, gadgets: 0.7, smokes: 0.8, liquor: 0.9, drugs: 0.5,
-                  melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8 },
+                  melee: 0.85, pistol: 0.75, shotgun: 0.85, rifle: 0.9, automatic: 0.5, explosive: 0.6, gunmod: 0.6, ammo: 0.8, armor: 0.8, firewood: 1.2 },
   zealot:       { liquor: 0, drugs: 0, smokes: 0, optics: 0.8, jewelry: 0.4, collectibles: 0.5, gadgets: 0.5, luxury: 0.5, books: 0.35, electronics: 0.6, treats: 0.8,
-                  medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2 },
+                  medical: 1.4, food: 1.3, water: 1.2, melee: 1.15, bow: 1.1, explosive: 1.2, firewood: 1.1 },
   expansionist: { fuel: 1.5, vehicle: 1.6, optics: 1.25, parts: 1.35, pistol: 1.15, shotgun: 1.2, rifle: 1.25, automatic: 1.35, ammo: 1.2, armor: 1.15, packs: 1.2, electronics: 1.1,
-                  camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8 },
+                  camp: 1.15, household: 1.1, jewelry: 1.1, farming: 0.8, luxury: 0.8, books: 0.8, collectibles: 0.8, firewood: 0.9 },
   merchants:    { "*": 1.05, margin: 1.1, food: 1.35, water: 1.3, scrap: 1.4, containers: 1.5, jewelry: 1.3, collectibles: 1.4, gadgets: 1.25, liquor: 1.2, smokes: 1.2,
-                  treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9 },
-  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7 },
+                  treats: 1.2, household: 1.15, fuel: 0.85, medical: 0.9, ammo: 0.9, firewood: 0.6 },
+  explorers:    { food: 1.3, water: 1.3, optics: 1.3, medical: 1.2, packs: 1.25, camp: 1.3, clothing: 1.25, household: 1.2, treats: 1.1, books: 0.8, jewelry: 0.8, gadgets: 0.7, firewood: 1.2 },
 };
 // Small valuables traded as goods (where they exist: gold ring, cigarettes, whiskey, coffee, batteries) are light.
 for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 1, coffee: 0.5, batteries: 0.2 })) if (GEAR[k]) GEAR[k].weight = w;
@@ -309,10 +317,10 @@ for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 
 export const LOCATIONS = {
   town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 0.4, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet", "bicycle", "bat", "revolver", "slingbag", "binoculars"], richness: 0.6, known: "public" },
   city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 0.6, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun", "bat", "prybar", "revolver", "slingbag"], richness: 1.0, known: "public" },
-  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap", "binoculars"], richness: 0.5, known: "road" },
+  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.5, known: "road" },
   gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol", "revolver", "prybar", "flashlight"], richness: 0.4, known: "public" },
   mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 0.4, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack", "bat", "compbow", "slingbag", "hikingpack", "stove", "binoculars"], richness: 0.9, known: "public" },
-  hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 6, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "fireaxe"], richness: 0.8, known: "public" },
+  hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 6, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "fireaxe", "dewormer"], richness: 0.8, known: "public" },
   police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 0.5, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet", "bicycle", "baton", "carbine", "riotarms", "riotlegs", "revolver", "binoculars"], richness: 0.7, known: "public" },
   military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 0.6 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack", "rucksack", "carbine", "camonet", "sandbags", "barbedwire", "stove", "binoculars", "spotscope", "thermal"], richness: 1.1, known: "public" },
   prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine"], richness: 0.7, known: "public" },
@@ -323,7 +331,7 @@ export const LOCATIONS = {
   quarry:   { name: "Quarry",         glyph: "Q",  cat: "rural",   danger: 0, loot: { scrap: 3, fuel: 0.4 }, gear: ["sledge", "prybar", "crowbar"], richness: 0.4, known: "road" },
   // City blocks: lootier, and more of the dead.
   autoshop:    { name: "Auto shop",          glyph: "Au", cat: "urban", danger: 2, loot: { parts: 4, fuel: 1, scrap: 3 }, gear: ["crowbar", "spikedbat", "kneeguards", "bicycle", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
-  pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit"], richness: 0.8, known: "public" },
+  pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit", "dewormer"], richness: 0.8, known: "public" },
   supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 0.4, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife", "slingbag"], richness: 0.95, known: "public" },
   gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet", "binoculars", "spotscope", "monocular"], richness: 0.85, known: "public" },
   hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars"], richness: 0.8, known: "public" },
@@ -337,11 +345,11 @@ export const LOCATIONS = {
   diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.75 }, gear: ["knife"], richness: 0.5, known: "public" },
   motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.25 }, gear: ["pistol", "knife", "backpack", "bicycle", "revolver", "slingbag"], richness: 0.5, known: "public" },
   church:      { name: "Church",             glyph: "†",  cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 0.4, scrap: 1, jars: 0.75 }, gear: ["bandagekit"], richness: 0.45, known: "public" },
-  clinic:      { name: "Clinic",             glyph: "Cl", cat: "town",  danger: 1, loot: { meds: 5, water: 1, scrap: 1 }, gear: ["surgkit", "bandagekit"], richness: 0.55, known: "public" },
+  clinic:      { name: "Clinic",             glyph: "Cl", cat: "town",  danger: 1, loot: { meds: 5, water: 1, scrap: 1 }, gear: ["surgkit", "bandagekit", "dewormer"], richness: 0.55, known: "public" },
   feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1, jars: 1 }, gear: ["machete", "huntrifle", "leverrifle", "barbedwire", "beartrap", "sledge"], richness: 0.5, known: "public" },
   // Countryside: sparse, quiet and poorer, often off the road.
   barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
-  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars"], richness: 0.55, known: "road" },
+  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.55, known: "road" },
   cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
   lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular"], richness: 0.55, known: "road" },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },

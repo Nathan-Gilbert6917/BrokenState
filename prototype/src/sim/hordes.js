@@ -15,6 +15,7 @@ import { hordeAttackBase, hordeWarnings } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
+import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { shelterHeat } from "./fieldheat.js";
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
@@ -84,7 +85,7 @@ export function baseHeat(state, base) {
   const workshop = mannedStations(state, base); // stations with an operator at work; idle "Operate" people make no noise
   // A shelter (tier 0, buildings.js): its fire, vehicles parked and shooting nearby (fieldheat.js shelterHeat) instead of the hub's flat 3.
   const own = base.type !== "hub" ? 0 : base.tier === 0 ? Math.round(shelterHeat(state, base).total * 10) / 10 : 3;
-  return people.length + workshop * 3 + (base.radio ? 2 : 0) + own + generatorHeat(base) + (base.huntNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js)
+  return people.length + workshop * 3 + (base.radio ? 2 : 0) + own + generatorHeat(base) + (base.huntNoise || 0) + (base.woodNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js); axes (woodcutting.js)
 }
 
 // Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or
@@ -166,6 +167,7 @@ export function hordesHour(state) {
 function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
   hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
+  sowTile(state, h); // middead.js: Sowers seed the land they cross with the worm's eggs
   const base = state.bases.find((b) => b.tile === h.tile);
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
