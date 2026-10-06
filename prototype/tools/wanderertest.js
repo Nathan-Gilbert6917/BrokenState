@@ -464,7 +464,7 @@ if (GAMES > 0) {
   section(`Autopilot games: ${GAMES} per mode, ${DAYS} days`);
   const sum = {};
   for (const mode of ["normal", "hardcore"]) {
-    const agg = (sum[mode] = { tiles: 0, trips: 0, visits: 0, road: { neutral: 0, hostile: 0, military: 0 }, site: { neutral: 0, hostile: 0, military: 0 }, bucket: {}, asked: 0, joined: 0, fights: 0, crash: 0, robbery: 0, squadfight: 0 });
+    const agg = (sum[mode] = { tiles: 0, expect: 0, trips: 0, visits: 0, road: { neutral: 0, hostile: 0, military: 0 }, site: { neutral: 0, hostile: 0, military: 0 }, bucket: {}, asked: 0, joined: 0, fights: 0, crash: 0, robbery: 0, squadfight: 0 });
     for (let i = 0; i < GAMES; i++) {
       const s = createWorld({ seed: 5100 + i * 17, factionCount: 7, mode });
       s.started = true;
@@ -478,10 +478,11 @@ if (GAMES > 0) {
             const st = s.wanderers.stats;
             const d = day(s) - 1;
             const bk = d <= 14 ? "1-14" : d <= 30 ? "15-30" : d <= 60 ? "31-60" : "61+";
-            const b = (agg.bucket[bk] = agg.bucket[bk] || { tiles: 0, met: 0, visits: 0, site: 0 });
+            const b = (agg.bucket[bk] = agg.bucket[bk] || { tiles: 0, met: 0, expect: 0, expect1: 0, visits: 0, site: 0 });
             const delta = (k) => (st[k] || 0) - (last[k] || 0);
             b.tiles += delta("road-tiles");
             b.met += delta("road-neutral") + delta("road-hostile") + delta("road-military");
+            b.expect += delta("road-expect"); b.expect1 += delta("road-expect1"); // the meetings expected on the tiles rolled: with the mode's factor, and at ×1
             b.visits += delta("site-visits");
             b.site += delta("site-neutral") + delta("site-hostile") + delta("site-military");
             last = { ...st };
@@ -490,6 +491,7 @@ if (GAMES > 0) {
       } catch (e) { agg.crash++; console.log(`  ${mode} game ${i}: ${e.stack.split("\n").slice(0, 4).join(" | ")}`); }
       const st = s.wanderers.stats;
       agg.tiles += st["road-tiles"] || 0;
+      agg.expect += st["road-expect"] || 0;
       agg.visits += st["site-visits"] || 0;
       agg.trips += s.governor ? s.governor.stats.launched : 0;
       for (const k of ["neutral", "hostile", "military"]) { agg.road[k] += st[`road-${k}`] || 0; agg.site[k] += st[`site-${k}`] || 0; }
@@ -504,13 +506,25 @@ if (GAMES > 0) {
     const siteMet = agg.site.neutral + agg.site.hostile + agg.site.military;
     console.log(`  ${mode} games: ${agg.ends.join("; ")}`);
     console.log(`  ${mode}: ${agg.trips} trips launched, ${agg.tiles} tiles walked, ${agg.visits} site visits`);
-    console.log(`    road: ${roadMet} met (${agg.road.neutral} neutral, ${agg.road.hostile} aggressive [${agg.robbery} robbing others], ${agg.road.military} squads [${agg.squadfight} fighting the dead]) = ${r2((roadMet / Math.max(1, agg.tiles)) * 100)} per 100 tiles, ${r2((roadMet / Math.max(1, agg.trips)) * 10)} per 10 trips`);
+    console.log(`    road: ${roadMet} met (${agg.road.neutral} neutral, ${agg.road.hostile} aggressive [${agg.robbery} robbing others], ${agg.road.military} squads [${agg.squadfight} fighting the dead]) = ${r2((roadMet / Math.max(1, agg.tiles)) * 100)} per 100 tiles, ${r2((roadMet / Math.max(1, agg.trips)) * 10)} per 10 trips (${r2(agg.expect)} expected on the tiles walked)`);
     console.log(`    sites: ${siteMet} met (${agg.site.neutral} neutral, ${agg.site.hostile} aggressive, ${agg.site.military} squads) = ${r2((siteMet / Math.max(1, agg.visits)) * 10)} per 10 searches or raids`);
-    console.log(`    by day: ${Object.entries(agg.bucket).map(([k, b]) => `days ${k}: ${r2((b.met / Math.max(1, b.tiles)) * 100)} per 100 tiles, ${r2((b.site / Math.max(1, b.visits)) * 10)} per 10 visits`).join("; ")}`);
+    // Per bucket: the meetings per 100 tiles walked, and the hardcore factor as the game applied it on those tiles
+    // (expected with the factor / expected at ×1: the terrain and the nights cancel out).
+    console.log(`    by day: ${Object.entries(agg.bucket).map(([k, b]) => `days ${k}: ${b.met} met on ${b.tiles} tiles = ${r2((b.met / Math.max(1, b.tiles)) * 100)} per 100 (${r2(b.expect)} expected${mode === "hardcore" ? `, factor ×${r2(b.expect / Math.max(1e-9, b.expect1))}` : ""}), ${r2((b.site / Math.max(1, b.visits)) * 10)} per 10 visits`).join("; ")}`);
     console.log(`    ${agg.asked} asked to join, ${agg.joined} of them in the group at the end; ${agg.fights} fights with them`);
     check(agg.crash === 0, `${mode}: ${GAMES} games ran without a crash`);
+    // The dice over the whole sample: the meetings land near what the tiles walked promised (a Poisson count of ~15-40
+    // in 4-10 games: a wide band; the meetings per tile by bucket above are too few to compare, see below).
+    check(roadMet >= agg.expect * 0.4 && roadMet <= agg.expect * 2 + 2, `${mode}: ${roadMet} met on the road against ${r2(agg.expect)} expected on the tiles walked`);
   }
-  check(sum.hardcore.bucket["1-14"] && sum.hardcore.bucket["61+"] ? sum.hardcore.bucket["1-14"].met / Math.max(1, sum.hardcore.bucket["1-14"].tiles) > sum.hardcore.bucket["61+"].met / Math.max(1, sum.hardcore.bucket["61+"].tiles) : true, "hardcore: more people on the road in the first two weeks than after two months");
+  // The hardcore factor as the game applied it on the ground its teams walked: the meetings expected on the tiles rolled
+  // in the first two weeks against a normal game's chance on the same tiles (about ×2.5-3), and after two months (about
+  // ×1.2-1.4). Read from the expectation, not the meetings: the early team walks few tiles (the staging camp and the
+  // foraging keep it close to home), so its 2-6 meetings in a sample of a few games are a coin toss against the late
+  // game's; the per-tile rate also mixes in the ground (open country early, towns and cities later), which this cancels.
+  const early = sum.hardcore.bucket["1-14"], late = sum.hardcore.bucket["61+"];
+  const applied = (b) => (b && b.expect1 > 0 ? b.expect / b.expect1 : null);
+  check(early && late && applied(early) > applied(late) * 1.5 && applied(early) > 2 && applied(late) < 1.5, `hardcore: more people on the road in the first two weeks (×${r2(applied(early))} on ${early && early.tiles} tiles) than after two months (×${r2(applied(late))} on ${late && late.tiles} tiles)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
