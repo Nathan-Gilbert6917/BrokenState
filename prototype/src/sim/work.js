@@ -151,7 +151,7 @@ export const WORK_TYPES = {
   },
   craft: {
     name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
-    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (it clogs up day by day, needed or not); the jobs behind it go first.",
+    desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (it clogs up day by day, needed or not); the jobs behind it go first. As the queue never waits for spare hands, the governor or a steward queues crafts that can wait only from scrap past what the next building needs.",
     open(ctx) {
       const jobs = openCrafts(ctx);
       if (!jobs.length) return { cap: 0, why: craftQueue(ctx.base).length ? (craftQueue(ctx.base).every((j) => craftHeld(ctx.state, j)) ? "the water filter waits: the tanks are full enough and a build is queued" : "the queued crafts need a workshop") : "nothing in the craft queue" };
