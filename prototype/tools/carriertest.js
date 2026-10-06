@@ -26,7 +26,7 @@ import {
   closeCombat, autoResolveCombat, canFire, ammoLeft,
 } from "../src/sim/combat.js";
 import { stirBodies, carrierRound, swarmArmor, crushable, tappable, endangered, imminent, wormable, walkingLoot, markWalking, walkingDaily, bodiesHome, buryBody, burnBodyHome, releaseSwarm } from "../src/sim/carriers.js";
-import { catchWorm, hasWorm, clearWorm } from "../src/sim/worm.js";
+import { catchWorm, hasWorm, clearWorm, wormSeen } from "../src/sim/worm.js";
 import { applyZType, typeStrength, mixWeight } from "../src/sim/zombietypes.js";
 import { CARRIER, ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
 import { growthWish, startGrowth, hiveMix } from "../src/sim/hivetech.js";
@@ -321,14 +321,14 @@ section("The worm in the living: caught in battle, saved and loaded, shown; whoe
   clearField(b);
   const n0 = st.log.length;
   endBattleNow(st, "victory");
-  check(hasWorm(sA) && sA.worm.from === "a worm swarm's bite" && sA.worm.day === day(st), `the battle over, ${first(sA.name)} has the worm for good (worm.js catchWorm: ${JSON.stringify(sA.worm)})`);
-  check(newLogs(st, n0).some((t) => /has the worm/.test(t)), `the log: “${newLogs(st, n0).find((t) => /has the worm/.test(t))}”`);
+  check(hasWorm(sA) && sA.worm.from === "swarm" && sA.worm.since === day(st) && sA.worm.stage === "eggs" && wormSeen(sA), `the battle over, ${first(sA.name)} has caught the worm (worm.js catchWorm, cause "swarm", spotted at once: stage ${sA.worm.stage}, from "${sA.worm.from}")`);
+  check(newLogs(st, n0).some((t) => /bitten by the worm swarm/.test(t)), `the log: “${newLogs(st, n0).find((t) => /bitten by the worm swarm/.test(t))}”`);
   check(!catchWorm(st, sA, "again") && hasWorm(sA), "catching it twice changes nothing");
   closeCombat(st);
   // Save and load keep it.
   const L = loadFromString(saveToString(st));
   const lA = L.survivors.find((s) => s.id === sA.id);
-  check(!!lA && hasWorm(lA) && lA.worm.day === sA.worm.day && lA.worm.from === sA.worm.from, "s.worm survives a save and a load");
+  check(!!lA && hasWorm(lA) && lA.worm.since === sA.worm.since && lA.worm.from === sA.worm.from && lA.worm.stage === sA.worm.stage, "s.worm survives a save and a load");
   // In a later battle their unit starts wormed, and if they die they get up.
   const b2 = inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: [sA.id, sC.id], enemy: { kind: "zombies", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "carriertest", context: {} }));
   st.combat = b2;
@@ -340,10 +340,13 @@ section("The worm in the living: caught in battle, saved and loaded, shown; whoe
   const zA = risenFrom(b2, uA);
   check(!!zA && zA.name === `${first(sA.name)} (turned)`, `killed with no Carrier near, ${first(sA.name)} gets up as ${zA ? zA.name : "nothing"}`);
   endBattleNow(st, "defeat");
+  check(!sA.alive && !hasWorm(sA), "dead and risen in the battle, the worm is cleared: they never rise twice");
   closeCombat(st);
   // clearWorm: gone.
   catchWorm(st, sC, "a test");
-  check(hasWorm(sC) && clearWorm(sC) && !hasWorm(sC) && !clearWorm(sC), "clearWorm takes it away");
+  const had = hasWorm(sC);
+  clearWorm(sC);
+  check(had && !hasWorm(sC), "clearWorm takes it away");
 }
 {
   // On the State Map: with others there they tear at someone and are put down; alone on the road they walk off.
@@ -357,6 +360,7 @@ section("The worm in the living: caught in battle, saved and loaded, shown; whoe
   hurt(st, sB, 9999, h.tile, "a test");
   const hurtOne = people.filter((s) => s !== sB).some((s, i) => s.health < before[i]);
   check(!sB.alive && hurtOne && newLogs(st, n0).some((t) => /got up again.*tore at/.test(t)), `dying at the hub with the worm, ${first(sB.name)} gets up and tears at someone before they are put down (${newLogs(st, n0).find((t) => /tore at/.test(t))})`);
+  check(!hasWorm(sB), "handled, the worm is cleared: they do not rise again");
   check(walkingLoot(st).length === 0, "their things stay in the armory: nothing walks off from inside the walls");
   const sD = atBase(st, h.id)[0];
   sD.gear.armor = newItem("vest", 0.8);

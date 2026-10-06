@@ -2129,6 +2129,32 @@ export function hordeSpriteCanvas(n) {
 // An infestation hive by how infected its ground is: level 0–2 (sim/hives.js).
 export const hiveSpriteCanvas = (level = 0) => cached(`hive:${level}`, () => paintHive(level));
 
+// Infested animals (sim/worm.js): n (1–3) gaunt grey deer or hogs with raw sores, heads hanging.
+export function herdSpriteCanvas(kind, n) {
+  const k = Math.max(1, Math.min(3, n));
+  return cached(`herd:${kind}:${k}`, () => paintHerd(kind === "hog" ? "hog" : "deer", k));
+}
+function paintHerd(kind, n) {
+  const p = painter(13 + (n - 1) * 7, 12 + (n > 1 ? 2 : 0));
+  for (let i = n - 1; i >= 0; i--) infestedBeast(p, i * 7, i % 2 ? 0 : (n > 1 ? 2 : 0), kind, i);
+  return p;
+}
+function infestedBeast(p, x, y, kind, k) {
+  const HIDE = k % 2 ? "#8d877a" : "#7f796e", DARK = "#55504a", SORE = "#9a2a2c", EYE = "#ff6a3a";
+  const deer = kind === "deer";
+  const top = deer ? 4 : 5;
+  p.rect(x + 1, y + top, x + 8, y + 7, deer ? HIDE : shade(HIDE, -0.1));         // body
+  p.rect(x + 2, y + 7, x + 7, y + 7, DARK);                                      // ribs and belly
+  for (const lx of [2, 4, 6, 8]) p.rect(x + lx, y + 8, x + lx, y + (deer ? 11 : 9), DARK); // legs
+  p.set(x, y + top, HIDE);                                                        // tail
+  p.rect(x + 9, y + top + 1, x + 10, y + top + 2, HIDE);                         // neck, low
+  p.rect(x + 10, y + top + 3, x + 12, y + top + 4, HIDE);                        // head, hanging
+  p.set(x + 11, y + top + 3, EYE);
+  if (deer) { p.set(x + 10, y + top - 1, BONE); p.set(x + 11, y + top - 2, BONE); p.set(x + 10, y + top - 2, BONE); p.set(x + 11, y + top, BONE); } // antlers
+  else p.set(x + 12, y + top + 4, shade(HIDE, 0.3));                            // snout
+  p.set(x + 3, y + top + 1, SORE); p.set(x + 6, y + top, SORE); p.set(x + 5, y + top + 2, shade(SORE, 0.3));
+}
+
 // Status icon: "alert" | "unknown" (a disc in `color`) | "work" | "radio" | "siege".
 export const iconCanvas = (kind, color = "#ffd166") => cached(`icon:${kind}:${color}`, () => paintIcon(kind, color));
 

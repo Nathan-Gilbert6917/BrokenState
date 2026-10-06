@@ -47,6 +47,7 @@ import { packOf, removeAt, personPlace, placeOfLoc } from "./inventory.js";
 import { teamFire } from "./fieldheat.js";
 import { heatUse } from "./upkeep.js";
 import { conditionsOf } from "./health.js";
+import { wormMeatIn, eatRawCargo, drinkHour } from "./worm.js";
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
@@ -114,12 +115,14 @@ function takeFrom(obj, k, want) {
   return q;
 }
 // Takes up to `want` food: fresh game first (it spoils), packed food, packed preserved, found food, found preserved.
+// Game with the worm's eggs (worm.js) is left: it is eaten last, raw (teamNeedsHour), unless a camp fire cooks it.
 export function takeFood(p, want) {
   if (!(want > 0)) return 0;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  let got = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, want) : 0;
+  let got = meatIn(p.cargo) > 0 ? takeMeat(p.cargo, want, { clean: true }) : 0;
   for (const [o, k] of [[p.supplies, "food"], [p.supplies, "preserved"], [p.cargo.supplies, "food"], [p.cargo.supplies, "preserved"]]) {
     if (got >= want - 1e-12) break;
+    if (o === p.cargo.supplies && k === "food") { const q = Math.max(0, Math.min(want - got, (o.food || 0) - wormMeatIn(p.cargo))); o.food = (o.food || 0) - q; got += q; continue; }
     got += takeFrom(o, k, want - got);
   }
   if (p.cargo.meat && !(meatIn(p.cargo) > 0)) p.cargo.meat = 0;
@@ -188,8 +191,12 @@ export function teamNeedsHour(state, p, members) {
   }
   const share = SHARES[p.share] ? p.share : "hurt";
   const rule = Object.prototype.hasOwnProperty.call(NEEDS.eat, p.ration) ? NEEDS.eat[p.ration] : NEEDS.eat.full;
-  const shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p), (q) => takeFood(p, q), share);
-  const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, teamWater(p), (q) => takeWater(p, q), share);
+  const raw = wormMeatIn(p.cargo); // worm.js: game with eggs, eaten last
+  let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw, (q) => takeFood(p, q), share);
+  if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q) => eatRawCargo(state, p, members, q), share);
+  const water0 = teamWater(p);
+  const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, water0, (q) => takeWater(p, q), share);
+  drinkHour(state, p, members, water0 - teamWater(p)); // worm.js: unboiled water with the worm's eggs
   // Empty gauges: health (raw: armor and toughness do not help); low ones: mood. The cold without a fire: mood.
   const tile = partyTile(p);
   for (const s of members) {

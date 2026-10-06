@@ -42,10 +42,13 @@
 //     holds for all three. Quick and weak; a single bullet or bolt does CARRIER.SHOT of its damage, a shotgun's spread
 //     CARRIER.SHOTGUN (swarmArmor, by the weapon's data.js cat), blades 0.9, blows 1.25, blasts 1.5, fire ZTYPES burn.
 //     Each hit on someone living leaves the worm in them CARRIER.INFEST of the time (swarmBite: the unit is wormed;
-//     one of yours who lives through the battle has it for good, worm.js catchWorm at the end); anyone it kills has
-//     it (swarmHit). Whoever has the worm and dies gets up: in a battle as above; on the State Map or at a base
-//     (riseOnMap, from world.js killSurvivor): they tear at someone before they are put down, or, alone on the road,
-//     walk off with their things into the walking loot. With no one to kill the swarm sinks into the ground after
+//     one of yours who lives through the battle has caught it for good: worm.js catchWorm with the cause "swarm" at
+//     the end, the normal incubation from there, and since everyone saw the bite it counts as spotted); anyone it
+//     kills has it (swarmHit). Whoever has the worm (worm.js hasWorm: any stage) and dies gets up: in a battle as
+//     above; on the State Map or at a base (riseOnMap, from world.js killSurvivor): they tear at someone before they
+//     are put down, or, alone on the road, walk off with their things into the walking loot. Someone the worm module
+//     itself turns, or who is put down by their own people, has the worm cleared before they die and never rises
+//     twice; a rise handled here clears it too. With no one to kill the swarm sinks into the ground after
 //     CARRIER.SWARM_TURNS enemy turns (sinkSwarms). It leaves no body.
 //   The AI: an aware Carrier with none of the living next to it walks to the nearest body within CARRIER.SEEK
 //     (carrierTurn); the rest of the time it claws like the others. Your people shoot it first (ZTYPES priority).
@@ -60,7 +63,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { partyMembers } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
-import { hasWorm, catchWorm } from "./worm.js";
+import { hasWorm, catchWorm, clearWorm } from "./worm.js";
 
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
 const first = (name) => String(name || "").split(" ")[0];
@@ -541,8 +544,12 @@ export function endBodies(state, b, outcome, keepsCar) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s) continue;
-    if (s.alive && u.wormBit) catchWorm(state, s, "a worm swarm's bite");
+    if (s.alive && u.wormBit && catchWorm(state, s, "swarm")) {
+      if (s.worm && s.worm.seen == null) s.worm.seen = day(state); // everyone saw the bite: no hiding it
+      log(state, `${s.name} was bitten by the worm swarm: the worm is in them now. Treat it before it reaches the brain (Medical tab); if they die, they will get up.`, "danger");
+    }
     if (s.alive || !u.dead) continue;
+    clearWorm(s); // dead in the battle: the battle raised them or did not; they do not rise again
     if (u.burnt) { const gone = claimFallen(state, s); if (gone.length) log(state, `${first(s.name)}'s things burned with their body (${gone.map((g) => g.name).join(", ")}).`, "death"); }
     else if (u.inVehicle) {
       const armor = armorMult(s);
@@ -652,6 +659,7 @@ export function riseOnMap(state, s, tileId) {
   const party = s.location && s.location.kind === "party" ? state.parties.find((p) => p.id === s.location.partyId) : null;
   const base = s.location && s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
   const others = (party ? partyMembers(state, party) : base ? atBase(state, base.id) : []).filter((x) => x !== s && x.alive);
+  clearWorm(s); // handled here: they rise once
   if (others.length) {
     const v = rng.pick(others);
     hurt(state, v, rng.int(8, 25), tileId, `when ${first(s.name)} got up again`);

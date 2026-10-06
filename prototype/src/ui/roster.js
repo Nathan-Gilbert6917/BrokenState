@@ -9,7 +9,7 @@ import * as Buildings from "../sim/buildings.js";
 import { conditionsOf, CONDITIONS } from "../sim/health.js";
 import { moodRisk, MOOD_RISK_TIP } from "../sim/morale.js";
 import { armorPower } from "../sim/inventory.js";
-import { hasWorm } from "../sim/worm.js"; // the worm in a living person
+import { wormSeen, wormLabel, wormTip } from "../sim/worm.js"; // the worm in a living person, once spotted (a swarm's bite is seen at once)
 import { contactable } from "../sim/orders.js";
 import { MISSIONS } from "../sim/parties.js";
 import * as Skills from "../sim/skills.js";
@@ -136,7 +136,7 @@ export function rosterModal(state, ui) {
       <td>${k ? `<div class="ro-hp"><span class="${hp < 40 ? "danger" : hp < 70 ? "warn" : "good"}">${hp}</span><div class="bar"><i style="width:${hp}%;background:${hp < 40 ? "var(--danger)" : "var(--good)"}"></i></div></div>` : `<span class="muted"${tip("No contact: unknown until the team reports in")}>?</span>`}</td>
       <td>${k ? `${n0(s.mood)}${risk ? ` <span class="${risk.tone}"${tip(MOOD_RISK_TIP)}>${esc(risk.text)}</span>` : ""}` : `<span class="muted">?</span>`}</td>
       <td>${k ? gaugeMini(s) : `<span class="muted">?</span>`}</td>
-      <td>${k ? (conds.length ? conds.map((c) => `<span class="chip off">${esc(c)}</span>`).join("") : "") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (hasWorm(s) ? `<span class="chip off"${tip("The worm is in them: if they die, they get up as one of the dead.")}>Infested (the worm)</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
+      <td>${k ? (conds.length ? conds.map((c) => `<span class="chip off">${esc(c)}</span>`).join("") : "") + (s.woundInfected ? `<span class="chip off">Infected wound</span>` : "") + (wormSeen(s) ? `<span class="chip off"${tip(`${wormTip(state, s)} If they die, they get up as one of the dead.`)}>${esc(wormLabel(s))}</span>` : "") + (s.inBed ? `<span class="chip">in bed</span>` : "") : ""}</td>
       ${skills}
       <td>${esc(weapon) || `<span class="muted">none</span>`}</td>
       <td${tip(`Armor ${ap} from worn pieces`)}>${body2 ? esc(body2) : `<span class="muted">none</span>`}${ap ? ` <span class="muted">(${ap})</span>` : ""}</td>
