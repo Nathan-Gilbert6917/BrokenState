@@ -192,7 +192,47 @@ export function queueOrder(state, p, o) {
 export function removeQueued(state, p, i) {
   if (!p.orders || i < 0 || i >= p.orders.length) return "";
   const [o] = p.orders.splice(i, 1);
+  reseatQueue(state, p);
   return `Removed from the queue: ${describeOrder(state, o)}.`;
+}
+
+// Reorder the queue: the order at `from` moves to position `to` (both 0-based within the queue; the team panel's
+// arrows and drag and drop). Jobs on the spot are tied again to the tile where the moves now before them leave
+// the team (their `at`, see queueOrder), so a scavenge dragged behind another move runs at that move's end.
+export function reorderQueued(state, p, from, to) {
+  const n = (p.orders || []).length;
+  if (from < 0 || from >= n || to < 0 || to >= n) return "";
+  if (from === to) return "";
+  const [o] = p.orders.splice(from, 1);
+  p.orders.splice(to, 0, o);
+  reseatQueue(state, p);
+  return `${describeOrder(state, o)}: now ${ordinal(to + 1)} in the queue.`;
+}
+
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"}`;
+
+// After the queue changed shape: every job on the spot is planned for the tile the queue reaches before it
+// (the same walk as queueEndTile: moves and crossings set the tile, going home ends at the base).
+function reseatQueue(state, p) {
+  let tile = p.dest ?? partyTile(p);
+  for (const o of p.orders || []) {
+    if (o.type === "move" || o.type === "cross") tile = o.tile;
+    else if (o.type === "home") { const home = baseById(state, p.homeBaseId) || hub(state); if (home) tile = home.tile; }
+    else if (PLACED.includes(o.type)) o.at = tile;
+  }
+}
+
+// Cancel the move under way (the team panel's ✕ on the "Now" line of the queue): the team stops on the tile it
+// has reached and carries on with its queue from there (a job planned for the old destination fails with a
+// message and holds the rest), or waits for orders. Unlike a stop on the way (a card), the trip is not put back.
+export function cancelMove(state, p) {
+  if (p.phase !== "out" && p.phase !== "back") return "The team is not on the move.";
+  const was = orderLabel(state, p);
+  const tile = partyTile(p);
+  p.dest = tile; // stopped here on purpose: awaitOrders treats the order as finished here (no requeue of the trip)
+  p.mission = "move";
+  awaitOrders(state, p, `${was} cancelled: the team stops at ${tileLabel(state, tile)}.`, { failed: true });
+  return `${was} cancelled. The team stops at ${tileLabel(state, tile)}${(p.orders || []).length || p.phase !== "waiting" ? "" : " and waits for orders"}.`;
 }
 
 // Pick the queue back up after the team was stopped on the way.

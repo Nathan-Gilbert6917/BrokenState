@@ -136,6 +136,7 @@ const KEYS = [
   ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
   ["J", "Diary"], ["R", "Roster"],
   ["[ / ] / L", "Fold or show the left panel / right panel / log (or click the bar beside it; drag the bar to resize)"],
+  ["Alt+[ / Alt+] / Alt+L", "Close the left panel / right panel / log completely (no strip), again to bring it back; also the ✕ on a folded strip or ◧ ◨ ⬓ in the top bar. The slim tab at the map's edge or the panel's plain key opens it again too"],
   ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
   ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
   ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Enter ends the turn"],

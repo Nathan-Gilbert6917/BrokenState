@@ -2,7 +2,7 @@
 // resizable windows, and the timelapse's floating boxes. The rules (what folds, sizes, clamping) are in
 // ui/layout.js; main.js owns the layout object and redraws the map when the space for it changes (relayout).
 import {
-  PANEL_SIZE, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
+  PANEL_SIZE, SHUT_KEYS, PANEL_NAMES, isShut, shutTip, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
 } from "./layout.js";
 
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -17,11 +17,17 @@ const GUTTERS = {
   log: { id: "gut-log", open: "▾", shut: "▴", label: "Log", key: "L" },
 };
 
-// The body classes and sizes that set the page's grid (styles.css), and the bars' hover text.
+// The body classes and sizes that set the page's grid (styles.css), the bars' hover text and the state of the
+// top-bar buttons that close a panel completely (lit while the panel is there, dark while it is closed).
 export function applyLayout(L) {
   const b = document.body, root = document.documentElement;
   for (const p of ["left", "right", "log"]) {
     b.classList.toggle(`fold-${p}`, !!L[p]);
+    b.classList.toggle(`shut-${p}`, isShut(L, p));
+    const sb = document.getElementById(`tb-panel-${p}`);
+    if (sb) { sb.classList.toggle("active", !isShut(L, p)); sb.dataset.tip = shutTip(L, p); }
+    const tab = document.getElementById(`tab-${p}`);
+    if (tab) tab.dataset.tip = shutTip(L, p);
     // A width set on a big screen (or at a big UI size) never leaves the map less than about a third of a smaller one.
     if (L.size[p] != null) root.style.setProperty(`--${p}-size`, `min(${L.size[p]}rem, ${p === "log" ? "45vh" : "35vw"})`);
     else root.style.removeProperty(`--${p}-size`);
@@ -44,11 +50,41 @@ export function initPanels(api) {
     el.id = g.id;
     el.className = `gut gut-${p}`;
     el.dataset.p = p;
-    el.innerHTML = `<span class="gut-open">${g.open}</span><span class="gut-shut">${g.shut}<span class="gut-label">${g.label}</span><span class="gut-line"></span><kbd>${g.key}</kbd></span>`;
+    // The strip's ✕ closes the panel completely (main.js "panel-close"; onDown leaves it to the click).
+    el.innerHTML = `<span class="gut-open">${g.open}</span><span class="gut-shut">${g.shut}<span class="gut-label">${g.label}</span><span class="gut-line"></span><kbd>${g.key}</kbd>` +
+      `<button class="gut-close" data-action="panel-close" data-p="${p}" data-tip="Close the ${PANEL_NAMES[p].name} completely, strip and all (Alt+${g.key}). Back: the ${PANEL_NAMES[p].glyph} button in the top bar, the ${PANEL_NAMES[p].tab} tab at the map's edge, Alt+${g.key} or ${g.key}">✕</button></span>`;
     app.appendChild(el);
   }
-  // The map-only button in the top bar (static; the top bar's other slots are redrawn by main.js).
+  // A closed panel's way back: a slim tab at that edge of the map (styles.css shows it only while the panel is closed).
+  const wrap = document.getElementById("mapwrap");
+  for (const p of SHUT_KEYS) {
+    if (!wrap || document.getElementById(`tab-${p}`)) continue;
+    const t = document.createElement("button");
+    t.id = `tab-${p}`;
+    t.className = `edgetab edgetab-${p}`;
+    t.dataset.action = "panel-close";
+    t.dataset.p = p;
+    t.textContent = PANEL_NAMES[p].tab;
+    wrap.appendChild(t);
+  }
+  // The top bar's panel buttons (◧ ◨ ⬓: close a panel completely, again to open it) and the map-only button
+  // (static; the top bar's other slots are redrawn by main.js).
   const top = document.getElementById("topbar");
+  if (top && !document.getElementById("tb-panels")) {
+    const g = document.createElement("span");
+    g.id = "tb-panels";
+    g.className = "row";
+    for (const p of SHUT_KEYS) {
+      const b = document.createElement("button");
+      b.id = `tb-panel-${p}`;
+      b.className = "mini";
+      b.dataset.action = "panel-close";
+      b.dataset.p = p;
+      b.textContent = PANEL_NAMES[p].glyph;
+      g.appendChild(b);
+    }
+    top.appendChild(g);
+  }
   if (top && !document.getElementById("tb-maponly")) {
     const b = document.createElement("button");
     b.id = "tb-maponly";
@@ -118,6 +154,7 @@ function onDown(e) {
   if (e.button !== 0) return;
   const t = e.target;
   if (!t || !t.closest) return;
+  if (t.closest(".gut-close")) return; // the strip's ✕: main.js's click handler closes the panel
   const gut = t.closest(".gut");
   if (gut) {
     e.preventDefault();

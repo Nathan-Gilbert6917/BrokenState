@@ -387,6 +387,8 @@ The Survey mission, rumours and optics (`src/sim/survey.js`, `src/sim/optics.js`
 | R | Roster: everyone in one table (also the 👥 Roster button); R or Esc closes it |
 | [ / ] | Fold or show the left / right panel (or click the slim bar between it and the map; drag that bar to make the panel wider or narrower) |
 | L | Fold or show the log (folded, its strip shows the latest line; drag its bar to make it taller) |
+| Alt+[ / Alt+] / Alt+L | Close the left panel / right panel / log completely, strip and all, so the map takes the room; again to bring it back |
+| ✕ on a folded strip, or ◧ ◨ ⬓ in the top bar | The same close, by click; the top-bar button (dark while the panel is closed), the slim tab at that edge of the map (⟩ ⟨ ▴), Alt + the panel's key, the panel's plain key, or picking something it shows opens it again. Remembered like the folds |
 | Shift+[ / Shift+] | Fold or show the running orders / the alerts on the map (folded alerts are one button with the count, red when one is urgent) |
 | \ (backslash) or ▣ in the top bar | Map only: fold every panel and box over the map; again to put them back as they were |
 | Window edges, corners, title | Drag to resize or move a big window (base screen and its Work tab, survivor, trade, radio, caravan, inventory and loot, planner, route, diplomacy, memorial, the menu with Help, diary, roster, new run); double-click the title for its usual size and place. The timelapse's two boxes resize from their corner |

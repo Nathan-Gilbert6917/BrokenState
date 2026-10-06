@@ -120,7 +120,7 @@ export function renderExpedition(state, ui, p) {
       ${s.pct != null && p.phase !== "waiting" ? bar(s.pct * 100, "var(--accent)") : ""}
       ${live ? `<div class="muted">At ${esc(tileLabel(state, tile))}${p.phase === "out" || p.phase === "back" ? ` → ${esc(tileLabel(state, p.path[p.path.length - 1]))}` : ""}</div>` : ""}
       ${live ? weatherLine(state, p, v) : ""}
-      ${queueBlock(state, p, cmd)}
+      ${queueBlock(state, p, cmd, ui)}
       ${planBlock(state, p)}
       ${live ? heatBlock(state, p) : ""}
     </div>`;
@@ -262,13 +262,40 @@ function boatBlock(state, p, from, queueing) {
 }
 const btn = (attrs, label, hint, disabled) => `<button class="mini" ${attrs} ${disabled ? "disabled" : ""}${tip(hint)}>${label}</button>`;
 
-function queueBlock(state, p, live) {
+// The order queue. A move under way is the first line ("Now", ✕ cancels it: the team stops where it is). Queued
+// orders can be removed, or reordered: drag a line onto another, or select one (click it) and use ▲ ▼ or the
+// ↑ ↓ keys (main.js; Delete removes the selected one, Esc drops the selection).
+function queueBlock(state, p, live, ui) {
   const q = queueEstimate(state, p);
-  if (!q.length) return live ? `<div class="muted" style="margin-top:0.3rem">Nothing queued. When this order is done the team reports in for the next one.</div>` : "";
+  const moving = live && (p.phase === "out" || p.phase === "back");
+  const working = live && p.phase === "task" && !!p.task && !p.task.afloat; // a boat on the water cannot be called back
+  if (!q.length && !moving && !working) return live ? `<div class="muted" style="margin-top:0.3rem">Nothing queued. When this order is done the team reports in for the next one.</div>` : "";
   const total = q.every((x) => x.hours != null) ? q.reduce((s, x) => s + x.hours, 0) : null;
-  return `<div style="margin-top:0.35rem"><b>Queue</b>${total != null ? ` <span class="muted">(+${hrs(total)} after the current order)</span>` : ""}</div>
-    <ol class="xpqueue">${q.map((x, i) => `<li><span>${esc(x.label)} <span class="muted">${x.hours != null ? `~${hrs(x.hours)}` : "time varies"}</span></span>${live ? `<button class="mini" data-action="xp-unqueue" data-id="${p.id}" data-i="${i}"${tip("Remove from the queue")}>✕</button>` : ""}</li>`).join("")}</ol>
-    ${live ? `<div class="row">${p.phase === "waiting" ? `<button class="mini primary" data-action="xp-resume" data-id="${p.id}"${tip("Start the next queued order now")}>Start queue</button>` : ""}<button class="mini" data-action="xp-clearq" data-id="${p.id}"${tip("Drop every queued order (the current one carries on)")}>Clear queue</button></div>` : ""}`;
+  const sel = ui && ui.qSel != null && ui.qSel < q.length ? ui.qSel : null;
+  let now = "";
+  if (moving || working) {
+    // The order under way, with ✕: a move is cancelled (the team stops where it is), work on the spot is stopped
+    // (a camp is broken). Either way the next queued order starts there, or the team waits for orders.
+    const st = orderStatus(state, p);
+    const next = q.length ? " The next queued order starts there." : " Then the team waits for orders.";
+    const hint = moving ? `Cancel this ${p.phase === "back" ? "return home" : "move"}: the team stops on the tile it has reached.${next}` :
+      p.task.type === "camp" ? `Break camp now.${next}` : `Stop this job now (nothing is used up).${next}`;
+    now = `<li class="now"><div class="qrow"><span class="qlabel"${tip("The order under way. ✕ cancels it: the team stops where it is and goes on with the queue from there, or waits for orders.")}><b>Now:</b> ${esc(st.label)} <span class="muted">${st.left != null && st.left > 0 ? `${hrs(st.left)} left` : st.left == null && working ? "until you stop it" : ""}</span></span>` +
+      `<span class="qbtns"><button class="mini" data-action="${moving ? "xp-cancelmove" : "xp-stop"}" data-id="${p.id}"${tip(hint)}>✕</button></span></div></li>`;
+  }
+  const rows = q.map((x, i) => {
+    const label = `${esc(x.label)} <span class="muted">${x.hours != null ? `~${hrs(x.hours)}` : "time varies"}</span>`;
+    if (!live) return `<li${i === 0 ? ' value="1"' : ""}><div class="qrow"><span class="qlabel">${label}</span></div></li>`;
+    return `<li class="${sel === i ? "sel" : ""}"${i === 0 ? ' value="1"' : ""} draggable="true" data-qdrag="${i}" data-qdrop="${i}" data-id="${p.id}">
+      <div class="qrow"><span class="qgrip"${tip("Drag onto another line to reorder the queue")}>⋮⋮</span>
+      <span class="qlabel" data-action="xp-qsel" data-id="${p.id}" data-i="${i}"${tip(sel === i ? "Selected: ↑ ↓ move it in the queue, Delete removes it, Esc drops the selection. Click to unselect." : "Click to select, then ↑ ↓ move it in the queue (or drag the line).")}>${label}</span>
+      <span class="qbtns"><button class="mini" data-action="xp-qmove" data-id="${p.id}" data-i="${i}" data-dir="-1" ${i === 0 ? "disabled" : ""}${tip("Earlier in the queue")}>▲</button>` +
+      `<button class="mini" data-action="xp-qmove" data-id="${p.id}" data-i="${i}" data-dir="1" ${i === q.length - 1 ? "disabled" : ""}${tip("Later in the queue")}>▼</button>` +
+      `<button class="mini" data-action="xp-unqueue" data-id="${p.id}" data-i="${i}"${tip("Remove from the queue")}>✕</button></span></div></li>`;
+  }).join("");
+  return `<div style="margin-top:0.35rem"><b>Queue</b>${total != null && q.length ? ` <span class="muted">(+${hrs(total)} after the current order)</span>` : ""}</div>
+    <ol class="xpqueue">${now}${rows}</ol>
+    ${live && q.length ? `<div class="row">${p.phase === "waiting" ? `<button class="mini primary" data-action="xp-resume" data-id="${p.id}"${tip("Start the next queued order now")}>Start queue</button>` : ""}<button class="mini" data-action="xp-clearq" data-id="${p.id}"${tip("Drop every queued order (the current one carries on)")}>Clear queue</button></div>` : ""}`;
 }
 
 function memberCard(state, p, m, live, queueing) {

@@ -20,7 +20,7 @@ import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, v
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
-import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, contactable, queueEndTile } from "./sim/orders.js";
+import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
 import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
@@ -61,7 +61,7 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { toManual } from "./sim/work.js";
 import {
-  loadLayout, saveLayout, setFolded, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
+  loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 
@@ -81,7 +81,7 @@ const freshUi = () => ({
   started: false, speed: 0, lastSpeed: 1, tab: "bases", selected: -1,
   planner: null, plannerError: "", routeSetup: null, survivor: null, cardResult: null, tradeMsg: "",
   baseView: null, baseMsg: "", moveParty: null, moveMsg: "", supplyForm: null, supplyError: "",
-  expedition: null, xpMsg: "", xpQueue: false, moveQueue: false, // team panel and order queue
+  expedition: null, xpMsg: "", xpQueue: false, moveQueue: false, qSel: null, // team panel and order queue (qSel: the selected queued order)
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null,
   dev: false, showFps: false, armed: newArmed(),
@@ -270,7 +270,8 @@ function tidyUi() {
   if (ui.baseView && !baseById(state, ui.baseView.id)) { ui.baseView = null; ui.baseMsg = ""; }
   if (ui.supplyForm && (!ui.baseView || !baseById(state, ui.supplyForm.originId))) { ui.supplyForm = null; ui.supplyError = ""; }
   if (ui.survivor != null && !survivorById(state, ui.survivor)) { ui.survivor = null; ui.lookEdit = null; }
-  if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; }
+  if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; ui.qSel = null; }
+  if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
 }
@@ -290,6 +291,11 @@ function relayout(fn) {
 }
 function foldPanel(p, v) {
   relayout(() => { setFolded(layout, p, v); applyLayout(layout); });
+  saveLayout(layout);
+}
+// Close the left panel, the right panel or the log completely (no strip), or open a closed one (ui/layout.js setShut).
+function shutPanel(p, v) {
+  relayout(() => { setShut(layout, p, v); applyLayout(layout); });
   saveLayout(layout);
 }
 // What was picked at the last refresh (autoReveal compares), the danger alerts already seen, and a tile clicked on
@@ -532,9 +538,12 @@ const actions = {
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
-  // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), map
-  // only (fold them all; again: back as they were), and the menu's reset (windows and panels as they first were).
+  // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), close
+  // one completely or open it again (data-p: left, right, log: the strip's ✕, the top bar's ◧ ◨ ⬓, the tab at the
+  // map's edge), map only (fold them all; again: back as they were), and the menu's reset (windows and panels as
+  // they first were).
   "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  "panel-close": (d) => shutPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
   "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
   "win-reset": () => {
     resetWindows();
@@ -638,8 +647,8 @@ const actions = {
     if (!state.parties.includes(p) || p.phase === "back") log(state, "Team ordered home.", "info");
   },
   // Team panel (right sidebar) and the order queue. Orders given while paused start when the clock runs again.
-  "xp-open": (d) => { ui.expedition = Number(d.id); ui.xpMsg = ""; const p = partyById(d.id); if (p && contactable(p)) { ui.selected = partyTile(p); view.selected = ui.selected; } },
-  "xp-close": () => { ui.expedition = null; ui.xpMsg = ""; },
+  "xp-open": (d) => { if (ui.expedition !== Number(d.id)) ui.qSel = null; ui.expedition = Number(d.id); ui.xpMsg = ""; const p = partyById(d.id); if (p && contactable(p)) { ui.selected = partyTile(p); view.selected = ui.selected; } },
+  "xp-close": () => { ui.expedition = null; ui.xpMsg = ""; ui.qSel = null; },
   "xp-queuemode": () => { ui.xpQueue = !ui.xpQueue; },
   "xp-orderstoggle": () => { ui.ordersCollapsed = !ui.ordersCollapsed; },
   "xp-order": (d) => {
@@ -674,8 +683,37 @@ const actions = {
   },
   "xp-stop": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = stopTask(state, p); },
   "xp-resume": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = resumeQueue(state, p); },
-  "xp-unqueue": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = removeQueued(state, p, Number(d.i)); },
-  "xp-clearq": (d) => { const p = partyById(d.id); if (p) { p.orders = []; ui.xpMsg = "Queue cleared."; } },
+  "xp-unqueue": (d) => {
+    const p = partyById(d.id);
+    if (!p) return;
+    const i = Number(d.i);
+    ui.xpMsg = removeQueued(state, p, i);
+    if (ui.qSel != null && ui.expedition === p.id) ui.qSel = ui.qSel === i ? null : ui.qSel > i ? ui.qSel - 1 : ui.qSel; // the selection follows its order
+  },
+  "xp-clearq": (d) => { const p = partyById(d.id); if (p) { p.orders = []; ui.xpMsg = "Queue cleared."; ui.qSel = null; } },
+  // The queue's "Now" line: cancel the move under way (sim/orders.js cancelMove; the team stops where it is).
+  "xp-cancelmove": (d) => { const p = partyById(d.id); if (p) ui.xpMsg = cancelMove(state, p); },
+  // Reordering the queue: select a line (click; again to unselect), move it with ▲ ▼ (or ↑ ↓, keydown below),
+  // or drag it onto another line (xp-qdrop, from the drop listener). The selection follows the order it was on.
+  "xp-qsel": (d) => { const i = Number(d.i); ui.qSel = ui.qSel === i ? null : i; },
+  "xp-qmove": (d) => {
+    const p = partyById(d.id);
+    if (!p) return;
+    const i = Number(d.i), to = i + Number(d.dir);
+    const msg = reorderQueued(state, p, i, to);
+    if (!msg) return;
+    ui.xpMsg = msg;
+    if (ui.expedition === p.id && (ui.qSel === i || ui.qSel == null)) ui.qSel = to;
+  },
+  "xp-qdrop": (d) => {
+    const p = partyById(d.id);
+    if (!p) return;
+    const from = Number(d.from), to = Number(d.to);
+    const msg = reorderQueued(state, p, from, to);
+    if (!msg) return;
+    ui.xpMsg = msg;
+    if (ui.expedition === p.id && ui.qSel != null) ui.qSel = ui.qSel === from ? to : from < ui.qSel && to >= ui.qSel ? ui.qSel - 1 : from > ui.qSel && to <= ui.qSel ? ui.qSel + 1 : ui.qSel;
+  },
   radiotalk: (d) => { log(state, radioTalk(state, factionById(state, Number(d.id))), "info"); },
   routesetup: (d) => {
     ui.routeSetup = { factionId: Number(d.id), sendKey: "food", sendQty: 20, recvKey: "ammo", recvQty: 60, interval: 5, escort: "standard", escortIds: new Set() };
@@ -836,7 +874,19 @@ for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(s
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
+// The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);
+// dropping one on another puts it in that place (xp-qdrop). The dragged line is dimmed, the target underlined.
+const QDRAG = "queue:"; // the queue's dataTransfer payload: queue:<party id>:<index>
+const clearQueueDrag = () => { for (const li of document.querySelectorAll(".xpqueue li.over, .xpqueue li.dragging")) li.classList.remove("over", "dragging"); };
 document.addEventListener("dragstart", (ev) => {
+  const q = ev.target.closest && ev.target.closest("[data-qdrag]");
+  if (q) {
+    ev.dataTransfer.setData("text/plain", `${QDRAG}${q.dataset.id}:${q.dataset.qdrag}`);
+    ev.dataTransfer.effectAllowed = "move";
+    q.classList.add("dragging");
+    hideTip();
+    return;
+  }
   const el = ev.target.closest && ev.target.closest("[data-drag]");
   if (!el || !ui.inv) return;
   ev.dataTransfer.setData("text/plain", el.dataset.drag);
@@ -844,9 +894,34 @@ document.addEventListener("dragstart", (ev) => {
   hideTip();
 });
 document.addEventListener("dragover", (ev) => {
+  const q = ev.target.closest && ev.target.closest("[data-qdrop]");
+  if (q) {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "move";
+    if (!q.classList.contains("over")) { for (const li of document.querySelectorAll(".xpqueue li.over")) li.classList.remove("over"); q.classList.add("over"); }
+    return;
+  }
   if (ui.inv && ev.target.closest && ev.target.closest("[data-drop]")) ev.preventDefault();
 });
+document.addEventListener("dragleave", (ev) => {
+  const q = ev.target.closest && ev.target.closest("[data-qdrop]");
+  if (q && !q.contains(ev.relatedTarget)) q.classList.remove("over");
+});
+document.addEventListener("dragend", clearQueueDrag);
 document.addEventListener("drop", (ev) => {
+  const q = ev.target.closest && ev.target.closest("[data-qdrop]");
+  if (q) {
+    ev.preventDefault();
+    clearQueueDrag();
+    releaseHold();
+    const data = ev.dataTransfer.getData("text/plain") || "";
+    if (data.startsWith(QDRAG)) {
+      const [id, from] = data.slice(QDRAG.length).split(":");
+      if (id === q.dataset.id) act(() => actions["xp-qdrop"]({ id, from, to: q.dataset.qdrop }));
+    }
+    refresh();
+    return;
+  }
   const el = ev.target.closest && ev.target.closest("[data-drop]");
   if (!el || !ui.inv) return;
   ev.preventDefault();
@@ -1298,7 +1373,7 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
@@ -1392,6 +1467,7 @@ function closeTopLayer() {
   if (ui.roster) { ui.roster = null; return true; }
   if (ui.diary) { ui.diary = null; return true; }
   if (ui.moveParty != null) { endMoveMode(); return true; }
+  if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
   return false;
 }
@@ -1412,13 +1488,30 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // A selected order in the team panel's queue (ui/expedition.js queueBlock): ↑ ↓ move it, Delete removes it.
+  if (ui.expedition != null && ui.qSel != null && ["ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.code) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    const p = partyById(ui.expedition);
+    if (p) {
+      if (e.code === "Delete" || e.code === "Backspace") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
+      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: e.code === "ArrowUp" ? -1 : 1 });
+    }
+    refresh();
+    return;
+  }
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
-  // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only.
+  // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key
+  // opens it whether it is folded or closed completely. Alt + the key closes the panel completely (strip and
+  // all), and brings a closed one back.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+    const shut = e.code === "BracketLeft" ? "left" : e.code === "BracketRight" ? "right" : e.code === "KeyL" ? "log" : null;
+    if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
+  }
   if (!e.ctrlKey && !e.altKey && !e.metaKey) {
     const fold = e.code === "BracketLeft" ? (e.shiftKey ? "orders" : "left") : e.code === "BracketRight" ? (e.shiftKey ? "alerts" : "right") :
       e.code === "KeyL" && !e.shiftKey ? "log" : null;
