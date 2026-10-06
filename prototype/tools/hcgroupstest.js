@@ -195,7 +195,10 @@ for (const seed of MSEEDS) {
   check(r.fell != null && r.back == null, `${tag} the base fell on day ${r.fell} (${m.sorties} sorties, ${m.culls} culls, ${m.killed} of the dead cut down); the strike force never got back`);
   if (r.fell == null) { arcs.push(r); continue; }
   const t = s.tiles[m.tile];
-  check(!mil.alive && !!t.ruin && t.infection >= 0.6 && s.log.some((l) => /Last transmission/.test(l.text)), `${tag} the old military is gone: its base a ruin full of the dead (infection ${t.infection.toFixed(2)}), a last radio message`);
+  // The ruin keeps its own dead even when a group burns the hive by the base out afterwards (hives.js destroyHive
+  // fades only what a hive radiated; seed 42: burned on day 60).
+  const hiveBy = O.mil && O.mil.tile != null ? (s.hives.some((h) => h.tile === O.mil.tile) ? "; the hive by the base still stands" : "; the hive by the base is gone") : "";
+  check(!mil.alive && !!t.ruin && t.infection >= 0.6 && s.log.some((l) => /Last transmission/.test(l.text)), `${tag} the old military is gone: its base a ruin full of the dead (infection ${t.infection.toFixed(2)}${hiveBy}), a last radio message`);
   r.founded = r.splinters.map((b) => s.factions.find((f) => f.id === b.id)).filter(Boolean);
   check(r.splinters.length >= 1 && r.splinters.every((b) => /^Remnant of |Holdouts$/.test(b.name) && (b.type === "military" || b.type === "fortress")),
     `${tag} it split into ${r.splinters.map((b) => `${b.name} (${b.type}, ${b.pop})`).join(" and ")}; ${r.toYou} soldier(s) came to you`);

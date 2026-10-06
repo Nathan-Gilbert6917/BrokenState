@@ -27,6 +27,7 @@ import { estimatePlan } from "./plans.js";
 import { hash01 } from "./skills.js";
 import { workFactor } from "./health.js";
 import { triggerConflict } from "./conflicts.js";
+import { stockHas } from "./water.js"; // water counts both kinds
 
 export const CRASH = {
   firstMin: 8, firstMax: 14, gapMin: 10, gapMax: 20, radius: 4, radiusTower: 3, radiusRadio: 5, lifeMin: 7, lifeMax: 10,
@@ -201,7 +202,7 @@ function searchSupplies(state, c, crew) {
   const n = crew.length;
   const est = estimatePlan(state, { memberIds: crew.map((s) => s.id), dest: c.center, vehicle: false, stance: "normal", mission: "recon", steps: SEARCH_STEPS(c), homeBaseId: h.id });
   if (!est) return { ok: false, why: "No way there on foot." };
-  const stock = (k) => Math.floor(h.stock[k] || 0);
+  const stock = (k) => Math.floor(stockHas(h.stock, k)); // water: both kinds (water.js)
   const sup = { food: Math.ceil(est.food * 1.3) + n, water: Math.ceil(est.water * 1.3) + n, ammo: Math.max(0, Math.min(stock("ammo") - 10, 8 * n)), meds: stock("meds") >= 4 ? 1 : 0 };
   const cap = carryCapacity(state, crew, null);
   while (supplyLoad(sup) > cap && sup.ammo > 0) sup.ammo = Math.max(0, sup.ammo - 4);

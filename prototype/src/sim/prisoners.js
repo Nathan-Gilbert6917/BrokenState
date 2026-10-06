@@ -56,7 +56,8 @@ import { SUPPLIES } from "./data.js";
 import {
   log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId,
 } from "./world.js";
-import { partyMembers, carried, takeSupply, tileLabel } from "./parties.js";
+import { partyMembers, carried, takeSupply, carriedAny, takeAny, tileLabel } from "./parties.js";
+import { waterIn, drawWater } from "./water.js"; // purified and un-purified water (purified drunk first)
 import { count } from "./buildings.js";
 import { changeGoodwill, attitude, strength, isAggressiveType, baseDefense } from "./factions.js";
 import { raidTier } from "./defences.js";
@@ -205,7 +206,7 @@ export function escapeOdds(state, p, { watch = null, fed = null } = {}) {
   e *= R.escape;
   if (mood(p) < E.lowMood) e *= E.lowMoodMult;
   if (base.prisonFear && day(state) <= base.prisonFear) e *= PRISON.EXECUTE.fear;
-  const willEat = fed ?? (R.share > 0 && (base.stock.food || 0) + (base.stock.preserved || 0) >= PRISON.FOOD * R.share * coldFactor(state) && (base.stock.water || 0) >= PRISON.WATER * thirstAt(state));
+  const willEat = fed ?? (R.share > 0 && (base.stock.food || 0) + (base.stock.preserved || 0) >= PRISON.FOOD * R.share * coldFactor(state) && waterIn(base.stock) >= PRISON.WATER * thirstAt(state));
   if (!willEat) e += E.unfed;
   return clamp(e, 0, 1);
 }
@@ -618,7 +619,7 @@ export function prisonersDaily(state) {
     if (p.at.kind === "party") {
       const party = state.parties.find((x) => x.id === p.at.partyId);
       if (!party) continue; // the hourly check frees them
-      if (carried(party, "food") >= PRISON.FOOD && carried(party, "water") >= drink) { takeSupply(party, "food", PRISON.FOOD); takeSupply(party, "water", drink); fed = true; }
+      if (carried(party, "food") >= PRISON.FOOD && carriedAny(party, "water") >= drink) { takeSupply(party, "food", PRISON.FOOD); takeAny(party, "water", drink); fed = true; }
       escape = party.vehicle ? PRISON.ESCAPE.vehicle : PRISON.ESCAPE.road;
       teamPace(state, party);
     } else {
@@ -629,11 +630,11 @@ export function prisonersDaily(state) {
       const work = labourOutput(state, p, base); // before today's meal and tiredness
       const food = (base.stock.food || 0) + (base.stock.preserved || 0);
       const eat = PRISON.FOOD * RD.share * coldFactor(state); // their rations, more in the cold, as for anyone at a base (upkeep.js)
-      if (RD.share > 0 && food >= eat && (base.stock.water || 0) >= drink) {
+      if (RD.share > 0 && food >= eat && waterIn(base.stock) >= drink) {
         eatFromStore(base, eat); // fresh first, then preserved (its jars come back: storage.js)
-        base.stock.water -= drink;
+        drawWater(base.stock, drink);
         fed = true;
-      } else if (RD.share === 0 && (base.stock.water || 0) >= drink) base.stock.water -= drink; // no food, but they drink
+      } else if (RD.share === 0 && waterIn(base.stock) >= drink) drawWater(base.stock, drink); // no food, but they drink
       escape = escapeOdds(state, p, { watch, fed });
       // Health and mood by rations (unfed: as None), then the day's work.
       if (p.s) {

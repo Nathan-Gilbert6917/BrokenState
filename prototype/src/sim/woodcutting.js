@@ -329,7 +329,7 @@ export function woodNeed(state, base, extraHeads = 0) {
   const days = coldDaysAhead(state);
   const heads = mouthsAt(state, base).heads + extraHeads;
   const boil = base.tier === 0 ? null : boilerUse(state, base);
-  const boiler = boil && boil.active ? r1(boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) : 0;
+  const boiler = boil && boil.active ? r1((boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) * (boil.share ?? 1)) : 0; // the days it burns: the filters' share of the drinking needs no boiling
   const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare + boiler * WORM.BOILER_DAYS);
   const have = Math.max(0, base.stock.wood || 0);
   return { need, have, days: r1(days), soon: woodSeason(state) || boiler > 0, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler };

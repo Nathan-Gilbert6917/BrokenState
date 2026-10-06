@@ -72,6 +72,7 @@ import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alli
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -328,7 +329,7 @@ function behindWall(ctx, u, X) {
 }
 
 // ---------- taking a base ----------
-const emptyStock = () => ({ food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
+const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
 function newOutpost(state, tile) {
   return { id: newId(), tile, type: "outpost", name: outpostName(state, tile), stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
 }
@@ -365,7 +366,7 @@ export function captureBase(state, f, tile, p, info = {}) {
     f.stock[k] = Math.max(0, (f.stock[k] || 0) - here);
     if (!SUPPLIES[k]) continue;
     const q = Math.floor(here * CONQUEST.STOCK_SHARE);
-    if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${k}`); }
+    if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); }
   }
   f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
@@ -470,7 +471,8 @@ function packFor(state, members, base, v) {
     out[k] = (out[k] || 0) + qty;
     room -= qty * w;
   };
-  take("water", Math.ceil(n * 4 * thirstAhead(state, 4))); // more in summer and a heat wave (weather.js)
+  const wantW = Math.ceil(n * 4 * thirstAhead(state, 4)); // more in summer and a heat wave (weather.js)
+  take("water", wantW); take("rawwater", wantW - (out.water || 0)); // purified first (water.js)
   take("food", n * 4); take("scrap", 15); take("ammo", n * 15); take("meds", n * 2); take("preserved", n * 4);
   take("food", n * 6); take("fuel", v ? 20 : 0); take("parts", 3); take("ammo", 200); take("meds", 10); take("scrap", 40);
   return out;
@@ -521,7 +523,7 @@ export function evacuate(state, base, f = null, why = "") {
   const p = makeTeam(state, people, base.tile, to, sup, v);
   if (to) {
     startReturn(state, p);
-    log(state, `${names(people)} left ${base.name}${why ? ` (${why})` : ""} for ${to.name}${v ? ` in the ${v.name}` : " on foot"}, carrying ${Object.entries(sup).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"}.`, "danger");
+    log(state, `${names(people)} left ${base.name}${why ? ` (${why})` : ""} for ${to.name}${v ? ` in the ${v.name}` : " on foot"}, carrying ${Object.entries(sup).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ") || "nothing"}.`, "danger");
   } else {
     p.exile = true;
     ensureConquest(state).stats.exiles++;
@@ -560,8 +562,8 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
     const q = Math.floor((base.stock[k] || 0) / 2);
     if (q <= 0) continue;
     base.stock[k] -= q;
-    if (k !== "water") f.stock[k] = (f.stock[k] || 0) + q;
-    took.push(`${q} ${k}`);
+    if (k !== "water" && k !== "rawwater") f.stock[k] = (f.stock[k] || 0) + q;
+    took.push(`${q} ${keyWord(k)}`);
   }
   base.alert = false;
   base.repairs = [];
@@ -616,7 +618,7 @@ export function razePlayerBase(state, base, f) {
   const burned = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id);
   for (const v of burned) state.vehicles.splice(state.vehicles.indexOf(v), 1);
   for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was burned down`; }
-  if (f) for (const k of Object.keys(base.stock)) if (k !== "water" && SUPPLIES[k]) f.stock[k] = (f.stock[k] || 0) + Math.floor((base.stock[k] || 0) * 0.6);
+  if (f) for (const k of Object.keys(base.stock)) if (k !== "water" && k !== "rawwater" && SUPPLIES[k]) f.stock[k] = (f.stock[k] || 0) + Math.floor((base.stock[k] || 0) * 0.6);
   const nBuild = base.buildings.length;
   state.bases.splice(i, 1);
   const t = state.tiles[base.tile];

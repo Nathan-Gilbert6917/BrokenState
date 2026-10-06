@@ -5,6 +5,8 @@ import {
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
+import { stockHas } from "./sim/water.js"; // purified and un-purified water
+import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
@@ -58,6 +60,7 @@ import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { NEEDS_ACTIONS } from "./ui/needs.js";
+import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
@@ -493,8 +496,11 @@ function autofill(pl) {
       // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
       scrap: pl.mission === "outpost" ? 15 : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };
-    for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(h.stock[k] || 0), want[k]));
+    for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(h.stock, k)), want[k])); // water: both kinds, purified packed first (sim/water.js)
   }
+  // A tube of purification tablets for a team going to fetch water or out more than two days (sim/worm.js packTablets).
+  const fetches = ((pl.plan && pl.plan.steps) || []).some((s) => s.kind === "water");
+  pl.tabs = armoryTabs(h).length > 0 && (fetches || (est.hours || 0) > TABS_TRIP_DAYS * 24);
   // Too heavy for the crew (and vehicle): less ammo, then fewer meds, then the 25% margin on food and water.
   if (!ids.length) return;
   const trim = (k, floor) => {
@@ -760,6 +766,7 @@ const actions = {
     autofill(pl);
     hideCtx();
   },
+  "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
   "pl-crew": (d) => { const s = ui.planner.crew, id = Number(d.id); s.has(id) ? s.delete(id) : s.add(id); autofill(ui.planner); ui.plannerError = ""; },
   "pl-vehicle": (d) => { ui.planner.vehicleId = d.v ? Number(d.v) : null; autofill(ui.planner); ui.plannerError = ""; },
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
@@ -769,7 +776,7 @@ const actions = {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs });
     if (res.error) { ui.plannerError = res.error; return; }
     ui.planner = null;
     view.preview = null;
@@ -873,6 +880,7 @@ for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) a
 for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).

@@ -5,13 +5,18 @@
 // cooked through are safe.
 //
 // Catching it (chances per person; eggs = (infection − CLEAN) / (1 − CLEAN), nothing on cleaner land):
-//   - water at a base: WATER × eggs a day × the share of its water drawn from the ground (its well or spring, wells,
-//     a stream, prisoners hauling it; rain catchers and filters give clean water). Nothing with the water boiler
-//     burning, a water filter there, or a shelter's fire lit (it boils the water).
-//   - water on the road: WATER × the eggs of what the team drinks, a day. Water packed at a base whose water is not
-//     safe, fetched from a river or drunk from it at the staging camp carries the eggs of where it came from (the
-//     team's p.wormWater units at p.wormEggs). A water filter carried cleans what is fetched and drunk; a camp fire
-//     boils BOIL water an hour (× STOVE with a smokeless stove).
+//   - water (purified and un-purified, water.js): only un-purified water carries eggs. At a base: WATER × the eggs of
+//     its un-purified water (the ground's × the share drawn from the ground: its well or spring, wells, a stream, the
+//     claims' wells, prisoners hauling it; rain catchers give clean water) × the share of the day's drinking that was
+//     un-purified (economy.js baseDaily drinks purified water first). Each day before drinking (purifyDaily) a lit water
+//     boiler purifies the day's drinking for everyone fed there, each water filter PURIFY_FILTER a day, a shelter's
+//     lit fire like the boiler. Bases do not use purification tablets: they are kept for the road.
+//   - water on the road: WATER × the eggs of the un-purified water the team drinks (p.wormEggs: the eggs of the
+//     un-purified water it carries, from where it was filled), × the share of the hour's drinking it was. A team
+//     drinks purified water first; un-purified water is safe through a water filter carried, at a lit camp fire (which
+//     also boils BOIL un-purified water an hour into purified water, × STOVE with a smokeless stove), or with
+//     purification tablets (data.js puritabs: one per TABS_WATER water, dropped in only on the road, never at a lit
+//     fire); otherwise it is drunk as it is.
 //   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
 //     infection carry eggs, and infested animals always do (base.wormMeat, cargo.wormMeat: the share of the fresh
 //     game that has them). A base with a cook fire or a preserving kitchen (a shelter with its fire lit) cooks it;
@@ -29,8 +34,9 @@
 //     base.wormForage, cargo.wormForage: like the meat, eaten last; dry crops threshed into the preserved stock are
 //     safe). A cook fire or a kitchen cooks them (boiling greens counts); a team's camp fire too.
 // The water boiler burns like heating (upkeep.js): BOILER_WOOD_HEAD firewood a head at the base a day (everyone fed
-// there), firewood first and fuel for what the wood does not cover (HEAT.wood fuel a firewood), only while the base's
-// water has eggs and no filter covers it. A base that cannot pay leaves it unlit that day and drinks unboiled water.
+// there), firewood first and fuel for what the wood does not cover (HEAT.wood fuel a firewood), only on days the base's
+// un-purified water has eggs and would be drunk (the purified water in store and the filters' share do not cover the
+// day). A base that cannot pay leaves it unlit that day and drinks un-purified water.
 // The other groups (GROUPS, groupsDaily): a group base on infected ground loses people to the worm at the rate a
 // player base of its size would catch it (water WATER + crops CROP at CROP_MIN+, × eggs, × UNCURED: the half they
 // never cure), × its type (TYPE: military and fortress hubs boil their water, traders mostly, communes farm infected
@@ -69,9 +75,10 @@ import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, sur
 import { GEAR } from "./data.js";
 import { Rng } from "./rng.js";
 import { count, isShelter } from "./buildings.js";
-import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel } from "./parties.js";
+import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel, teamName } from "./parties.js";
 import { activeHospital, careCtx, pickTreater, spendMedicTime, autoCareOn, noTimeReason, nextDayText } from "./medical.js";
-import { waterProduction } from "./economy.js";
+import { waterProduction, waterNeed } from "./economy.js";
+import { RAW, teamRawIn, waterIn } from "./water.js"; // purified and un-purified water
 import { eatFromStore } from "./storage.js";
 import { teamFire, teamKit, fireLit } from "./fieldheat.js";
 import { packOf } from "./inventory.js";
@@ -101,6 +108,9 @@ export const WORM = {
   // Clean water and cooked meat: a camp fire an hour; the base's water boiler a day (firewood a head, like heating;
   // BOILER_DAYS: the days of its firewood a base keeps in store)
   BOIL: 6, STOVE: 2, COOK: 12, BOILER_WOOD_HEAD: 0.2, BOILER_DAYS: 14,
+  // Purification tablets (data.js puritabs): water one tablet makes safe (teams only); a base's water filter
+  // purifies PURIFY_FILTER water a day
+  TABS_WATER: 10, PURIFY_FILTER: 10,
   // The other groups (groupsDaily)
   GROUPS: {
     UNCURED: 0.5, BOILER: 0.3, MIN: 4, ROAD: 0.03, HERD_EGGS: 0.5,
@@ -171,48 +181,97 @@ export function sourceEggs(state, tile) {
 }
 
 // ---------- water at a base ----------
+// Purified and un-purified water (water.js): what the base draws from the land is un-purified (stock.rawwater). Each day
+// before drinking (purifyDaily) it is purified: a lit water boiler purifies the day's drinking for everyone fed here,
+// each water filter (in the armory or held by someone here) PURIFY_FILTER a day, a shelter's lit fire like the boiler.
+// People drink purified water first, then un-purified water (economy.js baseDaily: base.drank), and the share drunk
+// un-purified is rolled with the eggs of the un-purified water here (baseWormDaily). Purification tablets are not used
+// at a base: they are kept for the teams on the road.
 export const hasBoiler = (base) => count(base, "boiler") > 0;
-export function baseFilter(state, base) {
-  if (base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].water)) return true;
-  return atBase(state, base.id).some((s) => s.gear.tool && GEAR[s.gear.tool.key] && GEAR[s.gear.tool.key].water);
-}
-// What the base drinks: { eggs (0..1 after boiling and filters), ground (share from the ground), safe, why }.
-export function baseWater(state, base) {
+const isFilter = (it) => !!(it && GEAR[it.key] && GEAR[it.key].water);
+// Water filters here: in the armory, or held by someone at the base.
+export const filterCount = (state, base) => base.armory.filter(isFilter).length + atBase(state, base.id).filter((s) => isFilter(s.gear.tool)).length;
+export const baseFilter = (state, base) => filterCount(state, base) > 0;
+// The eggs in this base's un-purified water: { raw (the ground's and the river's, 0..1), ground (the share of what it
+// makes drawn from the ground: rain catchers give clean water), eggs (raw × ground) }.
+export function rawWaterEggs(state, base) {
   const raw = sourceEggs(state, base.tile);
-  if (!(raw > 0)) return { eggs: 0, raw: 0, ground: 0, safe: true, why: "the ground here is clean enough" };
-  const boil = hasBoiler(base) ? boilerUse(state, base) : null;
-  if (boil && base.boiling !== false) return { eggs: 0, raw, ground: 1, safe: true, why: `boiled in the water boiler (${boil.text})` };
-  if (baseFilter(state, base)) return { eggs: 0, raw, ground: 1, safe: true, why: "through a water filter" };
-  if (isShelter(base) && fireLit(base)) return { eggs: 0, raw, ground: 1, safe: true, why: "boiled on the fire" };
+  if (!(raw > 0)) return { raw: 0, ground: 0, eggs: 0 };
   const prod = waterProduction(state, base);
   const ground = prod.own + prod.stream + prod.wells + prod.hauled;
-  const all = ground + prod.rain + prod.filters;
+  const all = ground + prod.rain;
   const share = all > 0 ? ground / all : 0;
-  const cold = boil ? `the water boiler is cold (nothing to burn: it needs ${boil.text}); ` : "";
-  return { eggs: raw * share, raw, ground: share, safe: !(share > 0), why: share > 0 ? `${cold}drawn from infected ground${share < 1 ? ` (${Math.round(share * 100)}% of it; the rain water is clean)` : ""}, not boiled or filtered` : "no ground water drawn here (rain only)" };
+  return { raw, ground: share, eggs: raw * share };
+}
+// What the base can purify a day: { drink (the day's drinking for everyone fed here), boiler, fire, filters, nFilters,
+// total }. The boiler counts while it is built and not cold (on the day itself: only if it burned, burned = true/false).
+export function purifyCap(state, base, burned = null) {
+  const need = waterNeed(state, base);
+  const drink = r2(need.people + need.prisoners + need.guests);
+  const nFilters = filterCount(state, base);
+  const boiler = hasBoiler(base) && (burned == null ? base.boiling !== false : burned) ? drink : 0;
+  const fire = isShelter(base) && fireLit(base) ? drink : 0;
+  const filters = nFilters * WORM.PURIFY_FILTER;
+  return { drink, boiler, fire, filters, nFilters, total: r2(boiler + fire + filters) };
+}
+// The share of a day's drinking that will be un-purified: what the purified water in store and what can be purified
+// today leave.
+function rawShareOf(base, cap) {
+  const st = base.stock;
+  const pure = Math.max(0, st.water || 0) + Math.min(Math.max(0, st[RAW] || 0), cap.total);
+  return cap.drink > 0 ? Math.max(0, Math.min(1, (cap.drink - pure) / cap.drink)) : 0;
+}
+// What the base drinks: { eggs (0..1: the worm's chance factor for a day, after the purified water), raw (the
+// ground's eggs), ground (share from the ground), rawShare (the share of the day's drinking that will be
+// un-purified), safe, why, cap (purifyCap) }.
+export function baseWater(state, base) {
+  const e = rawWaterEggs(state, base);
+  const cap = purifyCap(state, base);
+  const share = rawShareOf(base, cap);
+  if (!(e.raw > 0)) return { eggs: 0, raw: 0, ground: 0, rawShare: share, safe: true, cap, why: "the ground here is clean enough" };
+  if (!(e.eggs > 0)) return { eggs: 0, raw: e.raw, ground: 0, rawShare: share, safe: true, cap, why: "no ground water drawn here (rain only)" };
+  const boil = hasBoiler(base) ? boilerUse(state, base) : null;
+  const how = [];
+  if (cap.boiler > 0) how.push(`boiled in the water boiler (${boil.text})`);
+  if (cap.fire > 0) how.push("boiled on the fire");
+  if (cap.filters > 0) how.push(`through ${cap.nFilters === 1 ? "a water filter" : `${cap.nFilters} water filters`} (${cap.filters} a day)`);
+  if (!(share > 0)) return { eggs: 0, raw: e.raw, ground: e.ground, rawShare: 0, safe: true, cap, why: how.length ? how.join(" and ") : "purified water in store" };
+  const cold = boil && base.boiling === false ? `the water boiler is cold (nothing to burn: it needs ${boil.text}); ` : "";
+  const part = share < 1 ? `${Math.round(share * 100)}% of the day's drinking is un-purified (${how.length ? how.join(" and ") : "the purified water in store"} cover${how.length > 1 ? "" : "s"} the rest)` : "drunk un-purified";
+  const from = e.ground < 1 ? ` (${Math.round(e.ground * 100)}% of it from the ground; the rain water is clean)` : "";
+  return { eggs: e.eggs * share, raw: e.raw, ground: e.ground, rawShare: share, safe: false, cap, why: `${cold}drawn from infected ground${from}, not boiled or filtered: ${part}` };
 }
 
 // The base's water boiler: what it burns a day, like heating (upkeep.js heatUse): BOILER_WOOD_HEAD firewood a head
 // (everyone fed here), firewood first, then fuel for what the wood does not cover (HEAT.wood fuel a firewood).
-// { active (it has to burn today: the water has eggs and no filter covers it), heads, wood (firewood a day), fuel
-// (the same in fuel), lit (base.boiling), text ("25 people × 0.2 = 5.0 firewood a day (or 2.5 fuel)") }.
+// { active (it has work here: the un-purified water has eggs and the water filters do not purify the day's drinking),
+// heads, wood (firewood on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling), text ("25 people × 0.2 = 5.0 firewood a
+// day (or 2.5 fuel)") }. On a given day it burns only when un-purified water would be drunk (boilerDaily).
 export function boilerUse(state, base) {
   const heads = mouthsAt(state, base).heads;
   const wood = r2(heads * WORM.BOILER_WOOD_HEAD);
   const fuel = r2(wood * HEAT.wood);
-  const active = hasBoiler(base) && heads > 0 && sourceEggs(state, base.tile) > 0 && !baseFilter(state, base);
+  const cap = purifyCap(state, base);
+  const active = hasBoiler(base) && heads > 0 && rawWaterEggs(state, base).eggs > 0 && cap.filters < cap.drink;
+  // share: the days it burns, about (the share of the drinking the filters leave un-purified): each day it burns
+  // purifies a whole day's drinking, so with filters covering part of it the purified water carries over.
+  const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - cap.filters / cap.drink))) : 0;
   const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or ${fuel.toFixed(1)} fuel)` : "nobody here";
-  return { active, heads, wood, fuel, lit: base.boiling !== false, text };
+  return { active, heads, wood, fuel, share, lit: base.boiling !== false, text };
 }
-// Daily: burns the boiler's firewood (then fuel) from the stores while its water has eggs and no filter does the job;
+// Daily, before drinking (purifyDaily): burns the boiler's firewood (then fuel) from the stores on a day its
+// un-purified water has eggs and the purified water in store and the filters' share do not cover the day's drinking;
 // an outpost short of it is covered from the hub over its supply line like its heating (needs.js heatDaily). A base
-// that cannot pay the whole day leaves it unlit and drinks the water unboiled.
+// that cannot pay the whole day leaves it unlit and drinks un-purified water. Returns true when it burned.
 function boilerDaily(state, base, people) {
-  if (!hasBoiler(base) || !people.length) return;
-  const use = boilerUse(state, base);
   base.boilerBurn = { wood: 0, fuel: 0 };
-  if (!use.active) { base.boiling = true; return; } // nothing to kill, or a filter does it: it stands ready
+  if (!hasBoiler(base) || !people.length) return false;
+  const use = boilerUse(state, base);
+  if (!use.active) { base.boiling = true; return false; } // nothing to kill, or the filters do it: it stands ready
   const st = base.stock;
+  const cap = purifyCap(state, base, false);
+  const wanted = (st[RAW] || 0) > 0 && Math.max(0, st.water || 0) + Math.min(Math.max(0, st[RAW] || 0), cap.filters) + 1e-9 < cap.drink;
+  if (!wanted) { base.boiling = true; return false; } // enough purified water today (or nothing to boil): it stands ready
   const heatIn = () => Math.max(0, st.wood || 0) * HEAT.wood + Math.max(0, st.fuel || 0);
   const h = base.type === "outpost" ? hub(state) : null;
   const strength = base.supplyLine ? base.supplyLine.strength : 0.5;
@@ -234,8 +293,30 @@ function boilerDaily(state, base, people) {
     st.fuel = Math.max(0, (st.fuel || 0) - fuelNeed);
     base.boilerBurn = { wood: r2(wood), fuel: r2(fuelNeed) };
     if (base.boiling === false) log(state, `The water boiler at ${base.name} is burning again.`, "good");
-  } else if (base.boiling !== false) log(state, `The water boiler at ${base.name} is cold: not enough firewood or fuel to burn (it needs ${use.text}). The water is drunk unboiled.`, "danger");
+  } else if (base.boiling !== false) log(state, `The water boiler at ${base.name} is cold: not enough firewood or fuel to burn (it needs ${use.text}). The water is drunk un-purified.`, "danger");
   base.boiling = lit;
+  return lit;
+}
+// Daily (economy.js baseDaily, before drinking): the boiler burns if it has to, then the boiler, the water filters and
+// a shelter's lit fire turn un-purified water into purified water. base.purified = { day, q, boiler, fire, filters,
+// total, drink }. Returns the water purified.
+export function purifyDaily(state, base) {
+  const people = residents(state, base.id);
+  const burned = boilerDaily(state, base, people);
+  const cap = purifyCap(state, base, burned);
+  const st = base.stock;
+  const raw = Math.max(0, st[RAW] || 0);
+  const q = r2(Math.min(raw, cap.total));
+  if (q > 0) { st[RAW] = r2(raw - q); st.water = r2(Math.max(0, st.water || 0) + q); }
+  base.purified = { day: day(state), q, boiler: cap.boiler, fire: cap.fire, filters: cap.filters, total: cap.total, drink: cap.drink };
+  return q;
+}
+// Water purified a day at this base and where it comes from, for the base card: { total, text ("boiler 22, 2 filters
+// 20"), cap }.
+export function purifyText(state, base) {
+  const cap = purifyCap(state, base);
+  const bits = [cap.boiler > 0 ? `boiler ${Math.round(cap.boiler)}` : "", cap.fire > 0 ? `fire ${Math.round(cap.fire)}` : "", cap.filters > 0 ? `${cap.nFilters === 1 ? "filter" : `${cap.nFilters} filters`} ${cap.filters}` : ""].filter(Boolean);
+  return { total: cap.total, text: bits.join(", "), cap };
 }
 
 // ---------- meat ----------
@@ -331,35 +412,65 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
 }
 
 // ---------- teams ----------
-const hasFilter = (state, p) => teamKit(state, p).some((it) => it && GEAR[it.key] && GEAR[it.key].water);
+// A team carries purified and un-purified water (water.js) in its supplies and cargo; p.wormEggs is the eggs of the
+// un-purified water it carries (mixed from where it was filled). It drinks purified water first (needs.js takeWater);
+// the un-purified water it drinks is safe through a water filter carried, at a lit camp fire (boiled), or with
+// purification tablets (one per TABS_WATER, dropped in on the road); otherwise it is drunk as it is (drinkHour).
+const hasFilter = (state, p) => teamKit(state, p).some(isFilter);
 const hasStove = (state, p) => teamKit(state, p).some((it) => it && it.key === "stove");
-const waterCarried = (p) => carried(p, "water");
-// Water with eggs coming into the team's stores: `units` at `eggs` (0..1), mixed with what it carries.
+// Un-purified water coming into the team's stores: `units` (already added) at `eggs` (0..1), mixed with what it
+// carried before.
 export function addWormWater(state, p, units, eggs) {
-  if (!(units > 0) || !(eggs > 0) || hasFilter(state, p)) return;
-  const have = Math.min(p.wormWater || 0, Math.max(0, waterCarried(p) - units));
+  if (!(units > 0)) return;
+  const have = Math.max(0, teamRawIn(p) - units);
   const total = have + units;
-  p.wormEggs = r2(((p.wormEggs || 0) * have + eggs * units) / total);
-  p.wormWater = Math.round(total * 10) / 10;
+  p.wormEggs = total > 0 ? r2(((p.wormEggs || 0) * have + Math.max(0, eggs || 0) * units) / total) : 0;
 }
-// Packing at a base (parties.js launchExpedition): its water is what the base drinks.
+// Packing at a base (parties.js launchExpedition): the un-purified water packed carries the eggs of the base's.
 export function packWater(state, p, base) {
-  const w = baseWater(state, base);
-  p.wormWater = 0;
-  p.wormEggs = 0;
-  if (w.eggs > 0) addWormWater(state, p, carried(p, "water"), w.eggs);
+  delete p.wormWater; // the old single-water model (save.js)
+  p.wormEggs = teamRawIn(p) > 0 ? r2(rawWaterEggs(state, base).eggs) : 0;
 }
-// An hour's drinking (parties.js consume): the share with eggs is drunk in proportion. A water filter carried cleans
-// what is drunk.
-export function drinkHour(state, p, members, drank) {
-  if (!(p.wormWater > 0)) return;
-  if (hasFilter(state, p)) { p.wormWater = 0; return; }
-  const left = waterCarried(p);
-  const total = left + drank;
-  const share = total > 0 ? Math.min(1, p.wormWater / total) : 0;
-  p.wormWater = Math.max(0, Math.min(left, p.wormWater - drank * share));
-  const chance = (WORM.WATER * (p.wormEggs || 0) * share) / 24;
-  if (chance > 0) for (const s of members) if (wormRng(state).chance(chance)) catchWorm(state, s, `drinking unboiled water on the road`, "water");
+// How a team drinks its un-purified water now: "filter" (a water filter carried), "fire" (a lit camp fire boils it),
+// "tabs" (purification tablets carried), "unsafe" (drunk as it is), "clean" (from clean ground: no eggs), or "" (none
+// carried). For the team panel.
+export function teamWaterHow(state, p) {
+  if (!(teamRawIn(p) > 0)) return "";
+  if (!((p.wormEggs || 0) > 0)) return "clean";
+  if (hasFilter(state, p)) return "filter";
+  if (teamFire(state, p) === true) return "fire";
+  if ((p.tabWater || 0) > 0 || teamTabCount(state, p) > 0) return "tabs";
+  return "unsafe";
+}
+// An hour's drinking (needs.js teamNeedsHour): `drank` in all, `raw` of it un-purified. A water filter carried makes the
+// un-purified water safe; else a lit camp fire boils it; else purification tablets carried are dropped in (one per
+// TABS_WATER water); else it is drunk as it is: WORM.WATER × its eggs × the share of the hour's drinking, a day.
+export function drinkHour(state, p, members, drank, raw = 0) {
+  const e = p.wormEggs || 0;
+  if (!(teamRawIn(p) > 0)) p.wormEggs = 0; // the last of it was drunk
+  if (!(raw > 0) || !(drank > 0) || !(e > 0)) return; // none drunk, or from clean ground: nothing to kill
+  if (hasFilter(state, p)) return;
+  if (teamFire(state, p) === true) return; // boiled at the camp fire: no tablet spent while camping by a lit fire
+  // Purification tablets carried: one per TABS_WATER of the un-purified water drunk makes it safe; only what they do
+  // not cover is rolled.
+  const { raw: left, used } = treatWater(p, teamTabs(state, p), raw);
+  if (used > 0) { const n = teamTabCount(state, p); log(state, `${teamName(state, p)} dropped ${used === 1 ? "a purification tablet" : `${used} purification tablets`} into the river water (${n ? `${n} left` : "the last of them"}).`, "info"); }
+  const chance = (WORM.WATER * e * (left / drank)) / 24;
+  if (chance > 0) for (const s of members) if (wormRng(state).chance(chance)) catchWorm(state, s, `drinking un-purified water on the road`, "water");
+}
+// Boils up to `q` of the team's un-purified water into purified water (a camp fire): the packed supplies first, then
+// the cargo, each kind staying where it was. Returns the water boiled.
+function boilTeamWater(p, q) {
+  let left = q;
+  for (const o of [p.supplies, p.cargo && p.cargo.supplies]) {
+    if (!o || !(left > 0)) continue;
+    const b = Math.min(left, Math.max(0, o[RAW] || 0));
+    if (!(b > 0)) continue;
+    o[RAW] -= b;
+    o.water = Math.max(0, o.water || 0) + b;
+    left -= b;
+  }
+  return q - left;
 }
 // An hour's eating raw (parties.js consume): meat with eggs from the cargo, when nothing else is left. Returns rations.
 export function eatRawCargo(state, p, members, need) {
@@ -382,14 +493,14 @@ export function eatRawForageCargo(state, p, members, need) {
   eatRaw(state, members, q, "eating greens and roots gathered on infected ground", WORM.FORAGE, "forage");
   return q;
 }
-// Hourly for a team (parties.js playerPartyHour): a camp fire boils water and cooks meat and forage; camping on badly
+// Hourly for a team (parties.js playerPartyHour): a camp fire boils un-purified water and cooks meat and forage; camping on badly
 // infected land is a risk in itself; and when the day turns, the hands that searched yesterday are rolled.
 export function wormTeamHour(state, p, members) {
   const fire = teamFire(state, p);
   if (p.wormHands && p.wormHands.day !== day(state)) rollHands(state, p, members, fire === true, `searching ${p.wormHands.where}`);
   if (fire == null) return;
   if (fire) {
-    if (p.wormWater > 0) p.wormWater = Math.max(0, p.wormWater - WORM.BOIL * (hasStove(state, p) ? WORM.STOVE : 1));
+    if (teamRawIn(p) > 0) { boilTeamWater(p, WORM.BOIL * (hasStove(state, p) ? WORM.STOVE : 1)); if (!(teamRawIn(p) > 0)) p.wormEggs = 0; } // un-purified water boiled into purified water
     if (p.cargo && p.cargo.wormMeat > 0) p.cargo.wormMeat = Math.max(0, wormMeatIn(p.cargo) - WORM.COOK);
     if (p.cargo && p.cargo.wormForage > 0) p.cargo.wormForage = Math.max(0, wormForageIn(p.cargo) - WORM.COOK);
   }
@@ -438,7 +549,7 @@ export function searchRiskText(state, tile, hours = 6) {
 // Takes one item of `key` from a list of holders' pockets, packs, the given lists. Returns it or null.
 function takeFrom(people, lists, key) {
   for (const s of people) {
-    for (const where of [s.pockets || [], (packOf(s) && packOf(s).contents) || []]) {
+    for (const where of [s.pockets || [], packOf(s) || []]) { // packOf: the pack's slots (not an item with .contents)
       const i = where.findIndex((it) => it && it.key === key);
       if (i >= 0) { const it = where[i]; where[i] = null; return it; }
     }
@@ -449,8 +560,69 @@ function takeFrom(people, lists, key) {
   }
   return null;
 }
-const findIn = (people, lists, key) => people.some((s) => [...(s.pockets || []), ...((packOf(s) && packOf(s).contents) || [])].some((it) => it && it.key === key)) || lists.some((l) => l.some((it) => it && it.key === key));
-export const baseDewormers = (state, base) => base.armory.filter((it) => it && it.key === "dewormer").length + atBase(state, base.id).reduce((a, s) => a + [...(s.pockets || []), ...((packOf(s) && packOf(s).contents) || [])].filter((it) => it && it.key === "dewormer").length, 0);
+const findIn = (people, lists, key) => people.some((s) => [...(s.pockets || []), ...(packOf(s) || [])].some((it) => it && it.key === key)) || lists.some((l) => l.some((it) => it && it.key === key));
+
+// ---------- purification tablets (data.js puritabs: tabs, dur = tablets left) ----------
+// One tablet makes WORM.TABS_WATER water safe. They are for the road: a team drops them into the un-purified water it
+// drinks from infected sources when it carries no water filter and sits at no lit camp fire (drinkHour: a tablet is
+// opened when the last one's water is used up, the rest kept as p.tabWater for the next drink). A base never uses
+// them (its boiler, filters or a shelter's fire purify its water): tubes in the armory wait for a team to pack them
+// (autopilot.js launchTrip, the planner). Tubes are found in people's pockets and packs, the team's cargo and the
+// base armory; an emptied tube is gone.
+const isTabs = (it) => !!(it && GEAR[it.key] && GEAR[it.key].tabs);
+const tabsIn = (it) => (it.dur != null ? it.dur : GEAR[it.key].dur);
+// Every tube with tablets left among these people's pockets and packs and in these lists: { list, i, item, slot }.
+function tabStacks(people, lists) {
+  const out = [];
+  for (const s of people) for (const where of [s.pockets || [], packOf(s) || []]) where.forEach((it, i) => { if (isTabs(it) && tabsIn(it) > 0) out.push({ list: where, i, item: it, slot: true }); }); // packOf: the pack's slots
+  for (const list of lists) list.forEach((it, i) => { if (isTabs(it) && tabsIn(it) > 0) out.push({ list, i, item: it, slot: false }); });
+  return out;
+}
+const tabCount = (stacks) => stacks.reduce((a, x) => a + tabsIn(x.item), 0);
+// Takes n tablets from these tubes (emptied tubes are removed: a pocket or pack slot goes empty, a list shrinks).
+// Returns how many there were to take.
+function useTabs(stacks, n) {
+  let used = 0;
+  for (const x of stacks) while (n > 0 && tabsIn(x.item) > 0) { x.item.dur = tabsIn(x.item) - 1; n--; used++; }
+  const empty = stacks.filter((x) => tabsIn(x.item) <= 0);
+  for (const x of empty) if (x.slot) x.list[x.i] = null;
+  for (const x of empty.filter((x) => !x.slot).sort((a, b) => b.i - a.i)) x.list.splice(x.i, 1);
+  return used;
+}
+export const teamTabs = (state, p) => tabStacks(partyMembers(state, p), [(p.cargo && p.cargo.gear) || []]);
+export const teamTabCount = (state, p) => tabCount(teamTabs(state, p));
+export const baseTabs = (state, base) => tabStacks(atBase(state, base.id), [base.armory]);
+export const baseTabCount = (state, base) => tabCount(baseTabs(state, base));
+// Tubes in a base's armory (what a team can pack).
+export const armoryTabs = (base) => base.armory.filter((it) => isTabs(it) && tabsIn(it) > 0);
+// A team leaving a base packs a tube of tablets from the armory into its cargo when it carries none (parties.js
+// launchExpedition opts.tabs: the autopilot's water hauls and trips of more than TABS_TRIP_DAYS, the planner's
+// checkbox). Returns the tube or null.
+export const TABS_TRIP_DAYS = 2;
+export function packTablets(state, base, p) {
+  if (!base || !p || teamTabCount(state, p) > 0) return null;
+  const tube = armoryTabs(base).sort((a, b) => tabsIn(a) - tabsIn(b))[0]; // the opened one first
+  if (!tube) return null;
+  base.armory.splice(base.armory.indexOf(tube), 1);
+  (p.cargo = p.cargo || { supplies: {}, gear: [] }).gear.push(tube);
+  return tube;
+}
+// Treats `units` of unsafe water a team (holder.tabWater) drinks: the rest of the last tablet
+// first, then new tablets from `stacks`. Returns { raw (units nobody treated), used (tablets opened) }.
+function treatWater(holder, stacks, units) {
+  if (!(units > 0)) return { raw: 0, used: 0 };
+  let cover = holder.tabWater || 0, used = 0;
+  if (units > cover + 1e-9 && stacks.length) {
+    used = useTabs(stacks, Math.ceil((units - cover) / WORM.TABS_WATER));
+    cover += used * WORM.TABS_WATER;
+  }
+  if (!(cover > 0)) return { raw: units, used: 0 }; // no tablets: nothing changes
+  const treated = Math.min(units, cover);
+  holder.tabWater = r2(Math.max(0, cover - treated));
+  holder.tabsUsed = (holder.tabsUsed || 0) + used;
+  return { raw: Math.max(0, units - treated), used };
+}
+export const baseDewormers = (state, base) => base.armory.filter((it) => it && it.key === "dewormer").length + atBase(state, base.id).reduce((a, s) => a + [...(s.pockets || []), ...(packOf(s) || [])].filter((it) => it && it.key === "dewormer").length, 0);
 const teamHasDewormer = (state, p) => findIn(partyMembers(state, p), [(p.cargo && p.cargo.gear) || []], "dewormer");
 
 // ---------- treatment at a base ----------
@@ -562,8 +734,7 @@ export function wormDaily(state) {
 }
 
 function baseWormDaily(state, base) {
-  const people = residents(state, base.id);
-  boilerDaily(state, base, people);
+  const people = residents(state, base.id); // the boiler burned before drinking (purifyDaily)
   if (!people.length) { base.rawEaten = 0; base.rawCropEaten = 0; base.rawForageEaten = 0; return; }
   // Raw meat eaten today (storage.js eatFromStore: the meat with eggs, eaten last when nothing else was left).
   if (base.rawEaten > 0) {
@@ -581,13 +752,17 @@ function baseWormDaily(state, base) {
     base.rawCropEaten = 0;
     base.rawForageEaten = 0;
   }
-  const w = baseWater(state, base);
+  // Water: today's drinking (economy.js baseDaily: base.drank, purified first) and the share of it drunk un-purified,
+  // with the eggs of the un-purified water here.
+  const d = base.drank && base.drank.day === day(state) ? base.drank : null;
+  const share = d && d.pure + d.raw > 0 ? d.raw / (d.pure + d.raw) : 0;
+  const eggs = share > 0 ? rawWaterEggs(state, base).eggs * share : 0;
   // Once per base: the first day its people drink water with the worm's eggs.
-  if (w.eggs > 0 && !base.wormWaterWarned) {
+  if (eggs > 0 && !base.wormWaterWarned) {
     base.wormWaterWarned = true;
-    log(state, `The water at ${base.name} is drawn from infected ground and carries the worm's eggs. Build a water boiler or keep a water filter here; until then every day is a chance of catching it.`, "danger");
+    log(state, `The un-purified water at ${base.name} is drawn from infected ground and carries the worm's eggs. Build a water boiler or keep water filters here (each purifies ${WORM.PURIFY_FILTER} a day); until then every day is a chance of catching it.`, "danger");
   }
-  if (w.eggs > 0) for (const s of people) if (wormRng(state).chance(WORM.WATER * w.eggs)) catchWorm(state, s, `drinking unboiled water at ${base.name}`, "water");
+  if (eggs > 0) for (const s of people) if (wormRng(state).chance(WORM.WATER * eggs)) catchWorm(state, s, `drinking un-purified water at ${base.name}`, "water");
 }
 
 function where(state, s) {
@@ -914,8 +1089,13 @@ export function wormTip(state, s) {
 // A team's water and meat, for the team panel: "" when clean.
 export function teamWormText(state, p) {
   const bits = [];
-  const ww = Math.min(p.wormWater || 0, carried(p, "water"));
-  if (ww >= 1) bits.push(`${Math.floor(ww)} of the water carried is unboiled from infected ground (a camp fire boils it; a water filter cleans it)`);
+  const ww = teamRawIn(p);
+  const tabs = teamTabCount(state, p);
+  const how = teamWaterHow(state, p);
+  if (ww >= 1 && how !== "clean") bits.push(`${Math.floor(ww)} un-purified water carries the worm's eggs (${
+    how === "filter" ? "drunk through the water filter carried: safe" : how === "fire" ? "the camp fire boils it" :
+    how === "tabs" ? `dropping a tablet in the river water: ${tabs} purification tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER} water drunk` :
+    "drunk as it is: a camp fire boils it, a water filter or purification tablets make it safe"})`);
   const wm = wormMeatIn(p.cargo);
   if (wm >= 1) bits.push(`${Math.floor(wm)} of the game carries the worm's eggs (cook it at a camp fire or a base's cook fire)`);
   const wf = wormForageIn(p.cargo);

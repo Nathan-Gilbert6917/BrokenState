@@ -41,6 +41,7 @@ import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -162,7 +163,7 @@ function minBaseDist(state, f, tileId) {
 
 // Pay a value from what the team carries (found cargo first). Returns the plan, or null if short.
 export function payPlan(p, value) {
-  const order = ["scrap", "parts", "ammo", "meds", "fuel", "food", "water"];
+  const order = ["scrap", "parts", "ammo", "meds", "fuel", "food", "rawwater", "water"];
   const plan = {};
   let left = value;
   for (const pool of [p.cargo.supplies, p.supplies]) {
@@ -178,7 +179,7 @@ export function payPlan(p, value) {
   }
   return left > 0 ? null : plan;
 }
-const planText = (plan) => Object.entries(plan).map(([k, q]) => `${q} ${k}`).join(", ");
+const planText = (plan) => Object.entries(plan).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
 function payFrom(p, plan, f) {
   for (const [k, q] of Object.entries(plan)) {
     const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
@@ -203,7 +204,7 @@ export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
   }
   const gear = takeGear ? p.cargo.gear.splice(0) : [];
   if (f) for (const g of gear) f.lootedGear.push(g.name);
-  const parts = Object.entries(taken).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`);
+  const parts = Object.entries(taken).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`);
   if (gear.length) parts.push(...gear.map((g) => g.name));
   return parts.length ? parts.join(", ") : "nothing much";
 }
@@ -1131,7 +1132,7 @@ function victoryRewards(state, p, c, result) {
     if (result && result.tactical) {
       // Fought on the map: the dead were there to search (the loot screen, or "Take all"), and that is the loot.
       // Nothing is paid a second time here.
-      const got = [...Object.entries(result.loot.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`), ...result.loot.gear.map((g) => g.name)];
+      const got = [...Object.entries(result.loot.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
       if (got.length) out.push(`Taken from the bodies: ${got.join(", ")}.`);
     } else {
       // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.

@@ -12,6 +12,8 @@ import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "
 import { workFactor } from "./health.js";
 import { hasPerk } from "./skills.js";
 import { craftLock } from "./blueprints.js";
+import { stockHas, useStock, teamWaterIn, takeTeamWater, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
+import { WORM } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -32,6 +34,8 @@ export const CRAFTS = {
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // The worm (worm.js): a sure cure in the gut stage. Strong meds pressed into tablets at a med station.
   dewormer:    { gear: "dewormer",    in: { meds: 3, food: 1 },   hours: 8,  skill: "medicine",  min: 5, needs: "med_station" },
+  // Purification tablets (worm.js): iodine from the meds pressed into a tube of 10 at a med station.
+  puritabs:    { gear: "puritabs",    in: { meds: 1, scrap: 1 },  hours: 4,  skill: "medicine",  min: 3, needs: "med_station" },
   backpack:    { gear: "backpack",    in: { scrap: 3 },           hours: 5,  skill: "mechanics", min: 0 },
   // The stealth kit (stealth.js).
   noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
@@ -83,11 +87,12 @@ export function craftOutputText(key) {
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
+  else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; bases do not use them)`); // worm.js
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
-    if (d.water) fx.push(`+${d.water} water a day at its base, strains out the worm's eggs`);
+    if (d.water) fx.push(`+${d.water} purified water a day at its base and purifies ${WORM.PURIFY_FILTER} un-purified water a day there (strains out the worm's eggs)`);
     // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
     if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
     if (d.siege) fx.push(d.siege === "ladder" ? "set against a wall in battle to climb onto its walkway" : "carried by 2–3 to smash a barred gate or door, 16–24 a carrier a turn");
@@ -104,6 +109,7 @@ export function craftOutputText(key) {
 }
 export function durUnit(key) {
   const d = GEAR[key];
+  if (d.tabs) return "tablets"; // purification tablets: dur counts the tablets in the tube (worm.js)
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.suppressor) return "shots";
@@ -133,7 +139,7 @@ export function canCraft(state, base, key) {
   if (craftQueue(base).length >= MAX_CRAFT_QUEUE) return { ok: false, reason: `Queue is full (${MAX_CRAFT_QUEUE})` };
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
   if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
-  for (const [k, v] of Object.entries(r.in)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(base.stock[k] || 0)})` };
+  for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(stockHas(base.stock, k))})` };
   for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
   if (lock) return { ok: false, reason: lock, locked: true };
@@ -149,7 +155,7 @@ export function queueCraft(state, base, key) {
   const chk = canCraft(state, base, key);
   if (!chk.ok) return chk.reason;
   const r = CRAFTS[key];
-  for (const [k, v] of Object.entries(r.in)) base.stock[k] -= v;
+  for (const [k, v] of Object.entries(r.in)) useStock(base.stock, k, v);
   const taken = [];
   for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) taken.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
   craftQueue(base).push({ id: newId(), recipe: key, progress: 0, hours: r.hours, ...(taken.length ? { gearTaken: taken } : {}) });
@@ -164,7 +170,7 @@ export function cancelCraft(state, base, id) {
   const job = q.find((c) => c.id === id);
   if (!job) return "That job is gone.";
   const full = job.progress <= 0;
-  for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
+  for (const [k, v] of Object.entries(CRAFTS[job.recipe].in)) { const key = k === "water" ? RAW : k; base.stock[key] = (base.stock[key] || 0) + (full ? v : Math.ceil(v / 2)); } // water comes back un-purified
   if (job.gearTaken) base.armory.push(...job.gearTaken);
   q.splice(q.indexOf(job), 1);
   return `Cancelled ${craftName(job.recipe)}. ${full ? "All" : "Half"} the materials were returned.`;
@@ -305,8 +311,9 @@ export function craftingDaily(state) {
 }
 
 // ---------- field crafting (a team on the road) ----------
-const partyHas = (p, k) => Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0);
+const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
 function partyTake(p, k, qty) {
+  if (k === "water") { takeTeamWater(p, qty, { rawFirst: true }); return; } // boiled in the work: un-purified first (water.js)
   const fromCargo = Math.min(qty, Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
   if (fromCargo) p.cargo.supplies[k] -= fromCargo;
   p.supplies[k] = (p.supplies[k] || 0) - (qty - fromCargo);

@@ -50,6 +50,7 @@ import { shelterFire } from "./woodcutting.js";
 import { econStats } from "./farming.js";
 import { conditionsOf } from "./health.js";
 import { wormMeatIn, wormForageIn, eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
+import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
@@ -110,7 +111,8 @@ export function thirstWord(v) { return v <= 0 ? "Dehydrated" : v < NEEDS.starvin
 // ---------- the team's inventory ----------
 // Food a team can eat (packed, found, fresh game, preserved) and water.
 export const teamFood = (p) => Math.max(0, (p.supplies.food || 0)) + Math.max(0, p.supplies.preserved || 0) + Math.max(0, (p.cargo && p.cargo.supplies.food) || 0) + Math.max(0, (p.cargo && p.cargo.supplies.preserved) || 0);
-export const teamWater = (p) => Math.max(0, p.supplies.water || 0) + Math.max(0, (p.cargo && p.cargo.supplies.water) || 0);
+// Water: purified and un-purified together (water.js; the thirst gauge counts both).
+export const teamWater = (p) => teamWaterIn(p);
 function takeFrom(obj, k, want) {
   const q = Math.max(0, Math.min(want, obj[k] || 0));
   if (q > 0) obj[k] -= q;
@@ -130,12 +132,14 @@ export function takeFood(p, want) {
   if (p.cargo.meat && !(meatIn(p.cargo) > 0)) p.cargo.meat = 0;
   return got;
 }
+// Takes up to `want` water: purified first (packed, then found), then un-purified (packed, then found). p.rawDrunk adds
+// up the un-purified share for worm.js drinkHour.
 export function takeWater(p, want) {
   if (!(want > 0)) return 0;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  let got = takeFrom(p.supplies, "water", want);
-  if (got < want - 1e-12) got += takeFrom(p.cargo.supplies, "water", want - got);
-  return got;
+  const d = takeTeamWater(p, want);
+  if (d.raw > 0) p.rawDrunk = (p.rawDrunk || 0) + d.raw;
+  return d.got;
 }
 
 // Who eats first when there is not enough: the hurt (worst first), then the lowest gauge.
@@ -200,8 +204,10 @@ export function teamNeedsHour(state, p, members) {
   if (shortFood && rawVeg > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, rawVeg, (q) => eatRawForageCargo(state, p, members, q), share);
   if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q) => eatRawCargo(state, p, members, q), share);
   const water0 = teamWater(p);
+  p.rawDrunk = 0;
   const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, water0, (q) => takeWater(p, q), share);
-  drinkHour(state, p, members, water0 - teamWater(p)); // worm.js: unboiled water with the worm's eggs
+  drinkHour(state, p, members, water0 - teamWater(p), p.rawDrunk); // worm.js: un-purified water (filter, fire, tablets, or as it is)
+  delete p.rawDrunk;
   // Empty gauges: health (raw: armor and toughness do not help); low ones: mood. The cold without a fire: mood.
   const tile = partyTile(p);
   for (const s of members) {
@@ -273,7 +279,7 @@ function errandHour(state, s) {
   s.thirst = clamp(s.thirst - (NEEDS.water / 24) * tf);
   const [at, to] = NEEDS.eat.full;
   if (s.hunger < at) { const q = Math.min(pack.food || 0, (to - s.hunger) / NEEDS.food); pack.food = (pack.food || 0) - q; s.hunger = clamp(s.hunger + q * NEEDS.food); }
-  if (s.thirst < NEEDS.drink[0]) { const q = Math.min(pack.water || 0, (NEEDS.drink[1] - s.thirst) / NEEDS.water); pack.water = (pack.water || 0) - q; s.thirst = clamp(s.thirst + q * NEEDS.water); }
+  if (s.thirst < NEEDS.drink[0]) { const q = drawWater(pack, (NEEDS.drink[1] - s.thirst) / NEEDS.water).got; s.thirst = clamp(s.thirst + q * NEEDS.water); } // purified first (water.js)
   if (s.hunger <= 0) hurt(state, s, NEEDS.hurtFood, null, "of hunger far from home on a personal errand", { raw: true });
   if (s.alive && s.thirst <= 0) hurt(state, s, NEEDS.hurtWater, null, "of thirst far from home on a personal errand", { raw: true });
 }
@@ -402,18 +408,19 @@ export const ERRAND_PACK = { food: 1, water: 1 };
 export function packErrand(state, base, s, days) {
   const tf = Weather.thirstAhead ? Weather.thirstAhead(state, days) : 1;
   const food = Math.min(Math.max(0, Math.floor(Math.max(0, base.stock.food || 0))), Math.ceil(days * ERRAND_PACK.food));
-  const water = Math.min(Math.max(0, Math.floor(Math.max(0, base.stock.water || 0))), Math.ceil(days * ERRAND_PACK.water * tf));
+  const want = Math.min(Math.floor(waterIn(base.stock)), Math.ceil(days * ERRAND_PACK.water * tf));
   base.stock.food = (base.stock.food || 0) - food;
-  base.stock.water = (base.stock.water || 0) - water;
-  return { food, water };
+  const w = drawWater(base.stock, want); // purified first, then un-purified (water.js)
+  return { food, water: w.pure, [RAW]: w.raw };
 }
 // Back from the errand: what is left comes home. Returns { food, water } brought back (whole units).
 export function unpackErrand(base, pack) {
   if (!pack || !base) return { food: 0, water: 0 };
-  const food = Math.floor((pack.food || 0) + 1e-9), water = Math.floor((pack.water || 0) + 1e-9);
+  const food = Math.floor((pack.food || 0) + 1e-9), pure = Math.floor((pack.water || 0) + 1e-9), raw = Math.floor((pack[RAW] || 0) + 1e-9);
   base.stock.food = (base.stock.food || 0) + food;
-  base.stock.water = (base.stock.water || 0) + water;
-  return { food, water };
+  base.stock.water = (base.stock.water || 0) + pure;
+  if (raw > 0) base.stock[RAW] = (base.stock[RAW] || 0) + raw;
+  return { food, water: pure + raw };
 }
 
 // ---------- text for the UI and alerts ----------

@@ -48,7 +48,7 @@ import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { spawnAiParty, tileLabel } from "./parties.js";
-import { hasNetwork, canRadioGroup, radioSpeech } from "./radio.js";
+import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
 import { season } from "./weather.js";
 import { gainXp, USE } from "./skills.js";
@@ -56,6 +56,7 @@ import { jobsDaily, jobsHour } from "./jobs.js";
 import { allianceDaily, isMember } from "./alliance.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
+import { keyWord } from "./water.js"; // "un-purified water" in texts
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -152,10 +153,11 @@ export function knownAs(state, f) {
   return `a group to the ${dir}`;
 }
 
-// News on the radio: kept for the Affairs screen, and logged when you have a radio on the air and know one of them.
+// News on the radio: kept for the Affairs screen, and logged when you have a radio on the air (a station, or a
+// hand-crank radio listening: radio.js canListen) and know one of them.
 export function news(state, text, kind = "info", involved = []) {
   const d = ensureDiplo(state);
-  const heard = hasNetwork(state) && involved.some((f) => f && f.known);
+  const heard = canListen(state) && involved.some((f) => f && f.known);
   d.news.unshift({ day: day(state), text, heard });
   if (d.news.length > 60) d.news.length = 60;
   if (heard) log(state, `📻 ${text}`, kind);
@@ -440,7 +442,7 @@ export function makePeace(state, w, how = "terms") {
       if (mine > 0) { const h = hub(state); h.stock[k] = (h.stock[k] || 0) + mine; paid[k] = mine; }
     }
     d.stats.tribute++;
-    const share = Object.entries(paid).map(([k, q]) => `${q} ${k}`).join(", ");
+    const share = Object.entries(paid).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
     text = `${cap(knownAs(state, lose))} made peace with ${knownAs(state, win)} and pays tribute.${share ? ` Your share reached the hub: ${share}.` : ""}`;
   } else {
     d.stats.white++;
@@ -602,7 +604,7 @@ export function brokerCeasefire(state, warId) {
   for (const f of [a, b]) {
     changeGoodwill(state, f, 8, "you brokered a ceasefire");
     f.lastDiplomacy = day(state);
-    const k = SUPPLY_KEYS.filter((x) => available(f, x) >= 3 && x !== "water").sort((x, y) => need(f, x) - need(f, y))[0];
+    const k = SUPPLY_KEYS.filter((x) => available(f, x) >= 3 && x !== "water" && x !== "rawwater").sort((x, y) => need(f, x) - need(f, y))[0];
     if (!k) continue;
     const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (SUPPLIES[k].value * Math.max(0.5, need(f, k))))));
     f.stock[k] -= q;
@@ -679,7 +681,7 @@ export function askRansom(state, f, s = null) {
   const value = base * (attitude(f) === "Hostile" ? 0.6 : 1) * (atWar(state, f) ? 1.3 : 1);
   const offer = {};
   let left = value;
-  for (const k of SUPPLY_KEYS.filter((x) => x !== "water" && available(f, x) > 0).sort((x, y) => need(f, x) - need(f, y))) {
+  for (const k of SUPPLY_KEYS.filter((x) => x !== "water" && x !== "rawwater" && available(f, x) > 0).sort((x, y) => need(f, x) - need(f, y))) {
     if (left <= 0) break;
     const unit = buyPrice(state, f, k, 0, 1);
     const q = Math.min(available(f, k), Math.ceil(left / unit));
@@ -688,7 +690,7 @@ export function askRansom(state, f, s = null) {
     left -= q * unit;
   }
   const ok = Object.keys(offer).length > 0;
-  const what = Object.entries(offer).map(([k, q]) => `${q} ${k}`).join(", ");
+  const what = Object.entries(offer).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
   return { ok, offer, value: Math.round(value), text: ok ? `${f.name} would pay ${what} to have them back.` : `${f.name} has nothing to pay with.` };
 }
 // They pay and get their person back (+3 goodwill). opts.baseId: where the ransom goes (default the hub).

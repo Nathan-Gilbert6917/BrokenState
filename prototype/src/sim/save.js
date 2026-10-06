@@ -115,6 +115,25 @@ export function deserializeState(save) {
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
     state.woodcutting = 1;
   }
+  // water.js: saves from before purified and un-purified water (no state.rawWater) keep all their water as purified
+  // water; un-purified water starts at 0 everywhere (bases, teams' supplies and cargo, the staging camp's stores), and
+  // the water a team carried marked unboiled (worm.js's old p.wormWater) becomes un-purified water (cargo first) at
+  // its eggs. Other groups keep their single water pool (trade.js poolKey).
+  if (!state.rawWater) {
+    for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.rawwater)) b.stock.rawwater = 0;
+    for (const p of state.parties || []) {
+      for (const o of [p.supplies, p.cargo && p.cargo.supplies]) if (o && !Number.isFinite(o.rawwater)) o.rawwater = 0;
+      let unsafe = Math.max(0, Number(p.wormWater) || 0);
+      for (const o of [p.cargo && p.cargo.supplies, p.supplies]) {
+        if (!o || !(unsafe > 0)) continue;
+        const q = Math.min(unsafe, Math.max(0, o.water || 0));
+        o.water -= q; o.rawwater += q; unsafe -= q;
+      }
+      delete p.wormWater;
+    }
+    if (state.staging && state.staging.stores && !Number.isFinite(state.staging.stores.rawwater)) state.staging.stores.rawwater = 0;
+    state.rawWater = 1;
+  }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

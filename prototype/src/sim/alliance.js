@@ -39,7 +39,7 @@
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
-import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork } from "./radio.js";
+import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen } from "./radio.js";
 import { available, need } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
 import { count } from "./buildings.js";
@@ -448,7 +448,7 @@ export function allianceVictory(state) {
 // always stays out.) Returns a line for the log or "".
 export function autoDiplomacyDaily(state, style) {
   const out = [];
-  if (hasNetwork(state) && day(state) % 7 === 0) radioScan(state);
+  if (canListen(state) && day(state) % 7 === 0) radioScan(state); // a station, or a hand-crank radio listening
   for (const f of state.factions) {
     if (!f.alive || !f.known || !canRadioGroup(state, f)) continue;
     if (radioCooldown(state, f, "greet") === 0) radioGreet(state, f);

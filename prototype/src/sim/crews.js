@@ -38,6 +38,7 @@ import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishK
 import { crewSurveyCands, surveySent } from "./survey.js";
 import { woodNeed, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, bestChop, woodcutterMult, WOOD } from "./woodcutting.js";
 import { packTripKit } from "./kit.js";
+import { stockHas, waterIn, RAW } from "./water.js"; // water counts both kinds
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
 export const CREW_LOG = 8;         // trips kept in a crew's log
@@ -93,7 +94,7 @@ export const FIELD_TYPES = {
       for (const o of state.bases.filter((b) => b.type === "outpost" && state.grid.distance(b.tile, base.tile) <= crew.range)) {
         const staff = atBase(state, o.id).length;
         const deliver = [];
-        if (staff && crewAI.outpostThirsty(state, o) && (base.stock.water || 0) >= 30) deliver.push({ key: "water", qty: 20 });
+        if (staff && crewAI.outpostThirsty(state, o) && waterIn(base.stock) >= 30) deliver.push({ key: (base.stock.water || 0) >= 20 ? "water" : RAW, qty: 20 }); // purified when the hub has it
         if (staff && (o.stock.food || 0) < staff * 4 && (base.stock.food || 0) >= 40) deliver.push({ key: "food", qty: 12 });
         if ((o.stock.scrap || 0) < 10 && (base.stock.scrap || 0) >= 60) deliver.push({ key: "scrap", qty: 20 });
         if (deliver.length) out.push({ tile: o.tile, mission: "supply", outpost: o.id, deliver, score: 1 + deliver.length, why: `${deliver.map((l) => `${l.qty} ${l.key}`).join(", ")} for ${o.name}` });
@@ -281,7 +282,7 @@ function launchTeam(ctx, c) {
   if (est.hoursOut > crew.maxHours) return { error: `more than ${crew.maxHours}h out` };
   if (est.hours > 24 && severeSoon(state, 2)) return { error: "a storm is coming" };
   const days = (est.hours + (c.onSite || 4)) / 24;
-  const stock = (k) => Math.floor(base.stock[k] || 0);
+  const stock = (k) => Math.floor(stockHas(base.stock, k)); // water: both kinds (water.js)
   const homeLeft = Math.max(0, atBase(state, base.id).length - n);
   const sup = {
     food: Math.ceil(n * days * (crew.spare || 1.3)) + 1,

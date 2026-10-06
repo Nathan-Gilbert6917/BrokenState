@@ -19,7 +19,7 @@ import { LOCATIONS, siteDanger, SUPPLIES } from "./data.js";
 import { siteKnownTo } from "./discovery.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, travelHours, partySpeed, startReturn, awaitOrders,
-  ordersCard, partyCapacity, cargoRoom, carried, sightRadius, fuelForPath, STANCES, MISSIONS,
+  ordersCard, partyCapacity, cargoRoom, carried, carriedAny, sightRadius, fuelForPath, STANCES, MISSIONS,
   plannedPace, partyPace, plannedVehicle, rationsPerHour, paceOpts, modeSpeed, waterForHours,
 } from "./parties.js";
 import { travelMode } from "./vehicles.js";
@@ -374,6 +374,10 @@ export function commandable(state, p) {
   return state.bases.some((b) => b.tile === partyTile(p));
 }
 export const NO_RADIO = "No radio contact: the team follows its plan. New orders only through the cards it raises, or once it is in radio range (a station or a linked relay).";
+// A team carrying a receiver out of two-way reach, inside some radio network (parties.js updateRadio p.radioHear):
+// it listens, that is all (radiolisten.js: Listen in tunes it to one channel).
+export const HAND_RADIO = "Hand-crank radio: hears the networks around it, cannot call in";
+export const HAND_RADIO_TIP = "The team carries a receiver (a hand-crank radio, or a military radio): inside a radio network's coverage (yours, or a group's own around its bases) it hears that network, and nothing beyond every network. It cannot answer, so it is not in contact: no orders, nothing reported, until it is in radio range or raises a card. Listen in (1h, from the team panel while in contact) tunes it to one channel; then it picks up that channel's traffic each day while in range.";
 
 // ---------- hourly (parties.js playerPartyHour) ----------
 export function fieldHour(state, p) {
@@ -451,7 +455,7 @@ function planWatch(state, p) {
     const left = (p.orders || []).length;
     if (h != null && left && foodDays(state, p) * 24 < h + 12) {
       pl.fired.low = true;
-      return findCard(state, p, "Supplies running low", `Food for about ${foodDays(state, p).toFixed(1)} days, water ${(carried(p, "water") / Math.max(1, members.length)).toFixed(1)}; home is about ${h}h away and the plan still has ${left} step${left === 1 ? "" : "s"}.`);
+      return findCard(state, p, "Supplies running low", `Food for about ${foodDays(state, p).toFixed(1)} days, water ${(carriedAny(p, "water") / Math.max(1, members.length)).toFixed(1)}; home is about ${h}h away and the plan still has ${left} step${left === 1 ? "" : "s"}.`);
     }
   }
 }

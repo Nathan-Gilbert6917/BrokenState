@@ -2987,7 +2987,7 @@ export const FLOOR_RICH = { perFloor: 1.1, cap: 1.5 };
 // container). The small finds per container (valuables, comforts, throwables) are in loot.js AREA_FINDS.
 export const AREAS = {
   house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.07, 1, 1], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03], ["binoculars", 0.012], ["telescope", 0.003]] },
-  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], ammo: [0.25, 4, 12], meds: [0.05, 1, 1] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03]] },
+  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], rawwater: [0.2, 2, 6], ammo: [0.25, 4, 12], meds: [0.05, 1, 1] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03]] },
   store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.06, 1, 1] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01]] },
   kitchen:   { name: "Kitchen",        boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.85, 4, 12], water: [0.6, 3, 6] }, gear: [["knife", 0.08], ["bottle", 0.12]] },
   pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.9, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.05]] },
@@ -3005,7 +3005,7 @@ export const AREAS = {
   hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [["prybar", 0.03], ["hikingpack", 0.02]] },
   cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08], ["baton", 0.03]] },
   control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [["flashlight", 0.04]] },
-  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02]] },
+  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], rawwater: [0.25, 2, 5], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02]] },
   wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02]], alarm: 0.15 },
   // The cars left along a road or on a bridge (layRoad): placed on the road itself, not in a cluster. What people
   // fled with: fuel in the tanks, a bag of food and bottles, the odd gun in the glovebox. Some are locked (locks.js

@@ -8,6 +8,7 @@ import { refreshPower, generatorStatus, powerLine } from "./power.js";
 import { buildMult } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
+import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
 
 export const RECIPES = {
@@ -211,7 +212,7 @@ export function stationStatus(state, base, st) {
   const io = stationIO(state, base, st, op);
   const hold = orderHold(state, base, st);
   if (hold) return { op, running: false, idle: true, reason: hold, recipe, out: io.out, in: io.in, powered: io.powered };
-  const missing = Object.entries(io.in).filter(([k, v]) => (base.stock[k] || 0) < v).map(([k]) => k);
+  const missing = Object.entries(io.in).filter(([k, v]) => stockHas(base.stock, k) < v).map(([k]) => k);
   const out = io.out;
   if (missing.length) return { op, running: false, reason: `Waiting for ${missing.join(", ")}`, recipe, out, in: io.in, powered: io.powered };
   return { op, running: true, reason: io.powered ? "Running (powered)" : "Running", recipe, out, in: io.in, powered: io.powered, mash: io.mash };
@@ -225,7 +226,7 @@ export function runStations(state, base) {
     if (!status.running || status.recipe === "power") continue;
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
-    for (const [k, v] of Object.entries(inp)) base.stock[k] -= v;
+    for (const [k, v] of Object.entries(inp)) useStock(base.stock, k, v);
     if (status.mash) base.mash = Math.max(0, (base.mash || 0) - status.mash); // the still's spoiled food (storage.js)
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
     for (const [k, v] of Object.entries(status.out)) base.stock[k] = (base.stock[k] || 0) + v;

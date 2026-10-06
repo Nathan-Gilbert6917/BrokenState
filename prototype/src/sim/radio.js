@@ -12,6 +12,8 @@
 // - Your teams in coverage report live (world.js radioBasesInRange); groups whose base is within coverage plus
 //   GROUP_REACH (6) tiles (their own sets reach that far) can be called. A chain runs through your own bases only
 //   (every node is one of state.bases); the coalition's NEIGHBOUR / MEMBER_RELAY rules (alliance.js) do the rest.
+// - Networks (radioNetworks, networksAt): yours, and one per group around each of its bases (GROUP_NET_RANGE by
+//   type). Receivers hear a network only inside its coverage; Listen in tunes one to a channel (radiolisten.js).
 //
 // Talking to a group (Groups tab → Radio…), each with a cooldown:
 // - Greet: +2 goodwill (+1 if hostile), every 3 days. Scan the airwaves: groups in reach you have not met are
@@ -30,16 +32,19 @@
 // they need) or a request (they need something, paying with their surplus): 15% a day for traders, 10% for a
 // commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out.
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
-import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
 import { count } from "./buildings.js";
 import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
-import { planPath, spawnAiParty } from "./parties.js";
+import { planPath, spawnAiParty, partyTile } from "./parties.js";
+import { packOf } from "./inventory.js";
+import { teamKit } from "./fieldheat.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { marketOf } from "./trade.js";
-import { diplomacyDaily } from "./diplomacy.js";
+import { diplomacyDaily, knownAs } from "./diplomacy.js";
+import { listenDaily } from "./radiolisten.js"; // listening in on a network's traffic (Listen in)
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
@@ -50,6 +55,83 @@ export const GROUP_REACH = 6;
 export const MIL_RADIO_RANGE = 24; // a base with a Military encrypted radio in its armory
 export const hasMilRadio = (b) => !!b.armory && b.armory.some((it) => it && it.key === "milradio");
 export const COOLDOWN = { greet: 3, news: 5, caravan: 4, help: 10, scan: 1, offer: 6 };
+
+// ---------- radio networks (who broadcasts where; listening: radiolisten.js) ----------
+// Yours (every linked station and relay: radioNodes) and one per AI group with a base: each of its bases broadcasts
+// GROUP_NET_RANGE tiles by the group's type (military 24, traders and fortresses 12, communes, zealots and
+// expansionists 8, raiders 6), so a base taken or lost changes the group's coverage. A receiver hears a network only
+// while it stands inside that network's coverage: nothing beyond it (the old "+6 tiles past coverage" band is gone,
+// HEAR_EXTRA 0). Transmitting is unchanged: canRadioGroup (your coverage + GROUP_REACH) decides who can be called.
+export const GROUP_NET_RANGE = { military: 24, traders: 12, fortress: 12, commune: 8, zealot: 8, expansionist: 8, raider: 6 };
+export const PLAYER_NET = "player";
+export const PLAYER_NET_COLOR = "#4f8fd6"; // render.js PLAYER_COLOR
+// { id, name, color, kind: "player" | "group", faction?, nodes: [{ tile, range }] }; null: no network.
+export function playerNetwork(state) {
+  const nodes = radioNodes(state).filter((n) => n.linked && !n.offline).map((n) => ({ tile: n.tile, range: n.range }));
+  return nodes.length ? { id: PLAYER_NET, name: "Your network", color: PLAYER_NET_COLOR, kind: "player", nodes } : null;
+}
+export function groupNetwork(state, f) {
+  if (!f || !f.alive || !f.bases || !f.bases.length) return null;
+  const range = GROUP_NET_RANGE[f.type] ?? 8;
+  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: f.bases.map((tile) => ({ tile, range })) };
+}
+export function radioNetworks(state) {
+  const out = [];
+  const mine = playerNetwork(state);
+  if (mine) out.push(mine);
+  for (const f of state.factions) { const n = groupNetwork(state, f); if (n) out.push(n); }
+  return out;
+}
+export const netCovers = (state, net, tile) => !!net && net.nodes.some((n) => state.grid.distance(n.tile, tile) <= n.range);
+// The networks whose coverage contains a tile (yours first).
+export const networksAt = (state, tile) => radioNetworks(state).filter((n) => netCovers(state, n, tile));
+// A network by its id ("player" or a group's id), as it is now (null: gone or off the air).
+export const networkById = (state, id) => (id === PLAYER_NET ? playerNetwork(state) : groupNetwork(state, state.factions.find((f) => f.id === Number(id))));
+
+// ---------- receivers: hand-crank radios (data.js handradio: never a transmitter), stations, military radios ----------
+// A base with a hand-crank radio in its armory (or on someone there) and a player team carrying one are listeners;
+// a base with a station or a Military encrypted radio, and a team carrying a military radio, receive too. Inside a
+// network's coverage they hear it (scan, news, callers, rumours, and with Listen in its traffic: radiolisten.js);
+// outside every network they hear nothing. A team's handheld cannot answer: parties.js updateRadio sets
+// p.radioHear, never p.radioLive. Hearing calls nobody: canRadioGroup, commandable (plans.js) and the coverage
+// (radioNodes) ignore listeners.
+export const HEAR_EXTRA = 0; // no listening band beyond a network's coverage any more
+const isHandRadio = (it) => !!(it && GEAR[it.key] && GEAR[it.key].listen);
+export const hasHandRadioIn = (list) => Array.isArray(list) && list.some(isHandRadio);
+export const baseListens = (state, b) => hasHandRadioIn(b.armory) || atBase(state, b.id).some((s) => isHandRadio(s.gear && s.gear.tool) || hasHandRadioIn(s.pockets) || hasHandRadioIn(packOf(s))); // packOf: the pack's slots
+export const teamListens = (state, p) => !!p && p.owner === "player" && p.kind !== "convoy" && teamKit(state, p).some(isHandRadio);
+// Any receiver: a base's station or military radio, or a hand-crank radio; a team's hand-crank or military radio.
+export const baseReceives = (state, b) => !!b && (!!b.radio || hasMilRadio(b) || baseListens(state, b));
+export const teamMilRadio = (state, p) => teamKit(state, p).some((it) => it && it.key === "milradio");
+export const teamReceives = (state, p) => !!p && p.owner === "player" && p.kind !== "convoy" && teamKit(state, p).some((it) => isHandRadio(it) || (it && it.key === "milradio"));
+// Every receiver switched on: { tile, base } or { tile, party }.
+export function receivers(state) {
+  const out = [];
+  for (const b of state.bases) if (baseReceives(state, b)) out.push({ tile: b.tile, base: b });
+  for (const p of state.parties) if (teamReceives(state, p)) out.push({ tile: partyTile(p), party: p });
+  return out;
+}
+// Every hand-crank radio that hears something: inside some network's coverage ({ tile, base } or { tile, party }).
+export function listeners(state) {
+  const out = [];
+  let nets = null;
+  const onAir = (tile) => (nets = nets || radioNetworks(state)).some((n) => netCovers(state, n, tile));
+  for (const b of state.bases) if (baseListens(state, b) && onAir(b.tile)) out.push({ tile: b.tile, base: b });
+  for (const p of state.parties) if (teamListens(state, p) && onAir(partyTile(p))) out.push({ tile: partyTile(p), party: p });
+  return out;
+}
+// Something to hear with: a station or linked relay on the air, or a hand-crank radio inside some network.
+export const canListen = (state) => hasNetwork(state) || listeners(state).length > 0;
+// A tile within earshot of a hand-crank radio that is on the air: RADIO_RANGE (+ extra) around it (outsiders' own
+// sets: visitors.js sight).
+export const heardBy = (state, tile, extra = 0) => listeners(state).some((l) => state.grid.distance(l.tile, tile) <= RADIO_RANGE + extra);
+// A group whose set is heard: callable (canRadioGroup, two-way) or a receiver of yours inside its network (one-way).
+export function canHearGroup(state, f) {
+  if (!f || !f.alive) return false;
+  if (canRadioGroup(state, f)) return true;
+  const net = groupNetwork(state, f);
+  return !!net && receivers(state).some((r) => netCovers(state, net, r.tile));
+}
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -81,14 +163,16 @@ export const hasNetwork = (state) => radioNodes(state).some((n) => n.linked);
 // One line for the base screen.
 export function radioSummary(state, base) {
   const n = radioNodes(state).find((x) => x.base === base);
-  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}`;
+  const tuned = base.tuned != null ? networkById(state, base.tuned) : null; // radiolisten.js Listen in
+  const ear = tuned ? `. Tuned to ${tuned.name}${netCovers(state, tuned, base.tile) ? "" : " (out of range)"}` : "";
+  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}${ear}`;
   if (n) {
     if (n.offline) return "Relay offline: it needs 1 part (from this outpost or the hub)";
     if (!n.linked) return `Relay not linked: no station or linked relay within range (it reaches ${n.range} tiles)`;
     return `Relay linked: ${n.range} tiles of coverage. Upkeep 1 part every ${RELAY_UPKEEP_DAYS} days, next on day ${base.relayDue ?? day(state) + RELAY_UPKEEP_DAYS}`;
   }
   const by = coverNodes(state, base.tile)[0];
-  return by ? `In coverage (from ${by.base.name})` : "No radio here, and out of coverage";
+  return (by ? `In coverage (from ${by.base.name})` : baseListens(state, base) ? "A hand-crank radio: it listens, calls nobody" : "No radio here, and out of coverage") + ear;
 }
 
 // Relays use a part every few days; without one they go offline until one turns up.
@@ -147,19 +231,23 @@ export function tradeBase(state, f) {
 
 // ---------- your calls ----------
 export function radioScan(state) {
-  if (!hasNetwork(state)) return "You need a radio station first.";
+  if (!canListen(state)) return "You need a radio station (or a hand-crank radio) first.";
   if (state.radioScanDay === day(state)) return "You already scanned the airwaves today.";
   state.radioScanDay = day(state);
-  const heard = [];
+  const heard = [], onHand = [];
   for (const f of state.factions) {
-    if (!f.alive || f.known || !canRadioGroup(state, f)) continue;
+    if (!f.alive || f.known) continue;
+    const call = canRadioGroup(state, f);
+    if (!call && !canHearGroup(state, f)) continue; // a receiver of yours inside their network hears them (one way)
     f.known = true;
     f.heard = true;
     const b = f.bases[0];
     if (b != null) state.knowledge[b] = snapshot(state, b);
     heard.push(f.name);
+    if (!call) onHand.push(f.name);
   }
-  const text = heard.length ? `New voices on the radio: ${heard.join(", ")}. Their base is marked on the map.` : "Static. No new voices within reach.";
+  const hand = onHand.length ? ` ${onHand.length === heard.length ? "Heard" : `${onHand.join(", ")} heard`} on their own channel: within earshot, not within call.` : "";
+  const text = heard.length ? `New voices on the radio: ${heard.join(", ")}. Their base is marked on the map.${hand}` : "Static. No new voices within reach.";
   log(state, text, heard.length ? "good" : "info");
   return text;
 }
@@ -301,6 +389,7 @@ export function radioDaily(state) {
     grudgeRaid(state, f);
   }
   diplomacyDaily(state); // diplomacy.js: relations, pacts and wars between groups, market lists, jobs, the coalition
+  listenDaily(state); // radiolisten.js: the groups' channel traffic, and what your tuned receivers pick up of it
   if (!hasNetwork(state)) return;
   for (const f of state.factions) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f)) continue;

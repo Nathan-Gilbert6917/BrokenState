@@ -190,7 +190,7 @@ function record(state, c) {
   const deltas = key ? 0 : ownD.length + infD.length;
   const d = new Uint16Array(HEAD + nF * 3 + deltas + hz.length + pt.length);
   const hb = hub(state), st = hb ? hb.stock : {};
-  d.set([alive(state).length, clamp16(st.food), clamp16(st.water), clamp16(st.ammo), clamp16(st.meds),
+  d.set([alive(state).length, clamp16(st.food), clamp16((st.water || 0) + (st.rawwater || 0)), clamp16(st.ammo), clamp16(st.meds),
     key ? 0 : ownD.length / 2, key ? 0 : infD.length / 2, hz.length / 3, pt.length / 4, nF, land[1] || 0]);
   let o = HEAD;
   const live = new Map(state.factions.map((f) => [f.id, f]));

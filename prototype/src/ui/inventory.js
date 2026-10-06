@@ -35,7 +35,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
-const SUPPLY_ICON = { food: "🥫", water: "💧", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
+const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
 function icon(key) {
   const d = GEAR[key];
   if (GUNS.has(key)) return "🔫";
@@ -65,7 +65,7 @@ export function itemTip(item, s = null) {
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
-  if (dur != null) bits.push(`makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
+  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : `makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
   if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }

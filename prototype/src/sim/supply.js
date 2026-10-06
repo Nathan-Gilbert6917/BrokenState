@@ -11,6 +11,7 @@ import {
   partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty, waterForHours,
 } from "./parties.js";
 import { thirstAt } from "./weather.js";
+import { waterIn, drawWater, moveWater, RAW } from "./water.js"; // purified and un-purified water: the road's water counts both, purified packed first
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { edibleFood, eatFromStore } from "./storage.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
@@ -136,7 +137,7 @@ export function supplyEstimate(state, f) {
     if (have < q) warnings.push(`${origin.name} has only ${have} ${k} (sending ${q})${f.allowPartial ? ": it sends what is there" : ": the run waits until there is enough"}.`);
   }
   for (const k of ["food", "water"]) {
-    const left = Math.floor(origin.stock[k] || 0) - (deliver[k] || 0);
+    const left = k === "water" ? Math.floor(waterIn(origin.stock)) - (deliver.water || 0) - (deliver[RAW] || 0) : Math.floor(origin.stock[k] || 0) - (deliver[k] || 0);
     const need = k === "water" ? plan.needWater : plan.need;
     if (left < need) warnings.push(`Not enough ${k} left at ${origin.name} for the road (needs ${need} after the delivery).`);
   }
@@ -186,14 +187,17 @@ export function dispatchSupplyRun(state, job, manual = false) {
     return blockRun(state, job, `the load (${Math.ceil(plan.load)}) is more than the ${plan.useVehicle ? "crew and vehicle" : "crew"} can carry (${plan.capacity})${plan.vProblem ? `, and ${plan.vProblem}` : ""}`, manual);
   }
   // Road supplies come from what is left after the delivery.
-  const left = (k) => Math.floor(origin.stock[k] || 0) - (deliver[k] || 0);
+  const left = (k) => (k === "water" ? Math.floor(waterIn(origin.stock)) - (deliver.water || 0) - (deliver[RAW] || 0) : Math.floor(origin.stock[k] || 0) - (deliver[k] || 0));
   for (const k of ["food", "water"]) {
     const need = k === "water" ? plan.needWater : plan.need;
     if (left(k) < need) return blockRun(state, job, `not enough ${k} at ${origin.name} for the road (needs ${need} after the delivery, has ${Math.max(0, left(k))})`, manual);
   }
   const supplies = { food: Math.min(plan.want, left("food")), water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
   for (const [k, q] of Object.entries(deliver)) origin.stock[k] -= q;
-  for (const k of ["food", "water", "ammo"]) origin.stock[k] -= supplies[k];
+  for (const k of ["food", "ammo"]) origin.stock[k] -= supplies[k];
+  const w = drawWater(origin.stock, supplies.water); // purified first (water.js)
+  supplies.water = w.pure;
+  supplies[RAW] = w.raw;
   const v = plan.useVehicle ? plan.v : null;
   if (v) {
     const top = Math.max(0, Math.min(plan.fuelWant - v.fuel, tank(v) - v.fuel, Math.floor(origin.stock.fuel || 0)));
@@ -282,11 +286,10 @@ function headHome(state, p, job) {
     const back = planPath(state, dest.tile, home.tile, p.vehicle) || planPath(state, dest.tile, home.tile, false);
     if (back) {
       const need = Math.ceil((n * (back.cost / (STANCES[p.stance]?.speed || 1) + 2)) / 24) + 1;
-      for (const k of ["food", "water"]) {
-        const top = Math.max(0, Math.min(need - Math.floor(p.supplies[k] || 0), Math.floor(dest.stock[k] || 0)));
-        dest.stock[k] -= top;
-        p.supplies[k] = (p.supplies[k] || 0) + top;
-      }
+      const topFood = Math.max(0, Math.min(need - Math.floor(p.supplies.food || 0), Math.floor(dest.stock.food || 0)));
+      dest.stock.food -= topFood;
+      p.supplies.food = (p.supplies.food || 0) + topFood;
+      moveWater(dest.stock, p.supplies, Math.max(0, Math.min(need - Math.floor(waterIn(p.supplies)), Math.floor(waterIn(dest.stock))))); // purified first
       const v = partyVehicle(state, p);
       if (v) {
         const needF = Math.ceil(fuelForPath(state, back.path) * FUEL_MARGIN);
@@ -513,8 +516,9 @@ function holdUpkeep(state, p, job) {
   const draw = (k) => {
     const q = k === "water" ? thirstAt(state) : UPKEEP.crew * coldFactor(state);
     if (k === "food" && edibleFood(dest) >= q) eatFromStore(dest, q);
-    else if (k === "water" && (dest.stock[k] || 0) >= q) dest.stock[k] -= q;
-    else if ((p.supplies[k] || 0) >= q) p.supplies[k] -= q;
+    else if (k === "water" && waterIn(dest.stock) >= q) drawWater(dest.stock, q); // purified first (water.js)
+    else if (k === "water" && waterIn(p.supplies) >= q) drawWater(p.supplies, q);
+    else if (k !== "water" && (p.supplies[k] || 0) >= q) p.supplies[k] -= q;
     else return false;
     return true;
   };

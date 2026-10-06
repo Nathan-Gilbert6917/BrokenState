@@ -1013,7 +1013,9 @@ function militaryFalls(state, f, how) {
   const dead = Math.round(pop * rng.range(M.DEAD[0], M.DEAD[1])); // in the last fight
   const fallenAll = Math.max(dead, m.startPop - (pop - dead)); // all the soldiers the base cost
   if (!taken) {
-    t.ruin = { name: place, day: d, by: "the dead", from: f.name };
+    // dead: the garrison's own dead fill it; a hive burned out nearby (hives.js destroyHive) fades only what the
+    // hive radiated, never below this, until someone builds on the ruin.
+    t.ruin = { name: place, day: d, by: "the dead", from: f.name, dead: 0.85 };
     t.loot = Math.max(t.loot || 0, M.RUIN_LOOT);
     t.infection = Math.max(t.infection || 0, 0.85);
     // The first year's spread (hardcore-outbreak.js) steers every tile toward its infGoal: raise that too, or it

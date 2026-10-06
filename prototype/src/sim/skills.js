@@ -671,7 +671,7 @@ function fieldRepair(people) {
     const items = [...Object.values(s.gear || {}), ...(s.pockets || []), ...((s.gear && s.gear.backpack && s.gear.backpack.contents) || [])];
     for (const it of items) {
       const d = it && GEAR[it.key];
-      if (d && d.dur && Number.isFinite(it.dur) && it.dur < d.dur) it.dur = Math.min(d.dur, it.dur + 1);
+      if (d && d.dur && !d.tabs && Number.isFinite(it.dur) && it.dur < d.dur) it.dur = Math.min(d.dur, it.dur + 1); // not a tube of tablets: dur counts what is left, not wear (worm.js)
     }
   }
 }

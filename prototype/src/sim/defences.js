@@ -339,7 +339,7 @@ function smash(state, base, bosses) {
 // spoil half the food, water and meds, batter what was built and move on. Nobody is there to lose it: it stays yours.
 function wreckEmpty(state, base, h, through) {
   state.hiveInfo.stats.overrun++;
-  for (const k of ["food", "water", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+  for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
   const dmg = raidDamage(state, base, { strength: Math.min(60, through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
   log(state, `The dead tore through ${base.name}: nobody was there. Half the food, water and meds were spoiled. ${dmg.text}`, "danger");
   if (h && state.hordes.includes(h)) {
@@ -358,7 +358,7 @@ function overrun(state, base, h, through, why = "") {
     hurt(state, s, rng.int(20, 60), base.tile, `when the dead overran ${base.name}`);
     if (!s.alive) dead.push(s.name);
   }
-  for (const k of ["food", "water", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.65);
+  for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.65);
   log(state, `The dead overran ${base.name}.${why ? ` ${why}` : ""}${dead.length ? ` Killed: ${dead.join(", ")}.` : ""} A third of the food, water and meds were spoiled.`, "death");
   if (base.type === "outpost" && state.bases.includes(base)) removeBase(state, base, "was overrun by the dead");
   if (h && state.hordes.includes(h)) {
@@ -391,7 +391,7 @@ registerCombatHandler("hordeBreakIn", (state, result, setup) => {
     // (half the food, water and meds spoiled, the walls and defences battered), then come back once the horde has
     // moved on. Nobody else is hurt and the base (an outpost too) stays yours.
     state.hiveInfo.stats.overrun++;
-    for (const k of ["food", "water", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+    for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
     const dmg = raidDamage(state, base, { strength: Math.min(60, c.through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
     if (h && state.hordes.includes(h)) retreat(state, h, base);
     const text = `Your people pulled out of ${base.name} and waited outside while the dead tore through it. Half the food, water and meds were spoiled. ${dmg.text} The horde has moved on and everyone who got out is back inside.`;

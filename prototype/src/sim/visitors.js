@@ -79,10 +79,11 @@ import {
   supplyValue, skill, baseVision,
 } from "./world.js";
 import {
-  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply,
+  planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply, carriedAny, takeAny,
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
+import { waterIn, drawWater } from "./water.js"; // purified and un-purified water
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { raidSiegeKit, kitText } from "./siege.js";
@@ -90,7 +91,7 @@ import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { inCoverage, hasNetwork } from "./radio.js";
+import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
 import { newItem } from "./inventory.js";
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
@@ -1418,8 +1419,8 @@ function gateCard(state, v, base, lead) {
     const wcost = Math.ceil(cost * thirstAhead(state, O.explorers.shelterDays) - 1e-9); // more in summer and a heat wave
     choices.push({
       label: `Shelter them for ${O.explorers.shelterDays} days (${cost} food, ${wcost} water)`, hint: `${n} ${n === 1 ? "person" : "people"} eat and drink at ${base.name} (1 food and 1 water each a day, more water in summer). Everyone there feels better for it (mood +${O.explorers.shelterMood}); guests often leave a gift`,
-      disabled: (st) => !here(st) || (base.stock.food || 0) < cost || (base.stock.water || 0) < wcost,
-      ai: (st) => { const d = (base.stock.food || 0) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" || (base.stock.water || 0) < wcost + residents(st, base.id).length * 5 ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
+      disabled: (st) => !here(st) || (base.stock.food || 0) < cost || waterIn(base.stock) < wcost,
+      ai: (st) => { const d = (base.stock.food || 0) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" || waterIn(base.stock) < wcost + residents(st, base.id).length * 5 ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
       resolve: (st) => {
         if (!here(st)) return gone;
         v.done.shelter = true;
@@ -1453,7 +1454,7 @@ function shelterDay(state, v) {
   // Per head, as anyone at the base (upkeep.js): food times the cold, fresh then preserved; water times the day's thirst.
   eatFromStore(base, v.size * UPKEEP.guest * coldFactor(state));
   base.stock.food = Math.max(0, base.stock.food || 0);
-  base.stock.water = Math.max(0, (base.stock.water || 0) - v.size * thirstAt(state)); // the day's thirst (weather.js)
+  drawWater(base.stock, v.size * thirstAt(state)); // the day's thirst (weather.js), purified first (water.js)
 }
 function endShelter(state, v) {
   const base = baseById(state, v.shelterBase);
@@ -1666,11 +1667,11 @@ function explorerRoadCard(state, v, p) {
   }
   const give = { food: 2 * n, water: 2 * n };
   choices.push({
-    label: `Share supplies (${give.food} food, ${give.water} water)`, hint: "The team feels better for it (mood +2), and they share their map", disabled: (st) => carried(p, "food") < give.food || carried(p, "water") < give.water,
+    label: `Share supplies (${give.food} food, ${give.water} water)`, hint: "The team feels better for it (mood +2), and they share their map", disabled: (st) => carried(p, "food") < give.food || carriedAny(p, "water") < give.water,
     ai: (st) => (carried(p, "food") >= give.food * 3 ? 25 : -20),
     resolve: (st) => {
       if (!ok(st)) return done(st, "They are gone.");
-      takeSupply(p, "food", give.food); takeSupply(p, "water", give.water);
+      takeSupply(p, "food", give.food); takeAny(p, "water", give.water);
       for (const s of partyMembers(st, p)) s.mood = clamp(s.mood + 2, 0, 100);
       const k = v.done.roadNews ? 0 : giveIntel(st, v, 1, p);
       v.done.roadNews = true;
@@ -1798,13 +1799,14 @@ registerCombatHandler("outsiderRaid", onOutsiderRaid);
 // ---------- being seen ----------
 function sight(state, v) {
   const live = state.live.has(v.tile);
-  const heard = !live && inCoverage(state, v.tile);
+  const heard = !live && (inCoverage(state, v.tile) || heardBy(state, v.tile)); // your coverage, or a hand-crank radio's earshot (radio.js)
   v.live = live;
   v.heard = heard;
   if (!live && !heard) return;
   v.seen = { tile: v.tile, hour: state.hour };
   if (!v.known) { v.known = true; announce(state, v, live); }
-  if (v.kind === "merchants" && !v.called && (heard || (live && hasNetwork(state)))) merchantCall(state, v);
+  // Their call needs an answer: only within your own coverage (a hand-crank radio hears them but cannot reply).
+  if (v.kind === "merchants" && !v.called && hasNetwork(state) && ((heard && inCoverage(state, v.tile)) || live)) merchantCall(state, v);
 }
 
 function announce(state, v, live) {

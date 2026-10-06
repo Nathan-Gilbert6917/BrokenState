@@ -144,7 +144,12 @@ hives). Readings and deviations from the contracts:
   wells on claims by water when water is short. In tests a 150-guard hive 20 tiles out fell by day 115–357.
 - **Hardcore**: one starter is a prepper with a duffle bag (new pack): 15 food, 15 water, 2 meds, a water filter,
   flashlight, bandages, lighters, batteries, 2–3 extras, a gun with 20 rounds or a knife; the Prepper trait when a
-  slot is free (background only, no in-play effect). No hand-crank radio or purification tablets: neither exists.
+  slot is free (background only, no in-play effect). Added 2026-10-06 (after this reading): a hand-crank radio
+  (`data.js handradio`: a receiver, hears what a station would, calls nobody: `radio.js listeners`) and a tube of 10
+  purification tablets (`puritabs`: one per 10 water drunk from infected sources on the road; at a base one per 10
+  water on days the boiler is cold or missing and no filter covers it: `worm.js`), both in the prepper's kit and as
+  loot (pharmacies, clinics, hospitals, camping places, truck stops, supply drops); the tablets are pressed at a med
+  station (1 meds, 1 scrap). `tools/itemstest.js`.
 - **Raid bot**: leaves at Heat 40, half the squad hurt or anyone down, outnumbered in sight, or its way out growing
   two turns running. Interior raids out 16 → 23 of 24.
 - **Census tooling**: `--size a,b,c` sweeps with a comparison table, deaths by season, coalition blockers at month

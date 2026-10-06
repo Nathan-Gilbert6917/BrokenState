@@ -511,8 +511,12 @@ export function destroyHive(state, hive, how = "", opts = {}) {
   state.tiles[hive.tile].hive = false;
   for (const id of state.grid.within(hive.tile, 7)) {
     const t = state.tiles[id];
-    t.infBase = Math.min(t.infBase ?? t.infection, 0.06 + 0.07 * state.grid.distance(hive.tile, id));
-    if (t.infGoal != null) t.infGoal = Math.min(t.infGoal, t.infBase); // hardcore-outbreak.js: the level the first year spreads toward
+    // A ruin full of its own dead (t.ruin.dead: hardcore-groups.js, the fallen military's base) keeps them: the hive
+    // only takes back what it radiated.
+    const keep = (v) => (t.ruin && t.ruin.dead ? Math.min(v, t.ruin.dead) : 0);
+    const was = t.infBase ?? t.infection;
+    t.infBase = Math.max(keep(was), Math.min(was, 0.06 + 0.07 * state.grid.distance(hive.tile, id)));
+    if (t.infGoal != null) t.infGoal = Math.max(keep(t.infGoal), Math.min(t.infGoal, t.infBase)); // hardcore-outbreak.js: the level the first year spreads toward
   }
   for (const h of [...state.hordes]) {
     if (h.hive !== hive.id) continue;
