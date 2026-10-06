@@ -1005,7 +1005,8 @@ function handleTrade(state) {
 // needs-gauges: heating fuel for the winter (upkeep.js heatUse: 0.1 fuel a head a day below 0°C). The fuel a base will
 // burn from today to the end of the cold (the share of freezing days by part of the year, about 30 days a year: late
 // autumn 13%, winter 92%, early spring 16%; bitter days a little more), with a quarter more to spare. want: the weight
-// for needs() (2.4 under half of it, 1.7 under it; from the second half of autumn), 0 otherwise.
+// for needs() (1.9 under half of it, 1.4 under it, 0.7 with it in store: never traded away; from the second half of
+// autumn to early spring), 0 otherwise. Fuel runs (heatFuelCands) only under half.
 const FREEZE_SHARE = { "autumn-late": 0.13, "winter-early": 0.92, "winter-late": 0.92, "spring-early": 0.16 };
 export function heatFuelWant(state, base) {
   if (!base) return { need: 0, want: 0 };
@@ -1023,7 +1024,7 @@ export function heatFuelWant(state, base) {
   const s = wxSeason(state);
   const soon = s.key === "winter" || (s.key === "autumn" && s.dayOfSeason > 10) || (s.key === "spring" && s.dayOfSeason <= 14);
   // In the cold months the fuel is never "plenty" (0.7: not traded away) even with the winter's need in store.
-  return { need, want: !soon || need <= 0 ? 0 : have < need * 0.5 ? 2.4 : have < need ? 1.7 : 0.7 };
+  return { need, want: !soon || need <= 0 ? 0 : have < need * 0.5 ? 1.9 : have < need ? 1.4 : 0.7 };
 }
 
 // The heating fuel a base holds back from cars and the generator in the cold months (what heatFuelWant says the rest
