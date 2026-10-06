@@ -87,7 +87,7 @@ export const imminent = (b, c) => wormable(c) && (!!c.wormed || carriers(b).some
 // Is the worm about on this map (a Carrier or a swarm alive, or a body with the worm in it)?
 export const wormsAbout = (b) => b.units.some((u) => (u.ztype === "carrier" || u.ztype === "swarm") && !u.dead) || b.units.some((c) => wormable(c) && c.wormed);
 // The body (if any) lying on a tile.
-export const bodyAt = (b, x, y) => b.units.find((c) => isBody(c) && c.x === x && c.y === y) || null;
+export const bodyAt = (b, x, y) => b.units.find((c) => isBody(c) && c.x === x && c.y === y && (c.f || 0) === (b.floor || 0)) || null; // on this storey (buildingmaps.js)
 // "Dana" for one of yours, "Raider 3's body" for the rest.
 export const bodyName = (c) => (c.side === "player" ? c.name : `${c.name}'s body`);
 

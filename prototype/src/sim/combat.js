@@ -130,7 +130,110 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
-export function floodReach(b, x, y) { bindDims(b); b.reach = flood(b.cells, x, y); return b.reach; }
+export function floodReach(b, x, y) { bindDims(b); b.reach = flood(b.cells, x, y); syncFloor(b); return b.reach; }
+
+// ---------- storeys (buildingmaps.js multi-storey buildings) ----------
+// b.floors[f] = { cells, reach, losCache, name } for f = 0 (the ground) … b.raid.storeys − 1, every floor the same w × h
+// as the ground map (an upper floor is "void" outside the building's footprint). b.floor is the active floor: b.cells,
+// b.reach and b.losCache always alias its arrays, so everything that indexes the grid works on the floor being looked
+// at. Units carry u.f; a unit on another floor is "away" (active / onMap are false for it). Containers carry c.f.
+// Swaps the active floor; returns false when there is no such floor.
+export function setFloor(b, f) {
+  if (!b || !b.floors || !b.floors[f]) return false;
+  bindDims(b);
+  b.floor = f;
+  const F = b.floors[f];
+  if (!F.losCache) F.losCache = new Int8Array(W * H * W * H); // made when a floor is first looked at (saves stay smaller)
+  b.cells = F.cells; b.reach = F.reach; b.losCache = F.losCache;
+  for (const u of b.units) u.away = (u.f || 0) !== f;
+  return true;
+}
+// After b.cells / b.reach / b.losCache were replaced on the active floor: the floor record keeps them.
+function syncFloor(b) {
+  if (!b || !b.floors) return;
+  const F = b.floors[b.floor || 0];
+  if (!F) return;
+  F.cells = b.cells; F.reach = b.reach; F.losCache = b.losCache;
+}
+// Puts a unit on floor f at the same x, y (the stairs, a drift down the stairwell). The away flag follows.
+export function moveToFloor(b, u, f) {
+  u.f = f;
+  u.away = !!b.floors && f !== (b.floor || 0);
+  delete u.brace; // a braced door is let go of
+}
+// Which way the stairs lead from where a unit stands: { up, down }. Only on a stairwell cell ("stairs") of a building
+// with storeys; the top floor's stairwell only leads down, the ground floor's only up; a stairwell cell that is taken
+// on the other floor (someone standing or lying on it) is no way through.
+export function stairOptions(b, u) {
+  const none = { up: false, down: false };
+  if (!b || !b.floors || !u) return none;
+  const f = u.f || 0, F = b.floors[f];
+  if (!F || F.cells[u.y * b.w + u.x].k !== "stairs") return none;
+  const free = (g) => !!b.floors[g] && b.floors[g].cells[u.y * b.w + u.x].k === "stairs" && !b.units.some((o) => o !== u && (o.f || 0) === g && !o.dead && !o.left && !o.fled && !o.off && o.x === u.x && o.y === u.y);
+  return { up: f + 1 < b.floors.length && free(f + 1), down: f > 0 && free(f - 1) };
+}
+// Players standing on floor f (anywhere in the building when f is null).
+const playersOn = (b, f) => b.units.filter((u) => u.side === "player" && activeAny(u) && (f == null || (u.f || 0) === f));
+// Once a turn, a floor with aware dead and no players sends one of them to the stairwell toward the nearest floor with
+// players (down on a tie: the fight upstairs draws them up): it is marked (u.drift) and arrives on that floor's
+// stairwell at the start of the next enemy phase (floorArrivals), if the cell is free. Heat is one number for the
+// building, so the noise upstairs is what brings them.
+function floorDrift(b) {
+  if (!b.floors || !b.raid || !b.raid.stairs || !b.raid.stairs.length) return;
+  const withPlayers = [];
+  for (let f = 0; f < b.floors.length; f++) if (playersOn(b, f).length) withPlayers.push(f);
+  if (!withPlayers.length) return;
+  for (let f = 0; f < b.floors.length; f++) {
+    if (withPlayers.includes(f)) continue;
+    const dead = b.units.filter((u) => u.side === "enemy" && u.kind === "zombie" && u.aware && activeAny(u) && !u.drift && (u.f || 0) === f && !u.dormant);
+    if (!dead.length) continue;
+    let target = withPlayers[0];
+    for (const g of withPlayers) if (Math.abs(g - f) < Math.abs(target - f) || (Math.abs(g - f) === Math.abs(target - f) && g > target)) target = g;
+    const to = target > f ? f + 1 : f - 1;
+    // The one nearest a stairwell goes.
+    let best = null;
+    for (const u of dead) for (const [sx, sy] of b.raid.stairs) { const d = Math.hypot(u.x - sx, u.y - sy); if (!best || d < best.d) best = { u, sx, sy, d }; }
+    if (best) best.u.drift = { to, from: f, x: best.sx, y: best.sy, turn: b.turn };
+  }
+}
+// The dead marked last turn step off the stairs on their new floor (if the stairwell there is free), paying the climb.
+function floorArrivals(b) {
+  if (!b.floors) return;
+  for (const u of b.units) {
+    if (!u.drift || !activeAny(u)) { if (u.drift && !activeAny(u)) delete u.drift; continue; }
+    const d = u.drift;
+    if (d.turn >= b.turn) continue; // marked this very phase: it arrives next turn
+    const taken = b.units.some((o) => o !== u && (o.f || 0) === d.to && !o.dead && !o.left && !o.fled && !o.off && o.x === d.x && o.y === d.y);
+    if (taken) {
+      // The stairwell on the other floor is taken (someone standing on it): give the drift up for now and step off
+      // the stairwell on this floor, so whoever stands there can come through; floorDrift may send it again next turn.
+      if (u.x === d.x && u.y === d.y) stepAside(b, u);
+      delete u.drift;
+      continue;
+    }
+    u.x = d.x; u.y = d.y;
+    moveToFloor(b, u, d.to);
+    u.ap = Math.max(0, (u.ap ?? 2) - siegeRule(u).climb); // the dead pay CLIMB_DEAD: the stairs take their turn
+    u.wp = null;
+    delete u.drift;
+    say(b, `${u.name} comes ${d.to > d.from ? "up" : "down"} the stairs.`, "danger");
+  }
+}
+// A unit on its own floor steps to a free walkable cell next to it (off a stairwell), if there is one.
+function stepAside(b, u) {
+  const f = u.f || 0, F = b.floors ? b.floors[f] : null;
+  const cells = F ? F.cells : b.cells;
+  for (const [dx, dy] of DIRS8) {
+    const x = u.x + dx, y = u.y + dy;
+    if (!inside(x, y)) continue;
+    const c = cells[idx(x, y)];
+    if (!CELL[c.k].walk || c.k === "stairs" || barredCell(c)) continue;
+    if (b.units.some((o) => o !== u && (o.f || 0) === f && !o.dead && !o.left && !o.fled && !o.off && o.x === x && o.y === y)) continue;
+    u.x = x; u.y = y;
+    return true;
+  }
+  return false;
+}
 
 export function combatants(state, setup) {
   let list = [];
@@ -390,6 +493,9 @@ export const CELL = {
   stairs:    { walk: true,  cover: 0, los: false, name: "Stairs", climb: true },
   roof:      { walk: true,  cover: 0, los: false, name: "Flat roof", h: 1 },
   loft:      { walk: true,  cover: 0, los: false, name: "Upper floor", h: 1 },
+  // An upper storey's cells outside the building's footprint (buildingmaps.js multi-storey floors): open air. Nothing
+  // stands there, nothing hides behind it, and sight passes (you look out of the windows).
+  void:      { walk: false, cover: 0, los: false, name: "Open air" },
   bdoor:     { walk: true,  cover: 0, los: true,  name: "Barred door", bar: true },
   doorway:   { walk: true,  cover: 0, los: false, name: "Broken door" },
   smashed:   { walk: true,  cover: 0, los: false, name: "Smashed window" },
@@ -492,8 +598,16 @@ const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
 const cellAt = (b, x, y) => CELL[b.cells[idx(x, y)].k];
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 // off: an attacker still outside, waiting to come in through a breach (interior.js): not on the map yet.
-export const active = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
-const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off;
+// away: on another storey than the active one (a multi-storey building, b.floors: setFloor keeps the flag): off this
+// floor's map, so it is neither seen, shot, bumped into nor moved by this floor's turn. Every unit has u.f (its floor,
+// 0 by default); u.away is exactly (u.f !== b.floor), kept by setFloor and the floor changes (goup / godown).
+export const active = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off && !u.away;
+const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off && !u.away;
+// Standing somewhere in the building, whatever its floor (the turn flow, the end of a raid; the renderer's unit strip).
+export const activeAny = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
+// The floor a unit stands on, and whether it is on another floor than the one being looked at (the renderer's markers).
+export const unitFloor = (u) => u.f || 0;
+export const onOtherFloor = (b, u) => !!(b && b.floors) && (u.f || 0) !== (b.floor || 0);
 // Height of a cell (verticality), whether it is closed to the attackers, a ladder, and something that can be battered.
 export const heightAt = (b, x, y) => { const c = b.cells[y * b.w + x]; return c.h ?? CELL[c.k].h ?? 0; };
 const hAt = (b, x, y) => { const c = b.cells[idx(x, y)]; return c.h ?? CELL[c.k].h ?? 0; };
@@ -521,6 +635,7 @@ export function say(b, text, k = "info") {
 }
 export function fx(b, e) {
   e.seq = ++b.fxSeq;
+  if (b.floors) e.f = b.floor || 0; // the floor it happened on (the renderer shows the active floor's)
   b.fx.push(e);
   if (b.fx.length > 40) b.fx.shift();
 }
@@ -978,7 +1093,7 @@ export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null &
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
-  if (t.off) return false;
+  if (t.off || (b.floors && (t.f || 0) !== (b.floor || 0))) return false; // another storey: out of sight whatever the x, y
   return b.units.some((u) => u.side === "player" && active(u) && (canSee(b, u, t) || adjacent(u, t))) || (!!b.peeks && peekSees(b, t.x, t.y));
 }
 
@@ -1004,7 +1119,7 @@ function trackGhosts(b) {
   for (const e of b.units) {
     if (e.side !== "enemy") continue;
     if (e.dead || e.fled || e.left || e.off) { if (g[e.id] && (e.fled || e.left || e.off || playerSeesCell(b, e.x, e.y))) delete g[e.id]; continue; }
-    if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn];
+    if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn, e.f || 0]; // [x, y, turn, floor]
   }
 }
 const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
@@ -1014,8 +1129,9 @@ export function enemyGhosts(b) {
   const out = [];
   for (const e of b.units) {
     const g = b.ghosts[e.id];
-    if (!g || e.side !== "enemy" || !onMap(e) || playerSees(b, e)) continue;
-    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], kind: e.kind, name: e.name, unit: e });
+    if (!g || e.side !== "enemy" || e.dead || e.left || e.fled || e.off || playerSees(b, e)) continue;
+    if (b.floors && (g[3] || 0) !== (b.floor || 0)) continue; // last seen on another floor: not drawn on this one
+    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e });
   }
   return out;
 }
@@ -1053,7 +1169,7 @@ function playerUnit(b, s) {
     scouting: skill(s, "scouting"), load: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
-    ap: 2, aware: true, x: 0, y: 0,
+    ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
 }
 
@@ -1081,7 +1197,7 @@ export function enemyUnit(b, rng, kind, power, n) {
     return {
       id: b.nextId++, side: "enemy", kind: "zombie", name: `Zombie ${n}`, short: "Z", weapon: "claws", weaponName: "Teeth and nails",
       aim: 0, meleeAim: 55 + p * 3, dmgMult: 0.6 + p * 0.1, armor: 1, hp: Math.round(15 + p * 7), maxHp: Math.round(15 + p * 7),
-      mob: p >= 5 ? ZOMBIE_FAST : ZOMBIE_MOVE, sight: ZOMBIE_SIGHT, ap: 2, aware: true, x: 0, y: 0,
+      mob: p >= 5 ? ZOMBIE_FAST : ZOMBIE_MOVE, sight: ZOMBIE_SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, // f: the floor being built or played
     };
   }
   const kit = KITS[kind] || KITS.raiders;
@@ -1091,7 +1207,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   return {
     id: b.nextId++, side: "enemy", kind: "human", name: `${kit.label} ${n}`, short: kit.label[0] + n, weapon, weaponName: WEAPONS[weapon].name,
     aim: 39 + p * 4 + kit.aim, meleeAim: 65 + p * 2, dmgMult: 0.7 + p * 0.05, armor: armorKey ? 1 - GEAR[armorKey].power * 0.06 : 1, armorKey,
-    hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, fearless: !!kit.fearless, kit: kind,
+    hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
   };
 }
 
@@ -1268,12 +1384,12 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     t.dead = true;
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
-    if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
+    if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
     else if (b.raid && t.bodyBox) dropBodyBox(b, t); // carriers.js: one of the risen, put down: the body it got up from (what was on it)
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
     // swarm leaves nothing.
-    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
+    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
     if (b.raid && t.walking) walkingBox(b, t, b.raid.containers.find((k) => k.kind === "body" && k.uid === t.id)); // carriers.js: one of the walking dead put down: its things are in the body
     say(b, t.ztype === "swarm" ? `${t.name} is crushed and scattered.` : `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
     if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
@@ -1481,6 +1597,8 @@ export function combatAct(state, act) {
   }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   const u = unitById(b, act.unit);
+  // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
+  if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
   if (!u || u.side !== "player" || !active(u) || u.ap < 1) return "That unit cannot act.";
   const t = act.target != null ? unitById(b, act.target) : null;
   switch (act.type) {
@@ -1563,8 +1681,26 @@ export function combatAct(state, act) {
       say(b, `${u.name} loads ${r.put.join(", ")} into the vehicle.${r.left ? " The rest does not fit." : ""}`, "info");
       return "";
     }
+    case "goup": case "godown": { // buildingmaps.js storeys: the stairs (1 action), to the same cell a floor up or down
+      if (!b.floors) return "There are no stairs to take here.";
+      const so = stairOptions(b, u), up = act.type === "goup";
+      if (!(up ? so.up : so.down)) {
+        const onStairs = b.cells[idx(u.x, u.y)].k === "stairs";
+        return !onStairs ? "Stand on a stairwell first." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
+      }
+      u.ap -= 1;
+      u.hunker = false; u.ow = false;
+      const from = u.f || 0;
+      fx(b, { type: "move", unit: u.id, from: [u.x, u.y], path: [[u.x, u.y]] });
+      moveToFloor(b, u, from + (up ? 1 : -1));
+      say(b, `${u.name} goes ${up ? "up" : "down"} the stairs to ${/^floor/i.test(b.floors[u.f].name) ? "" : "the "}${b.floors[u.f].name.toLowerCase()}.`, "info");
+      setFloor(b, u.f); // the view follows
+      detect(b, u);
+      break;
+    }
     case "extract": {
       if (!b.raid) return "Use Retreat.";
+      if (u.f) return "Go down to the ground floor to extract.";
       const z = zoneAt(b, u.x, u.y);
       if (z < 0) return "Move into an extraction zone first.";
       u.left = true; u.exitZone = z; u.ap = 0; u.ow = u.hunker = false;
@@ -1608,6 +1744,7 @@ export function combatAct(state, act) {
       say(b, `${u.name} smashes the window and climbs through (Heat +${BMAP.CLIMB.heat}).`, "info");
       alertNear(b, w.x, w.y, BMAP.CLIMB.radius, "Breaking glass carries through the building.");
       b.reach = flood(b.cells, u.x, u.y);
+      syncFloor(b);
       detect(b, u);
       break;
     }
@@ -1673,7 +1810,7 @@ export function combatAct(state, act) {
   if (b.raid && b.raid.choose) b.raid.choose = null; // acting on the street map: the street it is (buildingmaps.js)
   bump(b);
   checkEnd(state, b);
-  if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && active(x) && x.ap > 0)) endPlayerTurn(state);
+  if (!b.over && b.phase === "player" && !b.units.some((x) => x.side === "player" && activeAny(x) && x.ap > 0)) endPlayerTurn(state);
   return "";
 }
 
@@ -1684,21 +1821,26 @@ export function endPlayerTurn(state) {
   if (!b || b.over || b.phase !== "player") return;
   for (const u of b.units) if (u.side === "player") u.ap = 0;
   b.phase = "enemy";
-  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
+  // arrive, then the next ones are sent; the Heat's waves come in on the ground floor.
+  if (b.floors) { b.viewFloor = b.floor || 0; floorArrivals(b); floorDrift(b); }
   zTick(b); // zombietypes.js: spitters and screamers get ready again
   sowerRound(b); // middead.js: Sowers thicken the ground with eggs
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   carrierRound(state, b); // carriers.js: bodies near a Carrier and bodies with the worm in them get up (and act this turn); bodies in the flames burn; worm swarms sink
   acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
-  if (b.raid) raidTurn(b);
+  if (b.raid && b.floors && b.floor) { setFloor(b, 0); raidTurn(b); setFloor(b, b.viewFloor); } // the waves come in at the ground floor
+  else if (b.raid) raidTurn(b);
   else reinforcements(b);
   if (b.tier) tierEnemyTurn(state, b); // interior.js: the attackers still outside come in through the breaches
   stealthTurn(b); // stealth.js: noise makers still ringing, the knocked out coming to, night eyes for newcomers
   // Sleepers look around at the start of their turn.
   for (const u of b.units) if (u.side === "player" && active(u)) detect(b, u);
-  b.queue = b.units.filter((u) => u.side === "enemy" && active(u)).sort((a, c) => (a.kind === "zombie") - (c.kind === "zombie")).map((u) => u.id);
-  for (const u of b.units) if (u.side === "third" && active(u)) b.queue.push(u.id); // thirdside.js: after the enemy
+  // Every floor that holds an enemy gets its turn (enemyStep swaps to the unit's floor): floor by floor, people first.
+  b.queue = b.units.filter((u) => u.side === "enemy" && activeAny(u)).sort((a, c) => ((a.f || 0) - (c.f || 0)) || ((a.kind === "zombie") - (c.kind === "zombie"))).map((u) => u.id);
+  for (const u of b.units) if (u.side === "third" && activeAny(u)) b.queue.push(u.id); // thirdside.js: after the enemy
   bump(b);
 }
 
@@ -1710,9 +1852,15 @@ export function enemyStep(state) {
   let u = null;
   while (b.queue.length && !u) {
     const c = unitById(b, b.queue.shift());
-    if (c && active(c)) u = c;
+    if (c && activeAny(c)) u = c;
   }
-  if (u) aiUnit(b, u);
+  if (u) {
+    // Storeys (buildingmaps.js): the AI runs on the unit's own floor, and the player's view floor comes back after.
+    const view = b.floors ? b.floor || 0 : null;
+    if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
+    aiUnit(b, u);
+    if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
+  }
   checkEnd(state, b);
   if (!b.over && !b.queue.length) startPlayerTurn(state, b);
   bump(b);
@@ -1726,12 +1874,13 @@ export function runEnemyPhase(state) {
 function startPlayerTurn(state, b) {
   b.turn++;
   b.phase = "player";
+  if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
-    u.ap = active(u) ? 2 : 0;
+    u.ap = activeAny(u) ? 2 : 0;
     if (u.down && !u.stab && !u.dead && !u.left) {
       u.bleed--;
       if (u.bleed <= 0) {
@@ -2410,7 +2559,7 @@ export function afterDeploy(state, b) {
 function checkEnd(state, b) {
   if (b.over) return;
   if (b.raid) {
-    if (!b.units.some((u) => u.side === "player" && active(u))) endRaid(state, b);
+    if (!b.units.some((u) => u.side === "player" && activeAny(u))) endRaid(state, b); // on any floor (buildingmaps.js storeys)
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
@@ -2562,6 +2711,8 @@ export function closeCombat(state, { take = true } = {}) {
 // RAID_W × RAID_H is the Medium one (the terrain scattered over it scales with the area).
 export const RAID_W = 32, RAID_H = 24;
 export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
+// Richness by storey (buildingmaps.js): × perFloor a floor up (the dead and earlier looters stayed low), at most × cap.
+export const FLOOR_RICH = { perFloor: 1.1, cap: 1.5 };
 
 // Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
 // container). The small finds per container (valuables, comforts, throwables) are in loot.js AREA_FINDS.
@@ -2641,8 +2792,11 @@ export function areaHint(type) {
 }
 
 export const zoneAt = (b, x, y) => (b.raid ? b.raid.zones.findIndex((z) => x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h) : -1);
-export const nearBox = (u, c) => Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1;
-export const boxAt = (b, x, y) => (b.raid ? b.raid.containers.find((c) => c.x === x && c.y === y && !c.searched) || b.raid.containers.find((c) => c.x === x && c.y === y) : null);
+// Containers carry c.f (their floor, buildingmaps.js storeys): the search helpers see the active floor's only.
+export const nearBox = (u, c) => (c.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1;
+const onFloor = (b, c) => (c.f || 0) === (b.floor || 0);
+export const boxAt = (b, x, y) => (b.raid ? b.raid.containers.find((c) => c.x === x && c.y === y && onFloor(b, c) && !c.searched) || b.raid.containers.find((c) => c.x === x && c.y === y && onFloor(b, c)) : null);
+export const floorContainers = (b, f = b.floor || 0) => (b.raid ? b.raid.containers.filter((c) => (c.f || 0) === f) : []);
 export function searchableNear(b, u) {
   bindDims(b);
   return b.raid ? b.raid.containers.filter((c) => !c.searched && nearBox(u, c) && !(c.lock && !c.lock.open)).sort((a, c) => (a.kind === "body") - (c.kind === "body")) : []; // locked: open it first (locks.js)
@@ -2833,11 +2987,20 @@ export function createRaid(state, setup) {
       reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
-      doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
+      doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
       // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
       choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile) : null,
     },
   };
+  // Storeys (buildingmaps.js): every floor its own grid of the same size, the ground floor active; the upper floors'
+  // reach floods from the first stairwell. b.cells / b.reach / b.losCache alias the active floor's (setFloor).
+  if (pick && map.floors && map.floors.length > 1) {
+    const [sx, sy] = map.stairs[0];
+    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : flood(F.cells, sx, sy), losCache: i === 0 ? b.losCache : null, name: F.name }));
+    b.floor = 0;
+    b.raid.storeys = map.floors.length;
+    b.raid.stairs = map.stairs.map((s) => s.slice());
+  } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
   b.reinfMax = 0;
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -2906,7 +3069,8 @@ export function createRaid(state, setup) {
   lockRaid(state, b); // locks.js: locked containers and a locked room
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
-    say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms.`, "info");
+    const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
+    say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
   if (b.raid.choose) say(b, `Several buildings stand here: pick one to explore from the panel (${b.raid.choose.filter((o) => o.id !== "street").map((o) => o.name).join(", ")}), or search the street.`, "good");
@@ -2974,11 +3138,20 @@ export function notice(b, e) {
 export function alertNear(b, x, y, radius, why) {
   bindDims(b);
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= radius);
-  if (!near.length) return;
+  if (!near.length && !b.floors) return;
   const pods = new Set(near.map((u) => u.pod));
   for (const u of b.units) if (u.side === "enemy" && !u.aware && active(u) && pods.has(u.pod)) { u.aware = true; if (b.phase === "player") u.surprised = true; }
+  // Through the floors (buildingmaps.js storeys): the dead on other storeys hear it too, FLOOR_DAMP tiles further off a
+  // storey; they wake (no surprise: they are not in the fight) and drift to the stairs (floorDrift).
+  let other = 0;
+  if (b.floors) for (const u of b.units) {
+    if (u.side !== "enemy" || u.aware || !activeAny(u) || (u.f || 0) === (b.floor || 0) || u.kind !== "zombie") continue;
+    if (dist(u.x, u.y, x, y) + FLOOR_DAMP * Math.abs((u.f || 0) - (b.floor || 0)) <= radius) { u.aware = true; other++; }
+  }
+  if (!near.length && !other) return;
   say(b, why, "danger");
 }
+const FLOOR_DAMP = 5; // a storey between a noise and a listener counts as this many tiles more
 
 // Heat climbs every turn and with noise. Each new stage brings a wave of the dead.
 function raidTurn(b) {
@@ -3032,7 +3205,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
   const scav = (s ? skill(s, "scavenging") : 0) + (u.scavBonus || 0); // scavBonus: Treasure Hunter (skills.js)
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
-  const rich = box.kind === "body" ? 1 : R.richness;
+  const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)); // upper storeys are less picked over (buildingmaps.js)
   const reward = box.kind === "body" ? 1 : R.reward ?? 1; // buildingmaps.js rewardMult: city sites pay more, the countryside less
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
@@ -3179,7 +3352,9 @@ function autoRaidTurn(state) {
   const b = state.combat;
   const R = b.raid;
   const party = state.parties.find((x) => x.id === b.setup.partyId);
+  const stairCells = () => (R.stairs || []).filter(([x, y]) => cellAt(b, x, y).walk);
   for (const u of b.units.filter((x) => x.side === "player")) {
+    if (b.floors && activeAny(u) && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0); // storeys: each one acts on its own floor
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
@@ -3187,22 +3362,35 @@ function autoRaidTurn(state) {
       if (unload && atVehicle(b, u)) { if (combatAct(state, { type: "stash", unit: u.id })) u.noStash = b.turn; continue; }
       const full = !!party && mine < 2 && !unload;
       const todo = (c) => !botDone(c) && !(c.skipBy && c.skipBy.includes(u.id)); // skipBy: nothing in it fits on this one
-      const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some(todo); // botDone: searched, or a lock it gave up on (locks.js)
-      const z = zoneAt(b, u.x, u.y);
+      const here = (c) => (c.f || 0) === (u.f || 0); // storeys (buildingmaps.js): this floor's containers
+      const hereTodo = R.containers.some((c) => todo(c) && here(c));
+      const leave = R.heat >= 55 || u.hp < 45 || full || !R.containers.some(todo) || (!!b.floors && !hereTodo && R.heat >= 45); // botDone: searched, or a lock it gave up on (locks.js)
+      // Storeys: on the way out, down the stairs; with this floor done and more above or below (Heat still low), the
+      // stairs toward the nearest floor with something left. On a stairwell: take it.
+      const otherFloor = !leave && b.floors && !hereTodo ? nearestFloorWith(b, u, todo) : -1;
+      const stairsTo = leave && (u.f || 0) > 0 ? (u.f || 0) - 1 : otherFloor >= 0 ? otherFloor : -1;
+      if (stairsTo >= 0 && b.cells[idx(u.x, u.y)].k === "stairs" && u.stairTurn !== b.turn) {
+        u.stairTurn = b.turn;
+        if (!combatAct(state, { type: stairsTo > (u.f || 0) ? "goup" : "godown", unit: u.id })) continue;
+      }
+      const z = (u.f || 0) ? -1 : zoneAt(b, u.x, u.y);
       if (leave && z >= 0 && (R.vehicleZone < 0 || z === R.vehicleZone || R.heat > 80)) { combatAct(state, { type: "extract", unit: u.id }); break; }
       // stealth.js: tie up the knocked out, take down an unaware guard next to it, throw a bottle to pull guards away.
       if (!leave && botStealth(state, b, u, combatAct)) continue;
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
-      const esc = leave && R.interior ? botEscape(state, b, u, R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
+      const esc = leave && R.interior ? botEscape(state, b, u, (u.f || 0) ? stairCells() : R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
       if (esc && !combatAct(state, esc)) continue;
       const skull = botCrush(b, u); // carriers.js: a body in danger next to them, crushed before it gets up
       if (skull && !combatAct(state, skull)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       const adj = foes.find((f) => adjacent(u, f));
-      if (adj && !isRanged(u)) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
       const shot = foes.length ? bestShot(b, u, foes) : null;
-      if (shot && shot.o.chance >= 45) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+      const fair = shot && shot.o.chance >= 45;
+      // Something next to them and no fair shot (no gun, nothing left to fire, a poor shooter): strike it, as the
+      // field AI does (aiMelee), instead of standing in a doorway being chewed on with a dry or a shaky pistol.
+      if (adj && !fair) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
+      if (fair) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
       const fallen = medsLeft(b) > 0 ? b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && adjacent(u, o)) : null;
       if (fallen) { combatAct(state, { type: "meds", unit: u.id, target: fallen.id }); continue; }
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
@@ -3217,14 +3405,15 @@ function autoRaidTurn(state) {
       }
       // Pressed: leave the rummaged ones for a calmer moment (a full search there costs the action it saved), unless
       // nothing else is left to go to.
-      const skipQuick = pressed && R.containers.some((c) => todo(c) && !c.quick);
+      const skipQuick = pressed && R.containers.some((c) => todo(c) && here(c) && !c.quick);
       const nearBoxes = searchableNear(b, u).filter(todo).filter((c) => !skipQuick || !c.quick);
       if (!leave && !unload && nearBoxes.length && (nearBoxes[0].contents || u.ap >= searchCost(b, u))) {
         if (combatAct(state, { type: "search", unit: u.id, box: nearBoxes[0].id })) u.ap = 0;
         continue;
       }
       let targets;
-      if (unload) {
+      if (stairsTo >= 0) targets = stairCells(); // storeys: to the stairwell (down to leave, up or down to the next floor worth searching)
+      else if (unload) {
         const zz = R.zones[R.vehicleZone];
         targets = [];
         for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
@@ -3234,8 +3423,8 @@ function autoRaidTurn(state) {
         for (const zz of zs) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) targets.push([x, y]);
       } else {
         targets = [];
-        for (const c of R.containers) if (todo(c) && !(skipQuick && c.quick)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
-        targets.push(...lockTargets(b)); // locks.js: the doors of a locked room
+        for (const c of R.containers) if (todo(c) && here(c) && !(skipQuick && c.quick)) for (const [dx, dy] of DIRS8) if (inside(c.x + dx, c.y + dy) && cellAt(b, c.x + dx, c.y + dy).walk) targets.push([c.x + dx, c.y + dy]);
+        targets.push(...lockTargets(b)); // locks.js: the doors of a locked room (this floor's)
       }
       if (!targets.length) { u.ap = 0; break; }
       const field = distField(b, targets);
@@ -3245,13 +3434,31 @@ function autoRaidTurn(state) {
       const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];
       let best = null;
       for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || score(i) < score(best))) best = i;
-      if (best == null || field[best] >= field[idx(u.x, u.y)]) { u.ap = 0; break; }
+      if (best == null || field[best] >= field[idx(u.x, u.y)]) {
+        // Nowhere better to go (the way is blocked, often by what is coming at them): a shot at anything aware and
+        // close rather than waiting with the action unused.
+        if (shot) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+        u.ap = 0; break;
+      }
       const err = combatAct(state, pools ? { type: "move", unit: u.id, x: best % W, y: (best / W) | 0, wary: true } : { type: "move", unit: u.id, x: best % W, y: (best / W) | 0 });
       if (err) { u.ap = 0; break; }
     }
   }
+  // Storeys: the view ends on the floor of the first of your people still standing.
+  if (b.floors && !b.over) { const first = b.units.find((x) => x.side === "player" && activeAny(x)); if (first && (first.f || 0) !== (b.floor || 0)) setFloor(b, first.f || 0); }
   bump(b);
   if (!b.over && b.phase === "player") endPlayerTurn(state);
+}
+// The nearest floor (up first on a tie) with a container the bot still wants (todo), or -1 (storeys, buildingmaps.js).
+function nearestFloorWith(b, u, todo) {
+  const f = u.f || 0;
+  let best = -1;
+  for (const c of b.raid.containers) {
+    if (!todo(c) || (c.f || 0) === f) continue;
+    const g = c.f || 0;
+    if (best < 0 || Math.abs(g - f) < Math.abs(best - f) || (Math.abs(g - f) === Math.abs(best - f) && g > best)) best = g;
+  }
+  return best;
 }
 
 export { survivorById, alive, log };

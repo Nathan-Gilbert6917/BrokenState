@@ -559,7 +559,8 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   };
   const builders = count("build", 150), resting = count("rest", 150);
   check(builders > resting && builders >= 3, `building brings cuts and sprains (${builders} injuries in 150 days vs ${resting} resting)`);
-  // Treatment: costs meds, lowers severity, once a day.
+  // Treatment: a course of doses (health.js SICK.dose: 3 at severity 70), each 1 meds, one a day; the course is set
+  // when the first dose is given, and a second dose the same day is refused.
   const st = W();
   const h = hub(st);
   const s = atBase(st, h.id)[1];
@@ -567,12 +568,15 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   const c = addCondition(st, s, "pneumonia", "for the test", { sev: 70 });
   check(isSick(s) && workFactor(s) < 0.3, `pneumonia stops work (${workFactor(s)})`);
   const info = treatConditionInfo(st, h, s, "pneumonia");
+  check(info.ok && info.course === 3 && info.dose === 1, `severity 70 pneumonia takes a course of 3 doses, the first today (course ${info.course}, dose ${info.dose})`);
   const msg = treatCondition(st, h, s.id, "pneumonia");
-  check(info.ok && h.stock.meds === 3 - CONDITIONS.pneumonia.meds && (c.sev < 70 || !isSick(s)), `treating costs meds and lowers the severity (${msg})`);
-  check(/Already treated today/.test(treatCondition(st, h, s.id, "pneumonia")) || !isSick(s), "one treatment per condition a day");
+  check(h.stock.meds === 3 - CONDITIONS.pneumonia.meds && c.sev < 70 && isSick(s) && c.course === 3 && c.dosed === 1 && !c.mending, `a dose costs ${CONDITIONS.pneumonia.meds} meds, lowers the severity and counts towards the course (${msg})`);
+  const again = treatConditionInfo(st, h, s, "pneumonia");
+  check(!again.ok && again.treatedToday && /Already had today's dose/.test(again.reason) && /Already had today's dose/.test(treatCondition(st, h, s.id, "pneumonia")) && h.stock.meds === 3 - CONDITIONS.pneumonia.meds && c.dosed === 1, `one dose per condition a day (${again.reason})`);
   h.stock.meds = 0;
-  const cut = addCondition(st, atBase(st, h.id)[2], "cut", "test", { sev: 30 });
-  check(/Needs 1 meds/.test(treatConditionInfo(st, h, atBase(st, h.id)[2], "cut").reason), "no meds, no treatment");
+  addCondition(st, atBase(st, h.id)[2], "cut", "test", { sev: 30 });
+  const dry = treatConditionInfo(st, h, atBase(st, h.id)[2], "cut");
+  check(!dry.ok && dry.cost === CONDITIONS.cut.meds && /^No meds: needs 1 \(have 0\)\./.test(dry.reason), `no meds, no dose (${dry.reason})`);
   // Untreated pneumonia costs health.
   const st2 = W();
   const h2 = hub(st2);

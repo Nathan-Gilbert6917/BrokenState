@@ -115,6 +115,17 @@ export function deserializeState(save) {
     state.woodcutting = 1;
   }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
+  // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
+  // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points
+  // them all the same (a save edited by hand, an older encoder), and the "away" flags follow the active floor.
+  const b = state.combat;
+  if (b && Array.isArray(b.floors) && b.floors.length) {
+    const F = b.floors[b.floor || 0] || b.floors[0];
+    b.floor = b.floors.indexOf(F);
+    if (!F.losCache) F.losCache = new Int8Array(b.w * b.h * b.w * b.h);
+    b.cells = F.cells; b.reach = F.reach; b.losCache = F.losCache;
+    for (const u of b.units || []) u.away = (u.f || 0) !== b.floor;
+  }
   return state;
 }
 

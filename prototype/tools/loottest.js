@@ -1,7 +1,7 @@
 // Loot audit (src/sim/loot.js, data.js LOCATIONS, combat.js AREAS / KITS, and every other place items come from):
 // every item has at least one source; everything a site type or raid area can hold fits its theme tags; every item
 // has a category, a weight, a value and a description; valuables are light for their worth and good for nothing
-// else; weapons have battle numbers and throwables their throw; the small-finds rolls stay within their tables;
+// else (the four treats among them, candy, tobacco, wine and whiskey, give mood only: needs.js); weapons have battle numbers and throwables their throw; the small-finds rolls stay within their tables;
 // then a table of sources per item (with its worth tier and weight).
 // Also: frag grenades and the decoys have sources, ladders and rams are crafted siege kit, every lure has its senses.
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
@@ -21,6 +21,7 @@ import { worthTier } from "../src/sim/valuation.js";
 import { newItem, ZBODY } from "../src/sim/inventory.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
 import { Rng } from "../src/sim/rng.js";
+import { TREAT_ORDER } from "../src/sim/needs.js";
 
 const quiet = process.argv.includes("--quiet");
 let pass = 0, fail = 0;
@@ -100,7 +101,13 @@ check(vals.length >= 30, `a full set of valuables (${vals.length})`);
 const fams = new Set(vals.map(([, d]) => d.cat));
 check(["jewelry", "smokes", "liquor", "treats", "gadgets", "collectibles", "household"].every((c) => fams.has(c)), `valuables in every valuable family (${[...fams].join(", ")})`);
 check(vals.every(([, d]) => d.value / d.weight >= 6), `valuables are light for their worth (worst ${vals.map(([k, d]) => [k, d.value / d.weight]).sort((a, b) => a[1] - b[1])[0].map((x) => (typeof x === "number" ? x.toFixed(1) : x)).join(" ")} a kg)`);
-check(vals.every(([, d]) => !d.use && !d.comfort && !d.heat && !d.throw && !d.defence && !d.book && d.slot === "pack" && !d.power), "valuables are good for nothing but trade");
+check(vals.every(([, d]) => !d.comfort && !d.heat && !d.throw && !d.defence && !d.book && d.slot === "pack" && !d.power), "valuables are good for nothing but trade (no comfort, heat, throw, defence, book or power)");
+// The exception (needs.js treats): candy, tobacco, wine and whiskey can be used up for mood, nothing else: no food,
+// water or health in them (tobacco costs health), and a team only reaches for them when someone is really low.
+const TREAT_VALUABLES = ["candy", "tobacco", "wine", "whiskey"];
+const usable = vals.filter(([, d]) => d.use).map(([k]) => k).sort();
+check(usable.join(",") === [...TREAT_VALUABLES].sort().join(","), `the only usable valuables are the four treats (${usable.join(", ")})`);
+check(TREAT_VALUABLES.every((k) => GEAR[k].use.mood > 0 && !(GEAR[k].use.hp > 0) && !GEAR[k].use.food && !GEAR[k].use.water && !GEAR[k].use.heal && GEAR[k].useVerb && TREAT_ORDER.includes(k)), "a treat valuable gives mood only (no food, water or health) and is on the team's treat list");
 check(vals.every(([, d]) => CATEGORIES[d.cat].group === "valuables"), "valuables sit in the valuables family");
 const weapons = Object.entries(GEAR).filter(([, d]) => d.slot === "weapon");
 check(weapons.every(([k]) => WEAPONS[k]), `every weapon has battle numbers (${weapons.filter(([k]) => !WEAPONS[k]).map(([k]) => k).join(", ") || "all"})`);

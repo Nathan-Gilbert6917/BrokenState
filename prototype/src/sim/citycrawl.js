@@ -26,8 +26,8 @@ import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName,
 } from "./parties.js";
-import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say } from "./combat.js";
-import { BUILDINGS, buildingHint } from "./buildingmaps.js";
+import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor } from "./combat.js";
+import { BUILDINGS, buildingHint, buildingSpec } from "./buildingmaps.js";
 import { raidEnemies } from "./scavenge.js";
 import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
 import { eraTier } from "./hivetech.js";
@@ -322,6 +322,19 @@ function placeGroups(state, c, place, n = c.block) {
   return groups;
 }
 
+// The building a place opens (buildingmaps.js raidBuilding / buildingMap): its option id is the block and the slot, so
+// the same place has the same floor plan every visit. Storeys (docs/multi-storey-crawl.md): block depth adds to the
+// storey roll of offices and apartments, STOREY_BONUS.at1 from block STOREY_BONUS.from1, at2 from from2 (capped in
+// buildingmaps.js MAX_STOREYS).
+export const STOREY_BONUS = { from1: 4, at1: 1, from2: 7, at2: 2 };
+export const storeyBonus = (n) => (n >= STOREY_BONUS.from2 ? STOREY_BONUS.at2 : n >= STOREY_BONUS.from1 ? STOREY_BONUS.at1 : 0);
+export const placeOption = (c, place, n = c.block) => ({ id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n) });
+// How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
+export function placeStoreys(state, c, place, n = c.block) {
+  const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
+  return typeof spec.storeys === "number" ? Math.max(1, spec.storeys) : 1;
+}
+
 // ---------- the team ----------
 // Load on foot: what the team carries (packed and found) against what its people can carry without the vehicle.
 export function crawlLoad(state, p) {
@@ -412,7 +425,7 @@ export function enterPlace(state, p, placeId, opts = {}) {
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
-    raid: { heat0, place: { id: `cc${n}-${place.slot}`, key: place.key, name: place.name } },
+    raid: { heat0, place: placeOption(c, place, n) },
     context: { factionIds: groups.filter((g) => g.factionId).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } },
   };
   // The vehicle waits at the city's edge: not on the building's map.
@@ -473,8 +486,11 @@ export function snapshotBuilding(b) {
     return o;
   });
   const boxes = R.containers.filter((x) => x.kind !== "body");
+  // Storeys (buildingmaps.js): every floor's cells are kept (the ground floor's are `cells`, as before).
+  const ground = b.floors ? b.floors[0].cells : b.cells;
   return {
-    w: b.w, h: b.h, cells: b.cells.map((x) => ({ ...x })), containers: R.containers.map((x) => ({ ...x })),
+    w: b.w, h: b.h, cells: ground.map((x) => ({ ...x })), containers: R.containers.map((x) => ({ ...x })),
+    floors: b.floors ? b.floors.map((F) => ({ cells: F.cells.map((x) => ({ ...x })), name: F.name })) : null,
     doors: R.doors ? R.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock })) : null,
     units, occupants: R.occupants || null, heat: Math.round(R.heat),
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
@@ -482,8 +498,8 @@ export function snapshotBuilding(b) {
 }
 export function restoreBuilding(state, b, snap) {
   if (!snap || snap.w !== b.w || snap.h !== b.h) return false;
+  if (!!snap.floors !== !!b.floors || (snap.floors && snap.floors.length !== b.floors.length)) return false; // the building was rebuilt with other storeys: start afresh
   const R = b.raid;
-  b.cells = snap.cells.map((x) => ({ ...x }));
   const players = b.units.filter((u) => u.side === "player");
   b.nextId = Math.max(b.nextId, ...snap.containers.map((x) => (x.id || 0) + 1), ...snap.units.map((u) => (u.id || 0) + 1));
   const ids = new Map();
@@ -492,16 +508,30 @@ export function restoreBuilding(state, b, snap) {
     const o = { ...u, id: b.nextId++ };
     ids.set(u.id, o.id);
     if (o.dead) { o.reinforcement = true; o.restored = true; } // a body from before: not counted as killed again
-    if (!o.dead && players.some((q) => q.x === o.x && q.y === o.y)) continue;
+    if (!o.dead && players.some((q) => q.x === o.x && q.y === o.y && (q.f || 0) === (o.f || 0))) continue;
     back.push(o);
   }
   b.units = [...players, ...back];
   R.containers = snap.containers.map((x) => ({ ...x, uid: x.uid != null && ids.has(x.uid) ? ids.get(x.uid) : x.uid }));
   if (snap.doors) R.doors = snap.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock }));
   if (snap.occupants) R.occupants = snap.occupants;
-  b.losCache = new Int8Array(b.w * b.h * b.w * b.h);
   const z = R.zones[0];
-  floodReach(b, z.x0 + 1, z.y0 + 1);
+  if (b.floors) {
+    // Every floor as it was left; the upper floors' reach floods from the first stairwell, the ground's from the front zone.
+    const [sx, sy] = R.stairs[0];
+    for (let f = 0; f < b.floors.length; f++) {
+      const F = b.floors[f];
+      F.cells = snap.floors[f].cells.map((x) => ({ ...x }));
+      F.losCache = null;
+      setFloor(b, f);
+      floodReach(b, f ? sx : z.x0 + 1, f ? sy : z.y0 + 1);
+    }
+    setFloor(b, 0);
+  } else {
+    b.cells = snap.cells.map((x) => ({ ...x }));
+    b.losCache = new Int8Array(b.w * b.h * b.w * b.h);
+    floodReach(b, z.x0 + 1, z.y0 + 1);
+  }
   b.enemyStart = b.units.filter((u) => u.side === "enemy" && !u.dead).length;
   say(b, `You go back into the ${R.interior ? R.interior.name.toLowerCase() : "building"}. It is as you left it: ${snap.searched} of ${snap.total} places searched.`, "info");
   return true;

@@ -457,6 +457,9 @@ export function raidTakeAll(state, uid, boxId) {
     if (!box.contents.gear.includes(it)) got.push(it.name);
   }
   const left = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;
+  // Nothing taken (an empty container, or nothing that fits) still counts as searched when nothing is left: afterBox
+  // runs with every move, but a container that rolled empty never had one, and the bot came back to it every step.
+  afterBox(b, box);
   return { got, left, outOfTime: left > 0 && haulBudget(b, u) < 0.5 };
 }
 // Where a found item goes on a survivor without being put to use: a free pocket or pack cell, else carried.
@@ -522,7 +525,7 @@ export function dropHaul(b, u) {
     if (any) { old.searched = false; old.partial = true; }
     return old;
   }
-  const pile = { id: b.nextId++, x: u.x, y: u.y, kind: "body", drop: true, area: null, searched: !any, partial: any, label: `${u.name}'s body`, uid: u.id, contents: { sup, gear } };
+  const pile = { id: b.nextId++, x: u.x, y: u.y, f: u.f || 0, kind: "body", drop: true, area: null, searched: !any, partial: any, label: `${u.name}'s body`, uid: u.id, contents: { sup, gear } };
   b.raid.containers.push(pile);
   return pile;
 }

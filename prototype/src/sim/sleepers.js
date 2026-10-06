@@ -55,7 +55,7 @@ export const sleepersLeft = (b) => (b.corpses || []).filter(live).length;
 export function spotCheck(b, u) {
   if (!b.corpses || !b.corpses.length || u.side !== "player" || !active(u)) return;
   for (const c of b.corpses) {
-    if (!live(c) || c.spotted || cheb(u, c) > SLEEPER.SPOT_RANGE) continue;
+    if (!live(c) || c.spotted || (c.f || 0) !== (b.floor || 0) || cheb(u, c) > SLEEPER.SPOT_RANGE) continue; // bodies lie on the ground floor (buildingmaps.js storeys)
     const tried = c.tried || (c.tried = {});
     if (tried[u.id] === b.turn || !los(b, u.x, u.y, c.x, c.y)) continue;
     tried[u.id] = b.turn;
@@ -84,7 +84,7 @@ function spot(b, c, by) {
 // Someone living just stepped (combat.js moveAlong): a Sleeper next to them splits open.
 export function wakeNear(b, u) {
   if (!b.corpses || !b.corpses.length || u.kind === "zombie" || !active(u)) return;
-  for (const c of b.corpses) if (live(c) && cheb(u, c) <= 1) split(b, c, u);
+  for (const c of b.corpses) if (live(c) && (c.f || 0) === (b.floor || 0) && cheb(u, c) <= 1) split(b, c, u);
 }
 function split(b, c, by) {
   c.burst = true;
