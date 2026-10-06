@@ -577,9 +577,10 @@ section("Camp without food or water does not heal (T-7)");
   p.cargo.supplies.food = 0;
   s.health = 80;
   s.mood = 50;
+  s.hunger = 5; // needs.js: already hungry (a full gauge would carry them about three days first)
   startOrder(state, p, { type: "camp", hours: null });
   tick(state, 48, p);
-  check(s.health < 80 - 20, `two days camping with no food: health 80 → ${s.health.toFixed(1)} (hunger should cost about 29)`);
+  check(s.health < 80 - 20, `two days camping with no food and an empty stomach: health 80 → ${s.health.toFixed(1)} (hunger should cost about 26)`);
   check(s.mood <= 50, `spirits rose in a starving camp (${s.mood.toFixed(1)})`);
   check(campHealPerHour(state, p, s) === 0, "the panel still shows camp healing while starving");
   p.supplies.food = 10;

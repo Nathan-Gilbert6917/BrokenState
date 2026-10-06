@@ -25,8 +25,9 @@ import { CELL, heightAt, active, coverSides, evacAt, barredCell } from "../sim/c
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing } from "./sprites.js";
-import { unitDownCanvas, drawDowned, downScale } from "./downsprites.js";
+import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
+import { stirring } from "../sim/carriers.js"; // a body the worm is in
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1202,6 +1203,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const margin = 80 * S;
   const sh = new Map(); for (const s of shown) { const a = sh.get(s.d); if (a) a.push(s); else sh.set(s.d, [s]); }
   const gh = new Map(); for (const q of ghosts) { const [gu, gv] = toView(q.x, q.y, r, b.w, b.h); const d = gu + gv; const a = gh.get(d); if (a) a.push(q); else gh.set(d, [q]); }
+  // Bodies on the ground (sim/sleepers.js), by the same depth as the units.
+  const bodies = new Map();
+  for (const c of b.corpses || []) { const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
   iso.rects = [];
   for (let d = 0; d <= Wv + Hv - 2; d++) {
     const uLo = Math.max(0, d - (Hv - 1)), uHi = Math.min(Wv - 1, d);
@@ -1234,6 +1238,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         if (deploying && canPlace(b, x, y)) { ctx.fillStyle = "rgba(108,196,138,0.28)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
+    for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
@@ -1538,7 +1543,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
@@ -1555,7 +1560,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (!cv) return;
   let facing = unitFacing(b, t);
   if (FR.r === 1 || FR.r === 2) facing = -facing;
-  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" ? 1.15 : t.ztype === "crawler" ? 0.8 : 1;
+  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1;
   const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -1566,9 +1571,34 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
+// A body on the ground (sim/sleepers.js), laid flat like the fallen.
+function drawCorpseIso(ctx, b, c, fog) {
+  const s = { wx: c.x + 0.5, wy: c.y + 0.5, z: standZ(b, c.x, c.y) };
+  const [X, Y] = feet(s), [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
+  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
+}
+function isoTag(ctx, X, Y, text, col, S) {
+  ctx.font = `800 ${Math.max(9, Math.round(7 * S))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.strokeText(text, X, Y);
+  ctx.fillStyle = col;
+  ctx.fillText(text, X, Y);
+}
 function drawUnitIso(ctx, state, b, s, H, now) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   void now;
+  if (t.ztype === "sleeper") {
+    // A spotted Sleeper: its body is drawn with the others; a dashed ring and its letter mark it.
+    if (t.dead) return;
+    ctx.strokeStyle = t.id === H.sel ? "#e0a84f" : ZRING.sleeper; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.ellipse(X, Y, 14 * S, 6.5 * S, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    isoTag(ctx, X, Y - 9 * S, t.short, ZRING.sleeper, S);
+    iso.rects.push({ x0: X - 14 * S, x1: X + 14 * S, y0: Y - 8 * S, y1: Y + 7 * S, x: t.x, y: t.y, id: t.id });
+    return;
+  }
   const ring = t.down ? (t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f") : ringOf(t);
   if (!t.dead) { // (the dead lie in their own pool of blood: ui/downsprites.js)
     ctx.fillStyle = "rgba(0,0,0,0.38)";
@@ -1585,6 +1615,9 @@ function drawUnitIso(ctx, state, b, s, H, now) {
     ctx.beginPath(); ctx.ellipse(X - 4 * S, Y - 2 * S, 1.6 * S, 3 * S, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(X + 4 * S, Y - 2 * S, 1.6 * S, 3 * S, 0, 0, Math.PI * 2); ctx.stroke();
   }
+  // A Flinger winding up, someone panicking (sim/middead.js).
+  if (t.windup != null && !t.dead) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "WINDS UP", ZRING.flinger, S);
+  if (t.terror && !t.dead && !t.down) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "PANIC", ZRING.nightmare, S);
   // Its rectangle on screen, for clicking it.
   if (!t.dead && !t.down) {
     const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
@@ -1607,7 +1640,16 @@ function drawGhost(ctx, state, b, q, H) {
 // Health, action pips, status tags, the kind of a hive's special dead, height, the hit chance.
 function drawLabels(ctx, b, s, H) {
   const t = s.t;
-  if (t.dead) return;
+  if (t.dead) {
+    // A body the worm is in (sim/carriers.js): a pale "!" over it until it gets up, burns or its skull is crushed.
+    if (stirring(t)) {
+      const [X, Y0] = feet(s);
+      ctx.font = `800 ${Math.max(12, Math.round(5 * FR.S))}px Segoe UI, sans-serif`;
+      ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
+      ctx.strokeText("!", X, Y0 - 8 * FR.S); ctx.fillStyle = ZRING.carrier; ctx.fillText("!", X, Y0 - 8 * FR.S);
+    }
+    return;
+  }
   const S = FR.S, [X, Y0] = feet(s);
   const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1;
   const top = t.down ? Y0 - 10 * S : Y0 - UNIT_H * big * S;

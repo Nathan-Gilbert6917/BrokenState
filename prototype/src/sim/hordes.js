@@ -15,6 +15,7 @@ import { hordeAttackBase, hordeWarnings } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
+import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { shelterHeat } from "./fieldheat.js";
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
@@ -166,6 +167,7 @@ export function hordesHour(state) {
 function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
   hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
+  sowTile(state, h); // middead.js: Sowers seed the land they cross with the worm's eggs
   const base = state.bases.find((b) => b.tile === h.tile);
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));

@@ -50,6 +50,7 @@ import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
 import { stagingHour } from "./staging.js";
+import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 
 export const HUB_VISION = 3;
@@ -587,6 +588,7 @@ export function tickHour(state) {
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   movePartiesHour(state);
   stagingHour(state); // staging.js: the staging camp with no base (work, stores, looters; done: the hub)
+  needsHour(state); // needs.js: hunger and thirst at bases and on errands (teams eat in movePartiesHour), teams' treats
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state

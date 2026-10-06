@@ -21,6 +21,7 @@ import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton } from "./hardcore.js";
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
 import { teamWormText } from "../sim/worm.js";
+import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -163,7 +164,7 @@ export function renderExpedition(state, ui, p) {
     </div>`;
 
   return head + status + actions +
-    `<h3>People (${members.length})</h3>${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
+    `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }
 
@@ -292,6 +293,7 @@ function memberCard(state, p, m, live, queueing) {
   return `<div class="card small">
     <div class="spread"><b>${m.leader ? "★ " : ""}${esc(m.name)}</b><span>${inv}${treat}</span></div>
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
+    ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}
     ${heal ? `<div class="good">Resting: +${heal.toFixed(2)} health/h</div>` : ""}` : ""}
     <div>${top}${m.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t]?.desc)}>${esc(TRAITS[t]?.name || t)}</span>`).join("")}</div>

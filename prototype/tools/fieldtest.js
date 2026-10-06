@@ -15,6 +15,7 @@ import {
 import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN_HOURS, CAMP_CHECKIN } from "../src/sim/plans.js";
 import { hiveDistance } from "../src/sim/hives.js";
 import { seasonOfDay, thirstFactor, THIRST } from "../src/sim/weather.js";
+import { NEEDS } from "../src/sim/needs.js";
 import { endTurnDecision, requestEndTurn, setConfirmEnd, unitsWithActions, cui } from "../src/ui/combat.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -335,9 +336,11 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
       for (let i = 0; i < 24 * 6 && !home(state, p); i++) {
         p.lastConflict = state.hour + 1; state.hordes.length = 0;
         const want = waterPerHour(state, p, partyMembers(state, p), state.hour + 1);
-        const before = p.supplies.water + (p.cargo.supplies.water || 0);
+        // needs.js: people drink when their thirst gauge is low, so count the gauges with the water carried.
+        const thirst = () => ids.reduce((a, id) => a + (state.survivors.find((x) => x.id === id).thirst ?? 100), 0) / NEEDS.water;
+        const before = p.supplies.water + (p.cargo.supplies.water || 0) + thirst();
         tickHour(state);
-        const after = home(state, p) ? before - want : p.supplies.water + (p.cargo.supplies.water || 0);
+        const after = home(state, p) ? before - want : p.supplies.water + (p.cargo.supplies.water || 0) + thirst();
         if (Math.abs(before - after - want) > 1e-9) events++;
         drunk += want;
         for (let k = state.cards.length - 1; k >= 0; k--) {

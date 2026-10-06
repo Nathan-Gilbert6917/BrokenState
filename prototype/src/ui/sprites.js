@@ -578,6 +578,27 @@ export function unitFacing(b, t) {
   return faces.get(t) ?? (t.side === "player" ? 1 : -1);
 }
 
+// One of the risen (sim/carriers.js): the person as they were and in what they wore (one of yours by their own look),
+// with no weapon in hand, gone grey-green, a few wounds.
+function rot(p, seed) {
+  for (let i = 0; i < p.px.length; i++) { const c = p.px[i]; if (c && c.length === 7) p.px[i] = mix(desat(c, 0.45), "#7f9a62", 0.22); }
+  const rng = new Rng(seed * 7 + 3);
+  for (let k = 0; k < 4; k++) { const x = rng.int(6, 15), y = rng.int(6, 20); if (p.get(x, y)) p.set(x, y, k % 2 ? "#7a1c18" : "#5c1210"); }
+  return p;
+}
+function turnedCanvas(state, b, t) {
+  const T = t.turned;
+  const s = T.sid != null ? state.survivors.find((x) => x.id === T.sid) : null;
+  if (s) {
+    const app = ensureAppearance(s, state.seed);
+    const armor = spriteArmorKey(s);
+    return cached(`t:s:${lookKey(app)}:${armor}`, () => rot(paintSurvivor({ ...app, skin: mix(app.skin, "#9aa877", 0.6) }, null, armor), s.id));
+  }
+  const seed = Math.abs((T.from * 131) | 0) % 61;
+  const f = b && b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? (state.factions || []).find((x) => x.id === b.setup.enemy.factionId) : null;
+  return cached(`t:e:${T.kit}:${f ? f.color : ""}:${T.armorKey}:${seed}`, () => rot(paintEnemyHuman(T.kit || "raiders", f ? f.color : null, null, T.armorKey, seed), seed));
+}
+
 // Picks the canvas for a battle unit. salt varies looks between battles.
 export function unitCanvas(state, b, t, salt = 0) {
   if (t.side === "player" && t.kind !== "zombie") {
@@ -586,6 +607,7 @@ export function unitCanvas(state, b, t, salt = 0) {
     return survivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, spriteArmorKey(s));
   }
   if (t.boss) return bossBattleCanvas(t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js)
+  if (t.turned) return turnedCanvas(state, b, t); // one of the risen (sim/carriers.js)
   const seed = (t.id * 131 + salt) | 0;
   // A hive's special dead (sim/zombietypes.js): runners and brutes are the zombie variants, the rest their own.
   if (t.ztype === "runner" || t.ztype === "brute") return zombieCanvas(t.ztype, seed);

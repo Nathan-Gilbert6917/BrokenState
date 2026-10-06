@@ -307,14 +307,14 @@ export function openLock(state, b, u, act, H) {
 // ---------- loot (combat.js searchBox, when a container's contents are rolled) ----------
 // Extras by lock kind: [supply, chance, lo, hi] and gear [key, chance].
 const LOCK_LOOT = {
-  cash:     { sup: [["ammo", 0.6, 6, 15], ["meds", 0.4, 1, 2]], gear: [["pistol", 0.1], ["knife", 0.1]], key: 0.2 },
+  cash:     { sup: [["ammo", 0.6, 6, 15], ["meds", 0.15, 1, 1]], gear: [["pistol", 0.1], ["knife", 0.1]], key: 0.2 },
   gear:     { sup: [["ammo", 0.4, 5, 12]], gear: [["vest", 0.1], ["bikehelmet", 0.1], ["kneeguards", 0.1], ["backpack", 0.1]], key: 0.1 },
   meds:     { sup: [["meds", 0.95, 3, 6]], gear: [["surgkit", 0.1], ["bandagekit", 0.2]], key: 0.08 },
   evidence: { sup: [["ammo", 0.8, 10, 25]], gear: [["pistol", 0.3], ["shotgun", 0.15], ["lockbook", 0.1], ["riothelmet", 0.1]], key: 0.3 },
   cargo:    { sup: [["food", 0.5, 4, 10], ["parts", 0.5, 1, 3], ["fuel", 0.25, 1, 3]], gear: [["assaultpack", 0.05]], key: 0.05 },
   guns:     { sup: [["ammo", 0.95, 20, 40]], gear: [["pistol", 0.4], ["shotgun", 0.3], ["huntrifle", 0.25], ["ar", 0.1]], key: 0.1 },
-  safe:     { sup: [["meds", 0.5, 2, 4], ["ammo", 0.5, 10, 20]], gear: [["nvg", 0.05], ["milradio", 0.05]], key: 0.3 },
-  crash:    { sup: [["meds", 0.6, 2, 5], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08]], key: 0 },
+  safe:     { sup: [["meds", 0.25, 1, 2], ["ammo", 0.5, 10, 20]], gear: [["nvg", 0.05], ["milradio", 0.05]], key: 0.3 },
+  crash:    { sup: [["meds", 0.45, 1, 3], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08]], key: 0 },
 };
 const BP_MULT = { lock: 4, room: 2, plain: 0.5 };
 const ZBODY_KEY = 0.04; // a key to a nearby place on one of the dead (their own house, a car, a shop)

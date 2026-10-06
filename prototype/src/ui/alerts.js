@@ -12,6 +12,8 @@ import { moodRisk } from "../sim/morale.js";
 import { conditionsOf, autoWantsCondition, CONDITIONS } from "../sim/health.js";
 import { wormOf, WORM } from "../sim/worm.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
+import { needAlerts } from "../sim/needs.js";
+import { contactable } from "../sim/orders.js";
 import { diaryEntries, diarySync, decodeRefs } from "../sim/diary.js";
 import { camera } from "./render.js";
 import { brokenAt, fixtureName, jobFor, FIXTURES } from "../sim/breakdowns.js";
@@ -79,6 +81,20 @@ const SECTIONS = {
       if (days >= 1.5) continue;
       const hint = landFoodHint(state, p);
       out.push({ key: `teamfood:${p.id}`, kind: "teamfood", icon: "🥫", tone: days < 0.5 ? "danger" : "warn", text: `${teamLabel(state, p)}: food for ${Math.round(days * 10) / 10} days${hint ? `: ${hint.replace(/, about.*$/, "")}` : ""}`, tip: `The team is running out of food: out of it, everyone loses health every hour.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}.` : ""} Forage, hunt or fish (team panel), search a farm, grocery or diner, or head home. Click to open the team panel.`, go: { team: p.id } });
+    }
+  },
+  // sim/needs.js: people starving or parched on a team you are in touch with (or anywhere at a base), and bases out of
+  // heating fuel in the cold.
+  needs(state, out) {
+    for (const p of state.parties) {
+      if (p.owner !== "player" || !(p.kind === "convoy" || contactable(p))) continue;
+      const low = needAlerts(state, partyMembers(state, p));
+      if (low.length) out.push({ key: `needs:${p.id}:${low.length}`, kind: "needs", icon: "🍞", tone: low[0].tone, text: low.length === 1 ? low[0].text : `${low[0].text} +${low.length - 1}`, tip: `${low.map((x) => x.text).join("; ")}. The team eats and drinks from what it carries and found; forage, hunt or fish, or head home. Click to open the team panel.`, go: { team: p.id } });
+    }
+    for (const b of state.bases) {
+      const low = needAlerts(state, residents(state, b.id));
+      if (low.length) out.push({ key: `needsb:${b.id}:${low.length}`, kind: "needs", icon: "🍞", tone: low[0].tone, text: `${b.name}: ${low.length === 1 ? low[0].text : `${low.length} hungry or thirsty`}`, tip: `${low.map((x) => x.text).join("; ")}. Click to open the base.`, go: { base: b.id, tab: "farming" } });
+      if (b.cold && residents(state, b.id).length) out.push({ key: `cold:${b.id}`, kind: "cold", icon: "🥶", tone: "danger", text: `${b.name} is cold: no heating fuel`, tip: `Below 0°C everyone burns ${b.heat ? `${b.heat.each} fuel a day each (${b.heat.need} a day here)` : "fuel to keep warm"}. Without it they lose mood and health every day and fall ill as if outdoors. Bring fuel (gas stations, truck stops, trade) or build a still. Click to open the base.`, go: { base: b.id, tab: "farming" } });
     }
   },
   stations(state, out) {

@@ -36,6 +36,7 @@ import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
 import { rollAreaFind } from "./loot.js";
 import { buzzAim } from "./comforts.js";
+import { needsAim } from "./needs.js";
 import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE } from "./throwables.js";
 import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM } from "./siege.js"; // ladders, the ram, rocks from the walls
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
@@ -48,10 +49,14 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
-import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList } from "./zombietypes.js"; // a hive's special dead
-import { ZTYPES } from "./hiveconst.js";
+import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
+import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { MEDS } from "./medfinds.js"; // how rare meds are
+import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
+import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
+import { stirBodies, carrierRound, burst, swarmHit, crush, botCrush, turnedBody, walksOn, turnedName, turnedLine, dropBodyBox, raidEndBodies } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
@@ -119,6 +124,7 @@ export function resizeBattle(b, w, h, cells, rx = 0, ry = 0) {
   b.losCache = new Int8Array(W * H * W * H);
   b.reach = flood(cells, rx, ry);
   b.acid = []; // acid pools (acid.js) stay on the old map
+  b.corpses = []; // and the bodies lying about (sleepers.js)
   return b;
 }
 // The cells the player side can stand on, flooded from (x, y) (after the map changed).
@@ -325,6 +331,9 @@ export const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action poi
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
 export const HUNKER_DEF = 20;
+// A critical hit (shots and melee, both sides; the chances are in shotOdds / meleeOdds): × this damage, and through a
+// dead soldier's or riot cop's armour (deadsoldiers.js armorVs).
+export const CRIT_MULT = 2;
 const BLEED_TURNS = 3;
 const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 
@@ -772,6 +781,10 @@ export function reachable(b, u, maxCost, opts = {}) {
   const occ = new Uint8Array(W * H);
   for (const o of b.units) if (o !== u && onMap(o)) occ[idx(o.x, o.y)] = active(o) ? 1 : 2;
   const foe = u.side !== (b.holders || "player"), per = siegeRule(u).climb; // b.holders: whose walls and gates (an assault on a group's base: theirs)
+  // A Climber (middead.js climbOver) goes over walls, fences and the like, a level up or down anywhere, never
+  // stopping on one of them.
+  const climber = u.ztype === "climber";
+  const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -785,14 +798,14 @@ export function reachable(b, u, maxCost, opts = {}) {
     const x = cur % W, y = (cur / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
-      if (!inside(nx, ny) || !cellAt(b, nx, ny).walk) continue;
+      if (!inside(nx, ny) || !passes(nx, ny)) continue;
       const diag = dx && dy;
-      if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue;
+      if (diag && (!passes(x + dx, y) || !passes(x, y + dy))) continue;
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
-      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j])) continue;
+      if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j]) && !(climber && climbOver(u, b.cells[j].k))) continue;
       if (avoid && avoid.has(j)) continue;
-      const climb = climbCost(b, x, y, nx, ny, diag, per);
+      const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
       const step = (diag ? 1.5 : 1) + climb;
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
@@ -806,7 +819,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   }
   // Downed bodies can be stepped over but not stood on.
   const stop = real.slice();
-  for (let j = 0; j < W * H; j++) if (occ[j] === 2) stop[j] = Infinity;
+  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (climber && (!CELL[b.cells[j].k].walk || barredCell(b.cells[j])))) stop[j] = Infinity;
   return { dist: stop, prev };
 }
 
@@ -831,14 +844,16 @@ export function distField(b, sources, walker = null) {
   const burning = walker && b.fires && b.fires.length && (walker.kind === "human" || walker.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   // The same field asked again with the map unchanged (every one of the dead in a turn heads for the same people):
   // the one worked out before (fieldCache). Callers only read it.
-  const key = `${siege ? 1 : 0}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const climber = !!walker && walker.ztype === "climber"; // middead.js: over walls and fences, up a level anywhere
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
   const d = new Float32Array(W * H).fill(Infinity);
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
-  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c))) && !(burning && burning.has(idx(x, y))); };
+  const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
+  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y)) && !(burning && burning.has(idx(x, y))); };
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
@@ -854,11 +869,11 @@ export function distField(b, sources, walker = null) {
       const nx = x + dx, ny = y + dy;
       if (!inside(nx, ny) || !pass(nx, ny)) continue;
       const diag = dx && dy;
-      if (diag && (!cellAt(b, x + dx, y).walk || !cellAt(b, x, y + dy).walk)) continue; // no corner cutting (as reachable)
-      const climb = climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
+      if (diag && (!(cellAt(b, x + dx, y).walk || over(x + dx, y)) || !(cellAt(b, x, y + dy).walk || over(x, y + dy)))) continue; // no corner cutting (as reachable)
+      const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (over(nx, ny) ? MIDDEAD.CLIMBER.COST : 0) : climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
       if (climb === Infinity) continue;
       const c = b.cells[idx(nx, ny)];
-      const bash = siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+      const bash = !over(nx, ny) && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
       const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash + (aw ? aw[j] : 0); // aw: acid.js
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
@@ -1025,7 +1040,8 @@ function playerUnit(b, s) {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
-    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js)
+    aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js)
+    nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
@@ -1177,6 +1193,7 @@ export function createBattle(state, setup) {
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
+  if (!setup.layout) placeBodies(b, state.seed); // sleepers.js: bodies lie about a fight in the open, Sleepers among them
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
@@ -1205,20 +1222,34 @@ function foesOf(b, u) {
   if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
   if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
-  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && o.side === "third"));
+  // A Sleeper lying where it is (sleepers.js) is shot only by order: the AI keeps clear of it.
+  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant)));
 }
 
 // ---------- actions ----------
 // nonLethal (Subdue, stealth.js): a person brought to 0 is knocked out, not killed.
 // hit: { how: "shot" | "melee" | "bash" | "fire" | "blast", crit, sneak } for the armoured dead (deadsoldiers.js
 // armorVs: their armour by the weapon that struck); everyone else takes raw × their armor ("acid": half of it, acid.js).
-// A spitter that dies bursts (acid.js spitterBurst).
+// A spitter that dies bursts (acid.js spitterBurst); a Carrier bursts into a worm swarm, and whoever the swarm kills
+// carries the worm (carriers.js; deadsoldiers.js armorVs: most bullets go through the swarm).
+// A Boneback's plates take most of a hit from the front (middead.js bonebackMult); a Flinger winding up drops its
+// mass when hit hard (afterHit); a spotted Sleeper splits where it lies (sleepers.js).
+export function hitMult(t, by, hit) {
+  if (hit && hit.how === "acid") return acidArmor(t);
+  if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
+  if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
+  return t.armor;
+}
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * (hit && hit.how === "acid" ? acidArmor(t) : t.ztype && ARMORED.includes(t.ztype) ? armorVs(t, by, hit) : t.armor);
+  const eff = raw * hitMult(t, by, hit);
   t.hp = Math.max(0, t.hp - eff);
-  if (t.hp > 0) return eff;
+  if (t.hp > 0) {
+    if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
+    return eff;
+  }
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
+  swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
   if (t.side === "player") {
     t.down = true;
     (b.downedIds || (b.downedIds = [])).push(t.sid); // service record (relations.js)
@@ -1230,11 +1261,17 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
     if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
+    else if (b.raid && t.bodyBox) dropBodyBox(b, t); // carriers.js: one of the risen, put down: the body it got up from (what was on it)
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
-    // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway).
-    else if (b.raid && t.kind === "zombie" && !t.boss) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
-    say(b, `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
+    // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
+    // swarm leaves nothing.
+    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
+    say(b, t.ztype === "swarm" ? `${t.name} is crushed and scattered.` : `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
     if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
+    if (t.ztype === "carrier") burst(b, t); // carriers.js: the worm swarm comes out
+    if (t.ztype === "swarm") t.off = true; // no body: gone from the map
+    if (t.ztype === "flinger") onDeath(b, t); // middead.js: the mass it was winding up to throw spills out
+    if (t.ztype === "sleeper") sleeperDies(b, t, hit); // sleepers.js: it splits where it lies, or the fire cooks it
   }
   return eff;
 }
@@ -1312,6 +1349,7 @@ export function moveAlong(b, u, path) {
       fire(b, o, u, { reaction: true });
     }
     if (u.side === "player" && active(u)) detect(b, u);
+    if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
     if (!active(u) || stopAtDoor) break;
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
@@ -1340,7 +1378,7 @@ function fire(b, a, t, opts = {}) {
   let text;
   if (hit) {
     const crit = rng.chance(o.crit / 100);
-    const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1);
+    const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1);
     const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit }));
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
     text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
@@ -1368,7 +1406,7 @@ function strike(b, a, t) {
   const hit = rng.chance(o.chance / 100) || sure;
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? 1.5 : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
@@ -1576,6 +1614,13 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "crush": { // carriers.js: crush the skull of a body next to the unit, so the worm cannot raise it (1 action, silent)
+      const err = crush(b, u, t);
+      if (err) return err;
+      u.ap -= 1;
+      u.hunker = false;
+      break;
+    }
     default:
       return "Unknown action.";
   }
@@ -1596,6 +1641,9 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && active(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   zTick(b); // zombietypes.js: spitters and screamers get ready again
+  sowerRound(b); // middead.js: Sowers thicken the ground with eggs
+  burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
+  carrierRound(state, b); // carriers.js: the bodies a Carrier stirred get up (and act this turn); worm swarms sink
   acidRound(b, ["enemy", "third"]); // acid.js: hostile people and the third side starting their turn in a spitter's acid
   shepherdTurn(b); // decoys.js: an aware Shepherd wakes its pack
   if (b.raid) raidTurn(b);
@@ -1649,6 +1697,10 @@ function startPlayerTurn(state, b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
+  stirBodies(b); // carriers.js: bodies near a Carrier (and the worm swarm's dead) stir: they get up after this turn
+  burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
+  terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
+  for (const u of b.units) if (u.side === "player" && active(u)) spotCheck(b, u); // sleepers.js: a body twitches
   // A base battle (interior.js): the wall breached (on to the yard map), the yard lost (the last stand).
   if (b.tier && !b.over) tierPlayerTurn(state, b);
   offerClear(b);
@@ -1708,11 +1760,12 @@ function reinforcements(b) {
 // ---------- AI (works for either side) ----------
 // Who the AI shoots first (× the worth of a shot): a Shepherd, a screamer, a spitter (zombietypes.js ZTYPES priority),
 // the ram's crew (siege.js) and anyone coming over the wall on a ladder.
-export const SHOT_PRIORITY = { crew: 1.8, climber: 1.5 };
+export const SHOT_PRIORITY = { crew: 1.8, climber: 1.5, windup: 1.5 };
 export function shotPriority(b, t) {
   let v = t.ztype && ZTYPES[t.ztype] && ZTYPES[t.ztype].priority ? ZTYPES[t.ztype].priority : 1;
   if (t.ram != null && b.rams && isCrew(b, t)) v *= SHOT_PRIORITY.crew;
   else if (b.cells[t.y * b.w + t.x].k === "siegeladder") v *= SHOT_PRIORITY.climber;
+  if (t.windup != null) v *= SHOT_PRIORITY.windup; // a Flinger about to throw (middead.js)
   return v;
 }
 function bestShot(b, u, foes, opts = {}) {
@@ -1721,7 +1774,10 @@ function bestShot(b, u, foes, opts = {}) {
   for (const t of foes) {
     if (!canSee(b, u, t)) continue;
     const o = shotOdds(b, u, t, u.x, u.y, opts);
-    const avg = (o.dmg[0] + o.dmg[1]) / 2 * (1 + o.crit / 200) * (t.ztype ? armorVs(t, u, { how: "shot" }) : t.armor); // a dead soldier's plates by this gun
+    // The expected damage: a dead soldier's plates by this gun (armorVs), a critical hit × CRIT_MULT and through them.
+    // A Boneback's plates by where the shooter stands (hitMult).
+    const p = o.crit / 100, m = hitMult(t, u, { how: "shot" });
+    const avg = (o.dmg[0] + o.dmg[1]) / 2 * ((1 - p) * m + p * CRIT_MULT * hitMult(t, u, { how: "shot", crit: true }));
     let v = (o.chance / 100) * avg;
     if (t.hp <= avg) v *= 1.5;
     v *= shotPriority(b, t);
@@ -1778,6 +1834,7 @@ function bestMove(b, u, foes, field = null) {
 
 function aiUnit(b, u) {
   if (!active(u)) return;
+  if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
     const plan = thirdPlan(b, u);
     if (plan === "hold") { u.ap = 0; return; }
@@ -2287,6 +2344,8 @@ export function autoPlayerTurn(state, opts = {}) {
     if (active(u) && u.ap > 0) botDecoy(state, b, u); // decoys.js: a decoy to pull the dead off your people
     if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a grenade, a pipe bomb or a Molotov on a crowd
     if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
+    const skull = botCrush(b, u); // carriers.js: a stirring body next to them, crushed before it gets up
+    if (skull) combatAct(state, skull);
     if (active(u) && u.ap > 0) aiUnit(b, u);
     checkEnd(state, b);
   }
@@ -2310,7 +2369,8 @@ function checkEnd(state, b) {
     return;
   }
   // Attackers still outside a base's wall waiting to come in (interior.js) count as not beaten.
-  if (!b.units.some((u) => u.side === "enemy" && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
+  // A spotted Sleeper lying where it is (sleepers.js) does not hold the field.
+  if (!b.units.some((u) => u.side === "enemy" && !u.dormant && (active(u) || (u.off && !u.dead)))) return endBattle(state, b, "victory");
   if (!b.units.some((u) => u.side === "player" && active(u))) endBattle(state, b, b.units.some((u) => u.side === "player" && u.left) ? "retreat" : "defeat");
 }
 
@@ -2354,7 +2414,7 @@ function endBattle(state, b, outcome) {
     if (dies) {
       hurt(state, s, 9999, b.tileId, cause);
       deadIds.push(s.id);
-      if (!u.lostBehind) lines.push(carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`);
+      if (!u.lostBehind) lines.push(u.roseAs != null ? turnedLine(b, u) : carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`); // carriers.js: got up as one of the dead
       continue;
     }
     const hp = u.down ? rng.int(5, 15) : u.hp;
@@ -2378,11 +2438,18 @@ function endBattle(state, b, outcome) {
   const loot = { supplies: {}, gear: [] };
   b.bodies = [];
   if (outcome === "victory") {
-    for (const e of enemies) if (e.dead) b.bodies.push(enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
+    // carriers.js: a body that got up is one body, the risen one's (with the person's kit); one of yours who got up is
+    // their own body as below; a worm swarm leaves none.
+    for (const e of enemies) {
+      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || (e.turned && e.turned.sid != null)) continue;
+      b.bodies.push(e.turned ? turnedBody(rng, e) : enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
+    }
     for (const e of captives) { const body = enemyBody(rng, e, KITS[e.kit] || KITS.raiders); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
-      if (s) b.bodies.push(allyBody(s, u));
+      // carriers.js: still walking as one of the dead, there is no body here (their things stay at the death site
+      // or in the armory, world.js killSurvivor); put down, the body is "Dana (turned)".
+      if (s && !walksOn(b, u)) { const body = allyBody(s, u); body.name = turnedName(b, u); b.bodies.push(body); }
     }
     b.bodies = b.bodies.filter((body) => !bodyEmpty(state, body));
   }
@@ -2447,22 +2514,22 @@ export const HEAT_NAMES = ["Quiet", "Stirring", "Swarming", "Overrun"];
 // Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
 // container). The small finds per container (valuables, comforts, throwables) are in loot.js AREA_FINDS.
 export const AREAS = {
-  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.25, 1, 2], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03], ["binoculars", 0.012], ["telescope", 0.003]] },
-  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], ammo: [0.25, 4, 12], meds: [0.15, 1, 2] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03]] },
-  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.2, 1, 2] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01]] },
+  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.07, 1, 1], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03], ["binoculars", 0.012], ["telescope", 0.003]] },
+  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], ammo: [0.25, 4, 12], meds: [0.05, 1, 1] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03]] },
+  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.06, 1, 1] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01]] },
   kitchen:   { name: "Kitchen",        boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.85, 4, 12], water: [0.6, 3, 6] }, gear: [["knife", 0.08], ["bottle", 0.12]] },
-  pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.85, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.05]] },
-  clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.75, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08], ["bandagekit", 0.06]] },
+  pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.9, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.05]] },
+  clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.85, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08], ["bandagekit", 0.06]] },
   garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03], ["flashlight", 0.05], ["prybar", 0.05], ["sledge", 0.03]] },
   workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [["prybar", 0.05], ["sledge", 0.04], ["crowbar", 0.03], ["kneeguards", 0.02]] },
   warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [["prybar", 0.03], ["sandbags", 0.03], ["barbedwire", 0.02]] },
-  office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.15, 1, 1], water: [0.3, 1, 3] }, gear: [["fireaxe", 0.03], ["slingbag", 0.03]] },
+  office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.05, 1, 1], water: [0.3, 1, 3] }, gear: [["fireaxe", 0.03], ["slingbag", 0.03]] },
   armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04], ["carbine", 0.05], ["baton", 0.06], ["riotarms", 0.04], ["riotlegs", 0.04], ["revolver", 0.03], ["binoculars", 0.04]] },
-  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.3, 1, 3] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03], ["binoculars", 0.05], ["spotscope", 0.02], ["thermal", 0.02]] },
+  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.15, 1, 2] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03], ["binoculars", 0.05], ["spotscope", 0.02], ["thermal", 0.02]] },
   motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [["prybar", 0.04], ["sandbags", 0.04], ["barbedwire", 0.03]] },
   barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02]] },
-  lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.5, 1, 4], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.03], ["telescope", 0.03]] },
-  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.2, 1, 2] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["spotscope", 0.02]] },
+  lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.3, 1, 2], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.03], ["telescope", 0.03]] },
+  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.07, 1, 1] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["spotscope", 0.02]] },
   hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [["prybar", 0.03], ["hikingpack", 0.02]] },
   cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08], ["baton", 0.03]] },
   control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [["flashlight", 0.04]] },
@@ -2470,18 +2537,20 @@ export const AREAS = {
   wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
   gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04]] },
-  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.25, 1, 2], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1]] },
-  chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.2, 1, 2] }, gear: [["bandagekit", 0.05]] },
+  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1]] },
+  chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.07, 1, 1] }, gear: [["bandagekit", 0.05]] },
+  // First aid on hand: a school nurse, a fire station's first-aid room, a barracks' medical store (medfinds.js).
+  nurse:     { name: "First-aid room",  boxes: ["cabinet", "shelf"],             loot: { meds: [0.3, 1, 2], water: [0.3, 1, 2] }, gear: [["bandagekit", 0.06]] },
   // Crash sites (crashes.js): wreckage and cargo cases in the open (locks.js names them and locks some cases).
-  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.4, 1, 4], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05], ["carbine", 0.03], ["rucksack", 0.04], ["camonet", 0.04], ["thermal", 0.03], ["binoculars", 0.04]] },
-  medwreck:  { name: "Medevac wreck",    outdoor: true, boxes: ["crate", "crate", "car"], loot: { meds: [0.85, 2, 6], water: [0.4, 1, 4], scrap: [0.4, 1, 4] }, gear: [["surgkit", 0.08], ["bandagekit", 0.12]] },
+  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.3, 1, 2], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05], ["carbine", 0.03], ["rucksack", 0.04], ["camonet", 0.04], ["thermal", 0.03], ["binoculars", 0.04]] },
+  medwreck:  { name: "Medevac wreck",    outdoor: true, boxes: ["crate", "crate", "car"], loot: { meds: [0.9, 2, 6], water: [0.4, 1, 4], scrap: [0.4, 1, 4] }, gear: [["surgkit", 0.08], ["bandagekit", 0.12]] },
   newswreck: { name: "News chopper wreck", outdoor: true, boxes: ["crate", "car"], loot: { parts: [0.6, 1, 3], scrap: [0.7, 2, 6], water: [0.3, 1, 3] }, gear: [["hikingpack", 0.04], ["slingbag", 0.06]] },
-  fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.35, 1, 3], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05], ["hikingpack", 0.04], ["slingbag", 0.04]] },
-  cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.4, 1, 3], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
+  fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.15, 1, 2], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05], ["hikingpack", 0.04], ["slingbag", 0.04]] },
+  cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 export const AREA_SETS = {
-  town: ["house", "house", "store", "garage", "pharmacy", "wreck"], city: ["store", "pharmacy", "office", "house", "warehouse", "wreck"],
-  farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "pharmacy", "kitchen", "warehouse"],
+  town: ["house", "house", "store", "garage", "kitchen", "wreck"], city: ["store", "office", "office", "house", "warehouse", "wreck"],
+  farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "lockers", "kitchen", "warehouse"],
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
   military: ["armory", "barracks", "motorpool", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
   univ: ["lab", "lab", "office", "kitchen"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
@@ -2492,8 +2561,8 @@ export const AREA_SETS = {
   autoshop: ["garage", "garage", "workshop", "wreck"], pharmacy: ["pharmacy", "pharmacy", "store", "office"],
   supermarket: ["store", "store", "kitchen", "warehouse", "wreck"], gunstore: ["gunshop", "store", "office", "wreck"],
   hardware: ["workshop", "store", "garage", "warehouse"], apartments: ["house", "house", "house", "kitchen", "garage"],
-  office: ["office", "office", "office", "kitchen"], school: ["lockers", "office", "kitchen", "clinic", "lockers"],
-  firestation: ["garage", "clinic", "kitchen", "motorpool"], warehouse: ["warehouse", "warehouse", "warehouse", "office", "wreck"],
+  office: ["office", "office", "office", "kitchen"], school: ["lockers", "office", "kitchen", "nurse", "lockers"],
+  firestation: ["garage", "nurse", "kitchen", "motorpool"], warehouse: ["warehouse", "warehouse", "warehouse", "office", "wreck"],
   // Small-town shops.
   grocery: ["store", "store", "kitchen", "garage"], diner: ["kitchen", "kitchen", "store", "wreck"], motel: ["house", "house", "house", "office", "wreck"],
   church: ["chapel", "kitchen", "house", "campsite"], clinic: ["clinic", "clinic", "pharmacy", "office"], feedstore: ["barn", "store", "warehouse", "garage"],
@@ -2750,7 +2819,7 @@ export function createRaid(state, setup) {
     const count = Math.max(0, Math.min(MAX_ENEMIES, Math.round((g.count || 0) * (g.kind === "zombies" ? raidDeadScale(W, H) : 1))));
     if (!count) continue;
     if (g.kind === "zombies") {
-      const zl = mixList(g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js)
+      const zl = siteList(rng, g.mix, count); // the armoured dead of a military site or a police station (deadsoldiers.js); the bred kinds met exploring (hivetech.js siteSpecials)
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);
@@ -2778,6 +2847,7 @@ export function createRaid(state, setup) {
       pod++;
     }
   }
+  placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
@@ -2926,7 +2996,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     } else if (box.kind === "body") {
       sup.ammo = rng.int(3, 10);
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
-      if (rng.chance(0.15)) sup.meds = 1;
+      if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
@@ -3010,7 +3080,7 @@ function endRaid(state, b) {
     if (u.dead || !u.left) {
       hurt(state, s, 9999, b.tileId, u.dead ? `while scavenging ${b.place}` : `left behind while scavenging ${b.place}`);
       deadIds.push(s.id);
-      lines.push(u.dead ? `${u.name} died.` : u.down && anyOut ? `${u.name} bled out before the others could carry them clear.` : `${u.name} was left behind.`);
+      lines.push(u.roseAs != null ? turnedLine(b, u) : u.dead ? `${u.name} died.` : u.down && anyOut ? `${u.name} bled out before the others could carry them clear.` : `${u.name} was left behind.`);
       continue;
     }
     extractedIds.push(s.id);
@@ -3019,6 +3089,7 @@ function endRaid(state, b) {
     if (!s.alive) { deadIds.push(s.id); continue; }
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
   }
+  raidEndBodies(b); // carriers.js: the bodies the risen still walk about in go back on the map (left behind)
   raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   const vehicleKept = R.vehicleZone >= 0 && b.units.some((u) => u.side === "player" && u.left && !u.dead && u.exitZone === R.vehicleZone);
   if (R.vehicleZone >= 0 && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
@@ -3071,6 +3142,8 @@ function autoRaidTurn(state) {
       // buildingmaps.js: on the way out of a building, shut a door on whatever follows, or throw a lure to pull it off.
       const esc = leave && R.interior ? botEscape(state, b, u, R.zones.map((zz) => [zz.x0 + 1, zz.y0 + 1])) : null;
       if (esc && !combatAct(state, esc)) continue;
+      const skull = botCrush(b, u); // carriers.js: a stirring body next to them, crushed before it gets up
+      if (skull && !combatAct(state, skull)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       const adj = foes.find((f) => adjacent(u, f));

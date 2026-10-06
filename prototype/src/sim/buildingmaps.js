@@ -33,7 +33,7 @@ import { interiorOccupants } from "./wanderers.js";
 import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod } from "./combat.js";
 import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
-import { applyZType, mixList } from "./zombietypes.js";
+import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside } from "./battlesize.js";
 
 export const BMAP = {
@@ -108,7 +108,7 @@ export const ROLES = {
   classroom:   role("Classroom", "office", "classroom", { fl: "tile", maxBoxes: 2 }),
   gym:         role("Gym", "lockers", "gym", { fl: "wood", maxBoxes: 2 }),
   lockerroom:  role("Locker room", "lockers", "lockers", { fl: "tile", maxBoxes: 3 }),
-  nurse:       role("Nurse's office", "clinic", "exam", { fl: "tile", maxBoxes: 2 }),
+  nurse:       role("Nurse's office", "nurse", "exam", { fl: "tile", maxBoxes: 2 }), // first aid only (medfinds.js)
   cafeteria:   role("Cafeteria", "kitchen", "dining", { hub: true, fl: "tile", maxBoxes: 3 }),
   breakroom:   role("Break room", "kitchen", "kitchen", { fl: "tile", maxBoxes: 2 }),
   warefloor:   role("Warehouse floor", "warehouse", "racks", { hub: true, fl: "conc", maxBoxes: 8 }),
@@ -393,7 +393,7 @@ function institution(rng, v) {
     default: // firestation
     {
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
-      const living = { split: "y", parts: [["*", { role: "dayroom", entry: true }], ["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks" }], [4, { role: "storage", name: "Medical store", type: "clinic", lock: ["door", 0.3] }], [4, "kitchen"]]) }]] };
+      const living = { split: "y", parts: [["*", { role: "dayroom", entry: true }], ["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3] }], [4, "kitchen"]]) }]] };
       const bays = [0.48, { role: "bays", name: "Engine bay", type: "motorpool", maxBoxes: 5 }];
       const left = rng.chance(0.5);
       return {
@@ -1282,7 +1282,7 @@ export function placeInterior(state, b, map, groups) {
     if (!(g.count > 0)) continue;
     if (g.kind === "zombies") {
       const n = Math.max(1, Math.round(g.count * scale));
-      const zl = mixList(g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js)
+      const zl = siteList(rng, g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js); the bred kinds met exploring
       for (let i = 0; i < n; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);

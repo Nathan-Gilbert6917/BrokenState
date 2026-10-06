@@ -281,7 +281,8 @@ function baseOnsets(state, base) {
   // indoors (the tarps are as cold as outside).
   const coldCamp = base.tier === 0 && base.fire === false;
   const dirty = (filter ? 0.001 : 0.004) * (base.thirstDays > 0 ? 3 : 1) * (coldCamp ? 2 : 1);
-  const outside = exposure(state, false), inside = exposure(state, !coldCamp);
+  // needs.js heatDaily: a base without heating fuel below 0°C is as cold indoors as out.
+  const outside = exposure(state, false), inside = exposure(state, !coldCamp && !base.cold);
   const quarantine = (base.quarantineUntil || 0) >= day(state);
   // Contagion from today's cases (before anyone new falls ill).
   const sources = people.filter((s) => isContagious(s));
