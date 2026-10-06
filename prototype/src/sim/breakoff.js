@@ -56,6 +56,10 @@ export const BREAKOFF = {
   PIN_DEAD: 0.35,          // each of the dead left per runner: this many on them (next to them)
   PIN_PEOPLE: 0.05,        // people rarely close to grappling range
   SHOOT: 0.35,             // shooters that see a runner: this share of the people left
+  // ... × this by the end of round 1 / 2: people who have only just been engaged are spread over the field, behind
+  // cover and mostly without a line on a runner yet (the map: about 0.4-0.75 shooters a runner when the Cautious AI
+  // pulls out on turn 2-3, three quarters of the runners with nobody on them at all; 1.7 a runner by turn 5).
+  SHOOT_CLOSE: [0.3, 1],
   CHASE: 0.5,              // the dead close behind: this share of the dead left
   CLOSE: [0.35, 0.5],      // how far the dead have closed in by the end of round 1 / 2 (× those on and behind a runner)
   PURSUERS: 16,            // at most this many of them can get at the runners (a battle map holds 20)
@@ -172,8 +176,9 @@ export function fightModel(state, people, { win, enemy, ambush = null, party = n
 }
 
 // The escape plan for the members still standing (with the downed to carry): every runner's odds and burden.
-// rng draws the pursuers on each runner (who has the dead on them, who is in sight).
-function planEscape(rng, model, ms, enemyLeft, close = 1) {
+// rng draws the pursuers on each runner (who has the dead on them, who is in sight). close: how far the dead have
+// closed in (BREAKOFF.CLOSE); seen: the share of the people who have a line on a runner (BREAKOFF.SHOOT_CLOSE).
+function planEscape(rng, model, ms, enemyLeft, close = 1, seen = 1) {
   const standing = ms.filter((m) => !m.down);
   const downed = ms.filter((m) => m.down);
   enemyLeft = Math.min(BREAKOFF.PURSUERS, enemyLeft);
@@ -185,7 +190,7 @@ function planEscape(rng, model, ms, enemyLeft, close = 1) {
     const e = {
       tiles: Math.max(0, tiles),
       pinned: Math.min(BREAKOFF.PIN_MAX, randRound(rng, ((enemyLeft * (1 - hs) / per) * BREAKOFF.PIN_DEAD + (enemyLeft * hs / per) * BREAKOFF.PIN_PEOPLE) * close)),
-      shooters: randRound(rng, enemyLeft * hs * BREAKOFF.SHOOT),
+      shooters: randRound(rng, enemyLeft * hs * BREAKOFF.SHOOT * seen),
       chasers: randRound(rng, enemyLeft * (1 - hs) * BREAKOFF.CHASE * close),
       night: model.night, vehicle: model.vehicle, stealthy: model.stealthy,
     };
@@ -207,9 +212,10 @@ function planEscape(rng, model, ms, enemyLeft, close = 1) {
 // Everyone standing runs for it: each rolls their escape (a carrier caught drops whoever they carried), the caught
 // take the blows. Returns { escaped, caught, carried: [{ id, by, lives }], left: [{ id, captured }], lines }.
 // Draws from rng; changes the members' hp and down flags only.
-function runFor(rng, model, ms, enemyLeft, close = 1) {
-  const plan = planEscape(rng, model, ms, enemyLeft, close);
-  const out = { escaped: [], caught: [], carried: [], left: [], blows: [], lines: [], odds: plan.map((r) => ({ id: r.m.id, chance: r.chance, carrying: r.carrying ? r.carrying.id : null })) };
+function runFor(rng, model, ms, enemyLeft, close = 1, seen = 1) {
+  const plan = planEscape(rng, model, ms, enemyLeft, close, seen);
+  // odds: each runner's chance and what it was made of (tools/retreattest.js compares them with the map's escapeOdds).
+  const out = { escaped: [], caught: [], carried: [], left: [], blows: [], lines: [], odds: plan.map((r) => ({ id: r.m.id, chance: r.chance, carrying: r.carrying ? r.carrying.id : null, tiles: r.e.tiles, pinned: r.e.pinned, shooters: r.e.shooters, chasers: r.e.chasers, hp: r.m.hp })) };
   const carriedOut = [];
   for (const r of plan) {
     const m = r.m, t = r.carrying;
@@ -319,7 +325,7 @@ export function rollFight(rng, model, policy = "never") {
   const k = win ? BREAKOFF.KILLS_WON : BREAKOFF.KILLS_LOST;
   const killShare = rng.range(k[0], k[1]) * ((round + 1) / R);
   const left = Math.max(0, model.enemy.count - Math.floor(model.enemy.count * killShare));
-  const run = runFor(rng, model, ms, left, BREAKOFF.CLOSE[Math.min(round, BREAKOFF.CLOSE.length - 1)]);
+  const run = runFor(rng, model, ms, left, BREAKOFF.CLOSE[Math.min(round, BREAKOFF.CLOSE.length - 1)], BREAKOFF.SHOOT_CLOSE[Math.min(round, BREAKOFF.SHOOT_CLOSE.length - 1)]);
   return { win, outcome: run.escaped.length ? "retreat" : "defeat", round, hits, worn, members: ms, run, killShare };
 }
 
