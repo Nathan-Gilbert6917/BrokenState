@@ -32,7 +32,8 @@
 //     quarantine, ×SICK.spread.team in a team's close quarters, ×SICK.spread.mending once on the mend); medics catch it
 //     half again as often (treating the sick);
 //   - work: farming 0.6%, building 1.2%, crafting 0.8%, workshop 0.6%, base scavenging 2%, guard 0.2% (cuts and
-//     sprains); searching a site 0.8% a cut and 0.25% a fever per person per search hour (scavenge.js);
+//     sprains); searching a site 0.8% a cut and 0.25% a fever per person per search hour (scavenge.js); a quick
+//     rummage on a raid map up to 9% a cut, 6% by day with no skill (search.js quickHurt);
 //   - wounds: a hit of 10+ health that does not kill: 25% a deep cut that needs dressing (world.hurt); an untreated
 //     cut can become an infected wound (medical.js woundInfected);
 //   - foraged mushrooms (foraging.js), the bites of the dead (combat.js: their own rules).

@@ -66,7 +66,7 @@ import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thi
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
-import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
+import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -3263,6 +3263,11 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     hideSome(rng, box);
     const came = quickNoise(b, u, box);
     say(b, `${u.name} rummages through the ${name} in a hurry (Heat +${SEARCH.quick.heat})${came ? `: ${came} nearby hear${came === 1 ? "s" : ""} it` : ""}.`, came ? "danger" : "info");
+    const cut = quickHurt(state, b, u); // search.js: going fast, a hand on something sharp
+    if (cut) {
+      say(b, `${u.name} cuts a hand on ${cut.what}${cut.hp ? ` (−${cut.hp} health)` : ""}: it needs dressing.`, "danger");
+      fx(b, { type: "loot", to: [box.x, box.y], text: "cut!" });
+    }
   } else if (box.hidden || box.quick) more = revealHidden(box);
   if (open) {
     const n = box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length;

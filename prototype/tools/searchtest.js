@@ -2,7 +2,9 @@
 // exactly n and leaves the rest, never more than fits, hauling time paid on what moved; a full search costs 1 action
 // (in the dark too) and shows everything; a quick rummage costs no action, shows 30–50% of the things, adds Heat and
 // pulls the unaware dead and guards within its radius (walls muffle it indoors), once a turn; a full search after it
-// shows the rest; a locked container is 1 action a pick attempt at odds by Stealth, then 1 action to search; a raid
+// shows the rest; the rummage costs Heat +5 and is heard 7 tiles off (9 in the dark), with a 6% chance (less with
+// Scavenging or Stealth, more in the dark, always under 10%) of a cut hand that never downs anyone, the bot rummaging
+// once a turn even cut every time; a locked container is 1 action a pick attempt at odds by Stealth, then 1 action to search; a raid
 // saved mid-search keeps what is hidden; the raid bot rummages when pressed and searches in full when not.
 // Usage: node tools/searchtest.js [seed] [v]
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
@@ -11,11 +13,12 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, combatAct, CELL, registerCombatHandler, unitAt, autoPlayerTurn } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
 import * as RL from "../src/sim/raidloot.js";
-import { SEARCH, hiddenCount, shownCount, quickRadius } from "../src/sim/search.js";
+import { SEARCH, hiddenCount, shownCount, quickRadius, quickHurtChance, quickHurtPct, quickHurt } from "../src/sim/search.js";
 import { openOdds, PICK, LOCKS } from "../src/sim/locks.js";
 import { BMAP } from "../src/sim/buildingmaps.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop, pickedQty } from "../src/ui/inventory.js";
+import { renderCombatPanel } from "../src/ui/combat.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -342,6 +345,118 @@ console.log("Quick search noise indoors: walls muffle it");
     check(!!open.investigate, `indoors, ${d} tiles off with nothing between: heard`);
     check(!walled.investigate, `${d} tiles off behind a wall (+${BMAP.WALL_DAMP}, past ${R}): not heard`);
   }
+}
+
+// ======================================================================================
+console.log("Quick search costs: Heat +5, heard 7 tiles off (9 in the dark), a chance to cut a hand");
+{
+  const Q = SEARCH.quick, H = Q.hurt;
+  check(Q.heat === 5 && Q.radius === 7 && Q.radius + Q.dark === 9, `Heat +${Q.heat}, heard ${Q.radius} tiles off, ${Q.radius + Q.dark} in the dark without a light`);
+  const { st, b } = raid(9);
+  const [u] = players(b);
+  const s = survivorById(st, u.sid);
+  s.traits = [];
+  const setUp = (scav, stealth, night, light) => { s.skills.scavenging = scav; s.skills.stealth = stealth; b.night = night; u.light = light; u.nvg = false; };
+  // The chance: 6% by day, less with Scavenging or Stealth (the better of the two), more in the dark, never 10%.
+  const cases = [
+    ["Scavenging 0, Stealth 0, by day", 0, 0, false, false, H.base],
+    ["Scavenging 10", 10, 0, false, false, H.base * (1 - 10 * H.perSkill)],
+    ["Stealth 20 (Scavenging 4)", 4, 20, false, false, H.base * (1 - 20 * H.perSkill)],
+    ["in the dark without a light", 0, 0, true, false, H.base + H.dark],
+    ["in the dark with a flashlight", 0, 0, true, true, H.base],
+    ["Scavenging 20 in the dark", 20, 0, true, false, (H.base + H.dark) * (1 - 20 * H.perSkill)],
+  ];
+  let allUnder = true;
+  for (const [label, sc, sl, night, light, want] of cases) {
+    setUp(sc, sl, night, light);
+    const p = quickHurtChance(st, b, u);
+    if (!(p < 0.1)) allUnder = false;
+    check(Math.abs(p - Math.min(H.max, want)) < 1e-9, `${label}: ${(p * 100).toFixed(1)}% a rummage`);
+  }
+  check(allUnder, "every case under 10%");
+  setUp(0, 0, true, false);
+  for (const k of ["scavenging", "stealth"]) s.skills[k] = 99; // past the cap: held at 20
+  check(quickHurtChance(st, b, u) <= H.max && Math.abs(quickHurtChance(st, b, u) - (H.base + H.dark) * (1 - H.skillCap * H.perSkill)) < 1e-9, "skills count only up to 20");
+  setUp(0, 0, false, false);
+  check(quickHurtPct(st, b, u) === "6%", `shown as ${quickHurtPct(st, b, u)}`);
+  // The panel: the line and the Quick search button's tooltip, for the survivor next to something unopened.
+  {
+    fresh(b, u);
+    freshBox(b, u);
+    b.phase = "player"; // the first of the crew is selected (autoSelect)
+    let html = "";
+    try { html = renderCombatPanel(st) || ""; } catch (e) { html = `ERR ${e.message}`; }
+    check(/Quick search: shows 30–50%, loud, 6% chance of cutting yourself/.test(html), `the raid panel: "Quick search: shows 30–50%, loud, 6% chance of cutting yourself" (${html.startsWith("ERR") ? html : "ok"})`);
+    check(/data-v="quick"[^>]*data-tip="[^"]*6% chance of cutting yourself/.test(html), "the Quick search button's tooltip gives the chance");
+  }
+
+  // Over many tries the cuts come at those rates.
+  const N = 4000;
+  const rate = (sc, sl, night, light) => {
+    setUp(sc, sl, night, light);
+    let n = 0;
+    for (let i = 0; i < N; i++) { u.hp = 60; if (quickHurt(st, b, u)) n++; }
+    s.conditions = (s.conditions || []).filter((c) => c.key !== "cut");
+    return n / N;
+  };
+  const tol = (p) => 3.5 * Math.sqrt(p * (1 - p) / N);
+  for (const [label, sc, sl, night, light] of [["by day, no skill", 0, 0, false, false], ["Scavenging 20", 20, 0, false, false], ["in the dark without a light", 0, 0, true, false], ["Stealth 12 in the dark", 0, 12, true, false]]) {
+    setUp(sc, sl, night, light);
+    const p = quickHurtChance(st, b, u);
+    const r = rate(sc, sl, night, light);
+    check(Math.abs(r - p) <= tol(p), `${label}: ${(r * 100).toFixed(1)}% of ${N} rummages cut a hand (chance ${(p * 100).toFixed(1)}%)`);
+  }
+
+  // What a cut does: a few health (never down), a cut on the survivor that needs dressing, a line in the log.
+  const save = { base: H.base, max: H.max };
+  H.base = 1; H.max = 1;
+  setUp(0, 0, false, false);
+  s.conditions = [];
+  fresh(b, u);
+  u.hp = 40;
+  const box = freshBox(b, u);
+  const n0 = b.log.length;
+  combatAct(st, { type: "search", unit: u.id, box: box.id, open: true, quick: true });
+  const cut = (s.conditions || []).find((c) => c.key === "cut");
+  const lines = b.log.slice(n0).map((l) => l.text).join("\n");
+  check(u.hp <= 40 - H.hp[0] && u.hp >= 40 - H.hp[1], `a cut costs ${H.hp[0]}–${H.hp[1]} health (${40 - u.hp})`);
+  check(!!cut && cut.sev >= H.sev[0] && cut.sev <= H.sev[1] && cut.cause === "search", `a cut on the survivor, severity ${cut ? cut.sev : "none"} (${H.sev[0]}–${H.sev[1]}: needs dressing, can get infected)`);
+  check(/cuts a hand on .*needs dressing/.test(lines), "the battle log says so");
+  // Never down: at 2 health it costs at most 1.
+  let down = false;
+  for (let i = 0; i < 30; i++) { u.hp = 2; u.down = false; quickHurt(st, b, u); if (u.hp < 1 || u.down) down = true; }
+  check(!down, "a cut never puts anyone down");
+  u.hp = 40;
+
+  // The raid bot, pressed and cutting itself every time: still one rummage a turn, and its turns go on (it searches,
+  // moves, leaves) instead of rummaging again.
+  let maxPer = 0, downs = 0, turns = 0, other = 0, rummages = 0;
+  for (let k = 0; k < 6; k++) {
+    const { st: st2, b: b2 } = raid(20 + k);
+    const us = players(b2);
+    for (const o of us.slice(1)) o.left = true;
+    const bot = us[0];
+    b2.raid.heat = 45;
+    for (let t = 0; t < 4 && !b2.over && !bot.left; t++) {
+      fresh(b2, bot);
+      freshBox(b2, bot);
+      b2.phase = "player"; // the enemy turn skipped: nobody else is on the map
+      const before = b2.log.length;
+      autoPlayerTurn(st2);
+      const mine = b2.log.slice(before).filter((l) => l.text.startsWith(bot.name));
+      const n = mine.filter((l) => /rummages through/.test(l.text)).length;
+      maxPer = Math.max(maxPer, n);
+      rummages += n;
+      if (mine.some((l) => !/rummages through|cuts a hand/.test(l.text)) || bot.left) other++;
+      if (bot.down) downs++;
+      turns++;
+      b2.turn++;
+      b2.raid.heat = Math.max(45, b2.raid.heat);
+    }
+  }
+  H.base = save.base; H.max = save.max;
+  check(rummages > 0 && maxPer <= 1 && downs === 0, `the bot cut on every rummage: ${rummages} rummages over ${turns} turns, at most ${maxPer} a turn, never down from it`);
+  check(other > 0, `and it gets on with other things (${other} turns with more than the rummage)`);
 }
 
 // ======================================================================================
