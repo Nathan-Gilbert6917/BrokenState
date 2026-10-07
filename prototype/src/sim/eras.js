@@ -184,7 +184,10 @@ export function erasVictoryDaily(state, coalitionHolds, hivesClear) {
   E.clearBest = Math.max(E.clearBest, E.clear);
 }
 // Seasons the coalition has stood (since its founding: alliance.js state.alliance.founded).
-export const coalitionSeasons = (state) => (state.alliance && state.alliance.founded != null ? Math.floor((dayOf(state) - state.alliance.founded) / 28) : 0);
+export const coalitionSeasons = (state) => {
+  const from = state.alliance && state.alliance.founded != null ? state.alliance.founded : ensureEraState(state).accordFirst; // no coalition ever: from the first day you held the state alone
+  return from != null ? Math.floor((dayOf(state) - from) / 28) : 0;
+};
 export const accordReady = (state) => winOpen(state) && ensureEraState(state).accord >= ERAS.ACCORD.DAYS && coalitionSeasons(state) >= ERAS.ACCORD.SEASONS;
 export const containReady = (state) => winOpen(state) && burnedOut(state) && ensureEraState(state).clear >= ERAS.CONTAIN.DAYS;
 // For the Goals panel and the tools.

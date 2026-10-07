@@ -484,7 +484,8 @@ function pickChoice(state, card, opts, p) {
     const wet = (k) => wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k);
     // Crops take weeks and winter brings none: a newcomer needs real reserves (a month's going into the cold).
     const minDays = Math.max(P.strangerDays * 2.5, seasonKey(state) === "autumn" || seasonKey(state) === "winter" ? 30 : 10);
-    const ok = (k) => days(k) >= minDays && wet(k) && roomFor(state, k);
+    const shortHanded = alive(state).filter((s) => s.location.kind !== "captive").length < HANDS_MIN;
+    const ok = (k) => (shortHanded || (days(k) >= minDays && wet(k))) && roomFor(state, k);
     if (/^Refugees/.test(t)) return (ok(2) ? find(/^Take them in/) : null) || (ok(1) ? find(/^Take one/) : null) || find(/^Turn them away/);
     return (ok(1) ? find(/^Let them in/) : null) || find(/^Turn them away/);
   }
@@ -535,6 +536,7 @@ function pickChoice(state, card, opts, p) {
 }
 
 // Beds for k more people: built, queued, or one more bunkhouse a base can still get (plus the style's slack).
+const HANDS_MIN = 5;
 function roomFor(state, k) {
   if (!hub(state)) return false; // no base left (conquest.js exiles): no room for anyone
   const people = alive(state).filter((s) => s.location.kind !== "captive").length;
@@ -547,6 +549,8 @@ function roomFor(state, k) {
   // Food and water for them too (economy rework): every newcomer, whatever card brings them.
   const h = hub(state);
   const n = atBase(state, h.id).length;
+  // Too few to work the fields, hunt and keep a guard: one more pair of hands feeds more than it eats.
+  if (people < HANDS_MIN && waterIn(h.stock) >= 2 * (n + k)) return true;
   const foodDays = (edibleFood(h) - 5 * k) / Math.max(1, n + k);
   const wo = waterOutlook(state, h);
   if (!(foodDays >= Math.max(10, foodTarget(state)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
@@ -3307,7 +3311,7 @@ function foodTripCands(state, h, pool, need, P) {
 // this module loads, through the claims.js import cycle, so no import is read at module top level here.)
 // A shore within `reach` tiles first; with none there, one within `far` (a hub in the forest 7 tiles from the
 // nearest river had no haul at all, even at a day of water: seed 17), scored a little lower for each tile past reach.
-const WATER_HAUL = { days: 3, reach: 6, far: 10, farCost: 0.3, crewMax: 3 };
+const WATER_HAUL = { days: 3, reach: 6, far: 10, inland: 16, farCost: 0.3, crewMax: 3 };
 function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const want = waterNeed(state, h).total;
   if (want <= 0) return [];
@@ -3320,12 +3324,18 @@ function waterTripCands(state, h, pool, need, P, { maxTeams = null } = {}) {
   const hauling = state.parties.filter((p) => p.owner === "player" && p.plan && p.plan.steps && p.plan.steps.some((s) => s.kind === "water")).length;
   const severe = days < 1.5 || prod < want * 0.6;
   if (hauling >= (maxTeams ?? (severe ? 2 : 1))) return [];
-  let best = null;
-  for (const id of state.grid.within(h.tile, Math.min(P.range, WATER_HAUL.far))) {
-    if (id === h.tile || !besideWater(state, id)) continue;
-    const d = state.grid.distance(id, h.tile);
-    if (!best || d < best.d) best = { id, d };
-  }
+  // The nearest shore within the style's range; a hub with none that near (a well-only hub inland) looks out to
+  // WATER_HAUL.inland while it is short: a long haul beats a dry well in a heat wave.
+  const nearestShore = (r) => {
+    let best = null;
+    for (const id of state.grid.within(h.tile, r)) {
+      if (id === h.tile || !besideWater(state, id)) continue;
+      const d = state.grid.distance(id, h.tile);
+      if (!best || d < best.d) best = { id, d };
+    }
+    return best;
+  };
+  const best = nearestShore(Math.min(P.range, WATER_HAUL.far)) || (days < WATER_HAUL.days ? nearestShore(WATER_HAUL.inland) : null);
   if (!best) return [];
   const size = Math.min(WATER_HAUL.crewMax, Math.max(2, P.crew));
   const shortBy = Math.max(0, want - prod);

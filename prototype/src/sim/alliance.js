@@ -435,7 +435,8 @@ export function accordHolds(state) {
 // more than LAND_NEEDED of the land (bases' reach plus claims). Groups outside do not block it: conquest counts.
 export function allianceVictory(state) {
   if (!alive(state).length || !state.bases.length) return false;
-  if (!allianceMembers(state).length) return false; // cheap check first
+  // Nobody left to sign: when every group is gone (broken, conquered, collapsed), the state is yours alone.
+  if (!allianceMembers(state).length && state.factions.some((f) => f.alive)) return false; // cheap check first
   return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
 }
 

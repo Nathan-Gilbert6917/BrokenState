@@ -478,7 +478,7 @@ function coalitionWins(state) {
   const members = state.alliance ? state.alliance.members.length : 0;
   const pct = Math.round(controlledLand(state).pct * 100);
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
-  log(state, `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members} member${members === 1 ? "" : "s"} beside you (the groups outside do not count: conquest). ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+  log(state, members ? `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members} member${members === 1 ? "" : "s"} beside you (the groups outside do not count: conquest). ${alive(state).length} survivors made it to day ${day(state)}.` : `The Calder Coalition holds the State of Calder: ${pct}% of the land, and no other group left standing to join it or oppose it. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
   return true;
 }
 

@@ -549,7 +549,7 @@ export function launchExpedition(state, opts) {
   if (bikes) v = takeBikes(state, home, members.length);
   const packed = { ...supplies };
   for (const [k, val] of Object.entries(supplies)) {
-    if (k !== "water") { home.stock[k] -= val; continue; }
+    if (k !== "water") { home.stock[k] = (home.stock[k] || 0) - val; continue; }
     const d = drawWater(home.stock, val); // purified first, then un-purified (water.js)
     packed.water = d.pure;
     if (d.raw > 0) packed[RAW] = (packed[RAW] || 0) + d.raw;
@@ -862,13 +862,19 @@ function onEnterTile(state, p, tileId) {
 export function trimCargo(state, p, into = null) {
   const dropped = { supplies: {}, gear: [], text: "" };
   let over = poolLoad(p) - partyCapacity(state, p); // found cargo goes first; packed supplies stay with the team
-  // Fresh game first: the heaviest food for what it is worth (hunting.js).
-  if (over > 1e-9 && meatIn(p.cargo) > 0) {
+  // Fresh game (hunting.js) goes in its place by worth per kg (food's value at MEAT_KG a ration): after un-purified
+  // water and scrap, before packed food, meds and ammo.
+  let meatDone = false;
+  const dropMeat = () => {
+    meatDone = true;
+    if (over <= 1e-9 || !(meatIn(p.cargo) > 0)) return;
     const drop = takeMeat(p.cargo, Math.min(meatIn(p.cargo), Math.ceil(over / MEAT_KG - 1e-9)));
     if (drop > 0) { dropped.supplies.food = drop; over -= drop * MEAT_KG; }
-  }
+  };
+  const meatWorth = SUPPLIES.food.value / MEAT_KG;
   const keys = Object.keys(p.cargo.supplies).sort((a, b) => SUPPLIES[a].value / SUPPLIES[a].weight - SUPPLIES[b].value / SUPPLIES[b].weight);
   for (const k of keys) {
+    if (!meatDone && SUPPLIES[k].value / SUPPLIES[k].weight >= meatWorth) dropMeat();
     if (over <= 1e-9) break;
     const drop = Math.min(Math.ceil(over / SUPPLIES[k].weight - 1e-9), Math.floor(p.cargo.supplies[k] || 0));
     if (drop <= 0) continue;
@@ -876,6 +882,7 @@ export function trimCargo(state, p, into = null) {
     dropped.supplies[k] = (dropped.supplies[k] || 0) + drop;
     over -= drop * SUPPLIES[k].weight;
   }
+  if (!meatDone) dropMeat();
   const byValue = [...p.cargo.gear].sort((a, b) => (GEAR[a.key]?.value || 0) * (a.quality || 1) - (GEAR[b.key]?.value || 0) * (b.quality || 1));
   for (const g of byValue) {
     if (over <= 1e-9) break;
@@ -883,7 +890,7 @@ export function trimCargo(state, p, into = null) {
     dropped.gear.push(g);
     over -= itemLoad(g);
   }
-  dropped.text = [...Object.entries(dropped.supplies).map(([k, q]) => `${q} ${SUPPLIES[k].name.toLowerCase()}`), ...dropped.gear.map((g) => g.name)].join(", ");
+  dropped.text = [...Object.entries(dropped.supplies).map(([k, q]) => `${Math.round(q * 10) / 10} ${SUPPLIES[k].name.toLowerCase()}`), ...dropped.gear.map((g) => g.name)].join(", ");
   if (into && dropped.text) {
     for (const [k, q] of Object.entries(dropped.supplies)) into.supplies[k] = (into.supplies[k] || 0) + q;
     into.gear.push(...dropped.gear);
