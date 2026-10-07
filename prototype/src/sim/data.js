@@ -29,9 +29,10 @@ export const SUPPLIES = {
   fuel:  { name: "Fuel",  value: 3,   weight: 1, cat: "fuel" },
   meds:  { name: "Meds",  value: 8,   weight: 0.1, cat: "medical" }, // semi-rare outside pharmacies and clinics (medfinds.js): dear
   ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" },
-  // Arrows and crossbow bolts (hunting.js): what a bow or crossbow uses up when it hunts (a shot at game is often lost
-  // in the brush or broken in the animal). In a fight the arrows are picked up again (no ammo). Made by hand from
-  // firewood and a little scrap (crafting.js), found at hunting lodges, gun stores, sports shops and campgrounds.
+  // Arrows and crossbow bolts: what a bow or crossbow shoots (1 a shot; it never uses ammo). Hunting (hunting.js) often
+  // loses one (in the brush, broken in the animal); in a fight about half the arrows shot are picked up again after a
+  // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from firewood and a little scrap
+  // (crafting.js), found at hunting lodges, gun stores, sports shops and campgrounds.
   arrows: { name: "Arrows", value: 0.4, weight: 0.03, cat: "bow" },
   parts: { name: "Parts", value: 8,   weight: 2, cat: "parts" },
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
@@ -96,7 +97,7 @@ export const GEAR = {
   spikedbat:  { burnShare: 0.8, name: "Spiked bat",               slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "A bat studded with nails. Hits hard, splinters eventually.", weight: 1.2, cat: "melee" },
   pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  desc: "A kitchen knife taped to a steel pipe.", weight: 1.5, cat: "melee" },
   sawmachete: { name: "Saw-blade machete",        slot: "weapon", skill: "shooting", power: 1.7, req: 0, value: 7,  noise: 0, makeshift: true, dur: 12, desc: "A circular-saw blade ground into a cleaver.", weight: 1.2, cat: "melee" },
-  crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs, reusable bolts: silent and needs no ammo in a fight. Hunting loses bolts (arrows).", weight: 3, cat: "bow" },
+  crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs: silent, shoots bolts (arrows, 1 a shot; never ammo). With none it is a club. After a won fight about half the bolts shot are picked up again; hunting loses some.", weight: 3, cat: "bow" },
   pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail. Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
   padding:    { burnShare: 0.9, name: "Magazine arm guards",      slot: "arms",   skill: null,       power: 0.6, req: 0, value: 3,  noise: 0, makeshift: true, dur: 6,  desc: "Magazines and duct tape around the forearms. Stops a bite, barely.", weight: 0.8, cat: "armor" },
   shinguards: { name: "Duct-tape shin guards",    slot: "legs",   skill: null,       power: 0.4, req: 0, value: 2,  noise: 0, makeshift: true, dur: 6,  desc: "Cut-up plastic bottles and tape around the shins.", weight: 0.6, cat: "armor" },
@@ -197,8 +198,8 @@ export const GEAR = {
   fireaxe:     { name: "Fire axe",                 slot: "weapon", skill: "shooting", power: 2.4, req: 0, value: 16, noise: 0, pry: true, weight: 2.7, cat: "melee", desc: "Red-handled, from a fire station or a glass case in a hallway. Splits skulls, and doors: it forces locks in a raid." },
   sledge:      { name: "Sledgehammer",             slot: "weapon", skill: "shooting", power: 2.6, req: 2, value: 14, noise: 0, pry: true, weight: 5, cat: "melee", desc: "Ten pounds of steel on a hickory handle. Crushing but slow to swing (−10 to hit in melee) and heavy to carry; it smashes locks open in a raid." },
   baton:       { name: "Police baton",             slot: "weapon", skill: "shooting", power: 1.3, req: 0, value: 6,  noise: 0, small: true, weight: 0.6, cat: "melee", desc: "An expandable steel baton. Light enough for a pocket, and a club: good for takedowns (+20)." },
-  compbow:     { name: "Compound bow",             slot: "weapon", skill: "shooting", power: 3.2, req: 4, value: 40, noise: 0, weight: 2, cat: "bow", desc: "Pulleys and a 60 lb draw. Silent, and in a fight the arrows are picked up again (no ammo); hunting loses some (arrows). Needs Shooting 4 for full use." },
-  xbow:        { name: "Hunting crossbow",         slot: "weapon", skill: "shooting", power: 3.8, req: 3, value: 50, noise: 0, weight: 3.5, cat: "bow", desc: "A scoped hunting crossbow: hits hard and silent, and in a fight the bolts are picked up again (no ammo); hunting loses some (arrows). Heavy. Needs Shooting 3." },
+  compbow:     { name: "Compound bow",             slot: "weapon", skill: "shooting", power: 3.2, req: 4, value: 40, noise: 0, weight: 2, cat: "bow", desc: "Pulleys and a 60 lb draw. Silent; shoots arrows (1 a shot, never ammo; with none it is a club). After a won fight about half the arrows shot are picked up again; hunting loses some. Needs Shooting 4 for full use." },
+  xbow:        { name: "Hunting crossbow",         slot: "weapon", skill: "shooting", power: 3.8, req: 3, value: 50, noise: 0, weight: 3.5, cat: "bow", desc: "A scoped hunting crossbow: hits hard and silent; shoots bolts (arrows, 1 a shot, never ammo; with none it is a club). After a won fight about half the bolts shot are picked up again; hunting loses some. Heavy. Needs Shooting 3." },
   revolver:    { name: ".357 revolver",            slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 34, noise: 3, small: true, weight: 1.2, cat: "pistol", desc: "Six rounds, a kick and a bang: hits harder than a 9mm but louder, and no suppressor fits it. Needs Shooting 3." },
   leverrifle:  { name: "Lever-action rifle",       slot: "weapon", skill: "shooting", power: 4.5, req: 4, value: 45, noise: 3, weight: 3.4, cat: "rifle", desc: "A ranch rifle: accurate at range, lighter and handier than a bolt-action hunting rifle. Needs Shooting 4." },
   carbine:     { name: "Police carbine",           slot: "weapon", skill: "shooting", power: 6.5, req: 8, value: 95, noise: 3, weight: 3, cat: "rifle", desc: "A semi-automatic patrol rifle from a squad-car rack: quick, accurate follow-up shots, one round a shot. Needs Shooting 8." },

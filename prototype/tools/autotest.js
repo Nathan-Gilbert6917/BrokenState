@@ -5,8 +5,12 @@
 // governor raises a radio relay at an outpost that brings a known group into reach, none where it would not link).
 // Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...] [size=small|normal|large|huge]
 // (Normal by default; other sizes play with their default group count, sim/worldsize.js.)
-import { createWorld, tickHour, day, alive, hub, newId, RADIO_RANGE } from "../src/sim/world.js";
-import { launchExpedition, estimateTrip, startReturn } from "../src/sim/parties.js";
+import { createWorld, tickHour, day, alive, hub, newId, RADIO_RANGE, atBase, usesArrows, archerCount, ARROWS } from "../src/sim/world.js";
+import { launchExpedition, estimateTrip, startReturn, partyMembers } from "../src/sim/parties.js";
+import { newItem } from "../src/sim/inventory.js";
+import { craftQueue } from "../src/sim/crafting.js";
+import { GEAR } from "../src/sim/data.js";
+const GEAR_SLOT = (it) => (GEAR[it.key] ? GEAR[it.key].slot : null);
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
 import { BUILDINGS, addBuilding } from "../src/sim/buildings.js";
@@ -252,6 +256,53 @@ function relayCheck(seed) {
   return out.length;
 }
 problems += relayCheck(seeds[0]);
+
+// Bows and arrows (world.js ARROWS, usesArrows): with bows and no arrows the governor queues arrows first thing (a bow
+// with none fights with its fists), and every trip it sends with a bow on it packs a dozen arrows a bow (launchTrip,
+// the crews), not only hunting trips.
+function arrowsCheck(seed) {
+  const out = [];
+  try {
+    const st = createWorld({ seed, factionCount: FACTIONS, size: SIZE });
+    st.started = true;
+    setAutopilot(st, true, "balanced");
+    const h = hub(st);
+    const home = atBase(st, h.id);
+    for (const s of home) { s.gear.weapon = newItem("compbow"); s.skills.shooting = Math.max(s.skills.shooting, 6); }
+    check(home.every(usesArrows), "everyone at the hub shoots a bow");
+    h.stock.arrows = 0; h.stock.wood = 400; h.stock.scrap = 120;
+    craftQueue(h).length = 0;
+    h.armory = h.armory.filter((it) => !it || GEAR_SLOT(it) !== "weapon"); // no guns to swap the bows for
+    for (let k = 0; k < 3; k++) governBase(st, h, { production: true }); // one craft queued a call (water filters first)
+    if (!craftQueue(h).some((j) => j.recipe === "arrows")) out.push(`no arrows queued for ${home.length} bows with none (queue: ${craftQueue(h).map((j) => j.recipe).join(", ") || "empty"})`);
+    // Packing: plenty of arrows at the hub; the governor's trips over 30 days.
+    h.stock.arrows = 400;
+    const seen = new Set();
+    let bowTrips = 0, packed = 0;
+    const short = [];
+    for (let i = 0; i < 24 * 30 && !st.gameOver; i++) {
+      tickHour(st);
+      for (const p of st.parties) {
+        if (p.owner !== "player" || seen.has(p.id)) continue;
+        seen.add(p.id);
+        const n = archerCount(partyMembers(st, p));
+        if (!n) continue;
+        bowTrips++;
+        if ((p.supplies.arrows || 0) >= ARROWS.PACK * n) packed++;
+        else short.push(`${p.mission || "trip"}: ${n} bow(s), ${p.supplies.arrows || 0} arrows`);
+      }
+    }
+    if (!bowTrips) out.push("no trip with a bow in 30 days");
+    else if (packed < bowTrips * 0.75) out.push(`only ${packed} of ${bowTrips} trips with bows packed a dozen arrows a bow (${short.slice(0, 4).join("; ")})`);
+    console.log(`Arrows check (seed ${seed}): ${out.length ? out.slice(0, 5).join("; ") : `ok (arrows queued for bows with none; ${packed} of ${bowTrips} trips with bows packed a dozen a bow${short.length ? `; short: ${short.slice(0, 3).join("; ")}` : ""})`}`);
+  } catch (e) {
+    out.push(`CRASH: ${e.stack.split("\n").slice(0, 4).join(" | ")}`);
+    console.log(`Arrows check (seed ${seed}): ${out.join("; ")}`);
+  }
+  return out.length;
+}
+const check = (ok, msg) => { if (!ok) throw new Error(msg); };
+problems += arrowsCheck(seeds[0]);
 
 console.log(`Problems: ${problems}`);
 if (problems) process.exitCode = 1;

@@ -76,7 +76,7 @@ import { Rng } from "./rng.js";
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
-  supplyValue, skill, baseVision, localId,
+  supplyValue, skill, baseVision, localId, spendShots, arrowsBack,
 } from "./world.js";
 import {
   planPath, moveCost, partyTile, partyMembers, tileLabel, removeParty, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, carried, takeSupply, carriedAny, takeAny,
@@ -864,7 +864,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   const caught = !beaten && v.surprise ? v.surprise : ""; // watch.js surpriseAt: an unwatched night
   delete v.surprise;
   const def = baseDefense(state, base, !!caught);
-  if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
+  const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings count (defences.js raidTier), with the same thresholds as a group's raid.
   const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8, bandKit(state, v, base), !!caught); // siege.js: their ladders, ram and grenades
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
@@ -882,6 +882,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     log(state, `${base.name} drove off ${v.name}, raiders from outside the state.`, "good");
     if (people.length && rng.chance(0.4)) hurt(state, people[rng.int(0, people.length - 1)], rng.int(10, 30), base.tile, `defending ${base.name}`);
     v.spared = [...(v.spared || []), base.id];
+    if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // held: about half the arrows picked up
   } else if (ratio >= 0.8) {
     outcome = "broken";
     head = rt && rt.tier === "buildings" ? `${cap1(v.name)} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${cap1(v.name)} broke into ${base.name} before being pushed out.`;
@@ -890,6 +891,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     for (let i = 0; i < 2 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(15, 45), base.tile, `defending ${base.name}`);
     v.size -= 1;
     v.spared = [...(v.spared || []), base.id];
+    if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // pushed out: the arrows in the yard are yours
   } else {
     outcome = "overrun";
     head = `${cap1(v.name)} overran ${base.name}.`;
