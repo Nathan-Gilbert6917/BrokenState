@@ -50,6 +50,7 @@ import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from
 import { teamNeedsHour } from "./needs.js";
 import { wormTeamHour, packWater, wormHome, unloadWormForage, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
+import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
@@ -1778,11 +1779,13 @@ function aiPartyHour(state, p) {
     removeParty(state, p);
     return;
   }
-  // Raid warnings when lookouts can see them coming.
+  // Raid warnings when lookouts can see them coming (watch.js lookoutsSpot: RAID_WARN_TILES, 2 more with someone
+  // awake on watch, and nobody sees them come on an unwatched night).
   if (p.kind === "raid" && p.target.kind === "player" && !p.warned) {
     const base = baseById(state, p.target.baseId);
-    if (base && state.live.has(partyTile(p)) && state.grid.distance(partyTile(p), base.tile) <= 4) {
+    if (base && lookoutsSpot(state, base, partyTile(p), RAID_WARN_TILES)) {
       p.warned = true;
+      p.watchSaw = watchSawText(state, base, partyTile(p), RAID_WARN_TILES);
       raidWarning(state, p);
     }
   }
@@ -1806,12 +1809,17 @@ function aiPartyHour(state, p) {
       p.siegeLeft = p.target.kind === "player" ? 8 : 18;
       if (p.target.kind === "player" && !p.warned) {
         p.warned = true;
+        // Not seen coming, at night, nobody awake on watch (watch.js surpriseAt): over the wall before anyone woke.
+        const sp = surpriseAt(state, baseById(state, p.target.baseId));
+        if (sp) p.surprise = sp.why;
         raidWarning(state, p);
       }
       if (p.target.kind === "faction") maybeCallForHelp(state, p);
     }
   }
 }
+
+const RAID_WARN_TILES = 4; // a raid on your base is warned of this far out when the lookouts see it (watch.js lookoutsSpot)
 
 function finishSiege(state, p) {
   if (p.target.kind === "player") {

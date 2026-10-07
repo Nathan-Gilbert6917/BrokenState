@@ -86,6 +86,7 @@ import * as Parties from "./parties.js";
 import { waterIn, drawWater } from "./water.js"; // purified and un-purified water
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
+import { lookoutsSpot, surpriseAt, watchSawText, SURPRISE } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { raidSiegeKit, kitText } from "./siege.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
@@ -336,7 +337,7 @@ export function spawnVisitor(state, kind, opts = {}) {
 function setGoal(state, v, goal, act) {
   // A band that comes for another of your bases (after a raid elsewhere, a chase, a roam) is warned of again:
   // v.warned belonged to the last base it came for (raidWarning sets v.warnedBase).
-  if (goal.kind === "base" && v.warnedBase !== goal.baseId) v.warned = false;
+  if (goal.kind === "base" && v.warnedBase !== goal.baseId) { v.warned = false; delete v.surprise; delete v.watchSaw; }
   if (goal.tile === v.tile) {
     v.goal = goal;
     v.path = [v.tile];
@@ -471,7 +472,7 @@ function visitorHour(state, v) {
     // At your walls a strong defence drives them off sooner (factions.js siegePace); the hours set the damage.
     v.siegeHours = (v.siegeHours || 0) + 1;
     v.siegeLeft -= v.goal.kind === "base" ? siegePace(state, baseById(state, v.goal.baseId), vStrength(v)) : 1;
-    if (v.goal.kind === "base" && !v.warned) { v.warned = true; raidWarning(state, v); }
+    if (v.goal.kind === "base" && !v.warned) { v.warned = true; atTheWalls(state, v); raidWarning(state, v); }
     if (v.siegeLeft <= 0) {
       if (v.goal.kind === "base") resolveRaidOnYou(state, v);
       else if (v.goal.kind === "faction") raidGroup(state, v);
@@ -498,8 +499,10 @@ function visitorHour(state, v) {
   if (!state.visitors.includes(v) || v.phase !== "travel") return;
   if (v.kind === "raiders" && v.goal && v.goal.kind === "base" && !v.warned) {
     const base = baseById(state, v.goal.baseId);
-    if (base && (state.live.has(v.tile) || inCoverage(state, v.tile)) && state.grid.distance(v.tile, base.tile) <= O.raiders.warnTiles) {
+    const seen = state.live.has(v.tile) || inCoverage(state, v.tile);
+    if (base && lookoutsSpot(state, base, v.tile, O.raiders.warnTiles, seen)) { // watch.js: 2 tiles more with someone awake on watch; nobody sees them on an unwatched night
       v.warned = true;
+      v.watchSaw = watchSawText(state, base, v.tile, O.raiders.warnTiles, seen);
       raidWarning(state, v);
     }
   }
@@ -583,7 +586,7 @@ function arrive(state, v) {
         v.siegeLeft = O.raiders.siegeYou;
         v.siegeHours = 0;
         v.act = `at the walls of ${base.name}`;
-        if (!v.warned) { v.warned = true; raidWarning(state, v); }
+        if (!v.warned) { v.warned = true; atTheWalls(state, v); raidWarning(state, v); }
         return;
       }
       if (v.kind === "merchants") return merchantsAtBase(state, v, base);
@@ -738,7 +741,8 @@ function raidWarning(state, v) {
   v.warnedBase = base.id;
   v.known = true;
   v.seen = { tile: v.tile, hour: state.hour };
-  const def = baseDefense(state, base);
+  const caught = v.surprise || ""; // watch.js surpriseAt: an unwatched night (atTheWalls)
+  const def = baseDefense(state, base, !!caught);
   const was = base.alert;
   base.alert = true;
   const prepared = baseDefense(state, base);
@@ -755,7 +759,7 @@ function raidWarning(state, v) {
   const p0 = price();
   addCard(state, {
     title: `Outsider raiders heading for ${base.name}`, visitorId: v.id,
-    text: `${cap1(v.name)}, about ${v.size} raiders from ${v.home} with ${gearText(v.power)}, are ${dist ? `${dist} tile${dist === 1 ? "" : "s"} out` : "at the walls"} (strength about ${Math.round(S)}). They are not one of the groups you know: they want what is in your stores, and then they will be gone.${bandKit(state, v, base) ? ` ${kitText(bandKit(state, v, base))}` : ""} Current defense: ${Math.round(def)}.`,
+    text: `${caught ? `${caught}: the raiders were over the wall before anyone woke. Until they are beaten off the walls do not count, and everyone but the guards fights half-asleep (${SURPRISE.ASLEEP}× instead of 0.8×) unless you rouse them (Prepare defenses). ` : ""}${cap1(v.name)}, about ${v.size} raiders from ${v.home} with ${gearText(v.power)}, are ${dist ? `${dist} tile${dist === 1 ? "" : "s"} out` : "at the walls"} (strength about ${Math.round(S)}). They are not one of the groups you know: they want what is in your stores, and then they will be gone.${v.watchSaw || ""}${bandKit(state, v, base) ? ` ${kitText(bandKit(state, v, base))}` : ""} Current defense: ${Math.round(def)}.`,
     choices: [
       {
         label: "Prepare defenses", hint: `Everyone at the base takes a post. Defense ${Math.round(def)} → ${Math.round(prepared)}. Held at 1.2× their strength, a break-in from 0.8×`,
@@ -826,7 +830,7 @@ function defendAgainst(state, v, base) {
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base) },
-    ambush: base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours }, // canRetreat: a way out away from them (deploy.js); they loot and move on
+    ambush: v.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours, surprise: !!v.surprise }, // canRetreat: a way out away from them (deploy.js); they loot and move on; surprise: an unwatched night (watch.js)
     layout: "baseDefence", deploy: true,
   });
   return "";
@@ -841,7 +845,15 @@ function steal(base, frac, into) {
   }
 }
 
-// After 8 hours at the walls: the numbers decide (the same thresholds as a group's raid, factions.js).
+// At your walls not seen coming: at night with nobody awake on watch (watch.js surpriseAt) they are over the wall
+// before anyone woke (v.surprise: the why).
+function atTheWalls(state, v) {
+  const sp = surpriseAt(state, baseById(state, v.goal && v.goal.baseId));
+  if (sp) v.surprise = sp.why;
+}
+
+// After 8 hours at the walls: the numbers decide (the same thresholds as a group's raid, factions.js). Caught asleep
+// (v.surprise): the walls do not count and everyone but the guards fights half-asleep (watch.js SURPRISE).
 export function resolveRaidOnYou(state, v, beaten = null) {
   const base = baseById(state, v.goal && v.goal.baseId);
   const rng = vrng(state);
@@ -849,10 +861,12 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   const info = visitorInfo(state);
   info.stats.raidsOnYou++;
   const people = beaten ? [] : atBase(state, base.id);
-  const def = baseDefense(state, base);
+  const caught = !beaten && v.surprise ? v.surprise : ""; // watch.js surpriseAt: an unwatched night
+  delete v.surprise;
+  const def = baseDefense(state, base, !!caught);
   if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   // The walls, the yard and the buildings count (defences.js raidTier), with the same thresholds as a group's raid.
-  const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8, bandKit(state, v, base)); // siege.js: their ladders, ram and grenades
+  const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8, bandKit(state, v, base), !!caught); // siege.js: their ladders, ram and grenades
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const store = count(base, "storehouse") > 0;
   const att = vStrength(v);
@@ -894,7 +908,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   v.lastDamage = dmg ? dmg.text : "";
   if (!beaten && kept) {
     const took = stolenText(before, base.stock);
-    raidReportCard(state, base, { title: outcome === "held" ? `${cap1(v.name)} driven off` : `Raid on ${base.name}`, text: [head, took ? `They took ${took}.` : "", dmg.text].filter(Boolean).join(" "), dmg });
+    raidReportCard(state, base, { title: outcome === "held" ? `${cap1(v.name)} driven off` : `Raid on ${base.name}`, text: [caught ? `${caught}: the raiders were over the wall before anyone woke.` : "", head, took ? `They took ${took}.` : "", dmg.text].filter(Boolean).join(" "), dmg });
   }
   if (v.size <= 0) return leaveMap(state, v, "broken");
   v.phase = "travel";

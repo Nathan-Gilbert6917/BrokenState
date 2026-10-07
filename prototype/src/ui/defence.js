@@ -11,6 +11,8 @@ import {
   setShiftHours, renameShift, toggleWatch, fillWatch, pruneWatch,
 } from "../sim/watch.js";
 import { startDrill, clearPlan, planPeople, PLAN_MAPS } from "../sim/defenceplan.js";
+import { rosterStrain, tiredLevel, TIRED, TIRED_WORDS } from "../sim/sleep.js"; // the watch's toll (roster card)
+import { tiredChip } from "./needs.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -32,7 +34,7 @@ export function defenceTab(state, b, ui) {
         <h3>Holding the walls now</h3>
         <div class="card small"${tip("What this base's walls hold off before a horde breaks in (defences.js): the walls, everyone on guard (the watch counts here), the defence buildings and the armory's kit. A Wallbreaker cuts it.")}>
           <div class="kv"><div>Hold limit</div><div><b>${hold.limit}</b> of the dead (${hold.boss} with a Wallbreaker)</div>
-          <div>On guard now</div><div>${people.filter((s) => s.role === "guard").map((s) => esc(first(s))).join(", ") || "nobody"}</div></div>
+          <div>On guard now</div><div>${people.filter((s) => s.role === "guard").map((s) => esc(first(s)) + tiredChip(s)).join(", ") || "nobody"}</div></div>
         </div>
       </div>
     </div>
@@ -43,7 +45,7 @@ export function defenceTab(state, b, ui) {
 function rosterCard(state, b, people) {
   const W = b.watch;
   const presetSel = `<select data-action="dwatch-preset" data-base="${b.id}"${tip("Set the watches at once. People on a watch with the same name or hours keep it.")}>
-    <option value="">${W ? (W.preset && WATCH_PRESETS[W.preset] ? esc(WATCH_PRESETS[W.preset].name) : "Your own watches") : "No roster"}…</option>
+    <option value="">${W ? (W.preset && WATCH_PRESETS[W.preset] ? esc(WATCH_PRESETS[W.preset].name) : W.gov ? "The governor's night watch" : "Your own watches") : "No roster"}…</option>
     ${Object.entries(WATCH_PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.name)}</option>`).join("")}
     ${W ? `<option value="none">No roster</option>` : ""}</select>`;
   let html = `<h3>Watch roster</h3>
@@ -63,7 +65,8 @@ function rosterCard(state, b, people) {
     const chips = on.map((s) => {
       const why = watchWhy(state, b, s);
       const job = isManaged(state, s) ? "on work priorities" : `Manual: ${ROLES[(s.watchWas && s.watchWas.role) || s.role] ? ROLES[(s.watchWas && s.watchWas.role) || s.role].name : s.role} the rest of the day`;
-      return `<button class="chip ${why ? "off" : "on"}" data-action="dwatch-toggle" data-base="${b.id}" data-i="${i}" data-id="${s.id}"${tip(`${s.name} (Shooting ${skill(s, "shooting")}, ${job})${why ? `: not standing it: ${why}` : ""}. Click to take them off this watch.`)}>${esc(first(s))} ✕</button>`;
+      const lv = tiredLevel(s);
+      return `<button class="chip ${why ? "off" : "on"}" data-action="dwatch-toggle" data-base="${b.id}" data-i="${i}" data-id="${s.id}"${tip(`${s.name} (Shooting ${skill(s, "shooting")}, ${job})${why ? `: not standing it: ${why}` : ""}${lv ? `. ${TIRED_WORDS[lv]}: owes ${Math.ceil(s.tired)} h of sleep` : ""}. Click to take them off this watch.`)}>${esc(first(s))}${lv ? ` <span class="${lv === 2 ? "danger" : "warn"}">${lv === 2 ? "Exhausted" : "Tired"}</span>` : ""} ✕</button>`;
     }).join("");
     const free = people.filter((s) => !sh.ids.includes(s.id) && !s.pinned);
     const hours = (k, v) => `<select data-action="dwatch-hours" data-base="${b.id}" data-i="${i}" data-k="${k}"${tip(k === "from" ? "Starts at" : "Ends at (the same hour as the start: all day)")}>${Array.from({ length: 24 }, (_, x) => `<option value="${x}" ${x === v ? "selected" : ""}>${hh(x)}:00</option>`).join("")}</select>`;
@@ -74,9 +77,27 @@ function rosterCard(state, b, people) {
         ${free.length ? `<select data-action="dwatch-addp" data-base="${b.id}" data-i="${i}"${tip("Put someone on this watch")}><option value="">+ Add…</option>${free.map((s) => `<option value="${s.id}">${esc(s.name)} (Shooting ${skill(s, "shooting")})</option>`).join("")}</select>` : ""}</div>
     </div>`;
   });
-  return html + watchHelp();
+  return html + strainWarnings(state, b) + watchHelp();
 }
-const watchHelp = () => `<div class="small muted" style="margin-top:0.4rem">On their watch people stand guard whatever their job (and whatever their role's schedule says, so a night watch replaces the night's sleep): they count in the walls' hold limit, guard the cells and put down anyone who turns. People on work priorities take it before their priorities; Manual people go back to their job when it ends. The hurt, the sick, anyone away and pinned people do not stand it. Raid and horde warnings still send everyone with Guard set to the walls.</div>`;
+const watchHelp = () => `<div class="small muted" style="margin-top:0.4rem">On their watch people stand guard whatever their job (and whatever their role's schedule says, so a night watch replaces the night's sleep): they count in the walls' hold limit, guard the cells and put down anyone who turns. People on work priorities take it before their priorities; Manual people go back to their job when it ends. The hurt, the sick, anyone away and pinned people do not stand it. Raid and horde warnings still send everyone with Guard set to the walls.<br>
+  A watch in someone's sleep hours (their role's Sleep hours, else 22–06) keeps them up: off a long one they sleep until rested (people on work priorities miss work for it). Standing watches back to back, or night after night with too little sleep between, makes them Tired (aim ${TIRED.AIM[1]}, mood falls) and then Exhausted (aim ${TIRED.AIM[2]}, half as good on guard, and they may doze off).<br>
+  At night someone awake on watch sees raiders and hordes coming two tiles sooner; with nobody on watch (and no tripwire alarm) an attack at night catches everyone asleep: raiders are over the wall before anyone wakes (the walls do not count, everyone but the guards fights half-asleep), a horde finds the defences unmanned (the defence buildings count half), and a battle opens with their volley.</div>`;
+// The roster's toll on each person on it (sleep.js rosterStrain, from rested over a few days): back-to-back watches,
+// and anyone it would leave Tired or Exhausted.
+function strainWarnings(state, b) {
+  const ids = [...new Set(b.watch.shifts.flatMap((sh) => sh.ids))];
+  const out = [];
+  for (const id of ids) {
+    const s = state.survivors.find((x) => x.id === id);
+    if (!s || !s.alive) continue;
+    const mine = b.watch.shifts.filter((sh) => sh.ids.includes(id));
+    const st = rosterStrain(state, b, s);
+    const longest = Math.max(...mine.map(shiftHours));
+    if (mine.length > 1 && st.run > longest) out.push(`${first(s)} stands ${mine.map((sh) => sh.name).join(" and ")} back to back: ${st.run >= 24 ? "round the clock" : `${st.run} hours on watch in a row`}.`);
+    if (st.level) out.push(`${first(s)} would end up ${TIRED_WORDS[st.level]} on this roster (owing up to ${Math.ceil(st.peak)} h of sleep): too little sleep between watches.`);
+  }
+  return out.length ? `<div class="warn small" style="margin-top:0.3rem"${tip("What this roster does to the people on it over a few days, from rested (sim/sleep.js): Tired from " + TIRED.TIRED + " hours of sleep owed, Exhausted from " + TIRED.EXHAUSTED + ".")}>${out.map(esc).join("<br>")}</div>` : "";
+}
 
 function coverageStrip(state, b) {
   const cov = watchCoverage(state, b);
