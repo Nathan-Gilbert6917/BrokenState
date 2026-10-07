@@ -17,6 +17,7 @@ import { newItem } from "../src/sim/inventory.js";
 import { weatherOnDay } from "../src/sim/weather.js";
 import { Rng } from "../src/sim/rng.js";
 import { GEAR } from "../src/sim/data.js";
+import { WHY_ACTIONS } from "../src/ui/causes.js"; // the "Why?" link on the memorial wall
 import {
   getRel, opinion, relKind, relationsDaily, moodFactors, noteMeals, onDeath, memorialList, holdMemorial, memorialInfo, memorialWeight,
   battleRecord, tripDone, noteSearch, noteRescue, rec, friendAim, teamSpirit, friendlyCrew, quarrelPair, couplePair, makePartners,
@@ -456,7 +457,7 @@ section("Render: survivor screen and memorial wall");
     const html = [ui.relationsSection(st, a, uiState), ui.relationsSection(st, dead, uiState), ui.relChip(st, a), ui.moodTipText(st, a), ui.memorialModal(st, uiState), ui.memorialButton(st, h)].join("\n");
     check(!/undefined|NaN|\[object/.test(html), "no undefined / NaN in the survivor screen, chips, mood tooltip and memorial wall");
     const acts = [...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);
-    const known = new Set([...Object.keys(ui.REL_ACTIONS), "survivor"]);
+    const known = new Set([...Object.keys(ui.REL_ACTIONS), ...Object.keys(WHY_ACTIONS), "survivor"]);
     const missing = [...new Set(acts)].filter((x) => !known.has(x));
     check(acts.length > 0 && !missing.length, `every data-action has a handler (${[...new Set(acts)].join(", ")})${missing.length ? ` missing: ${missing}` : ""}`);
     const opens = (html.match(/<div/g) || []).length, closes = (html.match(/<\/div>/g) || []).length;

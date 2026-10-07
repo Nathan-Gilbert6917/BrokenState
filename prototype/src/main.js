@@ -57,6 +57,7 @@ import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
+import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { GUIDE_ACTIONS, guideCheck, renderGuide, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts
@@ -962,7 +963,7 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js)
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
 for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
@@ -1605,6 +1606,7 @@ function closeTopLayer() {
     return true;
   }
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
+  if (ui.why) { ui.why = null; return true; } // ui/causes.js: the "Why?" panel
   if (!ui.started) {
     if (ui.lookEdit == null) return false;
     ui.lookEdit = null;

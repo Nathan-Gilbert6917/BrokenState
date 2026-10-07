@@ -70,6 +70,7 @@ import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start)
 import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
+import { whyModal, cardWhy } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
@@ -567,6 +568,7 @@ function pickModal(state, ui) {
   // A card raised over a fight (sim/floorfolk.js: the survivors barricaded upstairs) is the one card that shows during it.
   if (state.combat && !state.combat.over && !state.gameOver && state.cards.length && state.cards[0].battle) return ["card", () => cardModal(state, state.cards[0])];
   if (state.combat) return state.gameOver && !state.combat.over ? ["over", () => gameOverScreen(state)] : null;
+  if (ui.why) return ["why", () => whyModal(state, ui)]; // ui/causes.js: over a card, the diary, the memorial wall or game over
   // A card's result comes before "game over", so the last thing that happened is not skipped.
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
   if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger opens over the end screen
@@ -711,6 +713,7 @@ function cardModal(state, card) {
     <h1>${esc(card.title)}</h1>
     ${card.where ? `<div class="where">Near ${esc(card.where)} · Day ${day(state)} ${clock(state)}</div>` : ""}
     <div class="text">${esc(card.text)}</div>
+    ${cardWhy(state, card)}
     ${retreatPolicyRow(state, card)}
     <div class="choices">${card.choices.map((c, i) => {
       const dis = typeof c.disabled === "function" ? c.disabled(state) : c.disabled;

@@ -93,6 +93,9 @@ function startHereTopic() {
     <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year 8. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
 }
 
+// "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
+const WHY_HELP = `When someone dies or a base is lost, a <b>Why?</b> link sits on its line in the log and the diary, on the memorial wall, on the survivor screen of the dead and on the lost-base card. It opens a short chain of causes written down at the moment it happened: the immediate cause, then up to four things that led to it, drawn from the base, the team and the diary (a well that broke and the scrap that was missing to fix it, a trip that ran overdue, the walls and who was on guard, when a group turned hostile and why). Click a day to open the diary there, or a name or a place to go to it. Deaths from before this was added are pieced together from the diary.`;
+
 // The topics in order: Start here, then the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
   const out = [];
@@ -114,10 +117,12 @@ export function helpTopics() {
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
+    if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
   if (!seen.has("templates-repeat-trip-and-undo")) add("Templates, Repeat trip and Undo", tripsHelp());
+  if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
   add("Sound", soundHelp()); // ui/audio.js
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
   return out;
