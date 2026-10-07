@@ -15,7 +15,7 @@ import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
-import { planFor, planStale, planKey, PLAN_MAPS } from "../sim/defenceplan.js"; // the base's defence plan (the deploy step, the drill)
+import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
@@ -631,7 +631,9 @@ export function combatAction(state, key, d) {
     if (d.v === "defaults") return void act(state, { type: "defaults" });
     if (d.v === "flood") return void act(state, { type: "flood", zone: d.z });
     if (d.v === "gate" && u) return void act(state, { type: "gate", unit: u.id });
-    if (d.v === "plan" || d.v === "savePlan" || d.v === "endDrill") return void act(state, { type: d.v }); // sim/defenceplan.js
+    if (d.v === "plan" || d.v === "savePlan" || d.v === "endDrill" || d.v === "newPlan" || d.v === "deletePlan") return void act(state, { type: d.v }); // sim/defenceplan.js
+    if (d.v === "roles") return void act(state, { type: "roles", by: d.z }); // every post by role / by name
+    if (d.v === "role" && u) return void act(state, { type: "role", unit: u.id, role: d.z || null }); // the selected one's post
     return;
   }
   // The result screen: take the knocked out home as prisoners, or leave them tied up (sim/prisoners.js).
@@ -807,7 +809,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
-      [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -1090,7 +1092,7 @@ function deployPanel(state, b, u) {
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
   let html = `<h3>${b.drill ? `Drill · ${D.fort ? "the plan holds from any side" : "facing an attack from the east (it turns with the attack)"}` : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
     <div class="small muted">Click a defender, then a green cell to place them: on the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
-    <div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
+    ${startLine(state, b)}<div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
       <button data-action="cb-deploy" data-v="defaults" data-tip="Back to the default posts: the toughest fighters in the gate (with 7+ defenders), the best shots on the towers, the rest in a line well back from the openings.">Default positions</button>
@@ -1107,22 +1109,68 @@ function deployPanel(state, b, u) {
   return html;
 }
 
-// The base's defence plan in the deploy step (sim/defenceplan.js): back to the planned posts, or keep these as the plan.
+// Who was at a post when the attack hit (sim/defenceplan.js openStart): one line under the deploy step's title.
+function startLine(state, b) {
+  const t = startText(state, b);
+  if (!t || b.drill) return "";
+  const R = b.deploy.ready;
+  return `<div class="small ${R.manned || !R.late.length ? "good" : "warn"}" style="margin-top:0.3rem" data-tip="${esc("Who stands at a post when an attack hits: everyone after a warning (Prepare defenses, a horde warning); otherwise only the people on guard right now (the watch roster in the base's Defence tab, guards). The rest start in the buildings and cannot act until the attackers have moved once (with nobody on watch the attackers move first). They cannot be placed now.")}">${esc(t)}</div>`;
+}
+// The base's defence plans in the deploy step and the drill (sim/defenceplan.js): which plan (a picker: the one that
+// fits the attack was taken up by itself), back to its posts, keep these as the plan; posts by role; in a drill, new,
+// rename, tags and delete.
 function planRow(state, b) {
   const key = planKey(b);
   if (!key) return "";
-  const plan = planFor(state, b), stale = planStale(state, b);
+  const plan = planFor(state, b), stale = planStale(state, b), cur = currentPlan(state, b);
+  const base = state.bases.find((x) => x.id === b.setup.baseId);
+  const list = plansOf(base);
   const where = PLAN_MAPS[key];
-  return `<div class="cbactions" style="margin-top:0.3rem">
-      ${b.drill ? "" : `<button data-action="cb-deploy" data-v="plan" ${plan ? "" : "disabled"} data-tip="${esc(plan ? `Back to this base's defence plan for ${where} (made on day ${plan.day}): everyone in it to their planned post. The plan was taken up by itself as the attack began; this undoes your changes.` : stale || "This base has no defence plan yet: place everyone, then Save as plan (or plan it ahead in the base's Defence tab).")}">Planned posts</button>`}
-      <button ${b.drill ? 'class="primary" ' : ""}data-action="cb-deploy" data-v="savePlan" data-tip="${esc(`Keep where everyone stands now as this base's defence plan for ${where}: from the next attack on, they take up these posts by themselves in the deploy step (and in fights played out without you).${plan ? " Replaces the plan it has." : ""}`)}">Save as plan</button>
-    </div>${stale && !b.drill ? `<div class="small muted">${esc(stale)}</div>` : ""}`;
+  const u = selUnit(b);
+  const name = cur ? `"${cur.name}"` : "this base's";
+  const pick = list.length ? `<select data-action="dplan-pick"${tipA(b.drill ? "The plan this drill edits" : "The plan for this fight: the one that fits the attack best (who attacks, day or night) was taken up by itself. Pick another to take up its posts, or none for the default posts.")}>
+      ${b.drill ? "" : `<option value="0" ${cur ? "" : "selected"}>No plan (default posts)</option>`}
+      ${list.map((p) => `<option value="${p.id}" ${cur && cur.id === p.id ? "selected" : ""}>${esc(p.name)} · ${esc(planTags(p))}${p.maps[key] ? "" : " · not planned here"}</option>`).join("")}</select>` : "";
+  let html = `<div class="cbactions" style="margin-top:0.3rem">${pick}
+      ${b.drill ? "" : `<button data-action="cb-deploy" data-v="plan" ${plan ? "" : "disabled"} data-tip="${esc(plan ? `Back to the ${name} plan for ${where} (made on day ${plan.day}): everyone in it to their planned post. The plan was taken up by itself as the attack began; this undoes your changes.` : stale || "No plan for this map yet: place everyone, then Save as plan (or plan it ahead in the base's Defence tab).")}">Planned posts</button>`}
+      <button ${b.drill ? 'class="primary" ' : ""}data-action="cb-deploy" data-v="savePlan" data-tip="${esc(`Keep where everyone stands now as the ${cur ? name : "base's first"} plan for ${where}: from the next attack on, they take up these posts by themselves in the deploy step (and in fights played out without you).${plan ? " Replaces its posts here." : ""}`)}">Save as plan</button>
+    </div>`;
+  if (b.drill) {
+    html += `<div class="cbactions" style="margin-top:0.3rem">
+      ${cur ? `<input class="dshname" data-action="dplan-name" value="${esc(cur.name)}" maxlength="${PLAN.NAME}"${tipA("Rename this plan")}>
+      <select data-action="dplan-who"${tipA("Taken up by itself when these attack (a plan for this attacker beats one for any)")}>${Object.entries(PLAN_WHO).map(([k, v]) => `<option value="${k}" ${cur.who === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+      <select data-action="dplan-when"${tipA("Taken up by itself at this time (a plan for night or day beats one for both)")}>${Object.entries(PLAN_WHEN).map(([k, v]) => `<option value="${k}" ${cur.when === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>` : ""}
+      <button data-action="cb-deploy" data-v="newPlan" ${list.length < PLAN.MAX ? "" : "disabled"} data-tip="${esc(list.length < PLAN.MAX ? "A new plan from where everyone stands now (name and tag it, then move people and Save as plan): e.g. one for hordes, one for raiders, one for the night." : `At most ${PLAN.MAX} plans.`)}">New plan</button>
+      ${cur ? `<button data-action="cb-deploy" data-v="deletePlan" data-tip="${esc(`Forget the "${cur.name}" plan.`)}">Delete plan</button>` : ""}
+    </div>`;
+  }
+  // Posts by name or by role: the selected one, or everyone.
+  const roleBtn = (z, label, t) => `<button class="mini ${u && (u.planRole || "") === z ? "active" : ""}" data-action="cb-deploy" data-v="role" data-z="${z}" ${u && !u.late ? "" : "disabled"} data-tip="${esc(t)}">${label}</button>`;
+  const first = u ? u.name.split(" ")[0] : "they";
+  html += `<div class="cbactions small" style="margin-top:0.3rem"><span class="muted">${u ? `${esc(first)}'s post:` : "A post:"}</span>
+      ${roleBtn("", "This person", "Saved as this person's post: they take it whenever they are here.")}
+      ${Object.entries(PLAN_ROLES).map(([z, v]) => roleBtn(z, v, `Saved as a post by role: whoever fits it best takes it (${z === "shooter" ? "the best shot with a gun that reaches" : z === "close" ? "the toughest with a melee weapon or a shotgun" : "anyone left"}), so it is filled when ${first} ${u ? "is" : "are"} away or gone, or by a newcomer. Posts by name are filled first.`)).join("")}
+      <button class="mini" data-action="cb-deploy" data-v="roles" data-z="role" data-tip="Every post by role, from who stands there now (best shot, close fighter or anyone). Save as plan to keep it.">All by role</button>
+      <button class="mini" data-action="cb-deploy" data-v="roles" data-z="name" data-tip="Every post by name. Save as plan to keep it.">All by name</button></div>`;
+  if (u && u.planRole) html += `<div class="small muted">${esc(first)} stands a post by role (${esc(PLAN_ROLES[u.planRole].toLowerCase())}; ${esc(first)} is a ${esc(PLAN_ROLES[roleOf(u)].toLowerCase())}).</div>`;
+  if (stale && !b.drill) html += `<div class="small muted">${esc(stale)}</div>`;
+  return html;
 }
+const tipA = (t) => ` data-tip="${esc(t)}"`;
 // A drill's foot: nothing to start, only to save and close.
 function drillFoot(state, b) {
-  const plan = planFor(state, b);
-  return `<div class="cbfoot"><button data-action="cb-deploy" data-v="endDrill" data-tip="${esc(plan ? "Close the drill. The plan is kept as last saved." : "Close the drill. Nothing was saved as a plan: the default posts are used.")}">Close the drill</button>
-    <span class="small muted">${plan ? `Plan saved (day ${plan.day}, ${plan.posts.length} posts).` : "No plan saved yet."}</span></div>`;
+  const plan = planFor(state, b), cur = currentPlan(state, b);
+  return `<div class="cbfoot"><button data-action="cb-deploy" data-v="endDrill" data-tip="${esc(plan ? "Close the drill. The plans are kept as last saved." : "Close the drill. Nothing was saved for this map: the default posts are used.")}">Close the drill</button>
+    <span class="small muted">${plan ? `"${esc(cur.name)}" saved (day ${plan.day}, ${plan.posts.length} posts${plan.posts.some((p) => p[3]) ? `, ${plan.posts.filter((p) => p[3]).length} by role` : ""}).` : "Not saved yet."}</span></div>`;
+}
+// The plan picker, the name and the tags (selects and a text box: ui/defence.js DEFENCE_CHANGE routes them here).
+export function planChange(state, kind, value) {
+  const b = state.combat;
+  if (!b || b.phase !== "deploy") return;
+  const cur = currentPlan(state, b);
+  if (kind === "pick") return void act(state, { type: "pickPlan", id: Number(value) || 0 });
+  if (kind === "name") return void act(state, { type: "renamePlan", name: value });
+  if (kind === "who" || kind === "when") return void act(state, { type: "tagPlan", who: kind === "who" ? value : cur && cur.who, when: kind === "when" ? value : cur && cur.when });
 }
 
 // ---------- a base battle's tiers (sim/deploy.js, sim/interior.js) ----------
@@ -1164,7 +1212,7 @@ function fallBackConfirmHtml(b) {
 function interiorDeployPanel(state, b, u, D) {
   const after = b.tier && b.tier.fellBackTurn != null;
   let html = `<h3>${after ? "Redeploy · falling back" : b.drill ? "Drill · facing an attack from the east (it turns with the attack)" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
-    <div class="small muted">${after ? "Your people have left the wall. Place them on the green cells (near where they were, away from the attackers):" : "No walls here: the attackers come straight over the yard. Place your defenders on the green cells:"} in the buildings (barred doors, half cover at the windows), on an upper floor or a flat roof (▲ height 1: further sight, +5 aim down, half cover), on a tower (▲▲), or behind the barricades.</div>
+    <div class="small muted">${after ? "Your people have left the wall. Place them on the green cells (near where they were, away from the attackers):" : "No walls here: the attackers come straight over the yard. Place your defenders on the green cells:"} in the buildings (barred doors, half cover at the windows), on an upper floor or a flat roof (▲ height 1: further sight, +5 aim down, half cover), on a tower (▲▲), or behind the barricades.</div>${after ? "" : startLine(state, b)}
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="defaults" data-tip="The default posts: the best shots on the towers, upper floors and roofs, then at the windows; close fighters inside by the doors; the rest behind cover in the yard.">Default positions</button>
       ${after ? `<button class="${cui.autoRedeploy ? "active" : ""}" data-action="cb-redeploy" data-tip="When on, falling back skips this step: your people take the default posts and the fight goes on at once. Remembered in this browser.">${cui.autoRedeploy ? "✔" : "✗"} Skip this next time</button>` : ""}

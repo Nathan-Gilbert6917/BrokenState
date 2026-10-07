@@ -1753,7 +1753,9 @@ export function createBattle(state, setup) {
   const foeName = e.name || e.kind;
   say(b, `Battle at ${b.place} against ${foeName}.`, "info");
   if (setup.ambush === "player") say(b, "You have the drop on them. They have not seen you yet. Gunfire will alert them; melee is silent.", "good");
-  if (setup.ambush === "enemy") {
+  // A base battle has its own start for a surprise (defenceplan.js openStart: an unwatched night finds everyone in
+  // the buildings and the attackers move first), so no volley on top of it.
+  if (setup.ambush === "enemy" && setup.layout !== "baseDefence") {
     say(b, "Ambush! They saw you first. Your people are pinned: 1 action each this turn.", "danger");
     for (const u of b.units) if (u.side === "player") u.ap = 1;
     for (const u of b.units) {

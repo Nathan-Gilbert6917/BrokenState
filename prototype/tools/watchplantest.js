@@ -21,10 +21,11 @@ import { TIRED, TIRED_WORDS, tiredHour, tiredLevel, tiredAim, tiredText, sleepin
 import { baseDefense, resolveRaidOnPlayer } from "../src/sim/factions.js";
 import { spawnAiParty, movePartiesHour } from "../src/sim/parties.js";
 import { makeHorde } from "../src/sim/hordes.js";
-import { setAutopilot } from "../src/sim/autopilot.js";
+import { setAutopilot, autopilotDaily } from "../src/sim/autopilot.js";
 import { defenceTab } from "../src/ui/defence.js";
 import { gaugeRows } from "../src/ui/needs.js";
-import { startDrill, endDrill, savePlan, applyPlan, planFor, planKey, planStale, clearPlan } from "../src/sim/defenceplan.js";
+import { startDrill, endDrill, savePlan, applyPlan, planFor, planKey, planStale, clearPlan, plansOf, pickPlan, currentPlan, roleOf, startText, defaultRolePlan, PLAN, PLAN_ROLES } from "../src/sim/defenceplan.js";
+import { fightNow } from "../src/sim/defences.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 
@@ -43,10 +44,12 @@ function armHub(st, list = ["walls", "walls", "watchtower", "barricades", "bunkh
   h.stock.ammo = 300;
   return h;
 }
-function attack(st, h, context = {}) {
+// An attack on the base as the browser opens it. ready: who is at a post (defenceplan.js openStart; the defences
+// manned unless a test says otherwise). enemy: the horde unless given.
+function attack(st, h, context = {}, enemy = { kind: "zombies", count: 10, power: 3, name: "the horde" }) {
   globalThis.window = {};
   try {
-    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 10, power: 3, name: "the horde" }, ambush: null, canRetreat: true, handler: "wp", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: false, ...context } });
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "wp", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: false, ready: { manned: true }, ...context } });
   } finally { delete globalThis.window; }
   return st.combat;
 }
@@ -136,9 +139,9 @@ let planned = null;
   for (let y = 0; y < b.h && !target; y++) for (let x = 0; x < b.w && !target; x++) if (canPlace(b, x, y) && !unitAt(b, x, y) && Math.hypot(x - u.x, y - u.y) > 3) target = [x, y];
   check(combatAct(st, { type: "place", unit: u.id, x: target[0], y: target[1] }) === "" && u.x === target[0] && u.y === target[1], `${u.name} placed by hand at ${target}`);
   check(combatAct(st, { type: "plan" }) !== "", "no plan yet: Planned posts says so");
-  check(combatAct(st, { type: "savePlan" }) === "" && h.defencePlan && h.defencePlan[planKey(b)], "Save as plan");
+  check(combatAct(st, { type: "savePlan" }) === "" && plansOf(h).length === 1 && plansOf(h)[0].maps[planKey(b)], "Save as plan (a first plan, \"Default\")");
   planned = { sid: u.sid, key: planKey(b), cell: target.slice(), n: playersOf(b).length };
-  check(h.defencePlan[planned.key].posts.length === planned.n, `everyone in the plan (${planned.n})`);
+  check(plansOf(h)[0].maps[planned.key].posts.length === planned.n, `everyone in the plan (${planned.n})`);
   combatAct(st, { type: "endDrill" });
   check(!st.combat, "Close: no battle left behind");
   // The real attack.
@@ -149,7 +152,7 @@ let planned = null;
   check(!deployProblems(r).length && r.log.some((l) => /defence plan/.test(l.text)), `valid posts, the log says so (${(r.log.find((l) => /defence plan/.test(l.text)) || {}).text})`);
   const others = playersOf(r).filter((x) => x !== ru);
   const mapped = (x) => (r.tier.map === "fort" ? [x.x, x.y] : sideUntf(r.deploy.side, r.deploy.frame.w0, r.deploy.frame.h0)(x.x, x.y));
-  const same = others.filter((x) => { const p = h.defencePlan[planned.key].posts.find((q) => q[0] === x.sid); const c = mapped(x); return p && p[1] === c[0] && p[2] === c[1]; }).length;
+  const same = others.filter((x) => { const p = plansOf(h)[0].maps[planned.key].posts.find((q) => q[0] === x.sid); const c = mapped(x); return p && p[1] === c[0] && p[2] === c[1]; }).length;
   check(same >= others.length - 1, `the others at theirs too (${same} of ${others.length}; a breach can take one)`);
   // Changed for this fight, then the defaults, then back to the plan.
   combatAct(r, { type: "defaults" });
@@ -187,7 +190,7 @@ section("A map turned to face the attack (no walls: the yard and buildings)");
   for (let y = r.h - 1; y >= 0 && !t2; y--) for (let x = r.w - 1; x >= 0 && !t2; x--) if (canPlace(r, x, y) && !unitAt(r, x, y)) t2 = [x, y];
   combatAct(st, { type: "place", unit: ru.id, x: t2[0], y: t2[1] });
   combatAct(st, { type: "savePlan" });
-  const p = h.defencePlan.interior.posts.find((q) => q[0] === ru.sid);
+  const p = plansOf(h)[0].maps.interior.posts.find((q) => q[0] === ru.sid);
   const want = sideUntf("north", r.deploy.frame.w0, r.deploy.frame.h0)(t2[0], t2[1]);
   check(p[1] === want[0] && p[2] === want[1], "changed in the deploy step, saved back as the plan (on the east-facing layout)");
   st.combat = null;
@@ -197,7 +200,7 @@ section("A map turned to face the attack (no walls: the yard and buildings)");
   check(planKey(r2) !== "interior" || planStale(st, r2) || !planFor(st, r2), `walls built: another map (${r2.tier.map}), the yard plan is not used for it`);
   st.combat = null;
   clearPlan(st, h);
-  check(!h.defencePlan, "cleared");
+  check(!plansOf(h).length, "cleared");
 }
 
 section("A bridge barricade's wall map (turned to face the attack)");
@@ -239,10 +242,10 @@ section("Headless battles take the plan up; save and load");
   combatAct(st, { type: "savePlan" });
   // Save in the middle of the drill and load it.
   const st2 = loadFromString(saveToString(st));
-  check(st2.combat && st2.combat.drill && st2.bases[0].watch && st2.bases[0].watch.shifts.length === 4 && st2.bases[0].defencePlan, "saved and loaded mid-drill: the drill, the roster and the plan");
+  check(st2.combat && st2.combat.drill && st2.bases[0].watch && st2.bases[0].watch.shifts.length === 4 && plansOf(st2.bases[0]).length === 1, "saved and loaded mid-drill: the drill, the roster and the plan");
   endDrill(st);
   // A battle without the browser (the autopilot, headless): createBattle with no deploy step lays the plan too.
-  const r = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 8, power: 3 }, ambush: null, canRetreat: true, handler: "wp", layout: "baseDefence", context: { night: false } });
+  const r = createBattle(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 8, power: 3 }, ambush: null, canRetreat: true, handler: "wp", layout: "baseDefence", context: { night: false, ready: { manned: true } } });
   st.combat = r;
   const ru = playersOf(r).find((x) => x.sid === u.sid);
   const back = r.tier.map === "fort" ? [ru.x, ru.y] : sideUntf(r.deploy.side, r.deploy.frame.w0, r.deploy.frame.h0)(ru.x, ru.y);
@@ -452,5 +455,226 @@ section("The governor's night watch (autopilot.js govWatch)");
   check(!sh.watch || !sh.watch.gov, `two people at a base: no roster (${atBase(small, sh.id).length} there)`);
 }
 
+
+// ---------- who is at a post when the attack hits (defenceplan.js openStart) ----------
+section("Watchers start on the walls: an attack on a base whose defences are not manned");
+{
+  const st = world(seed + 4);
+  const h = armHub(st, undefined, 0);
+  const ppl = atBase(st, h.id).slice(0, 6);
+  for (const s of atBase(st, h.id).slice(6)) s.location = { kind: "party", partyId: 999 }; // six here: all in the fight
+  for (const s of ppl) s.role = "farm";
+  const [w1, w2] = ppl;
+  w1.role = "guard"; w2.role = "guard";
+  const R = readiness(st, h);
+  check(!R.manned && R.watchers.length === 2 && R.watchers.includes(w1.id), `readiness: not manned, 2 on guard (${R.watchers.length})`);
+  const b = attack(st, h, { ready: undefined });
+  const late = playersOf(b).filter((u) => u.late), on = playersOf(b).filter((u) => !u.late);
+  check(on.length === 2 && on.every((u) => u.sid === w1.id || u.sid === w2.id) && late.length === playersOf(b).length - 2, `only the 2 on watch at their posts, ${late.length} still inside (${on.map((u) => `${u.sid}:${u.post}`).join(" ")} / ${w1.id},${w2.id})`);
+  const T = b.tier;
+  check(late.every((u) => T.indoor && T.indoor[u.y * b.w + u.x]), `the rest start in the buildings (${T.map} map)`);
+  check(on.some((u) => ["tower", "wall", "gate"].includes(u.post)), `a watcher is on the wall (${on.map((u) => u.post).join(", ")})`);
+  check(!deployProblems(b).length, "valid cells");
+  const txt = startText(st, b);
+  check(txt.startsWith("Only ") && txt.includes(w1.name.split(" ")[0]) && /coming out of the buildings/.test(txt), `the deploy step says so: "${txt}"`);
+  check(b.log.some((l) => l.text === txt), "and the log");
+  check(combatAct(st, { type: "place", unit: late[0].id, x: on[0].x, y: on[0].y }) !== "" && late[0].late, "someone not on watch cannot be placed in the deploy step");
+  check(combatAct(st, { type: "place", unit: on[0].id, x: late[0].x, y: late[0].y }) !== "", "nor swapped out of the buildings");
+  combatAct(st, { type: "defaults" });
+  check(late.every((u) => T.indoor[u.y * b.w + u.x]), "Default positions keeps them inside");
+  combatAct(st, { type: "start" });
+  check(b.phase === "player" && late.every((u) => u.ap === 0) && on.every((u) => u.ap === 2), "turn 1: the watchers act, the rest cannot");
+  combatAct(st, { type: "end" });
+  runEnemyPhase(st);
+  const out = b.log.find((l) => /out to fight/.test(l.text));
+  check(b.over || (b.turn === 2 && b.phase === "player" && late.filter((u) => active(u)).every((u) => !u.late && u.ap === 2)), `turn 2: they come out (${out ? out.text : "no line"})`);
+  st.combat = null;
+}
+section("Nobody on watch, a manned base, the wall map, headless");
+{
+  const st = world(seed + 5);
+  const h = armHub(st, undefined, 4);
+  for (const s of atBase(st, h.id)) s.role = "farm";
+  const b = attack(st, h, { ready: undefined });
+  check(playersOf(b).every((u) => u.late) && /^Nobody was on watch/.test(startText(st, b)), `nobody on watch: nobody at a post ("${startText(st, b)}")`);
+  combatAct(st, { type: "start" });
+  check(b.phase === "enemy", `the attackers move first (turn ${b.turn}, ${b.phase})`);
+  runEnemyPhase(st);
+  check(b.over || (b.turn === 2 && b.phase === "player" && playersOf(b).every((u) => !u.late && u.ap === 2)), "then everyone comes out and acts");
+  st.combat = null;
+  h.alert = true;
+  const m = attack(st, h, { ready: undefined });
+  check(!playersOf(m).some((u) => u.late) && /manned/.test(startText(st, m)), `"Prepare defenses": everyone at their post ("${startText(st, m)}")`);
+  st.combat = null;
+  h.alert = false;
+  const ppl = atBase(st, h.id);
+  ppl[0].role = "guard";
+  const w = attack(st, h, { ready: undefined, strip: true });
+  const wl = playersOf(w).filter((u) => u.late);
+  const un = sideUntf(w.deploy.side, w.deploy.frame.w0, w.deploy.frame.h0);
+  check(w.tier.map === "wall" && wl.length === playersOf(w).length - 1 && wl.every((u) => { const [x] = un(u.x, u.y); return x >= PLAN.BACK[0] && x <= PLAN.BACK[1] + 3; }), `the wall map (no buildings): the rest at the back (columns ${wl.map((u) => un(u.x, u.y)[0]).join(",")})`);
+  check(/from the back/.test(startText(st, w)) && !deployProblems(w).length, "valid cells, the text says so");
+  st.combat = null;
+  // Headless: the same start, played to the end.
+  ppl[0].role = "farm";
+  const hd = fightNow(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 8, power: 2.5, name: "the horde" }, ambush: null, canRetreat: true, handler: "wp", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night: true, through: 60 } });
+  check(hd === null && !st.combat, "a headless fight with nobody on watch is played to the end");
+}
+
+// ---------- several plans ----------
+section("Several plans: named, tagged, picked by the attack");
+{
+  const st = world(seed + 6);
+  const h = armHub(st);
+  startDrill(st, h.id);
+  let b = st.combat;
+  const u = playersOf(b)[0];
+  const cell0 = [u.x, u.y];
+  combatAct(st, { type: "savePlan" });
+  check(plansOf(h).length === 1 && plansOf(h)[0].name === "Default", "the first plan is \"Default\"");
+  // A second plan, made from where everyone stands, renamed and tagged for hordes at night.
+  let target = null;
+  for (let y = 0; y < b.h && !target; y++) for (let x = 0; x < b.w && !target; x++) if (canPlace(b, x, y) && !unitAt(b, x, y) && Math.hypot(x - u.x, y - u.y) > 4) target = [x, y];
+  combatAct(st, { type: "place", unit: u.id, x: target[0], y: target[1] });
+  check(combatAct(st, { type: "newPlan", name: "Night horde" }) === "" && plansOf(h).length === 2 && currentPlan(st, b).name === "Night horde", "New plan: made from where everyone stands now, and edited");
+  combatAct(st, { type: "tagPlan", who: "dead", when: "night" });
+  combatAct(st, { type: "renamePlan", name: "  Horde at night  " });
+  const night = plansOf(h)[1];
+  check(night.name === "Horde at night" && night.who === "dead" && night.when === "night", `renamed and tagged (${night.name}: ${night.who}, ${night.when})`);
+  combatAct(st, { type: "pickPlan", id: plansOf(h)[0].id });
+  check(currentPlan(st, b).name === "Default" && u.x === cell0[0] && u.y === cell0[1], "the drill switches to the other plan (its posts shown)");
+  endDrill(st);
+  const at = (r) => playersOf(r).find((x) => x.sid === u.sid);
+  const r1 = attack(st, h, { night: true });
+  check(currentPlan(st, r1).name === "Horde at night" && at(r1).x === target[0] && at(r1).y === target[1], "a horde at night: the night horde plan");
+  st.combat = null;
+  const r2 = attack(st, h, { night: false });
+  check(currentPlan(st, r2).name === "Default", "a horde by day: the default plan");
+  // The deploy step's picker.
+  combatAct(st, { type: "pickPlan", id: night.id });
+  check(currentPlan(st, r2).name === "Horde at night" && at(r2).x === target[0], "picked by hand in the deploy step: taken up for this fight");
+  combatAct(st, { type: "pickPlan", id: 0 });
+  const d = r2.deploy.defaults.find(([id]) => id === at(r2).id);
+  check(!currentPlan(st, r2) && at(r2).x === d[1] && at(r2).y === d[2], "no plan: the default posts");
+  check(combatAct(st, { type: "newPlan", name: "x" }) !== "", "plans are made in a drill, not in a fight");
+  st.combat = null;
+  const r3 = attack(st, h, { night: true }, { kind: "raiders", count: 6, power: 3, name: "raiders" });
+  check(currentPlan(st, r3).name === "Default", "raiders at night: not the horde plan");
+  st.combat = null;
+  plansOf(h)[0].who = "people";
+  const r4 = attack(st, h, { night: false });
+  check(!currentPlan(st, r4), "a plan tagged for another attacker is never taken up (a horde by day: defaults)");
+  st.combat = null;
+  // Delete in a drill, the limit, save and load, the old shape.
+  startDrill(st, h.id, night.id);
+  b = st.combat;
+  check(currentPlan(st, b).id === night.id, "a drill opens on the plan asked for");
+  combatAct(st, { type: "deletePlan" });
+  check(plansOf(h).length === 1 && currentPlan(st, b).name === "Default", "deleted: the drill goes on with the other");
+  endDrill(st);
+  for (let i = 0; i < PLAN.MAX + 2; i++) { startDrill(st, h.id); combatAct(st, { type: "newPlan", name: `P${i}` }); endDrill(st); }
+  check(plansOf(h).length === PLAN.MAX, `at most ${PLAN.MAX} plans`);
+  const st2 = loadFromString(saveToString(st));
+  check(plansOf(st2.bases[0]).length === PLAN.MAX, "saved and loaded");
+  const hb = st2.bases[0];
+  delete hb.defencePlans;
+  hb.defencePlan = { fort: { w0: 1, h0: 1, posts: [[1, 0, 0]], lit: "center", day: 3 } };
+  const st3 = loadFromString(saveToString(st2));
+  const mig = plansOf(st3.bases[0]);
+  check(mig.length === 1 && mig[0].name === "Default" && mig[0].maps.fort.day === 3 && !st3.bases[0].defencePlan, "an old save's plan (one per map) loads as \"Default\"");
+}
+
+// ---------- posts by role ----------
+section("Posts by role: the best available person for the post");
+{
+  const st = world(seed + 7);
+  const h = armHub(st, undefined, 3);
+  const ppl = atBase(st, h.id).slice(0, 6);
+  for (const s of atBase(st, h.id).slice(6)) s.location = { kind: "party", partyId: 999 }; // six here: all in the fight
+  ppl[0].gear.weapon = newItem("huntrifle"); ppl[0].skills.shooting = 18;
+  ppl[1].gear.weapon = newItem("huntrifle"); ppl[1].skills.shooting = 14;
+  ppl[2].gear.weapon = newItem("machete");
+  for (const s of ppl.slice(3)) { s.gear.weapon = newItem("pistol"); s.skills.shooting = Math.min(s.skills.shooting, 8); }
+  startDrill(st, h.id);
+  const b = st.combat;
+  const best = playersOf(b).find((x) => x.sid === ppl[0].id);
+  check(roleOf(best) === "shooter" && roleOf(playersOf(b).find((x) => x.sid === ppl[2].id)) === "close", "roles from the weapon: a rifle shoots, a machete fights close");
+  combatAct(st, { type: "roles", by: "role" });
+  const keep = playersOf(b).find((x) => x.sid === ppl[3].id);
+  combatAct(st, { type: "role", unit: keep.id, role: null }); // one stays by name
+  combatAct(st, { type: "savePlan" });
+  const posts = plansOf(h)[0].maps[planKey(b)].posts;
+  check(posts.filter((p) => p[3]).length === posts.length - 1 && posts.find((p) => p[0] === ppl[0].id)[3] === "shooter", `saved: ${posts.length - 1} posts by role, 1 by name`);
+  const bestCell = [best.x, best.y];
+  endDrill(st);
+  ppl[0].location = { kind: "party", partyId: 999 };
+  const r = attack(st, h);
+  const second = playersOf(r).find((x) => x.sid === ppl[1].id);
+  check(second.x === bestCell[0] && second.y === bestCell[1] && second.planRole === "shooter", `${ppl[0].name.split(" ")[0]} away: ${second.name.split(" ")[0]}, the next best shot, takes the post`);
+  check(!deployProblems(r).length && r.log.some((l) => /by role/.test(l.text)), "valid, the log counts the posts by role");
+  st.combat = null;
+  ppl[0].location = { kind: "base", baseId: h.id };
+  const r2 = attack(st, h);
+  check(playersOf(r2).find((x) => x.sid === ppl[0].id).x === bestCell[0], "back again: the one who stood there keeps the post");
+  const named = playersOf(r2).find((x) => x.sid === ppl[3].id);
+  const np = posts.find((p) => p[0] === ppl[3].id);
+  const back = r2.tier.map === "fort" ? [named.x, named.y] : sideUntf(r2.deploy.side, r2.deploy.frame.w0, r2.deploy.frame.h0)(named.x, named.y);
+  check(!np[3] && Math.hypot(back[0] - np[1], back[1] - np[2]) <= PLAN.NEAR * 1.5, "the post by name keeps its person");
+  st.combat = null;
+}
+
+// ---------- the governor's plan (autopilot.js governorPlans, defenceplan.js defaultRolePlan) ----------
+section("The governor's plan: by role from the default posts, and not worse in its fights");
+{
+  const st = world(seed + 8);
+  const h = armHub(st, ["bunkhouse", "storehouse", "barricades", "watchtower"], 3);
+  h.buildings = h.buildings.filter((x) => x.type !== "walls");
+  const rng0 = st.rng.state;
+  const line = defaultRolePlan(st, h);
+  const gp = plansOf(h).find((p) => p.by === "governor");
+  check(line && gp && gp.maps.interior && gp.maps.interior.posts.every((p) => PLAN_ROLES[p[3]]), `no walls: a plan by role (${line})`);
+  check(st.rng.state === rng0 && !st.combat, "it draws nothing from the game's dice and leaves no battle open");
+  const roles = gp.maps.interior.posts.map((p) => p[3]);
+  check(roles.includes("shooter"), `best shots on the perches and at the windows (${roles.join(", ")})`);
+  const st2 = world(seed + 8);
+  const h2 = armHub(st2);
+  check(defaultRolePlan(st2, h2) === "" && !plansOf(h2).length, "a walled base (the fort map): no plan, the default posts face the attack");
+  // The morning pass: once per change of the base's buildings.
+  setAutopilot(st, true);
+  setHour(st, 6);
+  delete h.defencePlans;
+  autopilotDaily(st);
+  const n1 = plansOf(h).length;
+  const g = st.governor.planSig[h.id];
+  autopilotDaily(st);
+  check(n1 === 1 && plansOf(h).length === 1 && st.governor.planSig[h.id] === g, "the governor lays it out once, and again only when the base changes");
+  setAutopilot(st, false);
+  // Paired fights: the same world and the same horde with the governor's plan and without, a day later (one away, a
+  // newcomer), by day with the defences manned and at night with two on watch.
+  const out = { with: { hp: 0, dead: 0, won: 0 }, without: { hp: 0, dead: 0, won: 0 } };
+  registerCombatHandler("wpg", () => {});
+  for (const sd of [11, 12, 13]) for (const night of [false, true]) for (const withPlan of [true, false]) {
+    const w = world(seed + 100 + sd);
+    const hb = armHub(w, ["bunkhouse", "storehouse", "barricades", "watchtower", "barricades"], 3);
+    hb.buildings = hb.buildings.filter((x) => x.type !== "walls");
+    if (withPlan) defaultRolePlan(w, hb);
+    const ppl = atBase(w, hb.id);
+    ppl[0].location = { kind: "party", partyId: 999 };
+    const nu = makeSurvivor(w); nu.location = { kind: "base", baseId: hb.id }; nu.health = 100; nu.gear.weapon = newItem("huntrifle"); w.survivors.push(nu);
+    for (const s of atBase(w, hb.id)) s.role = "farm";
+    atBase(w, hb.id)[1].role = "guard"; atBase(w, hb.id)[2].role = "guard";
+    const here = atBase(w, hb.id);
+    const before = here.reduce((a, s) => a + s.health, 0);
+    let result = null;
+    registerCombatHandler("wpg", (state, r) => { result = r; });
+    fightNow(w, { tile: hb.tile, baseId: hb.id, enemy: { kind: "zombies", count: 14, power: 3, name: "the horde" }, ambush: null, canRetreat: true, handler: "wpg", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { night, through: 100, ...(night ? {} : { ready: { manned: true } }) } });
+    const o = out[withPlan ? "with" : "without"];
+    o.hp += before - here.reduce((a, s) => a + (s.alive ? s.health : 0), 0);
+    o.dead += here.filter((s) => !s.alive).length;
+    o.won += result && result.outcome === "victory" ? 1 : 0;
+  }
+  const txt = (o) => `${o.won}/6 won, ${o.dead} dead, ${Math.round(o.hp)} health lost`;
+  check(out.with.won >= out.without.won - 1 && out.with.dead <= out.without.dead + 1, `paired fights (3 seeds × day manned / night 2 on watch): with the plan ${txt(out.with)}; without ${txt(out.without)}`);
+}
 console.log(`\nwatchplantest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
