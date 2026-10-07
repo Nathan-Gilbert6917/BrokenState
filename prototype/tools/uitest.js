@@ -610,6 +610,9 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { newRunScreen, LOOK_ACTIONS, LOOK_CHANGE_ACTIONS } = await import("../src/ui/newgame.js");
   Object.assign(CLICK, LOOK_ACTIONS); // main.js registers the new-run screen's own handlers
   Object.assign(CHANGE, LOOK_CHANGE_ACTIONS);
+  const { BG_ACTIONS, BG_CHANGE, backgroundEditor, setCustomLibrary, presetToCustom } = await import("../src/ui/backgrounds.js"); // custom backgrounds window
+  Object.assign(CLICK, BG_ACTIONS);
+  Object.assign(CHANGE, BG_CHANGE);
   const { WORLD_SIZES, SIZE_KEYS, clampGroups } = await import("../src/sim/worldsize.js");
   for (const k of SIZE_KEYS) {
     const d = WORLD_SIZES[k];
@@ -646,6 +649,20 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
       check(sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]) && (html.match(/nrcard/g) || []).length === n,
         `Hardcore: Starting people 1–4 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
     }
+  }
+  // Customize and the custom backgrounds window (ui/backgrounds.js): clean, every action handled, in both modes.
+  {
+    setCustomLibrary([presetToCustom("nurse", "c_1"), presetToCustom("veteran", "c_2")]);
+    for (const mode of ["normal", "hardcore"]) {
+      const w = createWorld({ seed: seed + 9, factionCount: 7, mode });
+      htmlOk(newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3, freeEdit: true }), `new-run screen (${mode}, Customize)`);
+      htmlOk(newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3, ironman: true }), `new-run screen (${mode}, Ironman)`);
+      const ui = { started: false, ironman: false };
+      BG_ACTIONS["bg-open"](w, ui);
+      htmlOk(backgroundEditor(w, ui), `backgrounds window (${mode})`);
+    }
+    setCustomLibrary([]);
+    check(inMain("nr-free") && inMain("nr-bg") && inMain("bg-close") && mainSrc.includes("customBackgrounds: ui.ironman ? null : customLibrary()"), "main.js handles Customize, the background select and Done, and passes the list (not in Ironman)");
   }
   check(inMain("startpeople") && mainSrc.includes("startPeople: ui.startPeople"), "main.js handles Starting people and passes it to createWorld");
   check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
