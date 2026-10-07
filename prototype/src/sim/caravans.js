@@ -234,7 +234,7 @@ registerCombatHandler("caravanAttack", onCaravanCombat);
 // The governor at their caravan: takes a radio deal if it can pay; otherwise buys what the hub is short of with
 // what it has plenty of. Only the Aggressive style ever attacks a caravan (an aggressive group's, lightly
 // guarded); Cautious and Balanced never do. Returns a log text.
-export function autoCaravanTrade(state, needs, style) {
+export function autoCaravanTrade(state, needs, style, spare = {}) {
   const ctx = tradeContext(state);
   if (!ctx || ctx.kind !== "caravan") return "";
   const { f, caravan, base } = ctx;
@@ -250,7 +250,11 @@ export function autoCaravanTrade(state, needs, style) {
     // Pay with what they want most (trade.js demand: their stock, kind and state) among what the hub has plenty of.
     const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, f, b) - demand(state, f, a) || needs[a] - needs[b]);
     for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
-    for (const k of plenty) { if (tradeVerdict(state).ok) break; if (!ctx.t.ask[k]) balanceWith(state, k); }
+    for (const k of plenty) {
+      if (tradeVerdict(state).ok) break;
+      if (!ctx.t.ask[k]) balanceWith(state, k);
+      if (spare[k] != null && (ctx.t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs (autopilot.js tradeSpare)
+    }
     if (short.length && tradeVerdict(state).ok) text = executeTrade(state);
   }
   // Spare weapons to a group that prizes them (at war, hordes at its walls...), valuables to anyone who pays.

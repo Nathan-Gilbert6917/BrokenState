@@ -532,7 +532,21 @@ function shipFromOutposts(state) {
       // Firewood: a few days of the water boiler's (worm.js boilerUse) stays here; the rest pools at the hub, which sends
       // heating and boiler wood back over the line as the outpost runs short (needs.js heatDaily, worm.js boilerDaily).
       const boil = boilerUse(state, base);
-      const keep = { food: Math.ceil(foodUse(state, base).total * 3) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
+      // Food: past RATION_DAYS, so a staffed outpost is not on short rations while the hub's cellar is full (huge census:
+      // outposts rationed on 61-95% of their days with 900-6,400 food at the hub); the hub tops it up to that line.
+      const lineDays = RATION_DAYS + 1;
+      if (staff.length) {
+        const want = foodUse(state, base).total * lineDays - edibleFood(base);
+        const spare = edibleFood(h) - foodUse(state, h).total * lineDays;
+        if (want > 0 && spare > 0) {
+          const send = Math.min(spare, want / line.strength);
+          const fresh = Math.min(Math.max(0, h.stock.food || 0), send);
+          h.stock.food = Math.max(0, (h.stock.food || 0) - fresh);
+          h.stock.preserved = Math.max(0, (h.stock.preserved || 0) - (send - fresh));
+          base.stock.food = (base.stock.food || 0) + send * line.strength;
+        }
+      }
+      const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first

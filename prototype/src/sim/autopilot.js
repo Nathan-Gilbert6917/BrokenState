@@ -541,7 +541,7 @@ function roomFor(state, k) {
   const h = hub(state);
   if (!h) return false; // no base left (conquest.js exiles): no room for anyone
   const queued = h.construction.filter((c) => c.type === "bunkhouse").length;
-  const beds = baseBeds(h) + queued * 6 + (count(h, "bunkhouse") + queued < BUILDINGS.bunkhouse.max ? 6 : 0);
+  const beds = baseBeds(h) + queued * 6 + (count(h, "bunkhouse") + queued < BUILDINGS.bunkhouse.max && plotsFree(h, "building") > 0 ? 6 : 0);
   if (residents(state, h.id).length + returning(state, h) + k > beds + persona(state).crowdSlack) return false;
   // Food and water for them too (economy rework): every newcomer, whatever card brings them.
   const n = atBase(state, h.id).length;
@@ -955,7 +955,7 @@ function handleTrade(state) {
   }
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
-    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality).replace(/\.$/, "")}.`);
+    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality, tradeSpare(state)).replace(/\.$/, "")}.`);
     return;
   }
   const { p, f, speech } = ctx;
@@ -2144,7 +2144,7 @@ function planTrip(state) {
   }
   // Land for the coalition (claims.js): a claim trip toward the nearest contested ground while the land is short, and
   // a well on a claim by water when the water is (claimCandidate, wellCandidate; inert until claims.js lands).
-  const lc = claimCandidate(state, h, spareHands);
+  const lc = claimCandidate(state, h, spareHands, need);
   if (lc) cands.push(lc);
   const wc = wellCandidate(state, h, spareHands);
   if (wc) cands.push(wc);
@@ -3476,8 +3476,9 @@ function contestedGround(state) {
   return tiles;
 }
 const claimTripOut = (state) => state.parties.some((p) => p.owner === "player" && (p.apClaim || p.apWell));
-function claimCandidate(state, h, spareHands) {
+function claimCandidate(state, h, spareHands, need = null) {
   if (!claimsReady() || spareHands < 2 || claimTripOut(state)) return null;
+  if (need && (need.food >= 2 || need.water >= 2)) return null; // land can wait while the hub is short (seeds 5059, 5099: 2 of 4 out claiming with 0-2 days of food)
   const gp = goalsProgress(state);
   if (gp.alliance.landOk) return null;
   if ((h.stock.scrap || 0) - waterHold(state, h) < CLAIM.scrap + CLAIM.scrapKeep) return null;

@@ -159,8 +159,11 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(oUse.heads === 3 && hubUse.heads === residents(st, h.id).length, `the outpost feeds 3, the hub ${hubUse.heads}`);
   const ate = eatenToday(st);
   check(near(ate, hubUse.residents + oUse.residents, 1e-6), `each base eats for its own people (${Math.round(ate * 100) / 100})`);
-  // The outpost keeps a reserve by its heads and ships the rest: three days of food + 6.
-  check(o.stock.food <= Math.ceil(foodUse(st, o).total * 3) + 6 + 1 && o.stock.food >= Math.ceil(foodUse(st, o).total * 3) + 6 - 1, `the outpost keeps 3 days for its 3 + 6 (${o.stock.food})`);
+  // The outpost keeps a reserve by its heads and ships the rest: a day past the short-rations line (economy.js
+  // RATION_DAYS + 1, so it is not rationing while the hub is full) + 6.
+  const keepDays = RATION_DAYS + 1;
+  check(o.stock.food <= Math.ceil(foodUse(st, o).total * keepDays) + 6 + 1 && o.stock.food >= Math.ceil(foodUse(st, o).total * keepDays) + 6 - 1, `the outpost keeps ${keepDays} days for its 3 + 6 (${o.stock.food})`);
+  check(!o.rationing, "the outpost is not on short rations");
   takePrisonersAt(st, st.factions[0], o, 2);
   o.stock.food = 200;
   basesDaily(st);

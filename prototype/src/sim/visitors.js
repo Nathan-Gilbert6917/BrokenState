@@ -1401,7 +1401,7 @@ function gateCard(state, v, base, lead) {
     choices.push({
       label: `Buy their maps (${price() ? planText(price()) : `${scoutPrice(v)} worth of goods`})`, hint: "Everything within 2 tiles of the way they came, on your map as it was when they passed",
       disabled: (st) => !here(st) || !price(),
-      ai: (st) => (price() && style(st) !== "aggressive" ? 40 : -99),
+      ai: (st) => (price() && style(st) !== "aggressive" && !base.rationing && !base.hungerDays && !base.thirstDays ? 40 : -99), // no maps bought with food in a famine (seed 5034)
       resolve: (st) => {
         if (!here(st)) return gone;
         const plan = price();
