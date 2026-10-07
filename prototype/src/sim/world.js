@@ -32,6 +32,7 @@ import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { watchHour, watchDayRoles } from "./watch.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
@@ -634,6 +635,7 @@ export function tickHour(state) {
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
+    watchDayRoles(state); // watch.js: Manual people on watch likewise
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
@@ -671,5 +673,6 @@ export function tickHour(state) {
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
 }

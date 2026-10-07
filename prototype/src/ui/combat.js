@@ -14,6 +14,7 @@ import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
+import { planFor, planStale, planKey, PLAN_MAPS } from "../sim/defenceplan.js"; // the base's defence plan (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
@@ -521,6 +522,7 @@ export function combatKey(state, e) {
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
+    if (b.drill) { if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space"; }
     if (e.code === "Enter" || e.code === "NumpadEnter") { act(state, { type: "start" }); return true; }
     if (e.code === "Space") { cui.msg = "Place your defenders, then press Enter or Start the fight."; return true; }
   }
@@ -586,7 +588,7 @@ export function combatAction(state, key, d) {
   if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
   // The AI plays your side from here on (combatTick), or you take back control.
   if (key === "cb-autoplay") {
-    if (b.over) return;
+    if (b.over || b.drill) return; // a drill has nothing to play
     cui.autoPlay = !cui.autoPlay;
     cui.lastStep = 0;
     cui.msg = cui.autoPlay ? "The AI is playing your side. Shift+A or Take back control to play again." : "Your side is yours again.";
@@ -629,6 +631,7 @@ export function combatAction(state, key, d) {
     if (d.v === "defaults") return void act(state, { type: "defaults" });
     if (d.v === "flood") return void act(state, { type: "flood", zone: d.z });
     if (d.v === "gate" && u) return void act(state, { type: "gate", unit: u.id });
+    if (d.v === "plan" || d.v === "savePlan" || d.v === "endDrill") return void act(state, { type: d.v }); // sim/defenceplan.js
     return;
   }
   // The result screen: take the knocked out home as prisoners, or leave them tied up (sim/prisoners.js).
@@ -791,7 +794,8 @@ export function renderCombatPanel(state) {
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
-  html += b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
+  html += b.drill ? `<div class="cbhead"><div class="cbtitle">Defence drill at ${esc(((state.bases.find((x) => x.id === b.setup.baseId)) || {}).name || b.place)}</div>
+    <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
     <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
@@ -1084,13 +1088,13 @@ function deployPanel(state, b, u) {
   }
   const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
-  let html = `<h3>Deploy · the attack comes from the ${esc(D.side || "east")}</h3>
+  let html = `<h3>${b.drill ? `Drill · ${D.fort ? "the plan holds from any side" : "facing an attack from the east (it turns with the attack)"}` : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
     <div class="small muted">Click a defender, then a green cell to place them: on the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
     <div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
       <button data-action="cb-deploy" data-v="defaults" data-tip="Back to the default posts: the toughest fighters in the gate (with 7+ defenders), the best shots on the towers, the rest in a line well back from the openings.">Default positions</button>
-    </div>`;
+    </div>${planRow(state, b)}`;
   if (D.floodlit) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the approach: shots at anything in the light get +${b.floodAim}${D.night ? " (night)" : " (day)"}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
@@ -1098,9 +1102,27 @@ function deployPanel(state, b, u) {
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
-  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
+  html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
   return html;
+}
+
+// The base's defence plan in the deploy step (sim/defenceplan.js): back to the planned posts, or keep these as the plan.
+function planRow(state, b) {
+  const key = planKey(b);
+  if (!key) return "";
+  const plan = planFor(state, b), stale = planStale(state, b);
+  const where = PLAN_MAPS[key];
+  return `<div class="cbactions" style="margin-top:0.3rem">
+      ${b.drill ? "" : `<button data-action="cb-deploy" data-v="plan" ${plan ? "" : "disabled"} data-tip="${esc(plan ? `Back to this base's defence plan for ${where} (made on day ${plan.day}): everyone in it to their planned post. The plan was taken up by itself as the attack began; this undoes your changes.` : stale || "This base has no defence plan yet: place everyone, then Save as plan (or plan it ahead in the base's Defence tab).")}">Planned posts</button>`}
+      <button ${b.drill ? 'class="primary" ' : ""}data-action="cb-deploy" data-v="savePlan" data-tip="${esc(`Keep where everyone stands now as this base's defence plan for ${where}: from the next attack on, they take up these posts by themselves in the deploy step (and in fights played out without you).${plan ? " Replaces the plan it has." : ""}`)}">Save as plan</button>
+    </div>${stale && !b.drill ? `<div class="small muted">${esc(stale)}</div>` : ""}`;
+}
+// A drill's foot: nothing to start, only to save and close.
+function drillFoot(state, b) {
+  const plan = planFor(state, b);
+  return `<div class="cbfoot"><button data-action="cb-deploy" data-v="endDrill" data-tip="${esc(plan ? "Close the drill. The plan is kept as last saved." : "Close the drill. Nothing was saved as a plan: the default posts are used.")}">Close the drill</button>
+    <span class="small muted">${plan ? `Plan saved (day ${plan.day}, ${plan.posts.length} posts).` : "No plan saved yet."}</span></div>`;
 }
 
 // ---------- a base battle's tiers (sim/deploy.js, sim/interior.js) ----------
@@ -1141,12 +1163,12 @@ function fallBackConfirmHtml(b) {
 // The deploy step on the yard and buildings map: a base without walls, or the redeploy after falling back.
 function interiorDeployPanel(state, b, u, D) {
   const after = b.tier && b.tier.fellBackTurn != null;
-  let html = `<h3>${after ? "Redeploy · falling back" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
+  let html = `<h3>${after ? "Redeploy · falling back" : b.drill ? "Drill · facing an attack from the east (it turns with the attack)" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
     <div class="small muted">${after ? "Your people have left the wall. Place them on the green cells (near where they were, away from the attackers):" : "No walls here: the attackers come straight over the yard. Place your defenders on the green cells:"} in the buildings (barred doors, half cover at the windows), on an upper floor or a flat roof (▲ height 1: further sight, +5 aim down, half cover), on a tower (▲▲), or behind the barricades.</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="defaults" data-tip="The default posts: the best shots on the towers, upper floors and roofs, then at the windows; close fighters inside by the doors; the rest behind cover in the yard.">Default positions</button>
       ${after ? `<button class="${cui.autoRedeploy ? "active" : ""}" data-action="cb-redeploy" data-tip="When on, falling back skips this step: your people take the default posts and the fight goes on at once. Remembered in this browser.">${cui.autoRedeploy ? "✔" : "✗"} Skip this next time</button>` : ""}
-    </div>`;
+    </div>${planRow(state, b)}`;
   if (D.floodlit) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the yard: shots at anything in the light get +${b.floodAim}${D.night ? ", and at night your people see what stands in it" : ""}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
@@ -1154,7 +1176,7 @@ function interiorDeployPanel(state, b, u, D) {
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
-  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
+  html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
   void u;
   return html;
@@ -1662,7 +1684,7 @@ function drawBanner(b, cw, cs) {
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? (b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "deploy" ? (b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
