@@ -11,13 +11,22 @@
       "autoPort": true
     },
     {
-      "name": "bridges",
+      "name": "mapanim",
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "-e",
-        "process.env.PORT=\"5181\"; require(\"C:/Dev/BrokenState/.claude/worktrees/bridges/prototype/server.cjs\")"
+        "process.env.PORT=\"5183\"; require(\"C:/Dev/BrokenState/.claude/worktrees/mapanim/prototype/server.cjs\")"
       ],
-      "port": 5181
+      "port": 5183
+    },
+    {
+      "name": "plots",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5191\"; require(\"C:/Dev/BrokenState/.claude/worktrees/plots/prototype/server.cjs\")"
+      ],
+      "port": 5191
     }
   ]
 }
