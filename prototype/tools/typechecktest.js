@@ -7,7 +7,6 @@
 // Usage: node tools/typechecktest.js [--list]   (npm run typecheck)
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,10 +39,16 @@ const optedIn = (text) => {
 const files = walk(join(root, "src")).map((p) => ({ path: rel(p), text: readFileSync(p, "utf8") }));
 const checked = files.filter((f) => optedIn(f.text)).map((f) => f.path).sort();
 
-// Which checker: a local install first, else npx with the pinned version.
+// Which checker: a local install first (prototype/ or the repo root only, and 5.5 or newer for the @import types),
+// else npx with the pinned version. require.resolve would also climb into any node_modules above the repo, where an
+// older TypeScript that cannot read @import may sit.
 function findTsc() {
   for (const base of [root, join(root, "..")]) {
-    try { return { cmd: process.execPath, args: [createRequire(join(base, "noop.js")).resolve("typescript/bin/tsc")], how: "local install" }; } catch { /* not installed there */ }
+    const dir = join(base, "node_modules", "typescript");
+    try {
+      const [maj, min] = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).version.split(".").map(Number);
+      if (maj > 5 || (maj === 5 && min >= 5)) return { cmd: process.execPath, args: [join(dir, "bin", "tsc")], how: "local install" };
+    } catch { /* not installed there */ }
   }
   return { cmd: "npx", args: ["--yes", "-p", `typescript@${TS_VERSION}`, "tsc"], how: `npx typescript@${TS_VERSION}`, shell: process.platform === "win32" };
 }
