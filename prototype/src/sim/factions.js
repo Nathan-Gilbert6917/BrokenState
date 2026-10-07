@@ -665,8 +665,8 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   if (ratio >= RAIDS.HOLD) {
     outcome = "held";
     state.stats.raidsRepelled += 1;
-    head = `${base.name} drove off the ${f.name} raid after ${hours} hour${hours === 1 ? "" : "s"} at the walls.`;
-    log(state, `${base.name} drove off the ${f.name} raid.`, "good");
+    head = `${base.name} drove off the ${f.name.replace(/^The /, "")} raid after ${hours} hour${hours === 1 ? "" : "s"} at the walls.`;
+    log(state, `${base.name} drove off the ${f.name.replace(/^The /, "")} raid.`, "good");
     if (people.length && rng.chance(0.4)) wound(rng.pick(people), rng.int(10, 30), `defending ${base.name}`);
     f.pop = Math.max(0, f.pop - rng.int(1, 3));
     raidRepelled(state, f);

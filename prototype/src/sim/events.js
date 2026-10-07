@@ -438,7 +438,7 @@ export function hordeCard(state, p, horde) {
   const dc = 5 + Math.round(score / 3);
   return {
     title: `Horde of ${horde.size}`,
-    text: `A horde of about ${horde.size} (score ${score}${horde.bosses ? `, a ${BOSS_NAMES.horde} lumbering at its head` : ""}) is moving across ${tileLabel(state, horde.tile)}, right in your path.${land > 2 ? " This close to a hive the dead are much tougher." : ""}${horde.mix ? ` Among them: ${mixText(horde.mix, horde.size)}.` : ""}`,
+    text: `A horde of about ${horde.size} (score ${score}${horde.bosses ? `, a ${BOSS_NAMES.horde} lumbering at its head` : ""}) is moving across ${tileLabel(state, horde.tile)}, right in your path.${land > 2 ? " This close to a hive the dead are much tougher." : ""}${horde.mix && mixText(horde.mix, horde.size) ? ` Among them: ${mixText(horde.mix, horde.size)}.` : ""}`,
     partyId: p.id,
     choices: [
       { label: "Hide and let it pass (6 hours)", hint: hint(state, p, "stealth", dc), resolve: (s) => { delay(p, 6); return check(s, p, "stealth", dc).ok ? "The horde passes by." : `Something gives you away. ${injureRandom(s, p, 20, 60, "hiding from a horde")}`; } },

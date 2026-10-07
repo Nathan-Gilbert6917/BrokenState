@@ -190,7 +190,7 @@ export function attackCaravan(state, p) {
   if (state.trade && state.trade.caravanId === p.id) state.trade = null;
   p.phase = "fighting";
   turnHostile(state, f, "you attacked their caravan");
-  log(state, `You turn your guns on the ${f.name} caravan at ${base.name}.`, "danger");
+  log(state, `You turn your guns on the ${f.name.replace(/^The /, "")} caravan at ${base.name}.`, "danger");
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "guards", count: caravanGuards(f, p), power: Math.round(guardPower(f) * 10) / 10, factionId: f.id, name: `${f.name} caravan guards` },
@@ -240,7 +240,7 @@ export function autoCaravanTrade(state, needs, style) {
   const { f, caravan, base } = ctx;
   if (style === "aggressive" && isAggressiveType(f) && caravan.strength < 0.4 * baseDefense(state, base) && atBase(state, base.id).length >= 3) {
     attackCaravan(state, caravan);
-    return `attacked the ${f.name} caravan`;
+    return `attacked the ${f.name.replace(/^The /, "")} caravan`;
   }
   let text = "nothing worth swapping";
   if (ctx.t.deal && tradeVerdict(state).ok) text = executeTrade(state);

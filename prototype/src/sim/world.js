@@ -275,6 +275,7 @@ export const hourOfDay = (state) => state.hour % 24;
 export const isNight = (state) => hourOfDay(state) < 6 || hourOfDay(state) >= 20;
 
 export function log(state, text, kind = "info") {
+  text = text.replace(/(\w)\.\.(?=\s|$)/g, "$1."); // a name ending in a full stop at the end of a sentence ("Long Haul Co.."); "..." stays
   const line = { hour: state.hour, text, kind };
   state.log.unshift(line);
   if (state.log.length > 200) state.log.pop();

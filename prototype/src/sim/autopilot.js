@@ -484,8 +484,7 @@ function pickChoice(state, card, opts, p) {
     const wet = (k) => wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k);
     // Crops take weeks and winter brings none: a newcomer needs real reserves (a month's going into the cold).
     const minDays = Math.max(P.strangerDays * 2.5, seasonKey(state) === "autumn" || seasonKey(state) === "winter" ? 30 : 10);
-    const shortHanded = alive(state).filter((s) => s.location.kind !== "captive").length < HANDS_MIN;
-    const ok = (k) => (shortHanded || (days(k) >= minDays && wet(k))) && roomFor(state, k);
+    const ok = (k) => days(k) >= minDays && wet(k) && roomFor(state, k);
     if (/^Refugees/.test(t)) return (ok(2) ? find(/^Take them in/) : null) || (ok(1) ? find(/^Take one/) : null) || find(/^Turn them away/);
     return (ok(1) ? find(/^Let them in/) : null) || find(/^Turn them away/);
   }
@@ -535,22 +534,17 @@ function pickChoice(state, card, opts, p) {
   return null;
 }
 
-// Beds for k more people: built, queued, or one more bunkhouse a base can still get (plus the style's slack).
-const HANDS_MIN = 5;
+// Beds for k more people at the hub, where newcomers live: built, queued, or one more bunkhouse it can still get
+// (plus the style's slack). Counting every base's beds crowded the hub (seed 5035, large: 22-29 people in 16 beds,
+// 216 walked away and the same deserters were taken back again and again).
 function roomFor(state, k) {
-  if (!hub(state)) return false; // no base left (conquest.js exiles): no room for anyone
-  const people = alive(state).filter((s) => s.location.kind !== "captive").length;
-  let beds = 0;
-  for (const b of state.bases) {
-    const queued = b.construction.filter((c) => c.type === "bunkhouse").length;
-    beds += baseBeds(b) + queued * 6 + (count(b, "bunkhouse") + queued < BUILDINGS.bunkhouse.max ? 6 : 0);
-  }
-  if (people + k > beds + persona(state).crowdSlack) return false;
-  // Food and water for them too (economy rework): every newcomer, whatever card brings them.
   const h = hub(state);
+  if (!h) return false; // no base left (conquest.js exiles): no room for anyone
+  const queued = h.construction.filter((c) => c.type === "bunkhouse").length;
+  const beds = baseBeds(h) + queued * 6 + (count(h, "bunkhouse") + queued < BUILDINGS.bunkhouse.max ? 6 : 0);
+  if (residents(state, h.id).length + returning(state, h) + k > beds + persona(state).crowdSlack) return false;
+  // Food and water for them too (economy rework): every newcomer, whatever card brings them.
   const n = atBase(state, h.id).length;
-  // Too few to work the fields, hunt and keep a guard: one more pair of hands feeds more than it eats.
-  if (people < HANDS_MIN && waterIn(h.stock) >= 2 * (n + k)) return true;
   const foodDays = (edibleFood(h) - 5 * k) / Math.max(1, n + k);
   const wo = waterOutlook(state, h);
   if (!(foodDays >= Math.max(10, foodTarget(state)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
@@ -956,7 +950,7 @@ function handleTrade(state) {
   }
   if (ctx.visitor) {
     // Merchants or travellers from outside (visitors.js): a manual nobody has studied, then what the hub is short of.
-    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality)}.`);
+    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality, tradeSpare(state))}.`);
     return;
   }
   if (ctx.kind === "caravan") {
@@ -1111,6 +1105,17 @@ function heatFuelCands(state, h, need, P) {
   return out.sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
+// What the hub can pay a trader with and still not want it back: food above 1.5 × foodTarget days a head, ammo above
+// 15 a head (or the hive campaign's stockpile). Seed 5068: 80 food for a manual and 73 for ammo left 15 food in autumn
+// for four people who needed 308 to reach spring; they starved by day 83.
+function tradeSpare(state) {
+  const h = hub(state);
+  const heads = Math.max(1, mouthsAt(state, h).heads), n = Math.max(1, atBase(state, h.id).length);
+  // A winter outlook that comes up short pays no food at all: foodTarget nets off crops that may only ripen in spring,
+  // after the stores run out (seed 5062: short by the outlook, yet 66 food went to a caravan on day 72).
+  const short = winterActive(state, h) && winterPlan(state, h).short > 0;
+  return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor((h.stock.ammo || 0) - Math.max(campaignAmmoTarget(state), n * 15))) };
+}
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
 function needs(state) {
   const h = hub(state);
@@ -1264,6 +1269,11 @@ const returning = (state, base) => state.parties.filter((p) => p.owner === "play
 
 // What could hit a base: urgent = a raid that has been spotted or a horde at the door; standing = known hostile
 // raiders in reach and hordes in sight. Strength on the same scale as baseDefense.
+// Every urgent threat at a base is a horde its walls hold (no raid on the way).
+function urgentHolds(state, base) {
+  if (state.parties.some((q) => q.kind === "raid" && q.target && q.target.kind === "player" && q.target.baseId === base.id && !q.returning && (q.warned || q.phase === "siege" || state.live.has(partyTile(q))))) return false;
+  return state.hordes.filter((x) => state.live.has(x.tile) && state.grid.distance(x.tile, base.tile) <= 2).every((x) => holdCheck(state, base, x.size, x.bosses || 0, x.mix || null).holds);
+}
 function threatAt(state, base) {
   const g = state.grid;
   let urgent = 0, standing = 0;
@@ -2216,7 +2226,8 @@ function envoyGoods(state) {
   const h = hub(state);
   const n = Math.max(1, atBase(state, h.id).length);
   const goods = {};
-  if ((h.stock.food || 0) > n * 30 + 20) goods.food = Math.min(20, Math.floor(h.stock.food - n * 30));
+  const spare = tradeSpare(state); // never the food the winter plan needs (seed 5062)
+  if ((h.stock.food || 0) > n * 30 + 20 && spare.food > 0) goods.food = Math.min(20, Math.floor(h.stock.food - n * 30), spare.food);
   if ((h.stock.ammo || 0) > n * 15 + 100 && !campaignAmmoWant(state)) goods.ammo = Math.min(60, Math.floor(h.stock.ammo - n * 15 - 60)); // not the campaign's stockpile
   if ((h.stock.meds || 0) > n + 8) goods.meds = Math.min(4, Math.floor(h.stock.meds - n - 6));
   const value = Object.entries(goods).reduce((a, [k, q]) => a + q * SUPPLIES[k].value, 0);
@@ -2465,7 +2476,7 @@ export function campaignLine(state) {
   const allies = hiveAllies(state, hive).names.map((n) => n.replace(/ \(\d+\)$/, ""));
   const near = state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && f.bases.some((b) => state.grid.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)).map((f) => f.name);
   const WAIT = {
-    rest: "resting between hive missions", home: "too few would stay home", squad: "six fit fighters", ammo: `the ammo stockpile (${Math.floor(h.stock.ammo || 0)} of ${target})`,
+    rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${Math.floor(h.stock.ammo || 0)} of ${target})`,
     odds: "better odds: a stronger squad, allies near the mound, or fuel for fires", fires: "the next fire trip", storm: "nothing: the storm goes out", far: "a hive within reach", unknown: "a known hive",
   };
   // A storm or fire trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.
@@ -3204,7 +3215,12 @@ function launchTrip(state, c, pool, spareHands) {
     // An emergency haul (emergencyTrips): the hub is already short of what the team goes for, so it takes what there
     // is for the walk (the haul brings back many times that) rather than staying home to share the last of it.
     for (const k of ["food", "water"]) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
-  } else if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) return off(); // the hub cannot spare it
+  } else if (sup.food > stock("food") - Math.max(0, homeLeft) * 2 || sup.water > stock("water") - Math.max(0, homeLeft) * 2) {
+    // A hunt or a fishing trip is how a hub short of food eats (seed 5092: 38 people, one hunt in 25 days while the
+    // food ran out): it takes what is left after a day for each one home, as the small first hub does.
+    if (c.food !== "huntTrips" && c.food !== "fishTrips") return off(); // the hub cannot spare it
+    for (const k of ["food", "water"]) sup[k] = Math.max(0, Math.min(sup[k], stock(k) - Math.max(0, homeLeft)));
+  }
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   // The rations: fresh food first, preserved food for the rest (lighter, and the team eats it the same: parties.js).
   const freshFood = Math.floor(Math.max(0, h.stock.food || 0));
@@ -3261,6 +3277,10 @@ function launchTrip(state, c, pool, spareHands) {
 const huntFit = (s) => hunterMult(s) * (bestHuntWeapon(s) ? 3 : 0.3) + combatPower(s) * 0.1;
 const fishFit = (s) => fisherMult(s) + combatPower(s) * 0.05;
 // gov.noHunting: the test switch (hunttest.js) that leaves hunting and fishing out of the governor's plans.
+// A target across a river is a long walk round to a bridge (seed 5092: game land 2 tiles from the hub, 25 tiles by the
+// bridge, 60+ hours out): launchTrip refused it every morning while the near bank was never tried. Keep the targets a
+// team can walk to in about the straight-line distance.
+const walkable = (state, from, x) => { const p = planPath(state, from, x.tile, false); return !!p && p.path.length - 1 <= x.dist * 2 + 2; };
 function foodTripCands(state, h, pool, need, P) {
   if (gov(state).noHunting) return [];
   const n = Math.max(1, atBase(state, h.id).length);
@@ -3276,7 +3296,7 @@ function foodTripCands(state, h, pool, need, P) {
   if (hunters.some((s) => bestHuntWeapon(s, ammo))) {
     const wire = (h.armory || []).some((it) => it && it.key === "snarewire");
     const snareKit = wire || (h.stock.scrap || 0) >= 25;
-    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, hours: HUNT.defHours, limit: 3 })) {
+    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, hours: HUNT.defHours, limit: 8 }).filter((x) => walkable(state, h.tile, x)).slice(0, 3)) {
       if (x.est.rations < 8) continue;
       const line = snareLine(state, x.tile);
       const snare = line ? state.hour - (line.check ?? line.set) >= 48 : snareKit;
@@ -3289,7 +3309,7 @@ function foodTripCands(state, h, pool, need, P) {
   }
   const fishers = [...pool].sort((a, b) => fishFit(b) - fishFit(a) || a.id - b.id).slice(0, 2);
   if (hasFishingGear(h.armory) || fishKit(fishers).power) {
-    for (const x of fishTargets(state, h.tile, P.range, fishers, h.armory || [], { hours: HUNT.defHours, limit: 2 })) {
+    for (const x of fishTargets(state, h.tile, P.range, fishers, h.armory || [], { hours: HUNT.defHours, limit: 6 }).filter((x) => walkable(state, h.tile, x)).slice(0, 2)) {
       if (x.est.rations < 5) continue;
       out.push({ mission: "move", tile: x.tile, crew: 2, fit: fishFit, haul: true, food: "fishTrips", onSite: HUNT.defHours,
         steps: [{ kind: "fish", hours: HUNT.defHours }, { kind: "home" }],
@@ -3358,7 +3378,11 @@ function emergencyTrips(state) {
   const h = hub(state);
   if (!h || !state.autopilot) return;
   const P = persona(state);
-  if (threatAt(state, h).urgent || wxNow(state).severe) return;
+  if (wxNow(state).severe) return;
+  // A horde at the door the walls hold (one beaten off lingers a tile or two out for days) does not keep a thirsty or
+  // starving hub's haul at home (seed 5054, large: 31 died of thirst with the shore 1 tile away); a raid on the way or
+  // a horde that would break in still does.
+  if (threatAt(state, h).urgent && !urgentHolds(state, h)) return;
   const home = atBase(state, h.id);
   const want = waterNeed(state, h).total;
   const wDays = want > 0 ? waterIn(h.stock) / want : Infinity;

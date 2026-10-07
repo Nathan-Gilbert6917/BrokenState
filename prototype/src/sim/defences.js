@@ -236,7 +236,7 @@ export function hordeAttackBase(state, h, base) {
   const smashed = bosses + brutes ? smash(state, base, bosses + brutes) : [];
   const smasher = bosses ? (bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`) + (brutes ? " and the brutes" : "") : "The brutes";
   if (smashed.length) notes.push(`${smasher} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
-  if (h.mix) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
+  if (h.mix && mixText(h.mix, h.size)) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
   base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
   // The special dead press the walls by their weight: the limit in plain dead is the hold limit / the weight.
   const wm = wallWeight(h);
@@ -460,7 +460,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix && mixText(h.mix, h.size) ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
     choices: [
       {
         label: "Man the defences",

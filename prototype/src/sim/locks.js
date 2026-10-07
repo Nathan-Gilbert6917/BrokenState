@@ -75,7 +75,9 @@ export const hasKey = (state, tile) => keyRing(state).some((k) => k.tile === til
 export function keyName(state, tile) {
   const t = state.tiles[tile];
   if (!t || !t.loc) return "A key";
-  return `${t.loc.name} ${KEY_WORD[t.loc.type] || "key"}`;
+  const word = KEY_WORD[t.loc.type] || "key";
+  const first = word.split(" ")[0];
+  return word !== "key" && new RegExp(` ${first}$`, "i").test(t.loc.name) ? `${t.loc.name} ${word.slice(first.length + 1)}` : `${t.loc.name} ${word}`; // "Auto shop key", not "Auto shop shop key"
 }
 export function addKey(state, tile, how = "") {
   if (hasKey(state, tile)) return false;
@@ -473,9 +475,9 @@ export function lockedSearchHour(state, e, p, members) {
   if (bp2) { e.found.gear.push(bp2); bits.push(bp2.name); }
   if (L.key && roll("lkey") < L.key) {
     const tile = keyFor(state, e.tile, `hl${e.hours}`);
-    if (tile != null && addKey(state, tile, `found in a ${lower} at ${t.loc.name}`)) bits.push(`a key (${keyName(state, tile)})`);
+    if (tile != null && addKey(state, tile, `found in ${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower} at ${t.loc.name}`)) bits.push(`a key (${keyName(state, tile)})`);
   }
   const verb = how === "key" ? "unlocked" : how === "pick" ? "picked" : how === "force" ? "forced (loud)" : "smashed open (loud)";
-  return ` ${verb[0].toUpperCase()}${verb.slice(1)} a ${lower}: ${bits.length ? bits.join(", ") : "nothing much inside"}.`;
+  return ` ${verb[0].toUpperCase()}${verb.slice(1)} ${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower}: ${bits.length ? bits.join(", ") : "nothing much inside"}.`;
 }
 export { bpOfItem };

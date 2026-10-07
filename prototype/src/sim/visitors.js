@@ -386,7 +386,7 @@ export function leaveMap(state, v, how = "left") {
   info.stats.left++;
   if (isBorder(state, v.tile)) info.stats.leftAtBorder = (info.stats.leftAtBorder || 0) + 1; // off the map, as they should
   if (v.kind === "merchants") info.rep = clamp(info.rep + Math.max(0, (v.goodwill - v.startGoodwill) || 0) * 0.3, -100, 30);
-  if (v.known) log(state, `${cap1(v.name)} ${v.kind === "explorers" && v.size === 1 ? "has" : "have"} left the State of Calder, to the ${sideOf(state, v.tile)}${v.kind === "raiders" && supplyValue(v.stock) > 40 ? ", with their loot" : ""}.`, "info");
+  if (v.known) log(state, `${cap1(v.name)} ${v.sub === "wanderers" && v.size === 1 ? "has" : "have"} left the State of Calder, to the ${sideOf(state, v.tile)}${v.kind === "raiders" && supplyValue(v.stock) > 40 ? ", with their loot" : ""}.`, "info");
 }
 
 // ---------- spawning (daily) ----------
@@ -765,7 +765,7 @@ function raidWarning(state, v) {
       {
         label: `Pay them off (${p0 ? planText(p0) : `${tributeValue(v)} worth of goods`})`, hint: "They take it and leave the state",
         disabled: (st) => !there(st) || !price(),
-        ai: (st) => (!price() ? -99 : P(st) === "cautious" ? (ratioP < 1.5 ? 80 : 30) : P(st) === "aggressive" ? (ratioP < 0.8 ? 50 : 5) : ratioP < 1 ? 65 : 25),
+        ai: (st) => (!price() ? -99 : tributeStarves(st, base, price()) ? 12 : P(st) === "cautious" ? (ratioP < 1.5 ? 80 : 30) : P(st) === "aggressive" ? (ratioP < 0.8 ? 50 : 5) : ratioP < 1 ? 65 : 25),
         resolve: (st) => {
           if (!there(st)) return "The raiders are gone.";
           const plan = price();
@@ -1252,7 +1252,7 @@ export function visitorTradeContext(state, t) {
 
 // The autopilot at the merchants' wagons (autopilot.js handleTrade): buys a manual nobody has studied when the
 // hub has surplus to pay with, then what the hub is short of with what it has plenty of. needs: autopilot.js needs().
-export function autoVisitorTrade(state, needs, styleKey = "balanced") {
+export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}) {
   const ctx = tradeContext(state);
   if (!ctx || !ctx.visitor) return "";
   const t = ctx.t;
@@ -1262,8 +1262,20 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced") {
   const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, ctx.f, b) - demand(state, ctx.f, a) || needs[a] - needs[b]);
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
   const tryDeal = () => {
-    for (const k of plenty) { if (tradeVerdict(state).ok) break; if (!t.ask[k]) balanceWith(state, k); }
-    if (tradeVerdict(state).ok) { const r = executeTrade(state); if (/^Traded/.test(r)) { out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); return true; } }
+    for (const k of plenty) {
+      if (tradeVerdict(state).ok) break;
+      if (!t.ask[k]) balanceWith(state, k);
+      if (spare[k] != null && (t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs
+    }
+    if (tradeVerdict(state).ok) {
+      const paid = { ...t.offer };
+      const r = executeTrade(state);
+      if (/^Traded/.test(r)) {
+        for (const [k, q] of Object.entries(paid)) if (spare[k] != null) spare[k] = Math.max(0, spare[k] - q); // a second deal pays from what is left
+        out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, ""));
+        return true;
+      }
+    }
     t.offer = {}; t.ask = {}; t.offerGear = []; t.askGear = [];
     return false;
   };
@@ -1280,6 +1292,16 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced") {
   } else endTrade(state);
   if (out.length) visitorInfo(state).stats.trades++;
   return out.length ? out.join("; ") : "nothing worth swapping";
+}
+
+// The autopilot does not pay raiders in food the base cannot spare: under TRIBUTE_FOOD_DAYS a head left, it would
+// rather fight (seed 5021, large: 122 of 213 food paid on day 281 with the winter stores already short; 19 starved).
+const TRIBUTE_FOOD_DAYS = 10;
+function tributeStarves(st, base, plan) {
+  const paid = (plan.food || 0) + (plan.preserved || 0);
+  if (paid <= 0) return false;
+  const mouths = Math.max(1, atBase(st, base.id).length);
+  return (base.stock.food || 0) + (base.stock.preserved || 0) - paid < mouths * TRIBUTE_FOOD_DAYS;
 }
 
 // Attacking merchants (the trade window at your base, or a team's road card): reputation first, then the fight.

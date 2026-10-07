@@ -1443,7 +1443,7 @@ function cullCard(state, p, horde) {
   const moved = (st) => { awaitOrders(st, p, "The horde had moved on before the team was set.", { failed: true }); return "The horde is no longer there."; };
   return {
     title: `A horde of ${horde.size}`,
-    text: `The team has found the horde near ${tileLabel(state, horde.tile)} (score ${hordeScore(horde.size)}${horde.bosses ? `, a ${BOSS_NAMES.horde} among them` : ""}${zombieToughness(state, horde.tile) >= 3 ? "; this is red-skull ground by a hive, and the dead here are much tougher" : ""}).${horde.mix ? ` Among them: ${mixText(horde.mix, horde.size)}${horde.elite ? " (elite)" : ""}.` : ""} Your squad's combat power is ${Math.round(power0)}.`,
+    text: `The team has found the horde near ${tileLabel(state, horde.tile)} (score ${hordeScore(horde.size)}${horde.bosses ? `, a ${BOSS_NAMES.horde} among them` : ""}${zombieToughness(state, horde.tile) >= 3 ? "; this is red-skull ground by a hive, and the dead here are much tougher" : ""}).${horde.mix && mixText(horde.mix, horde.size) ? ` Among them: ${mixText(horde.mix, horde.size)}${horde.elite ? " (elite)" : ""}.` : ""} Your squad's combat power is ${Math.round(power0)}.`,
     partyId: p.id,
     choices: [
       {

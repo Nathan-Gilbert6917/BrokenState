@@ -274,7 +274,7 @@ export function siteWanderers(state, tileId) {
     } else {
       const f = factionById(state, r.fid);
       if (!f || !f.alive) continue;
-      out.push({ kind: "soldiers", side: "military", count: r.n, power: squadPower(f), name: `the ${f.name} squad`, factionId: f.id });
+      out.push({ kind: "soldiers", side: "military", count: r.n, power: squadPower(f), name: `the ${f.name.replace(/^The /, "")} squad`, factionId: f.id });
     }
   }
   return out;
@@ -549,7 +549,7 @@ function hurtGroup(state, g, k) {
 export function squadCard(state, p, f, n, opts = {}) {
   f.known = true;
   const att = attitude(f).toLowerCase();
-  const enemy = { kind: "soldiers", count: n, power: squadPower(f), factionId: f.id, name: `the ${f.name} squad` };
+  const enemy = { kind: "soldiers", count: n, power: squadPower(f), factionId: f.id, name: `the ${f.name.replace(/^The /, "")} squad` };
   const c = { type: "attackSquad", site: !!opts.site, enemy, factionId: f.id };
   const text = opts.site ? `A ${f.name} squad of ${NUM[n] || n} is clearing ${tileLabel(state, partyTile(p))} room by room. They are ${att}: the sergeant waves you over.`
     : `${cap(NUM[n] || String(n))} soldiers of ${f.name} come up the road in a loose file, rifles up, checking the ditches. They are ${att} and stop to size you up.`;
@@ -592,7 +592,7 @@ function squadFightCard(state, p, f, n, dead) {
   f.known = true;
   const t = state.tiles[partyTile(p)];
   const enemy = { kind: "zombies", count: dead, power: 1 + zombieToughness(state, t.id), name: "the dead" };
-  const third = [{ side: "military", kind: "soldiers", count: n, power: squadPower(f), name: `the ${f.name} squad`, factionId: f.id }];
+  const third = [{ side: "military", kind: "soldiers", count: n, power: squadPower(f), name: `the ${f.name.replace(/^The /, "")} squad`, factionId: f.id }];
   const c = { type: "helpSquad", enemy, factionId: f.id, third, allyPower: n * squadPower(f) * 0.8 };
   const text = `Gunfire ahead: ${NUM[n] || n} ${f.name} soldiers are holding a crossroads against about ${dead} of the dead. They are giving ground.`;
   const squadWins = clamp(winOdds((n * squadPower(f)) / Math.max(0.1, dead * enemy.power), { kind: "zombies", count: dead, people: n }), 0.1, 0.95);
