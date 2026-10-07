@@ -2,6 +2,7 @@
 // crafting.js, inventory.js, vehicles.js): game over, the leader card, deaths at a base, lost outposts, cut-off
 // outposts, hunger, starting roles and names, refunds, kits, armor condition and the stock floor.
 // Usage: node tools/basetest.js [seed]
+import { LIGHTS } from "../src/sim/lights.js";
 import {
   createWorld, tickHour, hub, atBase, alive, skill, hurt, killSurvivor, makeSurvivor, newId, applyCrew, residents,
   checkGameOver, removeBase, renameSurvivor, assignStartingRoles, combatPower,
@@ -455,6 +456,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.heat) check(!/power|armor/.test(text) && /Heat ×/.test(text), `${key}: camp kit says how much less Heat (${text})`);
     else if (d.defence) check(!/power|armor/.test(text) && /alarm/.test(text), `${key}: an alarm says what it does (${text})`);
     else if (r.gear === "dewormer") check(!/power|armor/.test(text) && /worm/.test(text) && /one use/.test(text), `${key}: the dewormer says what it cures (${text})`); // sim/worm.js
+    else if (LIGHTS[r.gear]) check(!/power|armor/.test(text) && /at night sees \d+ tiles/.test(text), `${key}: a light says how far it sees at night (${text})`); // sim/lights.js (a headlamp is carried, not held)
     else if (r.gear === "puritabs") check(!/power|armor/.test(text) && /10 un-purified water safe/.test(text) && /lasts 10 tablets/.test(text), `${key}: the tablets say what one treats and how many there are (${text})`); // sim/worm.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
