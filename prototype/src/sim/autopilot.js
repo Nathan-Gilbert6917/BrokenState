@@ -28,7 +28,7 @@ import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
-import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL } from "./defences.js";
+import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
@@ -1396,6 +1396,13 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   };
   if (threat.urgent) addGuards(threat.urgent * P.guardMargin, Math.ceil(people.length * 0.7));
+  // 3a. The watchtower's alarm (defences.js towerWatch: a horde near, or coming, seen from the tower): guards go on the
+  // walls now, ahead of the medics, the farm and the stations, as many as a horde at the door would want (people on
+  // work priorities move Guard up the same way: work.js watchPromotions), up to half the people.
+  else {
+    const tw = towerHordes(state, base)[0];
+    if (tw) addGuards(tw.size * 0.14 * 1.1 * P.guardMargin, Math.ceil(people.length * 0.5));
+  }
 
   // 4. Medics while anyone here is hurt (each hospital tier needs 1-3 to run).
   const hosp = hospitalDef(base);

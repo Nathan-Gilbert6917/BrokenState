@@ -23,6 +23,7 @@ import { createWorld, tickHour, hub, day, alive, atBase, residents, makeSurvivor
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { launchExpedition, partyTile } from "../src/sim/parties.js";
 import { makeHorde } from "../src/sim/hordes.js";
+import { towerWatch } from "../src/sim/defences.js";
 import { addCondition } from "../src/sim/health.js";
 import * as Buildings from "../src/sim/buildings.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -395,6 +396,14 @@ section("Alerts: each kind appears and clears");
   let hd = null;
   appearsClears("horde", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "horde near a base");
   appearsClears("breakin", () => { hd = makeHorde(w, { tile: near.id, size: 2000, target: h.tile }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "break-in warning");
+  // The watchtower's alarm (sim/defences.js towerWatch): its own alert, in place of the plain horde one.
+  Buildings.addBuilding(h, "watchtower");
+  const ta = appearsClears("tower", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w); }, "watchtower alarm");
+  check(ta && /Watchtower at .*horde of 30, 2 tiles out/.test(ta.text) && ta.go.tile === near.id, `watchtower alarm: the text and the horde's tile (${ta && ta.text})`);
+  hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w);
+  check(!has("horde").some((a) => a.key === `horde:${hd.id}`), "watchtower alarm: no second (plain) alert for the same horde");
+  w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w);
+  h.buildings = h.buildings.filter((b) => b.type !== "watchtower"); h.watchtower = false;
   // Sick and untreated.
   const patient = atBase(w, h.id)[1];
   let cond = null;

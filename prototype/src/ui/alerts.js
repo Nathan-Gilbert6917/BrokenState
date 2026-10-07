@@ -9,6 +9,7 @@ import { SUPPLIES } from "../sim/data.js";
 import { waterUseText } from "./farming.js";
 import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
+import { cellOf } from "../sim/work.js";
 import { moodRisk } from "../sim/morale.js";
 import { conditionsOf, autoWantsCondition, CONDITIONS, noMedsList, recentNews } from "../sim/health.js";
 import { wormOf, WORM } from "../sim/worm.js";
@@ -120,6 +121,17 @@ const SECTIONS = {
   hordes(state, out) {
     const g = state.grid;
     for (const h of state.hordes) {
+      // A watchtower's alarm (sim/defences.js towerWatch): its own alert, seen right now or not (the lookouts track it).
+      const tower = state.bases.find((b) => b.towerWatch && b.towerWatch.ids.includes(h.id));
+      if (tower) {
+        const d = g.distance(h.tile, tower.tile), limit = holdLimit(state, tower, h.bosses || 0);
+        const coming = (h.goal && h.goal.baseId === tower.id) || h.target === tower.tile;
+        const up = residents(state, tower.id).filter((s) => cellOf(state, s, "guard").watch);
+        const seen = state.live.has(h.tile), where = seen ? `${d} tile${d === 1 ? "" : "s"} out` : "out of sight"; // at night the tower sees a tile: the lookouts know it is out there
+        out.push({ key: `tower:${tower.id}:${h.id}`, kind: "tower", icon: "🗼", tone: coming || h.size > limit ? "danger" : "warn", text: `Watchtower at ${tower.name}: horde of ${h.size}, ${where}${coming ? ", coming" : ""}`,
+          tip: `The watchtower ${seen ? "sees" : "saw"} a horde of about ${h.size}${h.bosses ? " with a Wallbreaker" : ""} ${seen ? `${d} tile${d === 1 ? "" : "s"} from ${tower.name}` : `near ${tower.name} (out of sight now)`}${coming ? ", heading this way" : ""}. Its defences hold about ${Math.round(limit)}${h.size > limit ? ": it would break in" : ""}. ${up.length ? `Guard is moved up to priority 1 for ${up.map((s) => firstName(s.name)).join(", ")} (their backup job) until it has gone.` : "Anyone on work priorities there with Guard as a backup job moves it up to priority 1 until it has gone."} Click to see ${seen ? "the horde" : "the base"}.`, go: { tile: seen ? h.tile : tower.tile } });
+        if (!(coming && h.size > limit) || !state.live.has(h.tile)) continue; // in place of the plain horde alert; a likely break-in keeps its own
+      }
       if (!state.live.has(h.tile)) continue; // only hordes you can see now
       let best = null, dist = Infinity;
       for (const b of state.bases) {
@@ -244,7 +256,7 @@ const SECTIONS = {
     if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];
