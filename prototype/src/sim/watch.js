@@ -15,7 +15,8 @@
 //     priorities on a guard watch do (work.js workDayRoles).
 //   - Pinned people and anyone away from the base are left alone. The dev autopilot (which sets every role) skips the
 //     Manual part.
-import { atBase, baseById, hourOfDay, skill } from "./world.js";
+import { atBase, baseById, hourOfDay, skill, isNight } from "./world.js";
+import { manned } from "./defences.js";
 import { isManaged, healthRest } from "./work.js";
 
 export const WATCH_PRESETS = {
@@ -185,4 +186,14 @@ export function watchLine(state, base) {
   if (gaps.length > 1 && gaps[0][0] === 0 && gaps[gaps.length - 1][1] === 24) { const last = gaps.pop(); gaps[0][0] = last[0]; }
   const names = now.who.map((s) => s.name.split(" ")[0]);
   return `${names.length ? `On watch now: ${names.join(", ")}` : "Nobody on watch now"}${gaps.length ? ` · no watch ${gaps.map(([a, b]) => `${hh(a)}–${hh(b)}`).join(", ")}` : " · watched round the clock"}`;
+}
+
+// ---------- readiness when an attack hits ----------
+// The base as the attack finds it: manned (defences manned for a warned raid or horde: base.alert, defences.js
+// manned), the ids of the people standing guard there right now (fit, not in a bed: the watch roster, Guard on
+// priorities, a fixed guard, the emergency's guards), and whether it is night. The State Map's warnings and surprise
+// (an unwatched night) and the battle map's start (who is already at a post) read this.
+export function readiness(state, base) {
+  const watchers = base ? atBase(state, base.id).filter((s) => s.alive && s.role === "guard" && !s.inBed && !healthRest(s)).map((s) => s.id) : [];
+  return { manned: !!base && (!!base.alert || manned(state, base)), watchers, night: isNight(state) };
 }
