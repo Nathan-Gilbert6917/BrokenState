@@ -959,7 +959,7 @@ function skylineScene() {
 
 // ---------- background: a campfire at night ----------
 function campScene() {
-  let W = 0, H = 0, res = 1, sky, trees, ground, fog, fx = 0, fy = 0, horizon = 0, groundY = 0;
+  let W = 0, H = 0, res = 1, sky, trees, ground, props, fog, fx = 0, fy = 0, horizon = 0, groundY = 0;
   const flames = [], sparks = [], smoke = [], eyes = [], flies = [];
   let edge = [], clouds = [];
   const flameY = puff("255,226,150", 0.15), flameO = puff("255,140,40", 0.1), flameR = puff("200,50,20"), glowP = puff("255,130,50"), smokeP = puff("60,58,64"), moonGlow = puff("170,190,220");
@@ -1009,16 +1009,54 @@ function campScene() {
       g.fillStyle = "rgba(0,0,0,0.5)";
       g.beginPath(); g.ellipse(x + s * 0.2, y + s * 0.5, s * 1.5, s * 0.5, 0, 0, Math.PI * 2); g.fill();
     }
+    return L;
+  }
+
+  // The camp's things, in their own full-height layer drawn after the dead at the far edge: the pickup and the tent
+  // at the edges of the light first (they stand behind the rest), then the log and the crate the people sit on,
+  // packs, firewood, the ring of stones and the tripod with its pot.
+  function propsLayer() {
+    const L = layer(W, H, res), R = rng(607), g = L.g;
+    g.lineCap = "round";
     // A thing's shadow on the ground, cast away from the fire.
     const shadow = (x, y, w, len) => {
       const dir = Math.sign(x - fx) || 1;
       g.fillStyle = "rgba(0,0,0,0.55)";
       g.beginPath(); g.ellipse(x + dir * len * 0.55, y, len * 0.7 + w * 0.3, w * 0.22, 0, 0, Math.PI * 2); g.fill();
     };
+    // A pickup at the right edge, nose to the fire, only its lit side showing.
+    const px = fx + H * 0.46, py = fy + H * 0.012, pw = H * 0.75, ph = H * 0.3;
+    shadow(px, py, pw, H * 0.1);
+    let lg = g.createLinearGradient(px - pw / 2, 0, px + pw / 2, 0);
+    lg.addColorStop(0, "#4a3a2c"); lg.addColorStop(1, "#15110e");
+    g.fillStyle = lg;
+    g.beginPath();
+    g.moveTo(px - pw / 2, py); g.lineTo(px - pw / 2, py - ph * 0.55); g.lineTo(px - pw * 0.3, py - ph * 0.6); g.lineTo(px - pw * 0.2, py - ph); g.lineTo(px + pw * 0.12, py - ph); g.lineTo(px + pw * 0.15, py - ph * 0.6); g.lineTo(px + pw / 2, py - ph * 0.58); g.lineTo(px + pw / 2, py); g.closePath(); g.fill();
+    g.fillStyle = "rgba(255,200,140,0.12)";
+    g.beginPath(); g.moveTo(px - pw * 0.27, py - ph * 0.62); g.lineTo(px - pw * 0.18, py - ph * 0.95); g.lineTo(px + pw * 0.1, py - ph * 0.95); g.lineTo(px + pw * 0.12, py - ph * 0.62); g.closePath(); g.fill();
+    g.fillStyle = "#0a0908";
+    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.22, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = "#2a241e";
+    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.09, 0, Math.PI * 2); g.fill(); }
+    // A tent at the left edge of the light, its door side lit; a sleeping bag rolled by it.
+    const tx = fx - H * 0.5, ty = fy + H * 0.02, tw = H * 0.4, th = H * 0.24;
+    shadow(tx, ty, tw, H * 0.08);
+    g.fillStyle = "#17120f";
+    g.beginPath(); g.moveTo(tx - tw / 2, ty); g.lineTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.closePath(); g.fill();
+    lg = g.createLinearGradient(tx - tw * 0.1, 0, tx + tw * 0.55, 0);
+    lg.addColorStop(0, "#3d2c1c"); lg.addColorStop(1, "#6b4a2a");
+    g.fillStyle = lg;
+    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.12, ty); g.closePath(); g.fill();
+    g.fillStyle = "#0a0806";
+    g.beginPath(); g.moveTo(tx + tw * 0.2, ty); g.lineTo(tx + tw * 0.05, ty - th * 0.55); g.lineTo(tx + tw * 0.38, ty); g.closePath(); g.fill();
+    g.strokeStyle = "#8a6a44"; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx - tw * 0.2, ty + H * 0.01); g.moveTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.62, ty + H * 0.012); g.stroke();
+    g.fillStyle = "#2c2318";
+    g.beginPath(); g.roundRect(tx + tw * 0.62, ty - H * 0.02, H * 0.07, H * 0.022, H * 0.011); g.fill();
     // A fallen log to the left of the fire (two sit on it) and a crate to the right (one sits on that).
     const lx = fx - H * 0.155, ly = fy + H * 0.012, lw = H * 0.19, lh = H * 0.052;
     shadow(lx, ly + lh * 0.2, lw, H * 0.05);
-    let lg = g.createLinearGradient(lx, ly - lh, lx, ly);
+    lg = g.createLinearGradient(lx, ly - lh, lx, ly);
     lg.addColorStop(0, "#5a3d26"); lg.addColorStop(0.5, "#3a2617"); lg.addColorStop(1, "#160e09");
     g.fillStyle = lg;
     g.beginPath(); g.roundRect(lx - lw / 2, ly - lh, lw, lh, lh / 2); g.fill();
@@ -1037,35 +1075,6 @@ function campScene() {
     g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = 1.5;
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 1.5 + 2, cs - 4, cs * 0.75 - 4);
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 0.75 + 2, cs - 4, cs * 0.75 - 4);
-    // A tent at the left edge of the light, its door side lit; a sleeping bag rolled by it.
-    const tx = fx - H * 0.5, ty = fy + H * 0.02, tw = H * 0.4, th = H * 0.24;
-    shadow(tx, ty, tw, H * 0.08);
-    g.fillStyle = "#17120f";
-    g.beginPath(); g.moveTo(tx - tw / 2, ty); g.lineTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.closePath(); g.fill();
-    lg = g.createLinearGradient(tx - tw * 0.1, 0, tx + tw * 0.55, 0);
-    lg.addColorStop(0, "#3d2c1c"); lg.addColorStop(1, "#6b4a2a");
-    g.fillStyle = lg;
-    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.12, ty); g.closePath(); g.fill();
-    g.fillStyle = "#0a0806";
-    g.beginPath(); g.moveTo(tx + tw * 0.2, ty); g.lineTo(tx + tw * 0.05, ty - th * 0.55); g.lineTo(tx + tw * 0.38, ty); g.closePath(); g.fill();
-    g.strokeStyle = "#8a6a44"; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx - tw * 0.2, ty + H * 0.01); g.moveTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.62, ty + H * 0.012); g.stroke();
-    g.fillStyle = "#2c2318";
-    g.beginPath(); g.roundRect(tx + tw * 0.62, ty - H * 0.02, H * 0.07, H * 0.022, H * 0.011); g.fill();
-    // A pickup at the right edge, nose to the fire, only its lit side showing.
-    const px = fx + H * 0.46, py = fy + H * 0.012, pw = H * 0.75, ph = H * 0.3;
-    shadow(px, py, pw, H * 0.1);
-    lg = g.createLinearGradient(px - pw / 2, 0, px + pw / 2, 0);
-    lg.addColorStop(0, "#4a3a2c"); lg.addColorStop(1, "#15110e");
-    g.fillStyle = lg;
-    g.beginPath();
-    g.moveTo(px - pw / 2, py); g.lineTo(px - pw / 2, py - ph * 0.55); g.lineTo(px - pw * 0.3, py - ph * 0.6); g.lineTo(px - pw * 0.2, py - ph); g.lineTo(px + pw * 0.12, py - ph); g.lineTo(px + pw * 0.15, py - ph * 0.6); g.lineTo(px + pw / 2, py - ph * 0.58); g.lineTo(px + pw / 2, py); g.closePath(); g.fill();
-    g.fillStyle = "rgba(255,200,140,0.12)";
-    g.beginPath(); g.moveTo(px - pw * 0.27, py - ph * 0.62); g.lineTo(px - pw * 0.18, py - ph * 0.95); g.lineTo(px + pw * 0.1, py - ph * 0.95); g.lineTo(px + pw * 0.12, py - ph * 0.62); g.closePath(); g.fill();
-    g.fillStyle = "#0a0908";
-    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.22, 0, Math.PI * 2); g.fill(); }
-    g.fillStyle = "#2a241e";
-    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.09, 0, Math.PI * 2); g.fill(); }
     // Packs and a jerrycan by the log; firewood stacked.
     g.fillStyle = "#3a2e22";
     g.beginPath(); g.roundRect(lx - lw * 0.75, ly - H * 0.04, H * 0.035, H * 0.045, 4); g.fill();
@@ -1155,6 +1164,7 @@ function campScene() {
       pine(x, horizon + H * (0.08 + R() * 0.04), H * (0.2 + R() * 0.16) * d, "#020305");
     }
     ground = groundLayer();
+    props = propsLayer();
     fog = fogStrip(W, H * 0.16, "90,105,135", 31, res, 1);
     clouds = Array.from({ length: 9 }, (_, i) => ({ x: R() * (W + 600) - 300, y: H * (0.05 + R() * 0.25), r: H * (0.08 + R() * 0.1), v: 3 + R() * 5, k: i }));
     edge = walkers(5, 55, {}).map((z) => ({ ...z, k: { ...z.k, crawl: false } }));
@@ -1291,7 +1301,11 @@ function campScene() {
       g.globalAlpha = on * 0.8;
       g.fillRect(f.x, f.y - 6, 1.6, 1.6);
     }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    g.drawImage(props.c, 0, 0, W, H);
     // The firelight's flicker on everything around it (the steady part is painted into the ground).
+    g.globalCompositeOperation = "lighter";
     const r = H * 0.55;
     g.globalAlpha = 0.22 * flick;
     g.drawImage(glowP, fx - r * 1.4, fy - r * 0.75, r * 2.8, r * 1.2);
