@@ -9,15 +9,22 @@
 //   under 20%, dry at 0 with a log line; hauled water into waterProduction, one well per 4 people at the base
 // - radio: a station reaches 12, a Military encrypted radio in the armory 24, groups' sets add 6, a chain through an
 //   owned base; a group's base is no relay
+// - radio relays at any base: buildable at the hub without a station and at an outpost, refused beside a station
+//   (standing or queued); an outpost's relay links and brings a group past it into radio reach and so into reach
+//   for the coalition (inviteProblem, reachVia, relaySpotFor), out again when it goes off the air; a relay out of
+//   the station's range reaches nobody; a hub relay linked from an outpost's station; idle beside a station, no parts
 // - allianceVictory: a hostile group alive and outside does not block it with a member and over half the land; no
 //   member: no victory; goalsProgress blocks text
 // - save/load (sim/save.js): the claims and wells round-trip as plain data; an older save without claims loads
-import { createWorld, tickHour, hub, atBase, RADIO_RANGE, newId, makeSurvivor, day } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, RADIO_RANGE, newId, makeSurvivor, day, radioBasesInRange } from "../src/sim/world.js";
+import { BUILDINGS, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
+import * as BP from "../src/sim/blueprints.js";
+import { ensureJobs } from "../src/sim/jobs.js";
 import { launchExpedition, partyTile, carried, outpostName } from "../src/sim/parties.js";
 import { startOrder, queueEstimate, describeOrder, queueOrder } from "../src/sim/orders.js";
 import * as C from "../src/sim/claims.js";
-import { controlledLand, allianceVictory, accordHolds, goalsProgress, ensureAlliance, ALLIANCE, coalitionMask } from "../src/sim/alliance.js";
-import { radioNodes, canRadioGroup, GROUP_REACH, MIL_RADIO_RANGE, hasMilRadio } from "../src/sim/radio.js";
+import { controlledLand, allianceVictory, accordHolds, goalsProgress, ensureAlliance, ALLIANCE, coalitionMask, inviteProblem, reachVia } from "../src/sim/alliance.js";
+import { radioNodes, canRadioGroup, GROUP_REACH, MIL_RADIO_RANGE, hasMilRadio, RELAY_RANGE, relayReach, relaySpotFor, radioSummary, radioDaily } from "../src/sim/radio.js";
 import { waterProduction } from "../src/sim/economy.js";
 import { newItem } from "../src/sim/inventory.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
@@ -346,6 +353,90 @@ section("Radio reach: 12, 24 with a Military encrypted radio, groups' sets +6, a
     other.bases.pop();
   } else passed += 2;
   f.bases.length = 0; f.bases.push(...saved);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Radio relays at any base: an outpost and the hub, none beside a station, a group brought into reach");
+{
+  const state = mk();
+  const h = hub(state);
+  const g = state.grid;
+  BP.unlockAll(state); // the Radio Engineering Handbook studied
+  const mech = (base) => { const s = makeSurvivor(state); s.skills.mechanics = 5; s.location = { kind: "base", baseId: base.id }; state.survivors.push(s); return s; };
+  mech(h);
+  Object.assign(h.stock, { scrap: 100, parts: 20 });
+  check(!BUILDINGS.relay.outpostOnly && BUILDINGS.relay.plot === "utility" && BUILDINGS.relay.req.mechanics === 3 && BUILDINGS.relay.cost.parts === 3, "the relay: a utility plot, Mechanics 3+, 3 parts, no longer outposts only");
+  // The hub without a station: a relay can go up (it works once a station elsewhere reaches it).
+  h.radio = false;
+  h.buildings = h.buildings.filter((b) => b.type !== "radio" && b.type !== "relay");
+  check(canBuild(state, h, "relay").ok, `a relay at the hub with no station: buildable (${canBuild(state, h, "relay").reason || "ok"})`);
+  // Queued station, or a station standing: refused (the station's 12 tiles cover the relay's 6).
+  h.construction.push({ id: newId(), type: "radio", progress: 0, hours: 48 });
+  const q = canBuild(state, h, "relay");
+  check(!q.ok && /radio station here/.test(q.reason), `a station queued at the hub: no relay (${q.reason})`);
+  h.construction.length = 0;
+  addBuilding(h, "radio");
+  const r = canBuild(state, h, "relay");
+  check(!r.ok && /radio station here/.test(r.reason), `a station at the hub: no relay (${r.reason})`);
+  // An outpost 9-11 tiles out, with a mechanic and the materials: buildable, and queueBuild takes it.
+  const oTile = tileNear(state, h.tile, 9, 11);
+  const o = fakeOutpost(state, oTile);
+  mech(o);
+  Object.assign(o.stock, { scrap: 30, parts: 4 });
+  check(canBuild(state, o, "relay").ok && /queued/.test(queueBuild(state, o, "relay")) && o.stock.parts === 1, "a relay at an outpost: queued, 15 scrap and 3 parts paid");
+  o.construction.length = 0;
+  addBuilding(o, "relay");
+  const nodes = radioNodes(state);
+  check(nodes.find((n) => n.base === o).linked && nodes.find((n) => n.base === o).range === RELAY_RANGE, "the outpost's relay links to the hub's station");
+  // A group 6-12 tiles past the outpost (out of the hub's 12 + 6): the relay brings it into call reach, and so into
+  // reach for the coalition's invitation.
+  state.bases.splice(state.bases.indexOf(o), 1);
+  const f = state.factions.find((x) => x.alive && x.bases.length);
+  const saved = f.bases.slice();
+  const fTile = tileNear(state, oTile, 9, 12, (t) => g.distance(t.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH && g.distance(t.id, h.tile) > ALLIANCE.NEIGHBOUR + 2);
+  if (check(fTile != null, "a spot for the group past the outpost")) {
+    f.bases.length = 0; f.bases.push(fTile);
+    f.known = true; f.goodwill = 70; f.pact = "trade";
+    ensureJobs(state).list.push({ id: 9901, fid: f.id, type: "scout", status: "done", endDay: day(state), data: {}, reward: { goodwill: 0, supplies: {}, gear: [] }, title: "x", desc: "", target: fTile });
+    state.bases.push(o);
+    const relay = o.buildings.find((b) => b.type === "relay");
+    o.buildings.splice(o.buildings.indexOf(relay), 1); // no relay yet
+    const why = inviteProblem(state, f);
+    check(!canRadioGroup(state, f) && reachVia(state, f) === "" && /out of radio reach/.test(why), `no relay: out of radio reach ("${why}")`);
+    check(relaySpotFor(state, f) === o && relayReach(state, o).includes(f) && why.includes(`radio relay at ${o.name}`), "the invitation's line names the outpost where a relay would reach them");
+    o.buildings.push(relay);
+    check(canRadioGroup(state, f) && reachVia(state, f) === "radio" && inviteProblem(state, f) === "", `with the relay up: in radio reach, and they can be invited (${inviteProblem(state, f) || "ok"})`);
+    o.relayOffline = true;
+    check(!canRadioGroup(state, f) && /out of radio reach/.test(inviteProblem(state, f)), "the relay off the air: out of reach again");
+    o.relayOffline = false;
+    // A relay that would not link (an outpost beyond the station's 12, though within its coverage + 6) adds nothing.
+    o.buildings.splice(o.buildings.indexOf(relay), 1);
+    const farTile = tileNear(state, h.tile, RADIO_RANGE + 3, RADIO_RANGE + 5, (t) => g.distance(t.id, fTile) <= RELAY_RANGE + GROUP_REACH);
+    if (farTile != null) {
+      state.bases.splice(state.bases.indexOf(o), 1);
+      const far = fakeOutpost(state, farTile);
+      check(relayReach(state, far).length === 0 && relaySpotFor(state, f) !== far, "a relay out of the station's range would not link: it reaches nobody");
+      state.bases.splice(state.bases.indexOf(far), 1);
+    } else passed++;
+  }
+  f.bases.length = 0; f.bases.push(...saved);
+  // A relay at a hub with no station of its own, linked from an outpost's station: it extends coverage. With a
+  // station built beside it later, it stands idle and uses no parts.
+  const st2 = mk();
+  const h2 = hub(st2);
+  const o2 = fakeOutpost(st2, tileNear(st2, h2.tile, 8, 10));
+  addBuilding(o2, "radio");
+  addBuilding(h2, "relay");
+  const hn = radioNodes(st2).find((n) => n.base === h2);
+  check(hn && hn.kind === "relay" && hn.linked, "a hub relay without a station links to an outpost's station");
+  const edge = tileNear(st2, h2.tile, RELAY_RANGE, RELAY_RANGE, (t) => st2.grid.distance(t.id, o2.tile) > RADIO_RANGE + 2);
+  if (edge != null) check(radioBasesInRange(st2, edge).includes(h2), "the hub relay's 6 tiles are covered"); else passed++;
+  addBuilding(h2, "radio");
+  h2.stock.parts = 5;
+  const sum = radioSummary(st2, h2);
+  check(radioNodes(st2).find((n) => n.base === h2).kind === "station" && /relay here stands idle/.test(sum), `a station beside the relay: the base is a station, the relay idle ("${sum}")`);
+  for (let d = 0; d < 12; d++) { st2.hour += 24; radioDaily(st2); }
+  check(h2.stock.parts === 5 && !h2.relayOffline, "an idle relay uses no parts");
 }
 
 // ---------------------------------------------------------------------------------------------------------

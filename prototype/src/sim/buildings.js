@@ -42,7 +42,8 @@ export const BUILDINGS = {
   cells:        { name: "Holding cells",  plot: "building", cost: { scrap: 16, parts: 1 },  hours: 20, max: 2, desc: "Barred rooms for 3 prisoners each (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded; 8% for anyone kept in a shed when the cells are full)." },
   radio:        { name: "Radio station",  plot: "building", cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
-  relay:        { name: "Radio relay",    plot: "utility", cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, outpostOnly: true, desc: "Outposts only. An unmanned repeater mast: extends radio coverage 6 tiles around this outpost when a radio station or another linked relay is within range. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
+  // Any base, the hub too, but not where a radio station stands (canBuild: the station's 12 tiles cover its 6).
+  relay:        { name: "Radio relay",    plot: "utility", cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, desc: "An unmanned repeater mast for any base without a radio station: extends radio coverage 6 tiles around this base when a radio station or another linked relay is within range, so relays chain your coverage outward. Groups whose base lies within your coverage + 6 tiles can be called on the radio and invited into the coalition. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
   garage:       { name: "Garage",         plot: "building", cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed." },
   storehouse:   { name: "Storehouse",     plot: "building", cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked dry-goods store: +150 food storage room (0.8% a day, less in the cold), and raiders steal half as much from this base." },
   // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
@@ -373,6 +374,9 @@ export function canBuild(state, base, type) {
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
   if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
+  // A relay where a radio station stands (or is queued) would add nothing: the station's range covers the relay's
+  // (radio.js radioNodes counts the base as a station only). A broken station still counts: it is repaired.
+  if (type === "relay" && (base.radio || countAll(base, "radio") || base.construction.some((c) => c.type === "radio"))) return { ok: false, reason: "A radio station here already covers more than a relay would" };
   // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
   if (def.shelterOnly && !isShelter(base)) return { ok: false, reason: "Shelters only (this is a base already)" };
   if (isShelter(base)) {

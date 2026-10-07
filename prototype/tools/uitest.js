@@ -15,6 +15,8 @@
 //   layout and window sizes, drags clamped at several UI sizes, the menu's controls, keys in README and Help
 // - map overlays: Known area (searched tiles, saved), ruins (drawn, panel, gone when built over), Coalition land
 //   (the tiles controlledLand counts), worked out only when their data changes; every size and zoom, no NaN
+// - radio relays on screen: the radio header and a group's radio panel name the base where a relay would reach it,
+//   the Coalition tab's "out of radio reach" line, Construction (offered at an outpost, greyed out beside a station)
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -1559,6 +1561,58 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     }
   } finally {
     if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Radio relays on screen: the radio header, a group's radio panel, the Coalition tab, Construction");
+{
+  const { renderModal } = await import("../src/ui/ui.js");
+  const { groupsRadioHeader, radioModal, caravanLines } = await import("../src/ui/tradewindow.js");
+  const { diplomacyModal } = await import("../src/ui/diplomacy.js");
+  const { unlockAll } = await import("../src/sim/blueprints.js");
+  const { relaySpotFor, RELAY_RANGE, GROUP_REACH } = await import("../src/sim/radio.js");
+  const { RADIO_RANGE, newId } = await import("../src/sim/world.js");
+  const w = createWorld({ seed, factionCount: 6 });
+  w.started = true;
+  unlockAll(w);
+  const h = hub(w);
+  const g = w.grid;
+  Buildings.addBuilding(h, "radio");
+  Object.assign(h.stock, { scrap: 100, parts: 20 });
+  const free = (t, a, b, from, ok = () => true) => { const d = g.distance(from, t.id); return d >= a && d <= b && t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && t.owner == null && !w.bases.some((x) => x.tile === t.id) && !w.factions.some((f) => f.bases.includes(t.id)) && ok(t); };
+  const far = (u) => g.distance(u.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH;
+  const oT = w.tiles.find((t) => free(t, 9, 11, h.tile) && w.tiles.some((u) => free(u, 9, 12, t.id, far)));
+  if (check(!!oT, "a spot for an outpost with room for a group past it")) {
+    const fT = w.tiles.find((u) => free(u, 9, 12, oT.id, far));
+    const o = { id: newId(), tile: oT.id, type: "outpost", name: "Signal Rock", stock: { scrap: 30, parts: 4 }, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
+    w.bases.push(o);
+    const s = makeSurvivor(w); s.skills.mechanics = 5; s.location = { kind: "base", baseId: o.id }; w.survivors.push(s);
+    const f = w.factions.find((x) => x.alive && x.bases.length);
+    f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
+    check(relaySpotFor(w, f) === o, "a relay at the outpost would reach the group");
+    const head = groupsRadioHeader(w);
+    // The radio and diplomacy windows' handlers are main.js's TRADE_ACTIONS / DIPLO_ACTIONS (tradetest checks them):
+    // here only clean HTML.
+    const cleanOk = (html, where) => { const p = scan(html, where); check(!p.length, `${where}: clean HTML (${p.slice(0, 3).join(" | ")})`); };
+    cleanOk(head, "radio header");
+    check(head.includes(`A relay at ${o.name} would reach`) && head.includes(f.name), "the radio header names the base where a relay would reach a group");
+    const ui = { ...freshUi(), radioWith: f.id };
+    const rm = radioModal(w, ui);
+    cleanOk(rm, "radio panel (out of reach)");
+    check(/out of reach/.test(rm) && rm.includes(`a relay at ${o.name} would reach them`), "the group's radio panel: out of reach, and where a relay would reach them");
+    const dm = diplomacyModal(w, { ...freshUi(), diplo: { tab: "coalition" } });
+    cleanOk(dm, "Coalition tab");
+    check(dm.includes(`out of radio reach (build a radio relay at ${o.name}`), "the Coalition tab's line: out of radio reach, build a relay at the outpost");
+    const oc = renderModal(w, { ...freshUi(), baseView: { id: o.id, tab: "construction" } });
+    htmlOk(oc, "outpost Construction");
+    check(/data-type="relay" (?!disabled)/.test(oc), "Construction at the outpost: the relay can be built");
+    const hc = renderModal(w, { ...freshUi(), baseView: { id: h.id, tab: "construction" } });
+    check(/data-type="relay" disabled/.test(hc) && hc.includes("A radio station here already covers more than a relay would"), "Construction at the hub with a station: the relay is greyed out, with why");
+    Buildings.addBuilding(o, "relay");
+    const rm2 = radioModal(w, ui);
+    check(/in radio reach/.test(rm2) && !groupsRadioHeader(w).includes("would reach"), "with the relay up: in radio reach, no relay hint left");
+    check(caravanLines(w, o).includes(`relays ${RELAY_RANGE}`) && /Relay linked/.test(caravanLines(w, o)), "the base card's Radio line: relay linked, the ranges in its tooltip");
   }
 }
 
