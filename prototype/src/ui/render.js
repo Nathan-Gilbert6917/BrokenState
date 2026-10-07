@@ -31,6 +31,7 @@ import {
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
+import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -952,6 +953,7 @@ function moverHash(state) {
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
   h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0) + (state.claims ? Object.keys(state.claims).length * 11 : 0)) % 2147483647; // claims (sim/claims.js) made or lost while paused
+  if (state.mapNotes) h = (h * 31 + notesHash(state)) % 2147483647; // map notes added or edited while paused (ui/mapnotes.js)
   return h;
 }
 function unchanged(state, now) {
@@ -1455,6 +1457,8 @@ export function render(state) {
     const [px, py] = g.toPixel(pin.tile, HEX);
     pill(px, py - 24 * zoomBoost(), `${pin.icon} Job`, "#9a7410", zoomBoost());
   }
+  // The player's map notes (ui/mapnotes.js): a pin per note, its text when zoomed in.
+  if (state.mapNotes && !state.timelapse) drawMapNotes(ctx, state, { toPixel: (id) => [G.x[id], G.y[id]], zoom, boost: zoomBoost(), inView: (px, py) => !(px < minX || px > maxX || py < minY || py > maxY) });
   // Names (and danger skulls) last, so nothing drawn on the map covers them.
   drawLabels(labels, spriteBoxes);
   // Trip preview from the planner.
@@ -2014,6 +2018,8 @@ export function tileTooltip(state, id) {
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
   const sd = searchedDay(state, id);
   if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)
+  const nt = noteTip(state, id); // your map notes here (ui/mapnotes.js)
+  if (nt) lines.push(nt);
   return lines.join("<br>");
 }
 

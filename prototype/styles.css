@@ -589,3 +589,30 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .al-pill.danger { border-color: var(--danger); color: #ffd0cc; animation: alpulse 1.8s ease-in-out infinite; }
 @keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
 .al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }
+
+/* The Watching panel (ui/watch.js): top left under the running orders, above the Layers box (top and max-height set
+   by placeWatch). Map notes' editor (#noteedit) opens where the tile was right-clicked. Roster bulk actions' report. */
+#watch { position: absolute; left: 0.6rem; top: 0.6rem; width: 16rem; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
+#watch:has(> button:only-child) { width: auto; padding: 0; border: none; background: none; }
+#watch .wt-head { gap: 0.4rem; margin-bottom: 0.15rem; }
+#watch .wt-sub { margin-top: 0.4rem; border-top: 1px solid var(--line); padding-top: 0.3rem; }
+#watch .wt-row { border-top: 1px solid var(--line); padding: 0.25rem 0.1rem; cursor: pointer; }
+#watch .wt-row:hover, #watch .wt-note:hover { background: var(--panel-2); }
+#watch .wt-row.gone { opacity: 0.55; }
+#watch .wt-row.gone .wt-name { text-decoration: line-through; }
+#watch .wt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#watch .wt-x { padding: 0 0.35rem; }
+#watch .wt-note { display: flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.1rem; cursor: pointer; }
+#watch .wt-note .wt-ntext { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#watch .wt-note button { padding: 0 0.35rem; }
+#watch .wt-note button.danger { border-color: var(--danger); color: var(--danger); }
+button.wt-pin { padding: 0.05rem 0.35rem; opacity: 0.6; }
+button.wt-pin.on { opacity: 1; border-color: var(--accent); background: #4a3816; }
+#noteedit { position: absolute; z-index: 7; width: 19rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 0.45rem 0.55rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5); font-size: 0.85rem; display: grid; gap: 0.4rem; }
+#noteedit .mn-icons { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+#noteedit .mn-ic { padding: 0.15rem 0.35rem; font-size: 1.05rem; line-height: 1.2; }
+#noteedit .mn-ic.on { background: #4a3816; border-color: var(--accent); }
+#noteedit input { width: 100%; }
+body.tl-on #watch, body.tl-on #noteedit { display: none !important; }
+.ro-bar { flex-wrap: wrap; }
+.ro-report { margin: 0.2rem 0 0.5rem; }

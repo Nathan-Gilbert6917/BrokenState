@@ -28,6 +28,7 @@ import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.j
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
+import { watchPin } from "./watch.js"; // 📌 pin the team to the Watching panel
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -117,7 +118,7 @@ export function renderExpedition(state, ui, p) {
   const btn = (attrs, label, hint, disabled) => `<button class="mini" ${attrs} ${disabled ? "disabled" : ""}${tip(hint)}>${label}</button>`;
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
-  const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></div>
+  const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
     <div class="small muted">${esc(MISSIONS[p.mission]?.name || "Team")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
