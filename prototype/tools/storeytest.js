@@ -229,7 +229,12 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
       place(b, u, 1, side[0], side[1]);
       u.ap = 2;
       err = combatAct(st, { type: "search", unit: u.id, box: box.id });
-      check(err === "" && box.searched, `searching it upstairs works (${err || "ok"})`);
+      // Hauling takes time (raidloot.js HAUL: 8 kg a turn free, then 12 kg an action): a heavy find (firewood is 3 kg
+      // each, loot.js AREA_WOOD) may not all come out in the one action left, so come back next turn for the rest.
+      const took = !!box.contents && (Object.keys(R.found).length > 0 || R.foundGear.length > 0);
+      let turns = 1;
+      while (err === "" && !box.searched && turns < 4) { b.turn++; b.phase = "player"; u.ap = 2; turns++; err = combatAct(st, { type: "search", unit: u.id, box: box.id }); }
+      check(err === "" && took && box.searched, `searching it upstairs works (${err || "ok"}, emptied in ${turns} turn${turns === 1 ? "" : "s"})`);
     }
     // No extraction upstairs.
     const z = R.zones[0];
