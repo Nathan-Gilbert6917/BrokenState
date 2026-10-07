@@ -15,7 +15,7 @@ import { roadblockOnEnter } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
-  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight,
+  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, armedFactor, arrowsBack, ARROWS,
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
@@ -259,6 +259,14 @@ export function takeSupply(p, key, qty) {
   const fromPacked = Math.min(want - fromCargo, packed);
   p.supplies[key] = packed - fromPacked;
   return fromCargo + fromPacked;
+}
+// A team's shots in a fight by the numbers (events.js, the killzone): `total` rounds split by head between the bows
+// and crossbows (arrows) and everyone else (ammo; world.js usesArrows), each taken as takeSupply does. With no bow
+// it is takeSupply(p, "ammo", total). Returns what was taken: { ammo, arrows }.
+export function takeShots(p, members, total) {
+  const nb = archerCount(members);
+  const bows = nb ? Math.round((total * nb) / Math.max(1, members.length)) : 0;
+  return { ammo: takeSupply(p, "ammo", total - bows), arrows: bows ? takeSupply(p, "arrows", bows) : 0 };
 }
 
 /** @param {State} state @param {Party} p */
@@ -671,6 +679,8 @@ export function sendHelpSquad(state, raidParty, target) {
   const n = fighters.length;
   const have = (k) => Math.max(0, Math.floor(stockHas(h.stock, k))); // water: both kinds (water.js)
   const supplies = { food: Math.min(have("food"), 2 * n), water: Math.min(Math.floor(waterIn(h.stock)), Math.ceil(2 * n * thirstAhead(state, 2))), meds: Math.min(have("meds"), Math.min(2, n)), ammo: Math.min(have("ammo"), 10 * n) };
+  const archers = archerCount(fighters); // the bows' arrows (world.js ARROWS.PACK a bow)
+  if (archers) supplies.arrows = Math.min(have("arrows"), archers * ARROWS.PACK);
   const res = launchExpedition(state, { memberIds: fighters.map((s) => s.id), dest: raidParty.target.tile, mission: "help", stance: "rushed", supplies });
   if (res.error) return res.error;
   res.party.helpFor = raidParty.id;
@@ -1563,22 +1573,26 @@ function cullCard(state, p, horde) {
     choices: [
       {
         label: "Set up a killzone and fire",
-        hint: "Uses up to 15 ammo per person. Best with ammo and good shooters; someone may get hurt",
+        hint: "Uses up to 15 ammo per person (arrows for a bow or crossbow). Best with ammo and good shooters; someone may get hurt",
         resolve: (st) => {
           if (gone(st)) return moved(st);
           const members = partyMembers(st, p);
           const power = members.reduce((s, m) => s + combatPower(m), 0);
-          const ammoUse = takeSupply(p, "ammo", members.length * 15);
+          // Up to 15 shots a head: a bow's in arrows, everyone else's in ammo (takeShots). Over 8 a head the killzone
+          // works (× 3), short of that × 1.5: for the bows and the guns each (world.js armedFactor).
+          const shot = takeShots(p, members, members.length * 15);
           // Tougher dead (a hive's land, red-skull ground) fall slower; a bigger horde (its score) presses closer.
           const tough = (1 + zombieToughness(st, horde.tile) * 0.35) * mixWeight(horde.mix, "weight", horde.elite); // special dead (zombietypes.js)
-          const kill = Math.min(horde.size, Math.round((power * (ammoUse > members.length * 8 ? 3 : 1.5) * st.rng.range(0.7, 1.3)) / tough));
+          const kill = Math.min(horde.size, Math.round((power * 3 * armedFactor(members, shot.ammo, shot.arrows, { need: (k) => k * 8 + 1, short: 0.5 }) * st.rng.range(0.7, 1.3)) / tough));
           horde.size -= kill;
           const risk = Math.min(0.9, 0.25 + hordeScore(horde.size + kill) / 40 + (horde.bosses ? 0.2 : 0) + (tough - 1) * 0.3);
           if (members.length && st.rng.chance(risk)) hurt(st, st.rng.pick(members), st.rng.int(15, 45) * tough, horde.tile, "fighting a horde");
           const broken = horde.size <= 5;
           if (broken && st.hordes.includes(horde)) st.hordes.splice(st.hordes.indexOf(horde), 1);
+          const back = st.parties.includes(p) && partyMembers(st, p).length ? arrowsBack(shot.arrows) : 0; // about half the arrows picked up again
+          if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
           if (!wipeIfEmpty(st, p)) awaitOrders(st, p, `The team cut down about ${kill} of them.`);
-          return `About ${kill} of the dead fall.${broken ? " The horde is broken." : ""}`;
+          return `About ${kill} of the dead fall.${broken ? " The horde is broken." : ""}${shot.arrows ? ` ${shot.arrows} arrows shot, ${back} picked up again.` : ""}`;
         },
       },
       {

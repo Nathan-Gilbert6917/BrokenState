@@ -3,14 +3,14 @@
 // halted, raids carried out of, base defence in person, hordes, pacts, collapsed groups and trade-route terms; raids on
 // you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
-import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor, usesArrows, armedFactor, spendShots, ARROWS } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import {
   createBattle, startCombat, finishCombat, closeCombat, autoResolveCombat, combatAct, autoPlayerTurn, runEnemyPhase,
   registerCombatHandler, canSee, active, zoneAt,
 } from "../src/sim/combat.js";
 import {
-  launchExpedition, partyMembers, partyTile, partyCapacity, cargoLoad, poolLoad, planPath, giveOrder, spawnAiParty,
+  launchExpedition, partyMembers, partyTile, partyCapacity, cargoLoad, poolLoad, planPath, giveOrder, spawnAiParty, takeShots,
 } from "../src/sim/parties.js";
 import { triggerConflict, guardsFor, fightOdds, raidForce, engagedWith, defendInPerson } from "../src/sim/conflicts.js";
 import {
@@ -100,6 +100,7 @@ const groupOf = (state, type) => {
     const h = hub(st);
     const crew = [fighter(st, { weapon: null, shooting: 14 }), fighter(st, { weapon: null, shooting: 14 }), fighter(st, { weapon: null, shooting: 14 })];
     for (const s of crew) s.gear.weapon = makeItem("crossbow", 1);
+    h.stock.arrows = 30; // the crossbows' bolts (world.js usesArrows)
     const setup = { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy: { kind: "raiders", count: 4, power: 7 }, ambush: "player", canRetreat: false, handler: "ft", context: {} };
     const b = (st.combat = createBattle(st, setup));
     for (const u of b.units.filter((x) => x.side === "player")) {
@@ -775,6 +776,74 @@ const groupOf = (state, type) => {
     const dist = g.bases.length ? s9.grid.distance(g.bases[0], hub(s9).tile) : -1;
     check(s9.factions.length === n0 + 1 && g.alive && attitude(g) === "Hostile" && dist >= 12 && dist <= 30, `a new gang settled (${g.name}, ${g.type}, ${g.pop} people, ${dist} tiles from the hub)`);
   }
+}
+
+// 18. Guns use ammo, bows use arrows by the numbers (world.js usesArrows / armedFactor / spendShots, combat.js
+// autoResolveCombat, breakoff.js): up to 6 shots a head, the bows' in arrows; about half picked up after a win.
+{
+  console.log("Bows and arrows by the numbers");
+  const st = world();
+  const p = team(st, 3); // three hunting rifles
+  const ms = partyMembers(st, p);
+  ms[0].gear.weapon = newItem("compbow"); ms[1].gear.weapon = newItem("xbow");
+  check(usesArrows(ms[0]) && usesArrows(ms[1]) && !usesArrows(ms[2]), "a compound bow and a hunting crossbow shoot arrows, a rifle does not");
+  const weak = { kind: "zombies", count: 1, power: 1 };
+  let r = null;
+  for (let i = 0; i < 12 && (!r || r.outcome !== "victory"); i++) {
+    p.supplies.ammo = 30; p.supplies.arrows = 30; p.cargo.supplies.ammo = 0; p.cargo.supplies.arrows = 0;
+    for (const m of ms) m.health = 100;
+    r = autoResolveCombat(st, { tile: partyTile(p), partyId: p.id, enemy: weak, handler: "ft", context: {} });
+  }
+  check(r.outcome === "victory" && r.ammoUsed === 6 && r.arrowsUsed === 12, `two bows and a rifle shoot 12 arrows and 6 rounds (${r.outcome}: ammo ${r.ammoUsed}, arrows ${r.arrowsUsed})`);
+  check(r.arrowsBack === Math.round(12 * ARROWS.BACK) && p.supplies.arrows === 30 - 12 + r.arrowsBack && p.supplies.ammo === 24, `after the win ${r.arrowsBack} arrows are picked up again (packed ${p.supplies.arrows}, ammo ${p.supplies.ammo})`);
+  // Lost or broken off: none picked up (rounds not fired come back, arrows too).
+  let lost = 0;
+  for (let i = 0; i < 12 && lost < 3; i++) {
+    for (const m of ms) m.health = 100;
+    p.supplies.ammo = 30; p.supplies.arrows = 30;
+    const q = autoResolveCombat(st, { tile: partyTile(p), partyId: p.id, enemy: { kind: "raiders", count: 10, power: 9 }, handler: "ft", context: {} });
+    if (q.outcome === "victory") continue;
+    lost++;
+    check(!q.arrowsBack && p.supplies.arrows === 30 - q.arrowsUsed && q.arrowsUsed <= 12, `after a ${q.outcome} no arrows are picked up (${q.arrowsUsed} shot, ${p.supplies.arrows} left)`);
+    if (ms.some((m) => !m.alive)) break;
+  }
+  check(lost >= 1, `lost fights checked: ${lost}`);
+  // Short of arrows the bows fight at 60% (under 3 a head), as the guns short of ammo; a team with no bow ignores arrows.
+  const st2 = world(seed + 1);
+  const p2 = team(st2, 3);
+  const m2 = partyMembers(st2, p2);
+  const enemy = { kind: "raiders", count: 3, power: 5, name: "test raiders" };
+  p2.supplies.ammo = 60; p2.supplies.arrows = 0;
+  const guns = fightOdds(st2, p2, enemy, null);
+  p2.supplies.arrows = 60;
+  check(Math.abs(guns - fightOdds(st2, p2, enemy, null)) < 1e-12, "a team with no bow: arrows change nothing");
+  m2[0].gear.weapon = newItem("compbow"); m2[1].gear.weapon = newItem("compbow");
+  p2.supplies.ammo = 60; p2.supplies.arrows = 60;
+  const stocked = fightOdds(st2, p2, enemy, null);
+  p2.supplies.arrows = 0;
+  const empty = fightOdds(st2, p2, enemy, null);
+  p2.supplies.arrows = 60; p2.supplies.ammo = 0;
+  const noAmmo = fightOdds(st2, p2, enemy, null);
+  check(empty < stocked && noAmmo < stocked && noAmmo > empty, `bows without arrows fight worse (odds ${Math.round(stocked * 100)}% → ${Math.round(empty * 100)}% with no arrows, ${Math.round(noAmmo * 100)}% with no ammo for the one rifle)`);
+  check(armedFactor(m2, 0, 60) > 0.6 && armedFactor(m2, 0, 60) < 1 && armedFactor(m2, 60, 60) === 1 && Math.abs(armedFactor(m2, 0, 0) - 0.6) < 1e-12, "armedFactor weighs the bows and the guns by their power");
+  // Shots from a stock: 3 a head, the bows' in arrows (a raid or a horde at your walls).
+  const stock = { ammo: 10, arrows: 10 };
+  const shot = spendShots(stock, m2, 3);
+  check(shot.ammo === 3 && shot.arrows === 6 && stock.ammo === 7 && stock.arrows === 4, `three a head from a stock: ${shot.ammo} rounds, ${shot.arrows} arrows`);
+  p2.supplies.ammo = 20; p2.supplies.arrows = 20; p2.cargo.supplies.arrows = 5;
+  const ts = takeShots(p2, m2, 9);
+  check(ts.ammo === 3 && ts.arrows === 6 && p2.cargo.supplies.arrows === 0 && p2.supplies.arrows === 19, `a team's 9 shots: ${ts.ammo} rounds, ${ts.arrows} arrows (found ones first)`);
+  // Defending a base: the bows count by the base's arrows.
+  const h = hub(st2);
+  const home = atBase(st2, h.id);
+  h.stock.ammo = 500; h.stock.arrows = 0;
+  const d0 = baseDefense(st2, h);
+  h.stock.arrows = 500;
+  check(baseDefense(st2, h) === d0, "a base without bows: its arrows change nothing");
+  home[0].gear.weapon = newItem("compbow"); home[0].skills.shooting = 9;
+  const withArrows = baseDefense(st2, h);
+  h.stock.arrows = 0;
+  check(baseDefense(st2, h) < withArrows, `a base's bows defend worse without arrows (${baseDefense(st2, h).toFixed(1)} < ${withArrows.toFixed(1)})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

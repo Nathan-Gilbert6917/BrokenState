@@ -288,6 +288,20 @@ console.log("Saved at awkward moments");
     branch("mid-battle at the hub (turn 2), fought to the end", st, fight, battleTail);
   }
   {
+    // Bows on the hub's side (world.js usesArrows): the arrows shot so far and the hub's quiver are in the save, and
+    // the pickup after the fight (about half the arrows shot, after a win) comes out the same.
+    const st = world(42, 2);
+    const h = hub(st);
+    const team = atBase(st, h.id).slice(0, 4);
+    for (const s of team.slice(0, 2)) { s.gear.weapon = newItem("compbow"); s.skills.shooting = Math.max(6, s.skills.shooting); }
+    h.stock.arrows = 20;
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: team.map((s) => s.id), enemy: { kind: "zombies", count: 6, power: 2 }, ambush: null, canRetreat: true, handler: "savetest" });
+    for (let i = 0; i < 4 && st.combat && !st.combat.over && !st.combat.arrowsUsed; i++) turn(st);
+    const B = loadFromString(saveToString(st));
+    check(st.combat && B.combat && B.combat.arrowsUsed === st.combat.arrowsUsed && st.combat.arrowsUsed > 0 && hub(B).stock.arrows === h.stock.arrows, `a loaded battle keeps the arrows shot (${st.combat && st.combat.arrowsUsed}) and the hub's quiver (${h.stock.arrows})`);
+    branch("mid-battle with bows at the hub, fought to the end", st, fight, (w) => `${battleTail(w)} arrows ${hub(w).stock.arrows}`);
+  }
+  {
     const st = world(7, 2);
     const h = hub(st);
     const tile = st.tiles.find((t) => t.loc && t.loc.type === "town" && t.id !== h.tile).id;

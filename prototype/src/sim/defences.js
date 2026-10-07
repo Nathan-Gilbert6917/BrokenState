@@ -17,7 +17,7 @@
 // The watch (watch.js): an exhausted guard counts half (sleep.js). A horde that reaches a base at night with nobody
 // awake on watch, no tripwire and the defences not manned (surpriseAt) finds the defence buildings counting half and
 // opens a break-in with its first move; someone awake on watch sees one coming 2 tiles sooner (hordeWarnings).
-import { log, addCard, atBase, hurt, combatPower, removeBase, isNight, baseVision } from "./world.js";
+import { log, addCard, atBase, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
@@ -146,11 +146,12 @@ export function tierMults(state, base, night = false) {
   const buildings = 1 + T.BUILDINGS.per * Math.min(T.BUILDINGS.max, held);
   return { wall, yard, buildings, walled: walls > 0, held };
 }
-// The strength of the best 8 at a base (who would fight a break-in), with too little ammo counting 60%.
+// The strength of the best 8 at a base (who would fight a break-in), with too little ammo counting 60% (the bows by
+// the base's arrows: world.js armedFactor).
 export function defendersPower(state, base) {
   const people = atBase(state, base.id).filter((s) => !s.inBed).sort((a, c) => combatPower(c) - combatPower(a)).slice(0, 8);
   const p = people.reduce((a, s) => a + combatPower(s), 0);
-  return (base.stock.ammo || 0) >= people.length * 3 ? p : p * 0.6;
+  return p * armedFactor(people, base.stock.ammo || 0, base.stock.arrows || 0);
 }
 // The dead that broke in, as a strength on the same scale (breakInForce's count × power, a Wallbreaker 12).
 const BOSS_STRENGTH = 12;
@@ -250,12 +251,13 @@ export function hordeAttackBase(state, h, base) {
   const smasher = bosses ? (bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`) + (brutes ? " and the brutes" : "") : "The brutes";
   if (smashed.length) notes.push(`${smasher} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
   if (h.mix && mixText(h.mix, h.size)) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
-  base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
+  const shot = spendShots(base.stock, people, 3); // 3 a head from the base's stock: the bows' in arrows, the rest's in ammo
   // The special dead press the walls by their weight: the limit in plain dead is the hold limit / the weight.
   const wm = wallWeight(h);
   const lim = limit / wm;
   if (h.size <= lim) {
     stats.held++;
+    if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // held: about half the arrows are picked up below the walls
     const killed = Math.min(h.size, Math.round(8 + guardHold(state, base) * 0.8 + h.size * 0.12));
     log(state, `A horde of ${h.size} hit ${base.name}. The defences held (they stop about ${limit}) and about ${killed} of the dead were cut down.${notes.length ? ` ${notes.join(" ")}` : ""}`, "good");
     if (people.length && h.size > lim * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);

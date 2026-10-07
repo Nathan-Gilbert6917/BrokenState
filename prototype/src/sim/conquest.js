@@ -56,7 +56,7 @@
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
 import { teamKit, assaultCut, kitText, spendGrenades } from "./siege.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
-import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot } from "./world.js";
+import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot, armedFactor } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts, groupBroken, GROUP_BREAK } from "./factions.js";
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
@@ -147,7 +147,8 @@ export function assaultOdds(power, force, ammoOk = true, people = 0) {
   const theirs = force.count * force.power * force.fortified;
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
-const carriedAmmo = (p) => Math.max(0, Math.floor(p.supplies.ammo || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies.ammo) || 0));
+const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
+const carriedAmmo = (p) => carriedOf(p, "ammo");
 // "2 ladders, a battering ram and 3 grenades" (the assault card).
 function kitWords(k) {
   const parts = [];
@@ -158,7 +159,8 @@ function kitWords(k) {
 }
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
-  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0), force, carriedAmmo(p) >= m.length * 3, m.length);
+  // Short of ammo the guns count 60%, short of arrows the bows (world.js armedFactor; with no bow: the old ammo check).
+  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p), carriedOf(p, "arrows")), force, true, m.length);
 }
 
 // Why attacking this group is a bad idea (the planner and the card): "" for a hostile group.

@@ -2,7 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
-  canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
+  canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
@@ -382,6 +382,16 @@ function deployClick(state, b, px, py) {
   act(state, { type: "place", unit: u.id, x: c.x, y: c.y });
 }
 
+// Why a ranged weapon cannot shoot: a bow or crossbow is out of arrows, a gun out of ammo.
+const outOf = (u) => (WEAPONS[u.weapon] && WEAPONS[u.weapon].arrows ? "Out of arrows" : "Out of ammo");
+// The arrows to hand (sim/combat.js arrowsLeft), shown next to the ammo when anyone shoots a bow or there are arrows.
+const ARROWS_TIP = "Arrows (and crossbow bolts) carried: the team's packed and found ones, or the base's stock. A bow or crossbow uses 1 a shot; with none it can only fight in melee. After a won fight about half the arrows shot are picked up again; after a loss or a retreat none.";
+function arrowsChip(b) {
+  const n = Math.floor(arrowsLeft(b));
+  const bows = b.units.some((x) => x.side === "player" && !x.dead && WEAPONS[x.weapon] && WEAPONS[x.weapon].arrows);
+  return bows || n > 0 ? `<span data-tip="${esc(ARROWS_TIP)}" class="${bows && n < 1 ? "warn" : ""}">Arrows <b>${n}</b></span>` : "";
+}
+
 function attack(state, u, t) {
   const b = state.combat;
   if (cui.mode === "subdue") {
@@ -394,7 +404,7 @@ function attack(state, u, t) {
     return void act(state, { type: "melee", unit: u.id, target: t.id });
   }
   if (!isRanged(u)) { cui.msg = `${u.name} has no gun. Move next to the target and use Melee.`; return; }
-  if (!canFire(b, u)) { cui.msg = "Out of ammo. Melee only."; return; }
+  if (!canFire(b, u)) { cui.msg = `${outOf(u)}. Melee only.`; return; }
   if (!canSee(b, u, t)) { cui.msg = "No line of sight from here."; return; }
   act(state, { type: "shoot", unit: u.id, target: t.id });
 }
@@ -716,7 +726,7 @@ export function combatAction(state, key, d) {
   }
   if (v === "doubletap") {
     const seen = tappable(b, u);
-    if (!seen.length) { cui.msg = !isRanged(u) ? "Double tap needs a gun: crush the skull from next to the body instead (U)." : !canFire(b, u) ? "Double tap needs a gun with ammo and free hands." : "No body in sight that could still get up."; return; }
+    if (!seen.length) { cui.msg = !isRanged(u) ? "Double tap needs a gun: crush the skull from next to the body instead (U)." : !canFire(b, u) ? `Double tap needs a gun with ammo (a bow with arrows) and free hands.` : "No body in sight that could still get up."; return; }
     const c = seen.find((o) => imminent(b, o)) || seen.find((o) => endangered(b, o));
     if (c || seen.length === 1) return void act(state, { type: "doubletap", unit: u.id, target: (c || seen[0]).id });
     cui.mode = cui.mode === "doubletap" ? "move" : "doubletap";
@@ -801,7 +811,8 @@ export function renderCombatPanel(state) {
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
-    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
     ${tierHtml(b)}
@@ -840,7 +851,7 @@ export function renderCombatPanel(state) {
     html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
-      ${btn("shoot", "Shoot", gun ? (ammo ? "Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance." : "Out of ammo.") : "No usable gun.", ap > 0 && ammo, "F")}
+      ${btn("shoot", "Shoot", gun ? (ammo ? "Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance." : `${outOf(u)}.`) : "No usable gun.", ap > 0 && ammo, "F")}
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
       ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
@@ -954,7 +965,8 @@ function raidHead(state, b, phase) {
     <div class="small cbsupply">
       ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
       ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
-      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2).">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
     </div>
@@ -1291,6 +1303,7 @@ function resultHtml(state, b) {
       ${r.retreatOrder.caught.length ? `<div>Caught</div><div class="warn">${names(r.retreatOrder.caught)}</div>` : ""}` : ""}
       ${r.carriedIds && r.carriedIds.length ? `<div>Carried out</div><div class="good">${names(r.carriedIds)}</div>` : ""}
       <div>Ammo used</div><div>${r.ammoUsed}</div>
+      ${r.arrowsUsed ? `<div>Arrows shot</div><div>${r.arrowsUsed}${r.arrowsBack ? ` (${r.arrowsBack} picked up again)` : " (none picked up)"}</div>` : ""}
       <div>${bodies ? "Taken" : "Loot"}</div><div>${loot.length ? esc(loot.join(", ")) : "nothing"}</div>
       ${bodies ? `<div>Bodies</div><div>${bodies} with things on them</div>` : ""}
     </div>
@@ -1321,7 +1334,7 @@ function odds(b, u, t) {
     const o = meleeOdds(b, u, t);
     return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
   }
-  if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? "Out of ammo" : "No gun: move next to them and use Melee" };
+  if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? outOf(u) : "No gun: move next to them and use Melee" };
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
   const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";

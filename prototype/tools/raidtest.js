@@ -88,3 +88,36 @@ for (const [k, s] of Object.entries(stats)) {
 }
 console.log(`\nStealth kit${KIT ? "" : " (none carried; add kit)"}${NIGHT ? ", night raids" : ""}: ${kitStats.thrown} throws, ${kitStats.takedowns} takedowns, ${kitStats.tied} tied up, ${kitStats.suppressed} muffled volleys, ${kitStats.prisoners} prisoners taken out.`);
 console.log(`${battles} raids in ${((performance.now() - t0) / 1000).toFixed(1)}s, ${crashes} crashes, ${timeouts} timeouts.`);
+// Bows in a raid: arrows, never ammo, from the team's packed supplies; about half picked up again when the team got
+// out of a cleared site, none when it had to run for it (combat.js endRaid, world.js ARROWS).
+let arrowFails = 0, arrowRaids = 0, arrowsShot = 0, arrowsBack = 0;
+const arrowCheck = (ok, msg) => { if (!ok) { arrowFails++; console.log(`  FAIL: ${msg}`); } return ok; };
+for (let i = 0; i < Math.max(4, Math.ceil(per / 2)); i++) {
+  const state = createWorld({ seed: seed * 1000 + 500 + i, factionCount: 7 });
+  const h = hub(state);
+  const tile = state.tiles.find((t) => t.loc && t.loc.type === (i % 2 ? "town" : "farm")) || state.tiles.find((t) => t.loc && t.id !== h.tile);
+  const crew = atBase(state, h.id).slice(0, 3);
+  for (const s of crew) { s.gear.weapon = newItem(i % 3 ? "compbow" : "xbow"); s.skills.shooting = 9; }
+  h.stock.arrows = 30;
+  const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: tile.id, mission: "scavenge", stance: "normal", supplies: { food: 6, water: 6, ammo: 20, arrows: 30, meds: 2 } });
+  if (res.error) continue;
+  const p = res.party;
+  p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+  const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "test", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(state, tile.id) }, raid: { heat0: 5 }, context: {} };
+  state.combat = createBattle(state, setup);
+  let guard = 0;
+  while (!state.combat.over && guard++ < 200) { autoPlayerTurn(state); runEnemyPhase(state); }
+  const b = state.combat;
+  if (!b.over) continue;
+  arrowRaids++;
+  const r = b.result;
+  arrowsShot += r.arrowsUsed; arrowsBack += r.arrowsBack;
+  arrowCheck(r.ammoUsed === 0 && p.supplies.ammo === 20, `bows shoot no ammo in a raid (${r.ammoUsed})`);
+  arrowCheck(p.supplies.arrows === 30 - r.arrowsUsed + r.arrowsBack, `the arrows come from the packed supplies (30 - ${r.arrowsUsed} + ${r.arrowsBack} = ${p.supplies.arrows})`);
+  arrowCheck(r.arrowsBack === 0 || (r.outcome === "extracted" && r.arrowsBack === Math.round(r.arrowsUsed / 2)), `arrows are picked up only on the way out of a cleared site (${r.outcome}, ${r.arrowsBack} of ${r.arrowsUsed})`);
+  arrowCheck(r.outcome === "extracted" || r.arrowsBack === 0, "none after a wipe");
+  state.combat = null;
+}
+arrowCheck(arrowRaids >= 3 && arrowsShot > 0, `raids with bows: ${arrowRaids}, ${arrowsShot} arrows shot`);
+console.log(`Bows in raids: ${arrowRaids} raids, ${arrowsShot} arrows shot, ${arrowsBack} picked up again, ${arrowFails} failed checks.`);
+if (crashes || arrowFails) process.exit(1);

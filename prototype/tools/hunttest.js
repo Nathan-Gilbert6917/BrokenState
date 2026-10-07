@@ -17,6 +17,7 @@
 // - Save / load mid-hunt and determinism; the tile panel, team panel, planner and right-click menu.
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, survivorById, newId, makeSurvivor, setNextId } from "../src/sim/world.js";
+import { autoResolveCombat } from "../src/sim/combat.js";
 import { GEAR, TERRAIN, SUPPLIES } from "../src/sim/data.js";
 import { CRAFTS, canCraft, fieldCraft } from "../src/sim/crafting.js";
 import { rollSiteArrows } from "../src/sim/loot.js";
@@ -785,6 +786,20 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: near.id, mission: "move", stance: "normal", supplies: pl.supplies, plan: { preset: "hunt", steps: pl.plan.steps, conditions: {} } });
   check(!res.error && res.party.supplies.arrows === H.ARROW.pack && h.stock.arrows === 30 - H.ARROW.pack, `a bow on the crew: ${H.ARROW.pack} of the hub's arrows go along`);
   check(est && est.haul > 0, `the planner expects game from the bow (${est && est.haul})`);
+  // The same arrows serve in a fight (combat.js, world.js ARROWS): the bow shoots them (the knife none, no ammo), and
+  // after a win about half come back into the team's packed supplies.
+  {
+    const p = res.party;
+    p.supplies.ammo = 0;
+    const a0 = p.supplies.arrows;
+    let r = null;
+    for (let i = 0; i < 10 && (!r || r.outcome !== "victory"); i++) {
+      p.supplies.arrows = a0;
+      for (const s of crew) s.health = 100;
+      r = autoResolveCombat(state, { tile: partyTile(p), partyId: p.id, enemy: { kind: "zombies", count: 1, power: 1 }, handler: "hunttest", context: {} });
+    }
+    check(r.outcome === "victory" && r.arrowsUsed === 6 && r.ammoUsed === 0 && r.arrowsBack === 3 && p.supplies.arrows === a0 - 6 + 3, `the hunters' arrows in a fight: the bow shoots ${r.arrowsUsed}, ${r.arrowsBack} picked up after the win (${p.supplies.arrows} left of ${a0})`);
+  }
 }
 
 // ======================================================================

@@ -1,6 +1,6 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
-import { log, hurt, isNight, combatPower, gearEffect, factionById } from "./world.js";
+import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
   wipeIfEmpty, leaveVehicle, addGearToCargo,
@@ -238,11 +238,13 @@ export function searchHour(state) {
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
     const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile);
-    const ammoUse = e.approach === "loud" ? members.length * 6 : members.length * 2;
-    p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - ammoUse);
-    const power = members.reduce((a, m) => a + combatPower(m), 0) * ((p.supplies.ammo || 0) > 0 ? 1 : 0.6);
+    // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
+    const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
+    const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies.ammo || 0, p.supplies.arrows || 0, { need: () => 1 });
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
+      const back = arrowsBack(shot.arrows); // won: about half the arrows are picked up again
+      if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
       const kind = !e.guarded && mil ? ["soldier", "riot"].find((k) => mil[k] > 0) : null;
       if (kind && rng.chance(Math.min(0.8, mil[kind] * MILDEAD.SEARCH_BODY))) { // one of them was a soldier: his kit
         const loot = bodyLoot(rng, kind, newItem);

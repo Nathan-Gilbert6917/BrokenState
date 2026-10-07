@@ -330,9 +330,10 @@ export function rollFight(rng, model, policy = "never") {
 }
 
 // ---------- the real fight ----------
-// combat.js autoResolveCombat: people (alive), win (the odds), ammoUsed (already taken from pools), refund(n) gives
-// back ammo not fired. Applies wounds, deaths, the carried, the left behind (killed or taken), XP; returns the result.
-export function fightByNumbers(state, setup, people, { win, ammoUsed, refund, tile }) {
+// combat.js autoResolveCombat: people (alive), win (the odds), ammoUsed and arrowsUsed (already taken from pools),
+// refund(n, key) gives back the rounds (key "ammo") or arrows ("arrows") not fired. Applies wounds, deaths, the
+// carried, the left behind (killed or taken), XP; returns the result.
+export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed = 0, refund, tile }) {
   const rng = state.rng;
   const party = setup.partyId != null ? state.parties.find((x) => x.id === setup.partyId) : null;
   const policy = policyFor(state, setup);
@@ -373,9 +374,11 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, refund, ti
       if (l.captured && f) { barely(s); hurtIds.delete(s.id); takeCaptive(state, s, f, party); captured.push(s.id); }
       else { hurt(state, s, 9999, tile, `${cause}; left behind`, { raw: true }); deadIds.push(s.id); }
     }
-    // Rounds not fought: the ammo for them was not fired.
+    // Rounds not fought: the ammo (and the arrows) for them was not fired.
     const back = Math.floor((ammoUsed * (BREAKOFF.ROUNDS - 1 - fight.round)) / BREAKOFF.ROUNDS);
     if (back > 0 && refund) { refund(back); ammoUsed -= back; }
+    const kept = Math.floor((arrowsUsed * (BREAKOFF.ROUNDS - 1 - fight.round)) / BREAKOFF.ROUNDS);
+    if (kept > 0 && refund) { refund(kept, "arrows"); arrowsUsed -= kept; }
   }
   const count = setup.enemy.count;
   const killed = Math.min(count, Math.floor(count * fight.killShare));
@@ -383,7 +386,7 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, refund, ti
   const result = {
     outcome: fight.outcome,
     enemiesKilled: killed, enemiesLeft: count - killed,
-    survivorsHurt: [...hurtIds].filter((id) => !deadIds.includes(id)), survivorsDead: deadIds, ammoUsed,
+    survivorsHurt: [...hurtIds].filter((id) => !deadIds.includes(id)), survivorsDead: deadIds, ammoUsed, arrowsUsed,
     loot: { supplies: {}, gear: [] },
     policy, rounds: broke ? fight.round + 1 : null,
   };
