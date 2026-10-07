@@ -23,7 +23,7 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
-import { heatDaily } from "./needs.js";
+import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
@@ -305,10 +305,7 @@ function thirst(state, base, mouths, short) {
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 8);
-    hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
   log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
 }
 
@@ -360,10 +357,7 @@ function starve(state, base, mouths) {
   base.hungerDays = (base.hungerDays || 0) + 1;
   econStats(state).hungerDays++;
   const dmg = hungerDamage(base.hungerDays);
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 10);
-    hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (starving, worse each day)
   log(state, `${base.name} is out of food${base.hungerDays > 1 ? ` (day ${base.hungerDays}: everyone there loses ${dmg} health and nobody heals)` : ""}.`, "danger");
 }
 
@@ -380,6 +374,7 @@ export function basesDaily(state) {
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
+  starvingDaily(state); // needs.js: each morning starving or parched in a row costs more mood (−2, −4, −6 …)
   relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
   mentalBreaksDaily(state); // mentalbreaks.js: days at rock bottom end in a break that changes the colony
 }

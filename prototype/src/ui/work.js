@@ -18,6 +18,7 @@ import {
   renameRole, deleteRole, roleMembers, everyoneOnPriorities, setNewcomers, taskLabel, taskWhy, planBase, MOOD_LOW, MOOD_BACK,
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
+import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
 
@@ -90,7 +91,7 @@ export function workTab(state, b, ui) {
   const head = `<tr><th>Survivor</th><th>Role</th>${WORK_KEYS.map((k) => `<th class="wth"${tip(`${WORK_TYPES[k].name}: ${WORK_TYPES[k].desc}${WORK_TYPES[k].skill ? ` Skill: ${SKILL_NAMES[WORK_TYPES[k].skill] || WORK_TYPES[k].skill}.` : ""}`)}>${esc(WORK_TYPES[k].short)}</th>`).join("")}<th>Now</th></tr>`;
   const rows = shown.map((s) => {
     const role = roleOf(state, s);
-    const name = `<a class="link" data-action="survivor" data-id="${s.id}">${s.leader ? "★ " : ""}${esc(s.name)}</a>`;
+    const name = `<a class="link" data-action="survivor" data-id="${s.id}">${s.leader ? "★ " : ""}${esc(s.name)}</a>${statusIcons(state, s)}`; // people at a base: always in touch
     if (!role) {
       return `<tr class="wmanual"><td>${name}</td><td>${roleSelect(state, s)}</td><td colspan="${WORK_KEYS.length}" class="small muted">Manual: always ${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)}. Pick a work role to let them choose their work by priorities.</td><td></td></tr>`;
     }
