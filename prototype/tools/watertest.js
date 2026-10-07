@@ -146,7 +146,7 @@ section("Purification at a base: boiler, filters, a shelter's fire");
   check(q === 20 && h.stock.water === 20 && h.stock[RAW] === 80, `purifyDaily: 20 of 100 un-purified become purified (${h.stock.water} / ${h.stock[RAW]})`);
   h.armory = h.armory.filter((it) => it.key !== "waterfilter"); people[0].gear.tool = null;
   addBuilding(h, "boiler");
-  h.stock.wood = 30; h.stock.water = 0;
+  h.stock.wood = 900; h.stock.water = 0; // firewood of 0.1 kg
   const q2 = purifyDaily(st, h);
   const c2 = purifyCap(st, h, true);
   check(q2 === c2.drink && h.boilerBurn.wood > 0 && h.purified.boiler === c2.drink, `a lit boiler purifies the day's drinking for everyone here (${q2}, burning ${h.boilerBurn.wood} firewood)`);

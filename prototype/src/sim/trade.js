@@ -24,7 +24,7 @@
 //   their selling price. Deals agreed over the radio are honoured at the agreed amounts.
 // - Goodwill from trading grows with the deal's size and with what you overpay, at most 4 a day per group (the old
 //   flat +1 per trade could be farmed with tiny deals). Gifts give up to 15 a day.
-import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import { log, day, newId, survivorById, factionById, baseById, atBase, skill, snapshot, mergeKnowledge } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
@@ -47,9 +47,9 @@ export { itemValue };
 // Stock per head at which a group is comfortable (need 1 at the reference, 0.5 at 1.5× it, 2.2 at none).
 // Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 4 };
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120 }; // wood: 12 kg a head
 // Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 2 };
+const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60 };
 // Groups always have some water (wells, rain barrels) and firewood (they cut their own: woodcutting.js): with no figure
 // yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is
@@ -183,7 +183,7 @@ export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
 // Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
-export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 20 };
+export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600 }; // wood: 60 kg
 export const wantQty = (f, k) => Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[poolKey(k)] * f.pop - stockOf(f, k)));
 export function marketLists(state, f, speech = 0) {
   const wants = [], surplus = [], prices = {};
@@ -193,7 +193,7 @@ export function marketLists(state, f, speech = 0) {
     if (refuses(f, k) || k === RAW) continue; // un-purified water: priced, but the lists ask for and offer purified water
     const n = demand(state, f, k);
     if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: wantQty(f, k), price: prices[k].pay });
-    else if (n <= SURPLUS_NEED && available(f, k) >= 5) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });
+    else if (n <= SURPLUS_NEED && available(f, k) >= supplyFew(k, 5)) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });
   }
   wants.sort((a, b) => b.need - a.need || a.key.localeCompare(b.key));
   surplus.sort((a, b) => a.need - b.need || a.key.localeCompare(b.key));

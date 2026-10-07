@@ -132,7 +132,7 @@ const yieldTable = [];
   note("firewood per woodcutter-hour (Farming 3, Mechanics 3; untouched; summer daylight) · a base-job day (6h):");
   for (const y of yieldTable) note(`  ${y.terrain.padEnd(9)} bare hands ${r2(y.bare)}/h (${r1(y.bare * 6)}/day) · fire axe ${r2(y.axe)}/h (${r1(y.axe * 6)}/day)`);
   const fy = yieldTable.find((y) => y.terrain === "forest"), py = yieldTable.find((y) => y.terrain === "plains");
-  check(fy.axe * 6 >= 4 && fy.axe * 6 <= 6.5, `a woodcutter with an axe in forest: about 5 a day (${r1(fy.axe * 6)})`);
+  check(fy.axe * 6 >= 120 && fy.axe * 6 <= 195, `a woodcutter with an axe in forest: about 140 a day, 14 kg (${r1(fy.axe * 6)})`); // firewood is 0.1 kg (it was 4–6.5 of 3 kg)
   check(py && py.axe < fy.axe * 0.35, `farmland gives far less than forest (${r2(py.axe)} vs ${r2(fy.axe)} an hour)`);
 }
 
@@ -198,7 +198,7 @@ section("The Cut wood order: start, hours, the haul, the card, Heat, injuries, t
   check(stationaryActivity(p) === "wood" && heatGain(state, p).gain > 0 && /cutting wood/.test(heatGain(state, p).parts.join(" ")), `chopping builds Heat (${r1(heatGain(state, p).gain)} an hour: ${heatGain(state, p).parts[0]})`);
   for (let i = 0; i < 8; i++) { state.hour++; taskHour(state, p); }
   const got = carried(p, "wood");
-  check(p.phase === "waiting" && got > 5, `done: the team carries ${r1(got)} firewood`);
+  check(p.phase === "waiting" && got > 150, `done: the team carries ${r1(got)} firewood`);
   check(p.lastHaul && p.lastHaul.kind === "wood", "the trip report knows it cut wood");
   const card = state.cards.find((c) => c.partyId === p.id);
   check(!!card && /Cut wood 8h/.test(card.text || "") && /firewood/.test(card.text || ""), "the orders card says what was cut");
@@ -286,11 +286,11 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   const n = residents(st, h.id).length;
   const u = heatUse(st, h);
   check(near(u.total, n * HEAT.fuel) && near(u.wood, n * HEAT.fuel / HEAT.wood), `below 0°C: ${u.text}`);
-  check(/firewood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${r1(n * 0.1 / HEAT.wood).toFixed(1)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
+  check(/firewood a day/.test(upkeepLine(st, h).heating) && upkeepLine(st, h).heating === `Heating: ${n} people × 0.1 = ${r1(n * 0.1).toFixed(1)} → ${Math.round(n * 0.1 / HEAT.wood)} firewood a day (or ${r1(n * 0.1).toFixed(1)} fuel)`, `the Upkeep line: "${upkeepLine(st, h).heating}"`);
   // Enough firewood: no fuel burned.
-  h.stock.wood = 50; h.stock.fuel = 10;
+  h.stock.wood = 1500; h.stock.fuel = 10;
   heatDaily(st, h);
-  check(near(h.stock.wood, 50 - n * 0.1 / HEAT.wood, 1e-6) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * 0.1 / HEAT.wood)} firewood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
+  check(near(h.stock.wood, 1500 - n * 0.1 / HEAT.wood, 1e-6) && h.stock.fuel === 10 && !h.cold, `firewood first: ${r1(n * 0.1 / HEAT.wood)} firewood, no fuel (${h.heat.wood} wood, ${h.heat.burned} fuel)`);
   // Half the wood it needs: the fuel covers the rest.
   h.stock.wood = n * 0.05 / HEAT.wood; h.stock.fuel = 10;
   heatDaily(st, h);
@@ -303,7 +303,7 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   setAutopilot(st, true, "balanced");
   h.stock.fuel = 0; h.stock.wood = 0;
   const need0 = heatFuelWant(st, h).need;
-  h.stock.wood = 500;
+  h.stock.wood = 15000;
   check(need0 > 0 && heatFuelWant(st, h).need === 0, `the governor's heating fuel plan: ${need0} fuel without wood, none with the winter's wood in store`);
   setAutopilot(st, false);
   // An outpost short of heating gets the hub's spare firewood over its supply line.
@@ -316,9 +316,9 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   if (bare) {
     const keep = h.tile;
     h.tile = bare.id;
-    h.stock.wood = 5;
+    h.stock.wood = 150;
     heatDaily(st, h);
-    check(h.fireFed === true && near(h.stock.wood, 5 - Wd.WOOD.fire.shelter) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${Wd.WOOD.fire.shelter} firewood a day`);
+    check(h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${Wd.WOOD.fire.shelter} firewood a day`);
     h.stock.wood = 0;
     heatDaily(st, h);
     check(h.fireFed === false && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no firewood there: the fire does not warm it");
@@ -328,10 +328,10 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   // A team's camp fire on bare ground burns carried firewood, or goes out.
   if (bare) {
     const p = placeTeam(st, bare.id);
-    p.cargo.supplies.wood = 1;
+    p.cargo.supplies.wood = 30;
     startOrder(st, p, { type: "camp", hours: 30 });
     for (let i = 0; i < 24; i++) { st.hour++; taskHour(st, p); }
-    check(p.campFire !== false && carried(p, "wood") < 1 && carried(p, "wood") > 0.5, `a camp on bare ground burns its firewood (${r2(1 - carried(p, "wood"))} a day)`);
+    check(p.campFire !== false && carried(p, "wood") < 30 && carried(p, "wood") > 15, `a camp on bare ground burns its firewood (${r2(30 - carried(p, "wood"))} a day)`);
     p.cargo.supplies.wood = 0;
     for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, p); }
     check(p.campFire === false, "out of firewood there: the fire goes out");
@@ -418,7 +418,7 @@ section("Panels and alerts: the Upkeep line, the top bar, the tile panel, the te
   check(/data-type="wood"/.test(xp) && /Cut wood 8h/.test(xp) && /firewood expected/.test(xp), "team panel: Cut wood 4h / 8h with the expected yield");
   check(!BAD.test(xp), "team panel: no undefined / NaN");
   const tp = renderRight(state, { selected: forest.id, expedition: null });
-  check(/>Wood</.test(tp) && /firewood in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: the wood rating and a cutting estimate");
+  check(/>Wood</.test(tp) && /firewood \(\d+ kg\) in 8h/.test(tp.replace(/<[^>]*>/g, " ")), "tile panel: the wood rating and a cutting estimate");
   check(!BAD.test(tp), "tile panel: no undefined / NaN");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   check(/data-type="wood"/.test(main) && /d\.type === "wood"/.test(main), "right-click: Go and cut wood here");
@@ -435,7 +435,7 @@ section("Save / load: old saves start with none; mid-order, and determinism");
   for (const r of st.work.roles) delete r.pri.wood;
   delete st.woodcutting; // a world from before firewood
   const fresh = loadFromString(saveToString(mk()));
-  check(fresh.woodcutting === 1 && hub(fresh).stock.wood === 0, "a world made since loads unchanged");
+  check(fresh.woodcutting === 2 && hub(fresh).stock.wood === 0, "a world made since loads unchanged");
   const back = loadFromString(saveToString(st));
   check(hub(back).stock.wood === 0, "an old save: the bases start with 0 firewood");
   check(back.work.roles.find((r) => r.name === "Generalist").pri.wood === back.work.roles.find((r) => r.name === "Generalist").pri.forage, "an old save: the roles get Cut wood at their Forage priority");
@@ -462,7 +462,7 @@ section("Save / load: old saves start with none; mid-order, and determinism");
   check(strip(saveToString(a.st)) === strip(saveToString(b.st)), "the same woodcutting trip twice: identical worlds");
   check(!!c.text && strip(saveToString(a.st)) === strip(saveToString(c.st)), "saved and loaded in the middle of cutting: plays on identical");
   check(Object.keys(a.st.wood || {}).length > 0 && JSON.stringify(a.st.wood) === JSON.stringify(c.st.wood), "the land's wood levels are part of the save");
-  check((a.st.econStats.woodField || 0) > 1, `the team cut firewood (${Math.round(a.st.econStats.woodField || 0)})`);
+  check((a.st.econStats.woodField || 0) > 30, `the team cut firewood (${Math.round(a.st.econStats.woodField || 0)})`);
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

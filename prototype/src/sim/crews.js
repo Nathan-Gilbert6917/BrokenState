@@ -178,11 +178,11 @@ FIELD_TYPES.wood = {
     for (const id of state.grid.within(base.tile, crew.range)) {
       if (id === base.tile || targeted(state, id) || woodAbundance(state, id) * woodLevel(state, id) < 0.45) continue;
       const e = expectWood(state, team, id, WOOD.defHours, state.hour + 24, Infinity, power);
-      if (e.all < 6) continue;
+      if (e.all < 180) continue;
       const dist = state.grid.distance(base.tile, id);
       out.push({ tile: id, mission: "move", fit: woodFit, onSite: WOOD.defHours, chopGear: true, why: `cut firewood (~${Math.round(e.all)}; ${Math.floor(w.have)} of ${w.need} for the winter)`,
         steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
-        score: Math.min(2.5, e.all / 8) * (w.cold ? 1.4 : 1) / (1 + dist / 6) });
+        score: Math.min(2.5, e.all / 240) * (w.cold ? 1.4 : 1) / (1 + dist / 6) });
     }
     return out.sort((a, b) => b.score - a.score || a.tile - b.tile).slice(0, 3);
   },

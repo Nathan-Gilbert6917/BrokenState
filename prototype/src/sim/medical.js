@@ -22,7 +22,7 @@ import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, a
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
-import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them
+import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds)
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -148,6 +148,9 @@ export function patients(state, base, h = activeHospital(state, base)) {
   return residents(state, base.id).filter((s) => bedReason(state, base, s)).sort((a, b) => careNeed(b) - careNeed(a)).slice(0, h.beds);
 }
 
+// Meds used on them in the last day (a wound treated, an illness dosed, the worm purged or operated on: s.medsHour).
+// The worm (worm.js wormHealMult): a hospital bed heals them at the full rate on such a day, else at half.
+export const medsToday = (state, s) => !!s && Number.isFinite(s.medsHour) && state.hour - s.medsHour >= 0 && state.hour - s.medsHour <= 24;
 // Passive heal per hour for one survivor at a base.
 export function healRatePerHour(state, base, s, hosp = activeHospital(state, base), inBed = null) {
   if (!isHurt(s)) return 0;
@@ -159,7 +162,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
   if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
-  if (perDay > 0) perDay *= wormHealMult(s); // worm.js: the worm feeds on them: half the healing while it is in them
+  if (perDay > 0) perDay *= wormHealMult(s, { bed: bed && hosp.tier > 0, meds: medsToday(state, s) }); // worm.js: half while it is in them, full in a hospital bed with meds today
   return perDay / 24;
 }
 
@@ -341,7 +344,7 @@ function woundInfo(state, base, s, ctx) {
   const value = shown ? shown.value : 0;
   // Perks of the one treating (skills.js): Steady Hands +25%, Miracle Worker's surgery 2× instead of 1.5×.
   const who = t ? t.s : shown ? shown.s : null;
-  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1) * wormHealMult(s)); // worm.js: half while infected
+  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1) * wormHealMult(s, { bed: !!(s && s.inBed) && hosp.tier > 0, meds: true })); // worm.js: half while infected, full in a hospital bed (the treatment is the meds)
   const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
   const treatedToday = !!s && s.woundTreatedDay === ctx.day;
   let reason = "";
@@ -366,6 +369,7 @@ function applyWound(state, base, s, info) {
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   spendMedicTime(state, base, info.treater, info.load);
   s.woundTreatedDay = day(state);
+  s.medsHour = state.hour; // medsToday (the worm: a hospital bed heals at the full rate today)
   useMedKit(state, info.medic);
   gainXp(state, info.medic, "medicine", info.surgery ? USE.surgery : USE.wound); // skills.js
   const before = s.health;
@@ -455,7 +459,7 @@ export function projectHealth(state, base, s, { hosp = activeHospital(state, bas
   const ill = illnessTonight(s);
   let hp = s.health, night = s.health, passive = 0;
   for (let i = 1; i <= 24; i++) {
-    const t = { ...s, health: hp };
+    const t = { ...s, health: hp, medsHour: treat && i > H ? state.hour + H : s.medsHour }; // tonight's treatment is meds (the worm: medsToday)
     const bed = bedNow && !!bedReason(state, base, t);
     const rate = healRatePerHour(state, base, t, hosp, bed);
     const next = rate >= 0 ? Math.min(100, hp + rate) : hp + rate;
