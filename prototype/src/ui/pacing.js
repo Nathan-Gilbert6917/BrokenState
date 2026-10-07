@@ -71,7 +71,7 @@ function stamp(state) {
 export const cardPauses = (card) => !card.tray || pauseOn(card.tray.kind);
 export const trayCards = (state) => (state.autopilot ? [] : (state.cards || []).filter((c) => c.tray && !cardPauses(c)));
 // Cards still stopping the clock (the "N cards waiting" alert counts these).
-export const pileCount = (state) => (state.autopilot ? state.cards.length : state.cards.filter(cardPauses).length);
+export const pileCount = (state) => { if (state.autopilot) return state.cards.length; stamp(state); return state.cards.filter(cardPauses).length; };
 
 // The card on screen goes to the front of state.cards (the choice buttons answer state.cards[0]): the one opened
 // from the tray, else the first card that pauses. Returns it, or null when every card waits in the tray.
