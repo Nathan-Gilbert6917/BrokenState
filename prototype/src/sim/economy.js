@@ -1,7 +1,7 @@
 // Daily economy for every base (hub and outposts share the same rules): water, base scavenging, farming
 // (farming.js), eating, food storage and spoiling (storage.js), illness (health.js), supply lines, trade routes and
 // death-site looting.
-import { TERRAIN, LOCATIONS, SUPPLIES } from "./data.js";
+import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew } from "./data.js";
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver,
 } from "./world.js";
@@ -43,7 +43,7 @@ export const ROLES = {
   hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, with their own weapon (a rifle or a bow best; firearms use the base's ammo; no weapon: snares). Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod or net (carried, or in the armory: one each). Brings in fresh fish, which spoils fast." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
-  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 0.2 a head a day below freezing). Forest gives most (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -518,7 +518,7 @@ function shipFromOutposts(state) {
       keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first
       for (const k of Object.keys(base.stock)) {
         const surplus = base.stock[k] - (keep[k] || 0);
-        if (surplus > 1) {
+        if (surplus > supplyFew(k, 1)) {
           base.stock[k] -= surplus;
           h.stock[k] = (h.stock[k] || 0) + surplus * line.strength;
         }

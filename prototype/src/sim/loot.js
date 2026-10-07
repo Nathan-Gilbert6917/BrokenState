@@ -251,17 +251,18 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0) {
 
 // ---------- firewood (data.js SUPPLIES.wood) ----------
 // A woodpile, a log basket by the fireplace, split kindling in a shed, broken furniture: firewood turns up where wood is
-// burned or stored. Its own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max] units.
+// burned or stored. Its own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max] firewood
+// (0.1 kg each: a cabin's 60–180 is 6–18 kg).
 // Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
 export const SITE_WOOD = {
-  farm: [0.3, 2, 5], barn: [0.35, 2, 6], ranch: [0.3, 2, 5], cabin: [0.4, 2, 6], lodge: [0.35, 2, 5], campground: [0.4, 2, 5],
-  ranger: [0.35, 2, 5], hardware: [0.25, 1, 4], feedstore: [0.2, 1, 3], town: [0.15, 1, 3], church: [0.1, 1, 3], motel: [0.08, 1, 2],
+  farm: [0.3, 60, 150], barn: [0.35, 60, 180], ranch: [0.3, 60, 150], cabin: [0.4, 60, 180], lodge: [0.35, 60, 150], campground: [0.4, 60, 150],
+  ranger: [0.35, 60, 150], hardware: [0.25, 30, 120], feedstore: [0.2, 30, 90], town: [0.15, 30, 90], church: [0.1, 30, 90], motel: [0.08, 30, 60],
 };
 // Raid map containers (combat.js, a building's rooms too): by the room's type, × FURNITURE for wooden furniture
 // (cabinets, shelves, a counter; anything else half): a living room's log basket, a shed's kindling, a barn's woodpile.
 export const AREA_WOOD = {
-  house: [0.12, 1, 3], farmhouse: [0.2, 1, 4], barn: [0.3, 2, 5], cabin: [0.3, 2, 5], campsite: [0.35, 1, 4],
-  garage: [0.1, 1, 3], workshop: [0.15, 1, 3], chapel: [0.08, 1, 2],
+  house: [0.12, 30, 90], farmhouse: [0.2, 30, 120], barn: [0.3, 60, 150], cabin: [0.3, 60, 150], campsite: [0.35, 30, 120],
+  garage: [0.1, 30, 90], workshop: [0.15, 30, 90], chapel: [0.08, 30, 60],
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Firewood found this search hour at a site, or 0.

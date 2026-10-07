@@ -273,7 +273,7 @@ export function razeGroupBase(state, target, tile, attacker) {
 
 // A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
 // days by the time of year, woodcutting.js FREEZE_SHARE).
-export const GROUP_WOOD = { start: 4, cap: 8, cut: 0.12, burn: 0.3 };
+export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // firewood of 0.1 kg (30 times the old 3 kg units)
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);

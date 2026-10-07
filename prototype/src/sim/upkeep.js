@@ -14,8 +14,8 @@
 //               anyone (from the base first, then what the convoy carries).
 //   the dog     (hubevents.js DOG.food) when the base took one in.
 //   heating     on a day below 0°C (the day's mean) a base burns HEAT.fuel (0.1) fuel a person present (everyone
-//               fed there, the heads above) a day, ×HEAT.bitter (1.5) below −8°C: firewood first (1 firewood = 0.2
-//               fuel of heat, HEAT.wood: so 0.5 firewood a head), then fuel for what the wood does not cover (needs.js
+//               fed there, the heads above) a day, ×HEAT.bitter (1.5) below −8°C: firewood first (30 firewood = 0.2
+//               fuel of heat, HEAT.wood: so 15 firewood, 1.5 kg, a head), then fuel for what the wood does not cover (needs.js
 //               heatDaily). A shelter (buildings.js, tier 0) with its camp fire lit is warmed by the fire (deadfall
 //               from around it, or firewood where the ground is bare: woodcutting.js). Without either everyone there
 //               is cold: needs.js COLD.
@@ -73,32 +73,33 @@ export function foodUse(state, base, dayIdx) {
 }
 
 // ---------- heating ----------
-// The need is counted in fuel (HEAT.fuel a head a day below 0°C); a base burns firewood first (woodcutting.js: 1
-// firewood heats as much as HEAT.wood fuel, so the need in firewood is five times the fuel figure), then fuel for the
+// The need is counted in fuel (HEAT.fuel a head a day below 0°C); a base burns firewood first (woodcutting.js: a
+// firewood heats as much as HEAT.wood fuel, so the need in firewood is 150 times the fuel figure), then fuel for the
 // rest. Wood is the winter's heating; fuel is kept for the vehicles and the generator.
 // HEAT.wood 0.2 (tune-winter, was 0.5): at 0.5 the autopilot's colonies never went cold (0 cold base-days in 20 games ×
-// two winters); at 0.2 a winter takes about 15 firewood a head, a forest hub's woodcutters keep up, a big hub on
+// two winters); at 0.2 a winter takes about 15 firewood a head (450 since a unit is 0.1 kg), a forest hub's woodcutters keep up, a big hub on
 // farmland or one short of hands does not quite (about 2 cold base-days a winter on average, all on poor land).
-export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.2 };
+// HEAT.wood is per firewood of 0.1 kg (0.2 a 3 kg bundle, the unit before: every firewood figure is 30 times what it was).
+export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0.2 / 30 };
 // Fuel one person needs heating a day (today unless dayIdx): 0 at or above 0°C, HEAT.fuel below, ×HEAT.bitter below −8°C.
 export function heatRate(state, dayIdx) {
   const t = Weather.dayMeanTemp ? (dayIdx == null ? Weather.dayMeanTemp(state) : Weather.dayMeanTemp(state, dayIdx)) : 10;
   return t < HEAT.bitterAt ? HEAT.fuel * HEAT.bitter : t < HEAT.freezeAt ? HEAT.fuel : 0;
 }
 // Firewood for `fuel` worth of heat.
-export const woodFor = (fuel) => fuel / HEAT.wood;
+export const woodFor = (fuel) => Math.round((fuel / HEAT.wood) * 1e9) / 1e9; // rounded off: HEAT.wood is a 30th
 // A shelter (tier 0) with its camp fire lit (fieldheat.js fireLit: lit unless put out) is warmed by the fire. The fire
 // burns deadfall gathered around it, or firewood from the store where the ground is bare (woodcutting.js shelterFire:
 // base.fireFed false = nothing left to burn, so it does not warm).
 export const fireWarmed = (base) => !!base && base.tier === 0 && (base.campFire ?? base.fire) !== false && base.fireFed !== false;
 // Heating a day at a base: { each (fuel a head), n (the heads fed there), total (in fuel), wood (the same in firewood),
-// fire (a shelter's fire does it), text }. text: "6 people × 0.1 = 0.6 → 1.2 firewood a day (or 0.6 fuel)".
+// fire (a shelter's fire does it), text }. text: "6 people × 0.1 = 0.6 → 90 firewood a day (or 0.6 fuel)".
 export function heatUse(state, base, dayIdx) {
   const each = heatRate(state, dayIdx);
   const n = mouthsAt(state, base).heads;
   const fire = each > 0 && fireWarmed(base);
   const total = fire ? 0 : n * each;
-  const text = !each ? "no heating needed (above 0°C)" : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm (no fuel)` : n ? `${perHeadText(n, n === 1 ? "person" : "people", each)} → ${r1(woodFor(n * each)).toFixed(1)} firewood a day (or ${r1(n * each).toFixed(1)} fuel)` : "nobody here";
+  const text = !each ? "no heating needed (above 0°C)" : fire ? `the camp fire keeps ${n} ${n === 1 ? "person" : "people"} warm (no fuel)` : n ? `${perHeadText(n, n === 1 ? "person" : "people", each)} → ${Math.round(woodFor(n * each))} firewood a day (or ${r1(n * each).toFixed(1)} fuel)` : "nobody here";
   return { each: r2(each), n, total, wood: woodFor(total), fire, text };
 }
 

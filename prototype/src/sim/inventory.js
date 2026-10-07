@@ -20,6 +20,7 @@ import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
 import { MEDS } from "./medfinds.js"; // how rare meds are
+import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -253,18 +254,18 @@ export function removeAt(state, str) {
 }
 export const placeOfLoc = (state, loc) => placeOf(state, typeof loc === "string" ? parseLoc(loc) : loc);
 
-// ---------- breaking things down for firewood (data.js GEAR burn; woodcutting.js burnables) ----------
+// ---------- breaking things down for firewood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
 // What breaking down the item at a location would give: { ok, reason, item, wood, place }. Items in a base's armory, a
 // team's cargo, or a pocket or pack of someone at a base or on a team (not what is worn or held: take it off first;
 // not a body's).
 export function breakDownInfo(state, str) {
   const loc = parseLoc(str);
   const item = itemAt(state, str);
-  const wood = item && GEAR[item.key] ? Math.max(0, GEAR[item.key].burn || 0) : 0;
+  const wood = burnOf(item); // woodcutting.js: floor(weight × burnShare / 0.1 kg)
   const place = placeOf(state, loc);
   let reason = "";
   if (!item) reason = "Nothing there.";
-  else if (!(wood > 0)) reason = `The ${item.name} will not burn.`;
+  else if (!(wood > 0)) reason = burnShare(item.key) > 0 ? `Too little of the ${item.name} burns to make firewood.` : `The ${item.name} will not burn.`;
   else if (loc.o === "body") reason = "Take it first.";
   else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
   else if (!place) reason = "Out of reach.";

@@ -314,7 +314,7 @@ export const WORK_TYPES = {
   // Firewood for the winter's heating (woodcutting.js): felled trees, deadfall, fence rails, by the land around.
   wood: {
     name: "Cut wood", ing: "Cutting wood", short: "Wood", role: "wood", skill: "farming",
-    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the coming cold needs (0.2 a head a day below freezing): forest best (about 5 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
+    desc: "Cuts firewood within 2 tiles of the base 6 hours a day while the store is short of what the coming cold needs (15, 1.5 kg, a head a day below freezing; the water boiler 6 a head a day): forest best (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. As many as it takes to have the pile in within three weeks (no fixed cap; each one past the first brings in 5% less, at least half). Their own axe, machete or sledgehammer, or one from the armory, cuts much faster than bare hands. Loud (base Heat), and axes slip; the land cut hard grows back over seasons.",
     open(ctx) {
       const why = woodWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };

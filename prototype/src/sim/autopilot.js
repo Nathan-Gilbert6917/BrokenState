@@ -971,7 +971,7 @@ function handleTrade(state) {
   // priced as a whole, the way the trade window totals it; asking at single-unit prices got deals refused.
   let budget = Object.entries(spare).reduce((a, [k, q]) => a + (q > 0 ? q * sellPrice(state, f, k, speech, q) : 0), 0);
   const ask = {};
-  const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 20 };
+  const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
   let room = cargoRoom(state, p);
@@ -3518,9 +3518,9 @@ export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5 };
 // tune-jobcaps: the Cut wood job has no fixed cap (it was 2, 3 at 10+ people). The woodcutters it takes to have the pile
 // in by the cold (and keep up with the boiler) go ahead of the builders and stations up to a quarter of the people
 // (woodCrewMax: the governor's order of work; a third while the pile is under WOOD_AP.behind of what the cold needs:
-// the quarter was set when a winter took 0.2 firewood's worth a head a day, before tune-winter's HEAT.wood 0.2 made it
+// the quarter was set when a freezing day took 0.6 kg of firewood a head, before tune-winter (HEAT.wood) made it
 // 2.5 times that and the boiler burned firewood daily, and a big hub on farmland then met the winter with its pile a
-// third in: woodtest seed 42, 133 of 353); the spare hands cut toward having it in within three weeks
+// third in: woodtest seed 42, 400 kg of 1,060); the spare hands cut toward having it in within three weeks
 // (woodcutting.js woodHandsWanted), each one past the first a little less (woodCrowd).
 const woodCuttersFor = (state, base, w) => woodHandsWanted(state, base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) });
 const woodCrewMax = (n, w = null) => (n <= 3 ? 1 : Math.ceil(n / (w && w.have < w.need * WOOD_AP.behind ? 3 : 4)));
@@ -3555,11 +3555,11 @@ function planWood(state, base, people, areas) {
   };
 }
 // Woodcutting trips (planTrip) when the hub's woodpile is short and the cold is within a month (or here) and the
-// land around the hub gives little (a woodcutter there under 2.5 a day): the best wood land within range that a team
+// land around the hub gives little (a woodcutter there under 75 a day): the best wood land within range that a team
 // of 2–3 with the hub's axes would bring the most from in 8 hours (by a car when there is one: firewood is bulky),
 // scored by the share of the shortfall it covers. The trip takes the armory's cutting tools along.
 // When the Cut wood job's crew (woodCrewMax × a woodcutter's day here × the days to the cold) cannot have the
-// pile in by the winter (a big hub on farmland: three cutters bring in 2 a day against 100+ wanted), the trips are
+// pile in by the winter (a big hub on farmland: three cutters bring in 60 a day against 3,000+ wanted), the trips are
 // the only way to stock it, and by the share alone every trip scored under routine scavenging (0.3 against 0.8) and
 // none was ever sent: then the score rises with the share of the shortfall the job will leave (WOOD_TRIP.gapScore
 // at most, as a cache or a trade), and they start as soon as the stocking season does.
@@ -3568,8 +3568,8 @@ function woodTripCands(state, h, pool, P) {
   if (gov(state).noWood || !h || h.tier === 0) return [];
   const w = woodNeed(state, h, returning(state, h));
   if (!w.short || !w.soon || w.have >= w.need * 0.7) return [];
-  if (!woodWorkWhy(state, h) && baseWoodDay(state, h) >= 2.5) return [];
-  const shortfall = Math.max(10, w.need - w.have);
+  if (!woodWorkWhy(state, h) && baseWoodDay(state, h) >= 75) return [];
+  const shortfall = Math.max(300, w.need - w.have);
   // What the base's own woodcutters (at the job's cap) will still bring in before the cold, and the gap they leave.
   // (no fixed cap since tune-jobcaps: the crew the governor puts on it ahead of other work, woodCrewMax, each past the first a little less)
   // The crew it actually fields (woodCritical): the late summer's until the cold is within WOOD_AP.autumn days, the
@@ -3592,7 +3592,7 @@ function woodTripCands(state, h, pool, P) {
     if (t.hive || (state.hives && zombieToughness(state, id) >= 2)) continue;
     if (state.parties.some((p) => p.owner === "player" && (p.dest === id || (p.ap && p.ap.tile === id)))) continue;
     const e = expectWood(state, crew, id, WOOD.defHours, state.hour + 24, Infinity, power);
-    if (e.all < 8) continue;
+    if (e.all < 240) continue;
     const dist = state.grid.distance(h.tile, id);
     out.push({ mission: "move", tile: id, crew: crew.length, fit: (s) => woodcutterMult(s) * bestChop(s).mult + combatPower(s) * 0.05, haul: true, wood: true, food: "woodTrips", onSite: WOOD.defHours,
       steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
