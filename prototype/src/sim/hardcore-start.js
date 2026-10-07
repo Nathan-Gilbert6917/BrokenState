@@ -280,6 +280,7 @@ export function rollGrab(state, s, A = null) {
     got.weapon = s.gear.weapon;
     const rr = C.ROUNDS[w];
     if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
+    if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
   // Worn from the start (a cop's vest, a veteran's).
   if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = newItem(k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
@@ -444,6 +445,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     sup.food += got.food;
     sup.water += got.water;
     sup.ammo += got.ammo;
+    sup.arrows += got.arrows || 0;
     sup.meds += got.meds;
     lines.push(grabLine(s, got));
   }
