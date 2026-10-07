@@ -43,7 +43,7 @@
 //   A team's hours follow the mix in turn (methodAt: the method furthest behind its share goes next); a base deals
 //   its hunters' hours out each day (cabinPlan: gun hours to those with guns, bow hours to those with bows, the rest
 //   on the snare lines; the fraction of an hour carries over to the next day, base.huntCarry). The governor
-//   (autoHuntMix) goes quiet with wandering dead within 5 tiles (bows and traps), saves ammo for the walls with bows
+//   (autoHuntMix) quiets a cabin with wandering dead within 3 tiles (bows and traps), saves ammo for the walls with bows
 //   when it is short, and mixes bows and guns when it has bows and arrows.
 //   What does not fit in the cargo stays where it fell (the team takes what it can carry; the estimates follow the
 //   chances of each load hour by hour, so they count what is really kept).
@@ -1090,18 +1090,20 @@ export function packHuntArrows(state, home, p) {
   p.supplies.arrows = (p.supplies.arrows || 0) + n;
   return n;
 }
-// The governor's hunting mix for a base (autopilot.js planRoles): quiet with wandering dead within the reach of a shot
-// from its hunting grounds (HUNT.drawRange + CABIN.radius) or the dead at its gates (bows and traps; traps only
-// without a bow and arrows); bows only while the ammo above the walls' keep is short (under AUTO_MIX.ammo) and there
-// are bows and arrows; bows and guns half and half with bows and arrows; else every hunter's best weapon (all guns).
-export const AUTO_MIX = { ammo: 30, arrows: 4 };
+// The governor's hunting mix for a base (autopilot.js planRoles). With a hunting cabin (its hunters shoot within 2
+// tiles of the base) and wandering dead within HUNT.drawRange of the base, or the dead at its gates: quiet (bows and
+// traps; without a bow and arrows half traps, half guns: half the shots), unless the stores are down to AUTO_MIX.hungry
+// days of food (food first then). A base without a cabin hunts only with its teams, away from its walls: the dead near
+// it leave their mix alone. Bows only while the ammo above the walls' keep is short (under AUTO_MIX.ammo) and there are
+// bows and arrows; bows and guns half and half with bows and arrows; else every hunter's best weapon (all guns).
+export const AUTO_MIX = { ammo: 30, arrows: 4, hungry: 5, quietNoBows: { traps: 50, bows: 0, guns: 50 } };
 export function autoHuntMix(state, base) {
   const people = atBase(state, base.id);
   const bows = hasBow(people) && (base.stock.arrows || 0) >= AUTO_MIX.arrows;
-  const reach = HUNT.drawRange + CABIN.radius;
-  const near = state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= reach) ||
+  const food = ((base.stock.food || 0) + (base.stock.preserved || 0)) / Math.max(1, people.length);
+  const near = baseHasHunting(base) && food >= AUTO_MIX.hungry && state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= HUNT.drawRange) ||
     (h.role === "attack" && h.goal && h.goal.baseId === base.id));
-  if (near) return bows ? { ...MIX_PRESETS.quiet.mix } : { ...MIX_PRESETS.traps.mix };
+  if (near) return bows ? { ...MIX_PRESETS.quiet.mix } : { ...AUTO_MIX.quietNoBows };
   const spare = (base.stock.ammo || 0) - ammoKeep(state, base);
   if (bows && spare < AUTO_MIX.ammo) return { traps: 0, bows: 100, guns: 0 };
   return bows ? { ...MIX_PRESETS.mixed.mix } : { ...DEFAULT_MIX };

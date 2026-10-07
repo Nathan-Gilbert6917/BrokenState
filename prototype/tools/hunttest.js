@@ -722,11 +722,19 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   base.stock.ammo = H.ammoKeep(state, base) + 10;
   check(H.autoHuntMix(state, base).guns === 0 && H.autoHuntMix(state, base).bows === 100, "governor: the ammo short with bows: bows only (the ammo is for the walls)");
   base.stock.ammo = 300;
-  const near = state.grid.within(base.tile, 4).find((id) => state.grid.distance(id, base.tile) === 4 && state.tiles[id].terrain !== "water");
+  const near = state.grid.within(base.tile, 3).find((id) => state.grid.distance(id, base.tile) === 3 && state.tiles[id].terrain !== "water");
   makeHorde(state, { tile: near, size: 40, role: "roam" });
-  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.quiet.mix), "governor: the dead 4 tiles off: quiet (bows and traps)");
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.quiet.mix), "governor: the dead 3 tiles off the cabin: quiet (bows and traps)");
   base.stock.arrows = 0;
-  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.traps.mix), "governor: the dead near and no arrows: traps only");
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.AUTO_MIX.quietNoBows) && H.AUTO_MIX.quietNoBows.guns < 100, "governor: the dead near and no arrows: half traps, half guns (half the shots)");
+  const food0 = [base.stock.food, base.stock.preserved];
+  base.stock.food = 2; base.stock.preserved = 0;
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: the dead near but the stores nearly empty: food first (guns)");
+  [base.stock.food, base.stock.preserved] = food0;
+  const cabin = base.buildings.find((x) => x.type === "huntcabin");
+  base.buildings.splice(base.buildings.indexOf(cabin), 1);
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no hunting cabin (only teams hunt, away from the walls): the dead near change nothing");
+  base.buildings.push(cabin);
   state.hordes.length = 0;
   // Saved with the base.
   H.setHuntMix(base, H.MIX_PRESETS.quiet.mix);

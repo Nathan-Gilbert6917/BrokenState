@@ -75,7 +75,7 @@ import { isManaged } from "./work.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
-  hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor,
+  hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
@@ -1375,7 +1375,8 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const was = huntMixOf(base);
     if (mix.traps !== was.traps || mix.bows !== was.bows || mix.guns !== was.guns) {
       setHuntMix(base, mix);
-      if (!huntWorkWhy(state, base)) say(state, `${base.name}'s hunters: ${mix.guns ? (mix.bows ? "bows and guns" : "guns") : mix.bows === 100 ? "bows (saving the ammo)" : mix.bows ? "bows and traps, quiet (the dead are near)" : "traps only, quiet (the dead are near)"}.`);
+      const why = mix.guns === 100 ? "" : mix.bows === 100 ? " (saving the ammo for the walls)" : mix.traps === 0 ? " (bows: fewer shots)" : " (quieter: the dead are near)";
+      if (!huntWorkWhy(state, base)) say(state, `${base.name}'s hunters: ${huntMixText(base)}${why}.`);
     }
   }
   if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
