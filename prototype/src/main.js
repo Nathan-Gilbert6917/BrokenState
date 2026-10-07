@@ -56,6 +56,7 @@ import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
+import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
@@ -96,6 +97,7 @@ const freshUi = () => ({
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
+  ledger: null, // ui/ledger.js: the Ledger window is open
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -158,7 +160,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -399,6 +401,8 @@ function refreshModal(user) {
       if (nbody && bodyTop) nbody.scrollTop = bodyTop;
       const elog = $("elog");
       if (elog) elog.scrollTop = elog.scrollHeight;
+      modal.classList.remove("hidden"); // shown before the charts measure themselves
+      drawCharts(modal); // the Ledger's and the run summary's charts (ui/ledger.js)
     }
   }
   modal.classList.remove("hidden");
@@ -901,6 +905,7 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
+for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
@@ -1240,6 +1245,7 @@ document.addEventListener("mouseover", (e) => {
   tipTarget = el;
   tipEl.textContent = el.dataset.tip;
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
+  if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
   tipEl.classList.remove("hidden");
   placeTip(e);
 });
@@ -1534,6 +1540,7 @@ function closeTopLayer() {
     ui.lookEdit = null;
     return true;
   }
+  if (ui.ledger) { ui.ledger = null; return true; } // ui/ledger.js (it can open over the end screen)
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
   if (!state.autopilot && (state.cards.length || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
@@ -1591,6 +1598,7 @@ window.addEventListener("keydown", (e) => {
   }
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
+  if (ledgerKey(state, ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; } // E: the Ledger (ui/ledger.js)
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.

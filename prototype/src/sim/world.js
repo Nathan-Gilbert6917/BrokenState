@@ -28,6 +28,7 @@ import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
+import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
@@ -670,4 +671,5 @@ export function tickHour(state) {
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
+  historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
 }

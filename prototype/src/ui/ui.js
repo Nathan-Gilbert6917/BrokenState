@@ -90,6 +90,7 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, stageRows, fireButton } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
+import { ledgerModal, runSummaryHTML, stockChipTrend } from "./ledger.js"; // the Ledger, the run summary, the stock trends
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -127,12 +128,13 @@ export function topbarParts(state, ui) {
       (ui.speed > 3 ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
     // Food and water also show days left (economy.js outlook; the tooltip has the details).
     // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
-    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a staging camp built up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : SUPPLY_KEYS.filter((k) => k !== "jars" && k !== RAW).map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; return `<span${tip(`${wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}`)}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a staging camp built up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : SUPPLY_KEYS.filter((k) => k !== "jars" && k !== RAW).map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; const tr = stockChipTrend(state, h, k); return `<span${tip(`${wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}${tr.tip}`)}${tr.attr}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${tr.arrow}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     tools: `UI
       <select data-action="uiscale"${tip("Interface size. Larger is easier to read from the couch.")}>${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select>
       <button data-action="zlook-open"${tip("Zombie look: palette, gore, variants (battle sprites)")}>Zombies</button>
       <button data-action="dev-toggle" class="${ui.dev ? "active" : ""}"${tip("Dev tools: reveal the map, autopilot, fast forward, frame rate, and a tracker of groups and zombie hotzones (\` key)")}>Dev</button>
+      <button data-action="ld-open"${tip("Ledger: production and use of every resource, stock, people, mood and Heat day by day, per base; and the run summary (E)")}>📈 Ledger</button>
       <button data-action="dy-open"${tip("Diary: the whole run day by day, with filters and search (J)")}>📖 Diary</button>
       <button data-action="ro-toggle"${tip("Roster: everyone in one table, sortable, with roles you can change for many at once (R)")}>👥 Roster</button>
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>
@@ -558,7 +560,7 @@ function pickModal(state, ui) {
   if (state.combat) return state.gameOver && !state.combat.over ? ["over", () => gameOverScreen(state)] : null;
   // A card's result comes before "game over", so the last thing that happened is not skipped.
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
-  if (state.gameOver) return ["over", () => gameOverScreen(state)];
+  if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger opens over the end screen
   if (state.cards.length) return ["card", () => cardModal(state, state.cards[0])];
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
@@ -574,6 +576,7 @@ function pickModal(state, ui) {
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
   if (ui.roster) return ["roster", () => rosterModal(state, ui)]; // ui/roster.js (the survivor and base screens open over it)
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
+  if (ui.ledger) return ["ledger", () => ledgerModal(state, ui)]; // ui/ledger.js
   return null;
 }
 // The planner's line for an assault: the defenders, and a strong warning when the group is not hostile.
@@ -597,7 +600,12 @@ export function modalKind(state, ui) {
 
 // The new-run setup screen lives in ui/newgame.js (newRunScreen).
 
+// The end screen (fallen, or a victory) with the run summary under its words (ui/ledger.js), before its buttons.
 function gameOverScreen(state) {
+  return gameOverWords(state).replace('<div class="box">', '<div class="box rsbox">')
+    .replace('<div class="row">', `<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button>`);
+}
+function gameOverWords(state) {
   if (state.victory && state.victoryReason === "alliance") {
     const st = hiveTracker(state).stats;
     const a = goalsProgress(state).alliance;
@@ -682,7 +690,7 @@ export function helpText() {
     <b>Defending against hordes:</b> a base's walls hold back a horde up to a limit (the base panel shows "Holds a horde of"); guards and the defence buildings (barricades, spike pits, trench, reinforced gate, floodlights) raise it. A bigger horde breaks in and the best 8 there fight it on the base map, with the barricades, pits and trench on it. Lose and the base is overrun: people hurt or killed, stores spoiled, an outpost lost. When lookouts see a horde coming you get a warning card: man the defences, or burn a decoy fire.<br>
     <b>Saving:</b> ${k("⚙ Menu")} in the top bar (or ${k("Esc")} with nothing open; ${k("⚙ Menu")} in a battle's panel) opens the menu: <i>Save</i>, <i>Load</i>, <i>Save and exit</i> (back to the new-run screen, where <i>Continue</i> picks the latest save up again), <i>New campaign</i>, save files (<i>Export</i>, <i>Save to file</i>, <i>Load from file</i>) and the options (autosave every day or few days at dawn, confirmations, pause when the window loses focus, UI size, the battle's end-turn question, zombie look, the keys). Saves are kept in this browser, compressed: up to 12 named saves plus the autosave, which also saves when a hive assault starts and when the run ends. A save holds everything, a battle under way included; a card waiting for an answer cannot be saved, so answer it first (the autosave waits for that too). Loading pauses the game.<br>
     <b>Dev tools</b> (${k("`")} key or the Dev button): reveal the map, infection overlay, autopilot (${k("Shift+P")}: an AI governor plays for you), fast forward 60× / 300× / 1200×, show FPS, and the timelapse so far.<br>
-    <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–4")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("Shift+P")} autopilot (dev) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
+    <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–4")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("E")} Ledger (production and use, the run summary) · ${k("Shift+P")} autopilot (dev) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
     <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.`;
 }
 
