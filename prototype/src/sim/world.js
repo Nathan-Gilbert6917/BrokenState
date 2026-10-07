@@ -159,7 +159,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  for (const t of ["farm_plot", "farm_plot", "ammo_bench", "bunkhouse", "walls"]) addBuilding(hubBase, t);
+  for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hubBase, t); // a crafting bench, no ammo bench: that needs a workbench first (buildings.js BENCH)
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);

@@ -164,7 +164,7 @@ const SUPPLY_HOW = {
   rawwater: "Purify it (the water boiler, water filters, a camp fire, tablets) before drinking: drunk as it is, it can carry the worm's eggs.",
   fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the firewood.",
   meds: "Treat wounds and illnesses (a dose each). Rare: keep a reserve, and a med station makes more.",
-  ammo: "Every gunshot costs it (an assault rifle two). An ammo bench makes more from scrap.",
+  ammo: "Every gunshot costs it (an assault rifle two). An ammo bench makes more from scrap (it needs a workbench at the base to build).",
   arrows: "Bows and crossbows lose some when they hunt (in a fight they are picked up again). Made by hand from firewood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
   parts: "Buildings, vehicle repairs and gear need them. A machine shop makes them from scrap.",
   scrap: "What almost everything is built and crafted from. Scavenging brings it in.",
@@ -189,7 +189,7 @@ function buildingEntries() {
     if (b.outpostOnly) stats.push(["Only at", "outposts"]);
     if (b.shelterOnly) stats.push(["Only at", "a shelter"]);
     return {
-      key: `b:${k}`, cat: "buildings", name: b.name, sub: b.defence ? "Defence" : b.station ? "Workshop station" : b.family ? "Hospital" : "Building", stats, text: b.desc,
+      key: `b:${k}`, cat: "buildings", name: b.name, sub: b.defence ? "Defence" : b.station ? "Workshop station" : b.family === "bench" ? "Crafting bench" : b.family ? "Hospital" : "Building", stats, text: b.desc,
       how: `Build it from a base's Construction tab: the people on the Build role do the work.${b.station ? " It needs an operator (Workshops tab)." : ""}${b.defence ? " It counts when a horde attacks the base." : ""}`,
       sprite: null,
     };

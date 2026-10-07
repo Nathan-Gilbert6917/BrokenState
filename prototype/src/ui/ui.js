@@ -38,7 +38,7 @@ import { crawlModal } from "./citycrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
-  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP,
+  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -62,7 +62,7 @@ import { commandable, NO_RADIO } from "../sim/plans.js";
 import { teamRadioLine } from "./radiolisten.js"; // a team's receiver out of contact: what it hears (sim/radiolisten.js)
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS, frontsApproaching } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
-import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE, craftInText } from "../sim/crafting.js";
+import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE, craftInText, benchQuality, benchNeeded, hasBench } from "../sim/crafting.js";
 import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton } from "./production.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
@@ -692,7 +692,7 @@ export function helpText() {
     <b>Boats:</b> water blocks travel. A team on a shore can build a one-use boat and cross one water tile (team panel, or right-click the far shore). It costs scrap and hours; a vehicle needs a raft or is left on the shore.<br>
     <b>Supply runs and trade routes:</b> supply runs are convoy jobs between your own bases (a base's Supply runs tab): crew, vehicle, goods each way, once or on a schedule. Trade routes are repeating convoys to a group you have a trade pact with (Groups tab); the terms must be worth it to them at their prices.<br>
     <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
-    <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. Makeshift gear wears out. Teams can make the simplest things in the field.<br>
+    <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. Makeshift gear wears out. Teams can make the simplest things in the field (Field recipes); at a base everything else needs a crafting bench (a utility plot; the hub starts with one), where crafters also work faster and make better gear. Upgrade it to a workbench for the workshop recipes and before an ammo bench can be built, then to a master workbench.<br>
     <b>Orders, power and stewards:</b> each workshop station (Workshops tab) takes a standing order: Forever, Until stock reaches N, Keep at least N of an input, or Off, and what its operator does while it waits. The Crafting tab keeps N of an item in the armory at a minimum quality. A generator (needs an operator and 2 fuel a day) powers the cold store, radio, floodlights, machine shop and preserving kitchen; an ethanol still makes fuel from surplus food. <i>Hand to a steward</i> (Overview tab) lets the governor run a base, area by area; pinned people are left alone, and Take over hands it back as it is.<br>
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it). Treats (chocolate, coffee, cigarettes, vodka) are used up with <i>Use</i> for a mood boost at a price.<br>
     <b>What you find:</b> sites hold what fits them (a hunting lodge rifles, bows and camo; a police station batons, riot gear and a carbine; a hardware store crowbars, sledgehammers and barbed wire; houses jewelry and keepsakes). Valuables (jewelry, smokes, liquor, gadgets, collectibles, household goods) are only for trade. Comforts lift the mood of everyone around them (cards, a harmonica, a guitar) or of whoever carries them (family photos). Camp kit (camo netting, a ghillie wrap, rag-wrapped boots, a scent mask, a smokeless stove) cuts a team's Heat while it camps or searches. Barbed wire, sandbags, bear traps and a tripwire alarm in a base's armory help hold off hordes. Frag grenades, pipe bombs, Molotovs, flares and smoke grenades are thrown in battle like bottles; alarm clocks, pocket radios, hand warmers and heat packs are decoys for the dead (Siege, fire and decoys).<br>
@@ -1379,7 +1379,7 @@ function baseWorkshops(state, b) {
         <td class="small">${s.op ? `${Object.entries(s.in || r.in).map(([k, v]) => `−${v} ${k}`).join(", ")} → ${Object.entries(s.out).map(([k, v]) => `+${v} ${k}`).join(", ") || "power"}` : "—"}</td>
         <td>${orderCell(state, b, st)}</td>
       </tr>`;
-    }).join("")}</table>` : `<div class="muted small">No workshop stations. Build an ammo bench, med station or machine shop in Construction.</div>`}
+    }).join("")}</table>` : `<div class="muted small">No workshop stations. Build an ammo bench (needs a workbench here), med station or machine shop in Construction.</div>`}
     ${racksCard(state, b)}${powerCard(state, b)}`;
 }
 
@@ -1534,6 +1534,7 @@ function baseCrafting(state, b) {
       <h3>Crafters</h3>
       <div class="card small">
         ${crew.length || abed.length ? [...crew, ...abed].map((s) => `<div class="spread"><span>${esc(s.name)}${bedTag(s)} <span class="muted">Mechanics ${skill(s, "mechanics")} · Medicine ${skill(s, "medicine")}</span></span>${roleSelect(state, s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
+        <div class="muted" style="margin-top:0.3rem"${tip(benchType(b) ? BUILDINGS[benchType(b)].desc : BUILDINGS.craftbench.desc)}>${benchType(b) ? `${esc(BUILDINGS[benchType(b)].name)}: crafters work ${Math.round((BENCH[benchType(b)].rate - 1) * 100)}% faster, gear comes out +${Math.round(BENCH[benchType(b)].quality * 100)}% condition${BENCH[benchType(b)].workshop ? ", workshop recipes open" : ""}.` : hasBench(b) ? "No crafting bench: the workshop here does for one (no bonus). Build a crafting bench (Construction, a utility plot) to work faster and better." : `<span class="warn">No crafting bench: only the simple Field recipes can be made here.</span> Build one in Construction (a utility plot, ${BUILDINGS.craftbench.cost.scrap} scrap).`}</div>
         ${others.length ? `<div style="margin-top:0.3rem"><select data-action="craftop"${tip("Set someone's role to Craft")}><option value="">Add a crafter…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Mechanics ${skill(s, "mechanics")}, Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
       </div>
       <h3>Queue (${q.length}/${MAX_CRAFT_QUEUE})</h3>
@@ -1547,7 +1548,7 @@ function baseCrafting(state, b) {
         return `<div class="card small">
           <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))}</b><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
           ${bar((job.progress / job.hours) * 100, "var(--accent)")}
-          <span class="muted">${n1(left)} of ${job.hours} work-hours left · ${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about ${eta}h at the current pace${r.gear ? ` · condition about ${Math.round(craftQuality(best(r), r) * 100)}%` : ""}` : "paused"}</span>
+          <span class="muted">${n1(left)} of ${job.hours} work-hours left · ${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about ${eta}h at the current pace${r.gear ? ` · condition about ${Math.round(benchQuality(craftQuality(best(r), r), b) * 100)}%` : ""}` : "paused"}</span>
         </div>`;
       }).join("") : `<div class="muted small">Nothing queued.</div>`}
       <div class="small muted" style="margin-top:0.4rem">Crafters work on the first job they have the skill for. Finished gear goes to the armory; equip it in the Armory tab. Makeshift gear is weaker than the real thing and breaks after a number of uses.</div>
@@ -1555,13 +1556,13 @@ function baseCrafting(state, b) {
     </div>
     <div>
       <h3>Recipes</h3>
-      <div class="small muted" style="margin-bottom:0.4rem">${hasWorkshop(b) ? "A workshop is here: workshop recipes are open (and come out a bit better)." : "No workshop here: recipes marked Workshop need an ammo bench or machine shop at this base."}</div>
+      <div class="small muted" style="margin-bottom:0.4rem">${hasWorkshop(b) ? "A workshop is here: workshop recipes are open (and come out a bit better)." : "No workshop here: recipes marked Workshop need a workbench, ammo bench or machine shop at this base."} ${hasBench(b) ? "" : "Recipes marked Bench need a crafting bench here."}</div>
       ${Object.keys(CRAFTS).map((k) => {
         const r = CRAFTS[k];
         const chk = canCraft(state, b, k);
         const d = r.gear ? GEAR[r.gear] : null;
         return `<div class="card small"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
-          <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs ? `<span class="chip"${tip("Needs an ammo bench or machine shop at this base")}>Workshop</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
+          <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs === "workshop" ? `<span class="chip"${tip("Needs a workbench (or better), an ammo bench or a machine shop at this base")}>Workshop</span>` : r.needs ? `<span class="chip"${tip(`Needs a ${BUILDINGS[r.needs] ? BUILDINGS[r.needs].name.toLowerCase() : r.needs} at this base`)}>${esc(BUILDINGS[r.needs] ? BUILDINGS[r.needs].name : r.needs)}</span>` : ""}${benchNeeded(r) ? `<span class="chip"${tip("Needs a crafting bench (or better) at this base")}>Bench</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
           <span class="muted">${esc(craftInText(r))} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+</span><br>
           <span>→ ${esc(craftOutputText(k))}</span>${chk.ok ? "" : ` · <span class="danger">${esc(chk.reason)}</span>`}
           ${lockLine(state, b, "craft", k)}

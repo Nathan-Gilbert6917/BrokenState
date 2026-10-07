@@ -595,7 +595,7 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   const r0 = buildRate(st3, h3);
   addCondition(st3, ppl3[0], "flu", "test", { sev: 60 });
   check(buildRate(st3, h3) < r0, `a sick builder builds less (${r0.toFixed(2)} → ${buildRate(st3, h3).toFixed(2)})`);
-  const stn = stations(h3)[0];
+  const stn = stations(h3)[0] || addBuilding(h3, "ammo_bench"); // the hub starts with no station now (a crafting bench)
   if (stn) { ppl3[1].role = "operate"; ppl3[1].station = stn.id; addCondition(st3, ppl3[1], "pneumonia", "test", { sev: 80 }); check(!stationOperator(st3, h3, stn), "someone too sick leaves the station idle"); }
   addBuilding(h3, "infirmary");
   ppl3[2].role = "medic";

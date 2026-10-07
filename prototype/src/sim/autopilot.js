@@ -37,7 +37,7 @@ import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
@@ -1757,6 +1757,7 @@ const BUILD_AREA = {
   huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
+  craftbench: "production", workbench: "production", toolbench: "production",
 };
 function planBuilds(state, base, areas = ALL_AREAS) {
   if (base.construction.length >= (base.type === "hub" ? 2 : 1)) return;
@@ -1874,6 +1875,10 @@ function buildWishes(state, base) {
     const blocked = gain.filter((f) => !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)));
     if (gain.length) add("relay", `radio reach to ${gain.map((f) => f.name).join(", ")}${blocked.length ? " for the coalition" : ""}`, blocked.length > 0);
   }
+  // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
+  // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
+  const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
+  if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
   if (!base.watchtower && (hostileNear || state.hordes.some((h) => state.live.has(h.tile)))) add("watchtower", "earlier warning of raids and hordes");
@@ -1882,6 +1887,16 @@ function buildWishes(state, base) {
   if (next === "field_hosp" && pop >= 8 && (st.parts || 0) >= 3 && (st.meds || 0) >= 8) add("field_hosp", "more beds and no infected wounds");
   if (next === "clinic" && pop >= 11 && (st.parts || 0) >= 6 && (st.meds || 0) >= 12) add("clinic", "surgery and cleaned wounds");
   if (next === "hospital" && pop >= 16 && (st.parts || 0) >= 10 && (st.meds || 0) >= 16) add("hospital", "a proper trauma hospital");
+  // Ammo from scrap: an ammo bench needs a workbench here (it opens the workshop recipes too), so the crafting bench
+  // goes up and is upgraded first. Saved for while the ammo is below what would set the ammo bench to work
+  // (stationWorth: 15 a head + 60, or the hive campaign's stockpile); the hub used to start with an ammo bench.
+  if (!countAll(base, "ammo_bench") && !queued("ammo_bench")) {
+    const ammoLow = (st.ammo || 0) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
+    const bt = benchTier(base, true);
+    if (!bt && !benchQueued) add("craftbench", "a crafting bench, the first step to an ammo bench", ammoLow);
+    else if (bt === 1 && !benchQueued && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench: workshop recipes, and an ammo bench needs one", ammoLow);
+    else if (bt >= 2) add("ammo_bench", "ammo from scrap", ammoLow);
+  }
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");

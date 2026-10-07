@@ -122,6 +122,12 @@ node tools/crafttest.js 30 42
 Crafting: hand-craft gates (stock, skill, workshop), the craft queue (materials paid up front, crafters' work-hours, blocked jobs skipped, cancel refunds, queue cap), equipping makeshift gear, durability (fights, treatments, days) and breaking, water filters and crowbars at a base, field crafting from a team's supplies with the bandage kit in field treatment, 25 tactical battles with makeshift weapons, and a short campaign with a crafter.
 
 ```bash
+node tools/benchtest.js 42
+```
+
+Crafting benches (`src/sim/buildings.js` BENCH: a crafting bench 8 scrap, 10 h; a workbench 16 scrap + 1 part, 18 h, Mechanics 2; a master workbench 28 scrap + 3 parts, 30 h, Mechanics 5; one utility plot, each tier upgrading the one below in place; about 3 s): a bench at a shelter, an outpost and the hub on a utility plot (none without a free one), hand crafting at a base needing one for all but the Field recipes (station recipes and re-packed filters aside; a workshop does for one in old saves), crafters 25% / 40% / 60% faster and +5% / +8% / +12% condition (at most 100%; field crafting gets nothing), the workbench and up counting as a workshop and being what an ammo bench needs, the new hub starting with a crafting bench and no ammo bench, and the governor building a bench where someone crafts, then the workbench and the ammo bench at the hub.
+
+```bash
 node tools/invtest.js 60 11
 ```
 
