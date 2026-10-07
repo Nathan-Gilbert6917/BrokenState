@@ -132,7 +132,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
+    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];

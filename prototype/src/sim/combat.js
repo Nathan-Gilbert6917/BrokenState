@@ -35,7 +35,7 @@ import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
-import { rollAreaFind, rollAreaWood } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { illnessAim } from "./health.js";
@@ -3865,6 +3865,9 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
+      // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
+      const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
+      if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
       if (def.alarm && box.kind === "car" && rng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

@@ -75,6 +75,7 @@ import { isManaged } from "./work.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
+  hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
@@ -1368,9 +1369,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // the day's eating and the stores refilled, less the plots), up to a fifth of the people ahead of the farm
   // (LAND_AP.share: the governor's order of work, not the job's room; one at a base under 5).
   const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
+  // The hunting mix (hunting.js autoHuntMix): quiet with the dead near, bows when the ammo is short, else guns.
+  if (areas.food) {
+    const mix = autoHuntMix(state, base);
+    const was = huntMixOf(base);
+    if (mix.traps !== was.traps || mix.bows !== was.bows || mix.guns !== was.guns) {
+      setHuntMix(base, mix);
+      if (!huntWorkWhy(state, base)) say(state, `${base.name}'s hunters: ${mix.guns ? (mix.bows ? "bows and guns" : "guns") : mix.bows === 100 ? "bows (saving the ammo)" : mix.bows ? "bows and traps, quiet (the dead are near)" : "traps only, quiet (the dead are near)"}.`);
+    }
+  }
   if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
-    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
 
@@ -1888,6 +1898,11 @@ function planCrafts(state, base) {
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
+  // Arrows for the bows' hunting (hunting.js: about half the arrows shot at game are lost): a dozen a bow and a dozen
+  // more, from firewood the winter can spare.
+  const bows = people.filter((s) => hasBow([s])).length;
+  const arrowsQueued = q.filter((j) => j.recipe === "arrows").length * CRAFTS.arrows.supplies.arrows;
+  if (bows && (st.arrows || 0) + arrowsQueued < 12 * (bows + 1) && (st.wood || 0) >= 150 && tryCraft(["arrows"], "arrows: the bows hunt quietly", 30)) return;
   // Field kit (kit.js packs it for trips): quiet boots and a ghillie wrap against Heat, Molotovs for the walls.
   const have = (k) => base.armory.filter((it) => it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length;
   if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
@@ -3293,10 +3308,11 @@ function foodTripCands(state, h, pool, need, P) {
   const ammo = Math.max(0, (h.stock.ammo || 0) - 20);
   const out = [];
   const hunters = [...pool].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, size);
-  if (hunters.some((s) => bestHuntWeapon(s, ammo))) {
+  const arrows = huntArrowsFor(state, h, hunters); // the bows' arrows go along (plans.js applyPlan)
+  if (hunters.some((s) => bestHuntWeapon(s, ammo, arrows))) {
     const wire = (h.armory || []).some((it) => it && it.key === "snarewire");
     const snareKit = wire || (h.stock.scrap || 0) >= 25;
-    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, hours: HUNT.defHours, limit: 8 }).filter((x) => walkable(state, h.tile, x)).slice(0, 3)) {
+    for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, arrows, mix: huntMixOf(h), hours: HUNT.defHours, limit: 8 }).filter((x) => walkable(state, h.tile, x)).slice(0, 3)) {
       if (x.est.rations < 8) continue;
       const line = snareLine(state, x.tile);
       const snare = line ? state.hour - (line.check ?? line.set) >= 48 : snareKit;

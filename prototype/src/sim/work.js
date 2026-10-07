@@ -275,7 +275,7 @@ export const WORK_TYPES = {
   // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
   hunt: {
     name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
-    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun (this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
     open(ctx) {
       const why = huntWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
