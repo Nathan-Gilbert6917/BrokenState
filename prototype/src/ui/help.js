@@ -9,6 +9,7 @@ import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
+import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -118,6 +119,7 @@ export function helpTopics() {
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
   if (!seen.has("templates-repeat-trip-and-undo")) add("Templates, Repeat trip and Undo", tripsHelp());
   add("Sound", soundHelp()); // ui/audio.js
+  if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
   return out;
 }
 

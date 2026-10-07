@@ -29,6 +29,7 @@ import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by 
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
+import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -373,7 +374,9 @@ export function basesDaily(state) {
   wormDaily(state); // worm.js: catching the worm (water, raw meat), its stages, spotting, care, turning; infested herds
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
+  markAll(state); // history.js: the outposts' surplus run is stock moved, not made or used
   shipFromOutposts(state);
+  markAll(state, "move");
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
@@ -407,6 +410,7 @@ function baseDaily(state, base) {
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
+  flowMark(state, base); // history.js: the day's production so far is in (before anyone drinks or eats)
 
   // Purifying (worm.js purifyDaily): the boiler (it burns its firewood now), the water filters and a shelter's fire
   // turn un-purified water into purified water before anyone drinks.
@@ -427,6 +431,7 @@ function baseDaily(state, base) {
   base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
   const give = drawWater(st, need.crops, { rawFirst: true }).got;
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+  flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
   // Eating: fresh food first, then preserved (storage.js). An outpost that runs short is covered from the hub
   // afterwards (shipFromOutposts). Under a week of food left, everyone goes on short rations (60%): it stretches

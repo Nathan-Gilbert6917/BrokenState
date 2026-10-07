@@ -620,3 +620,30 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .gd-why { font-size: 0.86rem; color: var(--muted); margin: 0 0 0.3rem 1.45rem; line-height: 1.35; }
 .gd-pulse { outline: 2px solid #ffd166; outline-offset: 2px; animation: gdpulse 1s ease-in-out 10; }
 @keyframes gdpulse { 50% { box-shadow: 0 0 0 0.4rem rgba(255,209,102,0.45); outline-color: #fff2c4; } }
+/* The Ledger, the run summary and the top bar's stock trends (ui/ledger.js). */
+#modal .box.ledgerbox { width: min(100rem, 96vw); height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+#modal .win.sized > .box.ledgerbox { display: flex; flex-direction: column; }
+.ld-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.4rem; margin-top: 0.3rem; }
+.ld-row { border-top: 1px solid var(--line); padding: 0.45rem 0 0.4rem; }
+.ld-row.ld-empty { padding: 0.3rem 0; }
+.ld-head { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; font-size: 1.05rem; }
+.ld-legend { margin-left: auto; }
+.ld-key::before { content: ""; display: inline-block; width: 0.9em; height: 0.3em; margin-right: 0.3em; vertical-align: middle; background: var(--c); border-radius: 2px; }
+.ld-read { min-height: 1.4em; margin: 0.1rem 0 0.25rem; font-variant-numeric: tabular-nums; }
+.ld-read .info { color: var(--info); }
+.ld-charts { display: grid; gap: 0.8rem; grid-template-columns: 1fr; }
+.ld-charts.ld-n2 { grid-template-columns: 3fr 2fr; }
+.ld-chart { width: 100%; height: 6.5rem; display: block; background: var(--panel-2); border-radius: 6px; cursor: crosshair; }
+#topbar .stock .trend { font-size: 0.8em; margin-left: 0.1rem; }
+.tip-spark { margin-top: 0.35rem; display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; }
+.tip-spark svg { width: 11rem; height: 2.4rem; background: var(--panel-2); border-radius: 4px; }
+#modal .box.rsbox { width: min(90rem, 96vw); }
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(26rem, 100%), 1fr)); gap: 0 1.1rem; }
+.rs-grid .ld-chart { height: 7rem; }
+.rs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
+.rs-causes { display: grid; gap: 0.3rem; max-width: 48rem; }
+.rs-cause { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr 3rem; align-items: center; gap: 0.6rem; }
+.rs-bar { height: 0.8rem; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.rs-bar i { display: block; height: 100%; background: var(--danger); }
+.rs-events { max-width: 75rem; }
+.rs-over { margin: 0.4rem 0 0.9rem; }
