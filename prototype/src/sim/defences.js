@@ -28,6 +28,7 @@ import { BOSS_NAMES, ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { siegeWallCut } from "./siege.js";
 import { DECOY_KEYS, THROWABLES } from "./stealth.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
+import { applyPlan } from "./defenceplan.js"; // the base's defence plan at the deploy step
 import { fortable, fortDefence, fortSize } from "./fort.js"; // a walled base on land: the whole battle on one fort map
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
@@ -603,7 +604,11 @@ registerBattleSize("baseDefence", (state, setup) => {
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
-  if (fortable(ctx.state, base, c)) return fortDefence(b, ctx, base, c); // fort.js: both phases (a bridge barricade keeps the deck map below)
+  if (fortable(ctx.state, base, c)) { // fort.js: both phases (a bridge barricade keeps the deck map below)
+    fortDefence(b, ctx, base, c);
+    if (ctx.phase === "units") applyPlan(ctx.state, b); // defenceplan.js: the base's defence plan, if it has one
+    return;
+  }
   if (ctx.phase === "map") return deployMap(b, ctx, base, c);
   // Units: the Wallbreakers come in with the dead; then the defenders' posts and the turn of the map.
   for (let i = 0; i < (setup.enemy.bosses || 0); i++) {
@@ -611,6 +616,7 @@ registerBattleLayout("baseDefence", (b, ctx) => {
     if (placeUnitRight(b, ctx, boss, ctx.W - 6)) b.units.push(boss);
   }
   deployUnits(b, ctx, base, c);
+  applyPlan(ctx.state, b); // defenceplan.js: the base's defence plan, if it has one
 });
 
 // ---------- autopilot help ----------

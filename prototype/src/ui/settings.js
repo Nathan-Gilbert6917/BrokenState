@@ -420,7 +420,7 @@ export function autosaveCheck(state, ui, api, now) {
   // The battle-start save (its own slot): as each battle opens, before anything is done in it, so it can be played
   // again (Restart battle). Open cards are left out of it (a card's choices cannot be saved). Not on autopilot.
   const bt = state.combat;
-  if (bt && auto.battle !== bt && !bt.over && o.battleSave !== false && !state.autopilot) {
+  if (bt && auto.battle !== bt && !bt.over && !bt.drill && o.battleSave !== false && !state.autopilot) { // not a defence drill (sim/defenceplan.js)
     auto.battle = bt;
     if (bt.turn <= 1 && !bt.acted) doBattleSave(state, ui, api, bt, now);
     return;
@@ -473,7 +473,7 @@ function ironCheck(state, ui, api, now) {
   }
   auto.over = false;
   const bt = state.combat;
-  if (bt && auto.battle !== bt) { auto.battle = bt; auto.pending = "a battle started"; }
+  if (bt && auto.battle !== bt && !bt.drill) { auto.battle = bt; auto.pending = "a battle started"; } // a defence drill is not a battle
   if (!bt && auto.battle) { auto.battle = null; auto.pending = "a battle ended"; }
   const di = dawnIndex(state);
   if (di > auto.dawn) { auto.dawn = di; auto.pending = auto.pending || "dawn"; }

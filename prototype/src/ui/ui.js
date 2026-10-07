@@ -80,6 +80,7 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance } from "../sim/hunting.js";
 import { herdAt, infestedShare, WORM, wormMeatAt, baseWater, searchRiskText, boilerUse, armoryTabs } from "../sim/worm.js";
 import { LIGHTS, lightsPreview, litCount } from "../sim/lights.js"; // the planner's Lights line
@@ -1078,6 +1079,7 @@ function gearControls(state, base, s, slot) {
 const BASE_TABS = [
   ["overview", "Overview", "Stock, people and roles"],
   ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
+  ["defence", "Defence", "The watch roster (who stands guard at which hours) and the defence plan (where everyone stands when the base is attacked)"],
   ["farming", "Farming", "Crop plots: what grows, when it ripens, expected harvests, weather risks; the food and water outlook"],
   ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
@@ -1095,7 +1097,7 @@ function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
   const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, work: workTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>

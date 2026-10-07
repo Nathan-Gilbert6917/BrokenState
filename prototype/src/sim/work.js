@@ -20,7 +20,8 @@
 //      → rest. Then emergencies: raiders warned or at the walls, or the defences manned → everyone with Guard set
 //      (any priority) guards; a horde warned and coming, or next to the walls → as many of them as it takes to hold
 //      it with a quarter to spare (defences.js hold limit), best shots first, all of them when that is not enough.
-//      Then the role's schedule (guard watch, free time, sleep), then free time for anyone whose mood is very low
+//      Then the base's watch roster (watch.js: on their shift they stand guard), then the role's schedule (guard
+//      watch, free time, sleep), then free time for anyone whose mood is very low
 //      (below 25, until 40).
 //   2b. The watchtower's alarm (defences.js towerWatch: a horde near a base with a watchtower): Guard counts as
 //      priority 1 for everyone there who has it set lower than their first priority, and the walls take as many
@@ -62,6 +63,7 @@ import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./forag
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
 import { waterIn } from "./water.js"; // purified and un-purified water count together
+import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
 export const PRIO_MAX = 5;
@@ -783,6 +785,8 @@ export function planBase(state, base) {
     const sick = healthRest(s);
     if (sick) { put(s, { role: "rest", t: "rest", kind: "health", why: `Resting: ${sick}` }); continue; }
     if (walls.has(s)) { put(s, { role: "guard", t: "guard", kind: "emerg", why: `Emergency: ${ctx.threat.urgent}${ctx.wallsNote}` }); continue; }
+    const ws = base.watch ? watchShift(base, s, h) : null; // watch.js: the base's watch roster, before the role's schedule
+    if (ws) { put(s, { role: "guard", t: "guard", kind: "sched", why: `On watch: ${ws.name} ${shiftText(ws)} (the watch roster)` }); continue; }
     const block = schedAt(role, h);
     if (block === "g") { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guard watch (${role.name}'s schedule)` }); continue; }
     if (block === "s" || block === "f") { put(s, { role: "rest", t: block === "s" ? "sleep" : "free", kind: "sched", why: `${SCHED[block].name} (${role.name}'s schedule)` }); continue; }
