@@ -703,3 +703,31 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 #banner .pause-why { color: #ffe6a8; margin-right: 0.3rem; }
 .tray-note { font-size: 0.85rem; color: var(--muted, #9aa3ad); border-bottom: 1px solid var(--line); padding-bottom: 0.35rem; margin-bottom: 0.45rem; }
 .tray-note button { margin-left: 0.4rem; padding: 0.05rem 0.5rem; }
+/* Readability (Menu → Options → Display, ui/display.js). Colour-blind-safe colours: blue for good, orange for bad
+   (ui/palette.js holds the same set for the canvas). Reduce motion: no CSS animation or transition anywhere. */
+:root.cb { --good: #56b4e9; --danger: #e69f00; --death: #d55e00; }
+:root.cb .warn { color: #f0e442; }
+:root.cb .chip.on { background: #17344a; }
+:root.cb .chip.off { background: #45300f; }
+:root.cb .perk.taken { background: rgba(86, 180, 233, 0.18); }
+:root.cb .al.al-warn { border-left-color: #f0e442; }
+:root.calm *, :root.calm *::before, :root.calm *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+
+/* The minimap (ui/minimap.js): the map's bottom-right corner, sized in rem so it grows with the UI size. */
+#minimap { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 4; width: var(--minimap-w, 15rem); max-width: calc(50% - 1rem); border: 1px solid var(--line); border-radius: 6px; background: #0d0f12; box-shadow: 0 4px 14px rgba(0,0,0,0.5); overflow: hidden; }
+#minimap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#minimap .mm-hide { position: absolute; top: 0.2rem; left: 0.2rem; padding: 0 0.4rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
+#minimap .mm-hide:hover { opacity: 1; }
+#mm-show { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 4; padding: 0.15rem 0.55rem; font-size: 0.8rem; background: rgba(20,22,26,0.88); }
+#mapwrap:has(#minimap:not(.hidden)) #fps { bottom: auto; top: 0.6rem; right: auto; left: 50%; transform: translateX(-50%); }
+#mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: calc(55% - 1.8rem); }
+body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
+
+/* The one confirmation box (ui/confirm.js; the menu's questions use it too): over everything, Enter / Esc. */
+#ask { position: fixed; inset: 0; z-index: 30; }
+.askwrap { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
+.askbox { width: min(30rem, 92vw); background: var(--panel); border: 1px solid var(--danger); border-radius: 10px; padding: 0.9rem 1.1rem; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
+.askbox .asktitle { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem; }
+.askbox .asktext { line-height: 1.5; color: var(--text); margin-bottom: 0.6rem; }
+.askbox .askskip { display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; color: var(--muted); cursor: pointer; margin-bottom: 0.6rem; }
+.askbox .askbtns { display: flex; gap: 0.5rem; justify-content: flex-end; }

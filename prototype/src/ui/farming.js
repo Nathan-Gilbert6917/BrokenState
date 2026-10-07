@@ -20,6 +20,7 @@ import { baseWater, boilerUse, cropLandBad, WORM, purifyText, baseTabCount } fro
 import {
   HUNT_METHODS, METHOD_NAMES, MIX_PRESETS, huntMixOf, setHuntMix, setHuntShare, huntWorkWhy, ammoKeep, hasBow, ARROW, TRAP, HUNT, baseHuntDay,
 } from "../sim/hunting.js";
+import { ask } from "./confirm.js"; // digging a living crop under asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -299,7 +300,12 @@ export const FARM_ACTIONS = {
     ui.baseMsg = crop ? plantPlot(state, b, Number(d.plot), crop) : "Nothing would ripen there before its season ends.";
   },
   "farm-harvest": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = harvestPlot(state, b, Number(d.plot)); },
-  "farm-clear": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = clearPlot(state, b, Number(d.plot)); },
+  "farm-clear": (state, ui, d) => {
+    const b = baseOf(state, d), plot = b ? (farmOf(state, b).plots || []).find((x) => x.id === Number(d.plot)) : null;
+    if (!b) return;
+    if (plot && plot.stage !== "dead" && plot.stage !== "empty" && ask(ui, d, "farm-clear", { kind: "clearcrop", title: `Dig under the ${plot.crop && CROPS[plot.crop] ? CROPS[plot.crop].name.toLowerCase() : "crop"} on plot ${plot.id}?`, text: `The crop is lost${plot.stage === "ripe" ? " (it is ripe: Harvest brings it in instead)" : ""}, and the seed with it. The plot is free to sow again.`, yes: "Dig it under" })) return;
+    ui.baseMsg = clearPlot(state, b, Number(d.plot));
+  },
   "farm-auto": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = setAutoReplant(state, b, !farmOf(state, b).auto); },
   "hunt-preset": (state, ui, d) => { const b = baseOf(state, d); const p = MIX_PRESETS[d.preset]; if (b && p) ui.baseMsg = setHuntMix(b, p.mix); },
 };

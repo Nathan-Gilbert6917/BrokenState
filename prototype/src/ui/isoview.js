@@ -19,6 +19,7 @@
 // Camera: pan (drag, the arrow keys, the screen edge), zoom (wheel, + / −: 9 steps), turn in 90° steps (, and .),
 // center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
+import { PAL as COL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { LIGHTS } from "../sim/lights.js";
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
@@ -1023,7 +1024,7 @@ function drawEdgeMarkers(ctx, b, cw, ch, v) {
     ctx.save();
     ctx.translate(cx + dx * k, cy + dy * k); ctx.rotate(Math.atan2(dy, dx));
     ctx.globalAlpha = a;
-    ctx.fillStyle = "#e2685f"; ctx.strokeStyle = "rgba(15,17,20,0.85)"; ctx.lineWidth = 1.5;
+    ctx.fillStyle = COL.bad; ctx.strokeStyle = "rgba(15,17,20,0.85)"; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-6, -7); ctx.lineTo(-3, 0); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
@@ -1284,25 +1285,25 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (b.lit && b.floodAim) fillCells(ctx, b, (i) => b.lit[i], "rgba(255,236,150,0.13)");
   if (b.evacCols) {
     const ev = (i) => evacAt(b, i % b.w, (i / b.w) | 0);
-    fillCells(ctx, b, ev, "rgba(108,196,138,0.2)");
+    fillCells(ctx, b, ev, `rgba(${COL.goodRgb},0.2)`);
     ctx.setLineDash([6, 4]);
-    outlineCells(ctx, b, ev, "rgba(108,196,138,0.75)", 1.5);
+    outlineCells(ctx, b, ev, `rgba(${COL.goodRgb},0.75)`, 1.5);
     ctx.setLineDash([]);
   }
   // Extraction zones are on the ground floor only: not drawn while looking at an upper floor (they are void there).
   if (b.raid && !floorNo(b)) for (const z of b.raid.zones) {
     const inZ = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h; };
-    fillCells(ctx, b, inZ, z.vehicle ? "rgba(90,160,255,0.2)" : "rgba(108,196,138,0.2)");
+    fillCells(ctx, b, inZ, z.vehicle ? "rgba(90,160,255,0.2)" : `rgba(${COL.goodRgb},0.2)`);
     ctx.setLineDash([6, 4]);
-    outlineCells(ctx, b, inZ, z.vehicle ? "rgba(140,190,255,0.9)" : "rgba(108,196,138,0.85)", 2);
+    outlineCells(ctx, b, inZ, z.vehicle ? "rgba(140,190,255,0.9)" : `rgba(${COL.goodRgb},0.85)`, 2);
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
   if (deploying) {
     const ok = new Uint8Array(N);
     for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
-    fillCells(ctx, b, (i) => ok[i], "rgba(108,196,138,0.16)");
-    outlineCells(ctx, b, (i) => ok[i], "rgba(108,196,138,0.8)", 1.5);
+    fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
+    outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
   let bands = null;
   if (v.reach && H.mode === "move" && u) {
@@ -1457,7 +1458,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const zt = tileTop(b, x, y);
       if (zt) {
         if (bands && bands[i]) { ctx.fillStyle = bands[i] === 1 ? "rgba(80,150,255,0.32)" : "rgba(255,200,60,0.22)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
-        if (deploying && canPlace(b, x, y)) { ctx.fillStyle = "rgba(108,196,138,0.28)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
+        if (deploying && canPlace(b, x, y)) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
@@ -1608,7 +1609,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
-      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : "#6cc48a", Math.max(10, 4 * S));
+      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : COL.good, Math.max(10, 4 * S));
     }
   }
   // The base's buildings by name; hit points of a battered wall, gate, door or window.
@@ -1624,7 +1625,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const x = i % b.w, y = (i / b.w) | 0, L = looks[i], top = (L ? L.top : 0) + liftAt(b, i);
     const [X, Y] = project(x + 0.5, y + 0.5, top + 3), f = Math.max(0, c.hp / c.mhp), w = 18 * S * 0.6;
     ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(X - w / 2, Y - 3, w, 4);
-    ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
+    ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
   }
   // The deploy step: the gate and breaches, the side the attack comes from.
   if (deploying) {
@@ -1636,13 +1637,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const dir = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] }[D.side] || [1, 0];
     const ex = b.w / 2 + dir[0] * (b.w / 2 + 1), ey = b.h / 2 + dir[1] * (b.h / 2 + 1);
     const [X0, Y0] = project(ex, ey, 0), [X1, Y1] = project(ex - dir[0] * 2.2, ey - dir[1] * 2.2, 0);
-    arrow(ctx, X0, Y0, X1, Y1, "#e2685f", 4 * S);
+    arrow(ctx, X0, Y0, X1, Y1, COL.bad, 4 * S);
   }
 
   // Move: the path to the hovered cell; meds: who can be treated.
   const h = H.hover;
   if (H.mode === "meds" && u) {
-    ctx.strokeStyle = "#6cc48a"; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);
     ctx.stroke();
   }
@@ -1668,7 +1669,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const t = b.units.find((q) => q.id === p.id);
       if (!t) continue;
       const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H + 14);
-      tag(ctx, p.safe ? "SAFE" : `${p.chance}%`, X, Y, p.safe || p.chance >= 75 ? "#6cc48a" : p.chance >= 45 ? "#e0a84f" : "#e2685f", Math.max(11, 3.6 * S));
+      tag(ctx, p.safe ? "SAFE" : `${p.chance}%`, X, Y, p.safe || p.chance >= 75 ? COL.good : p.chance >= 45 ? COL.mid : COL.bad, Math.max(11, 3.6 * S));
     }
   }
 
@@ -1694,19 +1695,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       for (const T of H.threat(h.x, h.y)) {
         const e = T.e, shot = T.shot != null;
         const [EX, EY] = project(e.x + 0.5, e.y + 0.5, standZ(b, e.x, e.y) + UNIT_H * 0.6);
-        ctx.strokeStyle = shot ? "rgba(226,104,95,0.85)" : "rgba(224,168,79,0.8)";
+        ctx.strokeStyle = shot ? `rgba(${COL.badRgb},0.85)` : "rgba(224,168,79,0.8)";
         ctx.lineWidth = 1.5;
         if (!shot) ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(EX, EY); ctx.lineTo(TX, TY); ctx.stroke();
         ctx.setLineDash([]);
-        if (shot && u) tag(ctx, `⚠ ${T.shot}%`, EX, EY - 10, T.shot >= 50 ? "#e2685f" : T.shot >= 25 ? "#e0a84f" : "#9aa0a8", Math.max(10, 3.2 * S));
+        if (shot && u) tag(ctx, `⚠ ${T.shot}%`, EX, EY - 10, T.shot >= 50 ? COL.bad : T.shot >= 25 ? "#e0a84f" : "#9aa0a8", Math.max(10, 3.2 * S));
       }
     }
     if (u && active(u) && b.phase === "player") {
       const t = H.unitAt(h.x, h.y);
       if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
         const o = H.odds(b, u, t);
-        const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? "#6cc48a" : o.chance >= 35 ? "#e0a84f" : "#e2685f";
+        const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
         const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H * 0.6);
         ctx.strokeStyle = col; ctx.lineWidth = 2;
         if (!o.ok) ctx.setLineDash([4, 5]);
@@ -1789,7 +1790,7 @@ function drawCompass(ctx, cw, ch) {
   ctx.fillStyle = "rgba(15,17,20,0.78)"; ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "rgba(230,226,216,0.25)"; ctx.lineWidth = 1; ctx.stroke();
   ctx.translate(cx, cy); ctx.rotate(a);
-  ctx.fillStyle = "#e2685f"; ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(0, -6); ctx.lineTo(0, 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = COL.bad; ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(0, -6); ctx.lineTo(0, 6); ctx.closePath(); ctx.fill();
   ctx.fillStyle = "#9aa0a8"; ctx.beginPath(); ctx.moveTo(-15, 0); ctx.lineTo(0, -6); ctx.lineTo(0, 6); ctx.closePath(); ctx.fill();
   ctx.restore();
   ctx.fillStyle = "#e6e2d8"; ctx.font = "700 12px Segoe UI, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1820,7 +1821,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 
 // ---------- units ----------
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
-const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? "#e2685f" : "#b5d36a") : "#ff8f85");
+const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
 function drawBody(ctx, state, b, s, H, silhouette = false) {
@@ -1875,7 +1876,7 @@ function drawUnitIso(ctx, state, b, s, H, now) {
     iso.rects.push({ x0: X - 14 * S, x1: X + 14 * S, y0: Y - 8 * S, y1: Y + 7 * S, x: t.x, y: t.y, id: t.id });
     return;
   }
-  const ring = t.down ? (t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f") : ringOf(t);
+  const ring = t.down ? (t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? COL.good : COL.bad) : ringOf(t);
   if (!t.dead) { // (the dead lie in their own pool of blood: ui/downsprites.js)
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.beginPath(); ctx.ellipse(X + 1.5 * S, Y + 0.5 * S, 10 * S, 4.6 * S, 0, 0, Math.PI * 2); ctx.fill();
@@ -1932,7 +1933,7 @@ function drawLabels(ctx, b, s, H) {
   const top = t.down ? Y0 - 10 * S : Y0 - UNIT_H * big * S;
   const f = Math.max(0, Math.min(1, t.hp / t.maxHp)), bw = Math.max(22, 16 * S), by = top - 6;
   ctx.fillStyle = "rgba(12,14,17,0.9)"; ctx.fillRect(X - bw / 2 - 1, by - 1, bw + 2, 5);
-  ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(X - bw / 2, by, bw * f, 3);
+  ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - bw / 2, by, bw * f, 3);
   const fs = Math.max(10, Math.round(3.4 * S));
   if (t.side === "player" && active(t) && b.phase === "player") for (let i = 0; i < 2; i++) {
     ctx.fillStyle = i < t.ap ? "#8fc1ff" : "#2c3139";
@@ -1940,9 +1941,9 @@ function drawLabels(ctx, b, s, H) {
   }
   const hh = hAt(b, t.x, t.y);
   const tags = [];
-  if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? "#6cc48a" : "#e2685f"]);
+  if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]);
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
-  if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", "#e2685f"]);
+  if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
@@ -1960,7 +1961,7 @@ function drawLabels(ctx, b, s, H) {
   // The hit chance of the selected unit against each enemy in sight (X-COM's labels).
   if (t.side === "enemy" && active(t) && H.hits && H.hits.has(t.id)) {
     const o = H.hits.get(t.id);
-    const col = o.chance >= 65 ? "#6cc48a" : o.chance >= 35 ? "#e0a84f" : "#e2685f";
+    const col = o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
     tag(ctx, `${o.chance}%`, X + bw / 2 + 14, by + 4, col, fs);
   }
 }
@@ -1998,7 +1999,7 @@ function drawFxIso(ctx, b, now, H) {
     const text = f.text ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(Math.max(12, (f.crit ? 5.4 : 4.6) * S))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${COL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`; ctx.lineWidth = 3;
     const y = ty - UNIT_H * 0.7 * S - (el / 1400) * 14 * S;
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);

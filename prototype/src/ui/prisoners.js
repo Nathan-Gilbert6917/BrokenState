@@ -12,6 +12,7 @@ import {
 } from "../sim/prisoners.js";
 import { wormOthersAt, WORM } from "../sim/worm.js"; // the worm in a prisoner: spotted, treated like a resident
 import { otherWormRow } from "./health.js";
+import { ask } from "./confirm.js"; // execute and release ask first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => ` data-tip="${esc(t)}"`;
@@ -89,7 +90,6 @@ function prisonerCard(state, base, p, ui, watch) {
   const where = v.cell ? (v.guarded ? "In a cell, guarded" : "In a cell, unguarded") : "In a shed (no free cell)";
   const opinion = Math.max(0, Math.min(100, Math.round(p.opinion)));
   const ransom = p.ransom ? `Ransom asked: ${p.ransom.qty} ${p.ransom.key}, answer due on day ${p.ransom.due}.` : "";
-  const confirm = ui.prisonConfirm === p.id;
   const Q = PRISON.QUESTION, RQ = Q.rough;
   const qWhat = p.intelDone ? "Again: where their parties (raids too) and the hives near them are now." : "First answers: their bases, people and stock, their parties out (raids too), hives near them (onto your map).";
   const qTip = v.question.ok ? `Question ${p.name}: ${pctTxt(v.question.odds)} to get answers (the best talker's Speech +${pctTxt(Q.speech)} a point, the leader's Leadership +${pctTxt(Q.lead)}; zealots and soldiers say less; hunger loosens tongues: Starvation +${pctTxt(R.starve.question)}, None +${pctTxt(R.none.question)}). ${qWhat} Sours them (${Q.sour}).` : `Questioned on day ${p.questioned}: again from day ${p.questioned + Q.every}.`;
@@ -99,7 +99,7 @@ function prisonerCard(state, base, p, ui, watch) {
   const A = PRISON.ASK;
   const askTip = v.ask.ok ? `Ask ${p.name} to join now: ${pctTxt(v.ask.odds)}. By their opinion of you (from ${A.from}, +${pct1(1 / A.span)} a point above it; ${opinion} now), who they were (zealots ×${A.kind.zealots}, soldiers ×${A.kind.soldiers}, a loner ×${A.kind.none}), the leader's Leadership and the best talker's Speech (+${pct1(A.lead)} a point each), rations (Full +${pctTxt(R.full.ask)}, Starvation ${pctTxt(R.starve.ask)}, None ${pctTxt(R.none.ask)}), weeks of good work (+${pct1(L.askPerDay)} a day, up to +${pctTxt(L.askMax)}: ${p.labourDays || 0} days so far) and their mood. Raise it: time on Win them over, Full rations, labour, a leader with Leadership. No: opinion ${A.fail}, ask again in ${A.gap} days.` : `Asked on day ${p.asked}: again from day ${p.asked + A.gap}.`;
   const E = v.execute;
-  const exTip = `Execute ${p.name}. Everyone here takes it hard: mood ${E.mood} (Brave or Tough ${E.hardened}, a Former Medic ${E.soft}). Goodwill ${E.goodwill} with ${E.group || "their group"} and ${E.others} with ${E.known} other group${E.known === 1 ? "" : "s"} you know. Infamy +${E.infamy} (now ${Math.round(E.infamyNow)}; above ${CONQUEST.INFAMY.wary} peaceful groups cool toward you). The others held here are cowed for ${E.fearDays} days (escapes ×${E.fear}, mood ${E.fearMood}).${confirm ? " Click again to do it." : ""}`;
+  const exTip = `Execute ${p.name}. Everyone here takes it hard: mood ${E.mood} (Brave or Tough ${E.hardened}, a Former Medic ${E.soft}). Goodwill ${E.goodwill} with ${E.group || "their group"} and ${E.others} with ${E.known} other group${E.known === 1 ? "" : "s"} you know. Infamy +${E.infamy} (now ${Math.round(E.infamyNow)}; above ${CONQUEST.INFAMY.wary} peaceful groups cool toward you). The others held here are cowed for ${E.fearDays} days (escapes ×${E.fear}, mood ${E.fearMood}). Asks first.`;
   const workTxt = v.task === "idle" ? "in the cell" : v.work > 0 ? `${pctTxt(v.work)} of a survivor, ${v.watched ? "watched" : '<span class="warn">unwatched</span>'}` : `<span class="warn">not working</span> (${s.health < L.minHealth ? "too weak" : "nothing to do here now"})`;
   const hp = Math.round(s.health);
   const wo = wormOthersAt(state, base).find((x) => x.kind === "prisoner" && x.p === p);
@@ -126,24 +126,34 @@ function prisonerCard(state, base, p, ui, watch) {
       <button class="mini" data-action="pr-ransom" data-id="${p.id}" ${v.ransom && !p.ransom ? "" : "disabled"}${tip(rTip)}>Ask a ransom${v.ransom ? ` (${v.ransom.qty} ${esc(v.ransom.key)})` : ""}</button>
       <button class="mini" data-action="pr-tradeback" data-id="${p.id}" ${f ? "" : "disabled"}${tip(f ? `Send ${p.name} back to ${f.name} unharmed: goodwill +${PRISON.TRADE_BACK + cured}${cured ? " (+" + cured + " for treating their worm)" : ""}.` : "Their group is gone.")}>Trade back (+${PRISON.TRADE_BACK + cured})</button>
       <button class="mini" data-action="pr-release" data-id="${p.id}"${tip(`Let ${p.name} go${f ? `: they head back to ${f.name} (goodwill +${PRISON.RELEASE + cured}${cured ? ", " + cured + " of it for treating their worm" : ""})` : ""}.`)}>Release</button>
-      <button class="mini ${confirm ? "danger" : ""}" data-action="pr-execute" data-id="${p.id}"${tip(exTip)}>${confirm ? "Really execute?" : "Execute"}</button>
+      <button class="mini" data-action="pr-execute" data-id="${p.id}"${tip(exTip)}>Execute</button>
     </div>
     <div class="small muted" style="margin-top:0.2rem">Rough questioning: their health ${RQ.health}, your people's mood ${RQ.baseMood}, goodwill ${RQ.goodwill}. Execute: mood ${E.mood} here, goodwill ${E.goodwill}${E.group ? ` with ${esc(E.group)}` : ""} and ${E.others} with ${E.known} other${E.known === 1 ? "" : "s"}, infamy +${E.infamy}.</div>
   </div>`;
 }
 
-const done = (ui, text) => { ui.baseMsg = text || ""; ui.prisonConfirm = null; };
+const done = (ui, text) => { ui.baseMsg = text || ""; };
+// The questions before releasing or executing someone (ui/confirm.js): what happens, in full.
+const heldBy = (state, id) => (state.prisoners || []).find((x) => x.id === Number(id));
+function releaseQ(state, p) {
+  const f = p.factionId != null ? (state.factions || []).find((x) => x.id === p.factionId) : null;
+  return { kind: "release", title: `Let ${p.name} go?`, text: `They leave at once${f ? ` and head back to ${f.name} (goodwill +${PRISON.RELEASE})` : ""}. Nothing they could have told you or done for you comes with them.`, yes: "Release" };
+}
+function executeQ(state, p) {
+  const E = prisonerView(state, p).execute;
+  return { kind: "execute", title: `Execute ${p.name}?`, text: `There is no undoing it. Everyone here takes it hard (mood ${E.mood}; Brave or Tough ${E.hardened}, a Former Medic ${E.soft}). Goodwill ${E.goodwill} with ${E.group || "their group"} and ${E.others} with ${E.known} other group${E.known === 1 ? "" : "s"} you know; infamy +${E.infamy}. The others held here are cowed for ${E.fearDays} days.`, yes: "Execute" };
+}
 export const PRISON_ACTIONS = {
   "pr-question": (state, ui, d) => done(ui, questionPrisoner(state, d.id, d.method === "rough" ? "rough" : "talk")),
   "pr-ask": (state, ui, d) => done(ui, askToJoin(state, d.id)),
   "pr-ransom": (state, ui, d) => done(ui, askRansom(state, d.id)),
   "pr-tradeback": (state, ui, d) => done(ui, tradeBack(state, d.id)),
-  "pr-release": (state, ui, d) => done(ui, releasePrisoner(state, d.id)),
+  "pr-release": (state, ui, d) => { const p = heldBy(state, d.id); if (p && ask(ui, d, "pr-release", releaseQ(state, p))) return; done(ui, releasePrisoner(state, d.id)); },
   "pr-mode": (state, ui, d) => done(ui, setMode(state, d.id, d.mode)),
   "pr-execute": (state, ui, d) => {
-    const id = Number(d.id);
-    if (ui.prisonConfirm !== id) { ui.prisonConfirm = id; ui.baseMsg = "Click Execute again to confirm."; return; }
-    done(ui, executePrisoner(state, id));
+    const p = heldBy(state, d.id);
+    if (p && ask(ui, d, "pr-execute", executeQ(state, p))) return;
+    done(ui, executePrisoner(state, Number(d.id)));
   },
 };
 // The selects: rations and work, one prisoner or everyone at the base.

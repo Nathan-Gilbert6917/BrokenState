@@ -647,6 +647,9 @@ section("Help: the menu's Help tab, the Layers box and the ? buttons (ui/help.js
   const { LAYERS } = await import("../src/sim/markers.js");
   const { view } = await import("../src/ui/render.js");
   Object.assign(CLICK, SETTINGS_ACTIONS);
+  // The Display rows and the Confirmations row (ui/display.js, ui/confirm.js; main.js registers them).
+  Object.assign(CLICK, (await import("../src/ui/display.js")).DISPLAY_ACTIONS, (await import("../src/ui/confirm.js")).ASK_ACTIONS);
+  Object.assign(CHANGE, (await import("../src/ui/display.js")).DISPLAY_CHANGE);
   const strip = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   const w = createWorld({ seed: seed + 11, factionCount: 6 });
   const topics = helpTopics();

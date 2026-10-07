@@ -15,6 +15,7 @@ import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and t
 import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
 import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 import { pacingHelp } from "./pacing.js";
+import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -136,6 +137,7 @@ export function helpTopics() {
   if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
+  for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
   return out;
 }
 

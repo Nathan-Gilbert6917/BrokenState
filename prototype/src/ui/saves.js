@@ -8,6 +8,7 @@
 // Nothing here runs at import time, so the headless tools can import it with no browser around.
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
 import { saveSummary, campaignKey } from "../sim/savesummary.js";
+import { readDisplayOptions } from "./displayopts.js"; // the Display options and "Don't ask again" (ui/display.js, ui/confirm.js)
 
 // The one autosave slot of builds before the rotating autosaves (below): still listed and loaded, and replaced by its
 // campaign's first rotating autosave.
@@ -31,7 +32,7 @@ const storage = () => {
 
 // ---------- options ----------
 export function loadOptions() {
-  const o = { ...DEFAULT_OPTIONS };
+  const o = readDisplayOptions({ ...DEFAULT_OPTIONS });
   try {
     const raw = storage() && storage().getItem(OPTIONS_KEY);
     if (raw) {
@@ -47,6 +48,7 @@ export function loadOptions() {
       if (v.sound && typeof v.sound === "object") o.sound = { ...v.sound }; // volumes and mutes (ui/audio.js soundOptions cleans them)
       if (typeof v.guideSeen === "boolean") o.guideSeen = v.guideSeen; // a campaign was started here: the first-week guide box starts off (ui/guide.js)
       if (v.pacing && typeof v.pacing === "object") o.pacing = v.pacing; // Options → Pause for… (ui/pacing.js checks each switch)
+      readDisplayOptions(o, v); // Display (palette, map text, reduce motion, minimap, dev tools, map animations) and the confirmations
     }
   } catch { /* unreadable: the defaults */ }
   return o;
