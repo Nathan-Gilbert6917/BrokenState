@@ -13,7 +13,7 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot } from "./world.js";
+import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
@@ -529,7 +529,8 @@ function pickChoice(state, card, opts, p) {
   if (/^Bad footing/.test(t)) return ((p && (p.supplies.meds || 0) >= 2) || P.name === "Cautious" ? find(/^Treat it/) : null) || find(/^Keep moving/);
   if (/^The dead ahead/.test(t)) {
     const n = Number((/About (\d+)/.exec(card.text || "") || [0, 8])[1]);
-    const power = p ? partyMembers(state, p).reduce((a, s) => a + combatPower(s), 0) * ((p.supplies.ammo || 0) >= n ? 1 : 0.5) : 0;
+    const ms = p ? partyMembers(state, p) : [];
+    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, p.supplies.ammo || 0, p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }
@@ -1536,8 +1537,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const guards = new Set([...want].filter(([, w]) => w.role === "guard").map(([id]) => id));
   const defense = () => {
     let d = baseWalls(base) * 2;
-    for (const s of people) d += combatPower(s) * (guards.has(s.id) || (want.get(s.id) || {}).role === "guard" ? 1.5 : base.alert ? 1.3 : 0.8);
-    return (st.ammo || 0) < people.length * 3 ? d * 0.7 : d;
+    const mult = (s) => (guards.has(s.id) || (want.get(s.id) || {}).role === "guard" ? 1.5 : base.alert ? 1.3 : 0.8);
+    for (const s of people) d += combatPower(s) * mult(s);
+    return d * armedFactor(people, st.ammo || 0, st.arrows || 0, { short: 0.7, weight: mult }); // factions.js baseDefense: the bows' arrows too
   };
   const addGuards = (target, cap) => {
     if (!areas.defence) return;
@@ -2050,6 +2052,11 @@ function planCrafts(state, base) {
     return false;
   };
   if (lacking("weapon") > 0 && tryCraft(["crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return;
+  // Arrows: the bows and crossbows shoot them in every fight (and hunt with them): under half a dozen a bow, before
+  // anything else (a bow with none fights with its fists; about half the arrows shot are picked up again after a win).
+  const bows = people.filter((s) => hasBow([s])).length;
+  const arrowsQueued = q.filter((j) => j.recipe === "arrows").length * CRAFTS.arrows.supplies.arrows;
+  if (bows && (st.arrows || 0) + arrowsQueued < 6 * bows && (st.wood || 0) >= 100 && tryCraft(["arrows"], "arrows: a bow with none fights with its fists", 5)) return;
   if (((st.meds || 0) < Math.max(3, n / 2) || (rs && rs.meds.short)) && tryCraft(["dressings"], "meds are short", 5)) return;
   const filters = [...base.armory, ...people.map((s) => s.gear.tool)].filter((it) => it && it.key === "waterfilter").length + q.filter(isFilterJob).length;
   if (rs && rs.water.short && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "water is below the reserve", 4)) return;
@@ -2067,11 +2074,9 @@ function planCrafts(state, base) {
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
-  // Arrows for the bows' hunting (hunting.js: about half the arrows shot at game are lost): a dozen a bow and a dozen
-  // more, from firewood the winter can spare.
-  const bows = people.filter((s) => hasBow([s])).length;
-  const arrowsQueued = q.filter((j) => j.recipe === "arrows").length * CRAFTS.arrows.supplies.arrows;
-  if (bows && (st.arrows || 0) + arrowsQueued < 12 * (bows + 1) && (st.wood || 0) >= 150 && tryCraft(["arrows"], "arrows: the bows hunt quietly", 30)) return;
+  // Arrows for the bows' fights and hunting (hunting.js: about half the arrows shot at game are lost): a dozen a bow
+  // to pack (world.js ARROWS.PACK), a dozen more for the walls, from firewood the winter can spare.
+  if (bows && (st.arrows || 0) + arrowsQueued < ARROWS.PACK * (bows + 1) && (st.wood || 0) >= 150 && tryCraft(["arrows"], "arrows: the bows shoot them in fights and on hunts", 30)) return;
   // Field kit (kit.js packs it for trips): quiet boots and a ghillie wrap against Heat, Molotovs for the walls.
   const have = (k) => base.armory.filter((it) => it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length;
   if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
@@ -3380,6 +3385,9 @@ function launchTrip(state, c, pool, spareHands) {
     meds: stock("meds") >= 4 ? Math.min(2, Math.ceil(n / 2)) : 0,
     fuel: 0,
   };
+  // The bows and crossbows shoot arrows in a fight (and on a hunt): a dozen each (world.js ARROWS.PACK), what the hub has.
+  const archers = archerCount(crew);
+  if (archers) sup.arrows = Math.min(stock("arrows"), archers * ARROWS.PACK);
   // Weighed twice: what the team packs changes its load, and so its pace and what it eats.
   for (let pass = 0; pass < 2; pass++) {
     const r = ration(est);

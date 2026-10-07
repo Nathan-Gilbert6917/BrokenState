@@ -41,7 +41,7 @@
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
   newId, log, addCard, day, hub, atBase, combatPower, hurt, playerStrength,
-  factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue,
+  factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
 import { baseWalls, count } from "./buildings.js";
@@ -623,12 +623,10 @@ export function raidRepelled(state, f) {
 export function baseDefense(state, base, surprise = false) {
   const people = atBase(state, base.id);
   let d = baseWalls(base) * 2;
-  for (const s of people) {
-    const mult = s.role === "guard" ? 1.5 : base.alert ? 1.3 : surprise ? SURPRISE.ASLEEP : 0.8;
-    d += combatPower(s) * mult;
-  }
-  if ((base.stock.ammo || 0) < people.length * 3) d *= 0.7;
-  return d;
+  const mult = (s) => (s.role === "guard" ? 1.5 : base.alert ? 1.3 : surprise ? SURPRISE.ASLEEP : 0.8);
+  for (const s of people) d += combatPower(s) * mult(s);
+  // Short of ammo (under 3 a head) the guns count 70%, short of arrows the bows (world.js armedFactor).
+  return d * armedFactor(people, base.stock.ammo || 0, base.stock.arrows || 0, { short: 0.7, weight: mult });
 }
 
 // Called when a raid party reaches its target and the siege timer runs out.
@@ -655,7 +653,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const def = baseDefense(state, base, caught) + allies.power;
   const att = party.strength;
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
-  if (!beaten) base.stock.ammo = Math.max(0, (base.stock.ammo || 0) - people.length * 3);
+  const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
   // yard or the buildings, or overrun.
   const rt = beaten ? null : raidTier(state, base, def, att, RAIDS.HOLD, RAIDS.BREAK, party.siege || null, caught); // siege.js: their ladders, ram and grenades
@@ -674,6 +672,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     if (people.length && rng.chance(0.4)) wound(rng.pick(people), rng.int(10, 30), `defending ${base.name}`);
     f.pop = Math.max(0, f.pop - rng.int(1, 3));
     raidRepelled(state, f);
+    if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // the field is yours: about half the arrows picked up
   } else if (ratio >= RAIDS.BREAK) {
     outcome = "broken";
     head = rt && rt.tier === "buildings" ? `${f.name} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${f.name} broke into ${base.name} before being pushed out.`;
@@ -682,6 +681,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     for (let i = 0; i < (rt && rt.tier === "buildings" ? 3 : 2) && people.length; i++) wound(rng.pick(people), rng.int(15, 45), `defending ${base.name}`);
     f.pop = Math.max(0, f.pop - 1);
     raidWon(state, f);
+    if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // pushed out: the arrows in the yard are yours
     // An outpost they broke into may be kept (a third as likely as after an overrun): the people there leave.
     if (base.type === "outpost" && rng.chance(keepChance(state, f, base.tile, supplyValue(base.stock)) * CONQUEST.BREAKIN_KEEP)) keep = true;
   } else {

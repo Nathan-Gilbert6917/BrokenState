@@ -191,6 +191,7 @@ const factionIn = (state, line) => {
 // ---------- the fight going on ----------
 // A fight by the numbers notes its odds here as it is settled (combat.js autoResolveCombat); a battle on the map is
 // state.combat. Kept outside the state (never saved): only a death in the same hour, of that team or base, reads it.
+// ammoOk: true, false (short of ammo: everyone at 60%), or, with bows on the team, the line naming what was short.
 const fights = new WeakMap();
 export function noteFight(state, setup, odds, people, ammoOk = true) {
   if (!state || !setup || !setup.enemy) return;
@@ -208,6 +209,7 @@ function fightFactors(state, p, base) {
     out.push(F(`${f.people} of yours against ${f.count} ${f.enemy.replace(/^the /i, "")}${f.fortified ? " behind their walls" : ""}${odds}.`));
     if (f.ambush === "enemy") out.push(F("They struck first (an ambush)."));
     if (!f.ammoOk) out.push(F("Ammo was short: everyone fought at 60%."));
+    else if (typeof f.ammoOk === "string") out.push(F(f.ammoOk)); // with bows: the ammo, the arrows or both (combat.js)
   } else if (state.combat && state.combat.setup && mine(state.combat.setup)) {
     const e = state.combat.setup.enemy || {};
     out.push(F(`A battle on the map against ${e.count || "?"} ${String(e.name || e.kind || "enemies").replace(/^the /i, "")}.`));

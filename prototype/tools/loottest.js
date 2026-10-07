@@ -113,7 +113,7 @@ check(vals.every(([, d]) => CATEGORIES[d.cat].group === "valuables"), "valuables
 const weapons = Object.entries(GEAR).filter(([, d]) => d.slot === "weapon");
 check(weapons.every(([k]) => WEAPONS[k]), `every weapon has battle numbers (${weapons.filter(([k]) => !WEAPONS[k]).map(([k]) => k).join(", ") || "all"})`);
 check(weapons.filter(([k]) => !WEAPONS[k].melee).every(([k]) => Number.isFinite(WEAPONS[k].ammo) && Number.isFinite(WEAPONS[k].opt)), "every ranged weapon has a range and an ammo use");
-check(["compbow", "xbow"].every((k) => WEAPONS[k].ammo === 0 && WEAPONS[k].noise === 0), "bows are silent and need no ammo");
+check(["compbow", "xbow", "crossbow"].every((k) => WEAPONS[k].ammo === 0 && WEAPONS[k].arrows === 1 && WEAPONS[k].noise === 0), "bows are silent and shoot arrows, never ammo");
 check(["prybar", "fireaxe", "sledge"].every((k) => GEAR[k].pry), "crowbar, fire axe and sledgehammer force locks");
 const throwers = Object.entries(GEAR).filter(([, d]) => d.throw);
 check(throwers.every(([k, d]) => d.throw === k && THROWABLES[k]), "every throwable is in the throw table under its own key");

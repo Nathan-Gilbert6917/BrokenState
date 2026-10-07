@@ -17,7 +17,7 @@
 //   there it challenges you (a conflict card). The noise draws up to two hordes within 8 tiles toward it for 3 days.
 // Scheduling and placement use hash01 (skills.js), never the world's random numbers.
 import { LOCATIONS } from "./data.js";
-import { log, addCard, day, hub, atBase, factionById, skill, combatPower, snapshot } from "./world.js";
+import { log, addCard, day, hub, atBase, factionById, skill, combatPower, snapshot, archerCount, ARROWS } from "./world.js";
 import {
   partyTile, partyMembers, tileLabel, teamName, planPath, launchExpedition, carryCapacity, supplyLoad, spawnAiParty, awaitOrders,
   bestSkill, startReturn,
@@ -204,11 +204,13 @@ function searchSupplies(state, c, crew) {
   if (!est) return { ok: false, why: "No way there on foot." };
   const stock = (k) => Math.floor(stockHas(h.stock, k)); // water: both kinds (water.js)
   const sup = { food: Math.ceil(est.food * 1.3) + n, water: Math.ceil(est.water * 1.3) + n, ammo: Math.max(0, Math.min(stock("ammo") - 10, 8 * n)), meds: stock("meds") >= 4 ? 1 : 0 };
+  const bows = archerCount(crew); // the bows and crossbows shoot arrows: a dozen each (world.js ARROWS.PACK)
+  if (bows) sup.arrows = Math.min(stock("arrows"), bows * ARROWS.PACK);
   const cap = carryCapacity(state, crew, null);
   while (supplyLoad(sup) > cap && sup.ammo > 0) sup.ammo = Math.max(0, sup.ammo - 4);
   if (supplyLoad(sup) > cap) return { ok: false, why: "They cannot carry the food and water for it." };
   if (sup.food > stock("food") || sup.water > stock("water")) return { ok: false, why: `The hub cannot spare ${sup.food} food and ${sup.water} water.` };
-  return { ok: true, sup, days: est.total / 24, text: `${sup.food} food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} ammo` : ""}${sup.meds ? ", 1 meds" : ""}` };
+  return { ok: true, sup, days: est.total / 24, text: `${sup.food} food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} ammo` : ""}${sup.arrows ? `, ${sup.arrows} arrows` : ""}${sup.meds ? ", 1 meds" : ""}` };
 }
 export function sendSearchTeam(state, c) {
   if (!c || c.gone) return "The wreck has burned out.";

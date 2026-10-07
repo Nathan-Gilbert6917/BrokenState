@@ -1,6 +1,6 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
 import {
-  createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles,
+  createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
@@ -560,6 +560,8 @@ function autofill(pl) {
   // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
   // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
+  // The bows and crossbows on the team shoot arrows (sim/world.js usesArrows): a dozen each (ARROWS.PACK).
+  const archers = archerCount(ids.map((id) => survivorById(state, id)).filter(Boolean));
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
     est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
@@ -569,7 +571,7 @@ function autofill(pl) {
     const want = {
       food: Math.ceil(est.food * 1.25 + ahead), water: Math.ceil(est.water * 1.25 + ahead * thirstAhead(state, MOVE_OUT.days)),
       fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-      meds: Math.min(2, n), ammo: (out ? MOVE_OUT.ammo : 15) * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      meds: Math.min(2, n), ammo: (out ? MOVE_OUT.ammo : 15) * n, arrows: archers * ARROWS.PACK, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
       // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
       scrap: pl.mission === "outpost" ? 15 : out ? (pl.dest == null ? MOVE_OUT.scrap : 0) : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };

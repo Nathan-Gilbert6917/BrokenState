@@ -1,9 +1,9 @@
 // Travel events: choice cards rolled per tile, and the escort table for trade-route convoys.
 import { TERRAIN, GEAR, LOCATIONS } from "./data.js";
-import { log, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, newId, day, combatPower } from "./world.js";
+import { log, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, newId, day, combatPower, armedFactor, arrowsBack, archerCount } from "./world.js";
 import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
-  carried, takeSupply, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
+  carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
 import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
@@ -139,10 +139,16 @@ const EVENTS = [
         choices: [
           { label: "Sneak around", hint: hint(st, p, "stealth", 7 + Math.round(t.infection * 4)), resolve: (s) => check(s, p, "stealth", 7 + Math.round(t.infection * 4)).ok ? (delay(p, 1), "You slip past unseen.") : `They spot you. ${injureRandom(s, p, 10, 30, "fleeing the dead")}` },
           {
-            label: "Fight (uses ammo)", hint: "Safe with ammo and shooters, loud", resolve: (s) => {
-              const ammo = takeSupply(p, "ammo", n * 2);
-              const power = partyMembers(s, p).reduce((a, m) => a + combatPower(m), 0) * (ammo >= n ? 1 : 0.5);
-              return power > n * 0.6 ? `Cleared, using ${ammo} ammo.` : `A messy fight. ${injureRandom(s, p, 15, 40, "fighting the dead")}`;
+            label: "Fight (uses ammo)", hint: "Safe with ammo and shooters, loud (bows and crossbows use arrows)", resolve: (s) => {
+              // Two shots for each of the dead: a bow's in arrows, everyone else's in ammo (takeShots); half power for
+              // the bows or the guns with under one a head of the dead between them (world.js armedFactor).
+              const members = partyMembers(s, p);
+              const shot = takeShots(p, members, n * 2);
+              const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, shot.ammo, shot.arrows, { need: (k) => (n * k) / Math.max(1, members.length), short: 0.5 });
+              if (power <= n * 0.6) return `A messy fight. ${injureRandom(s, p, 15, 40, "fighting the dead")}`;
+              const back = arrowsBack(shot.arrows); // cleared: about half the arrows are picked up again
+              if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
+              return shot.arrows ? `Cleared, using ${shot.ammo} ammo and ${shot.arrows} arrows (${back} picked up again).` : `Cleared, using ${shot.ammo} ammo.`;
             },
           },
           { label: "Go the long way (3 hours)", resolve: () => { delay(p, 3); return "A safe but slow detour."; } },
@@ -462,7 +468,7 @@ export function hordeCard(state, p, horde) {
           const n = members0.length;
           const power = members0.reduce((a, m) => a + combatPower(m), 0);
           const cut = Math.round((power * 2) / tough);
-          takeSupply(p, "ammo", 40);
+          const shot = takeShots(p, members0, 40); // a bow's share in arrows (picked up again only if the team fights it out)
           // One wound for a small horde, two for a medium one, three for a large one (and one more for a Wallbreaker).
           // Each wound is a round of the fight; between rounds the team may break off by its policy.
           const hits = Math.min(4, 1 + (score >= 6 ? 1 : 0) + (score >= 13 ? 1 : 0) + (horde.bosses ? 1 : 0));
@@ -478,6 +484,11 @@ export function hordeCard(state, p, horde) {
           horde.size = Math.max(0, horde.size - Math.round((cut * rounds) / hits));
           // Too few left to be a horde: it is gone from the map.
           if (horde.size < 5 && s.hordes.includes(horde)) s.hordes.splice(s.hordes.indexOf(horde), 1);
+          // Fought out: about half the arrows are picked up again (world.js ARROWS.BACK); broken off, none.
+          if (shot.arrows && rounds === hits && s.parties.includes(p) && partyMembers(s, p).length) {
+            const back = arrowsBack(shot.arrows);
+            if (back) { p.supplies.arrows = (p.supplies.arrows || 0) + back; out.push(`${back} of the ${shot.arrows} arrows shot were picked up again.`); }
+          }
           if (rounds < hits && s.parties.includes(p)) {
             // Broken off: everyone runs for it with the dead on their heels (the tactical escape check).
             const run = breakOff(s, partyMembers(s, p), { enemy: { kind: "zombies", count: Math.min(12, Math.max(1, Math.round(horde.size / 4))) }, tiles: [3, 6], tile: partyTile(p), cause: "running from a horde", vehicle: p.vehicle, stealthy: p.stance === "stealthy", party: p });
@@ -510,14 +521,19 @@ export function convoyLegEvent(state, p, tileId) {
   const t = state.tiles[tileId];
   const rng = state.rng;
   const members = partyMembers(state, p);
-  const power = members.reduce((a, s) => a + combatPower(s), 0) + (p.supplies.ammo > 10 ? 2 : 0);
+  const bows = archerCount(members); // the escort's bows shoot arrows: the +2 for being well supplied counts them too
+  const power = members.reduce((a, s) => a + combatPower(s), 0) + (p.supplies.ammo > 10 || (bows && p.supplies.arrows > 10) ? 2 : 0);
   const where = tileLabel(state, tileId);
   if (rng.chance((0.02 + t.infection * 0.05) * m.zombie * sm)) {
     if (power > 6 + t.infection * 8) log(state, `Convoy fought off the dead near ${where}.`, "info");
     else {
       log(state, `The dead swarmed the convoy near ${where}. ${injureRandom(state, p, 15, 50, "defending the convoy")}`, "danger");
     }
-    p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - 6);
+    // Six shots from the escort's packed supplies (never the cargo): the bows' share in arrows, lost (the convoy does
+    // not stop to look for them).
+    const bowShots = bows ? Math.round((6 * bows) / Math.max(1, members.length)) : 0;
+    p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - (6 - bowShots));
+    if (bowShots) p.supplies.arrows = Math.max(0, (p.supplies.arrows || 0) - bowShots);
     return;
   }
   const hostileNear = factionNear(state, tileId, (f) => attitude(f) === "Hostile", 4);

@@ -379,6 +379,56 @@ export function combatPower(s) {
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
 
+// ---------- what people shoot: bows arrows, guns ammo ----------
+// A bow or crossbow (data.js cat "bow") shoots arrows (SUPPLIES.arrows: crafted, found, picked up again after a won
+// fight); every other weapon shoots ammo. By the numbers everyone without a bow counts with the guns, as they always
+// did (fists and blades too: a dropped gun is picked up). BACK: the share of the arrows shot that are picked up again
+// after a win (none after a loss or a retreat); PACK: the arrows a trip packs for each bow (the planner's Auto-fill,
+// the autopilot), a hunting team's dozen (hunting.js ARROW.pack).
+export const ARROWS = { BACK: 0.5, PACK: 12 };
+/** @param {Survivor} s @returns {boolean} */
+export function usesArrows(s) {
+  const it = s && s.gear ? s.gear.weapon : null;
+  const d = it ? GEAR[it.key] : null;
+  return !!(d && d.cat === "bow" && gearEffect(s, it).usable);
+}
+/** @param {Survivor[]} people @returns {number} */
+export const archerCount = (people) => people.filter(usesArrows).length;
+// The arrows picked up again after a won fight in which `shot` were loosed.
+/** @param {number} shot @returns {number} */
+export const arrowsBack = (shot) => Math.round(Math.max(0, shot || 0) * ARROWS.BACK);
+// What having enough to shoot is worth by the numbers: the archers' combat power at `short` while the arrows are under
+// need(archers), everyone else's while the ammo is under need(the rest); the power-weighted mean of the two (1 with
+// enough of both). weight(s): a person's share (a guard counts more). With no bows it is exactly the old rule (ammo
+// under need(everyone): short).
+/** @param {Survivor[]} people @param {number} ammo @param {number} arrows @param {{ need?: (n: number) => number, short?: number, weight?: ((s: Survivor) => number) | null }} [opts] @returns {number} */
+export function armedFactor(people, ammo, arrows, { need = (n) => n * 3, short = 0.6, weight = null } = {}) {
+  let gun = 0, bow = 0, ng = 0, nb = 0;
+  for (const s of people) {
+    const p = combatPower(s) * (weight ? weight(s) : 1);
+    if (usesArrows(s)) { bow += p; nb++; } else { gun += p; ng++; }
+  }
+  const fg = (ammo || 0) >= need(ng) ? 1 : short, fb = (arrows || 0) >= need(nb) ? 1 : short;
+  if (!nb) return fg;
+  if (!ng) return fb;
+  return gun + bow > 0 ? (gun * fg + bow * fb) / (gun + bow) : 1;
+}
+// Shots by the numbers taken from a stock (a base's, a team's supplies): perHead a head, the archers' in arrows, the
+// rest's in ammo, as far as there is any. Returns what was taken: { ammo, arrows }.
+/** @param {Record<string, number>} stock @param {Survivor[]} people @param {number} perHead @returns {{ ammo: number, arrows: number }} */
+export function spendShots(stock, people, perHead) {
+  const nb = archerCount(people), ng = people.length - nb;
+  const a0 = stock.ammo || 0;
+  stock.ammo = Math.max(0, a0 - ng * perHead);
+  let arrows = 0;
+  if (nb) {
+    const b0 = stock.arrows || 0;
+    stock.arrows = Math.max(0, b0 - nb * perHead);
+    arrows = Math.max(0, b0 - stock.arrows);
+  }
+  return { ammo: Math.max(0, a0 - stock.ammo), arrows };
+}
+
 /** @param {State} state @returns {number} */
 export function playerStrength(state) {
   return alive(state).reduce((sum, s) => sum + combatPower(s), 0);

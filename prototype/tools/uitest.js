@@ -1428,6 +1428,25 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
     { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    { // Bows use arrows (sim/combat.js arrowsLeft): the panel shows the arrows beside the ammo, and a bow out of arrows
+      // says so on Shoot. The planner's Auto-fill packs a dozen a bow (main.js autofill, sim/world.js ARROWS.PACK).
+      const b = ft.b, u = b.units.find((x) => x.side === "player" && C.active(x));
+      if (u) {
+        const keep = { weapon: u.weapon, weaponName: u.weaponName, ap: u.ap, phase: b.phase, sel: UI.cui.sel, arrows: b.pools[0].arrows };
+        u.weapon = "compbow"; u.weaponName = "Compound bow"; u.ap = 2; b.phase = "player"; UI.cui.sel = u.id;
+        b.pools[0].arrows = 7;
+        const withArrows = UI.renderCombatPanel(ft.st);
+        b.pools[0].arrows = 0;
+        const without = UI.renderCombatPanel(ft.st);
+        check(/Arrows <b>7<\/b>/.test(withArrows) && /Arrows <b>0<\/b>/.test(without) && /Out of arrows/.test(without) && !C.canFire(b, u), "the battle panel shows the arrows carried, and a bow with none is out of arrows");
+        const p = scan(without, "battle panel, bow out of arrows");
+        check(!p.length, `the panel with a bow out of arrows: clean HTML (${p.slice(0, 2).join(" | ")})`);
+        Object.assign(u, { weapon: keep.weapon, weaponName: keep.weaponName, ap: keep.ap });
+        b.phase = keep.phase; UI.cui.sel = keep.sel;
+        if (keep.arrows === undefined) delete b.pools[0].arrows; else b.pools[0].arrows = keep.arrows;
+      } else console.log("  (no unit standing in this battle: the arrows panel check skipped)");
+      check(/arrows: archers \* ARROWS\.PACK/.test(mainSrc) && /archerCount\(/.test(mainSrc), "the planner's Auto-fill packs a dozen arrows for each bow on the team (main.js autofill)");
+    }
     { // The battle roster's status icons: the survivor behind a unit (not low health: the unit's bar shows that).
       const u = ft.b.units.find((x) => x.side === "player" && x.sid != null && !x.dead);
       const s = u && ft.st.survivors.find((x) => x.id === u.sid);
