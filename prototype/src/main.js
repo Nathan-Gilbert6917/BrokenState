@@ -71,7 +71,7 @@ import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
-import { MAX_SPEED, speedForKey, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
+import { MAX_SPEED, SPEEDS, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
@@ -86,6 +86,10 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
+import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
+import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
+import { CODEX_ACTIONS, CODEX_CHANGE, codexScan } from "./ui/codex.js"; // the Codex (C): what the player has met
 import { TRIP_ACTIONS, TRIP_CHANGE, useArmedTemplate } from "./ui/trips.js"; // order templates and Repeat trip
 import { rememberLaunch } from "./sim/trips.js";
 import { UNDO_ACTIONS, installUndo, undoKey, undoable } from "./ui/undo.js"; // undo in the planner, build queue and Work tab
@@ -117,6 +121,7 @@ const freshUi = () => ({
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
+  codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
 });
@@ -129,6 +134,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 }
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
+initKeymap(options); // the player's key bindings (ui/keymap.js)
 initPacing(options, saveOptions); // Options → Pause for… (ui/pacing.js)
 ui.scale = options.uiScale;
 ui.guide = guideDefault(options); // the new-run screen's First-week guide box (ui/guide.js): on for the first campaign here
@@ -193,7 +199,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -387,6 +393,7 @@ function refresh(user = true) {
   lastRefresh = last;
   tidyUi();
   noteNames(state);
+  codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
@@ -626,6 +633,7 @@ const actions = {
   "dev-persona": (d) => { setPersonality(state, d.v); },
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
+  "pal-open": () => openPalette(), // the top bar's 🔍: the search box (ui/cmdpalette.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
   // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), close
   // one completely or open it again (data-p: left, right, log: the strip's ✕, the top bar's ◧ ◨ ⬓, the tab at the
@@ -1021,6 +1029,8 @@ for (const [k, fn] of Object.entries(DISPLAY_ACTIONS)) actions[k] = (d) => fn(ui
 for (const [k, fn] of Object.entries(ASK_ACTIONS)) actions[k] = (d) => fn(ui, d, actions);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
+for (const [k, fn] of Object.entries(CONTROLS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi); // Menu → Controls (ui/controls.js)
+for (const [k, fn] of Object.entries(CODEX_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Codex (ui/codex.js)
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 // The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
@@ -1202,6 +1212,7 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(CODEX_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the Codex's find box
 for (const [k, fn] of Object.entries(DISPLAY_CHANGE)) changeActions[k] = (el) => fn(ui, el); // ui/display.js
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
@@ -1688,6 +1699,7 @@ function closeTopLayer() {
   }
   if (ui.roster) { ui.roster = null; return true; }
   if (ui.diary) { ui.diary = null; return true; }
+  if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
@@ -1695,6 +1707,8 @@ function closeTopLayer() {
 }
 
 window.addEventListener("keydown", (e) => {
+  // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
+  if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
@@ -1715,54 +1729,55 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // Ctrl+K or / (ui/keymap.js win.palette): the search box (ui/cmdpalette.js), over any window but a card.
+  if (ui.started && keyIs(e, "win.palette") && !["card", "result", "over", "newrun"].includes(modalKind(state, ui))) { e.preventDefault(); openPalette(); return; }
   // A selected order in the team panel's queue (ui/expedition.js queueBlock): ↑ ↓ move it, Delete removes it.
-  if (ui.expedition != null && ui.qSel != null && ["ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.code) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+  const qk = ui.expedition != null && ui.qSel != null ? keyAction(e, "queue") : null;
+  if (qk) {
     e.preventDefault();
     const p = partyById(ui.expedition);
     if (p) {
-      if (e.code === "Delete" || e.code === "Backspace") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
-      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: e.code === "ArrowUp" ? -1 : 1 });
+      if (qk === "queue.remove") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
+      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: qk === "queue.up" ? -1 : 1 });
     }
     refresh();
     return;
   }
-  // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (undoKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // Ctrl+Z in the planner, the build queue, the Work tab (ui/undo.js)
+  // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (ui.workHover ? undoable(state, ui, "work", () => workKey(state, ui, e), null, "priority") : workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
   if (ledgerKey(state, ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; } // E: the Ledger (ui/ledger.js)
   // M the minimap, ` the dev tools (when they are shown), Shift+P autopilot only with them (ui/display.js).
   if (displayKey(ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
-  // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
+  // Tabs, next waiting team, bases, camera spots, diary, roster and codex (ui/alerts.js); J, R and C also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
+  // The rest of the map's keys, by the key table (ui/keymap.js; Menu → Controls rebinds them).
+  const k = keyAction(e, "map");
   // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key
   // opens it whether it is folded or closed completely. Alt + the key closes the panel completely (strip and
   // all), and brings a closed one back.
-  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-    const shut = e.code === "BracketLeft" ? "left" : e.code === "BracketRight" ? "right" : e.code === "KeyL" ? "log" : null;
-    if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
-  }
-  if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-    const fold = e.code === "BracketLeft" ? (e.shiftKey ? "orders" : "left") : e.code === "BracketRight" ? (e.shiftKey ? "alerts" : "right") :
-      e.code === "KeyL" && !e.shiftKey ? "log" : null;
-    if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
-    if (e.code === "Backslash" || e.code === "IntlBackslash") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
-  }
-  if (e.code === "Space") {
+  const shut = { "panel.closeLeft": "left", "panel.closeRight": "right", "panel.closeLog": "log" }[k];
+  if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
+  const fold = { "panel.left": "left", "panel.right": "right", "panel.log": "log", "panel.orders": "orders", "panel.alerts": "alerts" }[k];
+  if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
+  if (k === "panel.all") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
+  const speed = /^time\.speed([1-5])$/.exec(k || "");
+  if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
-  } else if (speedForKey(e.code) != null) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS)
-    ui.speed = speedForKey(e.code);
+  } else if (speed) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS; the keys by the key table)
+    ui.speed = SPEEDS[Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;
-  } else if (e.code === "KeyH") centerOn(state, playerTile(state));
-  else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
+  } else if (k === "map.hub") centerOn(state, playerTile(state));
+  else if (k === "map.infection") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {
     const pan = 40 / camera.zoom;
-    if (e.code === "KeyW" || e.code === "ArrowUp") camera.y -= pan;
-    else if (e.code === "KeyS" || e.code === "ArrowDown") camera.y += pan;
-    else if (e.code === "KeyA" || e.code === "ArrowLeft") camera.x -= pan;
-    else if (e.code === "KeyD" || e.code === "ArrowRight") camera.x += pan;
+    if (k === "map.panUp") camera.y -= pan;
+    else if (k === "map.panDown") camera.y += pan;
+    else if (k === "map.panLeft") camera.x -= pan;
+    else if (k === "map.panRight") camera.x += pan;
     else return;
     if (e.code.startsWith("Arrow")) e.preventDefault();
     return; // panning changes no panel
@@ -1776,13 +1791,17 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "Space" && (t.tagName === "BUTTON" || (t.tagName === "INPUT" && t.type === "checkbox"))) e.preventDefault();
 });
 
+initPalette({ getState: () => state, ui, actions, options, refresh: () => refresh() }); // the search box (ui/cmdpalette.js)
+
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
   frameErrors, devSpeeds: DEV_SPEEDS,
-  crashTest: (msg = "a test crash from the console") => reportCrash(new Error(msg), "the console (a test)"), // the error screen (ui/crash.js) options, layout, windowSizes,
+  crashTest: (msg = "a test crash from the console") => reportCrash(new Error(msg), "the console (a test)"), // the error screen (ui/crash.js)
+  options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
+  palette: { open: () => openPalette(), index: () => paletteIndex(state, ui) }, // ui/cmdpalette.js
   dev: (on = true) => { ui.dev = !!on; refresh(); }, // open the dev tools for this session (tools, the desktop perf driver), whatever Show dev tools says
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {

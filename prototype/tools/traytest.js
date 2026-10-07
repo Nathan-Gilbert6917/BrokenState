@@ -56,7 +56,8 @@ section("Options and speeds");
   const html = pacingOptionsHTML();
   check(PAUSE_KINDS.every((k) => html.includes(k.label)) && html.includes("Drop to 1×") && !/undefined|NaN/.test(html), "Options → Pause for… lists every switch and the drop to 1×");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/speedForKey\(e\.code\)/.test(main) && /PACE_ACTIONS/.test(main) && /"tray-rules"/.test(main) && /cardUp\(state, ui\) \|\| !!state\.engagement/.test(main), "main.js: speed keys, tray actions and the pause rule in blocked()");
+  // The speed keys go through the key table (ui/keymap.js time.speed1–5) to SPEEDS.
+  check(/time\\.speed\(\[1-5\]\)/.test(main) && /SPEEDS\[Number\(speed\[1\]\) - 1\]/.test(main) && /PACE_ACTIONS/.test(main) && /"tray-rules"/.test(main) && /cardUp\(state, ui\) \|\| !!state\.engagement/.test(main), "main.js: speed keys, tray actions and the pause rule in blocked()");
   check(/beforeHour\(state, ui\)[\s\S]{0,200}tickHour\(state\);\s*\n\s*afterHour\(state, ui\)/.test(main), "main.js: the tray's hour runs around each tick");
   const ui = readFileSync(new URL("../src/ui/ui.js", import.meta.url), "utf8");
   check(/\[5, "5×"/.test(ui) && /cardUp\(state, ui\)\) return \["card"/.test(ui), "ui.js: a 5× button; the card window follows the pause rules");

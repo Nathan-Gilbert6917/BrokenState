@@ -13,6 +13,7 @@
 import { baseById, survivorById } from "../sim/world.js";
 import { BUILDINGS, assignStations } from "../sim/buildings.js";
 import { planBase } from "../sim/work.js";
+import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 export const UNDO_MAX = 20;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -191,7 +192,7 @@ function say(ui, kind, msg) {
 }
 // Ctrl+Z (main.js keydown, after the battle keys). Returns true when it was used.
 export function undoKey(state, ui, e) {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.code !== "KeyZ") return false;
+  if (keyAction(e, "edit") !== "edit.undo") return false; // Ctrl+Z (or Cmd+Z) by default: ui/keymap.js, Menu → Controls
   const scr = undoScreen(state, ui);
   if (!scr) return false;
   say(ui, scr.kind, undoStep(state, ui, scr.kind, scr.baseId));
