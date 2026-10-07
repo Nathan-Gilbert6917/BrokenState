@@ -73,6 +73,9 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { TRIP_ACTIONS, TRIP_CHANGE, useArmedTemplate } from "./ui/trips.js"; // order templates and Repeat trip
+import { rememberLaunch } from "./sim/trips.js";
+import { UNDO_ACTIONS, installUndo, undoKey, undoable } from "./ui/undo.js"; // undo in the planner, build queue and Work tab
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -783,6 +786,7 @@ const actions = {
     ui.plannerError = "";
     endMoveMode();
     autofill(pl);
+    useArmedTemplate(state, ui, pl, autofill); // a template picked on the Teams tab (ui/trips.js)
     hideCtx();
   },
   "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
@@ -798,6 +802,7 @@ const actions = {
     if (c.over) { ui.plannerError = c.why; return; }
     const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
+    rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;
     view.preview = null;
   },
@@ -1175,6 +1180,17 @@ initTitle({
   newGame: () => { if (titleTicked) { titleTicked = false; newWorld(randomSeed()); } else { resetView(); centerOn(state, playerTile(state)); } },
 });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
+// planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
+const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
+const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
+Object.assign(actions, {
+  "tpl-use": tripAct(TRIP_ACTIONS["tpl-use"]), "tpl-save": tripAct(TRIP_ACTIONS["tpl-save"]), "tpl-plan": tripAct(TRIP_ACTIONS["tpl-plan"]),
+  "tpl-pick": tripAct(TRIP_ACTIONS["tpl-pick"]), "tpl-del": tripAct(TRIP_ACTIONS["tpl-del"]), "tr-repeat": tripAct(TRIP_ACTIONS["tr-repeat"]),
+  "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
+});
+Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
+installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
 function act(fn) {
@@ -1590,7 +1606,8 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
-  if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
+  if (undoKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // Ctrl+Z in the planner, the build queue, the Work tab (ui/undo.js)
+  if (ui.workHover ? undoable(state, ui, "work", () => workKey(state, ui, e), null, "priority") : workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
