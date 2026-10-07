@@ -1944,7 +1944,7 @@ function planCrafts(state, base) {
 }
 
 // ---------- gear from the armory ----------
-function itemScore(s, item) {
+export function itemScore(s, item) { // also the roster's Equip best available (sim/bulk.js)
   if (!item || !GEAR[item.key]) return 0;
   const d = GEAR[item.key];
   if (d.slot === "weapon") {

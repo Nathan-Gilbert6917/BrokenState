@@ -1,4 +1,5 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
+import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
@@ -91,7 +92,7 @@ const CDEF = (c) => CELL[c.k] || VOIDDEF;
 const players = (b) => b.units.filter((u) => u.side === "player");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = (u) => Math.max(0, Math.min(1, u.hp / u.maxHp));
-const hpColor = (f) => (f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f");
+const hpColor = (f) => (f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad);
 
 // New battle: reset the screen state.
 function sync(b) {
@@ -1470,16 +1471,16 @@ export function drawCombat(state, now) {
   // Evac strip.
   if (b.evacCols && b.evacMask) {
     // A base battle's way out, on the side away from the attack (sim/deploy.js).
-    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    ctx.fillStyle = `rgba(${PAL.goodRgb},0.16)`;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.evacMask[y * W + x]) ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
   } else if (b.evacCols) {
-    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    ctx.fillStyle = `rgba(${PAL.goodRgb},0.16)`;
     ctx.fillRect(ox, oy, b.evacCols * cs, H * cs);
-    ctx.strokeStyle = "rgba(108,196,138,0.7)";
+    ctx.strokeStyle = `rgba(${PAL.goodRgb},0.7)`;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(ox + 1, oy + 1, b.evacCols * cs - 2, H * cs - 2);
     ctx.setLineDash([]);
-    ctx.fillStyle = "#6cc48a";
+    ctx.fillStyle = PAL.good;
     ctx.font = `600 ${Math.round(cs * 0.28)}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
     ctx.fillText("EVAC", ox + b.evacCols * cs / 2, oy - 6);
@@ -1520,7 +1521,7 @@ export function drawCombat(state, now) {
   // Treat targets.
   if (cui.mode === "meds" && u) {
     for (const p of players(b)) if (!p.dead && !p.left && (p === u || adjacent(u, p))) {
-      ctx.strokeStyle = "#6cc48a"; ctx.lineWidth = 2;
+      ctx.strokeStyle = PAL.good; ctx.lineWidth = 2;
       ctx.strokeRect(ox + p.x * cs + 3, oy + p.y * cs + 3, cs - 6, cs - 6);
     }
   }
@@ -1576,7 +1577,7 @@ export function drawCombat(state, now) {
     for (const p of askPlan(b).units) {
       const t = unitById(b, p.id);
       const label = p.safe ? "SAFE" : `${p.chance}%`;
-      const col = p.safe || p.chance >= 75 ? "#6cc48a" : p.chance >= 45 ? "#e0a84f" : "#e2685f";
+      const col = p.safe || p.chance >= 75 ? PAL.good : p.chance >= 45 ? PAL.mid : PAL.bad;
       const x = ox + (t.x + 0.5) * cs, y = oy + t.y * cs + 2;
       const tw = ctx.measureText(label).width + 10, th = Math.max(14, cs * 0.36);
       ctx.fillStyle = "rgba(15,17,20,0.88)";
@@ -1595,7 +1596,7 @@ export function drawCombat(state, now) {
     const t = unitAt(b, h.x, h.y);
     if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
       const o = odds(b, u, t);
-      const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? "#6cc48a" : o.chance >= 35 ? "#e0a84f" : "#e2685f";
+      const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? PAL.good : o.chance >= 35 ? PAL.mid : PAL.bad;
       ctx.strokeStyle = col;
       ctx.lineWidth = 2;
       if (!o.ok) ctx.setLineDash([4, 5]);
@@ -1686,7 +1687,7 @@ function drawBanner(b, cw, cs) {
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
     b.phase === "deploy" ? (b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
-  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
+  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? PAL.good : PAL.bad) : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : PAL.bad;
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center";
   const tw = ctx.measureText(label).width + 28;
@@ -1706,15 +1707,15 @@ function drawRaidOverlay(b, cs) {
   const R = b.raid;
   ctx.textAlign = "center";
   R.zones.forEach((z) => {
-    ctx.fillStyle = z.vehicle ? "rgba(90,160,255,0.18)" : "rgba(108,196,138,0.18)";
+    ctx.fillStyle = z.vehicle ? "rgba(90,160,255,0.18)" : `rgba(${PAL.goodRgb},0.18)`;
     ctx.fillRect(ox + z.x0 * cs, oy + z.y0 * cs, z.w * cs, z.h * cs);
-    ctx.strokeStyle = z.vehicle ? "rgba(140,190,255,0.9)" : "rgba(108,196,138,0.85)";
+    ctx.strokeStyle = z.vehicle ? "rgba(140,190,255,0.9)" : `rgba(${PAL.goodRgb},0.85)`;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(ox + z.x0 * cs + 1, oy + z.y0 * cs + 1, z.w * cs - 2, z.h * cs - 2);
     ctx.setLineDash([]);
     ctx.font = `700 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
-    ctx.fillStyle = z.vehicle ? "#a9cbff" : "#6cc48a";
+    ctx.fillStyle = z.vehicle ? "#a9cbff" : PAL.good;
     const ty = z.y0 === 0 ? oy + (z.y0 + z.h) * cs + cs * 0.35 : oy + z.y0 * cs - 4;
     ctx.fillText(z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", ox + (z.x0 + z.w / 2) * cs, ty);
   });
@@ -1764,9 +1765,9 @@ function drawBaseOverlay(b, cs) {
   if (!D || b.phase !== "deploy") return;
   const band = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) band[i] = canPlace(b, i % W, (i / W) | 0) ? 1 : 0;
-  ctx.fillStyle = "rgba(108,196,138,0.13)";
+  ctx.fillStyle = `rgba(${PAL.goodRgb},0.13)`;
   for (let i = 0; i < W * H; i++) if (band[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
-  outline(band, (k) => k === 1, "rgba(108,196,138,0.8)");
+  outline(band, (k) => k === 1, `rgba(${PAL.goodRgb},0.8)`);
   ctx.strokeStyle = "#e0a84f";
   ctx.lineWidth = 2.5;
   for (const [x, y] of [...D.gate, ...D.breaches]) ctx.strokeRect(ox + x * cs + 2, oy + y * cs + 2, cs - 4, cs - 4);
@@ -1774,7 +1775,7 @@ function drawBaseOverlay(b, cs) {
   const dir = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] }[D.side] || [1, 0];
   const s = cs * 0.5;
   const ax = ox + (W / 2) * cs + dir[0] * ((W / 2) * cs - s * 1.4), ay = oy + (H / 2) * cs + dir[1] * ((H / 2) * cs - s * 1.4);
-  ctx.fillStyle = "#e2685f";
+  ctx.fillStyle = PAL.bad;
   ctx.beginPath();
   ctx.moveTo(ax - dir[0] * s * 0.2, ay - dir[1] * s * 0.2);
   ctx.lineTo(ax + dir[0] * s + dir[1] * s * 0.7, ay + dir[1] * s + dir[0] * s * 0.7);
@@ -1809,7 +1810,7 @@ function drawHeights(b, cs) {
     if (c.mhp && (c.hp < c.mhp || c.k === "gate")) {
       const f = Math.max(0, c.hp / c.mhp);
       ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8, 4);
-      ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8 * f, 4);
+      ctx.fillStyle = f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8 * f, 4);
     }
   }
 }
@@ -2408,7 +2409,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     }
     return;
   }
-  if (t.down) ring = t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f"; // ko: knocked out (sim/stealth.js)
+  if (t.down) ring = t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? PAL.good : PAL.bad; // ko: knocked out (sim/stealth.js)
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player" && !t.down;
   // Ground ring (side color) and shadow.
   ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -2554,7 +2555,7 @@ function drawFx(b, now, cs) {
     const text = f.text ? f.text : f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(cs * (f.crit ? 0.36 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${PAL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`;
     ctx.lineWidth = 3;
     const y = ty - cs * 0.5 - (el / 1400) * cs * 0.6;

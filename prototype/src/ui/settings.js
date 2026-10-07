@@ -1,13 +1,16 @@
 // The settings view (⚙ in the top bar, the ⚙ Menu button in a battle, or Esc on the map with nothing else open):
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
-// Options (autosave, confirmations, pause on focus loss, UI size, map detail, the battle's end-turn question, zombie look,
-// the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// Options (autosave, confirmations, pause on focus loss, Display: UI size, map detail and animations, zombie look,
+// colour-blind colours, larger map text, reduce motion, the minimap and the dev tools; Confirmations: the questions not
+// asked any more; the battle's end-turn question, the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
   listSaves, latestSave, saveEntry, writeSave, writeSaveSync, readSave, deleteSave, exportSave, importSaveText, readSaveFile, newSlotId,
   defaultSaveName, AUTOSAVE, BATTLE_SAVE, AUTOSAVE_DAYS, MAX_SLOTS, saveOptions, storageUsed, downloadText, canCompress,
 } from "./saves.js";
+import { writeAutosave, dropIronCrash, autoSlot } from "./saves.js"; // the rotating autosaves; an Ironman game's crash copy goes once its slot is written again
+import { savesByCampaign, storageWarning } from "./savelist.js"; // the save list grouped by campaign (ui/savelist.js)
 import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from "../sim/save.js";
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
@@ -16,12 +19,16 @@ import { helpTab } from "./help.js";
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
+import { soundOptionsHtml, SOUND_ACTIONS, SOUND_CHANGE } from "./audio.js"; // the Sound section (volumes, mutes, hear a sound)
+import { guideMenuRow, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week guide: shown again or hidden from the Game tab
+import { pacingOptionsHTML, MAX_SPEED, PACE_ACTIONS } from "./pacing.js"; // Options → Pause for… (the card tray, the speeds)
+import { displayRows, applyDisplay } from "./display.js"; // Display: colour-blind colours, map text, reduce motion, minimap, dev tools
+import { askBoxHtml, confirmRows } from "./confirm.js"; // the one confirmation box, and Confirmations (Don't ask again)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const pad2 = (n) => String(n).padStart(2, "0");
 const kb = (chars) => `${Math.max(1, Math.round((chars * 2) / 1024))} KB`;
-const MAX_SPEED = 3; // main.js: anything faster is a dev fast-forward
 
 // The desktop app (desktop/main.js, Electron): window.close() closes the game's window and quits.
 export const inDesktopApp = () => typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
@@ -69,10 +76,13 @@ export function settingsModal(state, ui, api = API) {
   return `<div class="box wide settings"><h1>⚙ Menu</h1>${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
+// The menu's question: the same box as the map's orders (ui/confirm.js), Enter / Esc. A question about leaving with
+// progress not saved offers "Don't ask again" (the option Confirm before leaving a game).
 function confirmBox(S) {
   const c = S.confirm;
   if (!c) return "";
-  return `<div class="setconfirm"><span>${esc(c.text)}</span><button class="primary" data-action="set-yes">${esc(c.yes || "Yes")}</button><button data-action="set-no">Cancel</button></div>`;
+  const t = String(c.text), q = t.indexOf("? "); // the question, then what it means
+  return askBoxHtml({ title: q >= 0 ? t.slice(0, q + 1) : t, text: q >= 0 ? t.slice(q + 2) : "", yes: c.yes || "Yes", yesAction: "set-yes", noAction: "set-no", skipAction: c.leave ? "set-noask" : "", skip: !!c.skip, skipLabel: "Don't ask again before leaving a game with progress not saved" });
 }
 
 function gameTab(state, ui, api) {
@@ -115,10 +125,12 @@ function gameTab(state, ui, api) {
     html += `<div class="setrow">${last ? `<button class="primary" data-action="set-continue"${dis(!busy)}${tip(`Load the latest save: ${last.name}`)}>▶ Continue: ${esc(last.name)}</button>` : `<span class="muted small">No saves yet in this browser.</span>`}
       ${api.desktop ? `<button data-action="set-quitnosave"${dis(!busy)}>Quit</button>` : ""}</div>`;
   }
+  html += guideMenuRow(state, ui); // ui/guide.js
   const auto = api.autosaveInfo();
-  html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the autosave · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
+  html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the last 3 autosaves of each campaign · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
   if (auto.error) html += `<div class="small danger">The last autosave failed: ${esc(auto.error)}</div>`;
-  html += saves.length ? `<div class="slots">${saves.map((e) => slotRow(state, ui, e, !!blocker || !ui.started, busy, iron)).join("")}</div>` : `<div class="muted small">No saves yet. ${ui.started ? "Save above, or wait for the autosave at dawn." : ""}</div>`;
+  html += storageWarning();
+  html += saves.length ? `<div class="slots">${savesByCampaign(state, ui, saves, (e) => slotRow(state, ui, e, !!blocker || !ui.started, busy, iron))}</div>` : `<div class="muted small">No saves yet. ${ui.started ? "Save above, or wait for the autosave at dawn." : ""}</div>`;
   html += `<div class="setrow" style="margin-top:0.6rem"><label class="btnlike${busy || iron ? " disabled" : ""}"${tip(iron ? "Ironman: leave this game first (Save and exit)" : "Load a .bsave file (it is also added to the list)")}>📂 Load from file…<input type="file" accept=".bsave,.json,application/json" data-action="set-import" class="hidden"${busy || iron ? " disabled" : ""}></label>
     <span class="small muted">Saves are kept in this browser${api.desktop ? " (the desktop app keeps them in its own profile)" : ""}; Export makes a file you can keep or move.</span></div>`;
   return html;
@@ -131,7 +143,7 @@ function slotRow(state, ui, e, cannotSave, busy, iron = false) {
   const dis = (on) => (on ? "" : " disabled");
   return `<div class="slot${cur ? " cur" : ""}">${thumb}
     <div class="sinfo"><b>${esc(e.name)}</b>${e.ironman || e.iron ? ` <span class="tag">ironman</span>` : e.id === BATTLE_SAVE ? ` <span class="tag">battle start</span>` : e.auto ? ` <span class="tag">autosave${e.why ? `: ${esc(e.why)}` : ""}</span>` : ""}${cur ? ` <span class="tag">this game</span>` : ""}
-      <div class="small muted">${entryLine(e)}</div>
+      ${e.summary && !e.id.startsWith("auto-") ? `<div class="small">${esc(e.summary)}</div>` : ""}<div class="small muted">${entryLine(e)}</div>
       <div class="small muted">${esc(ago(e.ts))} · ${kb(e.size || 0)}${e.v && e.v !== SAVE_VERSION ? ` · save format ${e.v}` : ""}</div></div>
     <div class="sbtns">
       <button data-action="set-load" data-id="${esc(e.id)}"${dis(!busy && !iron)}${tip(iron ? "Ironman: leave this game first (Save and exit)" : "Load this save (the game is paused after loading)")}>Load</button>
@@ -142,15 +154,15 @@ function slotRow(state, ui, e, cannotSave, busy, iron = false) {
 }
 
 const KEYS = [
-  ["Esc", "Close the top window; with nothing open, this menu"], ["Space", "Pause / run"], ["1–4", "Speed 0.5× / 1× / 2× / 3×"],
+  ["Esc", "Close the top window; with nothing open, this menu"], ["Space", "Pause / run"], ["1–5", "Speed 0.5× / 1× / 2× / 3× / 5×"],
   ["W A S D, arrows, drag, wheel", "Pan and zoom the map"], ["H", "Center on the hub"], ["I", "Infection overlay"],
   ["B / P / G / T", "Bases / People / Groups / Teams tab"], ["Tab or N", "Next team waiting for orders (Shift+Tab back)"],
   ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
-  ["J", "Diary"], ["R", "Roster"],
+  ["J", "Diary"], ["R", "Roster"], ["M", "Minimap: show or hide (click or drag on it to look there)"],
   ["[ / ] / L", "Fold or show the left panel / right panel / log (or click the bar beside it; drag the bar to resize)"],
   ["Alt+[ / Alt+] / Alt+L", "Close the left panel / right panel / log completely (no strip), again to bring it back; also the ✕ on a folded strip or ◧ ◨ ⬓ in the top bar. The slim tab at the map's edge or the panel's plain key opens it again too"],
   ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
-  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
+  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools (with Show dev tools on, in Display)"], ["Shift+P", "Autopilot (dev; with Show dev tools on)"], ["Enter / Esc", "Answer a question before an order that cannot be undone: yes / cancel"],
   ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Shift+S search, Shift+Q quick search, Shift+D drag a body, Shift+A the AI plays your side (again to take back control), Enter ends the turn; hover a tile for the threat there"],
   ["Battle view", "Drag (or W A S D, the arrow keys, or the mouse at the edge) to pan, the wheel or + / − to zoom, , and . to turn it, V to center on the selected unit, B roofs on / off"],
   ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
@@ -160,7 +172,7 @@ function optionsTab(state, ui, api) {
   const o = api.options;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="set-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   return `<h3>Saving</h3><div class="setrow">
-      ${box("autosave", o.autosave, "Autosave", "Save to the autosave slot at dawn, when a hive assault starts and when the run ends. It waits while a card needs an answer.")}
+      ${box("autosave", o.autosave, "Autosave", "Save at dawn, when a hive assault starts and when the run ends; each campaign keeps its last 3 autosaves (the oldest is written over). It waits while a card needs an answer.")}
       <label${tip("How often the dawn autosave runs")}>every <select data-action="set-autodays"${o.autosave ? "" : " disabled"}>${AUTOSAVE_DAYS.map((d) => `<option value="${d}" ${o.autosaveDays === d ? "selected" : ""}>${d === 1 ? "day" : `${d} days`}</option>`).join("")}</select></label>
       ${box("battleSave", o.battleSave !== false, "Save as each battle starts", "Keep a save of every battle's start (one slot, the latest battle) so it can be played again: Restart battle in the battle panel. Not in Ironman games.")}
       ${box("confirmQuit", o.confirmQuit, "Confirm before leaving a game", "Ask before loading, exiting or starting a new campaign with progress that is not saved (and, in a browser tab, before closing it)")}
@@ -170,12 +182,16 @@ function optionsTab(state, ui, api) {
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
     </div>
+    ${soundOptionsHtml(o)}
+    ${pacingOptionsHTML()}
     <h3>Display</h3><div class="setrow">
-      <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
+      <label${tip("Interface size: everything but the map's own drawing (Larger map text below is for that). Larger is easier to read from the couch.")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often).")}>Map animations <select data-action="set-mapanim">${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often). Reduce motion below turns them off too.")}>Map animations <select data-action="set-mapanim"${o.calm ? " disabled" : ""}>${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button data-action="zlook-open"${tip("Palette, gore and variants of the dead in battle")}>Zombie look…</button>
     </div>
+    ${displayRows(o)}
+    <h3>Confirmations</h3><div class="setrow">${confirmRows()}</div>
     <h3>Windows and panels</h3><div class="setrow">
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
@@ -214,7 +230,7 @@ function run(ui, api, label, fn) {
 }
 // Asks first when the option is on and there is progress that is not saved.
 function guarded(state, ui, api, confirm, go) {
-  if (api.options.confirmQuit && unsaved(state, ui) && !state.gameOver) { ui.settings.confirm = { ...confirm, go }; return; }
+  if (api.options.confirmQuit && unsaved(state, ui) && !state.gameOver) { ui.settings.confirm = { ...confirm, go, leave: true }; return; }
   go();
 }
 
@@ -250,9 +266,12 @@ function loadSlot(ui, api, id) {
 }
 
 export const SETTINGS_ACTIONS = {
+  ...SOUND_ACTIONS, // ui/audio.js
+  ...GUIDE_MENU_ACTIONS, // gd-toggle (ui/guide.js)
   "set-open": (state, ui, d) => openSettings(ui, d.tab || "game"),
   "set-close": (state, ui) => { if (!ui.settings || !ui.settings.busy) ui.settings = null; },
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },
+  "pace-opt": (state, ui, d) => PACE_ACTIONS["pace-opt"](state, ui, d), // Options → Pause for… (ui/pacing.js)
   // Help: a topic of the Help tab; help-open (the "?" buttons, the top bar's Help) opens the menu at a topic.
   "set-help": (state, ui, d) => { if (ui.settings) ui.settings.help = d.sec || ""; },
   "help-open": (state, ui, d) => {
@@ -260,7 +279,13 @@ export const SETTINGS_ACTIONS = {
     Object.assign(ui.settings, { tab: "help", help: d.sec || "", msg: "", confirm: null });
   },
   "set-no": (state, ui) => { ui.settings.confirm = null; },
-  "set-yes": (state, ui) => { const c = ui.settings.confirm; ui.settings.confirm = null; if (c && c.go) c.go(); },
+  "set-yes": (state, ui, d, api) => {
+    const c = ui.settings.confirm;
+    ui.settings.confirm = null;
+    if (c && c.leave && c.skip && api) { api.options.confirmQuit = false; saveOptions(api.options); } // Don't ask again ticked
+    if (c && c.go) c.go();
+  },
+  "set-noask": (state, ui) => { const c = ui.settings && ui.settings.confirm; if (c) c.skip = !c.skip; },
   // Save to the slot this game came from (or a new one); with data-id, over that slot (asks first).
   "set-save": (state, ui, d, api) => {
     if (ironBlocked(state, ui)) return;
@@ -370,10 +395,12 @@ export const SETTINGS_ACTIONS = {
 };
 
 export const SETTINGS_CHANGE = {
+  ...SOUND_CHANGE, // ui/audio.js: the volume sliders, the sound to hear
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";
     setMapAnim(api.options.mapAnim);
+    applyDisplay(); // reduce motion keeps them off (ui/display.js)
     saveOptions(api.options);
   },
   "set-mapdetail": (state, ui, el, api) => {
@@ -506,13 +533,15 @@ function doAutosave(state, ui, api, why, opts, now) {
   auto.busy = true;
   auto.pending = null;
   auto.lastReal = now;
-  const d = day(state), h = hub(state), hour = state.hour; // the world keeps running while the save is compressed
-  const p = writeSave(opts.id || AUTOSAVE, state, { name: opts.name || `Autosave: ${h ? h.name : "holdout"}, day ${d}`, why, thumb: api.thumb(), dropCards: !!opts.dropCards })
-    .then(() => {
+  const d = day(state), hour = state.hour; // the world keeps running while the save is compressed
+  const o = { name: opts.name, why, thumb: api.thumb(), dropCards: !!opts.dropCards };
+  const p = (opts.id ? writeSave(opts.id, state, o) : writeAutosave(state, o)) // the campaign's last 3 autosaves rotate (ui/saves.js)
+    .then((entry) => {
+      if (opts.id) dropIronCrash(opts.id);
       auto.lastDay = d;
       auto.error = "";
       auto.lastAt = { day: d, why };
-      if (!ui.slot || opts.id) ui.slot = opts.id || AUTOSAVE;
+      if (!ui.slot || opts.id || autoSlot(ui.slot)) ui.slot = entry.id; // a game played from an autosave follows the newest one
       markSaved(state, ui, hour);
     }, (e) => {
       auto.error = e && e.message ? e.message : String(e);

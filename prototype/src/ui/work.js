@@ -18,6 +18,8 @@ import {
   renameRole, deleteRole, roleMembers, everyoneOnPriorities, setNewcomers, taskLabel, taskWhy, planBase, MOOD_LOW, MOOD_BACK,
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
+import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
+import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -111,6 +113,7 @@ export function workTab(state, b, ui) {
       <span${tip("The role new people get when they join (recruits, strangers, rescued people). Manual: they keep the job they come with.")}>Newcomers join</span>
       <select data-action="wnew">${[["", "Manual"], ...roles.map((r) => [r.id, r.name])].map(([v, l]) => `<option value="${esc(v)}" ${String(newcomers || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
       <span class="muted small">${managed} of ${people.length} here on priorities</span>
+      ${undoBtn(state, ui, "work")}
     </div>
     ${pr.msg ? `<div class="result small">${esc(pr.msg)}</div>` : ""}
     <div class="wscroll"><table class="t worktbl">${head}${rows || `<tr><td colspan="${WORK_KEYS.length + 3}" class="muted">Nobody here matches.</td></tr>`}</table></div>
@@ -261,7 +264,11 @@ export const WORK_ACTIONS = {
   "wrole-new": (state, ui) => { const r = createRole(state); prefs(ui).edit = r.id; say(ui, `${r.name} created: set its priorities below.`); },
   "wrole-new-crew": (state, ui) => { const r = createRole(state, "New crew", "crew"); prefs(ui).edit = r.id; say(ui, `${r.name} created: pick members at the hub and set its field priorities under Crews.`); },
   "wrole-dup": (state, ui, d) => { const r = duplicateRole(state, roleOfD(state, d)); if (r) { prefs(ui).edit = r.id; say(ui, `${r.name} created.`); } },
-  "wrole-del": (state, ui, d) => { say(ui, deleteRole(state, roleOfD(state, d))); prefs(ui).edit = null; },
+  "wrole-del": (state, ui, d) => {
+    const role = roleOfD(state, d);
+    if (role && ask(ui, d, "wrole-del", { kind: "delrole", title: `Delete the role ${role.name || ""}?`, text: "Its priorities are gone for good. Its members go to Manual and keep the job they have now.", yes: "Delete it" })) return;
+    say(ui, deleteRole(state, role)); prefs(ui).edit = null;
+  },
   "wcrew-pause": (state, ui, d) => { const r = roleOfD(state, d); if (r && r.crew) { r.crew.paused = !r.crew.paused; say(ui, `${r.name}: ${r.crew.paused ? "paused" : "trips again"}.`); } },
   "wcrew-all": (state, ui, d) => { const r = roleOfD(state, d); if (r && r.crew) r.crew.handleAll = !r.crew.handleAll; },
   "wcrew-cargo": (state, ui, d) => { const r = roleOfD(state, d); if (r && r.crew) { r.crew.rules = r.crew.rules || {}; r.crew.rules.cargo = !r.crew.rules.cargo; } },

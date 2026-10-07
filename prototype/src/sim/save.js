@@ -26,6 +26,7 @@ import { peekNextId, setNextId, day, hub, alive } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js"; // the line-of-sight cache of a loaded battle (sparse on a big yard)
+import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 
 export const SAVE_FORMAT = "broken-state-save";
 // Bump when the state changes in a way an older save cannot just be loaded into, and add a migration below.
@@ -65,6 +66,7 @@ export function saveMeta(state) {
     mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
     ironman: !!state.ironman, // ui/saves.js: an Ironman game's own slot
     ...(state.mode === "hardcore" && Number.isFinite(state.startPeople) ? { startPeople: state.startPeople } : {}), // hardcore.js START_PEOPLE: the save list says when it was not three
+    summary: saveSummary(state), camp: campaignKey(state), // "Day 143 · 31 people · winter · …"; the campaign the save list groups it under
   };
 }
 
@@ -152,6 +154,11 @@ export function deserializeState(save) {
     if (state.staging && state.staging.stores && !Number.isFinite(state.staging.stores.rawwater)) state.staging.stores.rawwater = 0;
     state.rawWater = 1;
   }
+  // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
+  // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
+  const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };
+  for (const b of state.bases || []) unNaN(b.stock);
+  for (const p of state.parties || []) { unNaN(p.supplies); unNaN(p.cargo && p.cargo.supplies); }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points
