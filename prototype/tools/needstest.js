@@ -322,7 +322,7 @@ function team(st, n, supplies) {
   console.log("Starving and parched day after day");
   const st = W();
   quietHub(st);
-  const s = atBase(st, hub(st).id).find((x) => !x.leader);
+  const s = team(st, 1, { food: 0, water: 10 }).crew[0]; // away from a base the gauge decides
   s.mood = 90; s.hunger = 5;
   const hits = [];
   for (let d = 1; d <= 5; d++) { const m0 = s.mood; s.hunger = 5; starvingDaily(st); hits.push(r1(m0 - s.mood)); }
@@ -392,7 +392,7 @@ function team(st, n, supplies) {
   // The status icons: starving with its day and mood.
   const st3 = W();
   const q = atBase(st3, hub(st3).id)[0];
-  plain(q); q.hunger = 4; q.starveDays = 3;
+  plain(q); q.hunger = 4; q.starveDays = 3; hub(st3).hungerDays = 3; // at a base the stores decide
   const icon = statusesOf(st3, q).find((x) => x.key === "hunger");
   check(icon && icon.tone === "danger" && icon.tip.includes(`Starving: day 3, mood −${starveMood(3)} a day`), `the starving icon says the day and the mood (${icon && icon.tip})`);
 }

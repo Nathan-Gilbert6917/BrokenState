@@ -3,9 +3,9 @@
 // per state that is on now, in a fixed order, each with its detail for the tooltip. Every threshold is in STATUS here.
 //   😞 low mood     mood below STATUS.mood (30: they talk about leaving, morale.js MOOD.warn1); danger below
 //                   STATUS.moodBad (15: they may walk out; under 10 for 3 days they may break, mentalbreaks.js)
-//   🍽 hungry       hunger below STATUS.hunger (25, needs.js NEEDS.low); starving below NEEDS.starving (15) or at a base
-//                   out of food: the days starving and the mood they cost (needs.js starvingDaily)
-//   💧 thirsty      thirst below STATUS.thirst (25); parched below 15 or at a base out of water, the same way
+//   🍽 hungry       hunger below STATUS.hunger (25, needs.js NEEDS.low); starving at a base out of food, or below
+//                   NEEDS.starving (15) away from one: the days starving and the mood they cost (needs.js starvingDaily)
+//   💧 thirsty      thirst below STATUS.thirst (25); parched at a base out of water or below 15 away from one
 //   🩸 low health   health below STATUS.health (40); danger below STATUS.healthBad (20)
 //   🦠 infected     an infected wound (medical.js), or the worm once it has been spotted (worm.js)
 //   🤒 sick         an illness, 🩹 when it is only injuries (health.js conditions)
@@ -34,11 +34,12 @@ function needLine(state, s, kind) {
   const days = food ? s.starveDays || 0 : s.parchDays || 0;
   const word = food ? hungerWord(v) : thirstWord(v);
   const gauge = food ? "hunger" : "thirst";
-  if (!now && !days) return `${word} (${gauge} ${n0(v)}): below ${STATUS.starving} they start losing mood every morning, more each day.`;
+  if (!now && !days) return `${word} (${gauge} ${n0(v)}): ${s.location && (s.location.kind === "base" || s.location.kind === "route") ? `if the base runs out of ${food ? "food" : "water"}` : `below ${STATUS.starving}`} they start losing mood every morning, more each day.`;
   if (!now) return `${food ? "Fed" : "Watered"} again (${gauge} ${n0(v)}) after ${days} day${days === 1 ? "" : "s"} ${food ? "starving" : "parched"}: tomorrow morning it no longer costs mood.`;
   const name = food ? "Starving" : "Parched";
   const fix = food ? "eat" : "drink";
-  const why = v < STATUS.starving ? `${gauge} ${n0(v)}` : `their base is out of ${food ? "food" : "water"}; ${gauge} ${n0(v)}`;
+  const atBase = s.location && (s.location.kind === "base" || s.location.kind === "route");
+  const why = atBase ? `their base is out of ${food ? "food" : "water"}; ${gauge} ${n0(v)}` : `${gauge} ${n0(v)}`;
   if (!days) return `${name} (${why}): from tomorrow morning mood −${starveMood(1, kind)} a day, more each day until they ${fix}.`;
   return `${name}: day ${days}, mood −${starveMood(days, kind)} a day (${why}); tomorrow −${starveMood(days + 1, kind)} unless they ${fix}.${v <= 0 ? ` Empty: it costs health${food ? "" : " fast"}.` : ""}`;
 }

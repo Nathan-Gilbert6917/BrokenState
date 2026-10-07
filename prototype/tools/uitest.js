@@ -506,14 +506,22 @@ section("Roster: sort, filter, roles");
     for (const s of [a, b, c, d]) Object.assign(s, { health: 100, conditions: [], woundInfected: false, worm: null, mood: 60, hunger: 100, thirst: 100 });
     a.hunger = 5; a.starveDays = 2; a.thirst = 20; a.mood = 12; a.woundInfected = true; // four at once
     b.thirst = 8; b.parchDays = 1;
+    // At a base the stores decide (sim/needs.js starvingNow): first a hub that is out of food and water.
+    h.hungerDays = 2; h.thirstDays = 1;
+    const outHtml = rosterModal(w, ui);
+    const outRow = (s) => (outHtml.split("<tr").find((r) => r.includes(`data-action="ro-open" data-id="${s.id}"`)) || "");
+    check(/Starving: day 2, mood −4 a day \(their base is out of food/.test(outRow(a)), "the starving icon's tooltip has the day, the mood and why");
+    check(/Parched: day 1/.test(outRow(b)), "parched: the day");
+    check(/data-st="hunger"/.test(outRow(d)) && /from tomorrow morning mood −2 a day/.test(outRow(d)), "everyone at a base out of food is starving, from tomorrow");
+    h.hungerDays = 0; h.thirstDays = 0;
     addCondition(w, c, "sprain", "", { sev: 40, quiet: true });
     html = rosterModal(w, ui);
     htmlOk(html, "roster with status icons");
     const rowOf = (s) => (html.split("<tr").find((r) => r.includes(`data-action="ro-open" data-id="${s.id}"`)) || "");
     const icons = (s) => [...rowOf(s).matchAll(/data-st="(\w+)"/g)].map((m) => m[1]);
     check(icons(a).join(",") === "mood,hunger,thirst,infected", `they stack in order: ${icons(a).join(", ")}`);
-    check(/Starving: day 2, mood −\d+ a day/.test(rowOf(a)), "the starving icon's tooltip has the day and the mood");
-    check(icons(b).join(",") === "thirst" && /Parched: day 1/.test(rowOf(b)), `parched: ${icons(b).join(", ")}`);
+    check(/Fed again \(hunger 5\) after 2 days starving/.test(rowOf(a)), "the base has food again: the count ends tomorrow");
+    check(icons(b).join(",") === "thirst", `thirsty: ${icons(b).join(", ")}`);
     check(icons(c).join(",") === "sick" && rowOf(c).includes("🩹"), "injured only: the bandage");
     check(icons(alive(w)[4]).includes("sick") && rowOf(alive(w)[4]).includes("🤒"), "ill: the fever face");
     check(icons(alive(w)[3]).includes("health"), "low health (35)");

@@ -30,11 +30,12 @@
 // economy's hunger and thirst days do the damage (economy.js starve, thirst). The team counts as out of food (p.noFood:
 // no camp healing, illness risk) when someone's hunger is empty, or someone wants to eat and nothing is left.
 //
-// Starving and parched (STARVE, starvingDaily): every morning someone is starving (hunger below NEEDS.starving, 15, or
-// living at a base that is out of food today: economy.js hungerDays) counts a day starving (s.starveDays) and loses
-// STARVE.food.step mood × those days (−2, −4, −6 … up to −20 a day); parched the same for thirst (below 15, or a base out
-// of water: s.parchDays, −3, −6, −9 … up to −24). Anywhere: at a base, on a team, on an errand. A morning fed and
-// watered again (the gauge back at 15 or more, the base's stores back) resets it. This is a base's mood for being out
+// Starving and parched (STARVE, starvingDaily): every morning someone is starving (living at a base that is out of food
+// today, economy.js hungerDays; away from a base, on a team or an errand, hunger below NEEDS.starving, 15) counts a day
+// starving (s.starveDays) and loses STARVE.food.step mood × those days (−2, −4, −6 … up to −20 a day); parched the same
+// for thirst (a base out of water, or thirst below 15 away from one: s.parchDays, −3, −6, −9 … up to −24). At a base the
+// stores decide, not the gauge: short rations feed some in full and others not at all for the day (splitShare), and
+// that costs the base's −3 a day, not this. A morning fed and watered again resets it. This is a base's mood for being out
 // of food or water (it replaced the flat −10 and −8 a day); left alone it ends at rock bottom: a mental break
 // (mentalbreaks.js), walking out (morale.js), or death from hunger or thirst. On top of the hourly mood below 25.
 //
@@ -318,10 +319,12 @@ function homeBase(state, s) {
   if (L.kind === "route") return hub(state);
   return null;
 }
-// Starving / parched now: the gauge below NEEDS.starving, or their base is out of food / water today.
+// Starving / parched now: at a base, the base is out of food / water today; away from one, the gauge below
+// NEEDS.starving.
 export function starvingNow(state, s) {
   const b = homeBase(state, s);
-  return { food: hungerOf(s) < NEEDS.starving || !!(b && b.hungerDays > 0), water: thirstOf(s) < NEEDS.starving || !!(b && b.thirstDays > 0) };
+  if (b) return { food: b.hungerDays > 0, water: b.thirstDays > 0 };
+  return { food: hungerOf(s) < NEEDS.starving, water: thirstOf(s) < NEEDS.starving };
 }
 export function starvingDaily(state) {
   for (const s of state.survivors) {
