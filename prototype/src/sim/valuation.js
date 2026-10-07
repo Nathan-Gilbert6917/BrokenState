@@ -24,7 +24,7 @@ import { SUPPLIES, GEAR, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "./data.j
 import { day } from "./world.js";
 import { season } from "./weather.js";
 import { hash01 } from "./skills.js";
-import { itemDur } from "./crafting.js";
+import { itemDur, itemDurMax } from "./crafting.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -51,13 +51,13 @@ const isFine = (cat) => !!(CATEGORIES[cat] && CATEGORIES[cat].fine);
 const WEAPON_CATS = ["melee", "pistol", "shotgun", "rifle", "automatic", "bow", "explosive", "gunmod"];
 
 // ---------- hidden worth ----------
-// Base value × condition (0.2 + 0.8 × quality) × uses left (makeshift gear: 0.3 + 0.7 × uses left / full uses).
+// Base value × condition (0.2 + 0.8 × quality) × uses left (gear that wears: 0.3 + 0.7 × uses left / full uses).
 export function itemValue(item) {
   const d = item && GEAR[item.key];
   if (!d) return 0;
   const q = clamp(Number.isFinite(item.quality) ? item.quality : 1, 0, 1.5);
   const dur = itemDur(item);
-  const durF = dur == null ? 1 : 0.3 + 0.7 * clamp(dur / d.dur, 0, 1);
+  const durF = dur == null ? 1 : 0.3 + 0.7 * clamp(dur / itemDurMax(item), 0, 1);
   let v = d.value * (0.2 + 0.8 * q) * durF;
   if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);
   return v;

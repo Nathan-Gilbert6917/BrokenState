@@ -2010,7 +2010,7 @@ const byPriorityHere = (state, base) => (!state.autopilot || gov(state).priority
 // 2571 buildings to its 2711; with this hold 3968 and 2664, food unchanged. A water filter while the water runs short,
 // a weapon for the unarmed and dressings for short meds still go first.
 const buildKeep = (state, base) => (byPriorityHere(state, base) ? nextBuildScrap(state, base) : 0);
-function planCrafts(state, base) {
+export function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);
   if (!people.length || q.length >= 4) return;
@@ -2071,6 +2071,8 @@ function planCrafts(state, base) {
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
+  // A base by the water with nothing to fish with (hunting.js): a makeshift rod, so the Fish job can be worked.
+  if (fishWorkWhy(state, base) === "no fishing rod, net or spear here" && !q.some((j) => j.recipe === "makeshiftrod") && tryCraft(["makeshiftrod"], "a rod for fishing the water by the base: food from the land", 12)) return;
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;

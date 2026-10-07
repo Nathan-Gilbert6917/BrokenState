@@ -458,6 +458,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "dewormer") check(!/power|armor/.test(text) && /worm/.test(text) && /one use/.test(text), `${key}: the dewormer says what it cures (${text})`); // sim/worm.js
     else if (LIGHTS[r.gear]) check(!/power|armor/.test(text) && /at night sees \d+ tiles/.test(text), `${key}: a light says how far it sees at night (${text})`); // sim/lights.js (a headlamp is carried, not held)
     else if (r.gear === "puritabs") check(!/power|armor/.test(text) && /10 un-purified water safe/.test(text) && /lasts 10 tablets/.test(text), `${key}: the tablets say what one treats and how many there are (${text})`); // sim/worm.js
+    else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

@@ -37,12 +37,28 @@ export const ZOMBIE_PACK = 0.08;
 export const ZOMBIE_PACKS = ["slingbag", "slingbag", "backpack"];
 export const ZOMBIE_PACK_STUFF = ["chocolate", "candy", "phone", "photos", "novel", "magazines", "batteries", "lighters", "toiletpaper", "bandagekit", "knife", "flashlight", "smokes", "instcoffee", "cards", "soap"];
 
-export function newItem(key, quality = 1) {
+// worn: found or starting gear comes part-worn, FOUND_DUR / START_DUR of its uses left (data.js GEAR dur). Pass the
+// rng in hand (its position is hashed with the item, so the roll moves none of the world's random numbers) or a
+// number 0–1 from a hash of its own. Counts (tablets, toiletries) and items that do not wear stay full.
+export const FOUND_DUR = { lo: 0.3, hi: 1 };   // loot: from nearly done to as good as new
+export const START_DUR = { lo: 0.55, hi: 1 };  // what people start the game (or join) with: looked after
+export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
   const d = GEAR[key];
   const item = { key, name: d.name, quality };
   if (d.dur) item.dur = d.dur;
+  if (worn != null && d.dur && !d.tabs && !d.groom) {
+    const u = typeof worn === "number" ? worn : mix01(worn.state, key, quality);
+    item.dur = Math.max(1, Math.round(d.dur * (range.lo + (range.hi - range.lo) * u)));
+  }
   if (d.slots) ensurePack(item);
   return item;
+}
+// 0–1 from an rng's position and the item (FNV-1a and a final mix): no draw from the rng itself.
+function mix01(...parts) {
+  let h = 2166136261 >>> 0;
+  for (const c of parts.join("|")) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297a2d39) >>> 0; h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
 }
 
 // ---------- the model ----------
@@ -438,11 +454,11 @@ export function enemyBody(rng, u, kit) {
     }
     if (rng.chance(0.12)) add("ammo", rng.int(2, 6));
     if (rng.chance(0.05)) add("meds", 1);
-    if (rng.chance(0.06)) stow(body, newItem(rng.pick(ZOMBIE_FINDS), rng.pick([0.5, 0.7, 0.85])), "");
+    if (rng.chance(0.06)) stow(body, newItem(rng.pick(ZOMBIE_FINDS), rng.pick([0.5, 0.7, 0.85]), rng), "");
     if (rng.chance(ZOMBIE_PACK)) {
-      const pack = newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]));
+      const pack = newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]), rng);
       const n = rng.int(1, Math.min(3, pack.contents.length));
-      for (let i = 0; i < n; i++) pack.contents[i] = newItem(rng.pick(ZOMBIE_PACK_STUFF), rng.pick([0.6, 0.8, 1]));
+      for (let i = 0; i < n; i++) pack.contents[i] = newItem(rng.pick(ZOMBIE_PACK_STUFF), rng.pick([0.6, 0.8, 1]), rng);
       body.gear.backpack = pack;
     }
     return body;
@@ -452,10 +468,10 @@ export function enemyBody(rng, u, kit) {
   if (rng.chance(MEDS.BODY_HUMAN)) add("meds", 1); // medfinds.js
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
   // What they fought with, worse for wear.
-  if (GEAR[u.weapon]) body.gear.weapon = newItem(u.weapon, rng.pick([0.4, 0.55, 0.7, 0.85]));
-  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = newItem(u.armorKey, rng.pick([0.4, 0.55, 0.7]));
-  if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = newItem(kit.pack[0], rng.pick([0.7, 0.85]));
-  if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1])), "");
+  if (GEAR[u.weapon]) body.gear.weapon = newItem(u.weapon, rng.pick([0.4, 0.55, 0.7, 0.85]), rng);
+  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = newItem(u.armorKey, rng.pick([0.4, 0.55, 0.7]), rng);
+  if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = newItem(kit.pack[0], rng.pick([0.7, 0.85]), rng);
+  if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1]), rng), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, newItem(rng.pick(kit.finds), 1), ""); // pockets: smokes, a ring (combat.js KITS finds)
   return body;
 }
@@ -472,9 +488,9 @@ export function deadBodyFinds(rng, ztype) {
   if (mil) return mil;
   const sup = {}, gear = [];
   for (const k of ["ammo", "food", "meds", "scrap"]) { const [p, lo, hi] = ZBODY[k]; if (rng.chance(p)) sup[k] = rng.int(lo, hi); }
-  if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(newItem(k, GEAR[k].dur ? 1 : rng.pick([0.5, 0.7, 0.85]))); }
-  if (rng.chance(ZBODY.pistol)) { gear.push(newItem("pistol", rng.pick([0.4, 0.55, 0.7]))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
-  if (rng.chance(ZBODY.bag)) gear.push(newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7])));
+  if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(newItem(k, GEAR[k].makeshift ? 1 : rng.pick([0.5, 0.7, 0.85]), rng)); }
+  if (rng.chance(ZBODY.pistol)) { gear.push(newItem("pistol", rng.pick([0.4, 0.55, 0.7]), rng)); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
+  if (rng.chance(ZBODY.bag)) gear.push(newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]), rng));
   return { sup, gear };
 }
 export const allyBody = (s, u) => ({ name: s.name, kind: "ally", uid: u ? u.id : null, sid: s.id, supplies: {} });

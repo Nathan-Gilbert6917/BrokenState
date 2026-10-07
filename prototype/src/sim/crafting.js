@@ -2,7 +2,8 @@
 // no station needed. Works like the construction queue: materials are paid when a job is queued, crafters
 // put work-hours into the first job they are skilled enough for, and the item lands in the base armory.
 // Some sturdier recipes still need a workshop (needs: "workshop" = an ammo bench or machine shop here).
-// Makeshift gear has durability (item.dur): it wears with every fight / treatment / day of work and breaks at 0.
+// Gear has durability (item.dur, data.js GEAR dur / GEAR_DUR): it wears with every fight / treatment / day of work and
+// breaks at 0. Makeshift gear has few uses; a crafted item's quality sets how many (craftedDur).
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
 import { LIGHTS } from "./lights.js";
 import { GEAR, SKILL_NAMES } from "./data.js";
@@ -25,6 +26,7 @@ export const CRAFTS = {
   sawmachete:  { gear: "sawmachete",  in: { scrap: 6 },           hours: 10, skill: "mechanics", min: 3 },
   crossbow:    { gear: "crossbow",    in: { scrap: 8, parts: 1 }, hours: 16, skill: "mechanics", min: 5, needs: "workshop" },
   pipegun:     { gear: "pipegun",     in: { scrap: 6, parts: 2 }, hours: 14, skill: "mechanics", min: 6, needs: "workshop" },
+  makeshiftrod: { gear: "makeshiftrod", in: { scrap: 1 },         hours: 2,  skill: "mechanics", min: 0, field: true },
   padding:     { gear: "padding",     in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
   shinguards:  { gear: "shinguards",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
   tirevest:    { gear: "tirevest",    in: { scrap: 6 },           hours: 8,  skill: "mechanics", min: 2 },
@@ -97,7 +99,8 @@ export function craftOutputText(key) {
   const d = GEAR[r.gear];
   const bits = [];
   // What the thing does, by kind: weapons have power, armor has armor, packs carry, tools give their bonus.
-  if (d.slot === "weapon") bits.push(`weapon, power ${d.power}`);
+  if (d.slot === "weapon") bits.push(`weapon, power ${d.power}${d.fish === "spear" ? `, spears fish (${d.fishPower} food an hour in daylight)` : ""}`);
+  else if (d.fish) bits.push(`fishing ${d.fish}, about ${d.fishPower ?? 0.6} food an hour on a river or lake shore, more at dawn and dusk`);
   else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
@@ -118,7 +121,7 @@ export function craftOutputText(key) {
     bits.push(`${d.throw || d.suppressor || d.siege ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
-  if (d.dur) bits.push(`lasts ${d.dur} ${durUnit(r.gear)}`);
+  if (d.dur) bits.push(`lasts ${ownMax(d) ? `about ${d.dur}` : d.dur} ${durUnit(r.gear)}${ownMax(d) ? " (more when well made)" : ""}`);
   if (d.noise === 0 && d.slot === "weapon") bits.push("silent");
   return bits.join(", ");
 }
@@ -128,6 +131,8 @@ export function durUnit(key) {
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.suppressor) return "shots";
+  if (d.fish) return "days of fishing";
+  if (d.heat) return "days in the field";
   return "days";
 }
 
@@ -228,7 +233,7 @@ export function craftingHour(state) {
     } else {
       const best = Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill)));
       const item = makeItem(r.gear, craftQuality(best, r));
-      if (item.dur && crafters(state, base).some((s) => hasPerk(s, "tinkerer"))) item.dur = Math.round(item.dur * 1.5); // Tinkerer (skills.js): lasts 50% longer
+      if (item.dur && crafters(state, base).some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
       base.armory.push(item);
       log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
     }
@@ -236,10 +241,17 @@ export function craftingHour(state) {
 }
 
 // ---------- items and durability ----------
+// A crafted item's uses by its quality: the listed dur at 75% (a crafter with no skill), up to 20% more at 100%,
+// 12% less at the 60% floor. Quality also sets what it does: a weapon's damage and an armor piece's protection
+// (world.js combatPower, combat.js, inventory.js itemArmor) and a fishing tool's catch (hunting.js fishToolPower).
+export const craftedDur = (dur, quality = 1) => Math.max(1, Math.round(dur * (0.4 + 0.8 * Math.max(0, Math.min(1, quality)))));
+// Durability with its own maximum (item.durMax: crafted, or worn part-way when found); counts, not wear, stay out.
+const ownMax = (d) => d && d.dur && !d.tabs && !d.groom;
 export function makeItem(key, quality = 1) {
   const d = GEAR[key];
   const item = { key, name: d.name, quality };
   if (d.dur) item.dur = d.dur;
+  if (ownMax(d)) { item.dur = craftedDur(d.dur, quality); if (item.dur !== d.dur) item.durMax = item.dur; }
   if (d.slots) ensurePack(item); // a pack comes with empty pack slots
   return item;
 }
@@ -249,11 +261,17 @@ export function itemDur(item) {
   if (!item) return null;
   const d = GEAR[item.key];
   if (!d || !d.dur) return null;
-  return item.dur != null ? item.dur : d.dur;
+  return item.dur != null ? item.dur : itemDurMax(item);
+}
+// Its uses when new: its own (crafted by quality, a Tinkerer's) or the listed ones.
+export function itemDurMax(item) {
+  const d = item && GEAR[item.key];
+  if (!d || !d.dur) return null;
+  return item.durMax || d.dur;
 }
 
 // Wears an item by n uses. Returns true when it broke.
-function wear(item, n = 1) {
+export function wear(item, n = 1) {
   const left = itemDur(item);
   if (left == null) return false;
   item.dur = Math.max(0, left - n);
@@ -269,7 +287,25 @@ export function wearSlot(state, s, slot, n = 1) {
   return true;
 }
 
-// After a fight: makeshift weapons and every worn armor piece (body, head, arms, legs) lose one use.
+// Wears an item wherever it is kept: on one of these people (a slot, a pocket, the pack) or in one of these lists (a
+// team's cargo, a base's armory). A broken item is gone. Returns true when it broke.
+export function wearHeld(state, item, people = [], lists = [], n = 1) {
+  if (!item || !wear(item, n)) return false;
+  let who = null;
+  for (const s of people) {
+    if (!s || !s.gear) continue;
+    for (const k of Object.keys(s.gear)) if (s.gear[k] === item) { s.gear[k] = null; who = s; }
+    (s.pockets || []).forEach((it, i) => { if (it === item) { s.pockets[i] = null; who = s; } });
+    const pk = s.gear.backpack && s.gear.backpack.contents;
+    (pk || []).forEach((it, i) => { if (it === item) { pk[i] = null; who = s; } });
+    if (who) break;
+  }
+  if (!who) for (const l of lists) { const i = (l || []).indexOf(item); if (i >= 0) { l.splice(i, 1); break; } }
+  log(state, `${who ? `${who.name.split(" ")[0]}'s` : "The"} ${item.name} broke.`, "danger");
+  return true;
+}
+
+// After a fight: weapons and every worn armor piece (body, head, arms, legs) lose one use.
 export function wearAfterFight(state, people) {
   for (const s of people) {
     if (!s || !s.alive) continue;
@@ -356,7 +392,18 @@ export function craftingDaily(state) {
     }
     if (water) base.stock.water = (base.stock.water || 0) + water;
   }
+  // Camp kit (GEAR heat: the ghillie wrap, rag boots, camo netting, the stove) wears a day for each day a team is out
+  // with it; the scent mask is used up by the hour instead (fieldheat.js).
+  for (const p of state.parties || []) {
+    if (p.owner !== "player") continue;
+    const team = partyMembers(state, p);
+    const cargo = (p.cargo && p.cargo.gear) || [];
+    const kit = [...team.flatMap((s) => heldItems(s)), ...cargo].filter((it) => it && GEAR[it.key] && GEAR[it.key].heat && GEAR[it.key].dur);
+    for (const it of kit) wearHeld(state, it, team, [cargo]);
+  }
 }
+// Everything on a person: worn and held, pockets, the pack's slots.
+const heldItems = (s) => [...Object.values(s.gear || {}), ...(s.pockets || []), ...((packOf(s)) || [])].filter(Boolean);
 
 // ---------- field crafting (a team on the road) ----------
 const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));

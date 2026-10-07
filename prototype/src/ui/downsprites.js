@@ -159,7 +159,7 @@ function droppedWeapon(p, key) {
     case "knife": case "baton": p.rect(15, y, 18, y, key === "baton" ? "#2b2e33" : metal); p.set(14, y, wood); break;
     case "machete": case "sawmachete": p.rect(15, y, 20, y, metal); p.set(14, y, "#3a2a1c"); break;
     case "bat": case "spikedbat": case "nailbat": p.rect(14, y, 20, y, "#a07a48"); p.set(21, y, "#8a6638"); break;
-    case "prybar": case "crowbar": case "pipespear": p.rect(14, y, 21, y, "#6d7378"); break;
+    case "prybar": case "crowbar": case "pipespear": case "spear": p.rect(14, y, 21, y, "#6d7378"); break;
     case "fireaxe": case "sledge": p.rect(14, y, 20, y, wood); p.rect(21, y - 1, 21, y, key === "sledge" ? "#5b5f63" : "#a83a2a"); break;
     case "shotgun": case "pipegun": p.rect(12, y, 21, y, gun); p.rect(12, y - 1, 14, y - 1, wood); break;
     case "huntrifle": case "leverrifle": p.rect(12, y, 22, y, wood); p.rect(18, y, 22, y, gun); break;

@@ -600,6 +600,7 @@ export const WEAPONS = {
   fireaxe:    { name: "Fire axe",          melee: true, dmg: [21, 32] },
   sledge:     { name: "Sledgehammer",      melee: true, dmg: [25, 38], meleeAim: -10 },
   baton:      { name: "Police baton",      melee: true, dmg: [12, 19] },
+  spear:      { name: "Steel spear",       melee: true, dmg: [18, 28] }, // a long reach: between the machete and the fire axe
   compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3 },
@@ -3893,16 +3894,16 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
-        gear.push(newItem(key, rng.pick([0.7, 0.85, 1])));
+        gear.push(newItem(key, rng.pick([0.7, 0.85, 1]), rng));
       }
-      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1)); // what was in their pockets
+      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1, rng)); // what was in their pockets
     } else {
       const def = AREAS[R.areas[box.area].type];
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1, rng));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).

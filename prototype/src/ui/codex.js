@@ -20,6 +20,7 @@ import { bossUnit, DEFENCE } from "../sim/defences.js";
 import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
+import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
@@ -151,8 +152,10 @@ function itemEntries() {
     if (g.noise) stats.push(["Noise", g.noise]);
     if (g.medKit) stats.push(["Medicine", `+${g.medKit} when treating`]);
     if (g.slots) stats.push(["Pack", `${g.slots} slots, +${g.carry || 0} kg load`]);
-    if (g.makeshift && g.dur) stats.push([g.tabs ? "Tablets" : "Lasts", g.tabs ? g.dur : `${g.dur} uses (makeshift)`]);
-    else if (g.tabs) stats.push(["Tablets", g.dur]);
+    if (g.tabs) stats.push(["Tablets", g.dur]);
+    else if (g.groom) stats.push(["Lasts", `${g.dur} days of use`]);
+    else if (g.dur) stats.push(["Lasts", `${g.dur} ${durUnit(k)}${g.makeshift ? " (makeshift)" : ""}; found ones are part-worn, crafted ones last by their quality`]);
+    if (g.fish) stats.push(["Fishing", `${g.fish === "net" ? "net, worked by two, 1.2" : `${g.fish}, ${g.fishPower ?? 0.6}`} food an hour${g.fish === "spear" ? " in daylight, not through ice" : ""}`]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
     out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
   }

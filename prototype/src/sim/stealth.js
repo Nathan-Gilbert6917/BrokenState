@@ -41,7 +41,7 @@ export const STEALTH = {
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
-const CLUB = { spikedbat: 20, pipespear: 5, knife: 10, machete: 10, sawmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
+const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
 export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
