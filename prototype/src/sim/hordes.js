@@ -10,7 +10,7 @@ import { findPath } from "./hex.js";
 import { mannedStations } from "./buildings.js";
 import { generatorHeat } from "./power.js";
 import { resolveRaidOnFaction } from "./factions.js";
-import { hordeSpeedFactor } from "./weather.js";
+import { hordeSpeedAt, riverFrozen } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
 import { hordeAttackBase, hordeWarnings } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
@@ -121,8 +121,11 @@ export function mergeHordes(state) {
 }
 
 const isLand = (state, id) => { const t = state.tiles[id]; return t.terrain !== "water" || t.bridge; };
+// Where the dead can walk: land, and a river frozen in deep winter (weather.js ICE; never a place to stop and roam).
+const walkable = (state, id) => isLand(state, id) || riverFrozen(state, id);
 
-// The next tile toward a horde's target over land (rivers are crossed at bridges). The way is planned once per
+// The next tile toward a horde's target over land (rivers are crossed at bridges, or on the ice in deep winter). The
+// way is planned once per
 // target and kept on the horde; a target it cannot reach is dropped (its job then falls back to wandering).
 // A bridge barricaded with a base (parties.js bridgeHolder: yours or a group's) is no way over for a horde unless the
 // base is where it is going: a horde whose way needs that bridge turns on the barricade instead (role attack, the base
@@ -130,10 +133,11 @@ const isLand = (state, id) => { const t = state.tiles[id]; return t.terrain !== 
 const barricaded = (state, id) => !!state.tiles[id].bridge && bridgeHolder(state, id) != null;
 function nextStep(state, h) {
   const g = state.grid;
+  if (h.path && h.path.length > 1 && !walkable(state, h.path[1])) h.path = null; // the ice it meant to cross has gone
   if (!h.path || h.pathTo !== h.target || h.path[0] !== h.tile) {
-    const res = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) && (b === h.target || !barricaded(state, b)) ? 1 : Infinity), 120);
+    const res = findPath(g, h.tile, h.target, (a, b) => (walkable(state, b) && (b === h.target || !barricaded(state, b)) ? 1 : Infinity), 120);
     if (!res || res.path.length < 2) {
-      const over = findPath(g, h.tile, h.target, (a, b) => (isLand(state, b) ? 1 : Infinity), 120);
+      const over = findPath(g, h.tile, h.target, (a, b) => (walkable(state, b) ? 1 : Infinity), 120);
       const stop = over && over.path.length >= 2 ? over.path.findIndex((id, i) => i > 0 && barricaded(state, id)) : -1;
       if (stop > 0) { // only a barricade in the way: the horde goes for it
         const tile = over.path[stop];
@@ -163,11 +167,11 @@ function nextStep(state, h) {
 export function hordesHour(state) {
   const g = state.grid;
   pruneHordes(state);
-  let speed = 1;
-  try { speed = hordeSpeedFactor(state); } catch { speed = 1; }
   for (const h of [...state.hordes]) {
     if (!state.hordes.includes(h)) continue;
     if (h.target == null || h.target === h.tile) { h.move = Math.min(HOURS_PER_TILE, h.move || 0); continue; }
+    let speed = 1;
+    try { speed = hordeSpeedAt(state, h.tile); } catch { speed = 1; } // the cold and a blizzard where it is (weather.js)
     h.move = (h.move || 0) + speed * (h.mix && h.mix.runner >= 0.1 ? ZTYPES.runner.speed : 1); // runners set the pace
     if (h.move < HOURS_PER_TILE) continue;
     h.move -= HOURS_PER_TILE;

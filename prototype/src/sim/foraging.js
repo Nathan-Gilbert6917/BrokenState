@@ -116,7 +116,7 @@ export function forageTime(hour) {
   return FORAGE.night;
 }
 const daylight = (hour) => forageTime(hour) >= 1;
-const weatherMult = (state, hour) => (Weather.weather(state, hour).severe ? FORAGE.storm : 1);
+const weatherMult = (state, hour, tile) => (Weather.weather(state, hour, tile).severe ? FORAGE.storm : 1); // a storm over that tile (weather.js)
 const seasonKey = (state, hour = state.hour) => Weather.season(state, hour).key;
 
 // ---------- people ----------
@@ -136,7 +136,7 @@ export function foragePower(members) {
 // ---------- rates and estimates ----------
 // Rations an hour on this tile at this level for a team of power `power` (no randomness).
 export function forageRate(state, tile, hour, power, level = forageLevel(state, tile, hour)) {
-  return FORAGE.rate * forageAbundance(state, tile) * level * seasonForage(state, hour) * forageTime(hour) * weatherMult(state, hour) * power;
+  return FORAGE.rate * forageAbundance(state, tile) * level * seasonForage(state, hour) * forageTime(hour) * weatherMult(state, hour, tile) * power;
 }
 // Expected haul of `hours` of foraging from startHour, the land depleting as it goes; room = kg the team can still
 // carry (the haul is capped by it; all = what was gathered).

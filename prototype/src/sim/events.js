@@ -14,7 +14,7 @@ import { growthsOf } from "./hivetech.js";
 import { GROWTHS } from "./hiveconst.js";
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
-import { travelEffects } from "./weather.js";
+import { travelEffects, weatherAt } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
 import { newItem } from "./inventory.js";
@@ -106,10 +106,11 @@ const EVENTS = [
   },
   // (Vehicle breakdowns are rolled from the vehicle's condition: breakdownCard below.)
   {
-    id: "storm", weight: 2, when: () => true,
-    card: (st, p) => ({
-      title: "Storm",
-      text: "A violent storm rolls in.",
+    // Only under rain or snow where the team is, most often under a storm or blizzard front (weather.js).
+    id: "storm", weight: (st, p) => (weatherAt(st, partyTile(p)).severe ? 6 : 1.5), when: (st, p, t) => ["rain", "storm", "snow", "blizzard"].includes(weatherAt(st, t.id).key),
+    card: (st, p, t) => ({
+      title: weatherAt(st, t.id).key === "blizzard" || weatherAt(st, t.id).key === "snow" ? "Blizzard" : "Storm",
+      text: weatherAt(st, t.id).key === "blizzard" || weatherAt(st, t.id).key === "snow" ? "The snow thickens into a whiteout." : "A violent storm rolls in.",
       choices: [
         { label: "Shelter and wait (6 hours)", resolve: () => { delay(p, 6); return "You wait it out in a barn."; } },
         { label: "Push through", resolve: (s) => s.rng.chance(0.4) ? `Someone takes a fall. ${injureRandom(s, p, 5, 20, "in a storm")}` : "Soaked, but fine." },
@@ -362,7 +363,7 @@ export function rollTravelEvent(state, p, tileId) {
   if (v && state.rng.chance(breakdownChance(v, p.burden ? p.burden.fill : 0))) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
-  chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state).events; // storms and blizzards: more trouble on the road (weather.js)
+  chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state, state.hour, tileId).events; // storms and blizzards where the team is: more trouble on the road (weather.js)
   if (state.bases.some((b) => b.tile === tileId)) return null;
   // Conflicts with other people (or a surge of the dead): see conflicts.js. Roadblocks and ambushes live there.
   const conflict = rollConflict(state, p, tileId);

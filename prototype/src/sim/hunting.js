@@ -148,7 +148,7 @@ export function timeOfDay(hour, kind = "hunt") {
   if (h >= 20 || h <= 4) return kind === "fish" ? 0.5 : 0.35;
   return 1;
 }
-const weatherMult = (state, hour) => (Weather.weather(state, hour).severe ? 0.5 : 1);
+const weatherMult = (state, hour, tile) => (Weather.weather(state, hour, tile).severe ? 0.5 : 1); // a storm over that tile (weather.js)
 export const frozenAt = (state, hour = state.hour) => !!Weather.weather(state, hour).frozen;
 
 // ---------- people and gear ----------
@@ -205,7 +205,7 @@ export function teamPower(hs, others = 0) {
 // ---------- hunting odds ----------
 // Chances this hour on this tile at this level (no randomness): big and small game, and the mix of big game.
 export function huntOdds(state, team, tile, hour, level = gameLevel(state, tile, hour)) {
-  const base = gameAbundance(state, tile) * level * seasonGame(state, hour) * timeOfDay(hour) * weatherMult(state, hour);
+  const base = gameAbundance(state, tile) * level * seasonGame(state, hour) * timeOfDay(hour) * weatherMult(state, hour, tile);
   const t = state.tiles[tile];
   const deer = t && (t.terrain === "hills" || t.terrain === "mountain") ? 1 : 0.7;
   return { big: Math.min(0.6, HUNT.big * base * team.big), small: Math.min(0.9, HUNT.small * base * team.small), deer, base };
@@ -426,7 +426,7 @@ export function fishRate(state, kit, tile, hour, level = fishLevel(state, tile, 
   const spot = fishSpot(state, tile);
   if (!spot || !kit.power) return 0;
   const ice = frozenAt(state, hour) ? (kit.ice ? FISH.ice : 0) : 1;
-  return kit.power * spot.mult * seasonFish(state, hour) * timeOfDay(hour, "fish") * weatherMult(state, hour) * ice * level;
+  return kit.power * spot.mult * seasonFish(state, hour) * timeOfDay(hour, "fish") * weatherMult(state, hour, tile) * ice * level;
 }
 export function expectFish(state, kit, tile, hours, startHour = state.hour, room = Infinity) {
   let level = fishLevel(state, tile, startHour), rations = 0;

@@ -180,9 +180,9 @@ export function renderExpedition(state, ui, p) {
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }
 
-// Today's weather and what it does to this team's pace (sim/weather.js); the ETAs above already include it.
+// The weather where the team is and what it does to its pace (sim/weather.js); the ETAs above already include it.
 function weatherLine(state, p, v) {
-  const w = wxNow(state), fx = travelEffects(state);
+  const at = partyTile(p), w = wxNow(state, state.hour, at), fx = travelEffects(state, state.hour, at);
   const [road, off] = v ? [fx.vehRoad, fx.vehOff] : [fx.footRoad, fx.footOff];
   const pct = (f) => `${f >= 1 ? "+" : "−"}${Math.abs(Math.round((f - 1) * 100))}%`;
   const pace = road > 1.005 || off > 1.005 ? `${v ? "driving" : "on foot"}: roads ${pct(road)}, off-road ${pct(off)}` : "normal pace";

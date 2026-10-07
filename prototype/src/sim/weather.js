@@ -1,22 +1,36 @@
-// Seasons and weather for the whole state (one sky for every tile; kept simple on purpose).
+// Seasons and weather: a statewide sky (the season, temperatures, the ground) with regional weather fronts on top.
 //
 // A year is 4 seasons of 28 days (112 days), and day 1 of a campaign is day 15 of spring.
 // Every day has one weather type plus ground conditions that carry over (mud, snow cover, soil moisture).
 // Days are generated in order from the campaign seed with their own RNG stream (state.rng is never
-// touched here), and kept in state.weather.days. The weather of any future day is therefore already
-// decided: movement, the trip planner and every ETA read the same per-day records, so an estimate
-// made today stays exact however the weather turns during the trip. What the PLAYER is told about the
-// coming days (forecast) is a separate, deliberately imperfect view of those records.
+// touched here), and kept in state.weather.days. A day's record is the region's weather: its storms, blizzards
+// and fog do not cover the whole state but come as FRONTS (state.weather.fronts): seeded systems with a position,
+// a heading and speed in tiles an hour, a radius and a lifetime, that come in at a map edge and cross the map over
+// hours to a couple of days. Away from the fronts a tile has the day's background sky (bgKind: a storm day is rain
+// there, a blizzard day snow, a foggy day overcast). Fronts come from their own RNG stream, a day at a time, so
+// they too are fixed ahead for a seed. Movement uses the real fronts; estimates (travelHours) use only the fronts
+// already on the map when the estimate is made (`known`): a front that forms later can still slow a team down.
+// What the PLAYER is told about the coming days (forecast) is a separate, deliberately imperfect view of the
+// day records: the regional outlook ("storms about"), not where the fronts will go.
 //
-// API for other systems (all take the game state; `hour`/`dayIdx` default to now):
+// Rivers freeze in deep winter (ICE): a freezing index (degree-days below 0 °C, melting three times as fast above)
+// is kept on each day record; the rivers' northern reaches freeze first and thaw last. Frozen river tiles can be
+// walked (ICE.walk hours a tile), never driven; hordes and other groups cross them too (parties.js moveCost,
+// hordes.js, rivers.js).
+//
+// API for other systems (all take the game state; `hour`/`dayIdx` default to now; "home" is the hub's tile, or your
+// team's before you have a hub):
 //   season(state)                         -> { key, name, icon, dayOfSeason, daysLeft, year, index }
-//   weather(state)                        -> { key, name, icon, temp, hi, lo, rain, snow, wind, severe,
-//                                              mud, snowCover, soil, frozen, dryDays, desc }
-//   weatherAt(state, tileId)              -> same (no regional variation yet)
+//   weather(state, hour, tileId)          -> { key, name, icon, temp, hi, lo, rain, snow, wind, severe,
+//                                              mud, snowCover, soil, frozen, dryDays, desc, front } at home (or the tile)
+//   weatherAt(state, tileId, hour) / wxAt(state, x, y, hour)  -> the same for one tile
+//   frontAt(state, tileId, hour, known)   -> the front over a tile ({ f, x, y, r }) or null; visibleFronts(state, frac)
+//   frontsApproaching(state, tileId)      -> the fronts on the map with when (if ever) they reach the tile
 //   forecast(state, days)                 -> [{ day, offset, key, name, icon, hi, lo, severe, confidence, season }]
 //   forecastRange(state)                  -> days the hub can forecast (3; 4 with a watchtower; 5 with a radio station)
-//   travelFactor(state, { vehicle, tileId, from, hour })  -> multiplier on movement cost (1 = normal, more = slower)
-//   travelEffects(state)                  -> { footRoad, footOff, vehRoad, vehOff, sight, ambush, injury, events, boat, lines }
+//   travelFactor(state, { vehicle, tileId, from, hour, known })  -> multiplier on movement cost (1 = normal, more = slower)
+//   travelEffects(state, hour, tileId)    -> { footRoad, footOff, vehRoad, vehOff, sight, ambush, injury, events, boat, lines }
+//   iceRow(state, hour), riverFrozen(state, tileId, hour), thinIce(state, tileId, hour)  -> frozen rivers (ICE)
 //   growthFactor(state, crop)             -> 0..1.3 growth multiplier for today
 //   cropDamage(state, crop)               -> { kill, rot, reason } chances for today (0..1)
 //   isGrowingSeason(state, crop)          -> bool; growingDaysLeft(state, crop) -> days until that season ends
@@ -24,7 +38,9 @@
 //   thirstFactor(state, dayIdx)           -> how much people drink that day: THIRST by season, at least THIRST.heat on
 //                                            a hot day (hotDay: a heat wave, or 30 °C and up)
 //   exposureRisk(state, { sheltered })    -> { chance, kind: "cold"|"heat"|null, reason, temp } per person per day outdoors
-//   hordeSpeedFactor(state)               -> 0.5..1 (the dead are slower in deep cold and snow)
+//   hordeSpeedFactor(state)               -> 0.5..1 (the dead are slower in deep cold and snow); hordeSpeedAt(state, tile)
+//   The daily ones (growth, crop damage, rain water, wells, thirst, exposure, cold) read home's day (dayRec): the
+//   background sky, or the front that sat over home for a good part of the day.
 //   foodNeedFactor(state)                 -> 1..1.2 (people eat more in the cold; optional hook); coldAt(state, hour)
 //                                            the same for the hour a team eats in, coldAhead(state, days) the highest
 //                                            over the coming days (trip estimates and packing, as thirstAt/thirstAhead)
@@ -102,7 +118,21 @@ function ensure(state) {
     // Own stream: the map and everything else rolled from state.rng stay as they were.
     w = state.weather = { seed, rs: (Math.imul(seed ^ 0x57ea7e25, 0x9e3779b1) ^ 0x5eed) >>> 0, days: [], lastLogged: -1, tint: true };
   }
+  if (w.fs == null) upgrade(w);
   return w;
+}
+
+// Fronts and river ice for a state made before them (an older save): the fronts' own stream from the seed, every
+// day's travel table without its storm (now the fronts' part) and the freezing index.
+function upgrade(w) {
+  w.fs = (Math.imul((w.seed >>> 0) ^ 0x3f1a7c55, 0x85ebca6b) ^ 0xf007) >>> 0;
+  w.fronts = [];
+  w.fd = 0; // days whose fronts are made
+  w.nf = 1; // next front id
+  w.days.forEach((d, i) => {
+    d.tf = travelTable(d);
+    d.ice = nextIce(i > 0 ? w.days[i - 1].ice : 0, d);
+  });
 }
 
 function genDay(w, i) {
@@ -146,33 +176,231 @@ function genDay(w, i) {
   const frozen = (hi + lo) / 2 < -2; // frozen ground carries no mud
   const d = { k, hi, lo, rain, snow, wind, an, cover: r2(cover), mud: r2(mud), soil: r2(soil), dry, frozen };
   d.tf = travelTable(d);
+  d.ice = nextIce(prev ? prev.ice : 0, d);
   w.days[i] = d;
   w.rs = rng.state;
   return d;
 }
 
-// Movement-cost multipliers for one day: [on foot on a road, on foot off-road, vehicle on a road, vehicle off-road].
+// What each kind of weather adds to the movement cost: [on foot on a road, on foot off-road, vehicle on a road,
+// vehicle off-road]. A day's table has its background sky's share; a front over a tile adds the rest (travelFactor).
+const KIND_TF = {
+  rain: [0, 0.08, 0.05, 0.08], storm: [0.3, 0.35, 0.3, 0.35], fog: [0.04, 0.06, 0.12, 0.08], heat: [0.12, 0.15, 0, 0],
+  snow: [0.08, 0.08, 0.08, 0.08], blizzard: [0.5, 0.6, 0.6, 0.7],
+};
+const NO_TF = [0, 0, 0, 0];
+// Movement-cost multipliers for one day, from the ground (mud, snow cover) and the background sky.
 function travelTable(d) {
-  const m = d.frozen ? 0 : d.mud, c = d.cover;
-  let fr = 1 + 0.05 * m + 0.25 * c;
-  let fo = 1 + 0.45 * m + 0.6 * c;
-  let vr = 1 + 0.08 * m + 0.4 * c;
-  let vo = 1 + 0.9 * m + 1.0 * c;
-  if (d.k === "rain") { fo += 0.08; vr += 0.05; vo += 0.08; }
-  else if (d.k === "storm") { fr += 0.3; fo += 0.35; vr += 0.3; vo += 0.35; }
-  else if (d.k === "fog") { fr += 0.04; fo += 0.06; vr += 0.12; vo += 0.08; }
-  else if (d.k === "heat") { fr += 0.12; fo += 0.15; }
-  else if (d.k === "snow") { fr += 0.08; fo += 0.08; vr += 0.08; vo += 0.08; }
-  else if (d.k === "blizzard") { fr += 0.5; fo += 0.6; vr += 0.6; vo += 0.7; }
+  const m = d.frozen ? 0 : d.mud, c = d.cover, x = KIND_TF[bgKind(d.k)] || NO_TF;
+  const fr = 1 + 0.05 * m + 0.25 * c + x[0];
+  const fo = 1 + 0.45 * m + 0.6 * c + x[1];
+  const vr = 1 + 0.08 * m + 0.4 * c + x[2];
+  const vo = 1 + 0.9 * m + 1.0 * c + x[3];
   return [fr, fo, vr, vo].map((v) => Math.min(3, r2(v)));
 }
 
-// The record of a day (generated on demand, in order).
+// The record of a day (generated on demand, in order), with the fronts that come in that day.
 function rec(state, dayIdx) {
   const w = ensure(state);
   const i = Math.max(0, Math.floor(dayIdx));
   while (w.days.length <= i) genDay(w, w.days.length);
+  if (w.fd <= i) makeFronts(state, w, i);
   return w.days[i];
+}
+
+// ---------- regional weather: fronts ----------
+// The kinds of front, how big they are (radius in tiles, on a Normal map; a bigger map has bigger ones), how fast
+// they travel (tiles an hour) and how they look on the map (ui/wxmap.js).
+export const FRONT_KINDS = {
+  storm:    { name: "Thunderstorm", r: [5, 8],  speed: [0.9, 1.5] },
+  rain:     { name: "Rain belt",    r: [7, 12], speed: [0.7, 1.2] },
+  blizzard: { name: "Blizzard",     r: [7, 11], speed: [0.6, 1.0] },
+  snow:     { name: "Snow squall",  r: [6, 10], speed: [0.7, 1.2] },
+  fog:      { name: "Fog bank",     r: [6, 10], speed: [0.2, 0.45] },
+};
+// How strong a kind of weather is: a front shows over a tile only where it is stronger than the background sky.
+const RANK = { clear: 0, heat: 0, drought: 0, frost: 0, overcast: 1, fog: 2, rain: 3, snow: 4, storm: 5, blizzard: 6 };
+// The background sky of a day: its storms, blizzards and fog are fronts, so between them it is rain, snow, grey.
+const BG = { storm: "rain", blizzard: "snow", fog: "overcast" };
+export const bgKind = (k) => BG[k] || k;
+// Fronts a day brings: a stormy, blizzard or foggy day 1-2 of them (FRONT.second: the chance of a second), plus
+// these by season (the chance of each a day).
+export const FRONT = { second: 0.45, maxLife: 72, fadeHours: 6, growHours: 3 };
+const EXTRA = {
+  spring: { rain: 0.3, storm: 0.06 }, summer: { storm: 0.14, rain: 0.12 },
+  autumn: { rain: 0.3, storm: 0.05, fog: 0.1 }, winter: { snow: 0.3, blizzard: 0.04, fog: 0.05 },
+};
+// The map edge a front comes in from (weights): mostly the west, more from the north in winter and the south in summer.
+const EDGES = { spring: { w: 6, n: 2, s: 2, e: 1 }, summer: { w: 5, n: 1, s: 3, e: 1 }, autumn: { w: 6, n: 2, s: 2, e: 1 }, winter: { w: 5, n: 4, s: 1, e: 1 } };
+// Rain in the freezing cold falls as snow (a storm as a blizzard), snow in the warm as rain.
+const precip = (k, mean) => (mean < -0.5 ? (k === "rain" ? "snow" : k === "storm" ? "blizzard" : k) : mean > 3 ? (k === "snow" ? "rain" : k === "blizzard" ? "storm" : k) : k);
+
+// Map geometry in tile units (neighbouring tiles 1 apart): odd rows sit half a tile right, rows are 0.866 apart.
+const ROW = Math.sqrt(3) / 2;
+const dims = (state) => {
+  const g = state.grid;
+  return g ? { W: g.width, H: g.height, w: g.width - 0.5, h: (g.height - 1) * ROW } : { W: 64, H: 42, w: 63.5, h: 41 * ROW };
+};
+export function tileUnits(state, id) {
+  const W = state.grid ? state.grid.width : 64, x = id % W, y = (id - x) / W;
+  return [x + 0.5 * (y & 1), y * ROW];
+}
+
+// The fronts that come in on day i: each from a map edge, heading for a point inside the map, gone when it has
+// crossed (or after FRONT.maxLife hours, fading over the last FRONT.fadeHours).
+function makeFronts(state, w, upTo) {
+  const D = dims(state), size = Math.max(0.8, Math.min(1.4, Math.sqrt((D.W * D.H) / (64 * 42))));
+  for (let i = w.fd; i <= upTo; i++) {
+    const d = w.days[i], s = seasonOfDay(i).key, mean = (d.hi + d.lo) / 2, bg = bgKind(d.k);
+    const rng = new Rng(w.fs);
+    const kinds = [];
+    if (i >= 2) { // the calm first two days of a campaign stay calm
+      if (BG[d.k]) for (let n = rng.chance(FRONT.second) ? 2 : 1; n > 0; n--) kinds.push([d.k, rng.int(0, d.k === "fog" ? 4 : 9)]); // fog before dawn
+      for (const [k, c] of Object.entries(EXTRA[s])) if (rng.chance(c)) kinds.push([k, rng.int(0, 20)]);
+    }
+    const made = [];
+    for (const [k0, at] of kinds) {
+      const f = makeFront(rng, precip(k0, mean), i * 24 + at, D, size, EDGES[s]);
+      if (RANK[f.k] > RANK[bg]) made.push(f); // a rain belt on a rainy day changes nothing
+    }
+    made.sort((a, b) => a.t0 - b.t0);
+    for (const f of made) { f.id = w.nf++; w.fronts.push(f); }
+    w.fs = rng.state;
+    w.fd = i + 1;
+  }
+}
+
+function makeFront(rng, k, t0, D, size, edges) {
+  const def = FRONT_KINDS[k];
+  const r = r1(rng.range(def.r[0], def.r[1]) * size), speed = rng.range(def.speed[0], def.speed[1]);
+  const edge = rng.weighted(Object.keys(edges), (e) => edges[e]);
+  const along = rng.next(), out = r * 0.6;
+  let x = edge === "w" ? -out : edge === "e" ? D.w + out : along * D.w;
+  let y = edge === "n" ? -out : edge === "s" ? D.h + out : along * D.h;
+  const tx = D.w * rng.range(0.2, 0.8), ty = D.h * rng.range(0.2, 0.8);
+  if (k === "fog") { // fog forms where it lies (before dawn) and drifts a little until the day burns it off
+    const fx = D.w * rng.range(0.1, 0.9), fy = D.h * rng.range(0.1, 0.9), a = Math.atan2(ty - y, tx - x);
+    return { k, x: r2(fx), y: r2(fy), vx: r2(Math.cos(a) * speed), vy: r2(Math.sin(a) * speed), r, t0, t1: t0 + rng.int(8, 14), p: r2(rng.next()) };
+  }
+  const len = Math.hypot(tx - x, ty - y) || 1, ux = (tx - x) / len, uy = (ty - y) / len;
+  // Hours until it has left the map on the far side.
+  const tX = ux > 0 ? (D.w + r - x) / ux : ux < 0 ? (-r - x) / ux : Infinity;
+  const tY = uy > 0 ? (D.h + r - y) / uy : uy < 0 ? (-r - y) / uy : Infinity;
+  const life = Math.max(8, Math.min(FRONT.maxLife, Math.round(Math.min(tX, tY) / speed)));
+  return { k, x: r2(x), y: r2(y), vx: r2(ux * speed), vy: r2(uy * speed), r, t0, t1: t0 + life, p: r2(rng.next()) };
+}
+
+// A front's radius at an hour: growing over its first hours (FRONT.growHours), shrinking away over its last.
+const frontRadius = (f, h) => f.r * Math.min(1, (f.t1 - h) / FRONT.fadeHours, (h - f.t0 + 1) / FRONT.growHours);
+
+// The fronts over the map at `hour`, as known at hour `known` (only fronts that had come in by then; Infinity:
+// all of them): [{ f, x, y, r }] in tile units. Kept for the last few thousand asks (travel estimates ask a lot).
+let memoW = null, memoN = 0;
+const memo = new Map();
+function activeFronts(state, hour, known = Infinity) {
+  const w = ensure(state);
+  rec(state, Math.floor(hour / 24));
+  const lag = known >= hour ? 0 : Math.min(2097151, hour - known);
+  if (memoW !== w || memoN !== w.fronts.length || memo.size > 4096) { memo.clear(); memoW = w; memoN = w.fronts.length; }
+  const key = hour * 2097152 + lag;
+  let list = memo.get(key);
+  if (list) return list;
+  list = [];
+  const fr = w.fronts, from = hour - FRONT.maxLife, kn = hour - lag;
+  let lo = 0, hi = fr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (fr[m].t0 <= from) lo = m + 1; else hi = m; }
+  for (let j = lo; j < fr.length && fr[j].t0 <= hour; j++) {
+    const f = fr[j];
+    if (f.t0 > kn || hour >= f.t1) continue;
+    const r = frontRadius(f, hour), dt = hour - f.t0;
+    if (r > 0) list.push({ f, x: f.x + f.vx * dt, y: f.y + f.vy * dt, r });
+  }
+  memo.set(key, list);
+  return list;
+}
+
+// The strongest front over a tile at `hour` (as known at `known`), or null.
+export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
+  if (tileId == null || tileId < 0) return null;
+  const list = activeFronts(state, hour, known);
+  if (!list.length) return null;
+  const [ux, uy] = tileUnits(state, tileId);
+  let best = null;
+  for (const a of list) {
+    const dx = ux - a.x, dy = uy - a.y;
+    if (dx * dx + dy * dy <= a.r * a.r && (!best || RANK[a.f.k] > RANK[best.f.k])) best = a;
+  }
+  return best;
+}
+
+// A day's background sky (the record without its storm, blizzard or fog; the day's temperatures stay the record's:
+// the cold of a blizzard day is the region's): one object per day record. rk: the record's kind.
+const bgCache = new WeakMap();
+function bgRec(d) {
+  if (!BG[d.k]) return d;
+  let b = bgCache.get(d);
+  if (b) return b;
+  const k = BG[d.k];
+  b = { ...d, k, rk: d.k, rain: d.k === "storm" ? r2(d.rain * 0.5) : d.rain, snow: d.k === "blizzard" ? r2(d.snow * 0.55) : d.snow, wind: d.k === "fog" ? d.wind : r2(d.wind * 0.5) };
+  bgCache.set(d, b);
+  return b;
+}
+// The weather under a front: its kind (rain or snow by the day's cold), cooler or warmer than the day's record for
+// it (a rain belt on a clear day: 3 °C cooler; a blizzard on a blizzard day: the record's), its rain, snow and wind.
+function frontRec(b, f) {
+  const k = precip(f.k, (b.hi + b.lo) / 2);
+  if (RANK[k] <= RANK[b.k]) return b;
+  const dT = TEMP_MOD[k] - TEMP_MOD[b.rk || b.k], p = f.p ?? 0.5;
+  const rain = k === "storm" ? 0.75 + 0.25 * p : k === "rain" ? 0.3 + 0.3 * p : k === "snow" || k === "blizzard" ? 0 : b.rain;
+  const snow = k === "blizzard" ? 0.8 + 0.2 * p : k === "snow" ? 0.3 + 0.3 * p : k === "rain" || k === "storm" ? 0 : b.snow;
+  const wind = Math.max(b.wind, WIND[k][0] + (WIND[k][1] - WIND[k][0]) * p);
+  return { ...b, k, hi: r1(b.hi + dT), lo: r1(b.lo + dT), rain: r2(rain), snow: r2(snow), wind: r2(wind), front: f };
+}
+// The weather of a tile at an hour (as known at `known`).
+function localRec(state, tileId, hour, known = Infinity) {
+  const b = bgRec(rec(state, Math.floor(hour / 24)));
+  const a = tileId == null ? null : frontAt(state, tileId, hour, known);
+  return a ? frontRec(b, a.f) : b;
+}
+
+// Home: the hub's tile, or before there is a hub (the hardcore start) your first team's.
+export function homeTile(state) {
+  if (!Array.isArray(state.bases)) return null; // a bare state (farming.js climate tables): no home, no fronts
+  const b = hubBase(state);
+  if (b) return b.tile;
+  const p = (state.parties || []).find((x) => x.owner === "player" && Array.isArray(x.path) && x.path.length);
+  return p ? p.path[Math.min(p.idx || 0, p.path.length - 1)] : null;
+}
+
+// A tile's day (farming, water, thirst, exposure and the like go by home's): the front that sat over the tile for
+// a good part of the day (a storm or blizzard 3 hours, anything else 6), else the background sky; the temperatures
+// are the day record's either way.
+const dayCache = new WeakMap();
+function dayRec(state, dayIdx, tileId = homeTile(state)) {
+  const i = Math.max(0, Math.floor(dayIdx));
+  const d = rec(state, i);
+  if (tileId == null) return bgRec(d);
+  const w = state.weather;
+  let m = dayCache.get(w);
+  if (!m || m.size > 20000) dayCache.set(w, (m = new Map()));
+  const key = i * 65536 + tileId;
+  let out = m.get(key);
+  if (out) return out;
+  const b = bgRec(d), hours = new Map();
+  for (let h = i * 24; h < i * 24 + 24; h++) {
+    const a = frontAt(state, tileId, h);
+    if (a) hours.set(a.f, (hours.get(a.f) || 0) + 1);
+  }
+  out = b;
+  for (const [f, n] of hours) {
+    const x = frontRec(b, f);
+    if (x !== b && n >= (x.k === "storm" || x.k === "blizzard" ? 3 : 6) && RANK[x.k] > RANK[out.k]) out = x;
+  }
+  // The day's temperatures stay the region's (heating, appetite, frost and crop growth go by the season's day as
+  // before); a front changes the day's kind, rain, snow and wind.
+  if (out !== b) out = { ...out, hi: b.hi, lo: b.lo };
+  m.set(key, out);
+  return out;
 }
 
 // Temperature at an hour of the day: coldest around 05:00, warmest around 15:00.
@@ -187,16 +415,20 @@ function describe(d, hour) {
     temp: tempAt(d, ((hour % 24) + 24) % 24), hi: d.hi, lo: d.lo,
     rain: d.rain, snow: d.snow, wind: d.wind, severe: !!def.severe,
     mud: d.frozen ? 0 : d.mud, snowCover: d.cover, soil: d.soil, frozen: d.frozen, dryDays: d.dry,
+    front: d.front ? FRONT_KINDS[d.front.k]?.name || def.name : null,
   };
 }
 
-// Current statewide weather (or at a given hour).
-export function weather(state, hour = state.hour) {
-  return describe(rec(state, dayIndex(state, hour)), hour);
+// The weather now (or at a given hour) at home, or on a given tile: the background sky, or the front over it.
+export function weather(state, hour = state.hour, tileId = homeTile(state)) {
+  return describe(localRec(state, tileId, hour), hour);
 }
-export const weatherAt = (state, tileId, hour = state.hour) => weather(state, hour);
-// The true weather of a campaign day (1-based day number, as the clock shows it). For the timelapse and tools.
-export const weatherOnDay = (state, dayNumber) => describe(rec(state, dayNumber - 1), 12);
+export const weatherAt = (state, tileId, hour = state.hour) => weather(state, hour, tileId);
+export const wxAt = (state, x, y, hour = state.hour) => weather(state, hour, y * (state.grid ? state.grid.width : 64) + x);
+// The weather of a campaign day at home (1-based day number, as the clock shows it). For the diary, timelapse, tools.
+export const weatherOnDay = (state, dayNumber) => describe(dayRec(state, dayNumber - 1), 12);
+// The region's weather that day (the day record, storms and all): what the forecast foretells.
+export const regionOnDay = (state, dayNumber) => describe(rec(state, dayNumber - 1), 12);
 
 // ---------- forecast (what the player is told) ----------
 function hash(a, b, c) {
@@ -259,20 +491,32 @@ export function severeSoon(state, days = 1) {
 // ---------- travel ----------
 // Multiplier on the cost of entering `tileId` (from `from`, if given) at `hour`. 1 = normal, higher = slower.
 // Movement (parties.js stepAlong) and every estimate (travelHours) call this with the hour being simulated.
-export function travelFactor(state, { vehicle = false, tileId = null, from = null, hour = state.hour } = {}) {
-  const tf = rec(state, Math.floor(hour / 24)).tf;
+// The day's table is the ground and the background sky; a front over the tile adds its own share (KIND_TF).
+// known: estimates pass the hour they are made in, so only fronts already on the map count (Infinity: all).
+export function travelFactor(state, { vehicle = false, tileId = null, from = null, hour = state.hour, known = Infinity } = {}) {
   let road = false;
   if (tileId != null) {
     const links = from != null ? state.tiles[from]?.roadLinks : null;
     road = links ? links.includes(tileId) : (state.tiles[tileId]?.roadLinks?.length || 0) > 0;
   }
-  return tf[(vehicle ? 2 : 0) + (road ? 0 : 1)];
+  return localTable(state, tileId, hour, known)[(vehicle ? 2 : 0) + (road ? 0 : 1)];
+}
+// The four multipliers on a tile at an hour: the day's table, plus what a front over it adds.
+function localTable(state, tileId, hour, known = Infinity) {
+  const d = rec(state, Math.floor(hour / 24));
+  const a = tileId == null ? null : frontAt(state, tileId, hour, known);
+  if (!a) return d.tf;
+  const b = bgRec(d), k = precip(a.f.k, (b.hi + b.lo) / 2);
+  if (RANK[k] <= RANK[b.k]) return d.tf;
+  const x = KIND_TF[k] || NO_TF, y = KIND_TF[b.k] || NO_TF;
+  return d.tf.map((v, j) => Math.min(3, r2(v + Math.max(0, x[j] - y[j]))));
 }
 
-// Everything weather does to a team on the move right now, plus plain-text lines for panels and tooltips.
-export function travelEffects(state, hour = state.hour) {
-  const d = rec(state, Math.floor(hour / 24));
-  const [footRoad, footOff, vehRoad, vehOff] = d.tf;
+// Everything weather does to a team on the move right now (at home, or on `tileId`: where the team is), plus
+// plain-text lines for panels and tooltips.
+export function travelEffects(state, hour = state.hour, tileId = homeTile(state)) {
+  const d = localRec(state, tileId, hour);
+  const [footRoad, footOff, vehRoad, vehOff] = localTable(state, tileId, hour);
   const k = d.k;
   const sight = k === "fog" || k === "blizzard" ? -1 : 0;
   const ambush = k === "fog" ? 0.08 : k === "blizzard" ? 0.05 : k === "storm" ? 0.03 : 0;
@@ -281,6 +525,7 @@ export function travelEffects(state, hour = state.hour) {
   const boat = k === "storm" ? 2.5 : k === "blizzard" ? 2 : d.wind > 0.5 ? 1.5 : 1;
   const pct = (f) => `${f > 1 ? "+" : ""}${Math.round((f - 1) * 100)}%`;
   const lines = [];
+  if (d.front) lines.push(`${WEATHER[k].icon} ${FRONT_KINDS[d.front.k]?.name || WEATHER[k].name} overhead${frontLeaves(state, tileId, d.front, hour)}`);
   if (footOff > 1.005 || vehOff > 1.005 || footRoad > 1.005 || vehRoad > 1.005) {
     lines.push(`Travel time on foot: roads ${pct(footRoad)}, off-road ${pct(footOff)}`);
     lines.push(`Travel time by vehicle: roads ${pct(vehRoad)}, off-road ${pct(vehOff)}`);
@@ -296,8 +541,9 @@ export function travelEffects(state, hour = state.hour) {
 
 // Called by parties.js once an hour for a player team that moved: storms and blizzards can hurt someone.
 // Returns the survivor who was hurt, or null. Uses the play RNG only in severe weather.
+// The weather where the team is (a storm or blizzard front over it).
 export function travelHazard(state, p, members) {
-  const d = rec(state, dayIndex(state));
+  const d = localRec(state, p.path ? p.path[p.idx] : homeTile(state), state.hour);
   if (!WEATHER[d.k].severe || !members.length) return null;
   const chance = (d.k === "blizzard" ? 0.025 : 0.015) * (p.vehicle ? 0.5 : 1);
   if (!state.rng.chance(chance)) return null;
@@ -359,7 +605,7 @@ export function growingDaysLeft(state, crop, dayIdx = dayIndex(state)) {
 // with moist soil and sun.
 export function growthFactor(state, crop, dayIdx = dayIndex(state)) {
   const c = cropClimate(crop);
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   if (!c.seasons.includes(seasonOfDay(dayIdx).key)) return 0;
   const mean = (d.hi + d.lo) / 2;
   if (mean <= c.tMin) return 0;
@@ -377,7 +623,7 @@ export function growthFactor(state, crop, dayIdx = dayIndex(state)) {
 // reason names the main cause ("" when there is no risk): frost, hard freeze, blizzard, drought, heat, storm, wet, snow.
 export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
   const c = cropClimate(crop);
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   const causes = [];
   const tender = 1 - clamp(c.hardy, 0, 1);
   const shelter = c.sheltered || (c.seasons.length >= 4 && c.hardy >= 1 && !c.tall);
@@ -403,12 +649,12 @@ export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
 
 // Water one rain collector (barrel, tarp) gathers today. A wet day gives about 2-3.5, a storm 4.5-6, melting snow a little.
 export function rainWater(state, dayIdx = dayIndex(state)) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   return r1(d.rain * 6 + d.snow * 1.5);
 }
 // Multiplier on what a well or a stream gives: less in a dry spell, a little more after wet weeks.
 export function wellFactor(state, dayIdx = dayIndex(state)) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   if (d.k === "drought" || d.dry >= 6 || d.soil < 0.15) return 0.6;
   if (d.frozen) return 0.8;
   return d.soil > 0.6 ? 1.15 : 1;
@@ -422,7 +668,7 @@ export const THIRST = { spring: 1, summer: 1.3, autumn: 1, winter: 0.9, heat: 1.
 export const hotDay = (d) => d.k === "heat" || d.hi >= 30;
 export function thirstFactor(state, dayIdx = dayIndex(state)) {
   const s = THIRST[seasonOfDay(dayIdx).key] ?? 1;
-  return hotDay(rec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
+  return hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
 }
 // The factor for the hour a team drinks in (parties.js consume runs after the clock moves on).
 export const thirstAt = (state, hour = state.hour) => thirstFactor(state, dayIndex(state, hour));
@@ -439,7 +685,7 @@ const thirstNote = (f) => (f > 1.001 ? `everyone drinks ${Math.round((f - 1) * 1
 // Chance per person per day spent outdoors (travel, farm work, scavenging) of falling ill from cold or heat.
 // sheltered: indoors with a roof and a fire (a quarter of the risk).
 export function exposureRisk(state, { sheltered = false, dayIdx = dayIndex(state) } = {}) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   let chance = 0, kind = null, reason = "";
   if (d.k === "blizzard") { chance = 0.1; kind = "cold"; reason = "blizzard"; }
   else if (d.lo <= -8) { chance = 0.06; kind = "cold"; reason = "bitter cold"; }
@@ -453,7 +699,16 @@ export function exposureRisk(state, { sheltered = false, dayIdx = dayIndex(state
 
 // Speed multiplier for hordes: the dead stiffen in the cold and flounder in deep snow.
 export function hordeSpeedFactor(state, dayIdx = dayIndex(state)) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
+  const mean = (d.hi + d.lo) / 2;
+  let f = d.k === "blizzard" || mean < -8 ? 0.5 : mean < -2 ? 0.7 : 1;
+  if (d.cover > 0.5) f *= 0.85;
+  return r2(Math.max(0.4, f));
+}
+
+// The same for one horde, by the weather where it is this hour (a blizzard over it halves its pace).
+export function hordeSpeedAt(state, tileId, hour = state.hour) {
+  const d = localRec(state, tileId, hour);
   const mean = (d.hi + d.lo) / 2;
   let f = d.k === "blizzard" || mean < -8 ? 0.5 : mean < -2 ? 0.7 : 1;
   if (d.cover > 0.5) f *= 0.85;
@@ -462,13 +717,13 @@ export function hordeSpeedFactor(state, dayIdx = dayIndex(state)) {
 
 // The mean temperature of a day (°C): what heating (upkeep.js heatRate) and the cold's appetite go by.
 export function dayMeanTemp(state, dayIdx = dayIndex(state)) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   return (d.hi + d.lo) / 2;
 }
 
 // People burn more food keeping warm.
 export function foodNeedFactor(state, dayIdx = dayIndex(state)) {
-  const d = rec(state, dayIdx);
+  const d = dayRec(state, dayIdx);
   const mean = (d.hi + d.lo) / 2;
   return mean < -8 ? 1.2 : mean < 0 ? 1.1 : 1;
 }
@@ -483,12 +738,15 @@ export function coldAhead(state, days = 1) {
 }
 
 // ---------- ticks ----------
-// Once a day (world.js, at midnight): the new day's weather is fixed and anything notable goes in the log.
+// Once a day (world.js, at midnight): the new day's weather is fixed and anything notable goes in the log. The day
+// record is the region's: its storms, blizzards and fog come as fronts that may or may not pass over you.
 export function weatherDaily(state) {
   const w = ensure(state);
   const i = dayIndex(state);
   const d = rec(state, i);
   rec(state, i + 7); // the week ahead, so forecasts and short estimates never generate inside a render
+  // Fronts long gone are dropped (40 days back: the diary and the timelapse do not need them).
+  if (w.fronts.length && w.fronts[0].t1 < state.hour - 40 * 24) w.fronts = w.fronts.filter((f) => f.t1 >= state.hour - 40 * 24);
   if (w.lastLogged === i) return;
   w.lastLogged = i;
   const s = seasonOfDay(i);
@@ -496,7 +754,7 @@ export function weatherDaily(state) {
   if (s.dayOfSeason === 1) log(state, `${s.icon} ${s.name} begins. ${s.desc}`, "info");
   if (!prev || prev.k === d.k) return;
   const def = WEATHER[d.k];
-  if (def.severe) log(state, `${def.icon} ${def.name} today (${Math.round(d.lo)} to ${Math.round(d.hi)} °C): travel is slow and risky.`, "bad");
+  if (def.severe) log(state, `${def.icon} ${d.k === "blizzard" ? "Blizzards" : "Storms"} are about today (${Math.round(d.lo)} to ${Math.round(d.hi)} °C): travel under one is slow and risky. They cross the map from its edges (the Weather layers show where).`, "bad");
   else if (d.k === "snow" && prev.cover < 0.05) log(state, `${def.icon} Snow is falling. Travel slows as it builds up, off-road most of all.`, "info");
   else if (d.k === "heat") log(state, `${def.icon} A heat wave sets in (${Math.round(d.hi)} °C): everyone drinks ${Math.round((THIRST.heat - 1) * 100)}% more water while it lasts.`, "info");
   else if (d.k === "drought") log(state, `${def.icon} A dry spell: no rain in sight and the soil is drying out.`, "info");
@@ -532,13 +790,20 @@ export function weatherReport(state) {
   const rw = rainWater(state);
   if (rw > 0) lines.push(`• Rain water: +${rw} per collector today`);
   const tf = thirstFactor(state);
-  if (thirstNote(tf)) lines.push(`• Water: ${thirstNote(tf)} (${r2(tf)} a day each${hotDay(rec(state, dayIndex(state))) ? ", a hot day" : ` in ${s.name.toLowerCase()}`})`);
+  if (thirstNote(tf)) lines.push(`• Water: ${thirstNote(tf)} (${r2(tf)} a day each${hotDay(dayRec(state, dayIndex(state))) ? ", a hot day" : ` in ${s.name.toLowerCase()}`})`);
   const ex = exposureRisk(state);
   if (ex.chance > 0) lines.push(`• Exposure: ${ex.reason} (${(ex.chance * 100).toFixed(1)}% a day outdoors)`);
   const hs = hordeSpeedFactor(state);
   if (hs < 1) lines.push(`• The dead move at ${Math.round(hs * 100)}% speed in this cold`);
+  const ir = iceText(state);
+  if (ir) lines.push(`• ${ir}`);
+  const near = frontsApproaching(state).filter((x) => !x.over).slice(0, 5);
+  if (near.length) {
+    lines.push("", "Weather fronts on the map:");
+    for (const x of near) lines.push(`${x.icon} ${x.name} ${x.dist} tile${x.dist === 1 ? "" : "s"} ${x.dir}, ${x.eta != null ? `here ${whenText(state, x.eta)}` : `moving ${x.heading}, passing you by`}`);
+  }
   const fc = forecast(state);
-  lines.push("", `Forecast (${fc.length} days${forecastRange(state) < 5 ? "; a watchtower or radio station sees further and better" : ""}):`);
+  lines.push("", `Outlook for the region (${fc.length} days${forecastRange(state) < 5 ? "; a watchtower or radio station sees further and better" : ""}; storms, blizzards and fog come as fronts that may miss you):`);
   for (const f of fc) {
     const hot = f.key === "heat" || f.hi >= 30;
     lines.push(`Day ${f.day}: ${f.icon} ${f.name}, ${f.lo} to ${f.hi} °C${hot ? ` (hot: everyone drinks ${Math.round((THIRST.heat - 1) * 100)}% more water)` : ""}${f.confidence < 0.8 ? " (uncertain)" : ""}`);
@@ -550,7 +815,7 @@ export function weatherReport(state) {
 // A light wash over the land for the map renderer (render.js, "Weather" layer): snow whitens it, rain and storms
 // darken it, fog greys it, heat and dry spells warm it, autumn browns it a little. null = no wash.
 export function weatherTint(state, hour = state.hour) {
-  const d = rec(state, dayIndex(state, hour));
+  const d = bgRec(rec(state, dayIndex(state, hour))); // the statewide sky: the fronts are drawn on their own (ui/wxmap.js)
   const s = seasonOfDay(dayIndex(state, hour)).key;
   if (d.cover >= 0.08) return `rgba(235,240,248,${r2(Math.min(0.42, 0.1 + d.cover * 0.35))})`;
   if (d.k === "blizzard") return "rgba(225,232,242,0.35)";
@@ -562,4 +827,104 @@ export function weatherTint(state, hour = state.hour) {
   if (s === "autumn") return "rgba(170,100,30,0.1)";
   if (s === "winter") return "rgba(170,190,220,0.1)";
   return null;
+}
+
+// ---------- fronts for the UI ----------
+const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
+// The compass direction of a vector in tile units (y grows southward).
+export const compass = (dx, dy) => COMPASS[(Math.round(Math.atan2(-dy, dx) / (Math.PI / 4)) + 8) % 8];
+
+// When something `h` hours from now happens, in words: "within the hour", "by evening (5 h)", "tomorrow morning (19 h)".
+export function whenText(state, h) {
+  if (h <= 1) return "within the hour";
+  const at = state.hour + h, hod = at % 24, days = Math.floor(at / 24) - Math.floor(state.hour / 24);
+  const part = hod < 5 ? "night" : hod < 11 ? "morning" : hod < 14 ? "midday" : hod < 18 ? "afternoon" : hod < 22 ? "evening" : "night";
+  let when;
+  if (days === 0) when = part === "night" ? "tonight" : `by ${part}`;
+  else if (days === 1) when = hod < 5 ? "tonight" : `tomorrow ${part}`;
+  else when = days === 2 ? "the day after tomorrow" : `in ${days} days`;
+  return `${when} (${h} h)`;
+}
+
+// " (clears in about N h)" for a front over a tile.
+function frontLeaves(state, tileId, f, hour = state.hour) {
+  if (tileId == null) return "";
+  const [ux, uy] = tileUnits(state, tileId);
+  for (let t = hour + 1; t <= hour + 72; t++) {
+    if (t >= f.t1) return ` (clears in about ${t - hour} h)`;
+    const x = f.x + f.vx * (t - f.t0), y = f.y + f.vy * (t - f.t0), r = frontRadius(f, t);
+    if ((ux - x) ** 2 + (uy - y) ** 2 > r * r) return ` (clears in about ${t - hour} h)`;
+  }
+  return "";
+}
+
+// The fronts on the map now (as you see them) and what they will do at a tile (home by default): over it now,
+// arriving in `eta` hours (straight on at their speed, as everyone can see), or passing by. Nearest first.
+export function frontsApproaching(state, tileId = homeTile(state), horizon = 48) {
+  const now = state.hour, out = [];
+  if (tileId == null || !state.tiles) return out;
+  const [ux, uy] = tileUnits(state, tileId);
+  const b = bgRec(rec(state, dayIndex(state)));
+  for (const a of activeFronts(state, now, now)) {
+    const f = a.f, k = precip(f.k, (b.hi + b.lo) / 2);
+    if (RANK[k] <= RANK[b.k]) continue; // a rain belt on a rainy day: nothing to see
+    const dist = Math.hypot(ux - a.x, uy - a.y), over = dist <= a.r;
+    let eta = null;
+    if (!over) for (let h = 1; h <= horizon && now + h < f.t1; h++) {
+      const t = now + h, x = f.x + f.vx * (t - f.t0), y = f.y + f.vy * (t - f.t0), r = frontRadius(f, t);
+      if ((ux - x) ** 2 + (uy - y) ** 2 <= r * r) { eta = h; break; }
+    }
+    const def = WEATHER[k];
+    out.push({ f, k, name: FRONT_KINDS[k]?.name || def.name, icon: def.icon, severe: !!def.severe, dist: Math.max(0, Math.round(dist - a.r)), dir: compass(a.x - ux, a.y - uy), heading: compass(f.vx, f.vy), over, eta });
+  }
+  return out.sort((x, y) => (y.over - x.over) || ((x.eta ?? 999) - (y.eta ?? 999)) || x.dist - y.dist);
+}
+
+// The fronts to draw on the map: the ones on it now, where they are `frac` of the way into the coming hour
+// (they glide), in tile units, with the kind they bring (rain or snow by the cold). For ui/wxmap.js.
+export function visibleFronts(state, frac = 0) {
+  const now = state.hour, out = [];
+  if (!state.weather || !state.tiles) return out;
+  const b = bgRec(rec(state, dayIndex(state)));
+  for (const a of activeFronts(state, now, now)) {
+    const f = a.f, k = precip(f.k, (b.hi + b.lo) / 2), t = now + frac;
+    if (RANK[k] <= RANK[b.k]) continue;
+    out.push({ id: f.id, k, name: FRONT_KINDS[k]?.name || WEATHER[k].name, x: f.x + f.vx * (t - f.t0), y: f.y + f.vy * (t - f.t0), r: Math.max(0, frontRadius(f, t)), vx: f.vx, vy: f.vy });
+  }
+  return out;
+}
+
+// ---------- frozen rivers ----------
+// ICE: a river tile freezes once the freezing index (degree-days) reaches ICE.freeze at the map's north edge, up to
+// ICE.south more at its south edge (rivers run from the northern hills southward, so they freeze from their upper
+// reaches down and thaw the other way). Each day adds its mean frost below 0 °C and takes away ICE.thaw × its warmth
+// above, up to ICE.cap: about 3 weeks of ice up north and 2 down south in a usual winter, none in the south in a mild
+// one. On the ice: ICE.walk hours a tile on foot, no vehicles (bikes neither). Thin ice: within ICE.thin of the
+// freezing point (early and late in the freeze); a team on foot may go through (ICE.fall a tile; rivers.js).
+export const ICE = { freeze: 30, south: 15, thaw: 3, cap: 45, walk: 1.75, thin: 5, fall: 0.06 };
+function nextIce(prev, d) {
+  const mean = (d.hi + d.lo) / 2;
+  return r1(clamp((prev || 0) + (mean < 0 ? -mean : -mean * ICE.thaw), 0, ICE.cap));
+}
+export const iceIndex = (state, hour = state.hour) => rec(state, dayIndex(state, hour)).ice || 0;
+const iceNeed = (state, y) => ICE.freeze + ICE.south * (y / Math.max(1, (state.grid ? state.grid.height : 42) - 1));
+// The southernmost row whose rivers are frozen (-1: none).
+export function iceRow(state, hour = state.hour) {
+  const ice = iceIndex(state, hour), H = state.grid ? state.grid.height : 42;
+  if (ice < ICE.freeze) return -1;
+  return Math.min(H - 1, Math.floor(((ice - ICE.freeze) / ICE.south) * (H - 1)));
+}
+export function riverFrozen(state, tileId, hour = state.hour) {
+  const t = state.tiles && state.tiles[tileId];
+  return !!t && t.terrain === "water" && !t.bridge && t.y <= iceRow(state, hour);
+}
+export function thinIce(state, tileId, hour = state.hour) {
+  return riverFrozen(state, tileId, hour) && iceIndex(state, hour) - iceNeed(state, state.tiles[tileId].y) < ICE.thin;
+}
+// A line for the weather report: how far down the rivers are frozen, or how close they are to it.
+export function iceText(state) {
+  const row = iceRow(state), H = state.grid ? state.grid.height : 42;
+  if (row < 0) return iceIndex(state) >= ICE.freeze * 0.6 ? "The rivers are icing up: a few more freezing days and they can be walked across" : "";
+  const part = row >= H - 1 ? "everywhere" : row >= H * 0.6 ? "all but the far south" : row >= H * 0.3 ? "in the north and the middle of the state" : "in the north";
+  return `Rivers frozen ${part}: they can be walked across (${ICE.walk} h a tile, no vehicles), by you, other groups and the dead`;
 }
