@@ -226,7 +226,7 @@ function visit(st, f, n = 2, cargo = {}) {
   const base = st.factions[0];
   base.pop = 20;
   // A group of each kind in the same shape: comfortable stock, no war, nothing on the shelf.
-  const comfy = { food: 120, water: 100, fuel: 40, meds: 20, ammo: 200, parts: 10, scrap: 60, preserved: 40, jars: 20, wood: 80 };
+  const comfy = { food: 120, water: 100, fuel: 40, meds: 20, ammo: 200, parts: 10, scrap: 60, preserved: 40, jars: 20, wood: 80, arrows: 40 };
   const group = (type, extra = {}) => ({ ...base, type, stock: { ...comfy }, wares: [], atWar: 0, goodwill: 30, hitDay: undefined, hordeHitDay: undefined, lostBaseDay: undefined, ...extra });
   const mil = group("military"), com = group("commune"), rai = group("raider"), zea = group("zealot"), tra = group("traders"), fort = group("fortress");
   const ar = newItem("ar", 1), gold = newItem("goldring", 1), whiskey = newItem("whiskey", 1), coffee = newItem("coffee", 1), batt = newItem("batteries", 1);

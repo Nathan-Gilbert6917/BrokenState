@@ -437,6 +437,14 @@ button.mini.pinned { border-color: var(--accent); color: var(--accent); }
 .logbar select { font-size: 0.85rem; padding: 0.05rem 0.3rem; }
 a.lk { color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 0.18em; }
 a.lk:hover { color: var(--accent); text-decoration-style: solid; }
+/* "Why?" on deaths and lost bases (ui/causes.js) */
+a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
+#modal .box.whybox { width: min(40rem, 94vw); }
+.why-head { font-weight: 600; margin: 0.3rem 0 0.4rem; }
+.why-chain { margin: 0.2rem 0 0; padding-left: 1.4rem; line-height: 1.45; }
+.why-chain li { margin: 0.2rem 0; }
+.why-card { margin: 0.3rem 0; }
+.why-card a.lk.why-lk { font-size: 1em; }
 #modal .box.diarybox { width: min(112rem, 98vw); height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
 .dy-filters { margin: 0.25rem 0; gap: 0.3rem; }
 .dy-search { min-width: min(24rem, 60vw); font-size: 1rem; }
@@ -534,6 +542,7 @@ button.wcell.p3 { background: #48472a; color: #f3f0c8; border-color: #8c8650; }
 button.wcell.p4 { background: #4d3b25; color: #f5dfbf; border-color: #8e6a3e; }
 button.wcell.p5 { background: #3b3236; color: #d9c9cf; border-color: #6b5960; }
 button.wcell.over { box-shadow: 0 0 0 2px var(--accent) inset; text-decoration: underline; }
+button.wcell.watch { box-shadow: 0 0 0 2px #e05a4a inset; background: #5a2622; color: #ffe2dc; } /* Guard moved up by the watchtower's alarm (sim/work.js watchPromotions) */
 button.wcell.below { opacity: 0.45; }
 .worktab .wmanual td { opacity: 0.85; }
 .worktab .wtask, .wtask { margin-left: 0.3rem; }
@@ -589,3 +598,136 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .al-pill.danger { border-color: var(--danger); color: #ffd0cc; animation: alpulse 1.8s ease-in-out infinite; }
 @keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
 .al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }
+
+/* The Watching panel (ui/watchlist.js): top left under the running orders, above the Layers box (top and max-height set
+   by placeWatchlist). Map notes' editor (#noteedit) opens where the tile was right-clicked. Roster bulk actions' report. */
+#watchlist { position: absolute; left: 0.6rem; top: 0.6rem; width: 16rem; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
+#watchlist:has(> button:only-child) { width: auto; padding: 0; border: none; background: none; }
+#watchlist .wl-head { gap: 0.4rem; margin-bottom: 0.15rem; }
+#watchlist .wl-sub { margin-top: 0.4rem; border-top: 1px solid var(--line); padding-top: 0.3rem; }
+#watchlist .wl-row { border-top: 1px solid var(--line); padding: 0.25rem 0.1rem; cursor: pointer; }
+#watchlist .wl-row:hover, #watchlist .wl-note:hover { background: var(--panel-2); }
+#watchlist .wl-row.gone { opacity: 0.55; }
+#watchlist .wl-row.gone .wl-name { text-decoration: line-through; }
+#watchlist .wl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#watchlist .wl-x { padding: 0 0.35rem; }
+#watchlist .wl-note { display: flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.1rem; cursor: pointer; }
+#watchlist .wl-note .wl-ntext { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#watchlist .wl-note button { padding: 0 0.35rem; }
+#watchlist .wl-note button.danger { border-color: var(--danger); color: var(--danger); }
+button.wl-pin { padding: 0.05rem 0.35rem; opacity: 0.6; }
+button.wl-pin.on { opacity: 1; border-color: var(--accent); background: #4a3816; }
+#noteedit { position: absolute; z-index: 7; width: 19rem; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 0.45rem 0.55rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5); font-size: 0.85rem; display: grid; gap: 0.4rem; }
+#noteedit .mn-icons { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+#noteedit .mn-ic { padding: 0.15rem 0.35rem; font-size: 1.05rem; line-height: 1.2; }
+#noteedit .mn-ic.on { background: #4a3816; border-color: var(--accent); }
+#noteedit input { width: 100%; }
+body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
+.ro-bar { flex-wrap: wrap; }
+.ro-report { margin: 0.2rem 0 0.5rem; }
+/* The Defence tab (ui/defence.js): the watch roster's 24-hour strip and its watches. */
+.deftab .dcov { display: flex; gap: 2px; height: 2.6rem; align-items: stretch; margin: 0.4rem 0 0.1rem; }
+.deftab .dcell { flex: 1; position: relative; background: #23272e; border-radius: 2px; display: flex; flex-direction: column; justify-content: flex-end; }
+.deftab .dcell i { display: block; background: #3f6b48; border-radius: 2px; min-height: 0; }
+.deftab .dcell.gap { background: #3a2222; }
+.deftab .dcell.cur { outline: 1px solid var(--accent, #e0a84f); }
+.deftab .dcell span { position: absolute; bottom: -1.05rem; left: 0; font-size: 0.65rem; color: var(--muted); }
+.deftab .dcov + div { margin-top: 1.1rem !important; }
+.deftab .dshift.now { border-color: #6c8f5a; }
+.deftab .dshname { width: 7rem; font-weight: 700; }
+.deftab button.chip { border: none; cursor: pointer; }
+/* The first-week guide under the alerts (ui/guide.js), and the pulse its Show me puts on the button to press. */
+.guide { background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); padding: 0.3rem 0.45rem 0.4rem 0.55rem; margin-top: 0.25rem; font-size: 0.95rem; }
+.gd-head { display: flex; align-items: center; gap: 0.3rem; }
+.gd-title { flex: 1; font-weight: bold; color: var(--accent); }
+.gd-count { font-size: 0.85rem; color: var(--muted); }
+.gd-btn { border: none; background: none; padding: 0 0.4rem; opacity: 0.65; font-size: 0.9rem; }
+.gd-btn:hover:not(:disabled) { opacity: 1; }
+.gd-next { color: var(--muted); margin-top: 0.1rem; }
+.gd-step { display: flex; align-items: center; gap: 0.3rem; line-height: 1.3; }
+.gd-step.done { opacity: 0.55; padding: 0.12rem 0; }
+.gd-step.done .gd-mark { color: var(--good); }
+.gd-mark { display: inline-block; width: 1.3rem; text-align: center; margin-right: 0.15rem; }
+.gd-go { flex: 1; text-align: left; border: none; background: none; padding: 0.15rem 0; font-size: 0.95rem; }
+.gd-step.cur .gd-go { color: var(--accent); font-weight: bold; }
+.gd-show { font-size: 0.8rem; padding: 0.08rem 0.45rem; white-space: nowrap; }
+.gd-why { font-size: 0.86rem; color: var(--muted); margin: 0 0 0.3rem 1.45rem; line-height: 1.35; }
+.gd-pulse { outline: 2px solid #ffd166; outline-offset: 2px; animation: gdpulse 1s ease-in-out 10; }
+@keyframes gdpulse { 50% { box-shadow: 0 0 0 0.4rem rgba(255,209,102,0.45); outline-color: #fff2c4; } }
+/* The Ledger, the run summary and the top bar's stock trends (ui/ledger.js). */
+#modal .box.ledgerbox { width: min(100rem, 96vw); height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+#modal .win.sized > .box.ledgerbox { display: flex; flex-direction: column; }
+.ld-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.4rem; margin-top: 0.3rem; }
+.ld-row { border-top: 1px solid var(--line); padding: 0.45rem 0 0.4rem; }
+.ld-row.ld-empty { padding: 0.3rem 0; }
+.ld-head { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; font-size: 1.05rem; }
+.ld-legend { margin-left: auto; }
+.ld-key::before { content: ""; display: inline-block; width: 0.9em; height: 0.3em; margin-right: 0.3em; vertical-align: middle; background: var(--c); border-radius: 2px; }
+.ld-read { min-height: 1.4em; margin: 0.1rem 0 0.25rem; font-variant-numeric: tabular-nums; }
+.ld-read .info { color: var(--info); }
+.ld-charts { display: grid; gap: 0.8rem; grid-template-columns: 1fr; }
+.ld-charts.ld-n2 { grid-template-columns: 3fr 2fr; }
+.ld-chart { width: 100%; height: 6.5rem; display: block; background: var(--panel-2); border-radius: 6px; cursor: crosshair; }
+#topbar .stock .trend { font-size: 0.8em; margin-left: 0.1rem; }
+.tip-spark { margin-top: 0.35rem; display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; }
+.tip-spark svg { width: 11rem; height: 2.4rem; background: var(--panel-2); border-radius: 4px; }
+#modal .box.rsbox { width: min(90rem, 96vw); }
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(26rem, 100%), 1fr)); gap: 0 1.1rem; }
+.rs-grid .ld-chart { height: 7rem; }
+.rs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
+.rs-causes { display: grid; gap: 0.3rem; max-width: 48rem; }
+.rs-cause { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr 3rem; align-items: center; gap: 0.6rem; }
+.rs-bar { height: 0.8rem; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.rs-bar i { display: block; height: 100%; background: var(--danger); }
+.rs-events { max-width: 75rem; }
+.rs-over { margin: 0.4rem 0 0.9rem; }
+/* The save list grouped by campaign (ui/savelist.js) and the error screen (ui/crash.js). */
+.settings .sgroup { margin: 0.55rem 0 0.05rem; padding: 0 0.2rem 0.15rem; border-bottom: 1px solid var(--line); }
+.settings .sgroup:first-child { margin-top: 0; }
+#crash { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,0.82); }
+#crash .crashbox { background: var(--panel); border: 1px solid var(--danger); border-radius: 12px; padding: 1.1rem 1.4rem; width: min(44rem, 94vw); max-height: 92vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,0.7); line-height: 1.5; }
+#crash h1 { margin: 0 0 0.4rem; color: var(--danger); font-size: 1.4rem; }
+#crash .crasherr { font-family: Consolas, monospace; font-size: 0.9rem; background: var(--panel-2); border-left: 3px solid var(--danger); padding: 0.4rem 0.6rem; border-radius: 4px; overflow-wrap: anywhere; }
+#crash .crashbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.8rem 0 0.6rem; }
+#crash textarea { width: 100%; box-sizing: border-box; font-family: Consolas, monospace; font-size: 0.78rem; margin-top: 0.3rem; resize: vertical; }
+/* The card tray (ui/pacing.js): cards that do not stop the clock wait in a strip at the top of the map. */
+#banner > .tray { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.3rem; max-width: min(64rem, 62%);
+  background: rgba(20,22,26,0.93); border-color: var(--line); padding: 0.25rem 0.45rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.tray-h { color: var(--muted, #9aa3ad); font-size: 0.85rem; margin-right: 0.15rem; }
+.tray-chip { padding: 0.12rem 0.55rem; border-radius: 99px; font-size: 0.85rem; background: #2c3139; white-space: nowrap; }
+.tray-chip .ti { margin-right: 0.3rem; }
+.tray-chip .tl { color: var(--accent); margin-left: 0.2rem; font-size: 0.78rem; }
+.tray-chip.soon { border-color: var(--accent); }
+.tray-chip.soon .tl { color: #ffd166; font-weight: bold; }
+#banner > .tray button.mini { padding: 0.05rem 0.4rem; font-size: 0.78rem; }
+#banner .pause-why { color: #ffe6a8; margin-right: 0.3rem; }
+.tray-note { font-size: 0.85rem; color: var(--muted, #9aa3ad); border-bottom: 1px solid var(--line); padding-bottom: 0.35rem; margin-bottom: 0.45rem; }
+.tray-note button { margin-left: 0.4rem; padding: 0.05rem 0.5rem; }
+/* Readability (Menu → Options → Display, ui/display.js). Colour-blind-safe colours: blue for good, orange for bad
+   (ui/palette.js holds the same set for the canvas). Reduce motion: no CSS animation or transition anywhere. */
+:root.cb { --good: #56b4e9; --danger: #e69f00; --death: #d55e00; }
+:root.cb .warn { color: #f0e442; }
+:root.cb .chip.on { background: #17344a; }
+:root.cb .chip.off { background: #45300f; }
+:root.cb .perk.taken { background: rgba(86, 180, 233, 0.18); }
+:root.cb .al.al-warn { border-left-color: #f0e442; }
+:root.calm *, :root.calm *::before, :root.calm *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+
+/* The minimap (ui/minimap.js): the map's bottom-right corner, sized in rem so it grows with the UI size. */
+#minimap { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 4; width: var(--minimap-w, 15rem); max-width: calc(50% - 1rem); border: 1px solid var(--line); border-radius: 6px; background: #0d0f12; box-shadow: 0 4px 14px rgba(0,0,0,0.5); overflow: hidden; }
+#minimap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#minimap .mm-hide { position: absolute; top: 0.2rem; left: 0.2rem; padding: 0 0.4rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
+#minimap .mm-hide:hover { opacity: 1; }
+#mm-show { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 4; padding: 0.15rem 0.55rem; font-size: 0.8rem; background: rgba(20,22,26,0.88); }
+#mapwrap:has(#minimap:not(.hidden)) #fps { bottom: auto; top: 0.6rem; right: auto; left: 50%; transform: translateX(-50%); }
+#mapwrap:has(#minimap:not(.hidden)) #alerts { max-height: calc(55% - 1.8rem); }
+body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
+
+/* The one confirmation box (ui/confirm.js; the menu's questions use it too): over everything, Enter / Esc. */
+#ask { position: fixed; inset: 0; z-index: 30; }
+.askwrap { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
+.askbox { width: min(30rem, 92vw); background: var(--panel); border: 1px solid var(--danger); border-radius: 10px; padding: 0.9rem 1.1rem; box-shadow: 0 16px 48px rgba(0,0,0,0.7); }
+.askbox .asktitle { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem; }
+.askbox .asktext { line-height: 1.5; color: var(--text); margin-bottom: 0.6rem; }
+.askbox .askskip { display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; color: var(--muted); cursor: pointer; margin-bottom: 0.6rem; }
+.askbox .askbtns { display: flex; gap: 0.5rem; justify-content: flex-end; }

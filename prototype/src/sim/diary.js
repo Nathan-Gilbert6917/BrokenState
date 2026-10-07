@@ -49,7 +49,7 @@ const ORDER = ["d", "h", "c", "m", "t", "p", "f", "b"];
 // Checked first: lines whose subject is clear from how they start, whatever else they mention.
 const FIRST = [
   [/^[A-Z][A-Za-z /-]* team \(/, "p"],                       // "Scavenge / raid team (Cole, Jonah) is home with 3 meds"
-  [/\broles:|queued at |^Queued | finished at |Gear handed out|talks about leaving|close to leaving|grown close|\bdog\b|rose to \d|took the perk|cannot stand|become friends|survivor alone|at the gate|^Refugees/, "b"],
+  [/\broles:|queued at |^Queued | finished at |Gear handed out|talks about leaving|close to leaving|grown close|\bdog\b|rose to \d|took the perk|cannot stand|become friends|survivor alone|at the gate|^Refugees|was born\b|expecting a child|has grown up|hard birth|to be with \w+\.$/, "b"],
 ];
 export function classify(text, kind = "info") {
   const body = text.startsWith(ROBOT) ? text.slice(ROBOT.length).trim() : text;

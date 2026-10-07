@@ -1,4 +1,5 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
+import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
@@ -14,6 +15,7 @@ import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
 import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
+import { planFor, planStale, planKey, PLAN_MAPS } from "../sim/defenceplan.js"; // the base's defence plan (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
@@ -90,7 +92,7 @@ const CDEF = (c) => CELL[c.k] || VOIDDEF;
 const players = (b) => b.units.filter((u) => u.side === "player");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = (u) => Math.max(0, Math.min(1, u.hp / u.maxHp));
-const hpColor = (f) => (f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f");
+const hpColor = (f) => (f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad);
 
 // New battle: reset the screen state.
 function sync(b) {
@@ -521,6 +523,7 @@ export function combatKey(state, e) {
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
+    if (b.drill) { if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space"; }
     if (e.code === "Enter" || e.code === "NumpadEnter") { act(state, { type: "start" }); return true; }
     if (e.code === "Space") { cui.msg = "Place your defenders, then press Enter or Start the fight."; return true; }
   }
@@ -586,7 +589,7 @@ export function combatAction(state, key, d) {
   if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
   // The AI plays your side from here on (combatTick), or you take back control.
   if (key === "cb-autoplay") {
-    if (b.over) return;
+    if (b.over || b.drill) return; // a drill has nothing to play
     cui.autoPlay = !cui.autoPlay;
     cui.lastStep = 0;
     cui.msg = cui.autoPlay ? "The AI is playing your side. Shift+A or Take back control to play again." : "Your side is yours again.";
@@ -629,6 +632,7 @@ export function combatAction(state, key, d) {
     if (d.v === "defaults") return void act(state, { type: "defaults" });
     if (d.v === "flood") return void act(state, { type: "flood", zone: d.z });
     if (d.v === "gate" && u) return void act(state, { type: "gate", unit: u.id });
+    if (d.v === "plan" || d.v === "savePlan" || d.v === "endDrill") return void act(state, { type: d.v }); // sim/defenceplan.js
     return;
   }
   // The result screen: take the knocked out home as prisoners, or leave them tied up (sim/prisoners.js).
@@ -791,7 +795,8 @@ export function renderCombatPanel(state) {
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
-  html += b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
+  html += b.drill ? `<div class="cbhead"><div class="cbtitle">Defence drill at ${esc(((state.bases.find((x) => x.id === b.setup.baseId)) || {}).name || b.place)}</div>
+    <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
     <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
@@ -1084,13 +1089,13 @@ function deployPanel(state, b, u) {
   }
   const holders = players(b).filter((p) => p.post === "gate").map((p) => p.name);
   const towers = players(b).filter((p) => p.post === "tower").map((p) => p.name);
-  let html = `<h3>Deploy · the attack comes from the ${esc(D.side || "east")}</h3>
+  let html = `<h3>${b.drill ? `Drill · ${D.fort ? "the plan holds from any side" : "facing an attack from the east (it turns with the attack)"}` : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
     <div class="small muted">Click a defender, then a green cell to place them: on the walkway behind the wall (▲ height 1: shoot down over the wall, +5 aim, half cover; up the ladders), on a tower (▲▲ height 2: full cover, +10 aim, the widest view), in the gate or a breach (orange: whoever stands there holds it and blocks the way), or anywhere inside. The attackers batter the wall and the gate (hit points) and come through the openings.</div>
     <div class="small" style="margin-top:0.3rem">${D.walled ? `Holding the gate: <b>${holders.length ? esc(holders.join(", ")) : "nobody"}</b>${towers.length ? ` · On the towers: <b>${esc(towers.join(", "))}</b>` : ""}` : "No walls built here: defenders stand in the yard behind the barricades."}</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
       <button data-action="cb-deploy" data-v="defaults" data-tip="Back to the default posts: the toughest fighters in the gate (with 7+ defenders), the best shots on the towers, the rest in a line well back from the openings.">Default positions</button>
-    </div>`;
+    </div>${planRow(state, b)}`;
   if (D.floodlit) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the approach: shots at anything in the light get +${b.floodAim}${D.night ? " (night)" : " (day)"}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
@@ -1098,9 +1103,27 @@ function deployPanel(state, b, u) {
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
-  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
+  html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
   return html;
+}
+
+// The base's defence plan in the deploy step (sim/defenceplan.js): back to the planned posts, or keep these as the plan.
+function planRow(state, b) {
+  const key = planKey(b);
+  if (!key) return "";
+  const plan = planFor(state, b), stale = planStale(state, b);
+  const where = PLAN_MAPS[key];
+  return `<div class="cbactions" style="margin-top:0.3rem">
+      ${b.drill ? "" : `<button data-action="cb-deploy" data-v="plan" ${plan ? "" : "disabled"} data-tip="${esc(plan ? `Back to this base's defence plan for ${where} (made on day ${plan.day}): everyone in it to their planned post. The plan was taken up by itself as the attack began; this undoes your changes.` : stale || "This base has no defence plan yet: place everyone, then Save as plan (or plan it ahead in the base's Defence tab).")}">Planned posts</button>`}
+      <button ${b.drill ? 'class="primary" ' : ""}data-action="cb-deploy" data-v="savePlan" data-tip="${esc(`Keep where everyone stands now as this base's defence plan for ${where}: from the next attack on, they take up these posts by themselves in the deploy step (and in fights played out without you).${plan ? " Replaces the plan it has." : ""}`)}">Save as plan</button>
+    </div>${stale && !b.drill ? `<div class="small muted">${esc(stale)}</div>` : ""}`;
+}
+// A drill's foot: nothing to start, only to save and close.
+function drillFoot(state, b) {
+  const plan = planFor(state, b);
+  return `<div class="cbfoot"><button data-action="cb-deploy" data-v="endDrill" data-tip="${esc(plan ? "Close the drill. The plan is kept as last saved." : "Close the drill. Nothing was saved as a plan: the default posts are used.")}">Close the drill</button>
+    <span class="small muted">${plan ? `Plan saved (day ${plan.day}, ${plan.posts.length} posts).` : "No plan saved yet."}</span></div>`;
 }
 
 // ---------- a base battle's tiers (sim/deploy.js, sim/interior.js) ----------
@@ -1141,12 +1164,12 @@ function fallBackConfirmHtml(b) {
 // The deploy step on the yard and buildings map: a base without walls, or the redeploy after falling back.
 function interiorDeployPanel(state, b, u, D) {
   const after = b.tier && b.tier.fellBackTurn != null;
-  let html = `<h3>${after ? "Redeploy · falling back" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
+  let html = `<h3>${after ? "Redeploy · falling back" : b.drill ? "Drill · facing an attack from the east (it turns with the attack)" : `Deploy · the attack comes from the ${esc(D.side || "east")}`}</h3>
     <div class="small muted">${after ? "Your people have left the wall. Place them on the green cells (near where they were, away from the attackers):" : "No walls here: the attackers come straight over the yard. Place your defenders on the green cells:"} in the buildings (barred doors, half cover at the windows), on an upper floor or a flat roof (▲ height 1: further sight, +5 aim down, half cover), on a tower (▲▲), or behind the barricades.</div>
     <div class="cbactions" style="margin-top:0.4rem">
       <button data-action="cb-deploy" data-v="defaults" data-tip="The default posts: the best shots on the towers, upper floors and roofs, then at the windows; close fighters inside by the doors; the rest behind cover in the yard.">Default positions</button>
       ${after ? `<button class="${cui.autoRedeploy ? "active" : ""}" data-action="cb-redeploy" data-tip="When on, falling back skips this step: your people take the default posts and the fight goes on at once. Remembered in this browser.">${cui.autoRedeploy ? "✔" : "✗"} Skip this next time</button>` : ""}
-    </div>`;
+    </div>${planRow(state, b)}`;
   if (D.floodlit) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the yard: shots at anything in the light get +${b.floodAim}${D.night ? ", and at night your people see what stands in it" : ""}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
@@ -1154,7 +1177,7 @@ function interiorDeployPanel(state, b, u, D) {
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
-  html += `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
+  html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight goes on. (Enter)">${after ? "Hold the yard" : "Start the fight"}</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
   void u;
   return html;
@@ -1448,16 +1471,16 @@ export function drawCombat(state, now) {
   // Evac strip.
   if (b.evacCols && b.evacMask) {
     // A base battle's way out, on the side away from the attack (sim/deploy.js).
-    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    ctx.fillStyle = `rgba(${PAL.goodRgb},0.16)`;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.evacMask[y * W + x]) ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
   } else if (b.evacCols) {
-    ctx.fillStyle = "rgba(108,196,138,0.16)";
+    ctx.fillStyle = `rgba(${PAL.goodRgb},0.16)`;
     ctx.fillRect(ox, oy, b.evacCols * cs, H * cs);
-    ctx.strokeStyle = "rgba(108,196,138,0.7)";
+    ctx.strokeStyle = `rgba(${PAL.goodRgb},0.7)`;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(ox + 1, oy + 1, b.evacCols * cs - 2, H * cs - 2);
     ctx.setLineDash([]);
-    ctx.fillStyle = "#6cc48a";
+    ctx.fillStyle = PAL.good;
     ctx.font = `600 ${Math.round(cs * 0.28)}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
     ctx.fillText("EVAC", ox + b.evacCols * cs / 2, oy - 6);
@@ -1498,7 +1521,7 @@ export function drawCombat(state, now) {
   // Treat targets.
   if (cui.mode === "meds" && u) {
     for (const p of players(b)) if (!p.dead && !p.left && (p === u || adjacent(u, p))) {
-      ctx.strokeStyle = "#6cc48a"; ctx.lineWidth = 2;
+      ctx.strokeStyle = PAL.good; ctx.lineWidth = 2;
       ctx.strokeRect(ox + p.x * cs + 3, oy + p.y * cs + 3, cs - 6, cs - 6);
     }
   }
@@ -1554,7 +1577,7 @@ export function drawCombat(state, now) {
     for (const p of askPlan(b).units) {
       const t = unitById(b, p.id);
       const label = p.safe ? "SAFE" : `${p.chance}%`;
-      const col = p.safe || p.chance >= 75 ? "#6cc48a" : p.chance >= 45 ? "#e0a84f" : "#e2685f";
+      const col = p.safe || p.chance >= 75 ? PAL.good : p.chance >= 45 ? PAL.mid : PAL.bad;
       const x = ox + (t.x + 0.5) * cs, y = oy + t.y * cs + 2;
       const tw = ctx.measureText(label).width + 10, th = Math.max(14, cs * 0.36);
       ctx.fillStyle = "rgba(15,17,20,0.88)";
@@ -1573,7 +1596,7 @@ export function drawCombat(state, now) {
     const t = unitAt(b, h.x, h.y);
     if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
       const o = odds(b, u, t);
-      const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? "#6cc48a" : o.chance >= 35 ? "#e0a84f" : "#e2685f";
+      const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? PAL.good : o.chance >= 35 ? PAL.mid : PAL.bad;
       ctx.strokeStyle = col;
       ctx.lineWidth = 2;
       if (!o.ok) ctx.setLineDash([4, 5]);
@@ -1662,9 +1685,9 @@ function drawBanner(b, cw, cs) {
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? (b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "deploy" ? (b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
-  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? "#6cc48a" : "#e2685f") : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : "#e2685f";
+  const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? PAL.good : PAL.bad) : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : PAL.bad;
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center";
   const tw = ctx.measureText(label).width + 28;
@@ -1684,15 +1707,15 @@ function drawRaidOverlay(b, cs) {
   const R = b.raid;
   ctx.textAlign = "center";
   R.zones.forEach((z) => {
-    ctx.fillStyle = z.vehicle ? "rgba(90,160,255,0.18)" : "rgba(108,196,138,0.18)";
+    ctx.fillStyle = z.vehicle ? "rgba(90,160,255,0.18)" : `rgba(${PAL.goodRgb},0.18)`;
     ctx.fillRect(ox + z.x0 * cs, oy + z.y0 * cs, z.w * cs, z.h * cs);
-    ctx.strokeStyle = z.vehicle ? "rgba(140,190,255,0.9)" : "rgba(108,196,138,0.85)";
+    ctx.strokeStyle = z.vehicle ? "rgba(140,190,255,0.9)" : `rgba(${PAL.goodRgb},0.85)`;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(ox + z.x0 * cs + 1, oy + z.y0 * cs + 1, z.w * cs - 2, z.h * cs - 2);
     ctx.setLineDash([]);
     ctx.font = `700 ${Math.max(9, Math.round(cs * 0.3))}px Segoe UI, sans-serif`;
-    ctx.fillStyle = z.vehicle ? "#a9cbff" : "#6cc48a";
+    ctx.fillStyle = z.vehicle ? "#a9cbff" : PAL.good;
     const ty = z.y0 === 0 ? oy + (z.y0 + z.h) * cs + cs * 0.35 : oy + z.y0 * cs - 4;
     ctx.fillText(z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", ox + (z.x0 + z.w / 2) * cs, ty);
   });
@@ -1742,9 +1765,9 @@ function drawBaseOverlay(b, cs) {
   if (!D || b.phase !== "deploy") return;
   const band = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) band[i] = canPlace(b, i % W, (i / W) | 0) ? 1 : 0;
-  ctx.fillStyle = "rgba(108,196,138,0.13)";
+  ctx.fillStyle = `rgba(${PAL.goodRgb},0.13)`;
   for (let i = 0; i < W * H; i++) if (band[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
-  outline(band, (k) => k === 1, "rgba(108,196,138,0.8)");
+  outline(band, (k) => k === 1, `rgba(${PAL.goodRgb},0.8)`);
   ctx.strokeStyle = "#e0a84f";
   ctx.lineWidth = 2.5;
   for (const [x, y] of [...D.gate, ...D.breaches]) ctx.strokeRect(ox + x * cs + 2, oy + y * cs + 2, cs - 4, cs - 4);
@@ -1752,7 +1775,7 @@ function drawBaseOverlay(b, cs) {
   const dir = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] }[D.side] || [1, 0];
   const s = cs * 0.5;
   const ax = ox + (W / 2) * cs + dir[0] * ((W / 2) * cs - s * 1.4), ay = oy + (H / 2) * cs + dir[1] * ((H / 2) * cs - s * 1.4);
-  ctx.fillStyle = "#e2685f";
+  ctx.fillStyle = PAL.bad;
   ctx.beginPath();
   ctx.moveTo(ax - dir[0] * s * 0.2, ay - dir[1] * s * 0.2);
   ctx.lineTo(ax + dir[0] * s + dir[1] * s * 0.7, ay + dir[1] * s + dir[0] * s * 0.7);
@@ -1787,7 +1810,7 @@ function drawHeights(b, cs) {
     if (c.mhp && (c.hp < c.mhp || c.k === "gate")) {
       const f = Math.max(0, c.hp / c.mhp);
       ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8, 4);
-      ctx.fillStyle = f > 0.6 ? "#6cc48a" : f > 0.3 ? "#e0a84f" : "#e2685f"; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8 * f, 4);
+      ctx.fillStyle = f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad; ctx.fillRect(px + cs * 0.1, py + cs - 6, cs * 0.8 * f, 4);
     }
   }
 }
@@ -2386,7 +2409,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     }
     return;
   }
-  if (t.down) ring = t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? "#6cc48a" : "#e2685f"; // ko: knocked out (sim/stealth.js)
+  if (t.down) ring = t.ko ? (t.tied ? "#c9a74a" : "#9aa0a8") : t.stab ? PAL.good : PAL.bad; // ko: knocked out (sim/stealth.js)
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player" && !t.down;
   // Ground ring (side color) and shadow.
   ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -2532,7 +2555,7 @@ function drawFx(b, now, cs) {
     const text = f.text ? f.text : f.type === "loot" ? f.text : f.type === "heal" ? "+" : f.hit ? `${f.crit ? "CRIT " : ""}-${f.dmg}` : "MISS";
     ctx.font = `800 ${Math.round(cs * (f.crit ? 0.36 : 0.3))}px Segoe UI, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(108,196,138,${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
+    ctx.fillStyle = f.type === "loot" ? `rgba(255,209,102,${a})` : f.type === "heal" ? `rgba(${PAL.goodRgb},${a})` : f.acid ? `rgba(170,230,70,${a})` : f.hit ? `rgba(255,${f.crit ? 210 : 110},90,${a})` : `rgba(210,210,210,${a})`;
     ctx.strokeStyle = `rgba(0,0,0,${a})`;
     ctx.lineWidth = 3;
     const y = ty - cs * 0.5 - (el / 1400) * cs * 0.6;

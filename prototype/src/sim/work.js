@@ -6,8 +6,12 @@
 //   pri: missing / 0 = never. min: the skill a member needs for that type (Medicine 4 for Doctor, …).
 //   sched: one letter per hour of the day: w work (priorities), g guard watch, f free time, s sleep.
 //   crew: the field settings of a crew role (crews.js); its members work the base by `pri` while they are home.
-// s.work = { role: id | null, over: { type: 0..5 } }   (no s.work / role null: Manual, today's fixed role)
+// s.work = { role: id | null, over: { type: 0..5 }, watch? }   (no s.work / role null: Manual, today's fixed role)
 //   over: one cell overridden for this person (0 = never), on top of the role's default.
+//   watch: { base, was, hour, off? } while the watchtower's alarm at their base has moved Guard, a backup job of
+//   theirs (set below their first priority), up to priority 1 (watchPromotions; `was` is what it was then, for the
+//   UI). Their own cells are not touched: when the horde has gone, or they leave the base, the flag goes and Guard is
+//   back where it was. Setting the Guard cell by hand sets `off`: their own setting holds until the alarm is over.
 // s.task = what they do this hour and why (the Work tab, the roster, the survivor screen).
 //
 // Every hour (world.js tickHour, before stewards and the autopilot) each base with people on priorities is planned:
@@ -16,8 +20,12 @@
 //      → rest. Then emergencies: raiders warned or at the walls, or the defences manned → everyone with Guard set
 //      (any priority) guards; a horde warned and coming, or next to the walls → as many of them as it takes to hold
 //      it with a quarter to spare (defences.js hold limit), best shots first, all of them when that is not enough.
-//      Then the role's schedule (guard watch, free time, sleep), then free time for anyone whose mood is very low
+//      Then the base's watch roster (watch.js: on their shift they stand guard), then the role's schedule (guard
+//      watch, free time, sleep), then free time for anyone whose mood is very low
 //      (below 25, until 40).
+//   2b. The watchtower's alarm (defences.js towerWatch: a horde near a base with a watchtower): Guard counts as
+//      priority 1 for everyone there who has it set lower than their first priority, and the walls take as many
+//      more lookouts as it takes to hold that horde with a quarter to spare (at least one), first at priority 1.
 //   3. Everyone else, priority 1 first: each work type has work now (hasWork), room for more hands (capacity) and
 //      may need a skill (the role's minimum); at each priority the most urgent type and the best-skilled person go
 //      first (a small bonus for staying on the same job; ties by id, then column order). Whoever finds nothing at 1
@@ -33,7 +41,7 @@
 // Adding a work type (hunting, fishing …) is one entry in WORK_TYPES: name, the role it maps onto, the skill that
 // orders people, open (capacity, urgency, why not), can (this person), take (the assignment) and holds (counts a
 // Manual person already doing it).
-import { atBase, skill, combatPower, hourOfDay } from "./world.js";
+import { atBase, skill, combatPower, hourOfDay, baseById, log } from "./world.js";
 import { SKILLS, SKILL_NAMES } from "./data.js";
 import { BUILDINGS, RECIPES, stations, underAttack, assignStations } from "./buildings.js";
 import { hasOrder, orderHold, stationIO, stationOrder } from "./production.js";
@@ -49,12 +57,13 @@ import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
 import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
-import { DEFENCE, wallHold, defenceMult, spikeKill, manned } from "./defences.js";
+import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
 import { waterIn } from "./water.js"; // purified and un-purified water count together
+import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 
 export const PRIO_MAX = 5;
@@ -121,11 +130,12 @@ export const WORK_TYPES = {
   },
   guard: {
     name: "Guard", ing: "On guard", short: "Grd", role: "guard", skill: "shooting",
-    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work). Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
+    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work). While a watchtower sees a horde near, Guard is priority 1 for everyone who has it set as a backup job, and the walls take as many more as it takes to hold that horde (at least one), before any other work. Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
     open(ctx) {
       const n = ctx.people.length;
-      const cap = (n >= 4 ? 1 : 0) + (n >= 12 ? 1 : 0) + (ctx.threat.standing ? 1 : 0) + prisonGuardsWanted(ctx.state, ctx.base); // prisoners-tab: one for the cells, one per 4 prisoners out at work
-      return cap ? { cap, urg: ctx.threat.standing ? 6 : 2 } : { cap: 0, why: "no lookout needed (fewer than 4 people, nothing in sight)" };
+      const watch = ctx.threat.watch ? Math.max(1, ctx.watchNeed || 0) : 0; // the watchtower's alarm: the hands to hold the horde it sees
+      const cap = (n >= 4 ? 1 : 0) + (n >= 12 ? 1 : 0) + (ctx.threat.standing ? 1 : 0) + watch + prisonGuardsWanted(ctx.state, ctx.base); // prisoners-tab: one for the cells, one per 4 prisoners out at work
+      return cap ? { cap, urg: watch ? 9 : ctx.threat.standing ? 6 : 2 } : { cap: 0, why: "no lookout needed (fewer than 4 people, nothing in sight)" };
     },
     rank: (s) => combatPower(s) * 2,
   },
@@ -275,7 +285,7 @@ export const WORK_TYPES = {
   // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
   hunt: {
     name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
-    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk: their own rifle, bow or gun (this base's ammo), snares without one. Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun (this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
     open(ctx) {
       const why = huntWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
@@ -512,12 +522,25 @@ export const roleOf = (state, s) => (s && s.work ? roleById(state, s.work.role) 
 // On priorities: in a role (and not pinned). Pinned people keep what they do.
 export const isManaged = (state, s) => !!s && !s.pinned && !!roleOf(state, s);
 
-// A cell: { p (0 = never), over (set for this person), def (the role's) }.
+// A cell: { p (0 = never), over (set for this person), def (the role's), watch (Guard moved up to 1 by the
+// watchtower's alarm: what it is otherwise) }.
 export function cellOf(state, s, key) {
+  const c = ownCell(state, s, key);
+  return key === "guard" && onWatch(s) && c.p > 0 ? { ...c, p: 1, watch: c.p } : c;
+}
+function ownCell(state, s, key) {
   const role = roleOf(state, s);
   const def = role ? role.pri[key] || 0 : 0;
   const o = s.work && s.work.over && s.work.over[key];
   return o != null ? { p: o, over: true, def } : { p: def, over: false, def };
+}
+// Moved up by the watchtower's alarm at the base they are at now.
+const onWatch = (s) => !!(s && s.work && s.work.watch && !s.work.watch.off && s.location && s.location.kind === "base" && s.location.baseId === s.work.watch.base);
+// Their first priority, the alarm aside (0: nothing set).
+function topPrio(state, s) {
+  let top = 0;
+  for (const k of WORK_KEYS) { const p = ownCell(state, s, k).p; if (p > 0 && (!top || p < top)) top = p; }
+  return top;
 }
 export const prio = (state, s, key) => cellOf(state, s, key).p;
 
@@ -527,11 +550,15 @@ export function setCell(state, s, key, p) {
   const role = roleOf(state, s);
   if (!role) return `${s.name.split(" ")[0]} is on Manual: pick a role first.`;
   const v = clampP(p);
+  if (key === "guard" && s.work.watch) s.work.watch.off = true; // set by hand: the watchtower's alarm leaves their Guard alone until it is over
   s.work.over = s.work.over || {};
   if (v === (role.pri[key] || 0)) delete s.work.over[key]; else s.work.over[key] = v;
   return "";
 }
-export function clearCell(state, s, key) { if (s && s.work && s.work.over) delete s.work.over[key]; }
+export function clearCell(state, s, key) {
+  if (s && s.work && key === "guard" && s.work.watch) s.work.watch.off = true;
+  if (s && s.work && s.work.over) delete s.work.over[key];
+}
 export function setRoleCell(state, role, key, p) {
   if (!role || !WORK_TYPES[key]) return;
   const v = clampP(p);
@@ -624,6 +651,7 @@ export function setNewcomers(state, roleId) {
 // ---------- threats ----------
 // urgent: a reason to man the walls now (raid or horde warned and coming, the defences manned, at the walls).
 // standing: a horde in sight within 6 tiles (one more lookout).
+// watch: { size, bosses } of the biggest horde on the watchtower's alarm (defences.js towerWatch), else null.
 // kind: "raid" (raiders warned or at the walls, the defences manned for them: everyone with Guard set goes) or
 // "horde" (a horde warned and coming, or next to the walls: as many with Guard set as it takes to hold it, with a
 // quarter to spare; everyone when even that is not enough). size / bosses: the biggest such horde.
@@ -647,7 +675,9 @@ export function threatInfo(state, base) {
     }
     if (d <= 6) standing = true;
   }
-  return { urgent, kind, standing, size, bosses };
+  const tw = towerHordes(state, base)[0]; // the watchtower's alarm (defences.js towerWatch): the biggest horde on its watch
+  const watch = tw ? { size: tw.size, bosses: tw.bosses || 0 } : null;
+  return { urgent, kind, standing, size, bosses, watch };
 }
 
 // Who of the people with Guard set goes to the walls (best shots first). A raid: all of them. A horde: until the
@@ -688,12 +718,44 @@ export function healthRest(s) {
 // ---------- the hourly pass ----------
 export function workHour(state) {
   if (!state.work || state.gameOver) return;
-  if (state.autopilot && !(state.governor && state.governor.priorityRoles)) return; // the dev autopilot runs every role
+  const planned = !(state.autopilot && !(state.governor && state.governor.priorityRoles)); // the dev autopilot runs every role
+  watchPromotions(state, planned);
+  if (!planned) return;
   const w = state.work;
   if (w.newcomers != null && roleById(state, w.newcomers)) {
     for (const s of state.survivors) if (s.alive && !s.work && s.location.kind === "base") assignRole(state, s, w.newcomers);
   }
   for (const base of state.bases) planBase(state, base);
+}
+
+// The watchtower's alarm (defences.js towerWatch, base.towerWatch): everyone on priorities at that base with Guard
+// set below their first priority (a backup job) gets it moved up to 1 (s.work.watch), and back when the alarm is
+// off, they leave the base, or Guard is no longer set. A log line each way. promote false (the dev autopilot running
+// every role): only the flags left from before are cleared.
+export function watchPromotions(state, promote = true) {
+  const up = new Map(), back = new Map();
+  const add = (m, b, s) => { if (!m.has(b)) m.set(b, []); m.get(b).push(s); };
+  for (const s of state.survivors) {
+    if (!s.work || !s.work.watch) continue;
+    const b = baseById(state, s.work.watch.base);
+    const here = !!b && s.alive && s.location.kind === "base" && s.location.baseId === b.id;
+    const off = !!s.work.watch.off; // Guard set by hand during the alarm: left alone until it is over
+    if (promote && here && b.towerWatch && (off || (isManaged(state, s) && ownCell(state, s, "guard").p > 0))) continue;
+    if (here && !off && isManaged(state, s)) add(back, b, s);
+    delete s.work.watch;
+  }
+  if (promote) for (const b of state.bases) {
+    if (!b.towerWatch) continue;
+    for (const s of atBase(state, b.id)) {
+      if (!isManaged(state, s) || s.work.watch) continue;
+      const g = ownCell(state, s, "guard").p;
+      if (g > 0 && g > topPrio(state, s)) { s.work.watch = { base: b.id, was: g, hour: state.hour }; add(up, b, s); }
+    }
+  }
+  const names = (list, f) => { const n = list.map(f); return n.length > 1 ? `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}` : n[0]; };
+  const first = (s) => s.name.split(" ")[0];
+  for (const [b, list] of up) log(state, `Watchtower alarm at ${b.name}: ${names(list, (s) => `${first(s)} (Guard ${s.work.watch.was})`)} move${list.length === 1 ? "s" : ""} Guard up to priority 1 until the horde has gone.`, "info");
+  for (const [b, list] of back) log(state, `${b.name}: ${names(list, (s) => `${first(s)} (Guard ${ownCell(state, s, "guard").p || "never"})`)} back to the usual order of work.`, "info");
 }
 
 // Plans one base for this hour and applies it. Returns the number of people whose job changed.
@@ -712,6 +774,10 @@ export function planBase(state, base) {
     const cands = fit.filter((s) => prio(state, s, "guard") > 0);
     walls = emergencyGuards(state, base, ctx.threat, cands, new Set(people.filter((s) => !managed.includes(s) && s.role === "guard")));
     ctx.wallsNote = ctx.threat.kind === "horde" ? ` (${walls.size} of ${cands.length} with Guard set ${walls.size === 1 ? "is" : "are"} needed to hold it)` : " (Guard is set)";
+  } else if (ctx.threat.watch) {
+    // The watchtower's alarm: the lookouts it takes to hold the horde it sees (Guard's capacity, at least one more).
+    const cands = fit.filter((s) => prio(state, s, "guard") > 0);
+    ctx.watchNeed = emergencyGuards(state, base, { kind: "horde", size: ctx.threat.watch.size, bosses: ctx.threat.watch.bosses }, cands, new Set(people.filter((s) => !managed.includes(s) && s.role === "guard"))).size;
   }
   for (const s of managed) {
     const role = roleOf(state, s);
@@ -719,6 +785,8 @@ export function planBase(state, base) {
     const sick = healthRest(s);
     if (sick) { put(s, { role: "rest", t: "rest", kind: "health", why: `Resting: ${sick}` }); continue; }
     if (walls.has(s)) { put(s, { role: "guard", t: "guard", kind: "emerg", why: `Emergency: ${ctx.threat.urgent}${ctx.wallsNote}` }); continue; }
+    const ws = base.watch ? watchShift(base, s, h) : null; // watch.js: the base's watch roster, before the role's schedule
+    if (ws) { put(s, { role: "guard", t: "guard", kind: "sched", why: `On watch: ${ws.name} ${shiftText(ws)} (the watch roster)` }); continue; }
     const block = schedAt(role, h);
     if (block === "g") { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guard watch (${role.name}'s schedule)` }); continue; }
     if (block === "s" || block === "f") { put(s, { role: "rest", t: block === "s" ? "sleep" : "free", kind: "sched", why: `${SCHED[block].name} (${role.name}'s schedule)` }); continue; }
@@ -777,7 +845,8 @@ export function planBase(state, base) {
       const o = ctx.open(x.key);
       if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
       const higher = (reasons.get(x.s.id) || []).filter((r) => prio(state, x.s, r.key) < p);
-      give(x.s, x.key, p, "work", `${WORK_TYPES[x.key].ing}: priority ${p}${higher.length ? ` (before it: ${higher.map((r) => `${WORK_TYPES[r.key].name}: ${r.why}`).join("; ")})` : ""}`);
+      const raised = x.key === "guard" && cellOf(state, x.s, "guard").watch; // moved up by the watchtower's alarm
+      give(x.s, x.key, p, "work", `${WORK_TYPES[x.key].ing}: priority ${p}${raised ? ` (Guard ${raised}, moved up: the watchtower sees a horde of ${ctx.threat.watch ? ctx.threat.watch.size : "?"} near)` : ""}${higher.length ? ` (before it: ${higher.map((r) => `${WORK_TYPES[r.key].name}: ${r.why}`).join("; ")})` : ""}`);
     }
   }
   // A queued build keeps one hand (the governor's rule against the builder deadlock): when the farm or the like took

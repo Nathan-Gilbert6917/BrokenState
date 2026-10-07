@@ -12,7 +12,7 @@ import { generatorHeat } from "./power.js";
 import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedFactor } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
-import { hordeAttackBase, hordeWarnings } from "./defences.js";
+import { hordeAttackBase, hordeWarnings, towerWatch } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -179,6 +179,7 @@ export function hordesHour(state) {
   }
   mergeHordes(state);
   hordeWarnings(state); // defences.js: lookouts see a horde coming for a base
+  towerWatch(state); // defences.js: a watchtower sees a horde near: its alarm (work.js moves backup guards up)
 }
 
 function onHordeEnter(state, h) {

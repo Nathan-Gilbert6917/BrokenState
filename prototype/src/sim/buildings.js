@@ -253,7 +253,8 @@ export const baseWalls = (base) => (isShelter(base) ? SHELTER.walls : base.type 
 export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
-export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
+// Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
+export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6 - (base.kidBeds || 0);
 // Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
 export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);

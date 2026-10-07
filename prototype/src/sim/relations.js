@@ -36,6 +36,7 @@ import { Rng } from "./rng.js";
 import { hasPerk } from "./skills.js";
 import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
 import { festivalGlow } from "./festival.js";
+import { familyMood } from "./family.js"; // children and expecting (family.js)
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -367,6 +368,7 @@ export function moodFactors(state, s) {
   else if (partner && partner.location && partner.location.kind !== "captive") add(`Misses ${first(partner)} (away)`, MOODF.partnerAway, true);
   if (fr) add(`${fr} friend${fr === 1 ? "" : "s"} close by`, Math.min(MOODF.friendMax, fr * MOODF.friend), true);
   if (rv) add(`${rv} rival${rv === 1 ? "" : "s"} close by`, Math.max(MOODF.rivalMax, rv * MOODF.rival), true);
+  for (const f of familyMood(state, s, pl.route ? null : base)) add(f.label, f.v, true); // family.js: expecting, children
   if (s.grief) add(`Grieving for ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1), true);
   if (s.rough != null && s.rough >= d) {
     if (base && !pl.route && s.role === "rest") add("Resting after a rough trip", MOODF.roughRest, true);

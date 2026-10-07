@@ -1,0 +1,26 @@
+// The Display and confirmation options as they are stored (ui/saves.js loadOptions reads them through here; ui/display.js
+// applies them, ui/confirm.js keeps noAsk). No imports and no DOM: the headless tools load it with saves.js.
+//   cbPalette    colour-blind-safe colours (ui/palette.js)       bigText   larger text on the map canvas
+//   calm         reduce motion (no map animations, glides, pulsing badges or sliding cards)
+//   minimap      the minimap in the map's corner (M), minimapSize s / m / l
+//   devTools     the Dev button in the top bar and the ` key (ui.dev; off for players)
+//   mapAnim      the map's animations (Display → Map animations; ui/render.js)
+//   noAsk        { kind: true } for the questions with "Don't ask again" ticked (ui/confirm.js)
+export const MINIMAP_SIZES = { s: { label: "Small", rem: 11 }, m: { label: "Medium", rem: 15 }, l: { label: "Large", rem: 21 } };
+export const DISPLAY_DEFAULTS = { cbPalette: false, bigText: false, calm: false, minimap: true, minimapSize: "m", devTools: false };
+const BOOLS = ["cbPalette", "bigText", "calm", "minimap", "devTools", "mapAnim"];
+
+// o: the options being built; v: what was stored (or nothing). Fills the defaults, then takes the stored values that
+// make sense.
+export function readDisplayOptions(o, v = null) {
+  for (const [k, d] of Object.entries(DISPLAY_DEFAULTS)) if (!(k in o)) o[k] = d;
+  if (!o.noAsk || typeof o.noAsk !== "object") o.noAsk = {};
+  if (!v || typeof v !== "object") return o;
+  for (const k of BOOLS) if (typeof v[k] === "boolean") o[k] = v[k];
+  if (MINIMAP_SIZES[v.minimapSize]) o.minimapSize = v.minimapSize;
+  if (v.noAsk && typeof v.noAsk === "object") {
+    o.noAsk = {};
+    for (const [k, on] of Object.entries(v.noAsk)) if (on === true && /^[a-z][a-z-]{0,30}$/.test(k)) o.noAsk[k] = true;
+  }
+  return o;
+}
