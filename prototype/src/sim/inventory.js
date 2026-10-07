@@ -16,6 +16,7 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { fitMod, removeMod, modFitReason, isGunmod, takesMods } from "./gunmods.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -52,7 +53,9 @@ export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
 export const itemKg = (item) => (item && GEAR[item.key] && Number.isFinite(GEAR[item.key].weight) ? GEAR[item.key].weight : 1);
-export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0);
+// A gun also weighs its fitted attachments (gunmods.js: item.mods).
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item);
+const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? itemKg(m) : 0), 0) : 0);
 
 export function ensurePack(item) {
   const n = packSize(item);
@@ -255,6 +258,68 @@ export function removeAt(state, str) {
 }
 export const placeOfLoc = (state, loc) => placeOf(state, typeof loc === "string" ? parseLoc(loc) : loc);
 
+// ---------- gun attachments (gunmods.js) ----------
+// Who and what storage can reach a gun at a location: { holder (a survivor or null), st (storageFor or null) }. A body's
+// gun is out of reach (take it first). sid: the person whose inventory is open (a gun in storage, their pockets).
+function modReach(state, gunStr, sid = null) {
+  const loc = parseLoc(gunStr);
+  if (loc.o === "body") return null;
+  const place = placeOf(state, loc);
+  const holder = loc.o === "s" ? survivorById(state, loc.id) : sid != null ? survivorById(state, sid) : null;
+  const near = holder && place && personPlace(holder) === place ? holder : null;
+  return { holder: loc.o === "s" ? holder : near, st: place ? storageFor(state, place) : null };
+}
+// Loose attachments within reach that fit the gun at gunStr: the holder's pockets and pack, then the storage at the
+// place. [{ loc, item }].
+export function modChoices(state, gunStr, sid = null) {
+  const gun = itemAt(state, gunStr);
+  const r = gun && takesMods(gun.key) ? modReach(state, gunStr, sid) : null;
+  if (!r) return [];
+  const out = [];
+  const fits = (it) => it && isGunmod(it.key) && !modFitReason(gun, it);
+  if (r.holder) {
+    const pre = `s:${r.holder.id}`;
+    ensureInv(r.holder);
+    r.holder.pockets.forEach((it, i) => { if (fits(it)) out.push({ loc: `${pre}:pocket:${i}`, item: it }); });
+    (packOf(r.holder) || []).forEach((it, i) => { if (fits(it)) out.push({ loc: `${pre}:pack:${i}`, item: it }); });
+  }
+  if (r.st) r.st.list.forEach((it, i) => { if (fits(it)) out.push({ loc: `${r.st.o}:${r.st.id}:list:${i}`, item: it }); });
+  return out;
+}
+// Fits the loose attachment at modStr to the gun at gunStr. What was on that mount goes where the new one came from.
+// Returns a message.
+export function fitModAt(state, gunStr, modStr) {
+  const gun = itemAt(state, gunStr), mod = itemAt(state, modStr);
+  if (!gun || !mod) return "Nothing to fit.";
+  if (gun === mod) return "That is the gun.";
+  const why = modFitReason(gun, mod);
+  if (why) return why;
+  if (!modReach(state, gunStr) || parseLoc(modStr).o === "body") return "Take them off the body first.";
+  if (placeOf(state, parseLoc(gunStr)) !== placeOf(state, parseLoc(modStr))) return "The gun and the attachment are not in the same place.";
+  const r = ref(state, parseLoc(modStr));
+  if (!r) return "Nothing to fit.";
+  r.remove(mod);
+  const res = fitMod(gun, mod);
+  if (res.old) { if (r.put) r.put(res.old); else r.set(res.old); }
+  return `${mod.name} fitted to the ${gun.name}${res.old ? ` (the ${res.old.name} came off)` : ""}.`;
+}
+// Takes the attachment off a gun's mount: into the armory or the team's cargo where there is one, else onto the
+// holder (pocket or pack). Returns a message.
+export function unfitModAt(state, gunStr, mount, sid = null) {
+  const gun = itemAt(state, gunStr);
+  if (!gun || !gun.mods || !gun.mods[mount]) return "Nothing fitted there.";
+  const r = modReach(state, gunStr, sid);
+  if (!r) return "Take the gun off the body first.";
+  const mod = gun.mods[mount];
+  if (r.st) { removeMod(gun, mount); r.st.list.push(mod); return `${mod.name} taken off the ${gun.name}: into ${r.st.name}.`; }
+  if (r.holder) {
+    removeMod(gun, mount);
+    if (stow(r.holder, mod)) return `${mod.name} taken off the ${gun.name}: ${r.holder.name.split(" ")[0]} carries it.`;
+    fitMod(gun, mod);
+  }
+  return `No room for the ${mod.name}: free a pocket or a pack slot first.`;
+}
+
 // ---------- breaking things down for firewood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
 // What breaking down the item at a location would give: { ok, reason, item, wood, place }. Items in a base's armory, a
 // team's cargo, or a pocket or pack of someone at a base or on a team (not what is worn or held: take it off first;
@@ -453,11 +518,19 @@ export function enemyBody(rng, u, kit) {
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
   // What they fought with, worse for wear.
   if (GEAR[u.weapon]) body.gear.weapon = newItem(u.weapon, rng.pick([0.4, 0.55, 0.7, 0.85]));
+  if (body.gear.weapon) carryMods(u, body.gear.weapon); // gunmods.js: the attachments on their gun come with it
   if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = newItem(u.armorKey, rng.pick([0.4, 0.55, 0.7]));
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = newItem(kit.pack[0], rng.pick([0.7, 0.85]));
   if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1])), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, newItem(rng.pick(kit.finds), 1), ""); // pockets: smokes, a ring (combat.js KITS finds)
   return body;
+}
+// The attachments a battle unit's gun carried (combat.js enemyUnit: u.modItems, for the gun it was given) onto the gun
+// item looted from it. Only while the unit still holds that gun (u.gmWeapon), and each part only where it fits.
+export function carryMods(u, gun) {
+  if (!u || !u.modItems || u.gmWeapon !== gun.key) return;
+  for (const m of Object.values(u.modItems)) if (m) fitMod(gun, m);
+  u.modItems = null; // looted once
 }
 // One of the dead searched where it fell in a raid (combat.js searchBox): what the person had on them, kept modest
 // (bodies are a bonus; the buildings are the loot). A dead soldier or riot cop: their kit (deadsoldiers.js).
@@ -540,7 +613,7 @@ export function takeAllBody(state, bi) {
   }
   return out;
 }
-const worth = (item) => GEAR[item.key].value * (item.quality || 1) + (item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + worth(c), 0) : 0);
+const worth = (item) => GEAR[item.key].value * (item.quality || 1) + (item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + worth(c), 0) : 0) + (item.mods ? Object.values(item.mods).reduce((a, m) => a + (m && GEAR[m.key] ? worth(m) : 0), 0) : 0); // a gun's attachments (gunmods.js) too
 
 // Every body at once (headless battles do this as soon as they end; the "Take all" button too).
 export function takeAllBodies(state) {

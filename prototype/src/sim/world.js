@@ -30,6 +30,7 @@ import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
+import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
@@ -169,6 +170,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // Starting gear: a few basics spread among the colonists.
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
   state.survivors.forEach((s, i) => (s.gear.weapon = { key: starts[i], name: GEAR[starts[i]].name, quality: 1 }));
+  state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   state.survivors[0].gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 };
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
