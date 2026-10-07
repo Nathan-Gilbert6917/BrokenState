@@ -26,6 +26,16 @@ const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 60);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
+
+// Children are switched off in the game for now (FAMILY.enabled false): this tool switches them on to keep the
+// dormant code tested, after checking that a normal game has none.
+{
+  check(FAMILY.enabled === false, "children are off by default (FAMILY.enabled)");
+  const W0 = createWorld({ seed: 3, factionCount: 4 });
+  for (let h = 0; h < 24 * 60; h++) tickHour(W0);
+  check(!childrenOf(W0).length && !(W0.family && W0.family.births), "no couples' children in 60 days with children off");
+  FAMILY.enabled = true;
+}
 const section = (t) => console.log(t);
 const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; st.started = true; return st; };
 const nextDay = (st) => { st.hour += 24; };
