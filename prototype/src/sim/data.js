@@ -281,6 +281,21 @@ export const GEAR = {
   perfume:     { name: "Bottle of perfume",        slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, small: true, groom: 0.5, dur: 60, desc: "A designer bottle from a department store counter. A spritz and the world is less rotten for a while: +0.5 mood a day for whoever uses it. Traders like it too.", weight: 0.2, cat: "toiletries" },
   magazines:   { burnShare: 1, name: "Stack of magazines",       slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, book: { mood: 2, hours: 3 }, desc: "Celebrity gossip from another world. +2 mood an hour read (a third of that read again). Teaches nothing.", weight: 0.4, cat: "luxury" },
   puzzlebook:  { burnShare: 1, name: "Crossword book",           slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 12 }, desc: "Half the puzzles still blank. +2 mood an hour read, and it lasts. Teaches nothing.", weight: 0.3, cat: "luxury" },
+  // ---------- craft books and special crafted gear (blueprints.js CRAFT_BOOKS / BLUEPRINTS, crafting.js CRAFTS) ----------
+  // Craft books teach Crafting like any skill book; once anyone has finished one, its recipes are unlocked for good and
+  // the recipes it covers come out a little better and faster (blueprints.js craftEdge). Their unlock lines are added
+  // to the desc by blueprints.js.
+  diybook:      { burnShare: 1, name: "The Complete DIY Manual",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, book: { skill: "crafting", max: 7, hours: 24 }, desc: "Fixing, fitting and making do around the house. Teaches Crafting up to 7.", weight: 1, cat: "books" },
+  forgebook:    { burnShare: 1, name: "Backyard Blacksmithing",   slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "crafting", max: 11, hours: 40 }, desc: "Coal forges, quenching and riveting, from a hobbyist press. Teaches Crafting up to 11.", weight: 1.2, cat: "books" },
+  bushcraftbook:{ burnShare: 1, name: "Bushcraft Field Guide",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "crafting", max: 9, hours: 30 }, desc: "Cordage, camouflage and camp craft from what the woods give. Teaches Crafting up to 9.", weight: 0.6, cat: "books" },
+  // Special crafted gear: locked until a craft book is read or a blueprint studied; better than ordinary makeshift
+  // gear (still wears out). combat.js WEAPONS has the weapons' battle numbers.
+  springmachete:{ name: "Leaf-spring machete",      slot: "weapon", skill: "shooting", power: 2.2, req: 0, value: 18, noise: 0, makeshift: true, dur: 22, desc: "A truck leaf spring forged, quenched and ground into a heavy blade: hits harder than a store-bought machete and keeps its edge a long time.", weight: 1.1, cat: "melee" },
+  pulleybow:    { name: "Pulley-limb bow",          slot: "weapon", skill: "shooting", power: 2.9, req: 3, value: 30, noise: 0, makeshift: true, dur: 18, desc: "Laminated limbs with salvaged pulleys: nearly a compound bow. Silent, and in a fight the arrows are picked up again (no ammo); hunting loses some (arrows). Needs Shooting 3.", weight: 1.8, cat: "bow" },
+  rivethelmet:  { name: "Riveted scrap helmet",     slot: "head",   skill: null,       power: 1.0, req: 0, value: 16, noise: 0, makeshift: true, dur: 16, desc: "Hammered steel plates riveted over a padded cap, with a nape guard. Better than a motorcycle helmet.", weight: 2, cat: "armor" },
+  woodghillie:  { burnShare: 1, name: "Woodland ghillie suit", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, makeshift: true, heat: { stay: 0.75, search: 0.85 }, desc: "A full suit of netting, jute and local plants, built up layer by layer: a team with one gains Heat 25% slower while it stays put and 15% slower while it searches (with a ghillie wrap too, both count).", weight: 2, cat: "camp" },
+  traumakit:    { name: "Field trauma kit",         slot: "tool",   skill: "medicine", power: 2,   req: 4, value: 24, noise: 0, makeshift: true, dur: 8,  medKit: 3, small: true, desc: "Pressure dressings, a windlass tourniquet, chest seals and splints, packed the army way: +3 Medicine when treating (at a base, in the field or in battle). Needs Medicine 4 for the full bonus. Each treatment uses it up a little.", weight: 0.7, cat: "medical" },
+  // ---------- end of craft books and special crafted gear ----------
 };
 
 
@@ -438,10 +453,14 @@ export const siteDanger = (loc) => {
   return loc.zone === "town" || loc.zone === "rural" ? Math.min(1, d) : d;
 };
 
-export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership"];
+export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting"];
+// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting, which came
+// later and is rolled with its own dice (appearance.js craftingStart), so the same seed still makes the same people.
+export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting");
 export const SKILL_NAMES = {
   shooting: "Shooting", stealth: "Stealth", scavenging: "Scavenging", scouting: "Scouting",
   medicine: "Medicine", mechanics: "Mechanics", farming: "Farming", speech: "Speech", leadership: "Leadership",
+  crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
 };
 
 export const TRAITS = {

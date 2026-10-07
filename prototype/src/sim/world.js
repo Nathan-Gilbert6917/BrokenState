@@ -6,8 +6,8 @@ import { keyWord } from "./water.js"; // supply names in log lines (call-time on
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
-import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
-import { appearanceFor } from "./appearance.js";
+import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
 
 // Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
@@ -188,10 +188,11 @@ export function makeSurvivor(state, quality = 1) {
   const rng = state.rng;
   /** @type {Survivor["skills"]} */
   const skills = {};
-  for (const k of SKILLS) skills[k] = Math.max(0, Math.min(20, Math.round(rng.range(0, 9) * quality)));
+  for (const k of ROLLED_SKILLS) skills[k] = Math.max(0, Math.min(20, Math.round(rng.range(0, 9) * quality)));
   // Each survivor gets one or two specialties.
-  for (let i = 0; i < 2; i++) skills[rng.pick(SKILLS)] += rng.int(3, 7);
-  for (const k of SKILLS) skills[k] = Math.min(20, skills[k]);
+  for (let i = 0; i < 2; i++) skills[rng.pick(ROLLED_SKILLS)] += rng.int(3, 7);
+  for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
+  skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
   const traits = rollTraits(rng);
   /** @type {Survivor} */
   const s = {
@@ -346,8 +347,15 @@ export function residents(state, baseId) {
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
 /** @param {Survivor} s @param {string} key @returns {number} */
+// Crafting for someone from before the skill (save.js, skills.js ensureSkills): 0.7 × Mechanics, the floor too.
+export function fillCrafting(s) {
+  if (!s || !s.skills || Number.isFinite(s.skills.crafting)) return;
+  s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
+  if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
+}
 export function skill(s, key) {
   let v = s.skills[key] || 0;
+  if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
   if (key === "medicine" && s.traits.includes("medic")) v += 4;
   if (key === "stealth" && s.traits.includes("loud")) v -= 3;
   if (s.traits.includes("lucky")) v += 1;

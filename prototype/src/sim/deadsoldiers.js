@@ -28,7 +28,7 @@ export const MILDEAD = {
       w: {
         pistol: 0.5, revolver: 0.6, shotgun: 0.6, pipegun: 0.6, crossbow: 0.5, compbow: 0.45, xbow: 0.55,
         huntrifle: 0.75, leverrifle: 0.7, carbine: 0.75, ar: 0.75, acid: 1, // rifles: was 0.9 / 0.8 / 0.85 / 0.85 (the hunting rifle all but a full counter)
-        fists: 0.55, knife: 0.4, machete: 0.5, sawmachete: 0.5, pipespear: 0.45, fireaxe: 0.75,
+        fists: 0.55, knife: 0.4, machete: 0.5, sawmachete: 0.5, springmachete: 0.55, pipespear: 0.45, fireaxe: 0.75, pulleybow: 0.45,
         bat: 0.85, spikedbat: 0.8, nailbat: 0.8, prybar: 0.85, sledge: 1, baton: 0.75, claws: 0.7,
       },
     },
@@ -37,13 +37,13 @@ export const MILDEAD = {
       w: {
         pistol: 0.7, revolver: 0.8, shotgun: 0.75, pipegun: 0.75, crossbow: 0.7, compbow: 0.65, xbow: 0.7,
         huntrifle: 1, leverrifle: 1, carbine: 1, ar: 1, acid: 1,
-        fists: 0.4, knife: 0.45, machete: 0.55, sawmachete: 0.55, pipespear: 0.5, fireaxe: 0.65,
+        fists: 0.4, knife: 0.45, machete: 0.55, sawmachete: 0.55, springmachete: 0.6, pipespear: 0.5, fireaxe: 0.65, pulleybow: 0.65,
         bat: 0.6, spikedbat: 0.6, nailbat: 0.6, prybar: 0.6, sledge: 0.8, baton: 0.5, claws: 0.6,
       },
     },
   },
   // Blades that find the gap from behind or on the unaware (armour ignored).
-  STAB: ["knife", "machete", "sawmachete", "pipespear", "fireaxe"],
+  STAB: ["knife", "machete", "sawmachete", "springmachete", "pipespear", "fireaxe"],
   // Share among a site's dead, by site type; NEAR: within 1 tile of a military site (the cordon), ROAD: within 2 on a
   // road (the abandoned checkpoints); FALLEN: a fallen military base (hardcore) and the tiles around it.
   SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },

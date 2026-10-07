@@ -21,6 +21,7 @@ import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { day } from "../sim/world.js";
+import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
@@ -152,6 +153,16 @@ function itemEntries() {
     if (g.medKit) stats.push(["Medicine", `+${g.medKit} when treating`]);
     if (g.slots) stats.push(["Pack", `${g.slots} slots, +${g.carry || 0} kg load`]);
     if (g.makeshift && g.dur) stats.push([g.tabs ? "Tablets" : "Lasts", g.tabs ? g.dur : `${g.dur} uses (makeshift)`]);
+    if (g.book && g.book.skill) stats.push(["Teaches", `${SKILL_NAMES[g.book.skill]} up to ${g.book.max}, ${g.book.hours} h to read`]);
+    // Manuals and craft books (blueprints.js): what they open, and the recipes they make better and faster.
+    const tech = g.blueprint ? BLUEPRINTS[g.blueprint] : CRAFT_BOOKS[k];
+    if (tech) {
+      const opens = [...(tech.unlocks.buildings || []), ...(tech.unlocks.crafts || [])].map(unlockName);
+      if (opens.length) stats.push(["Unlocks", opens.join(", ")]);
+      const edge = [...new Set([...(tech.unlocks.crafts || []), ...(tech.covers || [])])].map(unlockName);
+      if (edge.length) stats.push(["Crafting edge", edge.join(", ")]);
+    }
+    if (LOCKED.crafts[k]) stats.push(["Recipe", `locked until ${techName(LOCKED.crafts[k])} is ${CRAFT_BOOKS[LOCKED.crafts[k]] ? "read" : "studied"}`]);
     else if (g.tabs) stats.push(["Tablets", g.dur]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
     out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });

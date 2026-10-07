@@ -136,7 +136,7 @@ export const MIX_PRESETS = {
   quiet: { name: "Quiet", mix: { traps: 40, bows: 60, guns: 0 }, desc: "Bows and traps only: no shots, no Heat, no noise; less food." },
   traps: { name: "Traps only", mix: { traps: 100, bows: 0, guns: 0 }, desc: "Snares and deadfalls: small game only, no ammo or arrows, silent; the least food." },
 };
-const ICE_TOOL = /^(crowbar|machete|sawmachete|hatchet|axe|fireaxe|iceauger|woodaxe)$/;
+const ICE_TOOL = /^(crowbar|machete|sawmachete|springmachete|hatchet|axe|fireaxe|iceauger|woodaxe)$/;
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => s.name.split(" ")[0];
 

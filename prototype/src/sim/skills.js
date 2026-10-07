@@ -20,12 +20,12 @@
 // perks (PERKS below), Fallout: New Vegas style. A card lets the player pick (or decide later from the survivor
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
-import { day, log, addCard, atBase, alive, skill, survivorById } from "./world.js";
+import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting } from "./world.js";
 import { workFactor } from "./health.js";
 import { newItem } from "./inventory.js";
 import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
-import { studyBlueprint, blueprintWares } from "./blueprints.js";
+import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -107,6 +107,15 @@ export const PERK_TREE = {
     15: [P("masterbuilder", "Master Builder", "Their construction work counts 40% more (instead of Handy's 20%).", [2, 3, 2], "buildings.js buildRate"),
          P("machinist", "Machinist", "Their crafting work counts 30% more (Craft role).", [2, 2, 2], "crafting.js craftRate")],
   },
+  // Crafting (crafting.js): everything made by hand. Quality is a roll around the expected condition (craftQuality).
+  crafting: {
+    5: [P("quickhands", "Quick Hands", "Their crafting work counts 15% more (Craft role).", [2, 2, 2], "crafting.js craftRate"),
+        P("goodeye", "Good Eye", "While they are on the Craft role, things made at their base come out 4% better on average (condition).", [2, 2, 2], "crafting.js craftMean")],
+    10: [P("steadybench", "Steady Bench", "While they are on the Craft role, a craft at their base rolls its condition twice and keeps the better roll.", [3, 2, 2], "crafting.js rollQuality"),
+         P("scrapsaver", "Scrap Saver", "While they are on the Craft role, a finished craft at their base that used 4 or more scrap gives 1 scrap back.", [2, 2, 2], "crafting.js craftingHour")],
+    15: [P("mastercrafter", "Master Crafter", "While they are on the Craft role, things made at their base come out 6% better on average (adds to Good Eye).", [2, 2, 2], "crafting.js craftMean"),
+         P("foreman", "Foreman", "Everyone else on the Craft role at their base works 15% faster.", [2, 3, 2], "crafting.js craftRate")],
+  },
   farming: {
     5: [P("earlyriser", "Early Riser", "Counts as Farming +3 when tending crops (a plot's care uses the tenders' average Farming).", [2, 2, 2], "farming.js careToday"),
         P("harvester", "Harvester", "+2 ripe plots harvested a day at their base while they farm.", [2, 2, 2], "farming.js farmingDaily")],
@@ -170,6 +179,7 @@ export const heatMult = (state, p) => (teamHas(state, p, "ranger") ? 0.7 : 1);
 // s.teach: { skill, learners: [ids] } on the Teach role.
 export function ensureSkills(state, s) {
   if (!s) return s;
+  fillCrafting(s); // world.js: people from before the Crafting skill
   if (s.xp && s.perkMs) return s;
   const d = state ? day(state) : 1;
   s.xp = s.xp || {};
@@ -338,7 +348,7 @@ export function perkScore(state, s, id) {
   if (role === "medic" && ["triage", "plaguedoctor", "chiefmedic"].includes(id)) v += 1.5;
   if (role === "farm" && ["earlyriser", "harvester", "greenthumb", "herbalist", "seedsaver", "rootcellar"].includes(id)) v += 1;
   if (role === "build" && ["handy", "masterbuilder"].includes(id)) v += 1.5;
-  if (role === "craft" && ["tinkerer", "machinist"].includes(id)) v += 1.5;
+  if (role === "craft" && ["tinkerer", "machinist", "quickhands", "goodeye", "steadybench", "scrapsaver", "mastercrafter", "foreman"].includes(id)) v += 1.5;
   if (role === "scavenge" && id === "scrounger") v += 1.5;
   return v - (Number(id.length) % 3) * 0.01; // stable tie-break
 }
@@ -365,13 +375,14 @@ export const bookDef = (key) => (GEAR[key] && GEAR[key].book) || null;
 export const bookHours = (s, key) => Math.max(0, (s && s.books && s.books[key]) || 0);
 export const bookDone = (s, key) => !!bookDef(key) && bookHours(s, key) >= bookDef(key).hours - 1e-9;
 
-// Why a survivor cannot read a book ("" when they can).
-export function readReason(s, key) {
+// Why a survivor cannot read a book ("" when they can). state: a craft book whose recipes nobody has unlocked yet
+// (blueprints.js CRAFT_BOOKS) is worth reading to the end even by someone past its skill cap (no XP above it).
+export function readReason(s, key, state = null) {
   const b = bookDef(key);
   if (!b) return "Not a book.";
   if (b.skill) {
     if (bookDone(s, key)) return `Already read it (${b.hours}h).`;
-    if (skill(s, b.skill) >= b.max) return `Already knows all it teaches (${SKILL_NAMES[b.skill]} ${skill(s, b.skill)}, the book goes to ${b.max}).`;
+    if (skill(s, b.skill) >= b.max && !(state && bookUnlocksPending(state, key))) return `Already knows all it teaches (${SKILL_NAMES[b.skill]} ${skill(s, b.skill)}, the book goes to ${b.max}).`;
   }
   return "";
 }
@@ -384,12 +395,13 @@ const armoryBooks = (base) => {
 };
 
 // The best book for someone from a set of free copies (skill books they can learn from first; comics when glum).
-export function bestBook(s, free) {
+export function bestBook(s, free, state = null) {
   let best = null, bestV = -1;
   for (const [k, n] of Object.entries(free)) {
-    if (n <= 0 || readReason(s, k)) continue;
+    if (n <= 0 || readReason(s, k, state)) continue;
     const b = bookDef(k);
-    const v = b.skill ? 10 + (b.max - skill(s, b.skill)) * 0.5 : s.mood < 55 ? 5 + (bookDone(s, k) ? 0 : 2) : 0.5;
+    const unlocks = state && bookUnlocksPending(state, k) ? 3 : 0; // a craft book's recipes: blueprints.js
+    const v = b.skill ? 10 + Math.max(-2, (b.max - skill(s, b.skill)) * 0.5) + unlocks : s.mood < 55 ? 5 + (bookDone(s, k) ? 0 : 2) : 0.5;
     if (v > bestV) { best = k; bestV = v; }
   }
   return best;
@@ -404,11 +416,11 @@ function readingDaily(state, base) {
   // Readers whose book is still here and still useful keep it first.
   const plan = new Map();
   for (const s of readers) {
-    if (s.reading && free[s.reading] > 0 && !readReason(s, s.reading)) { plan.set(s.id, s.reading); free[s.reading]--; }
+    if (s.reading && free[s.reading] > 0 && !readReason(s, s.reading, state)) { plan.set(s.id, s.reading); free[s.reading]--; }
   }
   for (const s of readers) {
     if (plan.has(s.id)) continue;
-    const k = bestBook(s, free);
+    const k = bestBook(s, free, state);
     if (k) { plan.set(s.id, k); free[k]--; }
   }
   for (const s of readers) {
@@ -434,11 +446,12 @@ export function readHours(state, s, key, hours) {
   const h = Math.min(hours, b.hours - bookHours(s, key));
   if (h <= 0) return 0;
   s.books[key] = bookHours(s, key) + h;
-  if (b.skill) gainXp(state, s, b.skill, h * BOOK_XP, "study");
+  if (b.skill && skill(s, b.skill) < b.max) gainXp(state, s, b.skill, h * BOOK_XP, "study"); // read past its cap for a craft book's recipes: no XP
   else s.mood = Math.min(100, s.mood + h * (b.mood || 2) / (reread ? 3 : 1));
   if (bookDone(s, key)) {
     if (!b.skill) (s.reread = s.reread || {})[key] = true;
     log(state, `${first(s)} finished reading ${GEAR[key].name}${b.skill ? ` (${SKILL_NAMES[b.skill]} ${skill(s, b.skill)})` : ""}.`, "good");
+    learnBook(state, key, s); // blueprints.js: a craft book's recipes and crafting edge, for good
   }
   return h;
 }
@@ -447,30 +460,30 @@ export function readHours(state, s, key, hours) {
 // Per site type: the books it may hold and the chance per search hour (hour-by-hour search) or per container
 // (a raid on the map) at full loot. Schools, universities, police, the military and homes, as in the request.
 export const BOOK_SITES = {
-  school: { p: 0.15, books: ["gardenbook", "talkbook", "medbook", "comic", "novel", "survivalbook"] },
-  univ: { p: 0.18, books: ["surgerybook", "enginebook", "medbook", "leadbook", "talkbook", "gardenbook"] },
+  school: { p: 0.15, books: ["gardenbook", "talkbook", "medbook", "comic", "novel", "survivalbook", "diybook"] },
+  univ: { p: 0.18, books: ["surgerybook", "enginebook", "medbook", "leadbook", "talkbook", "gardenbook", "forgebook"] },
   police: { p: 0.12, books: ["gunbook", "lockbook", "leadbook", "medbook"] },
-  military: { p: 0.15, books: ["armymanual", "gunbook", "survivalbook", "leadbook", "medbook"] },
-  apartments: { p: 0.08, books: ["comic", "novel", "gardenbook", "talkbook", "enginebook", "magazines", "puzzlebook"] },
-  town: { p: 0.06, books: ["comic", "novel", "gardenbook", "talkbook", "lockbook"] },
+  military: { p: 0.15, books: ["armymanual", "gunbook", "survivalbook", "leadbook", "medbook", "bushcraftbook"] },
+  apartments: { p: 0.08, books: ["comic", "novel", "gardenbook", "talkbook", "enginebook", "magazines", "puzzlebook", "diybook"] },
+  town: { p: 0.06, books: ["comic", "novel", "gardenbook", "talkbook", "lockbook", "diybook"] },
   motel: { p: 0.06, books: ["novel", "comic", "magazines", "puzzlebook"] },
-  cabin: { p: 0.06, books: ["survivalbook", "novel"] },
-  lodge: { p: 0.06, books: ["survivalbook", "gunbook"] },
-  ranger: { p: 0.08, books: ["survivalbook", "medbook"] },
-  farm: { p: 0.05, books: ["gardenbook"] },
-  ranch: { p: 0.05, books: ["gardenbook", "survivalbook"] },
-  feedstore: { p: 0.06, books: ["gardenbook"] },
+  cabin: { p: 0.06, books: ["survivalbook", "novel", "bushcraftbook"] },
+  lodge: { p: 0.06, books: ["survivalbook", "gunbook", "bushcraftbook"] },
+  ranger: { p: 0.08, books: ["survivalbook", "medbook", "bushcraftbook"] },
+  farm: { p: 0.05, books: ["gardenbook", "diybook", "forgebook"] },
+  ranch: { p: 0.05, books: ["gardenbook", "survivalbook", "forgebook"] },
+  feedstore: { p: 0.06, books: ["gardenbook", "diybook"] },
   hospital: { p: 0.09, books: ["medbook", "surgerybook", "magazines"] },
   clinic: { p: 0.07, books: ["medbook", "magazines"] },
   firestation: { p: 0.06, books: ["medbook", "leadbook"] },
-  autoshop: { p: 0.07, books: ["enginebook"] },
-  hardware: { p: 0.05, books: ["enginebook", "scavbook"] },
-  factory: { p: 0.05, books: ["enginebook", "scavbook"] },
+  autoshop: { p: 0.07, books: ["enginebook", "forgebook"] },
+  hardware: { p: 0.05, books: ["enginebook", "scavbook", "diybook", "forgebook"] },
+  factory: { p: 0.05, books: ["enginebook", "scavbook", "forgebook"] },
   gunstore: { p: 0.07, books: ["gunbook"] },
   office: { p: 0.06, books: ["talkbook", "leadbook", "novel"] },
-  mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook"] },
+  mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook", "diybook"] },
   church: { p: 0.04, books: ["novel"] },
-  warehouse: { p: 0.05, books: ["scavbook", "enginebook"] },
+  warehouse: { p: 0.05, books: ["scavbook", "enginebook", "diybook"] },
   supermarket: { p: 0.06, books: ["comic", "novel", "gardenbook", "magazines", "puzzlebook"] },
   pharmacy: { p: 0.06, books: ["medbook", "novel"] },
   grocery: { p: 0.04, books: ["comic", "novel", "gardenbook"] },
@@ -478,8 +491,8 @@ export const BOOK_SITES = {
   gas: { p: 0.05, books: ["comic", "enginebook", "magazines"] },
   prison: { p: 0.06, books: ["novel", "lockbook", "leadbook"] },
   city: { p: 0.06, books: ["comic", "novel", "talkbook", "leadbook"] },
-  barn: { p: 0.03, books: ["gardenbook"] },
-  campground: { p: 0.04, books: ["survivalbook", "comic"] },
+  barn: { p: 0.03, books: ["gardenbook", "forgebook"] },
+  campground: { p: 0.04, books: ["survivalbook", "comic", "bushcraftbook"] },
   radiotower: { p: 0.04, books: ["enginebook"] },
   airport: { p: 0.06, books: ["novel", "comic", "talkbook", "magazines", "puzzlebook"] },
   dam: { p: 0.05, books: ["enginebook"] },
@@ -512,10 +525,10 @@ export function rollBook(state, tileId, mult = 1, salt = "") {
 
 // Books a group has for sale this week (trade.js ensureWares): traders often, communes and the military sometimes.
 export const WARE_BOOKS = {
-  traders: { p: 0.6, books: ["medbook", "enginebook", "gardenbook", "talkbook", "survivalbook", "comic", "novel", "lockbook", "scavbook", "puzzlebook"] },
-  commune: { p: 0.35, books: ["gardenbook", "medbook", "novel"] },
+  traders: { p: 0.6, books: ["medbook", "enginebook", "gardenbook", "talkbook", "survivalbook", "comic", "novel", "lockbook", "scavbook", "puzzlebook", "diybook", "forgebook", "bushcraftbook"] },
+  commune: { p: 0.35, books: ["gardenbook", "medbook", "novel", "diybook", "bushcraftbook"] },
   military: { p: 0.3, books: ["armymanual", "gunbook", "leadbook"] },
-  fortress: { p: 0.2, books: ["gunbook", "enginebook", "leadbook"] },
+  fortress: { p: 0.2, books: ["gunbook", "enginebook", "leadbook", "forgebook"] },
 };
 export function bookWares(state, f) {
   const bp = blueprintWares(state, f, day(state)); // blueprints.js: a manual or blueprint now and then (its own dice)
@@ -778,7 +791,7 @@ export function planStudy(state, base, free, give, { foodDays = 0, urgent = fals
   const cap = plenty ? people.length : Math.max(1, Math.floor(people.length / 6));
   for (const s of pool) {
     if (readers >= cap || !free.has(s)) continue;
-    const k = bestBook(s, free2);
+    const k = bestBook(s, free2, state);
     if (!k || (!bookDef(k).skill && s.mood >= 55)) continue;
     free2[k]--;
     s.reading = k;
