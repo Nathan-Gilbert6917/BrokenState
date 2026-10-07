@@ -1112,9 +1112,10 @@ export function render(state) {
   const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
   // Weather fronts drifting over the land (ui/wxmap.js): faint on the Weather layer, strong with Weather fronts.
   if (!state.timelapse && (on("weather") || on("fronts"))) {
+    // They glide while the clock runs (Reduce motion: they jump an hour at a time, nothing asks for frames).
     const moving = view.hourFrac !== lastFrac;
     lastFrac = view.hourFrac;
-    if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: view.hourFrac || 0, strong: on("fronts"), zoom }) && animOn() && moving) wantFrames(150); // glide while the clock runs
+    if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: on("fronts"), zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
   }
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;

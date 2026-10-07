@@ -21,6 +21,7 @@ import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { day } from "../sim/world.js";
+import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
@@ -34,7 +35,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"],
+  ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -268,7 +269,7 @@ function groupEntries() {
 let ENTRIES = null, BY_KEY = null;
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...conditionEntries(), ...groupEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -323,8 +324,38 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
+  weatherSeen(state, keys);
   return keys;
 }
+// ---------- weather (sim/weather.js FRONT_KINDS, ICE): opened when one is on the map ----------
+const FRONT_HOW = {
+  storm: "Wait it out or go round: teams under it are much slower, can be hurt on the road and ambushed more; boats are riskier. It moves on in hours.",
+  rain: "Off-road gets slow (vehicles most): keep to the roads while it passes.",
+  blizzard: "Stay in: very slow, frostbite and falls on the road, a tile less sight. The dead are slowed too.",
+  snow: "Slower going, off-road most; it passes in hours.",
+  fog: "Teams see a tile less and are easier to ambush; driving is slower. It burns off by midday.",
+};
+function weatherEntries() {
+  const out = Object.entries(FRONT_KINDS).map(([k, f]) => ({
+    key: `w:${k}`, cat: "weather", name: `${WEATHER[k].icon} ${f.name}`, sub: "Weather front",
+    stats: [["Size", `${f.r[0]}–${f.r[1]} tiles across its middle (a Normal map; bigger on bigger maps)`], ["Speed", `${f.speed[0]}–${f.speed[1]} tiles an hour`], ["Lasts", k === "fog" ? "8–14 hours (forms before dawn)" : `up to ${FRONT.maxLife} hours, crossing the map from an edge`]],
+    text: `${WEATHER[k].desc} Only under the front: the rest of the map has the day's own sky.`, how: FRONT_HOW[k] || "", sprite: null,
+  }));
+  out.push({
+    key: "w:ice", cat: "weather", name: "❄️ Frozen river", sub: "Winter",
+    stats: [["Freezes", "after a run of freezing days in deep winter, from the north down"], ["On foot", `${ICE.walk} hours a tile; thin early and late (someone may go through)`], ["Vehicles", "never"]],
+    text: "A river frozen hard enough to walk on. Your teams can cross it, and so can other groups and the dead: a river that kept a base safe is open until the thaw.",
+    how: "Watch the river by your bases in winter (an alert says when it freezes): man the walls on that side. When it thaws, anyone on it scrambles ashore.", sprite: null,
+  });
+  return out;
+}
+function weatherSeen(state, keys) {
+  try {
+    for (const f of visibleFronts(state, 0)) keys.add(`w:${f.k}`);
+    if (state.weather && iceRow(state) >= 0) keys.add("w:ice");
+  } catch { /* no weather yet */ }
+}
+
 // A battle's units the player sees now (each kind once: a kind already open is not looked at again).
 function battleSeen(state, out) {
   const b = state.combat;
