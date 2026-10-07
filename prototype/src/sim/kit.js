@@ -4,6 +4,7 @@
 // the trip's load and pace barely change. What is not used comes home with them.
 import { GEAR } from "./data.js";
 import { stow } from "./inventory.js";
+import { packLights } from "./lights.js";
 
 export const KIT_KG = 1.5;
 // In order of preference: Heat first on a search trip, then morale, then the throwables.
@@ -25,6 +26,8 @@ export function packTripKit(state, base, crew, mission) {
   let kg = 0;
   const out = [];
   const taken = new Set();
+  // A light each first (lights.js: the lightest that works for them), outside the kit's weight budget.
+  out.push(...packLights(base, crew));
   for (const key of want) {
     if (taken.has(key) || crew.some((s) => hasOn(s, key))) continue;
     const i = base.armory.findIndex((it) => it && it.key === key);

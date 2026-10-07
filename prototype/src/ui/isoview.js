@@ -20,6 +20,7 @@
 // Camera: pan (drag, the arrow keys, the screen edge), zoom (wheel, + / −: 9 steps), turn in 90° steps (, and .),
 // center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
+import { LIGHTS } from "../sim/lights.js";
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
@@ -1461,10 +1462,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of players) {
       if (!p.light || !active(p)) continue;
       const f = p.face && (p.face[0] || p.face[1]) ? p.face : [1, 0], a = Math.atan2(f[1], f[0]);
-      ctx.fillStyle = "rgba(255,240,170,0.10)";
+      const L = LIGHTS[p.light] || LIGHTS.flashlight, R = L.cone; // sim/lights.js: a beam, or a lantern's or torch's glow all around
+      ctx.fillStyle = p.light === "torch" ? "rgba(255,170,80,0.12)" : "rgba(255,240,170,0.10)";
       ctx.beginPath();
-      ctx.moveTo(...project(p.x + 0.5, p.y + 0.5, standZ(b, p.x, p.y)));
-      for (let k = 0; k <= 8; k++) { const aa = a - 0.45 + (0.9 * k) / 8; ctx.lineTo(...project(p.x + 0.5 + Math.cos(aa) * 4.5, p.y + 0.5 + Math.sin(aa) * 4.5, standZ(b, p.x, p.y))); }
+      if (L.round) {
+        for (let k = 0; k <= 16; k++) { const aa = (Math.PI * 2 * k) / 16; ctx[k ? "lineTo" : "moveTo"](...project(p.x + 0.5 + Math.cos(aa) * R, p.y + 0.5 + Math.sin(aa) * R, standZ(b, p.x, p.y))); }
+      } else {
+        ctx.moveTo(...project(p.x + 0.5, p.y + 0.5, standZ(b, p.x, p.y)));
+        for (let k = 0; k <= 8; k++) { const aa = a - 0.45 + (0.9 * k) / 8; ctx.lineTo(...project(p.x + 0.5 + Math.cos(aa) * R, p.y + 0.5 + Math.sin(aa) * R, standZ(b, p.x, p.y))); }
+      }
       ctx.closePath(); ctx.fill();
     }
     for (const c of b.fires || []) groundDisc(c, "rgba(255,140,40,0.18)");

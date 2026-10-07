@@ -4,6 +4,7 @@
 // Some sturdier recipes still need a workshop (needs: "workshop" = an ammo bench or machine shop here).
 // Makeshift gear has durability (item.dur): it wears with every fight / treatment / day of work and breaks at 0.
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
+import { LIGHTS } from "./lights.js";
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS } from "./buildings.js";
@@ -46,6 +47,11 @@ export const CRAFTS = {
   noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
   firecracker: { gear: "firecracker", in: { scrap: 1, ammo: 8 },  hours: 3,  skill: "mechanics", min: 2, field: true },
   flashlight:  { gear: "flashlight",  in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 3 },
+  // Lights (lights.js): a torch from firewood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
+  torch:       { gear: "torch",       in: { wood: 1, scrap: 1 },  hours: 1,  skill: "mechanics", min: 0, field: true },
+  headlamp:    { gear: "headlamp",    in: { scrap: 1, parts: 1 }, hours: 5,  skill: "mechanics", min: 3 },
+  lantern:     { gear: "lantern",     in: { scrap: 3, parts: 1, fuel: 1 }, hours: 6, skill: "mechanics", min: 2 },
+  spotlight:   { gear: "spotlight",   in: { scrap: 4, parts: 3 }, hours: 12, skill: "mechanics", min: 5, needs: "workshop" },
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
   // A bicycle built from frames and wheels (vehicles.js): it joins the base's bikes.
   bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
@@ -102,7 +108,7 @@ export function craftOutputText(key) {
     if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
     if (d.siege) fx.push(d.siege === "ladder" ? "set against a wall in battle to climb onto its walkway" : "carried by 2–3 to smash a barred gate or door, 16–24 a carrier a turn");
     if (d.suppressor) fx.push("halves the noise of a pistol or rifle shot");
-    if (r.gear === "flashlight") fx.push("lets your people search at night, but the light is seen");
+    if (LIGHTS[r.gear]) fx.push(`a light: at night sees ${LIGHTS[r.gear].sight} tiles (7 without) and searches without fumbling, but is seen ${LIGHTS[r.gear].seen} tile${LIGHTS[r.gear].seen === 1 ? "" : "s"} further${LIGHTS[r.gear].free ? "; hands free" : "; in the off hand"}`); // lights.js
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
     bits.push(`${d.throw || d.suppressor || d.siege ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);

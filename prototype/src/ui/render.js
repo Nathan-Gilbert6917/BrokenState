@@ -1,7 +1,8 @@
 // Canvas renderer for the State Map. Reads the simulation; never changes it.
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
-import { hub, day, factionById, RADIO_RANGE } from "../sim/world.js";
-import { partyTile, plannedTile, outpostScrap, glideAt } from "../sim/parties.js";
+import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
+import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers } from "../sim/parties.js";
+import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
@@ -1801,6 +1802,20 @@ function heatBar(px, py, heat) {
   ctx.fillRect(x, y, (w * Math.min(100, heat)) / 100, h);
 }
 
+// A soft warm glow round a team at night, as wide as its brightest light reaches and stronger the more of them are lit.
+function lightGlow(state, p, x, y) {
+  let best = null, n = 0;
+  for (const s of partyMembers(state, p)) { const k = lightOf(s); if (k) { n++; if (!best || LIGHTS[k].sight > LIGHTS[best].sight) best = k; } }
+  if (!best) return;
+  const s = zoomBoost(), r = (10 + (LIGHTS[best].sight - 7) * 4) * s, a = Math.min(0.42, 0.18 + 0.06 * n);
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+  grad.addColorStop(0, best === "torch" ? `rgba(255,170,80,${a})` : `rgba(255,236,160,${a})`);
+  grad.addColorStop(1, "rgba(255,236,160,0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
 function drawPlayerParty(state, p) {
   const g = state.grid;
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? "#9be39b" : "#7fd0ff";
@@ -1876,6 +1891,7 @@ function drawPlayerParty(state, p) {
       fireGlow(p.id * 5 + 1, fx, fy, s);
       smokeWisps(p.id * 5 + 2, fx, fy - 2 * s, s, { n: 3, rise: 13 });
     }
+    if (isNight(state)) lightGlow(state, p, px, py); // sim/lights.js: a team carrying lights glows in the dark
     groundRing(px, py, ring, false);
     const cvp = partySpriteCanvas(look.kind, look.color, look.count), wp = spriteW(look.kind) * k2;
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.

@@ -17,9 +17,10 @@
 //     (+6 Heat in a raid). Drag (1 action) moves a body, a knocked-out enemy or a downed teammate up to 3 tiles.
 //   suppressor: carried by the shooter (anywhere on them), it fits a pistol, hunting rifle or assault rifle: shots
 //     make half the noise (half the Heat, half the earshot) and each shot wears it (12 shots).
-//   night raids: enemy sight 7 (the dead 5), detection range ×0.6 (at least 2); your people see 7 too, 9 with a
-//     flashlight in the off hand (noticed from 3 tiles further) and normally with night vision goggles; a quick
-//     rummage in the dark without either is heard 2 tiles further (search.js; a full search is 1 action either way).
+//   night raids: enemy sight 7 (the dead 5), detection range ×0.6 (at least 2); your people see 7 too, more with a
+//     light (lights.js: a headlamp 8, a flashlight or torch 9, a lantern 10, a spotlight 12; noticed 1–6 tiles further)
+//     and normally with night vision goggles; a quick rummage in the dark without either is heard 2 tiles further
+//     (search.js; a full search is 1 action either way).
 import { GEAR } from "./data.js";
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
@@ -32,9 +33,10 @@ import { sensesAny } from "./decoys.js";
 // Inside a building (buildingmaps.js): where a throw stops at a wall or a closed door, and how walls muffle a noise.
 import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps.js";
 import { battleOptic } from "./optics.js";
+import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torches, lanterns, spotlights
 
 export const STEALTH = {
-  NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3,
+  NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
   BODY_SIGHT: 5, BODY_SIGHT_NIGHT: 3, BODY_HEAT: 6, DRAG: 3, SUPPRESS: 0.5,
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
@@ -142,7 +144,7 @@ export function stealthSetup(state, b) {
     if (u.side === "player") {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
-      u.light = !!(tool && tool.key === "flashlight");
+      setLight(u, s);
       u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")); // a thermal monocular sees in the dark like night vision (optics.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
@@ -150,7 +152,7 @@ export function stealthSetup(state, b) {
       u.suppressor = sup ? sup.item : null;
       u.dropSuppressor = sup ? sup.take : null;
       u.daySight = u.sight; // refitSenses
-      if (b.night && !u.nvg) u.sight = Math.min(u.sight, u.light ? STEALTH.LIGHT_SIGHT : STEALTH.NIGHT_SIGHT);
+      if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(u));
       u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
     } else {
       if (!u.face) u.face = [sign(Math.round(cx - u.x)), sign(Math.round(cy - u.y))];
@@ -158,6 +160,13 @@ export function stealthSetup(state, b) {
     }
   }
 }
+// The light a unit carries (lights.js): u.light is its key (or null), read by the night sight, detection, the dark
+// rummage (search.js) and the battle views (their beams and glows).
+function setLight(u, s) {
+  u.light = lightOf(s);
+}
+const nightSight = (u) => (u.light && LIGHTS[u.light] ? LIGHTS[u.light].sight : STEALTH.NIGHT_SIGHT);
+export const lightSeen = (u) => (u.light && LIGHTS[u.light] ? LIGHTS[u.light].seen : 0);
 function nightEyes(b, u) {
   if (!b.night || u.nightEyes || u.side === "player") return;
   u.nightEyes = true;
@@ -170,7 +179,7 @@ export function detectRange(b, e, mover, perks = true) {
   const range = Math.max(3, 8 - Math.floor(mover.stealth / 4));
   let r = e.kind === "zombie" ? Math.min(range, 5) : range;
   if (perks && mover.sneak) r = Math.max(1, r - mover.sneak);
-  if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + (mover.light ? STEALTH.LIGHT_DETECT : 0));
+  if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
   // A person looks the way they face: behind them only what they hear (half the range). The dead have no front.
   if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT));
   if (perks && mover.ghost) r = Math.min(r, 2);
@@ -579,9 +588,9 @@ export function botRetreatSmoke(state, b, inEvac) {
 export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
-  u.light = !!(tool && tool.key === "flashlight");
+  setLight(u, s);
   u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal"));
-  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, u.light ? STEALTH.LIGHT_SIGHT : STEALTH.NIGHT_SIGHT) : u.daySight;
+  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   const sup = SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;
   u.suppressor = sup ? sup.item : null;

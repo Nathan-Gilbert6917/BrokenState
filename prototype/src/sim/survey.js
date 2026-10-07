@@ -12,7 +12,8 @@
 //     team       +8% a person past the first (at most ×1.3)
 //     terrain    of the site's tile: farmland ×1.35, suburbs ×1, city ×0.85, hills ×0.7, forest ×0.6, mountains ×0.55
 //     distance   from the team's tile, less the optics' reach: 0–1 tiles ×1.6, 2 ×1, 3 ×0.45, 4 ×0.18, 5 ×0.06
-//     light      night (20:00–06:00) ×0.35; a flashlight ×0.5, night vision ×0.75, a thermal ×0.9
+//     light      night (20:00–06:00) ×0.35; the best light carried (lights.js: a headlamp ×0.42, a torch ×0.45,
+//                a flashlight ×0.5, a lantern ×0.55, a spotlight ×0.7), night vision ×0.75, a thermal ×0.9
 //     weather    fog ×0.5, blizzard ×0.4, storm ×0.55, rain ×0.85, snow ×0.8 (a thermal leaves fog at ×0.9)
 //     vehicle    a car ×0.6 (it covers ground fast but sees little off the road), bikes ×0.8, on foot ×1
 //     stance     stealthy ×1.2 (slow and careful: fewer spots, fewer encounters), rushed ×0.75
@@ -33,6 +34,8 @@
 // north of Dunmore"). A rumour is a circle of 3 tiles that holds the place (never the exact tile), on the map for
 // RUMOUR.days days; a survey whose centre lies in it gets ×3 odds for that place. Found, it is struck off; nothing
 // here uses the world's random numbers (hash01), so rumours shift no other result.
+import { LIGHTS, surveyLight } from "./lights.js"; // the best light carried: a survey's night hours
+const bestLamp = (keys) => keys.filter((k) => LIGHTS[k]).sort((a, b) => LIGHTS[b].survey - LIGHTS[a].survey)[0] || null;
 import { TERRAIN, LOCATIONS } from "./data.js";
 import { log, snapshot, hub, day, skill, atBase } from "./world.js";
 import {
@@ -168,7 +171,7 @@ export function lookContext(state, members, { mode = false, stance = "normal", c
   const kit = members.flatMap(carriedAll).map((it) => it && it.key);
   return {
     scout, keen, spotter, n: members.length, mode: modeKey(mode), stance,
-    flashlight: kit.includes("flashlight"), nvg: kit.includes("nvg"),
+    lamp: surveyLight(kit), lampKey: bestLamp(kit), nvg: kit.includes("nvg"), // lights.js: the best light carried
     members, cargo,
   };
 }
@@ -181,7 +184,7 @@ function teamFactors(ctx) {
 // Light and weather at an hour (with the optics' night and fog relief).
 function seeing(state, ctx, hour, opt) {
   let light = 1, wx = 1;
-  if (isNightAt(hour)) light = Math.max(SURVEY.night, ctx.flashlight ? SURVEY.flashlight : 0, ctx.nvg ? SURVEY.nvg : 0, opt.night || 0);
+  if (isNightAt(hour)) light = Math.max(SURVEY.night, ctx.lamp || 0, ctx.nvg ? SURVEY.nvg : 0, opt.night || 0);
   const k = weather(state, hour).key;
   if (SURVEY.weather[k]) wx = k === "fog" && opt.fog ? Math.max(SURVEY.weather[k], opt.fog) : SURVEY.weather[k];
   return { light, wx };
@@ -370,8 +373,8 @@ export function sweepPreview(state, { members, center, radius, hours, mode = fal
   const nights = route.slice(1).filter((_, i) => isNightAt(startHour + i + 1)).length;
   if (nights) {
     const opt = opticsFor(members, cargo, { still: true, night: true });
-    const light = Math.max(SURVEY.night, ctx.flashlight ? SURVEY.flashlight : 0, ctx.nvg ? SURVEY.nvg : 0, opt.night || 0);
-    reasons.push({ mult: 1 - (1 - light) * (nights / o.hours), text: `${nights} of ${o.hours} hours in the dark ×${light}${light > SURVEY.night ? ` (${opt.night ? "thermal" : ctx.nvg ? "night vision" : "flashlight"})` : ""}` });
+    const light = Math.max(SURVEY.night, ctx.lamp || 0, ctx.nvg ? SURVEY.nvg : 0, opt.night || 0);
+    reasons.push({ mult: 1 - (1 - light) * (nights / o.hours), text: `${nights} of ${o.hours} hours in the dark ×${light}${light > SURVEY.night ? ` (${opt.night ? "thermal" : ctx.nvg && SURVEY.nvg >= (ctx.lamp || 0) ? "night vision" : LIGHTS[ctx.lampKey]?.name || "a light"})` : ""}` });
   }
   const wxs = new Map();
   for (let h = 1; h <= o.hours; h++) { const k = weather(state, startHour + h).key; if (SURVEY.weather[k]) wxs.set(k, (wxs.get(k) || 0) + 1); }

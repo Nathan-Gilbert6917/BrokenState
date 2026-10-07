@@ -12,6 +12,7 @@ import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
+import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { bodyEmpty } from "../sim/inventory.js";
@@ -878,7 +879,7 @@ function raidHead(state, b, phase) {
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+S, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
-    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too: ${STEALTH.LIGHT_SIGHT} with a flashlight in the off hand (but the light is seen from ${STEALTH.LIGHT_DETECT} tiles further), all the way with night vision goggles. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
+    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too, more with a light, and the light is seen from further off: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.sight} (+${L.seen})`).join(", ")}; all the way with night vision goggles. A headlamp works from anywhere on them; the others in the off hand. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
@@ -1207,7 +1208,7 @@ function previewHtml(b, state = null) {
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? " · flashlight" : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
@@ -1747,7 +1748,15 @@ function drawLights(b, cs) {
     if (!u.light || !active(u)) continue;
     const f = u.face && (u.face[0] || u.face[1]) ? u.face : [1, 0];
     const a = Math.atan2(f[1], f[0]);
-    const cx = ox + (u.x + 0.5) * cs, cy = oy + (u.y + 0.5) * cs, r = cs * 4.5;
+    const L = LIGHTS[u.light] || LIGHTS.flashlight; // sim/lights.js: a beam as long as the light reaches, a lantern or torch all around
+    const cx = ox + (u.x + 0.5) * cs, cy = oy + (u.y + 0.5) * cs, r = cs * L.cone;
+    if (L.round) {
+      ctx.fillStyle = u.light === "torch" ? "rgba(255,170,80,0.15)" : "rgba(255,240,170,0.13)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
     ctx.fillStyle = "rgba(255,240,170,0.16)";
     ctx.beginPath();
     ctx.moveTo(cx, cy);

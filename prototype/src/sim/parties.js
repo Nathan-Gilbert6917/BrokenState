@@ -32,6 +32,7 @@ import { supplyArrive, supplyReturned } from "./supply.js";
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText } from "./orders.js";
 import { applyPlan, fieldHour } from "./plans.js";
 import { packSiegeKit } from "./kit.js";
+import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
@@ -520,17 +521,22 @@ export function launchExpedition(state, opts) {
     if (have < members.length) return { error: `Not enough bikes: ${members.length} people, ${have} bike${have === 1 ? "" : "s"} at the hub (one each).` };
   }
   const plannedV = bikes ? { ...v, count: members.length } : v;
+  // Lights (lights.js): a light each from the armory, before the estimate so the pace counts their weight; put back if
+  // the launch fails after all.
+  const lightItems = [];
+  const lights = opts.lights ? packLights(home, members, lightItems) : [];
+  const fail = (error) => { unpackLights(home, members, lightItems); return { error }; };
   const est = estimateTrip(state, { memberIds, dest, vehicle: travelMode(v), stance, fuel: v ? v.fuel + (supplies.fuel || 0) : 0, supplies, v: plannedV });
-  if (!est) return { error: v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile." };
+  if (!est) return fail(v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile.");
   // Water: purified and un-purified together (water.js), purified packed first.
   const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : home.stock[k] || 0);
-  for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return { error: `Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at the hub.` };
+  for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at the hub.`);
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
   const cap = carryCapacity(state, members, plannedV);
   const load = supplyLoad(supplies);
   if (load > cap + 1e-9) {
-    return { error: `Too much to carry: the packed supplies weigh ${Math.ceil(load)} kg, the crew${v ? ` and the ${vehicleLabel(plannedV)}` : ""} can carry ${Math.floor(cap)} kg more than they wear. Pack less${v ? "" : ", or take more people, bikes or a vehicle"}.` };
+    return fail(`Too much to carry: the packed supplies weigh ${Math.ceil(load)} kg, the crew${v ? ` and the ${vehicleLabel(plannedV)}` : ""} can carry ${Math.floor(cap)} kg more than they wear. Pack less${v ? "" : ", or take more people, bikes or a vehicle"}.`);
   }
   if (bikes) v = takeBikes(state, home, members.length);
   const packed = { ...supplies };
@@ -571,6 +577,7 @@ export function launchExpedition(state, opts) {
   const waits = opts.plan ? !planHome : stays;
   const after = mission === "outpost" ? ` The team stays there as its first staff${v ? `, and the ${v.name} stays at the outpost` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
+  if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
   log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
   return { party: p };

@@ -82,7 +82,7 @@ export function quickRefusal(b, u, box) {
 // The containers next to the unit a quick search can go through (never opened, not locked).
 export const quickable = (near) => near.filter((c) => !c.contents);
 
-// Fumbling in the dark: night, and no flashlight or night vision.
+// Fumbling in the dark: night, and no light (lights.js: a headlamp anywhere on them, or a light in the off hand) or night vision.
 const inDark = (b, u) => !!b.night && !u.light && !u.nvg;
 // How far the rummage is heard (tiles), before walls.
 export const quickRadius = (b, u) => SEARCH.quick.radius + (inDark(b, u) ? SEARCH.quick.dark : 0);

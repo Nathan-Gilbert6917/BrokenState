@@ -15,7 +15,7 @@ import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, newItem } from "./inventory.js";
-import { rollFind, rollHuntFind, rollSiteWood } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
@@ -213,6 +213,8 @@ export function searchHour(state) {
   if (small) { e.found.gear.push(small); finds.push(small.name); }
   const gearFind = rollHuntFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // snare wire, a rod, a net (loot.js HUNT_FINDS)
   if (gearFind) { e.found.gear.push(gearFind); finds.push(gearFind.name); }
+  const lamp = rollLightFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a headlamp, a lantern, a spotlight (loot.js LIGHT_FINDS; its own dice)
+  if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.

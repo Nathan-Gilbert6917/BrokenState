@@ -69,6 +69,8 @@ export const ITEM_TAGS = {
   monocular: ["hunt", "outdoor", "guns", "camp", "home", "military", "travel"], binoculars: ["hunt", "outdoor", "guns", "military", "police", "home", "sport", "farm", "tech", "crash", "camp", "tools"],
   spotscope: ["hunt", "guns", "military", "outdoor"], thermal: ["military", "crash"], telescope: ["school", "tech", "home"],
   waterfilter: ["camp", "outdoor"], flashlight: ["home", "garage", "tools", "shop", "military", "police", "camp", "industry"],
+  headlamp: ["camp", "outdoor", "tools", "garage", "industry", "fire", "military"], torch: ["camp", "outdoor"], lantern: ["camp", "outdoor", "farm", "home", "shop"],
+  spotlight: ["police", "fire", "industry", "military", "tools", "garage"],
   // The hand-crank radio (radio.js listeners: hears, cannot call) and purification tablets (worm.js): camping and
   // travel places, pharmacies and clinics, supply drops.
   handradio: ["home", "camp", "outdoor", "travel", "shop", "tech", "fire"], puritabs: ["medical", "camp", "outdoor", "travel", "military", "crash"],
@@ -228,6 +230,26 @@ export function rollFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "find", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "findpick", tileId, state.hour, salt));
+  return key ? newItem(key, 1) : null;
+}
+// Lights (lights.js) where people kept them: a roll of its own each search hour, like HUNT_FINDS (so adding them
+// changed no other find). Torches are made, not found (crafting.js).
+export const LIGHT_FINDS = {
+  hardware: { p: 0.05, items: { headlamp: 2, lantern: 1.5, spotlight: 0.5 } }, campground: { p: 0.06, items: { headlamp: 2, lantern: 2 } },
+  lodge: { p: 0.05, items: { headlamp: 2, lantern: 1.5 } }, ranger: { p: 0.05, items: { headlamp: 1.5, lantern: 1, spotlight: 0.5 } },
+  cabin: { p: 0.04, items: { lantern: 2, headlamp: 1 } }, farm: { p: 0.03, items: { lantern: 2 } }, ranch: { p: 0.03, items: { lantern: 2 } },
+  firestation: { p: 0.05, items: { spotlight: 1.5, headlamp: 2 } }, police: { p: 0.04, items: { spotlight: 2 } },
+  military: { p: 0.04, items: { headlamp: 2, spotlight: 1 } }, autoshop: { p: 0.04, items: { headlamp: 2 } },
+  dam: { p: 0.04, items: { spotlight: 1, headlamp: 1 } }, factory: { p: 0.03, items: { headlamp: 1.5, spotlight: 0.5 } },
+  warehouse: { p: 0.03, items: { headlamp: 1, lantern: 1 } }, truckstop: { p: 0.03, items: { headlamp: 1, lantern: 0.5 } },
+};
+export function rollLightFind(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? LIGHT_FINDS[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "lightfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "lightpick", tileId, state.hour, salt));
   return key ? newItem(key, 1) : null;
 }
 // Hunting and fishing gear at a site this search hour (HUNT_FINDS; its own dice too), or null.
