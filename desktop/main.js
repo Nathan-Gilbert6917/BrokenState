@@ -98,12 +98,15 @@ async function serve(request) {
 }
 
 // ---------- window size, position, fullscreen and zoom, remembered between launches ----------
+// The game opens fullscreen the first time; after that it opens the way it was left (F11 toggles). fsChosen marks a
+// file written since then: an older one (from before the title screen) gets the fullscreen start once too.
 const stateFile = () => path.join(app.getPath("userData"), "window-state.json");
-const DEFAULT_STATE = { bounds: null, maximized: true, fullscreen: false, zoom: 1 };
+const DEFAULT_STATE = { bounds: null, maximized: true, fullscreen: true, zoom: 1 };
 
 function loadWindowState() {
   try {
     const s = { ...DEFAULT_STATE, ...JSON.parse(fs.readFileSync(stateFile(), "utf8")) };
+    if (!s.fsChosen) s.fullscreen = true;
     const b = s.bounds;
     const ok = b && [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width >= 400 && b.height >= 300 &&
       // still on a connected screen (the TV may have been unplugged or the resolution changed)
@@ -127,6 +130,7 @@ function saveWindowState(win) {
       maximized: win.isMaximized(),
       fullscreen: win.isFullScreen(),
       zoom: win.webContents.getZoomFactor(),
+      fsChosen: true,
     };
     fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
     fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2));

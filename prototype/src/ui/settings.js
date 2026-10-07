@@ -96,8 +96,8 @@ function gameTab(state, ui, api) {
     </div>`;
     if (blocker) html += `<div class="small warn" style="margin:0.2rem 0 0.5rem">${esc(blocker)}</div>`;
     html += `<div class="setrow">
-      <button data-action="set-saveexit"${dis(!busy && !state.gameOver)}${tip("Save (as above), then go back to the new-run screen, where Continue picks this game up again")}>Save and exit</button>
-      <button data-action="set-exit"${dis(!busy)}${tip("Back to the new-run screen without saving")}>Exit without saving</button>
+      <button data-action="set-saveexit"${dis(!busy && !state.gameOver)}${tip("Save (as above), then go back to the title screen, where Continue picks this game up again")}>Save and exit</button>
+      <button data-action="set-exit"${dis(!busy)}${tip("Back to the title screen without saving")}>Exit without saving</button>
       <button data-action="set-new"${dis(!busy)}${tip("A new map and colonists (the new-run screen)")}>New campaign</button>
       ${api.desktop ? `<button data-action="set-quit"${dis(!busy)}${tip("Save (if the game can be saved now), then close the game")}>Save and quit to desktop</button><button data-action="set-quitnosave"${dis(!busy)}${tip("Close the game without saving")}>Quit</button>` : ""}
     </div>`;
@@ -183,7 +183,7 @@ function aboutTab(state, ui, api) {
 }
 
 // ---------- actions (main.js registers them: fn(state, ui, data, api)) ----------
-// api: { options, desktop, refresh(), track(promise), adopt(state, entry), newWorld(), thumb(), quit(), applyScale(v), autosaveInfo() }
+// api: { options, desktop, refresh(), track(promise), adopt(state, entry), newWorld(), toTitle(), thumb(), quit(), applyScale(v), autosaveInfo() }
 function run(ui, api, label, fn) {
   const S = ui.settings;
   if (!S || S.busy) return;
@@ -296,16 +296,16 @@ export const SETTINGS_ACTIONS = {
   "set-saveexit": (state, ui, d, api) => {
     const why = saveBlocker(state);
     if (why) {
-      ui.settings.confirm = { text: `${why} Exit without saving instead?${listSaves().some((e) => e.auto) ? " (The last autosave is in the list.)" : ""}`, yes: "Exit without saving", go: () => api.newWorld() };
+      ui.settings.confirm = { text: `${why} Exit without saving instead?${listSaves().some((e) => e.auto) ? " (The last autosave is in the list.)" : ""}`, yes: "Exit without saving", go: () => api.toTitle() };
       return;
     }
     run(ui, api, "Saving", async () => {
       await saveTo(state, ui, api, targetSlot(ui) || newSlotId(), ui.settings.name.trim() || undefined);
-      api.newWorld(); // the new-run screen, where Continue loads it again
+      api.toTitle(); // the title screen, where Continue loads it again
       return "";
     });
   },
-  "set-exit": (state, ui, d, api) => guarded(state, ui, api, { text: "Exit without saving? Progress since your last save is lost.", yes: "Exit" }, () => api.newWorld()),
+  "set-exit": (state, ui, d, api) => guarded(state, ui, api, { text: "Exit without saving? Progress since your last save is lost.", yes: "Exit" }, () => api.toTitle()),
   "set-new": (state, ui, d, api) => guarded(state, ui, api, { text: "Start a new campaign? Progress since your last save is lost.", yes: "New campaign" }, () => api.newWorld()),
   "set-quit": (state, ui, d, api) => {
     if (!ui.started || state.gameOver) { api.quit(); return; }

@@ -549,6 +549,7 @@ function pickModal(state, ui) {
   if (ui.timelapse) return null; // the timelapse viewer has its own overlay (ui/timelapse.js)
   if (ui.zombieLook) return ["zlook", () => zombieLookModal(ui)];
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included
+  if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)
   if (ui.inv && (ui.inv.loot || ui.inv.raid)) return [ui.inv.raid ? "rloot" : "loot", () => inventoryModal(state, ui)]; // over the battle screen
   if (!ui.started) return ["newrun", () => newRunScreen(state, ui)];

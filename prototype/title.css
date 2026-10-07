@@ -1,0 +1,74 @@
+/* The title screen (src/ui/title.js): the animated background, the logo in four styles, the menu. */
+#title { position: fixed; inset: 0; z-index: 9; overflow: hidden; background: #050506; color: var(--text); user-select: none; }
+#title[data-bg="map"] { background: transparent; }
+#titlebg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#title[data-bg="map"] #titlebg { display: none; }
+#title .tt-shade { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 100%), linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0) 30%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.4)); }
+#title[data-bg="map"] .tt-shade { background: radial-gradient(ellipse at 50% 42%, rgba(8,8,10,0.55) 0%, rgba(8,8,10,0.25) 45%, rgba(0,0,0,0.75) 100%); }
+#title .tt-main { position: absolute; inset: 0; pointer-events: none; }
+#title .tt-main > * { pointer-events: auto; }
+#title .tt-logo { position: absolute; left: 50%; top: 5vh; translate: -50% 0; }
+#title.covered .tt-main, #title.covered .tt-look, #title.covered .tt-ver { visibility: hidden; }
+.tt-logo { width: min(56vw, 56rem); filter: drop-shadow(0 0.4rem 1.2rem rgba(0,0,0,0.75)); animation: tt-in 1.6s ease-out both; }
+.tt-logo svg { display: block; width: 100%; height: auto; overflow: visible; }
+@keyframes tt-in { from { opacity: 0; transform: translateY(-1rem); } to { opacity: 1; transform: none; } }
+
+/* Cracked stencil: worn paint on a quarantine fence, flickering like a sign under a failing light. */
+.tt-stencil text { font-family: Bahnschrift, "DIN Condensed", Impact, sans-serif; font-weight: 700; font-stretch: 75%; font-size: 236px; }
+.tt-stencil .tt-ink { fill: #d6cdb2; }
+.tt-stencil .tt-shift { transform: translate(5px, 7px) rotate(1.3deg); transform-origin: 600px 410px; }
+.tt-stencil svg { animation: tt-flicker 9s linear infinite; }
+@keyframes tt-flicker { 0%, 61%, 63%, 64.5%, 90%, 92.5%, 100% { opacity: 1; } 62% { opacity: 0.45; } 64% { opacity: 0.8; } 91% { opacity: 0.3; } 91.6% { opacity: 0.9; } 92% { opacity: 0.55; } }
+
+/* Blood-red serif: an old horror poster; the drips grow, let a drop go and start again. */
+.tt-blood text { font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 200px; }
+.tt-blood .tt-drip path, .tt-blood .tt-drop { fill: #7a0b10; }
+.tt-drip { animation: tt-drip 10s ease-in infinite; transform: scaleY(0.15); }
+@keyframes tt-drip { 0% { transform: scaleY(0.12); } 70% { transform: scaleY(1); } 78% { transform: scaleY(0.82); } 100% { transform: scaleY(0.12); } }
+.tt-drop { animation: tt-drop 10s ease-in infinite; opacity: 0; }
+@keyframes tt-drop { 0%, 70% { opacity: 0; transform: translateY(0); } 71% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; transform: translateY(70px); } 86%, 100% { opacity: 0; transform: translateY(80px); } }
+
+/* Spray-painted: graffiti on a wall, BROKEN in white, STATE in red with a slash under it. */
+.tt-spray text { font-family: Impact, "Arial Black", sans-serif; font-size: 210px; }
+.tt-spray .tt-white text { fill: #ece6d8; }
+.tt-spray .tt-red text { fill: #c0392b; }
+.tt-spray .tt-slash { fill: none; stroke: #c0392b; stroke-width: 15; stroke-linecap: round; }
+.tt-spray .tt-dw path, .tt-spray .tt-drop.tt-dw { fill: #ece6d8; }
+.tt-spray .tt-dr path, .tt-spray .tt-drop.tt-dr { fill: #c0392b; }
+.tt-spray .tt-drip { animation-name: tt-paintdrip; }
+@keyframes tt-paintdrip { 0% { transform: scaleY(0.2); } 60% { transform: scaleY(1); } 100% { transform: scaleY(1); } }
+.tt-spray .tt-drop { display: none; }
+
+/* Clean minimal: thin wide capitals, the letters coming up one by one. */
+.tt-logo.tt-minimal { width: min(56vw, 54rem); top: 12vh; }
+.tt-minimal text { font-family: "Segoe UI", system-ui, sans-serif; font-weight: 200; font-size: 92px; fill: #d5d8dc; }
+.tt-minimal tspan { opacity: 0; animation: tt-letter 1.2s ease-out forwards; }
+@keyframes tt-letter { from { opacity: 0; } to { opacity: 1; } }
+.tt-minimal .tt-rule { stroke: #8d939b; stroke-width: 1.2; animation: tt-breathe 6s ease-in-out infinite; }
+.tt-minimal .tt-dot { fill: var(--accent); animation: tt-breathe 3s ease-in-out infinite; }
+.tt-minimal .tt-sub { font-size: 19px; font-weight: 400; letter-spacing: 9px; fill: #8d939b; }
+@keyframes tt-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+/* The menu. */
+.tt-menu { position: absolute; left: 6vw; bottom: 11vh; display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem; padding: 1rem 0;
+  animation: tt-in 1.6s 0.4s ease-out both; }
+.tt-menu::before { content: ""; position: absolute; inset: -2rem -4rem -2rem -6vw; z-index: -1; background: radial-gradient(ellipse at 30% 50%, rgba(0,0,0,0.6), rgba(0,0,0,0) 70%); pointer-events: none; }
+.tt-item { min-width: 16rem; background: transparent; border: none; border-left: 3px solid transparent; border-radius: 0; padding: 0.45rem 1rem;
+  font-size: 1.25rem; letter-spacing: 0.22em; text-transform: uppercase; color: #d9d4c7; text-align: left; text-shadow: 0 2px 6px #000;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, letter-spacing 0.2s, padding 0.2s; }
+.tt-item small { display: block; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: none; color: var(--muted); margin-top: 0.1rem; }
+.tt-item.primary { color: #f0c46e; background: linear-gradient(90deg, rgba(224,168,79,0.22), rgba(224,168,79,0)); border-left-color: rgba(224,168,79,0.7); }
+.tt-item:hover:not(:disabled), .tt-item:focus-visible { background: linear-gradient(90deg, rgba(224,168,79,0.25), rgba(224,168,79,0)); border-left-color: var(--accent); color: #fff; padding-left: 1.4rem; outline: none; }
+.tt-item:disabled { opacity: 0.35; }
+.tt-look { position: absolute; right: 1rem; bottom: 0.8rem; display: flex; gap: 1.2rem; font-size: 0.82rem; color: var(--muted); background: rgba(0,0,0,0.45); padding: 0.3rem 0.6rem; border-radius: 4px; }
+.tt-pick { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tt-pick b { color: var(--text); font-weight: 600; min-width: 9.5rem; text-align: center; }
+.tt-pick button { padding: 0 0.45rem; line-height: 1.4; background: rgba(35,39,46,0.8); }
+.tt-lbl { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+.tt-ver { position: absolute; left: 1rem; bottom: 0.9rem; font-size: 0.75rem; color: rgba(200,200,200,0.4); letter-spacing: 0.06em; }
+
+/* The living State Map: the game's map canvas fills the window under the title; nothing else of the game shows. */
+body.title-map #mapwrap { position: fixed; inset: 0; z-index: 8; }
+body.title-map #mapwrap > :not(#map) { display: none !important; }
+body.title-map #map { cursor: default; }

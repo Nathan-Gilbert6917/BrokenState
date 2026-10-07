@@ -64,6 +64,7 @@ import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traf
 import { activeCrawl } from "./sim/citycrawl.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp } from "./ui/settings.js";
 import { loadOptions, saveOptions } from "./ui/saves.js";
+import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { toManual } from "./sim/work.js";
 import {
@@ -94,7 +95,7 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -203,7 +204,8 @@ function step(now) {
   else if (state.combat) {
     if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
-  } else render(state);
+  } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
+  if (ui.title) titleFrame(state, ui, now);
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }
@@ -360,6 +362,7 @@ function refresh(user = true) {
   setPanel("alerts", alertsHTML(alerts), user);
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
+  syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
   if (fps) {
@@ -1104,6 +1107,7 @@ function adopt(st, entry) {
   Object.assign(ui, freshUi());
   ui.crewEdited = false;
   state = st;
+  ui.title = false;
   if (!state.mode) state.mode = "normal"; // saves from before the modes
   ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.started = true;
@@ -1145,11 +1149,22 @@ const settingsApi = {
   track: (p) => { pendingIo.add(p); p.finally(() => pendingIo.delete(p)); },
   adopt,
   newWorld: () => newWorld(randomSeed()),
+  toTitle: () => { newWorld(randomSeed()); showTitle(ui); }, // exit: back to the title screen (ui/title.js)
   thumb: thumbnail,
   quit: () => { try { window.close(); } catch { /* not allowed here */ } },
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
+// The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
+// makes a fresh one.
+let titleTicked = false;
+initTitle({
+  options, desktop: settingsApi.desktop, quit: settingsApi.quit, saveOptions: () => saveOptions(options),
+  tick: () => { titleTicked = true; tickHour(state); },
+  newGame: () => { if (titleTicked) { titleTicked = false; newWorld(randomSeed()); } else { resetView(); centerOn(state, playerTile(state)); } },
+});
+for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
 function act(fn) {
   const before = armSnap();
@@ -1545,6 +1560,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "Escape" && closeTopLayer()) { e.preventDefault(); refresh(); return; }
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
+  if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
   if (ui.zombieLook || ui.inv || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
@@ -1614,6 +1630,7 @@ window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
   frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
+  skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {
     ui: cui,

@@ -21,6 +21,7 @@
     const g = window.game;
     // New game on the wanted seed (the new-run screen's Seed box), then Start.
     if (g.ui.started) throw new Error("perf driver: a game is already running; reload first");
+    if (g.ui.title) await click('[data-action="title-new"]', "the title screen's New game"); // ui/title.js
     const seedEl = await until(() => q('input[data-action="seed"]'), "the seed box");
     seedEl.value = String(seed);
     seedEl.dispatchEvent(new Event("change", { bubbles: true }));

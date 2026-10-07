@@ -35,6 +35,8 @@ export function loadOptions() {
       if (typeof v.autoOpen === "boolean") o.autoOpen = v.autoOpen; // folded panels open when you pick what they show (ui/layout.js)
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
       if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
+      if (typeof v.titleBg === "string") o.titleBg = v.titleBg; // the title screen's background and logo (ui/title.js checks them)
+      if (typeof v.titleStyle === "string") o.titleStyle = v.titleStyle;
     }
   } catch { /* unreadable: the defaults */ }
   return o;
