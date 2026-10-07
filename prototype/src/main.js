@@ -80,6 +80,7 @@ import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSi
 import { TRIP_ACTIONS, TRIP_CHANGE, useArmedTemplate } from "./ui/trips.js"; // order templates and Repeat trip
 import { rememberLaunch } from "./sim/trips.js";
 import { UNDO_ACTIONS, installUndo, undoKey, undoable } from "./ui/undo.js"; // undo in the planner, build queue and Work tab
+import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made on the spot (ui/soundcues.js says what to play)
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -115,6 +116,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 const options = loadOptions();
 ui.scale = options.uiScale;
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
+initAudio(options, () => saveOptions(options)); // the Sound options, the first-gesture unlock, button clicks
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
@@ -215,6 +217,7 @@ function step(now) {
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   if (ui.title) titleFrame(state, ui, now);
+  audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }

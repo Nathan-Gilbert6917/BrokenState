@@ -43,6 +43,7 @@ export function loadOptions() {
       if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)
       if (typeof v.titleBg === "string") o.titleBg = v.titleBg; // the title screen's background and logo (ui/title.js checks them)
       if (typeof v.titleStyle === "string") o.titleStyle = v.titleStyle;
+      if (v.sound && typeof v.sound === "object") o.sound = { ...v.sound }; // volumes and mutes (ui/audio.js soundOptions cleans them)
     }
   } catch { /* unreadable: the defaults */ }
   return o;
