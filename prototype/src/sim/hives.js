@@ -1,3 +1,4 @@
+// @ts-check
 // Infestation hives: where the hordes come from, and what the survivors have to destroy to win.
 //
 // Every hive gains resources each day, more when other hives stand within 5 tiles of it (a cluster):

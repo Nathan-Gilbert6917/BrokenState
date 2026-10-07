@@ -1,7 +1,8 @@
 // Diplomacy: jobs for other groups (every type made, accepted, done, failed or called off, deadlines, offers that
 // expire, rewards), the relations matrix between groups, wars (raids with their own odds, territory changing hands,
 // captives, peace on terms: land, tribute or a white peace), brokering a ceasefire, joining a war, trade at war
-// (prices up, less to trade, buying back still loses), the coalition (invitations, the council's vote, members
+// (prices up, less to trade, buying back still loses), the coalition (invitations, the ways into radio reach for one
+// (reachVia: radio, a team at the gates, a member, a base next door; the "out of radio reach" line), the council's vote, members
 // leaving, shared sightings, help against raids and hordes, allies at a hive, the seasonal council), the alliance
 // victory (true only when both conditions hold: land and every group still standing in it; hives do not matter), wants and surplus lists against the real stock, the market
 // board, the autopilot's choices, determinism, a 365-day run without NaN and the yearly group collapse rate with
@@ -588,6 +589,40 @@ section("The coalition");
   check(!!ask, "a group that qualifies asks to join");
   if (ask) { const best = [...ask.choices].sort((p, q) => q.ai(st) - p.ai(st))[0]; check(/Welcome/.test(best.label), "the autopilot welcomes it"); }
   clearCards(st);
+}
+
+// ======================================================================================
+section("Radio reach for the coalition (alliance.js reachVia): radio, a team at the gates, a member, a base next door");
+{
+  const st = setup();
+  const h = hub(st);
+  const g = st.grid;
+  const f = st.factions.find((x) => x.alive && canRadioGroup(st, x));
+  check(A.reachVia(st, f) === "radio", "a group within the station's coverage + 6: in reach by radio");
+  const far = g.within(h.tile, 40).find((t) => g.distance(t, h.tile) >= 30 && free(st, t) && planPath(st, h.tile, t, false) &&
+    st.factions.every((x) => x === f || x.bases.every((b) => g.distance(b, t) > 14)));
+  if (check(far != null, "a spot 30+ tiles out with no group near it")) {
+    const saved = f.bases.slice();
+    f.bases.length = 0; f.bases.push(far);
+    const why = A.inviteProblem(st, f);
+    check(A.reachVia(st, f) === "" && /out of radio reach \(bring their base within 6 tiles of your radio coverage \(a station reaches 12 tiles, each linked relay 6 more/.test(why),
+      `30+ tiles out: out of radio reach, and the line says what coverage (stations, relays) would take ("${why}")`);
+    const p = team(st, far);
+    check(A.reachVia(st, f) === "gates", "a team of yours at their gates: in reach");
+    drop(st, p);
+    const m = st.factions.find((x) => x.alive && x !== f);
+    const mSaved = m.bases.slice();
+    m.bases.push(g.within(far, 10).find((t) => g.distance(t, far) >= 9 && free(st, t)));
+    A.ensureAlliance(st).members.push(m.id);
+    check(A.reachVia(st, f) === "member", "a member with a base within 12 tiles of theirs: in reach");
+    st.alliance.members = st.alliance.members.filter((id) => id !== m.id);
+    m.bases.length = 0; m.bases.push(...mSaved);
+    const o = { id: newId(), tile: g.within(far, 8).find((t) => g.distance(t, far) >= 6 && free(st, t)), type: "outpost", name: "Fence Post", stock: {}, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
+    st.bases.push(o);
+    check(A.reachVia(st, f) === "neighbour", "a base of yours within 8 tiles of theirs: in reach (over the fence)");
+    st.bases.splice(st.bases.indexOf(o), 1);
+    f.bases.length = 0; f.bases.push(...saved);
+  }
 }
 
 // ======================================================================================

@@ -8,7 +8,7 @@
 // card, recruits.js), a wandering preacher, food stolen from the stores, a stray dog, storm damage (a leaking roof
 // over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, and two
 // survivors who have grown close (partners, relations.js), and remembering the dead (a memorial service).
-import { BUILDINGS, count, assignStations } from "./buildings.js";
+import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES } from "./data.js";
 import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
 import { weatherOnDay, season } from "./weather.js";
@@ -27,7 +27,7 @@ const pct = (c) => `${Math.round(c * 100)}%`;
 const moodAll = (list, v) => { for (const s of list) s.mood = clamp(s.mood + v, 0, 100); };
 const here = (s, base) => s.alive && s.location.kind === "base" && s.location.baseId === base.id;
 
-export const FIRE = { water: 15, burnable: ["bunkhouse", "ammo_bench", "med_station", "machine_shop", "garage", "watchtower", "rain_catcher"] };
+export const FIRE = { water: 15, burnable: ["bunkhouse", "barracks", "ammo_bench", "med_station", "machine_shop", "garage", "watchtower", "rain_catcher"] };
 export const DOG = { food: 0.5, mood: 0.5 };
 export const WELL_DOWN = { days: 5, water: 6 };
 // An errand takes about a day's food and water a day away from the base (needs.js packErrand: food, water = the least it
@@ -83,7 +83,7 @@ export const HUB_EVENTS = {
       };
       return {
         title: `Fire in the ${name}`,
-        text: `Smoke pours out of the ${name} at ${c.base.name}. ${c.n} people are here to fight it.${b.type === "bunkhouse" ? " Losing it means 6 fewer beds." : ""}`,
+        text: `Smoke pours out of the ${name} at ${c.base.name}. ${c.n} people are here to fight it.${BEDS[b.type] ? ` Losing it means ${BEDS[b.type]} fewer beds.` : ""}`,
         choices: [
           {
             label: `Fight it with water and every hand (${FIRE.water} water)`,

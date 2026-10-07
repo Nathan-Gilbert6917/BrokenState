@@ -1,3 +1,4 @@
+// @ts-check
 // Purified and un-purified water (data.js SUPPLIES water / rawwater). Plain helpers with no imports, so any module can
 // use them (no import cycles).
 //

@@ -26,9 +26,10 @@ import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
-import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
+import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
+import { defaultRolePlan } from "./defenceplan.js"; // the governor's defence plan (governorPlans)
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
@@ -36,7 +37,7 @@ import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
@@ -50,7 +51,7 @@ import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
-import { planBlueprintStudy } from "./blueprints.js";
+import { planBlueprintStudy, buildLock } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
@@ -72,7 +73,9 @@ import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
 import { autopilotPrisoners } from "./prisoners.js";
-import { isManaged } from "./work.js";
+import { isManaged, healthRest } from "./work.js";
+import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
+import { tiredLevel } from "./sleep.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
@@ -230,6 +233,7 @@ export function autopilotHour(state) {
     for (const b of [...state.bases]) governBase(state, b);
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
+    for (const b of state.bases) govWatch(state, b); // the night watch's roster (before the roles: planRoles 1a)
     for (const b of state.bases) governRoles(state, b);
     resolvePending(state);
     autoFires(state);
@@ -298,6 +302,7 @@ export function autopilotDaily(state) {
   planTrip(state);
   campaignReport(state); // one line a morning: what the campaign waits for
   supplyReport(state); // one line a morning when water or food is short: hauled, traded, made against drunk / eaten
+  governorPlans(state); // defenceplan.js: a plan by role for a base whose battle map changed
   const service = relAutopilotDaily(state); // relations.js: a memorial service when people grieve or spirits are low
   if (service) say(state, service);
   // Jobs, the coalition and wars (alliance.js): deliveries fetched, qualifying groups invited, Aggressive sells
@@ -315,6 +320,26 @@ export function autopilotDaily(state) {
   // food come first when the hub is short of them (needs: 2.5+), the campaign's ammo next (campaignAmmoWant).
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
+}
+
+// ---------- the defence plan (defenceplan.js) ----------
+// Each morning, for a base whose buildings changed since it last looked (a new battle map: walls, a bigger yard), the
+// governor lays its own plan out again from the default posts, every post by role (defaultRolePlan: best shots on
+// the towers, the walkway and the perches, close fighters by the gate and the doors), so the posts hold when people
+// are away, hurt or new. Only on maps that turn to face the attack; never while a battle is open; it draws nothing
+// from state.rng. g.planSig: the buildings each base had when it last looked.
+function governorPlans(state) {
+  const g = gov(state);
+  if (state.combat) return;
+  g.planSig = g.planSig || {};
+  for (const base of state.bases) {
+    if (atBase(state, base.id).length < 2) continue;
+    const sig = base.buildings.map((x) => x.type).sort().join(",");
+    if (g.planSig[base.id] === sig) continue;
+    g.planSig[base.id] = sig;
+    const line = defaultRolePlan(state, base);
+    if (line) say(state, line);
+  }
 }
 
 // Cautious, with a radio station: scan the airwaves once a day (groups in reach become known), then one deal for
@@ -455,7 +480,9 @@ function pickChoice(state, card, opts, p) {
     const take = opts.find((c) => c.kind === "take");
     return (take && partyMembers(state, p).length + k <= 6 && carriedDays(state, p, k) >= 2 ? take : null) || opts.find((c) => c.kind === "away") || null;
   }
-  if (card.recruit) return autoRecruitPick(state, card, opts, (k) => roomFor(state, k));
+  // Room at the hub (where newcomers live), or at the outpost they would be taken in at or sent to: its own beds,
+  // food and water (roomAt), so a hub that has outgrown its plots still takes people in where there is room.
+  if (card.recruit) return autoRecruitPick(state, card, opts, (k, id) => { const b = id != null ? state.bases.find((x) => x.id === id) : null; return roomFor(state, k) || (!!b && b.type === "outpost" && roomAt(state, b, k)); });
   // A group asks you to storm a hive (jobs.js): yes when the war on the hives would take it on.
   if (card.jobId != null) {
     const job = jobById(state, card.jobId);
@@ -538,22 +565,106 @@ function pickChoice(state, card, opts, p) {
   return null;
 }
 
-// Beds for k more people at the hub, where newcomers live: built, queued, or one more bunkhouse it can still get
-// (plus the style's slack). Counting every base's beds crowded the hub (seed 5035, large: 22-29 people in 16 beds,
-// 216 walked away and the same deserters were taken back again and again).
-function roomFor(state, k) {
-  const h = hub(state);
+// Beds for k more people at the hub, where newcomers live: built, queued, or the next bunkhouse or barracks it can
+// still get (nextHousing; plus the style's slack). Counting every base's beds crowded the hub (seed 5035, large: 22-29
+// people in 16 beds, 216 walked away and the same deserters were taken back again and again).
+const roomFor = (state, k) => roomAt(state, hub(state), k);
+// The same at any base: an outpost counts only the beds it has and has queued, with no slack, and its own water; its
+// food is the hub's (it keeps only about a week's and the hub tops it up over the supply line, economy.js), so the
+// food and winter rules are the hub's with k more mouths.
+function roomAt(state, h, k) {
   if (!h) return false; // no base left (conquest.js exiles): no room for anyone
-  const queued = h.construction.filter((c) => c.type === "bunkhouse").length;
-  const beds = baseBeds(h) + queued * 6 + (count(h, "bunkhouse") + queued < BUILDINGS.bunkhouse.max && plotsFree(h, "building") > 0 ? 6 : 0);
-  if (residents(state, h.id).length + returning(state, h) + k > beds + persona(state).crowdSlack) return false;
+  const isHub = h.type === "hub";
+  const next = isHub ? nextHousing(state, h) : null;
+  const beds = baseBeds(h) + queuedBeds(h) + (next ? next.beds : 0);
+  if (residents(state, h.id).length + returning(state, h) + k > beds + (isHub ? persona(state).crowdSlack : 0)) return false;
   // Food and water for them too (economy rework): every newcomer, whatever card brings them.
-  const n = atBase(state, h.id).length;
-  const foodDays = (edibleFood(h) - 5 * k) / Math.max(1, n + k);
+  const fh = isHub ? h : hub(state);
+  if (!fh) return false;
+  const n = atBase(state, h.id).length, nf = atBase(state, fh.id).length;
+  const foodDays = (edibleFood(fh) - 5 * k) / Math.max(1, nf + k);
   const wo = waterOutlook(state, h);
-  if (!(foodDays >= Math.max(10, foodTarget(state)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
+  if (!(foodDays >= Math.max(10, foodTarget(state, fh)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
   // No newcomers while the winter stores would not feed them too (farming.js winterOutlook with k more mouths).
-  return !winterActive(state, h) || winterOutlook(state, h, { extra: k + homeMouths(state, h), also: winterPool(state, h) }).short <= 0;
+  return !winterActive(state, fh) || winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short <= 0;
+}
+
+// ---------- housing ----------
+// For the headless tests (tools/plotstest.js): the housing plan below, read-only.
+export const housingAI = {
+  next: (state, base) => nextHousing(state, base), cramped: (state) => hubCramped(state), roomAt: (state, base, k) => roomAt(state, base, k),
+  movers: (state, o, avail = 9) => movers(state, hub(state), o, avail), bedsFree: (state, o) => outpostBedsFree(state, o), wishes: (state, base) => buildWishes(state, base),
+};
+// The next beds a base can still get (buildings.js BEDS), or null: a new bunkhouse while building plots are plenty; a
+// barracks (12 beds on one plot) once they are scarce (HOUSING.scarce of the base's building plots free, or fewer) or
+// the bunkhouses are at their max; with no plot free, a standing bunkhouse expanded into a barracks where it stands
+// (+6, no plot). A barracks takes parts: it is the plan only while the base keeps HOUSING.partsKeep after paying them
+// (else a bunkhouse on a free plot). { type, beds, upgrade (the bunkhouse's id, for an expansion) }.
+// (Reserving the hub's last plots for bunkhouses was tried in the census and left out: more hunger, fewer wins; a
+// barracks gets twice the beds out of whatever plot is left.)
+// scarce: share of the building plots; partsKeep: parts left after a barracks; scrapAhead: scrap above the cost for a
+// wish that is not urgent; ahead: an outpost of a cramped hub keeps this many beds free; moveMax / headroom / moveFood:
+// people moved out of a cramped hub at a time, the beds it keeps free under its ceiling, food sent along a head;
+// line: the least supply-line strength (economy.js) of an outpost people move to.
+const HOUSING = { scarce: 0.25, partsKeep: 1, scrapAhead: 25, ahead: 3, moveMax: 3, headroom: 2, moveFood: 4, line: 0.5 };
+function nextHousing(state, base) {
+  if (isShelter(base)) return null; // a shelter has no building plots: it is built up into a base first
+  const st = base.stock;
+  const free = plotsFree(base, "building");
+  const queued = (t) => base.construction.filter((c) => c.type === t && (!c.target || BUILDINGS[t].from)).length;
+  const barracksRoom = countAll(base, "barracks") + queued("barracks") < BUILDINGS.barracks.max;
+  const bunkRoom = countAll(base, "bunkhouse") + queued("bunkhouse") < BUILDINGS.bunkhouse.max;
+  const parts = (cost) => (st.parts || 0) - (cost.parts || 0) >= HOUSING.partsKeep;
+  const scarce = free <= Math.ceil(plotCap(base, "building") * HOUSING.scarce);
+  if (free > 0) {
+    if (barracksRoom && (scarce || !bunkRoom) && parts(BUILDINGS.barracks.cost)) return { type: "barracks", beds: BEDS.barracks };
+    if (bunkRoom) return { type: "bunkhouse", beds: BEDS.bunkhouse };
+  }
+  if (!barracksRoom || !parts(BARRACKS_UP.cost)) return null;
+  const bunk = base.buildings.find((b) => b.type === "bunkhouse" && !b.broken && !base.construction.some((c) => c.target === b.id));
+  return bunk ? { type: "barracks", upgrade: bunk.id, beds: BEDS.barracks - BEDS.bunkhouse } : null;
+}
+// A wish's check and cost: a new building (canBuild) or a bunkhouse expanded (canExpandBunkhouse).
+const wishCheck = (state, base, w) => (w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type));
+const wishCost = (w) => (w.upgrade != null ? BARRACKS_UP.cost : BUILDINGS[w.type].cost);
+const wishQueue = (state, base, w) => (w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
+// The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
+// barracks waits on scrap or parts (planBuilds takes the first it can build). Empty when nothing more fits.
+function housingWishes(state, base, why, save) {
+  const next = nextHousing(state, base);
+  if (!next) return [];
+  const label = next.upgrade != null ? `${why}: expand a bunkhouse into a barracks (no building plot free)` : next.type === "barracks" ? `${why}: a barracks (12 beds on one plot; building plots are short)` : why;
+  const out = [{ type: next.type, upgrade: next.upgrade, why: label, save }];
+  if (next.type === "barracks" && next.upgrade == null && countAll(base, "bunkhouse") + base.construction.filter((c) => c.type === "bunkhouse").length < BUILDINGS.bunkhouse.max) out.push({ type: "bunkhouse", why, save: false });
+  return out;
+}
+
+// The hub has outgrown its plots: no building plot free, nothing more it can build or expand for beds (nextHousing),
+// and its people (and the teams coming home) fill the beds it has and has queued to within two. Then the
+// governor grows outwards: an extra outpost (planTrip), people sent to outposts with beds and food to spare, and
+// housing, food, water and storage built at the outposts ahead of them (planSupplyRuns, buildWishes).
+function hubCramped(state, h = hub(state)) {
+  if (!h || isShelter(h) || plotsFree(h, "building") > 0) return false;
+  const next = nextHousing(state, h);
+  return residents(state, h.id).length + returning(state, h) + 2 > baseBeds(h) + queuedBeds(h) + (next ? next.beds : 0);
+}
+// Beds an outpost has free for people sent from the hub (built and queued beds, less its residents and the teams
+// coming home to it).
+const outpostBedsFree = (state, o) => baseBeds(o) + queuedBeds(o) - residents(state, o.id).length - returning(state, o);
+// How many people the hub sends to live at outpost o now (planSupplyRuns), out of avail it can spare: only while the
+// hub has outgrown its plots (hubCramped) and is fed (10 days a head), the outpost is not running dry, has beds
+// free and a good supply line (economy.js supplyLine, HOUSING.line: the hub tops up its food over it); HOUSING.moveMax
+// at a time, and no more than brings the hub HOUSING.headroom under its ceiling. 0: nobody.
+function movers(state, h, o, avail) {
+  if (avail < 1 || isShelter(o) || !hubCramped(state, h) || outpostThirsty(state, o)) return 0;
+  if (((o.supplyLine && o.supplyLine.strength) ?? 1) < HOUSING.line) return 0;
+  if (edibleFood(h) / Math.max(1, atBase(state, h.id).length) < 10) return 0;
+  const next = nextHousing(state, h);
+  const over = residents(state, h.id).length + returning(state, h) + HOUSING.headroom - (baseBeds(h) + queuedBeds(h) + (next ? next.beds : 0));
+  let n = Math.max(0, Math.min(HOUSING.moveMax, outpostBedsFree(state, o), over, avail));
+  // Water for them there through a summer too (droughtWater): fewer, or nobody, until its wells and barrels are in.
+  while (n > 0 && !droughtWater(state, o, atBase(state, o.id).length + n)) n--;
+  return n;
 }
 
 // Water for n people through a summer (economy.summerWater: an average summer day, everyone drinking 1.3, and a
@@ -1338,6 +1449,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const low = [...free].filter((s) => (s.mood < P.restMood || wantsRest(state, s)) && !s.leader).sort((a, b) => a.mood - b.mood); // wantsRest: low after a rough trip (relations.js)
   low.forEach((s, i) => { if (s.mood < 18 || (i < Math.floor(people.length / 3) && foodDays >= 3)) give(s, "rest"); });
 
+  // 1a. The watch roster (govWatch, watch.js): whoever stands their watch now is on guard before any other work (and
+  // counts among the guards posted below). s.govWatch keeps the job they had, for the day's work (watch.js
+  // watchDayRoles at midnight).
+  if (areas.defence && base.watch) {
+    for (const s of [...free]) {
+      if (!onWatchNow(state, base, s)) continue;
+      if (s.role !== "guard" && !s.govWatch) s.govWatch = { role: s.role, station: s.station ?? null };
+      give(s, "guard");
+    }
+  }
+  for (const s of people) if (s.govWatch && (!base.watch || !onWatchNow(state, base, s))) delete s.govWatch;
+
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
   // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
   // nothing boils it (worm.js: a filter makes it safe while it lasts).
@@ -1641,12 +1764,12 @@ function planBuilds(state, base, areas = ALL_AREAS) {
   for (const w of buildWishes(state, base)) {
     const def = BUILDINGS[w.type];
     if (!def || !areas[BUILD_AREA[w.type] || "building"]) continue;
-    const chk = canBuild(state, base, w.type);
+    const chk = wishCheck(state, base, w); // a new building, or a bunkhouse expanded into a barracks
     if (!chk.ok) {
       if (w.save && /^Needs \d+ scrap/.test(chk.reason)) return; // save up for it rather than spend on less
       continue;
     }
-    const cost = def.cost;
+    const cost = wishCost(w);
     // Cautious: anything not urgent is built only from what is above the reserves (reserveStatus).
     const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
     const reserve = rs ? rs.scrap.target : w.save || base.type !== "hub" ? 0 : 10;
@@ -1657,7 +1780,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
-    const msg = queueBuild(state, base, w.type);
+    const msg = wishQueue(state, base, w);
     g.stats.builds++;
     say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`);
     return;
@@ -1670,12 +1793,12 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
   for (const w of buildWishes(state, base)) {
     const def = BUILDINGS[w.type];
     if (!def || !areas[BUILD_AREA[w.type] || "building"]) continue;
-    const chk = canBuild(state, base, w.type);
+    const chk = wishCheck(state, base, w);
     const short = !chk.ok && /^Needs \d+ scrap/.test(chk.reason);
     if (!chk.ok && !(short && w.save)) continue;
     const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
     const reserve = rs ? rs.scrap.target : w.save || base.type !== "hub" ? 0 : 10;
-    const need = (def.cost.scrap || 0) + reserve;
+    const need = (wishCost(w).scrap || 0) + reserve;
     if (w.save || (base.stock.scrap || 0) >= need) return need;
   }
   return 0;
@@ -1689,7 +1812,8 @@ function buildWishes(state, base) {
   const people = here.length + returning(state, base);
   const isHub = base.type === "hub";
   const queued = (t) => base.construction.filter((c) => c.type === t && !c.target).length;
-  const beds = baseBeds(base) + queued("bunkhouse") * 6;
+  const beds = baseBeds(base) + queuedBeds(base); // bunkhouses and barracks built and queued (buildings.js BEDS)
+  const cramped = !isHub && hubCramped(state); // the hub has outgrown its plots: the outposts take the growth
   const threat = threatAt(state, base);
   const st = base.stock;
   const pop = alive(state).length;
@@ -1700,7 +1824,10 @@ function buildWishes(state, base) {
   // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
   if (isShelter(base) && !queued("hub_up")) add("hub_up", "build the shelter up into a base (a well, walls, room for everything)", true);
   for (const w of wormWishes(state, base, queued)) out.push(w); // worm.js: a water boiler, a cook fire
-  if (people + (isHub ? 1 : 0) > beds) add("bunkhouse", `${people} people for ${beds} beds`, true);
+  // Beds (nextHousing): a bunkhouse, or a barracks once the building plots run short, or a bunkhouse expanded.
+  if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
+  // An outpost of a hub that has outgrown its plots gets its beds ahead of the people sent to it (planSupplyRuns).
+  else if (!isHub && cramped && !isShelter(base) && people + HOUSING.ahead > beds) out.push(...housingWishes(state, base, "room for people from the crowded hub", true));
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
   const wDays = wo.net >= 0 ? Infinity : wo.daysLeft;
@@ -1728,16 +1855,24 @@ function buildWishes(state, base) {
       (st.scrap || 0) >= 30 && (winterShort(state, base) > 0 || (winterActive(state, base) && edibleFood(base) / Math.max(1, here.length) < foodTarget(state, base))) && here.some((s) => bestHuntWeapon(s))) add("huntcabin", "hunt the game land around it for the winter");
   if (isHub && count(base, "greenhouse") + queued("greenhouse") < (pop >= 12 ? 2 : 1) && pop >= 6 && (st.parts || 0) >= 4) add("greenhouse", "something to grow through the winter", wxSeason(state).key === "autumn" || winterShort(state, base) > 0);
   if (!isHub && count(base, "farm_plot") + queued("farm_plot") < 1) add("farm_plot", "an outpost should feed itself", true);
+  // An outpost's pantry holds 40 (storage.js): a root cellar once four or more live there and the food fills most of it.
+  if (!isHub && here.length >= 4 && (st.food || 0) > storeCapacity(base) * 0.8 && countAll(base, "cellar") + queued("cellar") < 1) add("cellar", "room for the outpost's food");
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
   if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
-  // A radio relay (radio.js) at an outpost within reach of the network, when it would bring a group you know into
-  // radio reach: greetings, pacts and the coalition need it.
-  if (!isHub && !count(base, "relay") && !queued("relay") && hasNetwork(state) && inCoverage(state, base.tile, RELAY_RANGE)) {
-    const gain = state.factions.some((f) => f.alive && f.known && !canRadioGroup(state, f) && f.bases.some((b) => state.grid.distance(b, base.tile) <= RELAY_RANGE + GROUP_REACH));
-    if (gain) add("relay", "radio reach to a group out of contact");
+  // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
+  // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
+  // reachVia). radio.js relayReach rules out a base with a station (it adds nothing there) and one the relay would
+  // not link from (it used to be wished for anywhere within coverage + 6, where it never linked). Only when it can
+  // go up here but for materials (a Mechanics 3+ builder, the Radio Engineering Handbook studied), so the supply
+  // runs (planSupplyRuns) do not carry scrap and parts out for a mast nobody can raise.
+  if (!count(base, "relay") && !queued("relay") && !base.radio && hasNetwork(state) && best("mechanics") >= (BUILDINGS.relay.req.mechanics || 0) && !buildLock(state, base, "relay")) {
+    const gain = relayReach(state, base, state.factions.filter((f) => f.alive && f.known && attitude(f) !== "Hostile"));
+    // Saved up for (the wishes after it wait) when radio reach is what keeps one of them out of the coalition.
+    const blocked = gain.filter((f) => !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)));
+    if (gain.length) add("relay", `radio reach to ${gain.map((f) => f.name).join(", ")}${blocked.length ? " for the coalition" : ""}`, blocked.length > 0);
   }
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
@@ -1769,7 +1904,8 @@ function buildWishes(state, base) {
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
   else if (!base.radio && pop >= 12 && day(state) >= 60 && (st.parts || 0) >= BUILDINGS.radio.cost.parts && best("mechanics") >= 4 && state.factions.some((f) => f.alive && f.known && !isMember(state, f))) add("radio", "radio contact with the groups for the coalition");
   if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
-  if (people + 2 > beds && (st.scrap || 0) >= 45) add("bunkhouse", "room for newcomers");
+  // Room for newcomers once the scrap is there (the housing's cost and HOUSING.scrapAhead more: 45 for a bunkhouse).
+  if (people + 2 > beds) for (const w of housingWishes(state, base, "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
   if (count(base, "walls") < 2 && (st.scrap || 0) >= 70) add("walls", "stronger defense");
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
   // there are parts for it: scanning finds the groups in reach, and radio deals bring what runs short without a
@@ -2129,13 +2265,16 @@ function planTrip(state) {
   // up to LAND_OUTPOSTS more, where they add the most land to the coalition.
   const outposts = state.bases.filter((b) => b.type === "outpost" && !b.captured).length; // bases taken from groups (conquest.js) are not founded ones
   const push = landPush(state);
-  if (outposts < P.outposts + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
+  // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost it founded has a
+  // bed free (built or queued: they build ahead of the people sent to them; taken bases get nobody, planSupplyRuns).
+  const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
+  if (outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
       (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
     const site = land ? land.id : outpostSite(state);
-    const crowded = alive(state).length > baseBeds(h) + 2;
+    const crowded = cramped || alive(state).length > baseBeds(h) + 2;
     if (site != null) cands.push({ mission: "outpost", tile: site, score: land ? 3 : crowded ? 3.5 : 2.2, crew: spareHands >= 4 ? 3 : 2, reach: land ? 1.6 : 1,
-      why: land ? `land for the coalition (+${land.gain} tiles)` : crowded ? "the hub is crowded: a new outpost" : "a new outpost", supplies: { scrap: 23 }, min: { scrap: 15 } });
+      why: land ? `land for the coalition (+${land.gain} tiles)` : cramped ? "the hub has outgrown its plots: a new outpost for its people" : crowded ? "the hub is crowded: a new outpost" : "a new outpost", supplies: { scrap: 23 }, min: { scrap: 15 } });
   }
   // Your people held by another group.
   const held = allCaptives(state);
@@ -2266,8 +2405,8 @@ function planTrip(state) {
 
 // ---------- envoys (alliance.js) ----------
 // The coalition needs every group in it, and the radio reaches only 12 tiles from the hub (more with relays at
-// outposts): a group out of reach is courted in person. Two people take the hub's surplus (food, ammo, meds) to
-// the nearest such group that is not hostile and not a member, at most one envoy out and one visit per group every
+// your other bases: buildWishes): a group out of reach is courted in person. Two people take the hub's surplus
+// (food, ammo, meds) to the nearest such group that is not hostile and not a member, at most one envoy out and one visit per group every
 // ENVOY_EVERY days; at their gates the team gives what it brought as a gift while their goodwill is short (up to
 // 15 goodwill a day), proposes a pact and invites them once they qualify (handleTrade). A team at their gates
 // also hears of jobs (jobs.js), and a job done for them is what the invitation needs without a council.
@@ -3903,20 +4042,36 @@ function planSupplyRuns(state) {
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
       if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
       why = `${load} water (it is running dry)`;
+    } else if (!o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
+      // Not to a base taken from a group (conquest.js): held by whoever took it, often out in the wild (census seed 5005,
+      // huge, aggressive: people moved one by one to nine taken bases died of hordes and the worm: 179 deaths against 85).
+      // The hub has outgrown its plots (hubCramped): people move to an outpost with beds free, food for the walk and a
+      // few days more with them; the outpost builds its beds, fields and stores ahead of them (buildWishes).
+      const n = movers(state, h, o, Math.min(spare, crewPool.length));
+      // Farmers first (an outpost has to feed itself); the hub's medics, builders and station hands last.
+      const keepHome = (s) => (s.role === "medic" || s.role === "build" || s.role === "operate" ? 6 : 0);
+      const crew = [...crewPool].sort((a, b) => skill(b, "farming") - keepHome(b) - (skill(a, "farming") - keepHome(a))).slice(0, n);
+      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)));
+      form = { crew: crew.map((s) => s.id), deliver: food > 0 ? [{ key: "food", qty: food }] : [], atDest: "disband" };
+      why = `${names(crew)} move${crew.length === 1 ? "s" : ""} there: ${h.name} has outgrown its building plots (${residents(state, h.id).length} people for ${baseBeds(h)} beds), ${o.name} has ${outpostBedsFree(state, o)} free`;
     } else {
-      const wish = buildWishes(state, o).find((w) => { if (!BUILDINGS[w.type]) return false; const c = canBuild(state, o, w.type); return !c.noPlot && c.reason !== `Limit reached (${BUILDINGS[w.type].max})`; }); // no plot free: no scrap run for it
-      const scrap = wish ? BUILDINGS[wish.type].cost.scrap || 0 : 0;
-      if (wish && (o.stock.scrap || 0) < scrap && (h.stock.scrap || 0) >= scrap + 25 && home.length >= 5 && crewPool.length >= 1) {
-        const deliver = [{ key: "scrap", qty: scrap + 2 }];
-        const parts = BUILDINGS[wish.type].cost.parts || 0; // a well needs a part too
-        if (parts && (o.stock.parts || 0) < parts && (h.stock.parts || 0) >= parts + 2) deliver.push({ key: "parts", qty: parts });
+      const wish = buildWishes(state, o).find((w) => { if (!BUILDINGS[w.type]) return false; const c = wishCheck(state, o, w); return !c.noPlot && !/^Limit reached/.test(c.reason || ""); }); // no plot free: no scrap run for it
+      const scrap = wish ? wishCost(wish).scrap || 0 : 0;
+      // A well needs a part too, a barracks two, a radio relay 3; one more when it is not saved for (planBuilds keeps 1 back then).
+      const parts = wish && wishCost(wish).parts ? wishCost(wish).parts + (wish.save ? 0 : 1) : 0;
+      const partsShort = parts > 0 && (o.stock.parts || 0) < parts && (h.stock.parts || 0) >= parts + 2;
+      // Scrap short (the hub can spare it), or only the parts (an outpost seldom has 3 for a relay: it makes none).
+      const scrapShort = (o.stock.scrap || 0) < scrap;
+      if (wish && (scrapShort ? (h.stock.scrap || 0) >= scrap + 25 : partsShort) && home.length >= 5 && crewPool.length >= 1) {
+        const deliver = scrapShort ? [{ key: "scrap", qty: scrap + 2 }] : [];
+        if (partsShort) deliver.push({ key: "parts", qty: parts - Math.floor(o.stock.parts || 0) });
         if ((o.stock.food || 0) < staff * 3) deliver.push({ key: "food", qty: 8 });
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
         const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
         const crew = [];
         for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, Math.max(1, Math.floor(home.length / 3)))) crew.push(s);
         if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };
-        why = `scrap for a ${BUILDINGS[wish.type].name.toLowerCase()} (${wish.why})`;
+        why = `${scrapShort ? (partsShort ? "scrap and parts" : "scrap") : "parts"} for ${wish.upgrade != null ? "expanding a bunkhouse into a barracks" : `a ${BUILDINGS[wish.type].name.toLowerCase()}`} (${wish.why})`;
       }
     }
     if (!form) continue;
@@ -3957,3 +4112,44 @@ export const crewAI = {
   outpostThirsty: (state, o) => outpostThirsty(state, o),
   isDisabled,
 };
+
+// ---------- the night watch (watch.js, sleep.js) ----------
+// The governor keeps a night watch at every base of GOV_WATCH.min (3) or more people, so no night finds a base asleep
+// (watch.js surpriseAt: raiders over the wall, a horde at the walls before anyone woke): two short watches,
+// GOV_WATCH.shifts (20–00 and 00–06), so nobody stands more than six hours past their bedtime and nobody comes off one
+// Tired (sleep.js: they sleep in after it). Each watch takes 1, +1 at GOV_WATCH.big (12) people, +1 while a threat is
+// known (a horde in sight or a hive near: defences.js hordeThreat; raiders in reach or on the way: threatAt), at most a
+// third of the fit people. Picked every day at GOV_WATCH.hour (18:00): the best shots first, those who stood last
+// night after everyone else, the Tired last (so it rotates); a watch on now whose people are all gone, hurt or away is
+// given one more. planRoles 1a puts whoever is on watch now on guard ahead of any other work (they count among the
+// guards it posts: the hub's standing lookouts, a threat's guards). A roster the governor did not make
+// (base.watch.gov unset) is left as it is and stood all the same. Cheap: one sort a base a day, else a look at the
+// watch on now.
+export const GOV_WATCH = { min: 3, big: 12, hour: 18, shifts: [["First watch", 20, 0], ["Second watch", 0, 6]] };
+function govWatch(state, base) {
+  const W = base.watch;
+  if (W && !W.gov) return; // the player's own roster
+  const people = atBase(state, base.id);
+  if (people.length < GOV_WATCH.min) { if (W) delete base.watch; return; }
+  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s);
+  const h = hourOfDay(state);
+  const rank = (list, last) => list.slice().sort((a, b) => (last.has(a.id) - last.has(b.id)) || (tiredLevel(a) - tiredLevel(b)) || (skill(b, "shooting") - skill(a, "shooting")) || (a.id - b.id));
+  if (W && h !== GOV_WATCH.hour) {
+    for (const sh of W.shifts) {
+      if (!inShift(sh, h) || sh.ids.some((id) => { const s = people.find((x) => x.id === id); return s && fit(s); })) continue;
+      const taken = new Set(W.shifts.flatMap((x) => x.ids));
+      const pick = rank(people.filter((s) => fit(s) && !taken.has(s.id)), new Set())[0];
+      if (pick) sh.ids.push(pick.id);
+    }
+    return;
+  }
+  const ok = people.filter(fit);
+  const t = threatAt(state, base);
+  const threat = t.urgent > 0 || t.standing > 0 || hordeThreat(state, base).size > 0;
+  const per = Math.max(1, Math.min(1 + (people.length >= GOV_WATCH.big ? 1 : 0) + (threat ? 1 : 0), Math.floor(ok.length / 3)));
+  const order = rank(ok, new Set(W ? W.shifts.flatMap((sh) => sh.ids) : []));
+  const shifts = GOV_WATCH.shifts.map(([name, from, to]) => ({ name, from, to, ids: [] }));
+  let k = 0;
+  for (let r = 0; r < per; r++) for (const sh of shifts) if (k < order.length) sh.ids.push(order[k++].id);
+  base.watch = { preset: null, gov: true, shifts };
+}

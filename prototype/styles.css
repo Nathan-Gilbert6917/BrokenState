@@ -188,6 +188,10 @@ button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 .chip.off { background: #402424; color: var(--danger); }
 .chip.trait { background: #3a2f1c; }
 .chip.rel { background: #2a2f45; color: #c9b6ff; } /* ui/relations.js: ♥ partner, +friends, −rivals */
+/* ui/status.js: stacking status icons next to a name (low mood, starving, thirsty, low health, infected, sick) */
+.st-icons { display: inline-flex; gap: 0.1rem; margin-left: 0.3rem; vertical-align: middle; font-weight: normal; }
+.st-ic { display: inline-block; font-size: 0.78rem; line-height: 1.15rem; min-width: 1.15rem; text-align: center; border-radius: 4px; background: #3a3426; cursor: help; }
+.st-ic.danger { background: #4a2626; box-shadow: inset 0 0 0 1px #8a3a34; }
 .memorial { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; max-height: 62vh; overflow-y: auto; }
 .memorial .mem { margin: 0; }
 a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
@@ -800,3 +804,6 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 .askbox .asktext { line-height: 1.5; color: var(--text); margin-bottom: 0.6rem; }
 .askbox .askskip { display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; color: var(--muted); cursor: pointer; margin-bottom: 0.6rem; }
 .askbox .askbtns { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.deftab .dplan { padding: 0.25rem 0; border-bottom: 1px solid #2c313a; }
+.deftab .dplan:last-of-type { border-bottom: none; }
+.cbactions .dshname { width: 8rem; font-weight: 700; }

@@ -1,15 +1,18 @@
 // Headless autopilot test: runs campaigns with the AI governor (sim/autopilot.js) in charge of the holdout and
 // compares them with simtest.js's simple auto-player on the same seeds. Reports days survived, population,
 // buildings, outposts, trips launched, cards resolved and hub stock, and checks for crashes, cards left
-// unanswered and teams stuck with nothing to resolve.
+// unanswered and teams stuck with nothing to resolve. Then a takeover check (browser paths) and a relay check (the
+// governor raises a radio relay at an outpost that brings a known group into reach, none where it would not link).
 // Usage: node tools/autotest.js [days] [cautious|balanced|aggressive|all] [seeds...] [size=small|normal|large|huge]
 // (Normal by default; other sizes play with their default group count, sim/worldsize.js.)
-import { createWorld, tickHour, day, alive, hub } from "../src/sim/world.js";
+import { createWorld, tickHour, day, alive, hub, newId, RADIO_RANGE } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, startReturn } from "../src/sim/parties.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
-import { BUILDINGS } from "../src/sim/buildings.js";
-import { setAutopilot, autopilotStats, autopilotResolve, PERSONALITIES } from "../src/sim/autopilot.js";
+import { BUILDINGS, addBuilding } from "../src/sim/buildings.js";
+import { setAutopilot, autopilotStats, autopilotResolve, PERSONALITIES, governBase } from "../src/sim/autopilot.js";
+import { canRadioGroup, relayReach, radioSummary, RELAY_RANGE, GROUP_REACH } from "../src/sim/radio.js";
+import { unlockAll } from "../src/sim/blueprints.js";
 import { sizeDef } from "../src/sim/worldsize.js";
 import { takeSize } from "./sizearg.js";
 
@@ -185,6 +188,70 @@ function takeover(seed) {
   return out.length;
 }
 problems += takeover(seeds[0]);
+
+// Radio relays (buildWishes, radio.js relayReach): with the hub's station on the air, an outpost 9-11 tiles out and a
+// known group 9-12 tiles past it (out of the station's 12 + 6), the governor raises a relay at the outpost (it
+// brings the group into reach for the coalition), never one at the station's base, nor one at an outpost the
+// station does not reach (it would not link), and none once the group is in reach.
+function relayCheck(seed) {
+  const out = [];
+  try {
+    const state = createWorld({ seed, factionCount: FACTIONS, size: SIZE });
+    state.started = true;
+    setAutopilot(state, true, "balanced");
+    unlockAll(state); // the Radio Engineering Handbook studied
+    const h = hub(state);
+    const g = state.grid;
+    addBuilding(h, "radio");
+    const free = (t, a, b, from, ok = () => true) => { const d = g.distance(from, t.id); return d >= a && d <= b && t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && t.owner == null && !state.bases.some((x) => x.tile === t.id) && !state.factions.some((f) => f.bases.includes(t.id)) && ok(t); };
+    const oT = state.tiles.find((t) => free(t, 9, 11, h.tile) && state.tiles.some((u) => free(u, 9, 12, t.id, () => g.distance(u.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH)));
+    if (!oT) return console.log(`Relay check (seed ${seed}): no spot found (skipped)`), 0;
+    const fT = state.tiles.find((u) => free(u, 9, 12, oT.id, () => g.distance(u.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH));
+    const f = state.factions.find((x) => x.alive && x.bases.length);
+    f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
+    for (const x of state.factions) if (x !== f) x.known = false;
+    const o = { id: newId(), tile: oT.id, type: "outpost", name: "Relay Hill", stock: { food: 80, water: 80, fuel: 10, meds: 2, ammo: 20, parts: 6, scrap: 80 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+    state.bases.push(o);
+    for (const t of ["farm_plot", "well", "rain_catcher", "boiler", "cookhouse"]) addBuilding(o, t); // the outpost's first wishes met
+    const crew = alive(state).filter((s) => s.location.kind === "base").slice(0, 2);
+    crew[0].skills.mechanics = 5;
+    for (const s of crew) s.location = { kind: "base", baseId: o.id };
+    // At the hub (its station covers more): no relay, ever.
+    for (let i = 0; i < 6; i++) { governBase(state, h, { building: true }); h.construction.length = 0; }
+    if (h.buildings.some((b) => b.type === "relay")) out.push("a relay was built beside the hub's station");
+    // At the outpost: up to 8 build rounds, each queued job finished at once; a relay among them.
+    let relay = false, farOk = "";
+    for (let i = 0; i < 8 && !relay; i++) {
+      governBase(state, o, { building: true });
+      for (const c of o.construction) { addBuilding(o, c.type); if (c.type === "relay") relay = true; }
+      o.construction.length = 0;
+    }
+    if (!relay) out.push(`no relay at the outpost (${radioSummary(state, o)}; ${relayReach(state, o).map((x) => x.name).join(", ") || "it would reach nobody"})`);
+    else if (!canRadioGroup(state, f)) out.push("the relay went up but the group is still out of reach");
+    // An outpost beyond the station's own range: a relay there would not link, so none goes up.
+    const fT2 = state.tiles.find((t) => free(t, RADIO_RANGE + 3, RADIO_RANGE + 5, h.tile, (x) => g.distance(x.id, o.tile) > RELAY_RANGE + 2));
+    if (fT2) {
+      const o2 = { ...o, id: newId(), tile: fT2.id, name: "Far Ridge", stock: { ...o.stock }, buildings: [], construction: [], armory: [] };
+      state.bases.push(o2);
+      for (const t of ["farm_plot", "well", "rain_catcher", "boiler", "cookhouse"]) addBuilding(o2, t);
+      crew[1].skills.mechanics = 5; crew[1].location = { kind: "base", baseId: o2.id };
+      const f2 = state.factions.find((x) => x !== f && x.alive && x.bases.length);
+      if (f2) {
+        f2.bases = [state.tiles.find((t) => free(t, 7, 11, o2.tile, (x) => g.distance(x.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH && g.distance(x.id, o.tile) > RELAY_RANGE + GROUP_REACH))?.id ?? f2.bases[0]];
+        f2.known = true; f2.goodwill = 60;
+        for (let i = 0; i < 8; i++) { governBase(state, o2, { building: true }); for (const c of o2.construction) addBuilding(o2, c.type); o2.construction.length = 0; }
+        if (o2.buildings.some((b) => b.type === "relay")) out.push("a relay went up at an outpost the station does not reach (it cannot link)");
+        else farOk = `none at ${o2.name}, ${g.distance(o2.tile, h.tile)} tiles out (built: ${o2.buildings.slice(5).map((b) => b.type).join(", ") || "nothing"})`;
+      }
+    }
+    console.log(`Relay check (seed ${seed}): ${out.length ? out.join("; ") : `ok (a relay at ${o.name}, ${g.distance(o.tile, h.tile)} tiles out, for ${f.name} ${g.distance(f.bases[0], h.tile)} out; ${farOk || "no far outpost tried"})`}`);
+  } catch (e) {
+    out.push(`CRASH: ${e.stack.split("\n").slice(0, 4).join(" | ")}`);
+    console.log(`Relay check (seed ${seed}): ${out.join("; ")}`);
+  }
+  return out.length;
+}
+problems += relayCheck(seeds[0]);
 
 console.log(`Problems: ${problems}`);
 if (problems) process.exitCode = 1;

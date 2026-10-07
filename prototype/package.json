@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.cjs",
-    "simtest": "node tools/simtest.js"
+    "simtest": "node tools/simtest.js",
+    "typecheck": "node tools/typechecktest.js"
   }
 }

@@ -1,6 +1,8 @@
+// @ts-check
 // Daily economy for every base (hub and outposts share the same rules): water, base scavenging, farming
 // (farming.js), eating, food storage and spoiling (storage.js), illness (health.js), supply lines, trade routes and
 // death-site looting.
+/** @import { State, Base, Survivor } from "./types" */
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew } from "./data.js";
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver,
@@ -23,7 +25,7 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
-import { heatDaily } from "./needs.js";
+import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
@@ -49,6 +51,7 @@ export const ROLES = {
 };
 
 // Farming and scavenging bonuses from where the base sits.
+/** @param {State} state @param {Base} base */
 export function siteBonus(state, base) {
   const t = state.tiles[base.tile];
   const loc = t.loc ? t.loc.type : null;
@@ -60,6 +63,7 @@ export function siteBonus(state, base) {
 }
 
 // Expected food per day from the plots over the next 30 days (what is in the ground, by when it ripens).
+/** @param {State} state @param {Base} base */
 export function farmOutput(state, base) {
   return farmFoodPerDay(state, base);
 }
@@ -73,14 +77,17 @@ export const GREEDY_SCAV = 1.15; // the Greedy trait: finds more when scavenging
 export const BASE_SCAV_CHANCE = 0.07;   // per scavenger per day at Scavenging 0, fresh surroundings
 export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], rawwater: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1], preserved: [1, 3], jars: [2, 6] };
 export const SCAV_DEPLETE = 0.004, SCAV_FLOOR = 0.2;
+/** @param {Base} base */
 export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
+/** @param {State} state @param {Base} base @param {Survivor} s */
 export function scavChance(state, base, s) {
   const b = siteBonus(state, base);
   const p = BASE_SCAV_CHANCE * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.04) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s) * (hasPerk(s, "scrounger") ? 1.3 : 1); // Scrounger (skills.js)
   return Math.min(0.5, p);
 }
 // What a find is drawn from: the site's own table, with scrap always likely; fuel and parts are rare.
+/** @param {State} state @param {Base} base */
 function scavTable(state, base) {
   const t = { ...siteBonus(state, base).table };
   t.scrap = (t.scrap || 0) + 2;
@@ -89,6 +96,7 @@ function scavTable(state, base) {
   return t;
 }
 // Expected supplies per day (for the UI and tests).
+/** @param {State} state @param {Base} base */
 export function scavengeOutput(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "scavenge" && !s.inBed);
   const table = scavTable(state, base);
@@ -99,6 +107,7 @@ export function scavengeOutput(state, base) {
   return out;
 }
 
+/** @param {State} state @param {Base} base */
 function baseScavenging(state, base, people) {
   const rng = state.rng;
   const scav = people.filter((s) => s.role === "scavenge" && !s.inBed);
@@ -130,10 +139,13 @@ function baseScavenging(state, base, people) {
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
 // The tanks and cisterns hold both kinds; water barrels (buildings.js WATER_BARREL) keep room for one kind each.
+/** @param {Base} base */
 export const tankCapacity = (base) => (isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? WATER.hubCap : WATER.outpostCap) + count(base, "cistern") * WATER.cistern;
+/** @param {Base} base */
 export const waterCapacity = (base) => tankCapacity(base) + barrelRoom(base, "water") + barrelRoom(base, RAW);
 // Where the water stands: each kind fills its own barrels first, then the shared tanks (purified water first); what
 // is left over stands outside. { pure, raw, tanks, pureOut, rawOut, outside }.
+/** @param {Base} base */
 export function waterLayout(base) {
   const st = base.stock;
   const pure = Math.max(0, st.water || 0), raw = Math.max(0, st[RAW] || 0);
@@ -145,6 +157,7 @@ export function waterLayout(base) {
 }
 // Room for un-purified water coming in (the well, springs, rain, the river haul): its barrels and the tanks, not the
 // purified barrels.
+/** @param {Base} base */
 export function rawRoom(base) {
   const st = base.stock;
   const pureOver = Math.max(0, (st.water || 0) - barrelRoom(base, "water"));
@@ -152,14 +165,21 @@ export function rawRoom(base) {
 }
 // camp-tier0: a shelter (buildings.js SHELTER, tier 0) has no well or spring of its own; beside a river or lake its
 // people haul SHELTER.river a day instead of the stream's 3.
+/** @param {Base} base */
 const ownWell = (base) => (isShelter(base) ? 0 : base.type === "hub" ? WATER.hubWell : WATER.spring);
+/** @param {Base} base */
 const streamWater = (base) => (isShelter(base) ? SHELTER.river : WATER.stream);
+/** @param {State} state @param {Base} base */
 const byWater = (state, base) => state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
 // Water one person drinks on a campaign day (day index; today by default): the season's thirst, a hot day's at least.
+/** @param {State} state @param {number} [dayIdx] */
 export const drinkRate = (state, dayIdx) => WATER.drink * (Weather.thirstFactor ? Weather.thirstFactor(state, dayIdx) : 1);
+/** @param {Base} base */
 const filtersAt = (base) => base.armory.filter((it) => it && it.key === "waterfilter").length;
+/** @param {State} state @param {Base} base */
 const prisonersHere = (state, base) => prisonersAt(state, base);
 
+/** @param {State} state @param {Base} base */
 export function waterProduction(state, base) {
   const factor = Weather.wellFactor ? Weather.wellFactor(state) : 1;
   const own = ownWell(base) * factor;
@@ -175,6 +195,7 @@ export function waterProduction(state, base) {
   return { own, stream, wells, rain, filters, hauled, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
 }
 
+/** @param {State} state @param {Base} base */
 export function waterNeed(state, base) {
   const mouths = residents(state, base.id);
   const rate = drinkRate(state);
@@ -195,6 +216,7 @@ export function waterNeed(state, base) {
 }
 
 // Water per day and days left, for the top bar and the base panel.
+/** @param {State} state @param {Base} base */
 export function waterOutlook(state, base) {
   const prod = waterProduction(state, base);
   const need = waterNeed(state, base);
@@ -208,6 +230,7 @@ export function waterOutlook(state, base) {
 }
 // Water running short now: more drunk than made, and it runs out within 6 days or is under 3 a head. The governor
 // puts a crafter on a queued water filter only then (autopilot planRoles), and so do work priorities (work.js).
+/** @param {State} state @param {Base} base */
 export function waterRunningShort(state, base) {
   const wo = waterOutlook(state, base);
   return wo.net < 0 && (wo.daysLeft < 6 || waterIn(base.stock) < wo.need.heads * 3);
@@ -223,6 +246,7 @@ export function waterRunningShort(state, base) {
 // the stock a summer needs (`reserve`: a heat stretch, plus ten days of any average-day shortfall), the shortfall on
 // an average summer day (`short`, 0 when the sources keep up) and what would close it (`fix`).
 export const SUMMER = { well: 0.9, rain: 0.7, heatWell: 0.6, crops: 1.2, heatCrops: 1.5, heatStretch: 9 };
+/** @param {State} state @param {Base} base */
 export function summerWater(state, base, { extra = 0, people = null, filterShare = 1 } = {}) {
   const T = Weather.THIRST || { summer: 1.3, heat: 1.6 };
   const r1 = (v) => Math.round(v * 10) / 10;
@@ -269,6 +293,7 @@ export const summerWaterOk = (sw) => sw.net >= 0 && sw.reserve <= sw.cap;
 // End of spring: SUMMER_WARN_DAYS before summer, a base whose summer water would not hold says so (a log line per
 // base and one card), with the shortfall and what to build. Once a year per base.
 export const SUMMER_WARN_DAYS = 7;
+/** @param {State} state */
 export function summerWarningDaily(state) {
   if (!Weather.season) return;
   const s = Weather.season(state);
@@ -299,16 +324,15 @@ export function summerWarningDaily(state) {
 
 // Thirst: health lost per day by everyone at a base that ran dry (10, 14, 18 … up to 25), scaled by how short they
 // were (at least 35%). Like hunger, armor does not help and nobody heals; it kills faster than hunger.
+/** @param {number} days */
 export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
+/** @param {State} state @param {Base} base */
 function thirst(state, base, mouths, short) {
   base.waterFed = Math.round((1 - short) * 100) / 100; // needs.js: the share of a day's water everyone got (thirst gauges)
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 8);
-    hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
   log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
 }
 
@@ -317,17 +341,21 @@ function thirst(state, base, mouths, short) {
 // cellars, a storehouse, a cold store) and spoils slowly there; food above the room is stored outside and spoils
 // fast; preserved food barely spoils. spoilRate = today's average rate of the fresh food, foodSpoilage = food
 // (fresh and preserved) lost a day.
+/** @param {State} state @param {Base} base */
 export const spoilRate = (state, base) => foodStore(state, base).rate;
+/** @param {State} state @param {Base} base */
 export const foodSpoilage = (state, base) => foodStore(state, base).spoil;
 export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
 // What the people living here eat a day (per head × heads; upkeep.js: the cold, a Quartermaster). Prisoners, guests,
 // a holding convoy's crew and the dog eat on top (foodUse(...).total; each in its own module).
+/** @param {State} state @param {Base} base */
 export const eatPerDay = (state, base) => foodUse(state, base).residents;
 
 // Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten (everyone fed
 // from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled and used per day (workshops; the
 // preserving kitchen and drying racks turn fresh food into preserved, so only what they lose counts), days of food
 // left without harvests, the next harvests and the storage.
+/** @param {State} state @param {Base} base */
 export function foodOutlook(state, base) {
   const farm = farmFoodPerDay(state, base);
   const scav = (scavengeOutput(state, base).food || 0) + (scavengeOutput(state, base).preserved || 0);
@@ -348,6 +376,7 @@ export function foodOutlook(state, base) {
 }
 
 // Expected food a day from the plots less what everyone fed here eats (per head × heads).
+/** @param {State} state @param {Base} base */
 export function foodForecast(state, base) {
   return farmOutput(state, base) - foodUse(state, base).total;
 }
@@ -355,18 +384,18 @@ export function foodForecast(state, base) {
 // Hunger: health lost per day by everyone at a base that ran out of food, by consecutive days without
 // (6, 8, 10 … up to 20). Armor and toughness do not help, and nobody heals while a base starves (medical.js),
 // so a week or so without food kills.
+/** @param {number} days */
 export const hungerDamage = (days) => Math.min(20, 4 + 2 * Math.max(1, days));
+/** @param {State} state @param {Base} base */
 function starve(state, base, mouths) {
   base.hungerDays = (base.hungerDays || 0) + 1;
   econStats(state).hungerDays++;
   const dmg = hungerDamage(base.hungerDays);
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 10);
-    hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (starving, worse each day)
   log(state, `${base.name} is out of food${base.hungerDays > 1 ? ` (day ${base.hungerDays}: everyone there loses ${dmg} health and nobody heals)` : ""}.`, "danger");
 }
 
+/** @param {State} state */
 export function basesDaily(state) {
   for (const base of [...state.bases]) baseDaily(state, base);
   summerWarningDaily(state); // the end of spring: bases whose water would not hold through the summer
@@ -380,10 +409,12 @@ export function basesDaily(state) {
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
+  starvingDaily(state); // needs.js: each morning starving or parched in a row costs more mood (−2, −4, −6 …)
   relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
   mentalBreaksDaily(state); // mentalbreaks.js: days at rock bottom end in a break that changes the colony
 }
 
+/** @param {State} state @param {Base} base */
 function baseDaily(state, base) {
   const rng = state.rng;
   const people = atBase(state, base.id);
@@ -477,6 +508,7 @@ function baseDaily(state, base) {
 
 // A stranger at the gate: a recruit card (recruits.js) with the hub's beds, food and water. Taking them in costs
 // 5 food on arrival (what the hub has then, never below zero).
+/** @param {State} state */
 function maybeStranger(state) {
   const h = hub(state);
   if (!state.rng.chance(0.06) || !h) return; // no base left (conquest.js exiles): nobody to come to
@@ -485,6 +517,7 @@ function maybeStranger(state) {
 }
 
 // ---------- outposts and supply lines ----------
+/** @param {State} state @param {Base} base */
 export function supplyLine(state, base) {
   const h = hub(state);
   const res = planPath(state, base.tile, h.tile, true) || planPath(state, base.tile, h.tile, false);
@@ -500,6 +533,7 @@ export function supplyLine(state, base) {
   return { hours: Math.round(res.cost), strength, path: res.path, hostile, horde };
 }
 
+/** @param {State} state */
 function shipFromOutposts(state) {
   const h = hub(state);
   for (const base of state.bases) {
@@ -574,6 +608,7 @@ export const ESCORTS = {
   heavy:    { name: "Heavy",    people: 5, desc: "Loud: deters small raids, draws zombies and big raids near aggressive groups" },
 };
 
+/** @param {State} state */
 export function routesDaily(state) {
   const d = day(state);
   for (const r of state.routes) {
@@ -593,6 +628,7 @@ export function routesDaily(state) {
   }
 }
 
+/** @param {State} state */
 export function releaseEscorts(state, r) {
   for (const id of r.escortIds) {
     const s = survivorById(state, id);
@@ -601,6 +637,7 @@ export function releaseEscorts(state, r) {
 }
 
 // ---------- death sites ----------
+/** @param {State} state */
 export function deathSitesDaily(state) {
   const rng = state.rng;
   const d = day(state);

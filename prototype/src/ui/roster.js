@@ -18,6 +18,7 @@ import { roleOf, roleById, toManual } from "../sim/work.js";
 import { roleSelect, taskChip, applyRoleChoice } from "./work.js";
 import { gaugeMini } from "./needs.js";
 import { hungerOf, thirstOf } from "../sim/needs.js";
+import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { rosterChildren } from "./family.js"; // the children under the table (sim/family.js)
 import { bulkBar, bulkReport, BULK_ACTIONS, BULK_CHANGE } from "./rosterbulk.js"; // equip best, to the hospital, move to base
 
@@ -131,7 +132,7 @@ export function rosterModal(state, ui) {
     const ap = Math.round(armorPower(s) * 10) / 10;
     return `<tr class="${sel.has(s.id) ? "on" : ""}">
       <td><input type="checkbox" data-action="ro-sel" data-id="${s.id}" ${sel.has(s.id) ? "checked" : ""}${tip("Tick to act on several people at once: a role, the best gear, the hospital, another base")}></td>
-      <td class="ro-name"><a class="lk" data-action="ro-open" data-id="${s.id}"${tip("Open their survivor screen: skills, traits, gear, inventory")}>${s.leader ? "★ " : ""}${esc(s.name)}</a></td>
+      <td class="ro-name"><a class="lk" data-action="ro-open" data-id="${s.id}"${tip("Open their survivor screen: skills, traits, gear, inventory")}>${s.leader ? "★ " : ""}${esc(s.name)}</a>${k ? statusIcons(state, s) : ""}</td>
       <td>${esc(w.text)}</td>
       <td>${w.key.startsWith("b") ? roleSel(s) : `<span class="muted"${tip("Roles are set at a base")}>${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)}</span>`}</td>
       <td>${k ? `<div class="ro-hp"><span class="${hp < 40 ? "danger" : hp < 70 ? "warn" : "good"}">${hp}</span><div class="bar"><i style="width:${hp}%;background:${hp < 40 ? "var(--danger)" : "var(--good)"}"></i></div></div>` : `<span class="muted"${tip("No contact: unknown until the team reports in")}>?</span>`}</td>

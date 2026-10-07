@@ -47,6 +47,7 @@ import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
+import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
 // H_GROW rows taller at a time (up to H_TRIES times) if its buildings do not all fit, and its wall map is as much longer
@@ -68,7 +69,8 @@ const HOSPITAL_NAME = { infirmary: "Infirmary", field_hosp: "Field hospital", cl
 export const STRUCTURES = [
   { key: "hall", name: "Main house", w: 6, h: 5, storeys: 2, when: (base) => base.type === "hub" && base.tier !== 0 },
   // A shelter (buildings.js SHELTER, tier 0) has only its shack behind the barricade.
-  { key: "shack", name: "Bunk shack", w: 5, h: 4, storeys: 1, when: (base) => (base.type !== "hub" || base.tier === 0) && !countAll(base, "bunkhouse") },
+  { key: "shack", name: "Bunk shack", w: 5, h: 4, storeys: 1, when: (base) => (base.type !== "hub" || base.tier === 0) && !countAll(base, "bunkhouse") && !countAll(base, "barracks") },
+  { key: "barracks", name: "Barracks", w: 6, h: 4, storeys: 2, per: "barracks", max: 2 },
   { key: "bunkhouse", name: "Bunkhouse", w: 5, h: 4, storeys: 2, per: "bunkhouse", max: 2 },
   { key: "hospital", name: "Infirmary", w: 5, h: 4, storeys: 1, any: Object.keys(HOSPITAL_NAME) },
   { key: "workshop", name: "Workshop", w: 6, h: 4, storeys: 1, any: ["ammo_bench", "med_station", "machine_shop", "kitchen", "still", "generator"] },
@@ -647,6 +649,7 @@ export function fallBack(state, opts = {}) {
 // The start of your turn: on the wall map, are they through? On the yard map, is the yard lost?
 export function tierPlayerTurn(state, b) {
   const T = b.tier;
+  lateOut(b); // defenceplan.js: the people who were not on watch are out of the buildings now
   const foes = b.units.filter((u) => u.side === "enemy" && active(u));
   if (T.map === "wall") {
     const inside = foes.filter((f) => T.interior[f.y * b.w + f.x]).length;

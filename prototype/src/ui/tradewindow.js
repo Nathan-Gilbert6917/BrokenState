@@ -2,7 +2,7 @@
 // and the bits of the Groups and Bases tabs that lead to them. Handlers: TRADE_ACTIONS / TRADE_CHANGE_ACTIONS,
 // registered by main.js. The rules live in sim/trade.js, sim/radio.js and sim/caravans.js.
 import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES } from "../sim/data.js";
-import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower } from "../sim/world.js";
+import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower, RADIO_RANGE } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
 import { waterIn } from "../sim/water.js"; // purified and un-purified water
@@ -13,7 +13,7 @@ import {
 import { situation, tastes, profileLabel, catName, catOf, margin } from "../sim/valuation.js";
 import {
   radioNodes, hasNetwork, canRadioGroup, radioScan, radioGreet, radioNews, radioRequestCaravan, radioDeal, radioHelp, radioPact, dealQuote,
-  radioCooldown, refusal, tradeBase, radioSummary, RELAY_RANGE, GROUP_REACH, listeners,
+  radioCooldown, refusal, tradeBase, radioSummary, RELAY_RANGE, GROUP_REACH, listeners, relaySpotFor,
 } from "../sim/radio.js";
 import {
   caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan,
@@ -168,7 +168,7 @@ export function radioModal(state, ui) {
   const sel = (fld, val) => `<select data-action="rd-dealf" data-f="${fld}">${keys.map((k) => `<option value="${k}" ${val === k ? "selected" : ""}>${SUPPLIES[k].name}</option>`).join("")}</select>`;
   const coming = incomingCaravans(state).filter((c) => c.owner === f.id);
   return `<div class="box wide"><h1>📻 ${esc(f.name)}</h1>
-    <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""} · ${reach ? `<span class="good">in radio reach</span>` : `<span class="danger">out of reach</span>`}</div>
+    <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""} · ${reach ? `<span class="good">in radio reach</span>` : outOfReachTag(state, f)}</div>
     <div class="grid2">
       <div>
         <h3>Calls</h3>
@@ -208,7 +208,7 @@ export function groupsRadioHeader(state) {
   const coming = incomingCaravans(state);
   return `<div class="card small">
     <div class="spread"><b>📻 Radio</b><span class="muted">${net ? `${nodes.filter((n) => n.linked).length} transmitter${nodes.filter((n) => n.linked).length === 1 ? "" : "s"} on the air${ears.length ? `, ${ears.length} hand-crank radio${ears.length === 1 ? "" : "s"} listening` : ""}` : ears.length ? `No radio station: ${ears.length === 1 ? "a hand-crank radio listens" : `${ears.length} hand-crank radios listen`} (hearing only)` : "No radio station"}</span></div>
-    <div class="muted">${net ? `Groups whose base is within your coverage (plus ${GROUP_REACH} tiles: they have radios too) can be called.${relays.length ? ` Relays: ${relays.map((n) => `${esc(n.base.name)} ${n.offline ? "(offline)" : n.linked ? "(linked)" : "(not linked)"}`).join(", ")}.` : ` Build radio relays at outposts to reach further (${RELAY_RANGE} tiles each, linked in a chain).`}` : "Build a radio station at the hub (Manage → Construction) to call other groups and hear from them."}</div>
+    <div class="muted">${net ? `Groups whose base is within your coverage (plus ${GROUP_REACH} tiles: they have radios too) can be called and invited into the coalition.${relays.length ? ` Relays: ${relays.map((n) => `${esc(n.base.name)} ${n.offline ? "(offline)" : n.linked ? "(linked)" : "(not linked)"}`).join(", ")}.` : ` Build radio relays at your other bases to reach further (${RELAY_RANGE} tiles each, linked in a chain back to a station).`}${relayHints(state)}` : "Build a radio station (Manage → Construction) to call other groups and hear from them."}</div>
     <div class="row" style="margin-top:0.35rem">
       <button data-action="rd-scan" ${(net || ears.length) && state.radioScanDay !== day(state) ? "" : "disabled"}${tip(net || ears.length ? `Listen for groups within reach that you have not met (once a day)${ears.length ? "; a hand-crank radio hears them inside their network but cannot call them" : ""}` : "Needs a radio station, or a hand-crank radio inside a radio network's coverage")}>Scan the airwaves</button>
       <button data-action="cp-open"${tip("A trade caravan of yours: crew, goods and a list of destinations (groups' bases, your outposts)")}>New trade caravan…</button>
@@ -227,7 +227,26 @@ export function caravanLines(state, base) {
   return caravansAt(state, base.id).map((c) => {
     const f = factionById(state, c.owner);
     return `<div>Caravan</div><div><span class="good">${esc(f ? f.name : "Traders")}</span> until ${when(c.stayUntil)} <button class="mini" data-action="cv-trade" data-id="${c.id}"${tip("Open the trade window")}>Trade</button></div>`;
-  }).join("") + `<div${tip("Radio stations reach 8 tiles, relays 6 (when linked)")}>Radio</div><div>${esc(radioSummary(state, base))}</div>`;
+  }).join("") + `<div${tip(`Radio stations reach ${RADIO_RANGE} tiles, relays ${RELAY_RANGE} (when linked: within range of a station or another linked relay). A relay goes up at any base without a station.`)}>Radio</div><div>${esc(radioSummary(state, base))}</div>`;
+}
+
+// "out of reach" in a group's radio panel, with how to reach it (radio.js relaySpotFor: a relay that would do it).
+function outOfReachTag(state, f) {
+  const spot = relaySpotFor(state, f);
+  const how = spot ? `A radio relay at ${spot.name} would bring them into your coverage (calls, pacts, the coalition's invitation).`
+    : `Their base must lie within your radio coverage + ${GROUP_REACH} tiles: a station reaches ${RADIO_RANGE}, each linked relay ${RELAY_RANGE} more around its base.`;
+  return `<span class="danger"${tip(how)}>out of reach</span>${spot ? ` <span class="muted">(a relay at ${esc(spot.name)} would reach them)</span>` : ""}`;
+}
+// The radio header's line on relays worth building: known groups out of reach that a relay at one of your bases
+// would bring in (radio.js relaySpotFor), grouped by base.
+function relayHints(state) {
+  const by = new Map();
+  for (const f of state.factions) {
+    if (!f.alive || !f.known) continue;
+    const spot = relaySpotFor(state, f);
+    if (spot) by.set(spot, [...(by.get(spot) || []), f.name]);
+  }
+  return [...by].map(([b, names]) => ` A relay at ${esc(b.name)} would reach ${names.map(esc).join(", ")}.`).join("");
 }
 
 // ---------- trade caravan planner ----------

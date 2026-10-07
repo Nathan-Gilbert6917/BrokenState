@@ -28,6 +28,7 @@ import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.j
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
+import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -338,7 +339,7 @@ function memberCard(state, p, m, live, queueing) {
   }
   const heal = live && p.phase === "task" && p.task?.type === "camp" ? campHealPerHour(state, p, m) : 0;
   return `<div class="card small">
-    <div class="spread"><b>${m.leader ? "★ " : ""}${esc(m.name)}</b><span>${inv}${treat}</span></div>
+    <div class="spread"><b>${m.leader ? "★ " : ""}${esc(m.name)}${live ? statusIcons(state, m) : ""}</b><span>${inv}${treat}</span></div>
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
     ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}

@@ -15,6 +15,8 @@
 //   layout and window sizes, drags clamped at several UI sizes, the menu's controls, keys in README and Help
 // - map overlays: Known area (searched tiles, saved), ruins (drawn, panel, gone when built over), Coalition land
 //   (the tiles controlledLand counts), worked out only when their data changes; every size and zoom, no NaN
+// - radio relays on screen: the radio header and a group's radio panel name the base where a relay would reach it,
+//   the Coalition tab's "out of radio reach" line, Construction (offered at an outpost, greyed out beside a station)
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
@@ -513,6 +515,35 @@ section("Roster: sort, filter, roles");
   htmlOk(html, "roster");
   check((html.match(/data-action="ro-open"/g) || []).length === alive(w).length, `a row per survivor (${alive(w).length})`);
   check((html.match(/<select data-action="role"/g) || []).length === alive(w).filter((s) => s.location.kind === "base").length, "a role drop-down for everyone at a base");
+  // Status icons (ui/status.js, sim/status.js): one per state, stacking, with a tooltip; none for the well.
+  {
+    const home = atBase(w, h.id).filter((s) => !s.leader && s !== alive(w)[3] && s !== alive(w)[4]);
+    const [a, b, c, d] = home;
+    for (const s of [a, b, c, d]) Object.assign(s, { health: 100, conditions: [], woundInfected: false, worm: null, mood: 60, hunger: 100, thirst: 100 });
+    a.hunger = 5; a.starveDays = 2; a.thirst = 20; a.mood = 12; a.woundInfected = true; // four at once
+    b.thirst = 8; b.parchDays = 1;
+    // At a base the stores decide (sim/needs.js starvingNow): first a hub that is out of food and water.
+    h.hungerDays = 2; h.thirstDays = 1;
+    const outHtml = rosterModal(w, ui);
+    const outRow = (s) => (outHtml.split("<tr").find((r) => r.includes(`data-action="ro-open" data-id="${s.id}"`)) || "");
+    check(/Starving: day 2, mood −4 a day \(their base is out of food/.test(outRow(a)), "the starving icon's tooltip has the day, the mood and why");
+    check(/Parched: day 1/.test(outRow(b)), "parched: the day");
+    check(/data-st="hunger"/.test(outRow(d)) && /from tomorrow morning mood −2 a day/.test(outRow(d)), "everyone at a base out of food is starving, from tomorrow");
+    h.hungerDays = 0; h.thirstDays = 0;
+    addCondition(w, c, "sprain", "", { sev: 40, quiet: true });
+    html = rosterModal(w, ui);
+    htmlOk(html, "roster with status icons");
+    const rowOf = (s) => (html.split("<tr").find((r) => r.includes(`data-action="ro-open" data-id="${s.id}"`)) || "");
+    const icons = (s) => [...rowOf(s).matchAll(/data-st="(\w+)"/g)].map((m) => m[1]);
+    check(icons(a).join(",") === "mood,hunger,thirst,infected", `they stack in order: ${icons(a).join(", ")}`);
+    check(/Fed again \(hunger 5\) after 2 days starving/.test(rowOf(a)), "the base has food again: the count ends tomorrow");
+    check(icons(b).join(",") === "thirst", `thirsty: ${icons(b).join(", ")}`);
+    check(icons(c).join(",") === "sick" && rowOf(c).includes("🩹"), "injured only: the bandage");
+    check(icons(alive(w)[4]).includes("sick") && rowOf(alive(w)[4]).includes("🤒"), "ill: the fever face");
+    check(icons(alive(w)[3]).includes("health"), "low health (35)");
+    check(!icons(d).length, "nobody well gets an icon");
+    for (const s of [a, b]) { s.hunger = 100; s.thirst = 100; s.mood = 60; delete s.starveDays; delete s.parchDays; } a.woundInfected = false;
+  }
   // Sorting: every column, both ways.
   const cols = ["name", "where", "role", "health", "mood", "cond", "weapon", "armor", "traits", ...SKILLS.map((k) => `sk:${k}`)];
   let sorted = 0;
@@ -1397,6 +1428,17 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
     { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    { // The battle roster's status icons: the survivor behind a unit (not low health: the unit's bar shows that).
+      const u = ft.b.units.find((x) => x.side === "player" && x.sid != null && !x.dead);
+      const s = u && ft.st.survivors.find((x) => x.id === u.sid);
+      if (s) {
+        const keep = { hunger: s.hunger, health: s.health };
+        s.hunger = 3; s.health = 20;
+        const html = UI.renderCombatPanel(ft.st);
+        check(html.includes('data-st="hunger"') && !html.includes('data-st="health"'), "the battle roster shows a starving unit's icon, and no low-health one");
+        Object.assign(s, keep);
+      } else console.log("  (no survivor unit in this battle: battle icons skipped)");
+    }
     check(!bar.includes(`data-v="top"`) && ["rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: turn, zoom, center, roofs, no top-down (main.js handles cb-view)");
     for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs"]) UI.combatAction(ft.st, "cb-view", { v });
     check(UI.cui.view === "iso" && ISO.iso.rot === r0, "the view bar's buttons work");
@@ -1593,6 +1635,58 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     }
   } finally {
     if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Radio relays on screen: the radio header, a group's radio panel, the Coalition tab, Construction");
+{
+  const { renderModal } = await import("../src/ui/ui.js");
+  const { groupsRadioHeader, radioModal, caravanLines } = await import("../src/ui/tradewindow.js");
+  const { diplomacyModal } = await import("../src/ui/diplomacy.js");
+  const { unlockAll } = await import("../src/sim/blueprints.js");
+  const { relaySpotFor, RELAY_RANGE, GROUP_REACH } = await import("../src/sim/radio.js");
+  const { RADIO_RANGE, newId } = await import("../src/sim/world.js");
+  const w = createWorld({ seed, factionCount: 6 });
+  w.started = true;
+  unlockAll(w);
+  const h = hub(w);
+  const g = w.grid;
+  Buildings.addBuilding(h, "radio");
+  Object.assign(h.stock, { scrap: 100, parts: 20 });
+  const free = (t, a, b, from, ok = () => true) => { const d = g.distance(from, t.id); return d >= a && d <= b && t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && t.owner == null && !w.bases.some((x) => x.tile === t.id) && !w.factions.some((f) => f.bases.includes(t.id)) && ok(t); };
+  const far = (u) => g.distance(u.id, h.tile) > RADIO_RANGE + 2 + GROUP_REACH;
+  const oT = w.tiles.find((t) => free(t, 9, 11, h.tile) && w.tiles.some((u) => free(u, 9, 12, t.id, far)));
+  if (check(!!oT, "a spot for an outpost with room for a group past it")) {
+    const fT = w.tiles.find((u) => free(u, 9, 12, oT.id, far));
+    const o = { id: newId(), tile: oT.id, type: "outpost", name: "Signal Rock", stock: { scrap: 30, parts: 4 }, buildings: [], construction: [], armory: [], radio: false, watchtower: false };
+    w.bases.push(o);
+    const s = makeSurvivor(w); s.skills.mechanics = 5; s.location = { kind: "base", baseId: o.id }; w.survivors.push(s);
+    const f = w.factions.find((x) => x.alive && x.bases.length);
+    f.bases = [fT.id]; f.known = true; f.goodwill = 60; f.pact = "trade";
+    check(relaySpotFor(w, f) === o, "a relay at the outpost would reach the group");
+    const head = groupsRadioHeader(w);
+    // The radio and diplomacy windows' handlers are main.js's TRADE_ACTIONS / DIPLO_ACTIONS (tradetest checks them):
+    // here only clean HTML.
+    const cleanOk = (html, where) => { const p = scan(html, where); check(!p.length, `${where}: clean HTML (${p.slice(0, 3).join(" | ")})`); };
+    cleanOk(head, "radio header");
+    check(head.includes(`A relay at ${o.name} would reach`) && head.includes(f.name), "the radio header names the base where a relay would reach a group");
+    const ui = { ...freshUi(), radioWith: f.id };
+    const rm = radioModal(w, ui);
+    cleanOk(rm, "radio panel (out of reach)");
+    check(/out of reach/.test(rm) && rm.includes(`a relay at ${o.name} would reach them`), "the group's radio panel: out of reach, and where a relay would reach them");
+    const dm = diplomacyModal(w, { ...freshUi(), diplo: { tab: "coalition" } });
+    cleanOk(dm, "Coalition tab");
+    check(dm.includes(`out of radio reach (build a radio relay at ${o.name}`), "the Coalition tab's line: out of radio reach, build a relay at the outpost");
+    const oc = renderModal(w, { ...freshUi(), baseView: { id: o.id, tab: "construction" } });
+    htmlOk(oc, "outpost Construction");
+    check(/data-type="relay" (?!disabled)/.test(oc), "Construction at the outpost: the relay can be built");
+    const hc = renderModal(w, { ...freshUi(), baseView: { id: h.id, tab: "construction" } });
+    check(/data-type="relay" disabled/.test(hc) && hc.includes("A radio station here already covers more than a relay would"), "Construction at the hub with a station: the relay is greyed out, with why");
+    Buildings.addBuilding(o, "relay");
+    const rm2 = radioModal(w, ui);
+    check(/in radio reach/.test(rm2) && !groupsRadioHeader(w).includes("would reach"), "with the relay up: in radio reach, no relay hint left");
+    check(caravanLines(w, o).includes(`relays ${RELAY_RANGE}`) && /Relay linked/.test(caravanLines(w, o)), "the base card's Radio line: relay linked, the ranges in its tooltip");
   }
 }
 

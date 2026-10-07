@@ -13,7 +13,7 @@ import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
-import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, BUILDINGS, demolishRefund } from "./sim/buildings.js";
+import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, queueBunkhouseExpand, BUILDINGS, demolishRefund } from "./sim/buildings.js";
 // What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
 const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
 import { refuel, repair } from "./sim/vehicles.js";
@@ -706,6 +706,7 @@ const actions = {
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
+  "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
   demolish: (d) => {
     const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";

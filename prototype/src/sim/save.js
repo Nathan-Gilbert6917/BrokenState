@@ -1,3 +1,4 @@
+// @ts-check
 // Saving and loading a whole world. Pure simulation: no DOM, no storage, no clock (ui/saves.js stores the result).
 //
 // A save is the state written as a graph, not a tree: everything the sim keeps is written once, whatever shape it
@@ -27,6 +28,11 @@ import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js"; // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
+/** @import { State } from "./types" */
+/**
+ * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
+ * @typedef {{ format: string, v: number, game: string, nextId: number, meta: ReturnType<typeof saveMeta>, state: any }} SaveFile
+ */
 
 export const SAVE_FORMAT = "broken-state-save";
 // Bump when the state changes in a way an older save cannot just be loaded into, and add a migration below.
@@ -47,6 +53,7 @@ export class SaveError extends Error {
 }
 
 // Why the world cannot be saved right now (a message for the player), or "" when it can.
+/** @param {State} state */
 export function saveBlocker(state) {
   if (!state) return "There is no game to save.";
   if (state.cards && state.cards.length) {
@@ -57,6 +64,7 @@ export function saveBlocker(state) {
 }
 
 // A short description of a world for the save list (no clock: the caller adds the time it was saved).
+/** @param {State} state */
 export function saveMeta(state) {
   const h = hub(state);
   return {
@@ -72,6 +80,7 @@ export function saveMeta(state) {
 
 // The world as a JSON-safe object. opts.dropCards: write the world without its open cards (the game-over autosave;
 // a run that has ended has nothing left to answer). Throws a SaveError when something in it cannot be saved.
+/** @param {State} state @param {{ dropCards?: boolean }} [opts] @returns {SaveFile} */
 export function serializeState(state, { dropCards = false } = {}) {
   const why = saveBlocker(state);
   if (why && !(dropCards && state && state.cards && state.cards.length)) throw new SaveError(why, "card", ".cards");
@@ -87,6 +96,7 @@ export function serializeState(state, { dropCards = false } = {}) {
 }
 
 // Is this a save this version can load? { ok, why }.
+/** @param {any} save @returns {{ ok: boolean, why: string }} */
 export function checkSave(save) {
   if (!save || typeof save !== "object" || save.format !== SAVE_FORMAT || !save.state) return { ok: false, why: "This is not a Broken State save." };
   const v = Number(save.v);
@@ -98,6 +108,7 @@ export function checkSave(save) {
 
 // A live world from a save object (serializeState's result, after JSON.parse). Old versions are migrated first.
 // Sets the id counter (world.js), so call it only for the world that is about to be played.
+/** @param {SaveFile} save @returns {State} */
 export function deserializeState(save) {
   const chk = checkSave(save);
   if (!chk.ok) throw new SaveError(chk.why, "version");
@@ -183,6 +194,7 @@ export function deserializeState(save) {
 // an object reached twice is scaled once), except the work roles' priorities and minimums that share the key (pri,
 // over, a role's min); a Cut wood order's left-behind, the day's cut, the boiler's items' worth and the economy's
 // tallies too. The groups' markets (prices per firewood) are made afresh. state.wood (the land's levels) is not an amount.
+/** @param {State} state @param {number} k */
 export function scaleSavedWood(state, k) {
   const seen = new Set();
   const walk = (o, key, parent) => {
@@ -206,7 +218,10 @@ export function scaleSavedWood(state, k) {
 }
 
 // String forms (a save file is this JSON).
+/** @param {State} state */
+/** @param {State} state @param {{ dropCards?: boolean }} [opts] @returns {string} */
 export const saveToString = (state, opts) => JSON.stringify(serializeState(state, opts));
+/** @param {string} text @returns {State} */
 export const loadFromString = (text) => deserializeState(JSON.parse(text));
 
 // ---------- the graph encoder ----------
@@ -214,6 +229,7 @@ const TYPED = { Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Arra
 const isPlain = (v) => { const p = Object.getPrototypeOf(v); return p === Object.prototype || p === null; };
 const keyLabel = (k) => (typeof k === "string" && /^[A-Za-z_$][\w$]*$/.test(k) ? `.${k}` : `[${typeof k === "string" ? JSON.stringify(k) : String(k)}]`);
 
+/** @param {any} root @returns {any} */
 export function encodeGraph(root) {
   // Pass 1: how often each object is reached, and anything that cannot be written.
   const count = new Map();
@@ -230,7 +246,7 @@ export function encodeGraph(root) {
     count.set(v, 1);
     if (Array.isArray(v)) {
       for (let i = 0; i < v.length; i++) { path.push(`[${i}]`); visit(v[i]); path.pop(); }
-      for (const k of Object.keys(v)) if (!(String(k >>> 0) === k && (k >>> 0) < v.length)) { path.push(keyLabel(k)); fail("A property on a list"); }
+      for (const k of Object.keys(v)) if (!(String(+k >>> 0) === k && (+k >>> 0) < v.length)) { path.push(keyLabel(k)); fail("A property on a list"); }
       return;
     }
     if (ArrayBuffer.isView(v)) { if (!TYPED[v.constructor.name]) fail(`A ${v.constructor.name}`); return; }
@@ -300,6 +316,7 @@ export function encodeGraph(root) {
 }
 
 // ---------- the graph decoder (the same walk, in the same order) ----------
+/** @param {any} data @returns {any} */
 export function decodeGraph(data) {
   const refs = [];
   const put = (o, k, x) => {
@@ -352,6 +369,7 @@ export function decodeGraph(data) {
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const B64I = new Int16Array(128).fill(-1);
 for (let i = 0; i < 64; i++) B64I[B64.charCodeAt(i)] = i;
+/** @param {Uint8Array} u8 @returns {string} */
 export function bytesToB64(u8) {
   const parts = [];
   const CH = 3 * 4096;
@@ -367,6 +385,7 @@ export function bytesToB64(u8) {
   }
   return parts.join("");
 }
+/** @param {string} s @returns {Uint8Array} */
 export function b64ToBytes(s) {
   const str = String(s).replace(/[^A-Za-z0-9+/]/g, "");
   const n = Math.floor((str.length * 3) / 4);

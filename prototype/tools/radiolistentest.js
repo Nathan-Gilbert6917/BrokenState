@@ -1,6 +1,7 @@
 // Radio networks and listening in on radio traffic (src/sim/radio.js radioNetworks / networksAt, src/sim/radiolisten.js,
 // src/ui/radiolisten.js; 2026-10-06):
-// - networks: yours (stations and linked relays) and one per group with a base, each base broadcasting by the group's
+// - networks: yours (stations and linked relays: an outpost's relay is a node, one beside a station is not, a hub
+//   relay without a station is once a station reaches it) and one per group with a base, each base broadcasting by the group's
 //   type (military 24, traders and fortresses 12, communes, zealots and expansionists 8, raiders 6); a base taken or
 //   lost changes it; networksAt with two overlapping networks;
 // - a receiver hears a network only inside its coverage: a hand-crank radio outside every network hears nothing;
@@ -95,6 +96,20 @@ section("Networks: yours and one per group, ranges by type");
   check(!radioNetworks(st).some((n) => n.id === dead.id) && networkById(st, dead.id) === null, "a group gone: its network is off the air");
   dead.alive = true;
   check(networkById(st, PLAYER_NET).id === PLAYER_NET && networkById(st, String(f.id)).id === f.id, "networkById: \"player\" or a group's id (a string id from the page works too)");
+  // Relays (any base, the hub too): an outpost's linked relay is a node of your network; one beside a station is not
+  // (the base is a station node only); a hub relay with no station there is a node once an outpost's station links it.
+  const oT = st.tiles.find((x) => land(st, x) && g.distance(x.id, h.tile) >= 8 && g.distance(x.id, h.tile) <= 10);
+  const o = { id: 99001, tile: oT.id, type: "outpost", name: "Mast Hill", stock: { parts: 0 }, buildings: [{ id: 99002, type: "relay" }], construction: [], armory: [], radio: false, watchtower: false };
+  st.bases.push(o);
+  const withRelay = playerNetwork(st);
+  check(withRelay.nodes.length === 2 && withRelay.nodes.some((n) => n.tile === oT.id && n.range === 6) && networksAt(st, oT.id)[0].id === PLAYER_NET, "an outpost's linked relay: a second node (6 tiles) of your network");
+  h.buildings.push({ id: 99003, type: "relay" });
+  check(playerNetwork(st).nodes.length === 2 && playerNetwork(st).nodes.find((n) => n.tile === h.tile).range > 6, "a relay beside the hub's station adds no node (the station's own range stands)");
+  h.radio = false; o.radio = true; o.buildings = [];
+  const hubRelay = playerNetwork(st);
+  check(hubRelay && hubRelay.nodes.some((n) => n.tile === h.tile && n.range === 6), "a hub relay without a station, linked from an outpost's station: a node of your network");
+  h.buildings = h.buildings.filter((b) => b.id !== 99003);
+  st.bases.splice(st.bases.indexOf(o), 1);
 }
 
 // ---------- 2. overlapping networks ----------
