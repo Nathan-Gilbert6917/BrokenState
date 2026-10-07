@@ -219,7 +219,7 @@ function step(now) {
   else if (state.combat) {
     if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
-  } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
+  } else if (!titleCovers(ui)) render(state); // the title screen hides the map
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
@@ -1236,14 +1236,8 @@ const settingsApi = {
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
-// The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
-// makes a fresh one.
-let titleTicked = false;
-initTitle({
-  options, desktop: settingsApi.desktop, quit: settingsApi.quit, saveOptions: () => saveOptions(options),
-  tick: () => { titleTicked = true; tickHour(state); },
-  newGame: () => { if (titleTicked) { titleTicked = false; newWorld(randomSeed()); } else { resetView(); centerOn(state, playerTile(state)); } },
-});
+// The title screen (ui/title.js).
+initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).

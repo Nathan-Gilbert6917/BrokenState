@@ -2,36 +2,31 @@
 // save), New game (the new-run screen), Load game (the menu's save list), Settings (the menu's Options tab), How to
 // play (its Help tab) and, in the desktop app, Quit. The menu itself (ui/settings.js) opens over the title.
 //
-// Behind it one of three animated backgrounds (options.titleBg), each drawn in code: a ruined skyline at dusk, the
-// living State Map (the game's own renderer on the main canvas, panning over a world that runs on its own) and a
-// campfire at night. The logo comes in four styles (options.titleStyle). Both are picked in the corner of the title
-// screen and remembered with the other options (ui/saves.js).
+// Behind it, four animated backgrounds drawn in code take turns: a ruined skyline at dusk, a campfire at night, a
+// holdout's wall in a storm and a hive, each held for a while and then cross-faded into the next.
 import { latestSave, listSaves } from "./saves.js";
 import { openSettings } from "./settings.js";
-import { camera, view, HEX } from "./render.js";
 import { GAME_VERSION } from "../sim/save.js";
 
-export const TITLE_BGS = [["skyline", "Ruined skyline"], ["map", "Living State Map"], ["camp", "Campfire at night"]];
-export const TITLE_STYLES = [["spray", "Spray-painted"], ["stencil", "Cracked stencil"], ["blood", "Blood-red serif"], ["minimal", "Clean minimal"]];
-const MAP_TICK_S = 0.7; // the living map's world runs an hour every this many seconds
+const SCENES = ["skyline", "camp", "walls", "hive"];
+const HOLD_S = 45;  // how long each background stays before the next fades in
+const FADE_S = 3;   // the cross-fade
+const PIXEL_BUDGET = 5e6; // a background layer's pixels at most (a 4K screen gets a softer, cheaper scene)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
-const pick = (list, v) => (list.some(([k]) => k === v) ? v : list[0][0]);
-export const titleBg = (o) => pick(TITLE_BGS, o && o.titleBg);
-export const titleStyle = (o) => pick(TITLE_STYLES, o && o.titleStyle);
 
-// main.js hands over: options, saveOptions(), desktop, getState(), tick() (an hour of the living map's world), newGame(),
-// quit(), refresh().
+// main.js hands over: desktop, quit().
 let API = null;
 export function initTitle(api) { API = api; }
 
 export function showTitle(ui) {
   ui.title = true;
-  mapClock = { t: 0, acc: 0 };
+  show = { cur: 0, next: -1, at: 0, fade: 0 };
+  scenes.length = 0;
 }
-// Over the whole window, the map included (main.js does not draw the map behind it).
-export const titleCovers = (ui) => !!ui.title && !(API && titleBg(API.options) === "map");
+// The title covers the whole window, the map included (main.js does not draw the map behind it).
+export const titleCovers = (ui) => !!ui.title;
 
 // ---------- the menu ----------
 export function titleMenuHTML(ui, api = API) {
@@ -46,21 +41,14 @@ export function titleMenuHTML(ui, api = API) {
   if (api && api.desktop) items.push(`<button class="tt-item" data-action="title-quit">Quit</button>`);
   return items.join("");
 }
-function lookHTML(o) {
-  const row = (label, action, list, cur) => `<span class="tt-pick"><span class="tt-lbl">${label}</span><button data-action="${action}" data-dir="-1" aria-label="Previous">‹</button><b>${esc(list.find(([k]) => k === cur)[1])}</b><button data-action="${action}" data-dir="1" aria-label="Next">›</button></span>`;
-  return row("Background", "title-bg", TITLE_BGS, titleBg(o)) + row("Title", "title-style", TITLE_STYLES, titleStyle(o));
-}
 
-const cycle = (list, cur, dir) => list[(list.findIndex(([k]) => k === cur) + (Number(dir) || 1) + list.length) % list.length][0];
 // main.js registers them: fn(state, ui, data, api).
 export const TITLE_ACTIONS = {
-  "title-new": (state, ui, d, api = API) => { ui.title = false; api.newGame(); },
+  "title-new": (state, ui) => { ui.title = false; },
   "title-load": (state, ui) => openSettings(ui, "game"),
   "title-settings": (state, ui) => openSettings(ui, "options"),
   "title-help": (state, ui) => openSettings(ui, "help"),
   "title-quit": (state, ui, d, api = API) => api.quit(),
-  "title-bg": (state, ui, d, api = API) => { api.options.titleBg = cycle(TITLE_BGS, titleBg(api.options), d.dir); api.saveOptions(); },
-  "title-style": (state, ui, d, api = API) => { api.options.titleStyle = cycle(TITLE_STYLES, titleStyle(api.options), d.dir); api.saveOptions(); },
 };
 
 // Up and down move between the buttons, Enter presses one (the browser's own). Returns true when it used the key.
@@ -75,16 +63,18 @@ export function titleKey(ui, e) {
 }
 
 // ---------- the screen (DOM) ----------
-let root = null, bgCanvas = null, scene = null, sceneKey = "", logoKey = "", menuShown = "", lookShown = "", lastFrame = 0;
-let mapClock = { t: 0, acc: 0 };
+let root = null, bgCanvas = null, menuShown = "", logoDone = false, lastFrame = 0;
+let show = { cur: 0, next: -1, at: 0, fade: 0 }; // which background is up, which is fading in, since when
+const scenes = []; // by SCENES index: { scene, L } (built when first shown, dropped once faded out)
+let sceneSize = "";
 
 function build() {
   root = document.createElement("div");
   root.id = "title";
   root.className = "hidden";
   root.innerHTML = `<canvas id="titlebg"></canvas><div class="tt-shade"></div>
-    <div class="tt-main"><div class="tt-logo" id="tt-logo"></div><nav class="tt-menu" id="tt-menu"></nav></div>
-    <div class="tt-look" id="tt-look"></div><div class="tt-ver">Broken State · prototype ${esc(GAME_VERSION)}</div>`;
+    <div class="tt-main"><div class="tt-logo" id="tt-logo">${LOGO()}</div><nav class="tt-menu" id="tt-menu"></nav></div>
+    <div class="tt-ver">Broken State · prototype ${esc(GAME_VERSION)}</div>`;
   document.body.appendChild(root);
   bgCanvas = root.querySelector("#titlebg");
 }
@@ -93,113 +83,65 @@ function build() {
 export function syncTitle(state, ui) {
   if (typeof document === "undefined") return;
   if (!root) { if (!ui.title) return; build(); }
-  const o = API.options;
   const on = !!ui.title;
-  const bg = titleBg(o);
   root.classList.toggle("hidden", !on);
   root.classList.toggle("covered", on && !!(ui.settings || ui.zombieLook)); // the menu opens over the title: only the background shows
-  root.dataset.bg = bg;
-  document.body.classList.toggle("title-map", on && bg === "map");
-  if (on && bg === "map") view.devReveal = true; // the whole state, no fog (a new world or a load sets it back: resetView)
-  if (!on) { sceneKey = ""; scene = null; return; }
+  if (!on) { scenes.length = 0; sceneSize = ""; return; }
   const menu = titleMenuHTML(ui);
   if (menu !== menuShown) { root.querySelector("#tt-menu").innerHTML = menu; menuShown = menu; }
-  const look = lookHTML(o);
-  if (look !== lookShown) { root.querySelector("#tt-look").innerHTML = look; lookShown = look; }
-  const style = titleStyle(o);
-  if (style !== logoKey) {
-    const el = root.querySelector("#tt-logo");
-    el.className = `tt-logo tt-${style}`;
-    el.innerHTML = LOGOS[style]();
-    logoKey = style;
-    decorateLogo(el, style);
-  }
+  if (!logoDone) logoDone = decorateLogo(root.querySelector("#tt-logo"));
 }
 
-// Every frame while the title is up (main.js step).
+// Every frame while the title is up (main.js step): the background of the moment, and the next one fading in over it.
 export function titleFrame(state, ui, now) {
   if (!root || !ui.title) return;
   const dt = Math.min(0.1, lastFrame ? (now - lastFrame) / 1000 : 0.016);
   lastFrame = now;
-  const bg = titleBg(API.options);
-  if (bg === "map") { mapFrame(state, dt); return; }
-  if (sceneKey !== bg) { scene = bg === "camp" ? campScene() : skylineScene(); sceneKey = bg; scene.size = ""; }
-  const dpr = window.devicePixelRatio || 1, res = Math.min(dpr, 2);
+  const t = now / 1000;
+  const dpr = window.devicePixelRatio || 1;
   const W = window.innerWidth, H = window.innerHeight;
-  const size = `${W}x${H}x${res}`;
-  if (scene.size !== size) {
+  const res = Math.min(dpr, 1.5, Math.sqrt(PIXEL_BUDGET / Math.max(1, W * H)));
+  const size = `${W}x${H}x${res.toFixed(3)}`;
+  if (sceneSize !== size) {
     bgCanvas.width = Math.round(W * res);
     bgCanvas.height = Math.round(H * res);
-    scene.resize(W, H, res);
-    scene.size = size;
+    scenes.length = 0;
+    sceneSize = size;
   }
+  const get = (i) => {
+    if (!scenes[i]) {
+      const scene = SCENES[i] === "camp" ? campScene() : SCENES[i] === "walls" ? wallsScene() : SCENES[i] === "hive" ? hiveScene() : skylineScene();
+      const L = layer(W, H, res);
+      scene.resize(W, H, res);
+      scenes[i] = { scene, L };
+    }
+    return scenes[i];
+  };
+  if (!show.at) show.at = t;
+  // The next background is built a second before its fade, so the fade itself starts without a hitch.
+  if (show.next < 0 && t - show.at > HOLD_S - 1) get((show.cur + 1) % SCENES.length);
+  if (show.next < 0 && t - show.at > HOLD_S) { show.next = (show.cur + 1) % SCENES.length; show.fade = t; }
+  const cur = get(show.cur);
+  cur.scene.frame(cur.L.g, t, dt);
   const g = bgCanvas.getContext("2d");
   g.setTransform(res, 0, 0, res, 0, 0);
-  scene.frame(g, now / 1000, dt);
-}
-
-// The living State Map: the main canvas (full screen under the title, styles: body.title-map) pans slowly over the
-// whole state while its world runs on its own.
-function mapFrame(state, dt) {
-  mapClock.t += dt;
-  mapClock.acc += dt;
-  if (mapClock.acc >= MAP_TICK_S) {
-    mapClock.acc = 0;
-    try { API.tick(); } catch (e) { /* a demo world that trips over itself just stands still */ }
+  g.globalAlpha = 1;
+  g.drawImage(cur.L.c, 0, 0, W, H);
+  if (show.next >= 0) {
+    const nx = get(show.next);
+    nx.scene.frame(nx.L.g, t, dt);
+    const f = Math.min(1, (t - show.fade) / FADE_S);
+    g.globalAlpha = f * f * (3 - 2 * f);
+    g.drawImage(nx.L.c, 0, 0, W, H);
+    g.globalAlpha = 1;
+    if (f >= 1) { scenes[show.cur] = null; show.cur = show.next; show.next = -1; show.at = t; }
   }
-  const gr = state.grid;
-  if (!gr) return;
-  const w = HEX * Math.sqrt(3) * (gr.width + 0.5), h = HEX * (1.5 * (gr.height - 1) + 2);
-  camera.zoom = 0.85;
-  const vw = window.innerWidth / camera.zoom, vh = window.innerHeight / camera.zoom;
-  const t = mapClock.t + 40;
-  const ax = Math.max(0, w / 2 - vw / 2) * 0.9, ay = Math.max(0, h / 2 - vh / 2) * 0.9;
-  camera.x = w / 2 + ax * Math.sin(t * 0.012) - vw / 2;
-  camera.y = h / 2 + ay * Math.sin(t * 0.0083 + 1.3) - vh / 2;
 }
 
-// ---------- logos ----------
-// Two lines of text in an SVG; the stencil bridges, the crack and the drips are added once the letters can be measured.
-const LOGOS = {
-  stencil: () => `<svg viewBox="0 0 1000 440" aria-label="Broken State">
-    <defs>
-      <filter id="tt-wear" x="-2%" y="-2%" width="104%" height="104%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.03 0.07" numOctaves="3" seed="11" result="n"/>
-        <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -7 0 0 0 5.2" result="big"/>
-        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="3" result="f"/>
-        <feColorMatrix in="f" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -6 0 0 0 4.4" result="fine"/>
-        <feComposite in="big" in2="fine" operator="in" result="keep"/>
-        <feComposite in="SourceGraphic" in2="keep" operator="in"/>
-      </filter>
-      <mask id="tt-cuts" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="440"><rect width="1000" height="440" fill="#fff"/><g id="tt-bridges" fill="#000"></g></mask>
-      <clipPath id="tt-left"><path id="tt-cl" d="M0 0H1000V440H0Z"/></clipPath>
-      <clipPath id="tt-right"><path id="tt-cr" d="M0 0Z"/></clipPath>
-    </defs>
-    <g class="tt-ink" filter="url(#tt-wear)">
-      <g mask="url(#tt-cuts)">
-        <text id="tt-l1" x="500" y="195" text-anchor="middle" textLength="930" lengthAdjust="spacingAndGlyphs">BROKEN</text>
-        <g clip-path="url(#tt-left)"><text class="tt-l2" x="500" y="410" text-anchor="middle" textLength="930" lengthAdjust="spacingAndGlyphs">STATE</text></g>
-        <g clip-path="url(#tt-right)"><g class="tt-shift"><text id="tt-l2" class="tt-l2" x="500" y="410" text-anchor="middle" textLength="930" lengthAdjust="spacingAndGlyphs">STATE</text></g></g>
-      </g>
-    </g>
-  </svg>`,
-  blood: () => `<svg viewBox="0 0 1000 470" aria-label="Broken State">
-    <defs>
-      <linearGradient id="tt-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b3161c"/><stop offset="0.65" stop-color="#7a0b10"/><stop offset="1" stop-color="#4a0407"/></linearGradient>
-      <filter id="tt-rough" x="-3%" y="-3%" width="106%" height="140%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="5" result="n"/>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" result="d"/>
-        <feGaussianBlur in="d" stdDeviation="9" result="b"/><feFlood flood-color="#600" flood-opacity="0.55"/><feComposite in2="b" operator="in" result="glow"/>
-        <feMerge><feMergeNode in="glow"/><feMergeNode in="d"/></feMerge>
-      </filter>
-    </defs>
-    <g filter="url(#tt-rough)" fill="url(#tt-red)">
-      <text id="tt-l1" x="500" y="190" text-anchor="middle" textLength="900" lengthAdjust="spacingAndGlyphs">BROKEN</text>
-      <text id="tt-l2" x="500" y="385" text-anchor="middle" textLength="760" lengthAdjust="spacingAndGlyphs">STATE</text>
-      <g id="tt-drips"></g>
-    </g>
-  </svg>`,
-  spray: () => `<svg viewBox="0 0 1000 470" aria-label="Broken State">
+// ---------- the logo: spray paint on a wall ----------
+// Two SVGs on top of each other: the lettering with its paint filter and shadow, which never changes once drawn (so
+// the browser keeps it), and over it the paint runs, which grow on their own without the filter.
+const LOGO = () => `<svg class="tt-ink" viewBox="0 0 1000 470" aria-label="Broken State">
     <defs>
       <filter id="tt-paint" x="-5%" y="-8%" width="110%" height="140%">
         <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="9" result="w"/>
@@ -210,23 +152,17 @@ const LOGOS = {
         <feComposite in="halo" in2="dots" operator="in" result="speck"/>
         <feComponentTransfer in="speck" result="speck2"><feFuncA type="linear" slope="1.6"/></feComponentTransfer>
         <feGaussianBlur in="core" stdDeviation="2.2" result="soft"/>
-        <feMerge><feMergeNode in="speck2"/><feMergeNode in="soft"/><feMergeNode in="core"/></feMerge>
+        <feMerge result="painted"><feMergeNode in="speck2"/><feMergeNode in="soft"/><feMergeNode in="core"/></feMerge>
+        <feDropShadow in="painted" dx="0" dy="7" stdDeviation="9" flood-color="#000" flood-opacity="0.8"/>
       </filter>
     </defs>
     <g transform="rotate(-4 500 235)" filter="url(#tt-paint)">
       <g class="tt-white"><text id="tt-l1" x="490" y="200" text-anchor="middle" textLength="880" lengthAdjust="spacingAndGlyphs">BROKEN</text></g>
       <g class="tt-red"><text id="tt-l2" x="530" y="395" text-anchor="middle" textLength="700" lengthAdjust="spacingAndGlyphs">STATE</text>
         <path class="tt-slash" d="M150 425 C 330 440, 650 418, 905 405"/></g>
-      <g id="tt-drips"></g>
     </g>
-  </svg>`,
-  minimal: () => `<svg viewBox="0 0 1000 230" aria-label="Broken State">
-    <text id="tt-l1" x="500" y="110" text-anchor="middle" textLength="900" lengthAdjust="spacing">${[..."BROKEN STATE"].map((c, i) => `<tspan style="animation-delay:${(0.25 + i * 0.09).toFixed(2)}s">${c === " " ? " " : c}</tspan>`).join("")}</text>
-    <line class="tt-rule" x1="120" y1="150" x2="455" y2="150"/><line class="tt-rule" x1="545" y1="150" x2="880" y2="150"/>
-    <circle class="tt-dot" cx="500" cy="150" r="3"/>
-    <text class="tt-sub" x="500" y="200" text-anchor="middle">THE STATE OF CALDER · AFTER THE FALL</text>
-  </svg>`,
-};
+  </svg>
+  <svg class="tt-runs" viewBox="0 0 1000 470" aria-hidden="true"><g transform="rotate(-4 500 235)" id="tt-drips"></g></svg>`;
 
 // Glyph boxes of a <text> (user units), measured by the browser.
 function glyphs(text) {
@@ -235,69 +171,28 @@ function glyphs(text) {
   return out;
 }
 
-// Stencil bridges, by letter: vertical cuts at fractions of the glyph's width (from top to bottom, or only part of the
-// height), horizontal cuts at a fraction of its height.
-const BRIDGES = {
-  B: [["v", 0.36]], R: [["v", 0.36]], K: [["v", 0.38]], E: [["v", 0.36]], N: [["v", 0.3], ["v", 0.7]],
-  O: [["v", 0.5]], S: [["v", 0.5]], T: [["h", 0.27, 0.3, 0.7]], A: [["v", 0.5, 0, 0.42], ["h", 0.68, 0.3, 0.7]],
-};
-
-function decorateLogo(el, style) {
-  const l1 = el.querySelector("#tt-l1"), l2 = el.querySelector("#tt-l2");
-  if (!l1 || !l2) return;
-  const all = [...glyphs(l1), ...glyphs(l2)];
-  if (!all.length) return;
-  const rnd = rng(style.length * 7919 + 17);
-  if (style === "stencil") {
-    // Cap height: the glyph box includes the font's ascent and descent; capitals fill about the middle 70%.
-    const cuts = [];
-    for (const gl of all) {
-      const top = gl.y + gl.h * 0.18, ch = gl.h * 0.62;
-      for (const [k, a, b = 0, c = 1] of BRIDGES[gl.ch] || []) {
-        if (k === "v") cuts.push(`<rect x="${(gl.x + gl.w * a - 3.5).toFixed(1)}" y="${(top + ch * b - 6).toFixed(1)}" width="7" height="${(ch * (c - b) + 12).toFixed(1)}"/>`);
-        else cuts.push(`<rect x="${(gl.x + gl.w * b).toFixed(1)}" y="${(top + ch * a - 3.5).toFixed(1)}" width="${(gl.w * (c - b)).toFixed(1)}" height="7"/>`);
-      }
-    }
-    // The crack: a jagged line down through STATE's A; the right-hand piece has dropped and turned a little.
-    const g2 = glyphs(l2), a = g2[2] || g2[Math.floor(g2.length / 2)];
-    if (a) {
-      const x0 = a.x + a.w * 0.62, top = a.y - 10, bot = a.y + a.h + 10;
-      const pts = [];
-      for (let y = top, i = 0; y <= bot; y += 16 + rnd() * 18, i++) pts.push([x0 + (rnd() - 0.5) * 34 + (y - top) * -0.12, y]);
-      pts.push([x0 - 10, bot]);
-      const line = pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L");
-      el.querySelector("#tt-cl").setAttribute("d", `M0 0H${pts[0][0].toFixed(1)} L${line} V440 H0Z`);
-      el.querySelector("#tt-cr").setAttribute("d", `M1000 0H${pts[0][0].toFixed(1)} L${line} V440 H1000Z`);
-      el.querySelector("#tt-bridges").insertAdjacentHTML("beforeend", `<path d="M${line}" fill="none" stroke="#000" stroke-width="5"/>`);
-      // The upper line has a hairline crack too, running into the same break.
-      const b1 = glyphs(l1)[4];
-      if (b1) {
-        let x = b1.x + b1.w * 0.3, y = b1.y + b1.h * 0.85, d = `M${x.toFixed(1)} ${y.toFixed(1)}`;
-        while (y > b1.y + b1.h * 0.2) { y -= 12 + rnd() * 14; x += (rnd() - 0.4) * 20; d += ` L${x.toFixed(1)} ${y.toFixed(1)}`; }
-        el.querySelector("#tt-bridges").insertAdjacentHTML("beforeend", `<path d="${d}" fill="none" stroke="#000" stroke-width="3"/>`);
-      }
-    }
-    el.querySelector("#tt-bridges").insertAdjacentHTML("afterbegin", cuts.join(""));
-    return;
-  }
-  // Drips from the bottom of some letters (blood, paint), each growing, then letting a drop go, then starting again.
-  const holder = el.querySelector("#tt-drips");
-  if (!holder) return;
-  const thin = style === "spray";
+// Paint runs from the bottom of some letters, each growing once, slowly, and staying. Returns false until the
+// letters can be measured.
+function decorateLogo(el) {
+  const l1 = el.querySelector("#tt-l1"), l2 = el.querySelector("#tt-l2"), holder = el.querySelector("#tt-drips");
+  if (!l1 || !l2 || !holder) return true;
+  const all = [...glyphs(l1).map((g) => ({ ...g, white: true })), ...glyphs(l2).map((g) => ({ ...g, white: false }))];
+  if (!all.length || !all[0].w) return false;
+  const rnd = rng(31);
   const out = [];
   for (const gl of all) {
-    const n = rnd() < (thin ? 0.55 : 0.75) ? 1 + (rnd() < 0.35 ? 1 : 0) : 0;
+    const n = rnd() < 0.55 ? 1 + (rnd() < 0.35 ? 1 : 0) : 0;
     for (let k = 0; k < n; k++) {
-      const x = gl.x + gl.w * (0.2 + rnd() * 0.6), y = gl.y + gl.h * (thin ? 0.76 : 0.8) - 4;
-      const len = (thin ? 25 : 30) + rnd() * (thin ? 70 : 85), w = thin ? 2.5 + rnd() * 2.5 : 4 + rnd() * 6;
-      const dur = (6 + rnd() * 8).toFixed(1), delay = (-rnd() * 12).toFixed(1);
-      const cls = thin && gl.y < 250 ? "tt-dw" : thin ? "tt-dr" : "";
-      out.push(`<g class="tt-drip ${cls}" style="--len:${len.toFixed(0)}px;animation-duration:${dur}s;animation-delay:${delay}s;transform-origin:${x.toFixed(1)}px ${y.toFixed(1)}px">
-        <path d="M${(x - w / 2).toFixed(1)} ${y} V${(y + len).toFixed(1)} a${(w / 2).toFixed(1)} ${(w / 2).toFixed(1)} 0 0 0 ${w.toFixed(1)} 0 V${y}Z"/></g>
-        <circle class="tt-drop ${cls}" cx="${x.toFixed(1)}" cy="${(y + len + w * 0.8).toFixed(1)}" r="${(w * 0.62).toFixed(1)}" style="animation-duration:${dur}s;animation-delay:${delay}s"/>`);
+      // A run: wide where it leaves the letter, narrowing to a round bead at the end.
+      const x = gl.x + gl.w * (0.2 + rnd() * 0.6), y = gl.y + gl.h * 0.76 - 6;
+      const len = 25 + rnd() * 70, w = 5 + rnd() * 5, tip = w * 0.32;
+      const dur = (8 + rnd() * 10).toFixed(1), delay = (rnd() * 18 - 8).toFixed(1);
+      out.push(`<g class="tt-drip ${gl.white ? "tt-dw" : "tt-dr"}" style="animation-duration:${dur}s;animation-delay:${delay}s;transform-origin:${x.toFixed(1)}px ${y.toFixed(1)}px">
+        <path d="M${(x - w / 2).toFixed(1)} ${y} L${(x + w / 2).toFixed(1)} ${y} L${(x + tip).toFixed(1)} ${(y + len).toFixed(1)} a${tip.toFixed(1)} ${tip.toFixed(1)} 0 0 1 ${(-tip * 2).toFixed(1)} 0 Z"/></g>`);
     }
   }
   holder.innerHTML = out.join("");
+  return true;
 }
 
 // ---------- drawing helpers ----------
@@ -1254,7 +1149,7 @@ function campScene() {
 
   function frame(g, t, dt) {
     step(dt, t);
-    const flick = 0.85 + 0.15 * wob(t * 3.1, 1) + 0.05 * Math.sin(t * 23);
+    const flick = 0.88 + 0.12 * wob(t * 2.2, 1);
     g.drawImage(sky.c, 0, 0, W, H);
     // Clouds drift across, lit at the edges by the moon.
     for (const c of clouds) {
@@ -1346,6 +1241,581 @@ function campScene() {
     }
     g.globalAlpha = 1;
     g.globalCompositeOperation = "source-over";
+  }
+  return { resize, frame };
+}
+
+// ---------- background: the wall in a storm ----------
+// From the walkway of a holdout's wall: a sentry by a lantern, the watchtower's spotlight sweeping the field, the
+// radio mast blinking, rain, and a horde out in the dark that the lightning shows for a moment.
+function wallsScene() {
+  let W = 0, H = 0, res = 1, sky, hills, field, wall;
+  let fieldTop = 0, fieldBot = 0, towerX = 0, lampX = 0, lampY = 0, mastX = 0, mastY = 0, lanternX = 0, lanternY = 0;
+  let horde = [], rain = [], clouds, bolt = null, nextBolt = 6;
+  const glowW = puff("255,200,130"), spotP = puff("210,225,255", 0.1), flashP = puff("220,230,255");
+
+  function resize(w, h, r) {
+    W = w; H = h; res = r;
+    fieldTop = H * 0.56; fieldBot = H * 0.8;
+    towerX = W * 0.8; lampX = towerX - H * 0.02; lampY = H * 0.47;
+    mastX = W * 0.14; mastY = H * 0.26;
+    lanternX = W * 0.45; lanternY = H * 0.78;
+    const R = rng(1313);
+    sky = layer(W, H, res);
+    let g = sky.g;
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, "#0a0d14"); gr.addColorStop(0.4, "#141a26"); gr.addColorStop(0.56, "#1b2230"); gr.addColorStop(0.6, "#0d1016"); gr.addColorStop(1, "#07080a");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    // Far hills and the treeline, lost in the rain.
+    hills = layer(W, H * 0.5, res);
+    g = hills.g;
+    g.translate(0, -H * 0.3);
+    g.fillStyle = "#0e121a";
+    g.beginPath(); g.moveTo(0, fieldTop);
+    for (let x = 0; x <= W; x += 16) g.lineTo(x, fieldTop - H * 0.06 - Math.sin(x * 0.0025 + 2) * H * 0.035 - Math.sin(x * 0.009) * H * 0.01);
+    g.lineTo(W, H); g.lineTo(0, H); g.fill();
+    g.fillStyle = "#090c12";
+    for (let x = -10; x < W + 10; x += 5 + R() * 9) {
+      const h = H * (0.03 + R() * 0.04), y = fieldTop + H * 0.005;
+      g.beginPath(); g.moveTo(x, y - h); g.lineTo(x + h * 0.28, y); g.lineTo(x - h * 0.28, y); g.closePath(); g.fill();
+    }
+    // The field: wet grass and mud, darker near the wall, the ruts of a track.
+    field = layer(W, fieldBot - fieldTop + H * 0.02, res);
+    g = field.g;
+    g.translate(0, -fieldTop);
+    const fg = g.createLinearGradient(0, fieldTop, 0, fieldBot);
+    fg.addColorStop(0, "#161a14"); fg.addColorStop(0.5, "#10130d"); fg.addColorStop(1, "#090a08");
+    g.fillStyle = fg;
+    g.fillRect(0, fieldTop, W, fieldBot - fieldTop + H * 0.02);
+    g.lineCap = "round";
+    for (let i = 0; i < 2200; i++) {
+      const y = fieldTop + Math.pow(R(), 0.7) * (fieldBot - fieldTop), f = (y - fieldTop) / (fieldBot - fieldTop), x = R() * W;
+      g.strokeStyle = R() < 0.6 ? `rgba(60,70,40,${(0.25 + f * 0.3).toFixed(2)})` : `rgba(20,24,16,${(0.4 + f * 0.3).toFixed(2)})`;
+      g.lineWidth = 0.7 + f * 1.3;
+      const h = (2 + R() * 5) * (0.4 + f), lean = (R() - 0.5) * 5;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + lean, y - h); g.stroke();
+    }
+    g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = H * 0.004;
+    for (const dx of [-H * 0.03, H * 0.03]) { g.beginPath(); g.moveTo(W * 0.3 + dx * 0.4, fieldTop + H * 0.01); g.quadraticCurveTo(W * 0.36 + dx, fieldTop + H * 0.12, W * 0.42 + dx * 2, fieldBot + H * 0.02); g.stroke(); }
+    for (let i = 0; i < 12; i++) { const y = fieldTop + H * 0.03 + R() * (fieldBot - fieldTop - H * 0.03), x = R() * W; g.fillStyle = "rgba(40,48,60,0.35)"; g.beginPath(); g.ellipse(x, y, H * (0.02 + R() * 0.04), H * 0.006, 0, 0, Math.PI * 2); g.fill(); }
+    wall = wallLayer();
+    horde = [];
+    for (let i = 0; i < 64; i++) {
+      const z = walkers(1, 500 + i, {})[0];
+      z.k.crawl = false; z.k.idle = R() < 0.1;
+      z.turn = 2 + R() * 8;
+      horde.push(z);
+    }
+    rain = Array.from({ length: 320 }, () => ({ x: R() * (W + H * 0.3), y: R() * H, l: H * (0.025 + R() * 0.03), v: H * (0.9 + R() * 0.5), a: 0.1 + R() * 0.2 }));
+    clouds = fogStrip(W, H * 0.4, "60,70,90", 21, res, 1.4);
+    bolt = null; nextBolt = 4 + R() * 6;
+  }
+
+  // The wall from inside: a walkway of planks on posts, the wall of sheet metal and timber above it with wire on
+  // top, sandbags, the watchtower at the right, the radio mast at the left, the lantern on its hook.
+  function wallLayer() {
+    const L = layer(W, H, res), R = rng(77), g = L.g;
+    const top = H * 0.76, walk = H * 0.86;
+    g.lineCap = "round";
+    // The wall's inner face: sheets and planks of different heights, dark and wet.
+    for (let x = -10; x < W + 10;) {
+      const w = H * (0.04 + R() * 0.07), h = H * (0.1 + R() * 0.035), metal = R() < 0.45;
+      const y = top + H * 0.14 - h;
+      g.fillStyle = metal ? `rgb(${26 + (R() * 8) | 0},${29 + (R() * 8) | 0},${34 + (R() * 8) | 0})` : `rgb(${30 + (R() * 10) | 0},${24 + (R() * 8) | 0},${18 + (R() * 6) | 0})`;
+      g.fillRect(x, y, w + 1, H * 0.14 - (y - top) + 2);
+      if (metal) { g.fillStyle = "rgba(255,255,255,0.05)"; for (let r = 0; r < w; r += 7) g.fillRect(x + r, y, 2, H * 0.14 - (y - top)); }
+      else { g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = 1; for (let r = 8; r < w; r += 9 + R() * 6) { g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + r + (R() - 0.5) * 3, walk); g.stroke(); } }
+      g.fillStyle = "rgba(0,0,0,0.6)";
+      g.fillRect(x + w - 1, y, 2, walk - y);
+      x += w;
+    }
+    // The walkway: planks, a rail, posts.
+    g.fillStyle = "#171310";
+    g.fillRect(0, walk, W, H - walk);
+    g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 2;
+    for (let x = 0; x < W; x += H * 0.05 + R() * H * 0.02) { g.beginPath(); g.moveTo(x, walk); g.lineTo(x + H * 0.01, H); g.stroke(); }
+    g.fillStyle = "rgba(255,255,255,0.03)";
+    g.fillRect(0, walk, W, 2);
+    // Sandbags along the top of the wall, with gaps.
+    for (let x = -10; x < W + 10; x += H * 0.02) {
+      if (R() < 0.15) { x += H * 0.03; continue; }
+      g.fillStyle = `rgb(${52 + (R() * 10) | 0},${46 + (R() * 8) | 0},${34 + (R() * 6) | 0})`;
+      g.beginPath(); g.ellipse(x + H * 0.012, top + H * 0.006 + (R() - 0.5) * 3, H * 0.013, H * 0.007, (R() - 0.5) * 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(0,0,0,0.35)";
+      g.beginPath(); g.ellipse(x + H * 0.012, top + H * 0.01, H * 0.013, H * 0.004, 0, 0, Math.PI); g.fill();
+    }
+    // Barbed wire above the bags: two sagging strands with barbs.
+    g.strokeStyle = "rgba(170,180,190,0.45)"; g.lineWidth = 1;
+    for (const dy of [-H * 0.025, -H * 0.012]) {
+      for (let x = -20; x < W; x += H * 0.12) { g.beginPath(); g.moveTo(x, top + dy); g.quadraticCurveTo(x + H * 0.06, top + dy + H * 0.008, x + H * 0.12, top + dy); g.stroke(); }
+      for (let x = R() * 10; x < W; x += 9 + R() * 8) { g.beginPath(); g.moveTo(x - 2, top + dy + 3); g.lineTo(x + 2, top + dy - 1); g.moveTo(x + 2, top + dy + 3); g.lineTo(x - 2, top + dy - 1); g.stroke(); }
+    }
+    g.strokeStyle = "#1b1613"; g.lineWidth = Math.max(2, H * 0.005);
+    for (let x = H * 0.05; x < W; x += H * 0.3) { g.beginPath(); g.moveTo(x, top - H * 0.035); g.lineTo(x, top + H * 0.01); g.stroke(); }
+    // The watchtower: legs, platform, rail, roof, the spotlight housing, the lookout inside.
+    const tx = towerX, pw = H * 0.16, py = H * 0.5;
+    g.strokeStyle = "#0b0a0a"; g.fillStyle = "#0b0a0a";
+    g.lineWidth = Math.max(4, H * 0.012);
+    g.beginPath(); g.moveTo(tx - pw * 0.42, walk); g.lineTo(tx - pw * 0.34, py); g.moveTo(tx + pw * 0.42, walk); g.lineTo(tx + pw * 0.34, py); g.stroke();
+    g.lineWidth = Math.max(2, H * 0.005);
+    for (let y = walk - H * 0.06; y > py + H * 0.02; y -= H * 0.075) { g.beginPath(); g.moveTo(tx - pw * 0.4, y); g.lineTo(tx + pw * 0.4, y - H * 0.06); g.moveTo(tx + pw * 0.4, y); g.lineTo(tx - pw * 0.4, y - H * 0.06); g.stroke(); }
+    g.fillRect(tx - pw * 0.55, py - H * 0.012, pw * 1.1, H * 0.012);
+    g.fillRect(tx - pw * 0.55, py - H * 0.09, pw * 1.1, H * 0.006);
+    g.lineWidth = Math.max(2, H * 0.004);
+    for (let i = 0; i <= 6; i++) { const x = tx - pw * 0.55 + (pw * 1.1 * i) / 6; g.beginPath(); g.moveTo(x, py - H * 0.012); g.lineTo(x, py - H * 0.09); g.stroke(); }
+    g.beginPath(); g.moveTo(tx - pw * 0.65, py - H * 0.2); g.lineTo(tx, py - H * 0.26); g.lineTo(tx + pw * 0.65, py - H * 0.2); g.lineTo(tx + pw * 0.6, py - H * 0.185); g.lineTo(tx, py - H * 0.245); g.lineTo(tx - pw * 0.6, py - H * 0.185); g.closePath(); g.fill();
+    g.lineWidth = Math.max(3, H * 0.006);
+    g.beginPath(); g.moveTo(tx - pw * 0.5, py - H * 0.012); g.lineTo(tx - pw * 0.5, py - H * 0.2); g.moveTo(tx + pw * 0.5, py - H * 0.012); g.lineTo(tx + pw * 0.5, py - H * 0.2); g.stroke();
+    g.fillStyle = "#121214";
+    g.fillRect(lampX - H * 0.02, lampY - H * 0.015, H * 0.04, H * 0.03);
+    g.fillStyle = "#0b0a0a";
+    g.beginPath(); g.arc(tx + pw * 0.12, py - H * 0.145, H * 0.012, 0, Math.PI * 2); g.fill();
+    g.fillRect(tx + pw * 0.12 - H * 0.016, py - H * 0.13, H * 0.032, H * 0.12);
+    // The radio mast, guyed, with its lamp at the top (lit each frame).
+    g.strokeStyle = "#0c0c0e"; g.lineWidth = Math.max(2, H * 0.004);
+    g.beginPath(); g.moveTo(mastX, walk); g.lineTo(mastX, mastY); g.stroke();
+    g.lineWidth = 1;
+    for (let y = walk - H * 0.03; y > mastY + H * 0.02; y -= H * 0.03) { g.beginPath(); g.moveTo(mastX - H * 0.012, y); g.lineTo(mastX + H * 0.012, y - H * 0.03); g.moveTo(mastX + H * 0.012, y); g.lineTo(mastX - H * 0.012, y - H * 0.03); g.stroke(); }
+    g.strokeStyle = "rgba(20,20,24,0.9)";
+    g.beginPath(); g.moveTo(mastX, mastY + H * 0.05); g.lineTo(mastX - W * 0.08, walk); g.moveTo(mastX, mastY + H * 0.05); g.lineTo(mastX + W * 0.07, walk); g.stroke();
+    g.fillStyle = "#0c0c0e";
+    g.fillRect(mastX - H * 0.03, mastY + H * 0.12, H * 0.06, H * 0.004);
+    g.fillRect(mastX - H * 0.002, mastY - H * 0.03, H * 0.004, H * 0.03);
+    // A crate of ammunition and a water drum on the walkway; the lantern on its hook.
+    g.fillStyle = "#1a1612";
+    g.fillRect(W * 0.6, walk - H * 0.045, H * 0.07, H * 0.045);
+    g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1.5;
+    g.strokeRect(W * 0.6 + 2, walk - H * 0.045 + 2, H * 0.07 - 4, H * 0.045 - 4);
+    g.fillStyle = "#1c2024";
+    g.beginPath(); g.roundRect(W * 0.66, walk - H * 0.07, H * 0.045, H * 0.07, 3); g.fill();
+    g.strokeStyle = "#2a2622"; g.lineWidth = Math.max(1.5, H * 0.003);
+    g.beginPath(); g.moveTo(lanternX, top - H * 0.035); g.lineTo(lanternX, lanternY - H * 0.03); g.stroke();
+    g.fillStyle = "#15120f";
+    g.fillRect(lanternX - H * 0.012, lanternY - H * 0.03, H * 0.024, H * 0.006);
+    g.fillRect(lanternX - H * 0.012, lanternY + H * 0.01, H * 0.024, H * 0.006);
+    g.fillRect(lanternX - H * 0.003, lanternY - H * 0.03, H * 0.006, H * 0.046);
+    return L;
+  }
+
+  // The sentry on the walkway, facing the field with a rifle, shifting now and then; lit by the lantern.
+  function sentry(g, t, flick) {
+    const x = W * 0.5, y = H * 0.86, s = H * 0.16;
+    g.save();
+    g.translate(x, y);
+    g.scale(s / 100, s / 100);
+    const gr = g.createLinearGradient(-30, 0, 30, 0);
+    gr.addColorStop(0, `rgb(${Math.round(90 * flick)},${Math.round(60 * flick)},${Math.round(28 * flick)})`);
+    gr.addColorStop(0.45, "#0e0b09");
+    gr.addColorStop(1, "#050404");
+    g.fillStyle = g.strokeStyle = gr;
+    g.lineCap = g.lineJoin = "round";
+    const sway = Math.sin(t * 0.4) * 2, breathe = Math.sin(t * 1.1) * 0.8;
+    g.lineWidth = 12;
+    g.beginPath(); g.moveTo(-9, 0); g.lineTo(-4 + sway, -50); g.lineTo(4 + sway, -50); g.lineTo(10, 0); g.stroke();
+    g.lineWidth = 22;
+    g.beginPath(); g.moveTo(sway, -50); g.lineTo(sway * 1.5, -96 + breathe); g.stroke();
+    g.lineWidth = 9;
+    g.beginPath(); g.moveTo(sway * 1.5 - 8, -82 + breathe); g.lineTo(sway * 1.5 - 20, -70); g.lineTo(sway * 1.5 - 6, -62); g.stroke(); // the hand on the rail
+    g.beginPath(); g.moveTo(sway * 1.5 + 8, -84 + breathe); g.lineTo(sway * 1.5 + 18, -72); g.stroke();
+    g.lineWidth = 4;
+    g.beginPath(); g.moveTo(sway * 1.5 + 12, -70); g.lineTo(sway * 1.5 + 4, -128); g.stroke(); // the rifle, slung
+    g.beginPath(); g.arc(sway * 1.5 + 1, -108 + breathe, 10, 0, Math.PI * 2); g.fill();
+    g.fillRect(sway * 1.5 - 11, -117 + breathe, 22, 5); // the cap's peak
+    g.restore();
+  }
+
+  function frame(g, t, dt) {
+    // Rain, the horde and the lightning move on.
+    const wind = H * 0.25;
+    for (const d of rain) { d.y += d.v * dt; d.x -= wind * dt; if (d.y > H) { d.y = -d.l; d.x = Math.random() * (W + H * 0.3); } if (d.x < -H * 0.1) d.x += W + H * 0.3; }
+    for (const z of horde) {
+      z.turn -= dt;
+      if (z.turn <= 0) { z.turn = 3 + Math.random() * 9; if (Math.random() < 0.5) z.dir = -z.dir; }
+      z.x += (z.k.idle ? 0 : z.dir * z.speed * 0.012) * dt;
+      z.depth += 0.004 * dt * (z.k.idle ? 0.3 : 1);
+      if (z.depth > 1) { z.depth = 0; z.x = Math.random(); }
+      if (z.x < -0.05) z.x += 1.1; else if (z.x > 1.05) z.x -= 1.1;
+    }
+    nextBolt -= dt;
+    if (nextBolt <= 0 && !bolt) {
+      bolt = { age: 0, x: W * (0.15 + Math.random() * 0.7), pts: [], again: Math.random() < 0.5 };
+      let x = bolt.x, y = -H * 0.02;
+      bolt.pts.push([x, y]);
+      while (y < fieldTop - H * 0.02) { y += H * (0.02 + Math.random() * 0.04); x += (Math.random() - 0.5) * H * 0.06; bolt.pts.push([x, y]); }
+      nextBolt = 7 + Math.random() * 12;
+    }
+    if (bolt) { bolt.age += dt; if (bolt.age > 1.4) bolt = null; }
+    // The flash: two strikes close together, then the glow dying away.
+    let flash = 0;
+    if (bolt) {
+      const a = bolt.age;
+      flash = a < 0.06 ? 1 : a < 0.12 ? 0.35 : a < 0.2 ? (bolt.again ? 0.9 : 0.3) : Math.max(0, 0.5 - (a - 0.2) * 0.7);
+    }
+    const flick = 0.9 + 0.1 * wob(t * 1.6, 3);
+    g.drawImage(sky.c, 0, 0, W, H);
+    drawStrip(g, clouds, -t * 9, -H * 0.05, W, H * 0.4);
+    drawStrip(g, clouds, -t * 16 + W * 0.5, H * 0.15, W, H * 0.35);
+    if (flash > 0) {
+      g.globalCompositeOperation = "lighter";
+      g.globalAlpha = flash * 0.9;
+      const r = H * 0.7;
+      g.drawImage(flashP, bolt.x - r, -r * 0.6, r * 2, r * 1.6);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = "source-over";
+      g.fillStyle = `rgba(200,210,240,${(flash * 0.22).toFixed(3)})`;
+      g.fillRect(0, 0, W, H);
+      if (bolt.age < 0.2) {
+        g.strokeStyle = `rgba(235,240,255,${(flash * 0.95).toFixed(2)})`;
+        g.lineWidth = 2.5;
+        g.lineJoin = "round";
+        g.beginPath(); g.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+        for (const [x, y] of bolt.pts) g.lineTo(x, y);
+        g.stroke();
+        g.strokeStyle = `rgba(180,200,255,${(flash * 0.35).toFixed(2)})`;
+        g.lineWidth = 9;
+        g.stroke();
+      }
+    }
+    g.drawImage(hills.c, 0, H * 0.3, W, hills.h);
+    g.drawImage(field.c, 0, fieldTop, W, field.h);
+    if (flash > 0) { g.fillStyle = `rgba(190,205,235,${(flash * 0.18).toFixed(3)})`; g.fillRect(0, fieldTop - H * 0.1, W, fieldBot - fieldTop + H * 0.12); }
+    // The spotlight: the beam from the tower and the patch of field it lights, sweeping slowly.
+    const sx = W * 0.5 + Math.sin(t * 0.17) * W * 0.36, sy = fieldTop + H * 0.1 + Math.cos(t * 0.11) * H * 0.07;
+    const srx = H * 0.11, sry = H * 0.03;
+    g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.09;
+    g.fillStyle = "#cfdcff";
+    g.beginPath(); g.moveTo(lampX - 4, lampY); g.lineTo(lampX + 4, lampY); g.lineTo(sx + srx, sy); g.lineTo(sx - srx, sy); g.fill();
+    g.globalAlpha = 0.6;
+    g.drawImage(spotP, sx - srx * 1.4, sy - sry * 1.4, srx * 2.8, sry * 2.8);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    // The horde, far to near; the ones in the spotlight or under the lightning stand out.
+    const sorted = horde.slice().sort((a, b) => a.depth - b.depth);
+    for (const z of sorted) {
+      const s = H * (0.032 + z.depth * 0.075), y = fieldTop + H * 0.02 + z.depth * (fieldBot - fieldTop - H * 0.02);
+      const x = z.x * (W + s * 2) - s;
+      const inSpot = Math.max(0, 1 - Math.hypot((x - sx) / (srx * 1.2), (y - sy) / (sry * 2.5)));
+      const l = Math.min(1, inSpot * 1.2 + flash * 0.9);
+      const c = Math.round(10 + l * 150), rim = inSpot > 0.05 || flash > 0.1 ? `rgba(200,215,245,${(0.25 + l * 0.6).toFixed(2)})` : null;
+      g.fillStyle = `rgba(0,0,0,${(0.2 + z.depth * 0.2).toFixed(2)})`;
+      g.beginPath(); g.ellipse(x, y + 1, s * 0.2, s * 0.025, 0, 0, Math.PI * 2); g.fill();
+      shambler(g, x, y, s, t * 2 * z.speed + z.ph, z.dir, z.k, `rgb(${c},${Math.round(c * 1.05)},${Math.round(c * 1.2)})`, rim);
+    }
+    // Rain in front of the field.
+    g.strokeStyle = "rgba(190,200,220,0.22)";
+    g.lineWidth = 1;
+    g.beginPath();
+    for (const d of rain) { if (d.a < 0.18) continue; g.moveTo(d.x, d.y); g.lineTo(d.x - d.l * 0.25, d.y + d.l); }
+    g.stroke();
+    // The wall and everything on it; the lantern's light on the sentry and the planks; the lamps.
+    g.drawImage(wall.c, 0, 0, W, H);
+    g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.55 * flick;
+    g.drawImage(glowW, lanternX - H * 0.2, lanternY - H * 0.16, H * 0.4, H * 0.3);
+    g.globalAlpha = 0.9 * flick;
+    g.drawImage(glowW, lanternX - H * 0.03, lanternY - H * 0.035, H * 0.06, H * 0.06);
+    if (Math.floor(t * 0.8) % 2 === 0) { g.globalAlpha = 0.9; g.fillStyle = "#ff3a2a"; g.beginPath(); g.arc(mastX, mastY - H * 0.03, Math.max(2, H * 0.004), 0, Math.PI * 2); g.fill(); g.globalAlpha = 0.35; g.drawImage(puff("255,70,50"), mastX - H * 0.03, mastY - H * 0.06, H * 0.06, H * 0.06); }
+    g.globalAlpha = 0.8;
+    g.drawImage(glowW, lampX - H * 0.035, lampY - H * 0.03, H * 0.07, H * 0.06);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    sentry(g, t, flick);
+    // Rain closest to the camera, a little bigger.
+    g.strokeStyle = "rgba(200,210,230,0.16)";
+    g.lineWidth = 1.5;
+    g.beginPath();
+    for (const d of rain) { if (d.a >= 0.18) continue; g.moveTo(d.x, d.y); g.lineTo(d.x - d.l * 0.3, d.y + d.l * 1.2); }
+    g.stroke();
+    if (flash > 0) { g.fillStyle = `rgba(200,210,240,${(flash * 0.1).toFixed(3)})`; g.fillRect(0, 0, W, H); }
+  }
+  return { resize, frame };
+}
+
+// ---------- background: a hive ----------
+// A town the worm has taken: the Broodmother's mass risen among the ruins, breathing, its growth climbing the walls,
+// egg sacs and veins pulsing in the ground with its heartbeat, worms in the soil, the dead gathered and swaying
+// before it, spores drifting up. A scout crouches behind a wreck in the foreground, flashlight on it.
+function hiveScene() {
+  let W = 0, H = 0, res = 1, sky, ruins, mother, ground, veins, fore, fog;
+  let horizon = 0, groundY = 0, mx = 0, my = 0, scoutX = 0, scoutY = 0;
+  let pores = [], sacs = [], worms = [], spores = [], dead = [];
+  const glowG = puff("120,230,170"), glowT = puff("90,220,200", 0.15), spore = puff("170,240,190", 0.3), glowR = puff("190,60,90");
+  // The heartbeat: a double beat every 2.6 s, smooth.
+  const beat = (t) => { const p = (t % 2.6) / 2.6; const k = (c, w) => Math.exp(-((p - c) * (p - c)) / w); return Math.min(1, k(0.08, 0.004) + 0.6 * k(0.22, 0.004)); };
+  const shade = (g, x, y, rx, ry, inner, outer) => { const gr = g.createRadialGradient(x - rx * 0.3, y - ry * 0.4, rx * 0.1, x, y, rx * 1.1); gr.addColorStop(0, inner); gr.addColorStop(1, outer); g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill(); };
+  // A tendril: a thick tapered curve from (x0,y0) to (x1,y1), bulging towards cx,cy.
+  const tendril = (g, x0, y0, x1, y1, cx, cy, w, c) => {
+    g.strokeStyle = c; g.lineCap = "round";
+    for (let i = 0; i < 4; i++) { const f = i / 4; g.lineWidth = w * (1 - f * 0.8); g.beginPath(); g.moveTo(lerp(x0, x1, f), lerp(y0, y1, f)); g.quadraticCurveTo(cx, cy, x1, y1); g.stroke(); }
+  };
+
+  function ruinsLayer() {
+    const L = layer(W, H * 0.45, res), R = rng(2027), g = L.g;
+    g.translate(0, -H * 0.35);
+    // A row of broken buildings, dark, with the growth climbing them in lumps.
+    for (let x = -20; x < W + 20;) {
+      const w = H * (0.08 + R() * 0.14), h = H * (0.1 + R() * 0.26), y = horizon - h;
+      g.fillStyle = `rgb(${18 + (R() * 6) | 0},${12 + (R() * 4) | 0},${20 + (R() * 6) | 0})`;
+      g.beginPath(); g.moveTo(x, horizon + 4); g.lineTo(x, y + (R() < 0.4 ? h * 0.2 * R() : 0));
+      const n = 3 + (R() * 4) | 0;
+      for (let i = 1; i < n; i++) g.lineTo(x + (w * i) / n, y + (R() < 0.5 ? h * R() * 0.25 : 0));
+      g.lineTo(x + w, y + h * R() * 0.3); g.lineTo(x + w, horizon + 4); g.closePath(); g.fill();
+      // Windows, a few glowing with what grows inside.
+      const cw = Math.max(2, H * 0.006);
+      for (let yy = y + h * 0.15; yy < horizon - cw * 2; yy += cw * 2.6) for (let xx = x + w * 0.12; xx < x + w * 0.88; xx += cw * 2.2) {
+        if (R() < 0.45) continue;
+        g.fillStyle = R() < 0.1 ? "rgba(120,230,170,0.35)" : "rgba(0,0,0,0.5)";
+        g.fillRect(xx, yy, cw, cw * 1.4);
+      }
+      // Growth: vines climbing the wall from the ground, small lumps hanging off them, most near the mother.
+      const near = Math.max(0, 1 - Math.abs(x + w / 2 - mx) / (W * 0.45));
+      for (let i = 0; i < 1 + near * 5; i++) {
+        let vx = x + R() * w, vy = horizon + 2;
+        g.strokeStyle = "rgba(70,20,40,0.85)";
+        for (let j = 0; j < 7; j++) {
+          const nx = vx + (R() - 0.5) * w * 0.25, ny = vy - h * (0.06 + R() * 0.08) * (0.4 + near);
+          g.lineWidth = 2.5 * (1 - j / 8) + 0.5;
+          g.beginPath(); g.moveTo(vx, vy); g.lineTo(nx, ny); g.stroke();
+          if (R() < 0.5) { const r = H * (0.0025 + R() * 0.005) * (0.5 + near); shade(g, nx, ny + r, r, r * 1.3, "#4a1a2a", "#160810"); }
+          vx = nx; vy = ny;
+        }
+      }
+      // A fleshy crust along the foot of the wall.
+      g.fillStyle = "#1e0a14";
+      for (let gx = x; gx < x + w; gx += H * 0.012) { const r = H * (0.004 + R() * 0.008) * (0.5 + near); g.beginPath(); g.ellipse(gx, horizon + 1, r * 1.4, r, 0, Math.PI, 0); g.fill(); }
+      x += w * (0.75 + R() * 0.4);
+    }
+    return L;
+  }
+
+  // The Broodmother: a mass of lobes, shaded, ridged, with pores that glow; tendrils to the ground and the ruins.
+  function motherLayer() {
+    const L = layer(W, H, res), R = rng(99), g = L.g;
+    pores = [];
+    const rx = H * 0.27, ry = H * 0.2, cy = my - ry * 0.75;
+    // Tendrils first (they go behind the mass).
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI - Math.PI * 0.05, len = H * (0.25 + R() * 0.35);
+      const x1 = mx + Math.cos(a) * len * 1.3, y1 = my + H * 0.02 + Math.abs(Math.sin(a * 2)) * H * 0.06 + R() * H * 0.05;
+      tendril(g, mx + Math.cos(a) * rx * 0.5, cy + ry * 0.4, x1, Math.min(y1, groundY + H * 0.16), mx + Math.cos(a) * len * 0.5, cy - ry * 0.2 + R() * ry, H * (0.02 + R() * 0.02), "#2e1020");
+    }
+    for (let i = 0; i < 3; i++) { // up and over the ruins
+      const dir = i === 1 ? -1 : 1, x1 = mx + dir * (rx * 0.9 + R() * H * 0.2), y1 = horizon - H * (0.05 + R() * 0.12);
+      tendril(g, mx + dir * rx * 0.3, cy, x1, y1, mx + dir * rx * 1.1, cy - ry * 0.9, H * 0.025, "#2e1020");
+    }
+    // Lobes: the main dome and smaller ones around it, lighter towards the top left.
+    const lobes = [[0, 0.05, 1, 0.95], [-0.55, 0.35, 0.55, 0.5], [0.6, 0.3, 0.5, 0.45], [-0.25, -0.45, 0.48, 0.38], [0.3, -0.5, 0.4, 0.33], [0.05, -0.75, 0.25, 0.2], [0.75, 0.6, 0.35, 0.3], [-0.8, 0.65, 0.32, 0.28]];
+    for (const [ox, oy, sx, sy] of lobes) shade(g, mx + ox * rx, cy + oy * ry, rx * sx, ry * sy, "#5c2030", "#1c0810");
+    for (let i = 0; i < 14; i++) { const ox = -1.05 + (i / 13) * 2.1, r = ry * (0.12 + R() * 0.14); shade(g, mx + ox * rx, cy + ry * (0.7 + R() * 0.2), r * 1.3, r, "#4e1a2a", "#160810"); } // the bumpy foot
+    // Ridges: dark arcs across the dome; a wet sheen along the upper edge.
+    g.strokeStyle = "rgba(20,6,12,0.3)"; g.lineWidth = Math.max(2, H * 0.004);
+    for (let i = 0; i < 5; i++) { const yy = cy - ry * 0.5 + (i / 5) * ry * 1.1; g.beginPath(); g.ellipse(mx + (R() - 0.5) * rx * 0.2, yy, rx * (0.8 - Math.abs(i - 2) * 0.1), ry * 0.1, (R() - 0.5) * 0.2, 0.3, Math.PI - 0.3); g.stroke(); }
+    g.strokeStyle = "rgba(230,150,170,0.18)"; g.lineWidth = Math.max(2, H * 0.005);
+    g.beginPath(); g.ellipse(mx - rx * 0.05, cy - ry * 0.08, rx * 0.9, ry * 0.88, 0, Math.PI * 1.1, Math.PI * 1.7); g.stroke();
+    // Pores: lit from inside, each with its own phase.
+    for (let i = 0; i < 26; i++) {
+      const a = R() * Math.PI * 2, d = Math.sqrt(R()) * 0.85, px = mx + Math.cos(a) * rx * d, py = cy + Math.sin(a) * ry * d;
+      const r = H * (0.0025 + R() * 0.005);
+      g.fillStyle = "#140608";
+      g.beginPath(); g.ellipse(px, py, r * 1.3, r, 0, 0, Math.PI * 2); g.fill();
+      pores.push({ x: px, y: py, r, ph: R() * 6 });
+    }
+    return L;
+  }
+
+  function groundLayer() {
+    const L = layer(W, H - groundY, res), R = rng(404), g = L.g;
+    g.translate(0, -groundY);
+    const gr = g.createLinearGradient(0, groundY, 0, H);
+    gr.addColorStop(0, "#1c1018"); gr.addColorStop(0.5, "#130a10"); gr.addColorStop(1, "#0a0508");
+    g.fillStyle = gr;
+    g.fillRect(0, groundY, W, H - groundY);
+    for (let i = 0; i < 2000; i++) { const y = groundY + Math.pow(R(), 0.8) * (H - groundY), f = (y - groundY) / (H - groundY); g.fillStyle = R() < 0.5 ? `rgba(90,40,60,${(0.05 + f * 0.08).toFixed(3)})` : `rgba(0,0,0,${(0.1 + f * 0.1).toFixed(3)})`; const s = 1 + f * 2.5; g.fillRect(R() * W, y, s, s * 0.6); }
+    // The pool of flesh the mass sits in, and the roots spreading out from under it.
+    shade(g, mx, groundY + H * 0.025, H * 0.34, H * 0.045, "#3a1222", "#14060c");
+    for (let i = 0; i < 14; i++) {
+      const a = Math.PI * (0.1 + R() * 0.8), len = H * (0.15 + R() * 0.45);
+      let x = mx + (R() - 0.5) * H * 0.3, y = groundY + H * 0.01, w = H * (0.008 + R() * 0.01);
+      g.strokeStyle = "#2a0e1a"; g.lineCap = "round";
+      for (let j = 0; j < 6; j++) { const nx = x + Math.cos(a) * len / 6 + (R() - 0.5) * H * 0.04, ny = y + Math.abs(Math.sin(a)) * len / 6 * 0.5 + R() * H * 0.01; g.lineWidth = w * (1 - j / 7); g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke(); x = nx; y = ny; }
+    }
+    // Egg sacs in clusters, their bases here (they glow each frame).
+    sacs = [];
+    for (let c = 0; c < 6; c++) {
+      const cx = mx + (R() - 0.5) * W * 0.7, cyy = groundY + H * 0.04 + R() * (H - groundY) * 0.7, f = (cyy - groundY) / (H - groundY);
+      for (let i = 0; i < 2 + (R() * 3) | 0; i++) {
+        const x = cx + (R() - 0.5) * H * 0.07, y = cyy + (R() - 0.5) * H * 0.015, r = H * (0.006 + R() * 0.009) * (0.5 + f);
+        g.fillStyle = "rgba(0,0,0,0.5)"; g.beginPath(); g.ellipse(x + r * 0.2, y + r * 0.9, r * 1.1, r * 0.35, 0, 0, Math.PI * 2); g.fill();
+        shade(g, x, y, r, r * 1.15, "#8a3a52", "#2a0c18");
+        g.fillStyle = "rgba(240,190,210,0.18)"; g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.5, r * 0.3, r * 0.2, -0.5, 0, Math.PI * 2); g.fill();
+        sacs.push({ x, y, r, ph: R() * 6 });
+      }
+    }
+    // Bones and a rifle someone dropped.
+    g.strokeStyle = "#d9d0c4"; g.lineWidth = Math.max(1.5, H * 0.003); g.lineCap = "round";
+    for (let i = 0; i < 9; i++) { const x = R() * W, y = groundY + H * 0.03 + R() * (H - groundY) * 0.8, l = H * (0.015 + R() * 0.03), a = R() * Math.PI; g.globalAlpha = 0.35 + R() * 0.3; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.35); g.stroke(); }
+    g.globalAlpha = 1;
+    return L;
+  }
+  // The veins in the ground, lit from within: drawn once, shown each frame with the heartbeat.
+  function veinsLayer() {
+    const L = layer(W, H - groundY, res), R = rng(505), g = L.g;
+    g.translate(0, -groundY);
+    g.lineCap = "round";
+    for (let i = 0; i < 18; i++) {
+      let x = mx + (R() - 0.5) * H * 0.4, y = groundY + H * 0.02 + R() * H * 0.03;
+      const a = Math.PI * (0.05 + R() * 0.9), steps = 5 + (R() * 7) | 0;
+      for (let j = 0; j < steps; j++) {
+        const nx = x + Math.cos(a) * H * 0.05 + (R() - 0.5) * H * 0.04, ny = y + Math.abs(Math.sin(a)) * H * 0.025 + R() * H * 0.012;
+        const f = 1 - j / steps;
+        g.strokeStyle = `rgba(200,70,110,${(0.35 * f).toFixed(2)})`; g.lineWidth = 2 * f + 0.5;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
+        g.strokeStyle = `rgba(255,150,180,${(0.15 * f).toFixed(2)})`; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
+        x = nx; y = ny;
+      }
+    }
+    return L;
+  }
+  // The scout behind the wreck of a van, flashlight up; the van's tail is cropped by the screen's edge.
+  function foreLayer() {
+    const L = layer(W, H, res), g = L.g;
+    const vx = W * 0.02, vy = H * 0.97, vw = H * 0.42, vh = H * 0.19;
+    g.fillStyle = "#06040a";
+    g.beginPath(); g.moveTo(vx - H * 0.1, vy); g.lineTo(vx - H * 0.1, vy - vh * 0.95); g.lineTo(vx + vw * 0.6, vy - vh); g.lineTo(vx + vw * 0.78, vy - vh * 0.6); g.lineTo(vx + vw, vy - vh * 0.5); g.lineTo(vx + vw, vy); g.closePath(); g.fill();
+    g.fillStyle = "rgba(120,200,170,0.08)";
+    g.beginPath(); g.moveTo(vx + vw * 0.62, vy - vh * 0.95); g.lineTo(vx + vw * 0.75, vy - vh * 0.62); g.lineTo(vx + vw * 0.5, vy - vh * 0.62); g.lineTo(vx + vw * 0.45, vy - vh * 0.95); g.fill();
+    g.fillStyle = "#06040a";
+    g.beginPath(); g.arc(vx + vw * 0.8, vy, vh * 0.2, 0, Math.PI * 2); g.fill();
+    // The scout, crouched at the van's front corner, one knee down, the flashlight in the raised hand.
+    g.save();
+    g.translate(scoutX, scoutY);
+    const s = H * 0.17 / 100;
+    g.scale(s, s);
+    g.fillStyle = g.strokeStyle = "#07050a";
+    g.lineCap = g.lineJoin = "round";
+    g.lineWidth = 13; g.beginPath(); g.moveTo(-14, 0); g.lineTo(-4, -34); g.lineTo(16, -30); g.lineTo(22, 0); g.stroke(); // legs, one knee down
+    g.lineWidth = 22; g.beginPath(); g.moveTo(0, -36); g.lineTo(10, -74); g.stroke();
+    g.beginPath(); g.arc(14, -86, 10, 0, Math.PI * 2); g.fill();
+    g.fillRect(4, -96, 22, 5);
+    g.lineWidth = 8; g.beginPath(); g.moveTo(12, -68); g.lineTo(34, -78); g.lineTo(44, -72); g.stroke(); // the arm with the torch
+    g.fillRect(40, -78, 14, 9);
+    g.lineWidth = 7; g.beginPath(); g.moveTo(6, -60); g.lineTo(-10, -50); g.lineTo(-16, -36); g.stroke(); // the other hand on the wreck
+    g.restore();
+    return L;
+  }
+
+  function resize(w, h, r) {
+    W = w; H = h; res = r;
+    horizon = H * 0.66; groundY = H * 0.7;
+    mx = W * 0.62; my = H * 0.72;
+    scoutX = W * 0.02 + H * 0.4; scoutY = H * 0.95;
+    const R = rng(2028);
+    sky = layer(W, H, res);
+    let g = sky.g;
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, "#07060c"); gr.addColorStop(0.5, "#120c1a"); gr.addColorStop(0.66, "#1e1022"); gr.addColorStop(1, "#0a060c");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 160; i++) { const y = Math.pow(R(), 1.6) * horizon * 0.8; g.fillStyle = `rgba(200,210,230,${(0.1 + R() * 0.35).toFixed(2)})`; g.fillRect(R() * W, y, 1, 1); }
+    ruins = ruinsLayer();
+    mother = motherLayer();
+    ground = groundLayer();
+    veins = veinsLayer();
+    fore = foreLayer();
+    fog = fogStrip(W, H * 0.16, "80,60,90", 41, res, 1);
+    worms = Array.from({ length: 22 }, (_, i) => ({ x: R() * W, y: groundY + H * 0.03 + R() * (H - groundY) * 0.75, dir: R() < 0.5 ? -1 : 1, ph: R() * 6, len: H * (0.02 + R() * 0.02), v: H * (0.004 + R() * 0.006), turn: 3 + R() * 10 }));
+    spores = Array.from({ length: 70 }, () => ({ x: R() * W, y: R() * H, vy: H * (0.008 + R() * 0.012), k: R() * 9, r: 2 + R() * 4 }));
+    dead = walkers(11, 808, {}).map((z) => { z.k.crawl = false; z.k.idle = R() < 0.7; z.k.lurch = false; return z; });
+  }
+
+  function frame(g, t, dt) {
+    const b = beat(t), breathe = 0.012 * Math.sin(t * 0.9) + 0.006 * b;
+    for (const w of worms) {
+      w.turn -= dt; if (w.turn <= 0) { w.turn = 3 + Math.random() * 10; w.dir = -w.dir; }
+      w.x += w.dir * w.v * dt * 10; if (w.x < -w.len) w.x = W + w.len; else if (w.x > W + w.len) w.x = -w.len;
+    }
+    for (const s of spores) { s.y -= s.vy * dt * 10; s.x += Math.sin(t * 0.5 + s.k) * 10 * dt; if (s.y < -10) { s.y = H + 5; s.x = Math.random() * W; } }
+    g.drawImage(sky.c, 0, 0, W, H);
+    // The hive's glow behind the ruins, with the heartbeat.
+    g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.16 + 0.1 * b;
+    const gr = H * 0.6;
+    g.drawImage(glowG, mx - gr, horizon - gr * 0.75, gr * 2, gr * 1.4);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    drawStrip(g, fog, t * 3, horizon - H * 0.2, W, H * 0.16);
+    g.drawImage(ruins.c, 0, H * 0.35, W, ruins.h);
+    // The mass, breathing around its base; its pores light up with the beat, each a little out of step.
+    g.save();
+    g.translate(mx, my);
+    g.scale(1 + breathe, 1 + breathe * 1.7);
+    g.translate(-mx, -my);
+    g.drawImage(mother.c, 0, 0, W, H);
+    g.globalCompositeOperation = "lighter";
+    for (const p of pores) {
+      const a = Math.max(0, Math.sin(t * 1.1 + p.ph)) ** 2 * 0.35 + b * 0.5;
+      g.globalAlpha = Math.min(1, a);
+      g.drawImage(glowT, p.x - p.r * 3, p.y - p.r * 3, p.r * 6, p.r * 6);
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    g.restore();
+    g.drawImage(ground.c, 0, groundY, W, ground.h);
+    g.globalCompositeOperation = "lighter";
+    g.globalAlpha = 0.25 + 0.45 * b;
+    g.drawImage(veins.c, 0, groundY, W, veins.h);
+    for (const s of sacs) {
+      const a = Math.max(0, Math.sin(t * 0.7 + s.ph)) ** 3 * 0.45 + b * 0.25;
+      g.globalAlpha = Math.min(1, a);
+      g.drawImage(glowR, s.x - s.r * 1.6, s.y - s.r * 1.6, s.r * 3.2, s.r * 3.2);
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    // Worms in the soil: short bodies that ripple as they go.
+    g.lineCap = "round";
+    for (const w of worms) {
+      const f = (w.y - groundY) / (H - groundY), th = 1.5 + f * 3;
+      g.strokeStyle = "#6a2a40"; g.lineWidth = th;
+      g.beginPath();
+      for (let i = 0; i <= 8; i++) { const u = i / 8, x = w.x - w.dir * u * w.len, y = w.y + Math.sin(u * 6 + t * 6 * w.dir + w.ph) * th * 0.9; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+      g.strokeStyle = "rgba(230,150,170,0.35)"; g.lineWidth = th * 0.35; g.stroke();
+    }
+    // The flashlight's beam from the scout, sweeping a little; the dead in it stand out.
+    const ang = -0.34 + 0.1 * Math.sin(t * 0.23), half = 0.07, bx = scoutX + H * 0.09, by = scoutY - H * 0.125, blen = W * 0.9;
+    const ex = bx + Math.cos(ang) * blen, ey = by + Math.sin(ang) * blen;
+    const beamLit = (x, y) => { const d = Math.atan2(y - by, x - bx) - ang, dist = Math.hypot(x - bx, y - by); return x > bx ? Math.max(0, 1 - Math.abs(d) / half) * Math.max(0, 1 - dist / blen) : 0; };
+    // The dead before the mother, far to near, swaying; lit by the hive's glow from behind and the torch from the front.
+    const sorted = dead.slice().sort((a, c) => a.depth - c.depth);
+    for (const z of sorted) {
+      const s = H * (0.07 + z.depth * 0.09), span = W + s * 2;
+      if (!z.k.idle) { z.pos = (z.pos ?? z.x * span) + z.speed * s * 0.1 * dt * z.dir; } else z.pos = z.pos ?? z.x * span;
+      const x = ((z.pos % span) + span) % span - s, y = groundY + H * 0.015 + z.depth * H * 0.2;
+      const dir = z.k.idle ? (Math.sign(mx - x) || 1) : z.dir;
+      const l = beamLit(x, y - s * 0.5);
+      const c = Math.round(14 + l * 160);
+      g.fillStyle = `rgba(0,0,0,${(0.3 + z.depth * 0.25).toFixed(2)})`;
+      g.beginPath(); g.ellipse(x, y + 1, s * 0.2, s * 0.03, 0, 0, Math.PI * 2); g.fill();
+      shambler(g, x, y, s, t * 2 * z.speed + z.ph, dir, z.k, `rgb(${c},${Math.round(c * 0.9)},${Math.round(c * 0.95)})`, `rgba(${120 + l * 100},${220},${180},${(0.3 + 0.2 * b + l * 0.4).toFixed(2)})`);
+    }
+    g.globalCompositeOperation = "lighter";
+    const beam = g.createLinearGradient(bx, by, ex, ey);
+    beam.addColorStop(0, "rgba(255,245,220,0.16)"); beam.addColorStop(1, "rgba(255,245,220,0)");
+    g.fillStyle = beam;
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + Math.cos(ang - half) * blen, by + Math.sin(ang - half) * blen); g.lineTo(bx + Math.cos(ang + half) * blen, by + Math.sin(ang + half) * blen); g.fill();
+    g.globalAlpha = 0.7;
+    g.drawImage(puff("255,245,220"), bx - H * 0.02, by - H * 0.02, H * 0.04, H * 0.04);
+    // Spores drifting up through the light.
+    for (const s of spores) { g.globalAlpha = 0.25 + 0.2 * Math.sin(t * 1.3 + s.k); g.drawImage(spore, s.x - s.r, s.y - s.r, s.r * 2, s.r * 2); }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    g.drawImage(fore.c, 0, 0, W, H);
+    g.globalAlpha = 0.5;
+    drawStrip(g, fog, -t * 5 + W * 0.3, H * 0.84, W, H * 0.16);
+    g.globalAlpha = 1;
   }
   return { resize, frame };
 }

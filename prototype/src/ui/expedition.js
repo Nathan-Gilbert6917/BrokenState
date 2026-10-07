@@ -21,7 +21,7 @@ import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.j
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton } from "./hardcore.js";
-import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE } from "../sim/hunting.js";
+import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
@@ -195,7 +195,9 @@ function landBlock(state, p, at, queueing) {
   const t = state.tiles[at];
   if (!t || t.terrain === "water") return "";
   const members = partyMembers(state, p);
-  const info = huntInfo(state, at, { members, ammo: carried(p, "ammo"), hours: HUNT.defHours, room: cargoRoom(state, p) });
+  const mix = partyHuntMix(state, p); // the home base's hunting mix (sim/hunting.js)
+  const info = huntInfo(state, at, { members, ammo: carried(p, "ammo"), arrows: carried(p, "arrows"), mix, hours: HUNT.defHours, room: cargoRoom(state, p) });
+  const mixNote = ` The hours follow the home base's hunting mix (${HUNT_METHODS.filter((k) => mix[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${mix[k]}%`).join(", ")}; the base's Farming tab): guns hours use the best weapon, bow hours bows and crossbows with arrows (${Math.floor(carried(p, "arrows"))} carried; about half the arrows shot are lost), trap hours snares and deadfalls for small game (silent, less food).${info.est ? ` Expect ~${Math.round(info.est.shots)} shots${info.est.arrows >= 0.5 ? `, ~${Math.round(info.est.arrows)} arrows lost` : ""}.` : ""}`;
   const hp = queueing ? "" : huntProblem(state, p, at);
   const fs = fishSpot(state, at);
   const fp = fs && !queueing ? fishProblem(state, p, at) : "";
@@ -206,7 +208,7 @@ function landBlock(state, p, at, queueing) {
   const se = line ? expectSnare(state, at, line.check ?? line.set, state.hour) : null;
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
   const meat = meatIn(p.cargo);
-  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} food expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent). Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
+  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} food expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent).${mixNote} Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
   const fishBtns = fs ? [4, 8].map((h) => ord("fish", ` data-hours="${h}"`, `Fish ${h}h`, fp ? `Fish: ${fp}` : `Fish ${h} hours in ${fs.name}${fe && h === HUNT.defHours ? `: about ${Math.round(fe)} food expected` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.`, !!fp)).join("") : "";
   const snareBtns = line
     ? ord("snare", ` data-mode="check"`, "Check snares (1h)", sp ? `Snares: ${sp}` : `Collect the catch (about ${Math.round(se.animals)} small game by now, if nothing got to it) and leave the line set.`, !!sp) +
