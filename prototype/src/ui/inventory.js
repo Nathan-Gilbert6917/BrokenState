@@ -24,6 +24,7 @@ import { partyVehicle, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
+import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -168,14 +169,13 @@ function selBar(state, ui, place) {
     ${burnButtons(state, ui, item, from)}
     <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
 }
-// The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (a confirm for anything
-// that is not junk), and in an armory the water boiler's mark (may burn / keep).
+// The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (asks first for anything
+// that is not junk: ui/confirm.js), and in an armory the water boiler's mark (may burn / keep).
 function burnButtons(state, ui, item, from) {
   const bd = breakDownInfo(state, ui.invSel);
   if (!(bd.wood > 0) || from.o === "body") return "";
-  const confirm = ui.invBurnConfirm === ui.invSel;
   const junk = isJunk(item);
-  const btn = `<button class="mini ${confirm ? "danger" : ""}" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood, by its weight (${kg(bd.wood * SUPPLIES.wood.weight)} kg of its ${kg(GEAR[item.key].weight || 0)} kg burns; ${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: click again to confirm."}` : bd.reason)}>${confirm ? `Really break it down? (+${bd.wood})` : `Break down for firewood (+${bd.wood})`}</button>`;
+  const btn = `<button class="mini" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood, by its weight (${kg(bd.wood * SUPPLIES.wood.weight)} kg of its ${kg(GEAR[item.key].weight || 0)} kg burns; ${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: asks first."}` : bd.reason)}>Break down for firewood (+${bd.wood})</button>`;
   if (from.o !== "armory") return btn;
   const b = baseById(state, from.id);
   const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";
@@ -509,13 +509,13 @@ export const INV_ACTIONS = {
   "inv-cancel": (state, ui) => { ui.invSel = null; },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
-  // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks twice.
-  "inv-breakdown": (state, ui) => {
+  // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
+  "inv-breakdown": (state, ui, d = {}) => {
     if (!ui.invSel) return;
     const it = itemAt(state, ui.invSel);
-    if (it && !isJunk(it) && ui.invBurnConfirm !== ui.invSel) { ui.invBurnConfirm = ui.invSel; return; }
+    if (it && !isJunk(it) && ask(ui, d, "inv-breakdown", { kind: "breakdown", title: `Break the ${it.name} down for firewood?`, text: `It is gone for good: +${breakDownInfo(state, ui.invSel).wood} firewood. It is worth more than junk (it could be worn, traded or repaired).`, yes: "Break it down" })) return;
     ui.invMsg = breakDownAt(state, ui.invSel);
-    ui.invSel = null; ui.invBurnConfirm = null;
+    ui.invSel = null;
   },
   "inv-firemark": (state, ui, d) => { if (ui.invSel) ui.invMsg = setFireMark(state, ui.invSel, d.mark || null); },
   "inv-burnjunk": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = breakDownJunk(state, b); ui.invSel = null; },

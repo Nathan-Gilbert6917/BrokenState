@@ -9,6 +9,7 @@ import { SUPPLIES } from "../sim/data.js";
 import { waterUseText } from "./farming.js";
 import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
+import { cellOf } from "../sim/work.js";
 import { moodRisk } from "../sim/morale.js";
 import { conditionsOf, autoWantsCondition, CONDITIONS, noMedsList, recentNews } from "../sim/health.js";
 import { wormOf, WORM } from "../sim/worm.js";
@@ -22,11 +23,17 @@ import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 import { knownLoc } from "../sim/discovery.js";
 import { openDiary } from "./diary.js";
 import { openRoster } from "./roster.js";
+import { keyAction, keyLabel } from "./keymap.js"; // the key table (Menu → Controls)
+import { openCodex } from "./codex.js";
 import { visitorAlerts } from "./visitors.js";
 import { roadAlerts } from "./hardcore.js";
 import { baseFoodHint, landFoodHint } from "../sim/foraging.js";
 import { woodShortfall } from "../sim/woodcutting.js";
 import { carried } from "../sim/parties.js";
+import { gatheringAlerts } from "../sim/hivebirth.js";
+import { weatherAlerts } from "../sim/rivers.js"; // a frozen river by a base, a storm heading for the hub
+import { tripAlerts } from "./trips.js"; // a team sent from the planner is home: repeat the trip?
+import { pileCount } from "./pacing.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -120,6 +127,17 @@ const SECTIONS = {
   hordes(state, out) {
     const g = state.grid;
     for (const h of state.hordes) {
+      // A watchtower's alarm (sim/defences.js towerWatch): its own alert, seen right now or not (the lookouts track it).
+      const tower = state.bases.find((b) => b.towerWatch && b.towerWatch.ids.includes(h.id));
+      if (tower) {
+        const d = g.distance(h.tile, tower.tile), limit = holdLimit(state, tower, h.bosses || 0);
+        const coming = (h.goal && h.goal.baseId === tower.id) || h.target === tower.tile;
+        const up = residents(state, tower.id).filter((s) => cellOf(state, s, "guard").watch);
+        const seen = state.live.has(h.tile), where = seen ? `${d} tile${d === 1 ? "" : "s"} out` : "out of sight"; // at night the tower sees a tile: the lookouts know it is out there
+        out.push({ key: `tower:${tower.id}:${h.id}`, kind: "tower", icon: "🗼", tone: coming || h.size > limit ? "danger" : "warn", text: `Watchtower at ${tower.name}: horde of ${h.size}, ${where}${coming ? ", coming" : ""}`,
+          tip: `The watchtower ${seen ? "sees" : "saw"} a horde of about ${h.size}${h.bosses ? " with a Wallbreaker" : ""} ${seen ? `${d} tile${d === 1 ? "" : "s"} from ${tower.name}` : `near ${tower.name} (out of sight now)`}${coming ? ", heading this way" : ""}. Its defences hold about ${Math.round(limit)}${h.size > limit ? ": it would break in" : ""}. ${up.length ? `Guard is moved up to priority 1 for ${up.map((s) => firstName(s.name)).join(", ")} (their backup job) until it has gone.` : "Anyone on work priorities there with Guard as a backup job moves it up to priority 1 until it has gone."} Click to see ${seen ? "the horde" : "the base"}.`, go: { tile: seen ? h.tile : tower.tile } });
+        if (!(coming && h.size > limit) || !state.live.has(h.tile)) continue; // in place of the plain horde alert; a likely break-in keeps its own
+      }
       if (!state.live.has(h.tile)) continue; // only hordes you can see now
       let best = null, dist = Infinity;
       for (const b of state.bases) {
@@ -237,14 +255,20 @@ const SECTIONS = {
       out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${knownLoc(state, c.center) ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
     }
   },
+  gatherings(state, out) { out.push(...gatheringAlerts(state)); }, // sim/hivebirth.js: the dead massing for a hive you marked
+  weather(state, out) { // a frozen river by a base (the dead can cross), a storm or blizzard front heading for the hub
+    out.push(...weatherAlerts(state));
+  },
+  trips: tripAlerts,
   outsiders(state, out) { // raiders from outside near a base, merchants at one (ui/visitors.js)
     out.push(...visitorAlerts(state));
   },
   cards(state, out) {
-    if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
+    const n = pileCount(state); // cards that stop the clock (the tray shows the rest: ui/pacing.js)
+    if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];
@@ -301,6 +325,7 @@ function goTo(state, ui, a, act) {
   } else if (g.tile != null) act.center({ tile: g.tile });
   else if (g.surv != null) { if (survivorById(state, g.surv)) ui.survivor = g.surv; }
   else if (g.cards) { ui.baseView = null; ui.survivor = null; ui.help = false; }
+  else if (g.act && act[g.act]) act[g.act](g); // an action of its own (ui/trips.js: Repeat trip)
 }
 
 export const ALERT_ACTIONS = {
@@ -327,48 +352,44 @@ export function nextWaitingTeam(state, ui, act, back = false) {
   return p;
 }
 
-// Map keys added with the alerts (README controls). Returns true when the key was used. modal: what window is up
-// (ui.js modalKind); only the diary and roster keys work with a window open (they close their own window).
+// Map keys added with the alerts (README controls), matched through the key table (ui/keymap.js: Menu → Controls
+// rebinds them). Returns true when the key was used. modal: what window is up (ui.js modalKind); only the diary,
+// roster and codex keys work with a window open, and only over one of those three (they close it, or switch).
+const KEY_WINDOWS = { "win.diary": "diary", "win.roster": "roster", "win.codex": "codex" };
+const openWindow = (ui, w) => (w === "diary" ? openDiary(ui) : w === "roster" ? openRoster(ui) : openCodex(ui));
 export function mapHotkey(state, ui, e, act, modal) {
-  const code = e.code || "";
-  const mods = e.ctrlKey || e.altKey || e.metaKey;
+  const k = keyAction(e, "map");
   if (modal) {
-    if (mods) return false;
-    if (modal === "diary" && (code === "KeyJ" || code === "KeyR")) { ui.diary = null; if (code === "KeyR") openRoster(ui); return true; }
-    if (modal === "roster" && (code === "KeyR" || code === "KeyJ")) { ui.roster = null; if (code === "KeyJ") openDiary(ui); return true; }
-    return false;
+    const w = KEY_WINDOWS[k];
+    if (!w || !Object.values(KEY_WINDOWS).includes(modal)) return false;
+    ui[modal] = null;
+    if (w !== modal) openWindow(ui, w);
+    return true;
   }
   if (!ui.started) return false;
   ui.flash = null;
-  const dm = /^Digit([1-9])$/.exec(code) || /^Numpad([1-9])$/.exec(code);
-  if (dm && (e.ctrlKey || e.altKey) && !e.metaKey) { // save a camera spot (Alt as well: some browsers keep Ctrl+1–9 for their tabs)
-    (ui.camSpots || (ui.camSpots = {}))[dm[1]] = { x: camera.x, y: camera.y, zoom: camera.zoom, seed: state.seed };
-    ui.flash = { text: `Camera spot ${dm[1]} saved. Shift+${dm[1]} brings you back here.`, at: performance.now() };
+  let m = /^cam\.save([1-9])$/.exec(k || "");
+  if (m) { // save a camera spot (Alt as well: some browsers keep Ctrl+1–9 for their tabs)
+    (ui.camSpots || (ui.camSpots = {}))[m[1]] = { x: camera.x, y: camera.y, zoom: camera.zoom, seed: state.seed };
+    ui.flash = { text: `Camera spot ${m[1]} saved. ${keyLabel(`cam.go${m[1]}`, 1) || "Its key"} brings you back here.`, at: performance.now() };
     return true;
   }
-  if (dm && e.shiftKey && !mods) {
-    const spot = ui.camSpots && ui.camSpots[dm[1]];
-    if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${dm[1]} yet: Ctrl+${dm[1]} (or Alt+${dm[1]}) saves the current view.`, at: performance.now() }; return true; }
+  if ((m = /^cam\.go([1-9])$/.exec(k || ""))) {
+    const spot = ui.camSpots && ui.camSpots[m[1]];
+    if (!spot || spot.seed !== state.seed) { ui.flash = { text: `No camera spot ${m[1]} yet: ${keyLabel(`cam.save${m[1]}`) || "its key"} saves the current view.`, at: performance.now() }; return true; }
     camera.x = spot.x; camera.y = spot.y; camera.zoom = spot.zoom;
     return true;
   }
-  const fm = /^F([1-9])$/.exec(code);
-  if (fm && !mods) {
-    const b = state.bases[Number(fm[1]) - 1];
-    if (!b) { ui.flash = { text: `You have ${state.bases.length} base${state.bases.length === 1 ? "" : "s"}: F1–F${state.bases.length}.`, at: performance.now() }; return true; }
+  if ((m = /^base\.([1-9])$/.exec(k || ""))) {
+    const b = state.bases[Number(m[1]) - 1];
+    if (!b) { ui.flash = { text: `You have ${state.bases.length} base${state.bases.length === 1 ? "" : "s"}: ${keyLabel("base.1", 1)}–${keyLabel(`base.${Math.max(1, Math.min(9, state.bases.length))}`, 1)}.`, at: performance.now() }; return true; }
     act.center({ tile: b.tile });
     return true;
   }
-  if (mods) return false;
-  const tabs = { KeyB: "bases", KeyG: "groups", KeyT: "teams" };
-  if (tabs[code]) { ui.tab = tabs[code]; return true; }
-  if (code === "KeyP") {
-    if (e.shiftKey) act["dev-autopilot"]();
-    else ui.tab = "people";
-    return true;
-  }
-  if (code === "Tab" || code === "KeyN") { nextWaitingTeam(state, ui, act, e.shiftKey); return true; }
-  if (code === "KeyJ") { openDiary(ui); return true; }
-  if (code === "KeyR") { openRoster(ui); return true; }
+  const tabs = { "tab.bases": "bases", "tab.people": "people", "tab.groups": "groups", "tab.teams": "teams" };
+  if (tabs[k]) { ui.tab = tabs[k]; return true; }
+  if (k === "dev.autopilot") { act["dev-autopilot"](); return true; }
+  if (k === "team.next" || k === "team.prev") { nextWaitingTeam(state, ui, act, k === "team.prev"); return true; }
+  if (KEY_WINDOWS[k]) { openWindow(ui, KEY_WINDOWS[k]); return true; }
   return false;
 }

@@ -30,6 +30,15 @@
 // economy's hunger and thirst days do the damage (economy.js starve, thirst). The team counts as out of food (p.noFood:
 // no camp healing, illness risk) when someone's hunger is empty, or someone wants to eat and nothing is left.
 //
+// Starving and parched (STARVE, starvingDaily): every morning someone is starving (living at a base that is out of food
+// today, economy.js hungerDays; away from a base, on a team or an errand, hunger below NEEDS.starving, 15) counts a day
+// starving (s.starveDays) and loses STARVE.food.step mood × those days (−2, −4, −6 … up to −20 a day); parched the same
+// for thirst (a base out of water, or thirst below 15 away from one: s.parchDays, −3, −6, −9 … up to −24). At a base the
+// stores decide, not the gauge: short rations feed some in full and others not at all for the day (splitShare), and
+// that costs the base's −3 a day, not this. A morning fed and watered again resets it. This is a base's mood for being out
+// of food or water (it replaced the flat −10 and −8 a day); left alone it ends at rock bottom: a mental break
+// (mentalbreaks.js), walking out (morale.js), or death from hunger or thirst. On top of the hourly mood below 25.
+//
 // Mood items: at NEEDS.treatHour each team member below COMFORT.lowMood (35) uses a treat from the team's inventory
 // (their own pockets and pack first, then a teammate's, then the cargo): chocolate, candy, coffee, cigarettes, tobacco;
 // drink (wine, vodka, whiskey) only while the team rests (a hangover follows); valuables (candy, tobacco, wine, whiskey)
@@ -43,6 +52,7 @@ import * as Weather from "./weather.js";
 import { meatIn, takeMeat } from "./hunting.js";
 import { GEAR } from "./data.js";
 import { COMFORT, applyUse } from "./comforts.js";
+import { addMood } from "./relations.js"; // the starving days show in the mood breakdown
 import { packOf, removeAt, personPlace, placeOfLoc } from "./inventory.js";
 import { teamFire } from "./fieldheat.js";
 import { heatUse, HEAT } from "./upkeep.js";
@@ -61,6 +71,10 @@ export const NEEDS = {
   low: 25, starving: 15, warnBack: 40,
   treatHour: 20, valuableMood: 20,
 };
+// Mood a day for each morning starving (hunger) or parched (thirst) in a row: step × days, up to max (starvingDaily).
+// warn: the day the log says it is getting serious.
+export const STARVE = { food: { step: 2, max: 20 }, water: { step: 3, max: 24 }, warn: 3 };
+export const starveMood = (days, kind = "food") => (days > 0 ? Math.min(STARVE[kind].max, STARVE[kind].step * days) : 0);
 export const RATIONS = {
   full: { name: "Full", desc: "Eat below 70 hunger, up to full: a ration a person a day." },
   short: { name: "Short", desc: "Eat only below 40 hunger: about 60% of a ration a day once they are lean. Food lasts longer; people are Hungry (work −10%, a little aim)." },
@@ -293,6 +307,37 @@ export function needsHour(state) {
   }
   for (const s of state.survivors) if (s.alive && s.location && s.location.kind === "errand") errandHour(state, s);
   if (hourOfDay(state) === NEEDS.treatHour) for (const p of state.parties) if (p.owner === "player" && Array.isArray(p.members)) for (const line of teamTreats(state, p)) log(state, line, "info");
+}
+
+// ---------- starving, day after day ----------
+// Daily (economy.js basesDaily, before relationsDaily and the breaks): see STARVE. Everyone of yours who is not held
+// captive. Draws no dice.
+// The base someone lives at today (a trade-route escort lives at the hub), or null.
+function homeBase(state, s) {
+  const L = s.location || {};
+  if (L.kind === "base") return baseById(state, L.baseId);
+  if (L.kind === "route") return hub(state);
+  return null;
+}
+// Starving / parched now: at a base, the base is out of food / water today; away from one, the gauge below
+// NEEDS.starving.
+export function starvingNow(state, s) {
+  const b = homeBase(state, s);
+  if (b) return { food: b.hungerDays > 0, water: b.thirstDays > 0 };
+  return { food: hungerOf(s) < NEEDS.starving, water: thirstOf(s) < NEEDS.starving };
+}
+export function starvingDaily(state) {
+  for (const s of state.survivors) {
+    if (!s.alive || !s.location || s.location.kind === "captive") continue;
+    const now = starvingNow(state, s);
+    for (const [kind, key, word] of [["food", "starveDays", "starving"], ["water", "parchDays", "parched"]]) {
+      if (!now[kind]) { if (s[key]) delete s[key]; continue; }
+      s[key] = (s[key] || 0) + 1;
+      const hit = starveMood(s[key], kind);
+      addMood(state, s, -hit, `${word === "starving" ? "Starving" : "Parched"} (day ${s[key]})`);
+      if (s[key] === STARVE.warn) log(state, `${s.name} has been ${word} for ${s[key]} days: mood −${hit} a day and getting worse until they ${kind === "food" ? "eat" : "drink"}.`, "danger");
+    }
+  }
 }
 
 // ---------- treats ----------

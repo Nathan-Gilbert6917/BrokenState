@@ -21,7 +21,8 @@ export const LAYERS = {
   vehicles:  { name: "Vehicles",         desc: "Abandoned vehicles you know about" },
   finds:     { name: "Spotted finds",    desc: "Caches, wrecks and camps your teams noticed" },
   infection: { name: "Infection",        desc: "Red overlay showing infection level" },
-  weather:   { name: "Weather",          desc: "Season and weather wash over the land: snow, rain, fog, heat" },
+  weather:   { name: "Weather",          desc: "Season wash over the land, faint clouds for weather fronts" },
+  fronts:    { name: "Weather fronts",   desc: "Storms, rain, snow and fog fronts and where they head" },
   known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
 };

@@ -15,7 +15,7 @@ import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, newItem } from "./inventory.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
@@ -217,6 +217,8 @@ export function searchHour(state) {
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
+  const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)
+  if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
   const locked = lockedSearchHour(state, e, p, members);
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower

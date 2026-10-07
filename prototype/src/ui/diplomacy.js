@@ -20,6 +20,7 @@ import {
   ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
+import { ask } from "./confirm.js"; // joining or leaving a war, expelling a member, giving up a job ask first
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -322,14 +323,28 @@ export const DIPLO_ACTIONS = {
   "dp-radio": (state, ui, d, actions) => { ui.diplo = null; if (actions && actions["rd-open"]) actions["rd-open"](d); },
   "job-accept": (state, ui, d) => { ui.diploMsg = acceptJob(state, Number(d.id)); dropOfferCard(state, d.id); },
   "job-decline": (state, ui, d) => { ui.diploMsg = declineJob(state, Number(d.id)); dropOfferCard(state, d.id); },
-  "job-abandon": (state, ui, d) => { ui.diploMsg = abandonJob(state, Number(d.id)); },
+  "job-abandon": (state, ui, d) => {
+    if (ask(ui, d, "job-abandon", { kind: "giveup", title: "Give up this job?", text: "It counts as failing it: the group that offered it thinks less of you (goodwill), and the reward is lost.", yes: "Give it up" })) return;
+    ui.diploMsg = abandonJob(state, Number(d.id));
+  },
   "job-pickup": (state, ui, d) => { ui.diploMsg = requestPickup(state, Number(d.id)); },
   "mk-side": (state, ui, d) => { ui.marketSide = d.v === "buy" ? "buy" : "sell"; },
   "war-broker": (state, ui, d) => { ui.diploMsg = brokerCeasefire(state, Number(d.id)); },
-  "war-join": (state, ui, d) => { ui.diploMsg = joinWar(state, Number(d.id), Number(d.side)); },
-  "war-leave": (state, ui, d) => { ui.diploMsg = leaveWar(state, Number(d.id)); },
+  "war-join": (state, ui, d) => {
+    const w = warById(state, Number(d.id)), foe = w ? enemyIn(w, factionById(state, Number(d.side))) : null;
+    if (ask(ui, d, "war-join", { kind: "war", title: `Join the war beside ${nameOf(state, Number(d.side))}?`, text: `${foe != null ? nameOf(state, foe) : "Their enemy"} turns hostile and may raid you. If your side wins you get a share of the tribute and any land; leaving later costs goodwill with your side.`, yes: "Join the war" })) return;
+    ui.diploMsg = joinWar(state, Number(d.id), Number(d.side));
+  },
+  "war-leave": (state, ui, d) => {
+    if (ask(ui, d, "war-leave", { kind: "war", title: "Leave the war?", text: "Your side thinks less of you (goodwill −8); the enemy stays as it is.", yes: "Leave the war" })) return;
+    ui.diploMsg = leaveWar(state, Number(d.id));
+  },
   "al-invite": (state, ui, d) => { const f = factionById(state, Number(d.id)); const msg = f ? inviteToAlliance(state, f) : ""; if (ui.radioWith != null) ui.radioMsg = msg; else ui.diploMsg = msg; },
-  "al-expel": (state, ui, d) => { const f = factionById(state, Number(d.id)); if (f) ui.diploMsg = expel(state, f); },
+  "al-expel": (state, ui, d) => {
+    const f = factionById(state, Number(d.id));
+    if (!f || ask(ui, d, "al-expel", { kind: "expel", title: `Expel ${f.name} from the coalition?`, text: `They leave the coalition and its land count at once, and think much less of you (goodwill −15).`, yes: "Expel them" })) return;
+    ui.diploMsg = expel(state, f);
+  },
 };
 export const DIPLO_CHANGE = {
   "mk-good": (state, ui, el) => { if (SUPPLIES[el.value]) ui.marketKey = el.value; },

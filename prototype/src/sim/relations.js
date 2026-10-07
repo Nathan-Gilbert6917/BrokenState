@@ -35,6 +35,9 @@ import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
 import { hasPerk } from "./skills.js";
 import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
+import { starveMood, NEEDS } from "./needs.js"; // starving and parched days (needs.js starvingDaily)
+import { festivalGlow } from "./festival.js";
+import { familyMood } from "./family.js"; // children and expecting (family.js)
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -315,9 +318,7 @@ export function moodFactors(state, s) {
     if (ci.penalty > 0) add(`Crowded: ${ci.people} people in ${ci.beds} beds`, -ci.penalty, false);
     else add("A bed for everyone", 1, false);
     if (ci.lift > 0) add(`Leader ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
-    if (base.thirstDays > 0) add("Out of water", -8, false);
-    if (base.hungerDays > 0) add("Out of food", -10, false);
-    else add("Fed", 1, false);
+    if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
@@ -337,6 +338,9 @@ export function moodFactors(state, s) {
     const insp = pl.route ? [] : atBase(state, base.id).filter((o) => o !== s && hasPerk(o, "inspiring"));
     if (insp.length) add(`Inspired by ${listText(insp.slice(0, 2).map(first))}`, Math.min(MOODF.inspireMax, insp.length * MOODF.inspire), true);
   }
+  // Starving or parched, day after day (needs.js starvingDaily: applied there, each morning).
+  if (s.starveDays > 0) add(`Starving: day ${s.starveDays} (${base ? `${base.name} is out of food` : `hunger below ${NEEDS.starving}`}; worse each day until they eat)`, -starveMood(s.starveDays, "food"), false);
+  if (s.parchDays > 0) add(`Parched: day ${s.parchDays} (${base ? `${base.name} is out of water` : `thirst below ${NEEDS.starving}`}; worse each day until they drink)`, -starveMood(s.parchDays, "water"), false);
   const ci = comfortInfo(state, s, base);
   if (ci.n > 0) add(`Something to read (${ci.text})`, Math.min(MOODF.comfortMax, ci.n * MOODF.comfortPer), true);
   // Music, cards, keepsakes and toiletries (comforts.js), and the after-effect of a treat (a coffee buzz, a hangover).
@@ -349,6 +353,8 @@ export function moodFactors(state, s) {
   else if (se.key === "winter" && se.dayOfSeason > 14) add(`Cabin fever (day ${se.dayOfSeason} of winter)`, MOODF.winter14, true);
   const grey = gloomDays(state, d);
   if (grey >= 3) add(`${grey} grey days in a row`, MOODF.gloom, true);
+  const glow = festivalGlow(state, s); // festival.js: the harvest festival's afterglow
+  if (glow) add("The harvest festival", glow, true, "A good day together is still on everyone's mind");
   // People.
   const near = together(state, s);
   let fr = 0, rv = 0, partnerHere = false;
@@ -364,6 +370,7 @@ export function moodFactors(state, s) {
   else if (partner && partner.location && partner.location.kind !== "captive") add(`Misses ${first(partner)} (away)`, MOODF.partnerAway, true);
   if (fr) add(`${fr} friend${fr === 1 ? "" : "s"} close by`, Math.min(MOODF.friendMax, fr * MOODF.friend), true);
   if (rv) add(`${rv} rival${rv === 1 ? "" : "s"} close by`, Math.max(MOODF.rivalMax, rv * MOODF.rival), true);
+  for (const f of familyMood(state, s, pl.route ? null : base)) add(f.label, f.v, true); // family.js: expecting, children
   if (s.grief) add(`Grieving for ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1), true);
   if (s.rough != null && s.rough >= d) {
     if (base && !pl.route && s.role === "rest") add("Resting after a rough trip", MOODF.roughRest, true);

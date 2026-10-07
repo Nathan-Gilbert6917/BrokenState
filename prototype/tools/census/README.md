@@ -54,5 +54,10 @@ note in the write-up what moved. A `--size normal,large,huge,120x80` sweep write
     node tools/campaign50.js 50 1095 --groups 15-20 --seed 5000 --census
     node tools/campaign50.js --preset hardcore-cautious --census        # 25 hardcore cautious games, grep on the fallen
     node tools/campaign50.js 25 1095 --size normal,large,huge,120x80 --groups 15-20 --seed 5000 --census
+    node tools/campaign50.js 30 450 --size normal --groups 5-10 --seed 5050 --mode hardcore --start-people 1   # hardcore starting team of 1-4 (default 3)
+
+`--start-people N` (1–4) sets how many flee together in the hardcore starts (the new-run screen's Starting people,
+`createWorld({ startPeople })`); the JSON's `args.START_PEOPLE` records it (null: the default three). Normal starts
+ignore it.
 
 A quick self-check that the runner and its columns work: `node tools/campaign50.js 2 10 --size normal --groups 7-7`.

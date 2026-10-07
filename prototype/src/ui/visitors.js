@@ -8,6 +8,7 @@ import {
 } from "../sim/visitors.js";
 import { wormOthersAt } from "../sim/worm.js"; // sick guests sheltering at a base
 import { otherWormRow } from "./health.js";
+import { ask } from "./confirm.js"; // robbing merchants asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -72,9 +73,7 @@ export function visitorTradeButtons(state, ui, ctx) {
   const v = ctx.visitor;
   if (v.kind !== "merchants") return "";
   const where = ctx.base ? `data-base="${ctx.base.id}"` : `data-party="${ctx.p.id}"`;
-  return ui.visitorAttack === v.id
-    ? `<span class="danger small">Rob the merchants? Every trading group will hear of it, and merchants from outside will shun you.</span><button class="danger" data-action="vis-attack-yes" data-id="${v.id}" ${where}${tip("A battle against their guards; win and their goods are yours")}>Yes, rob them</button><button data-action="vis-attack-no">No</button>`
-    : `<button data-action="vis-attack" data-id="${v.id}"${tip(`Fight their ${v.guards || 1} guards for everything they carry. Merchant reputation −45; traders −15 and communes and fortresses −8 goodwill`)}>Rob the merchants…</button>`;
+  return `<button data-action="vis-attack" data-id="${v.id}" ${where}${tip(`Fight their ${v.guards || 1} guards for everything they carry. Merchant reputation −45; traders −15 and communes and fortresses −8 goodwill. Asks first.`)}>Rob the merchants…</button>`;
 }
 
 // ---------- handlers ----------
@@ -85,10 +84,12 @@ export const VISITOR_ACTIONS = {
   "vis-invite": (state, ui, d) => { const v = visitorById(state, d.id); if (v) log(state, `Radio: ${inviteMerchants(state, v)}`, "info"); },
   "vis-news": (state, ui, d) => { const v = visitorById(state, d.id); if (v) { const t = radioNewsFrom(state, v); if (!/^.+ on the radio:/.test(t)) log(state, `Radio: ${t}`, "info"); } },
   "vis-pay": (state, ui, d) => { const v = visitorById(state, d.id); if (v) { const t = radioPayRaiders(state, v); if (!/are leaving the state\.$/.test(t)) log(state, `Radio: ${t}`, "info"); } },
-  "vis-attack": (state, ui, d) => { ui.visitorAttack = Number(d.id); },
+  // Rob the merchants: asks first (ui/confirm.js), then a battle against their guards.
+  "vis-attack": (state, ui, d) => VISITOR_ACTIONS["vis-attack-yes"](state, ui, d),
   "vis-attack-no": (state, ui) => { ui.visitorAttack = null; },
   "vis-attack-yes": (state, ui, d) => {
     const v = visitorById(state, d.id);
+    if (v && ask(ui, d, "vis-attack-yes", { kind: "rob", title: `Rob the merchants from ${v.home}?`, text: `A battle against their ${v.guards || 1} guards; win and their goods are yours. Every trading group hears of it (merchant reputation −45; traders −15, communes and fortresses −8 goodwill) and merchants from outside shun you.`, yes: "Rob them" })) return;
     ui.visitorAttack = null;
     ui.tradeMsg = "";
     if (!v) return;

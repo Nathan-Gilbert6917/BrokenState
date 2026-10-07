@@ -182,10 +182,10 @@ function teamFactors(ctx) {
   return { skill, team, vehicle: SURVEY.vehicle[ctx.mode] || 1, stance: SURVEY.stance[ctx.stance] || 1 };
 }
 // Light and weather at an hour (with the optics' night and fog relief).
-function seeing(state, ctx, hour, opt) {
+function seeing(state, ctx, hour, opt, tile) {
   let light = 1, wx = 1;
   if (isNightAt(hour)) light = Math.max(SURVEY.night, ctx.lamp || 0, ctx.nvg ? SURVEY.nvg : 0, opt.night || 0);
-  const k = weather(state, hour).key;
+  const k = weather(state, hour, tile).key; // the weather where the team is (weather.js; home if not given)
   if (SURVEY.weather[k]) wx = k === "fog" && opt.fog ? Math.max(SURVEY.weather[k], opt.fog) : SURVEY.weather[k];
   return { light, wx };
 }
@@ -194,13 +194,13 @@ export const rumourFor = (state, site, center) => rumoursOf(state).find((r) => r
 
 // The chance an hour to spot a hidden place on `site` from `from` (the team's tile), for a survey centred on `center`.
 export function siteOdds(state, ctx, site, from, hour, center = from) {
-  const opt = opticsFor(ctx.members, ctx.cargo, { still: true, night: isNightAt(hour), fog: weather(state, hour).key === "fog" });
+  const opt = opticsFor(ctx.members, ctx.cargo, { still: true, night: isNightAt(hour), fog: weather(state, hour, from).key === "fog" });
   const f = teamFactors(ctx);
   const d = Math.max(0, state.grid.distance(from, site) - opt.reach);
   const dist = SURVEY.dist[d] ?? 0;
   if (!dist) return 0;
   const terr = SURVEY.terrain[state.tiles[site].terrain] ?? 1;
-  const { light, wx } = seeing(state, ctx, hour, opt);
+  const { light, wx } = seeing(state, ctx, hour, opt, from);
   const rum = rumourFor(state, site, center) ? SURVEY.rumour : 1;
   return Math.min(SURVEY.cap, SURVEY.base * f.skill * f.team * f.vehicle * f.stance * terr * dist * light * wx * opt.look * rum);
 }

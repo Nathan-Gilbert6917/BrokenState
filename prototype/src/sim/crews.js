@@ -34,7 +34,7 @@ import { weather, severeSoon, thirstAhead } from "./weather.js";
 import { crewAI } from "./autopilot.js";
 import { siteKnown } from "./discovery.js";
 import { roleMembers, isManaged, threatInfo, healthRest } from "./work.js";
-import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT } from "./hunting.js";
+import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, packFishingGear, snareLine, HUNT, huntArrowsFor, huntMixOf } from "./hunting.js";
 import { crewSurveyCands, surveySent } from "./survey.js";
 import { woodNeed, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, bestChop, woodcutterMult, WOOD } from "./woodcutting.js";
 import { packTripKit } from "./kit.js";
@@ -136,12 +136,12 @@ const huntFit = (s) => hunterMult(s) * (bestHuntWeapon(s) ? 3 : 0.3);
 const fishFit = (s) => fisherMult(s);
 const wantsFood = (need) => (need.food || 0) >= 0.6;
 FIELD_TYPES.hunt = {
-  name: "Hunt", desc: "Hunting trips (8 hours, snares checked or set when the crew has wire or scrap) to the best game land within range while the hub wants food. Needs a hunter with a rifle, bow, crossbow, shotgun or pistol.",
+  name: "Hunt", desc: "Hunting trips (8 hours, snares checked or set when the crew has wire or scrap) to the best game land within range while the hub wants food. Needs a hunter with a rifle, shotgun or pistol (and ammo), or a bow or crossbow (the hub's arrows go along). The hours follow the hub's hunting mix (traps, bows, guns).",
   cands(ctx) {
     const { state, base, crew, need, role } = ctx;
     if (!wantsFood(need)) return [];
     const team = [...crewReady(state, role)].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, Math.max(1, crew.size || 1));
-    return huntTargets(state, base.tile, crew.range, team, { ammo: Math.max(0, (base.stock.ammo || 0) - 20), hours: HUNT.defHours, limit: 4 })
+    return huntTargets(state, base.tile, crew.range, team, { ammo: Math.max(0, (base.stock.ammo || 0) - 20), arrows: huntArrowsFor(state, base, team), mix: huntMixOf(base), hours: HUNT.defHours, limit: 4 })
       .filter((x) => !targeted(state, x.tile) && x.est.rations >= 6)
       .map((x) => ({ tile: x.tile, mission: "move", fit: huntFit, onSite: HUNT.defHours + 2, why: `hunt for food (~${Math.round(x.est.rations)} expected)`,
         steps: [...(x.snares || (base.stock.scrap || 0) >= 10 ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],

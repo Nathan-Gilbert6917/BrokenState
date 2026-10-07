@@ -285,7 +285,8 @@ export const underAttack = (state, base) => !!base.alert ||
 // Beds: the hub 4, an outpost 2, a shelter SHELTER.beds, plus BEDS for each working bunkhouse or barracks (a broken one
 // sleeps nobody until it is repaired).
 export const BEDS = { bunkhouse: 6, barracks: 12 };
-export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0);
+// Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
+export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);

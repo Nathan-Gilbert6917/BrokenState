@@ -37,6 +37,7 @@ import { poweredType } from "./power.js";
 import { armoryDefence } from "./defences.js";
 import { isNight } from "./world.js";
 import { interiorMap, interiorUnits } from "./interior.js";
+import { applyPlan, planFor, planStale, savePlan } from "./defenceplan.js"; // the base's defence plan
 
 export const DEPLOY = {
   WALL_X: 12, LINE_X: 11, BARRICADE_X: [8, 10], SPIKE_X: [13, 15], TRENCH_X: 14, ENEMY_X: 15, ZONE_OPEN: 7,
@@ -325,7 +326,7 @@ export function setLit(b, zone) {
 export const inZone = (b, x, y) => !!(b.deploy && x >= 0 && y >= 0 && x < b.w && y < b.h && b.deploy.zone[y * b.w + x]);
 // The post a defender placed by hand takes (the battle AI keeps them there): the gate or a breach, a tower, the
 // walkway; on the yard map an upper floor or a roof ("perch") and inside a building ("inside", interior.js).
-const postAt = (b, x, y) => {
+export const postAt = (b, x, y) => {
   const k = b.cells[y * b.w + x].k;
   if (k === "gate" || k === "breach") return "gate";
   if (k === "tower") return "tower";
@@ -375,7 +376,18 @@ export function deployAct(state, b, act) {
       setLit(b, act.zone);
       break;
     }
+    case "plan": { // defenceplan.js: back to the base's defence plan
+      if (!planFor(state, b)) return planStale(state, b) || "This base has no defence plan for this map yet: place everyone, then Save as plan.";
+      applyPlan(state, b);
+      break;
+    }
+    case "savePlan": {
+      const msg = savePlan(state, b);
+      say(b, msg, "good");
+      break;
+    }
     case "start":
+      if (b.setup.drill) return "This is a drill: save the plan, or close it.";
       endDeploy(b);
       break;
     default:
@@ -386,7 +398,7 @@ export function deployAct(state, b, act) {
 }
 
 export function endDeploy(b) {
-  if (!b || b.phase !== "deploy") return;
+  if (!b || b.phase !== "deploy" || b.setup.drill) return; // a drill (defenceplan.js) never starts
   b.phase = "player";
   b.acted = true; // no auto-resolve once the defenders are placed
   const interior = b.tier && b.tier.map === "interior";

@@ -17,6 +17,10 @@ import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
 import { baseWater, boilerUse, cropLandBad, WORM, purifyText, baseTabCount } from "../sim/worm.js";
+import {
+  HUNT_METHODS, METHOD_NAMES, MIX_PRESETS, huntMixOf, setHuntMix, setHuntShare, huntWorkWhy, ammoKeep, hasBow, ARROW, TRAP, HUNT, baseHuntDay,
+} from "../sim/hunting.js";
+import { ask } from "./confirm.js"; // digging a living crop under asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -235,6 +239,7 @@ export function baseFarming(state, b) {
         </div>
         <label style="display:block;margin-top:0.35rem"${tip("Farmers sow free plots by themselves (the crop picked for the plot, or the best one for the season) and clear dead ones. Off: only what you sow.")}><input type="checkbox" data-action="farm-auto" data-base="${b.id}" ${f.auto ? "checked" : ""}> Replant automatically</label>
       </div>
+      ${huntingCard(state, b)}
     </div>
     <div>
       <h3>How farming works</h3>
@@ -248,6 +253,42 @@ export function baseFarming(state, b) {
   <table class="t small"><tr><th>Crop</th><th${tip("Growing days at full growth")}>Days</th><th${tip("Food per plot at care ×1")}>Yield</th><th>Seed</th><th${tip("Water per plot on a dry day")}>Water</th><th>Seasons</th><th>Frost</th><th>Drought</th><th>Heat</th><th${tip("Days a ripe crop keeps in the field")}>Keeps</th><th${tip("Where the harvest goes: fresh food (cellar, spoils) or the preserved stock (dry grain and beans: barely spoils, no cellar room)")}>Store</th><th${tip("Growth over the last week outdoors")}>Growth</th><th${tip("Sown outdoors today: about how many days until it is ripe and the chance it lives that long, by the usual weather for the time of year (frost, storms, heat)")}>Sow now</th></tr>${guide}</table>`;
 }
 
+// ---------- hunting (sim/hunting.js) ----------
+// The base's hunting mix: the share of the hunting hours with traps, bows and guns, for the Hunt job's hunters at the
+// hunting cabin and for the teams that hunt from here. A drop-down per method (the other two share the rest), the
+// presets, what the hunters have to shoot with, and yesterday's hunt.
+const MIX_TIPS = {
+  traps: `Snares and deadfalls: small game only. Silent: no Heat, no noise, no ammo or arrows. At the cabin a trap hour is a third of a day on two snare lines (about half a rifle's food); on a team's hunt ${Math.round(TRAP.field * 100)}% of that, + ${Math.round(TRAP.hand * 100)}% a hand past the first (about a third).`,
+  bows: `Bows and crossbows with arrows: nearly a rifle's food (a compound bow about 90%), silent: no Heat, no noise. A shot at game loses its arrow ${Math.round(ARROW.lost * 100)}% of the time (about 0.6 arrows a kill). Without a bow or arrows those hours go to the traps.`,
+  guns: `Each hunter's best weapon (a rifle first; a bow if that is all they have): the most food. Every shot uses 1 ammo (never the walls' last 3 a head + 10), adds Heat to the base (a rifle +1 a kill) or to a team (+${HUNT.shotHeat} a shot), and each wandering horde within ${HUNT.drawRange} tiles of the hunting ground turns toward the shots ${Math.round(HUNT.drawChance * 100)}% of the time. Without a gun or ammo those hours go to the bows, then the traps.`,
+};
+function huntingCard(state, b) {
+  const mix = huntMixOf(b);
+  const people = atBase(state, b.id);
+  const hunters = people.filter((s) => s.role === "hunt");
+  const why = huntWorkWhy(state, b);
+  const spare = Math.max(0, (b.stock.ammo || 0) - ammoKeep(state, b));
+  const bows = people.filter((s) => hasBow([s]));
+  const opts = (k) => Array.from({ length: 11 }, (_, i) => i * 10).map((v) => `<option value="${v}" ${mix[k] === v ? "selected" : ""}>${v}%</option>`).join("");
+  const sel = HUNT_METHODS.map((k) => `<label class="wcf"${tip(MIX_TIPS[k])}>${METHOD_NAMES[k]} <select data-action="hunt-share" data-base="${b.id}" data-k="${k}">${opts(k)}</select></label>`).join(" ");
+  const presets = Object.entries(MIX_PRESETS).map(([k, p]) => `<button class="mini${mix.traps === p.mix.traps && mix.bows === p.mix.bows && mix.guns === p.mix.guns ? " active" : ""}" data-action="hunt-preset" data-base="${b.id}" data-preset="${k}"${tip(`${p.name}: traps ${p.mix.traps}%, bows ${p.mix.bows}%, guns ${p.mix.guns}%. ${p.desc}`)}>${esc(p.name)}</button>`).join(" ");
+  const last = b.huntLast && b.huntLast.day >= Math.floor(state.hour / 24) - 1 ? b.huntLast : null;
+  const lastText = last ? `${n1(last.rations)} food; ${HUNT_METHODS.filter((k) => last.hrs[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${last.hrs[k]}h`).join(", ") || "no hours"}${last.shots ? ` · ${last.shots} shot${last.shots === 1 ? "" : "s"} (Heat +${n1(last.noise)})` : " · not a shot fired"}${last.arrows ? ` · ${last.arrows} arrow${last.arrows === 1 ? "" : "s"} lost` : ""}${last.trapped ? ` · traps ${last.trapped} small game` : ""}${last.drawn ? ` · <span class="danger">${last.drawn} horde${last.drawn === 1 ? "" : "s"} drawn by the shots</span>` : ""}` : "";
+  const day = baseHuntDay(state, b);
+  return `<h3${tip("How this base hunts: the share of the hunting hours with traps, bows and guns, for the people on the Hunt job at its hunting cabin and for the teams that hunt from here (their hours in turn by the same shares). Guns bring the most food but use ammo, add Heat and can draw the dead; bows are silent but lose arrows; traps are silent and catch the least.")}>Hunting</h3>
+      <div class="card small">
+        <div>${why ? `<span class="muted">${esc(why === "no hunting cabin" ? "No hunting cabin: the mix is for the teams that hunt from here (and the Hunt job once a cabin is built)." : `The Hunt job: ${why}.`)}</span>` : hunters.length ? `On the Hunt job: ${hunters.map((s) => esc(s.name.split(" ")[0])).join(", ")}${day > 0 ? ` <span class="muted">(~${n1(day)} food a day each by this mix, an average hunter on the best ground)</span>` : ""}` : `<span class="muted">Nobody on the Hunt job.</span>`}</div>
+        <div class="row" style="margin-top:0.35rem">${sel}</div>
+        <div class="row" style="margin-top:0.3rem">${presets}</div>
+        <div class="kv" style="margin-top:0.3rem">
+          <div${tip(`Ammo the hunters may use: the stock less the walls' keep (3 a person here + 10).`)}>Ammo</div><div>${n0(b.stock.ammo)} <span class="muted">(${n0(spare)} above the walls' keep)</span></div>
+          <div${tip("Arrows and crossbow bolts for hunting (Crafting: 12 from 30 firewood and 1 scrap; found at hunting lodges, gun stores, sports shops and campgrounds). A hunting team with a bow takes up to 12 along.")}>Arrows</div><div>${n0(b.stock.arrows)}${bows.length ? ` <span class="muted">(${bows.length} with a bow or crossbow)</span>` : ` <span class="muted">(nobody here carries a bow)</span>`}</div>
+          ${last ? `<div>Yesterday</div><div>${lastText}</div>` : ""}
+        </div>
+        ${mix.bows > 0 && (!bows.length || (b.stock.arrows || 0) < 1) ? `<div class="small warn" style="margin-top:0.3rem">${bows.length ? "No arrows" : "Nobody here carries a bow or crossbow"}: the bow hours go to the traps.</div>` : ""}
+      </div>`;
+}
+
 // ---------- actions ----------
 const baseOf = (state, d) => baseById(state, Number(d.base));
 export const FARM_ACTIONS = {
@@ -259,10 +300,17 @@ export const FARM_ACTIONS = {
     ui.baseMsg = crop ? plantPlot(state, b, Number(d.plot), crop) : "Nothing would ripen there before its season ends.";
   },
   "farm-harvest": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = harvestPlot(state, b, Number(d.plot)); },
-  "farm-clear": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = clearPlot(state, b, Number(d.plot)); },
+  "farm-clear": (state, ui, d) => {
+    const b = baseOf(state, d), plot = b ? (farmOf(state, b).plots || []).find((x) => x.id === Number(d.plot)) : null;
+    if (!b) return;
+    if (plot && plot.stage !== "dead" && plot.stage !== "empty" && ask(ui, d, "farm-clear", { kind: "clearcrop", title: `Dig under the ${plot.crop && CROPS[plot.crop] ? CROPS[plot.crop].name.toLowerCase() : "crop"} on plot ${plot.id}?`, text: `The crop is lost${plot.stage === "ripe" ? " (it is ripe: Harvest brings it in instead)" : ""}, and the seed with it. The plot is free to sow again.`, yes: "Dig it under" })) return;
+    ui.baseMsg = clearPlot(state, b, Number(d.plot));
+  },
   "farm-auto": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = setAutoReplant(state, b, !farmOf(state, b).auto); },
+  "hunt-preset": (state, ui, d) => { const b = baseOf(state, d); const p = MIX_PRESETS[d.preset]; if (b && p) ui.baseMsg = setHuntMix(b, p.mix); },
 };
 // Change events (selects).
 export const FARM_CHANGE = {
   "farm-want": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) ui.baseMsg = setPlotWant(state, b, Number(el.dataset.plot), el.value); },
+  "hunt-share": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) ui.baseMsg = setHuntShare(b, el.dataset.k, Number(el.value)); },
 };

@@ -1,7 +1,8 @@
 // Hardcore mode, your start (sim/hardcore-start.js): the spawn, what the three grabbed as they fled, the low supplies,
 // founding the first hub through a staging camp (sim/staging.js: the order, the materials over trips, the days of
-// work, the hub; neglect, striking it, a team lost there), the hubless views, saves before, during and after the
-// camp, and the autopilot founding one.
+// work, the hub; neglect, striking it, a team lost there), the hubless views, the starting people (1–4: food by
+// background, a small team's skills and loaded seats, armed strangers sized to the team), saves before, during and
+// after the camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
 import { isShelter, tierName, SHELTER, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
@@ -18,7 +19,7 @@ import { partyTile, partyMembers, orderOptions, giveOrder, orderMove, carried, M
 import { packSize } from "../src/sim/inventory.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
-import { HC_START, BACKGROUNDS, playerTile, roadTeam, firstHubPending, hubSites, applyArchetype } from "../src/sim/hardcore-start.js";
+import { HC_START, BACKGROUNDS, playerTile, roadTeam, firstHubPending, hubSites, applyArchetype, rollGrab, teamFoodCap, smallTeamSkills, emptySeats } from "../src/sim/hardcore-start.js";
 import { VEHICLE_TYPES, partyVehicle, isCar } from "../src/sim/vehicles.js";
 import {
   STAGING, ESTABLISH_LABEL, needText, establishProblem, establishOption, stagingMissing, workCap, stagingPct, stagingStage, daysLeft, crewRate,
@@ -90,12 +91,14 @@ for (const st of worlds) {
     for (const k of ["weapon", "tool", "backpack"]) if (s.gear[k]) check(GEAR[s.gear[k].key] && GEAR[s.gear[k].key].slot === k, `seed ${st.seed}: ${s.gear[k].key} in its slot`);
     check(!s.gear.armor || (HC_START.ARCHETYPES[s.background] || {}).armor, `seed ${st.seed}: body armor only on a background that wears it (${s.background})`);
   }
-  // The others carried 1–3 days for three (TEAM_MIN..TEAM_MAX); a prepper's five days (PREPPER.FOOD / WATER) come on top.
+  // The others carried 1–3 days for three (TEAM_MIN..TEAM_MAX; food up to a farmer's, a hunter's or a trucker's own
+  // max: teamFoodCap); a prepper's five days (PREPPER.FOOD / WATER) come on top.
   const sup = p.supplies, n = partyMembers(st, p).length, P = HC_START.PREPPER;
   const prep = partyMembers(st, p).some((x) => x.background === "prepper");
   const pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
-  check(sup.food >= HC_START.TEAM_MIN + pf && sup.food <= HC_START.TEAM_MAX + pf && sup.water >= HC_START.TEAM_MIN + pw && sup.water <= HC_START.TEAM_MAX + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
-  check(sup.food / n <= 3 + pf / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each beyond a prepper's bag`);
+  const lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, fhi = teamFoodCap(partyMembers(st, p)); // per head (3–9 for three)
+  check(sup.food >= lo + pf && sup.food <= fhi + pf && sup.water >= lo + pw && sup.water <= hi + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
+  check(sup.food / n <= 5 + pf / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each (5 food for a farmer's team) beyond a prepper's bag`);
   check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 72 + (prep ? P.AMMO : 0) && (sup.meds || 0) <= 6 + (prep ? P.MEDS : 0), `seed ${st.seed}: no fuel, scrap or parts in the packs, little ammo (${sup.ammo || 0}) or meds beyond the bags`);
   check(Object.values(sup).every((v) => Number.isFinite(v) && v >= 0), `seed ${st.seed}: clean supply numbers`);
 }
@@ -646,6 +649,209 @@ function views(st, label) {
     check(!scan(html, mode).length && /data-action="gamemode"/.test(html) && new RegExp(`value="${mode}" selected`).test(html), `new-run screen (${mode}): the Mode select, clean`);
     check((html.match(/nrcard/g) || []).length === (mode === "hardcore" ? 3 : 6), `new-run screen (${mode}): ${mode === "hardcore" ? 3 : 6} colonists to edit`);
   }
+}
+
+// ---------- starting people ----------
+section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together; the default is the old start");
+{
+  const { START_PEOPLE, clampStartPeople } = await import("../src/sim/hardcore.js");
+  check(START_PEOPLE.MIN === 1 && START_PEOPLE.MAX === 4 && START_PEOPLE.DEF === 3 && HC_START.CREW === 3, "1–4, three by default");
+  check(clampStartPeople(0) === 1 && clampStartPeople(9) === 4 && clampStartPeople("2") === 2 && clampStartPeople("x") === 3 && clampStartPeople(2.6) === 3, "counts are clamped and rounded (junk: three)");
+  const sizes = {};
+  for (let n = 1; n <= 4; n++) {
+    let foodPer = 0, games = 0;
+    for (const seed of [11, 42, 77, 303, 505, 808]) {
+      const st = hc(seed, { startPeople: n });
+      const p = roadTeam(st);
+      const tag = `${n} people, seed ${seed}`;
+      if (!check(!!p, `${tag}: a team on the road`)) continue;
+      const team = partyMembers(st, p);
+      check(st.startPeople === n && st.hardcore.start.people === n && st.survivors.length === n && team.length === n && alive(st).length === n, `${tag}: ${n} on the team (${team.length}, ${st.survivors.length} in all)`);
+      check(st.survivors.filter((s) => s.leader).length === 1 && new Set(team.map((s) => s.background)).size === n && team.every((s) => BACKGROUNDS[s.background]), `${tag}: one leader, ${n} background${n > 1 ? "s, no two alike" : ""}`);
+      check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1, `${tag}: one car`);
+      const prep = team.some((s) => s.background === "prepper"), P = HC_START.PREPPER;
+      const sup = p.supplies, lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
+      check(sup.food >= lo + pf && sup.food <= teamFoodCap(team) + pf && sup.water >= lo + pw && sup.water <= hi + pw, `${tag}: 1–3 days each (food by background)${prep ? " plus the prepper's bag" : ""} (${sup.food} food, ${sup.water} water)`);
+      check(n === 1 ? /got out alone/.test(st.log.map((l) => l.text).join(" ")) : st.log.some((l) => new RegExp(`of you got out`).test(l.text)), `${tag}: the day-1 log counts them`);
+      check(st.cards[0] && st.cards[0].isOrders && /Calder is falling/.test(st.cards[0].text), `${tag}: the orders card`);
+      if (!prep) { foodPer += sup.food / n; games++; }
+      try { for (let i = 0; i < 48; i++) { tickHour(st); st.cards.length = 0; } check(true, `${tag}: two days run`); } catch (e) { check(false, `${tag}: two days run: ${e.message}`); }
+    }
+    sizes[n] = games ? (foodPer / games).toFixed(1) : "-";
+  }
+  console.log(`  food a head at the start (no prepper): ${Object.entries(sizes).map(([n, v]) => `${n}: ${v}`).join(", ")}`);
+  // The default: leaving it out, 3 and the old start build the same world.
+  const a = hc(42), b = hc(42, { startPeople: 3 });
+  check(JSON.stringify(a.survivors.map((s) => [s.name, s.background, s.skills])) === JSON.stringify(b.survivors.map((s) => [s.name, s.background, s.skills])) && JSON.stringify(roadTeam(a).supplies) === JSON.stringify(roadTeam(b).supplies) && a.rng.next() === b.rng.next(), "leaving it out is the same as 3");
+  check(hc(42, { startPeople: 0 }).survivors.length === 1 && hc(42, { startPeople: 7 }).survivors.length === 4, "out of range: clamped to 1–4");
+  // A normal start ignores it (a full hub of six).
+  const nw = createWorld({ seed: 42, factionCount: 7, startPeople: 1 });
+  check(nw.mode === "normal" && nw.survivors.length === 6 && nw.startPeople === undefined, "a normal start ignores it (six at the hub)");
+  // Saves: the count comes back, the save list has it, and a hardcore save from before it loads as three.
+  const two = hc(77, { startPeople: 2 });
+  two.cards.length = 0;
+  const text = saveToString(two);
+  const back = loadFromString(text);
+  check(back.startPeople === 2 && JSON.parse(text).meta.startPeople === 2 && partyMembers(back, roadTeam(back)).length === 2, "a save keeps the count (and the save list shows it)");
+  const old = hc(77);
+  old.cards.length = 0;
+  delete old.startPeople;
+  check(loadFromString(saveToString(old)).startPeople === 3, "a hardcore save from before the choice loads as three");
+  // Edited colonists carried into a smaller or bigger start (the new-run screen's crew, by index).
+  const crew = [{ name: "Ada Test" }, { name: "Bo Test", leader: true }, { name: "Cy Test" }];
+  const one = hc(42, { startPeople: 1, crew });
+  check(one.survivors.length === 1 && one.survivors[0].name === "Ada Test" && one.survivors[0].leader, "a crew of three edited, one starts: the first, and the leader falls back to them");
+  const four = hc(42, { startPeople: 4, crew });
+  check(four.survivors.length === 4 && four.survivors[1].name === "Bo Test" && four.survivors[1].leader && four.survivors.filter((s) => s.leader).length === 1, "a crew of three edited, four start: the three and one more");
+  // The new-run screen: the select, set to the count, in Hardcore; greyed out for a normal start.
+  for (let n = 1; n <= 4; n++) {
+    const w = hc(5, { startPeople: n });
+    const html = newRunScreen(w, { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: n });
+    const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+    check(!!sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]), `new-run screen (hardcore, ${n}): Starting people, ${n} selected`);
+    check((html.match(/nrcard/g) || []).length === n && !scan(html, `hardcore ${n}`).length, `new-run screen (hardcore, ${n}): ${n} colonist${n > 1 ? "s" : ""} to edit, clean`);
+  }
+  {
+    const html = newRunScreen(createWorld({ seed: 5, factionCount: 7 }), { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: 2 });
+    const sel = /<select data-action="startpeople"([^>]*)>/.exec(html);
+    check(!!sel && /disabled/.test(sel[1]) && /Hardcore only/.test(html), "new-run screen (normal): Starting people greyed out, Hardcore only");
+  }
+}
+
+// ---------- food by background, small teams, the road by team size (2026-10-07) ----------
+section("Food by background; one or two get a skill bump and the empty seats loaded; armed strangers sized to the team (2026-10-07)");
+{
+  const A = HC_START.ARCHETYPES, C = HC_START;
+  // What each background grabbed to eat (rollGrab, ARCHETYPES food over the common FOOD): in its own ranges; against
+  // the same background with the common FOOD (its own odds of a bag kept), the food backgrounds grab more and the
+  // ones who ran with other things less.
+  const st0 = hc(31);
+  const meanFood = {}, meanCommon = {};
+  for (const k of Object.keys(A).filter((x) => x !== "prepper")) {
+    const F = A[k].food || C.FOOD;
+    let sum = 0, sumC = 0, inRange = true;
+    for (let i = 0; i < 400; i++) {
+      const s = makeSurvivor(st0, 1);
+      const got = rollGrab(st0, s, A[k]);
+      const r = s.gear.backpack ? F.pack : F.pockets;
+      if (got.food < r[0] || got.food > r[1]) inRange = false;
+      sum += got.food;
+      sumC += rollGrab(st0, makeSurvivor(st0, 1), { ...A[k], food: undefined }).food;
+    }
+    meanFood[k] = sum / 400;
+    meanCommon[k] = sumC / 400;
+    check(inRange, `${k}: food in its own ranges (bag ${F.pack.join("–")}, pockets ${F.pockets.join("–")})`);
+  }
+  console.log(`  food grabbed, mean of 400 (with the common food): ${Object.entries(meanFood).map(([k, v]) => `${k} ${v.toFixed(2)} (${meanCommon[k].toFixed(2)})`).join(", ")}`);
+  check(["farmer", "hunter", "trucker"].every((k) => meanFood[k] > meanCommon[k] + 0.3), "a farmer, a hunter and a trucker grab more food than they would have");
+  check(["veteran", "nurse", "mechanic", "cop"].every((k) => meanFood[k] < meanCommon[k] - 0.2), "a veteran, a nurse, a mechanic and a cop grab less (they ran with ammo, a vest, meds or tools)");
+  check(["student", "office", "bluecollar", "teacher"].every((k) => !A[k].food), "the others grab the common food");
+  // Weighted over the backgrounds (their draw weights) a head grabs about what it did: a default team of three carries
+  // about what it did.
+  const wsum = Object.entries(A).filter(([k]) => k !== "prepper").reduce((a, [, x]) => a + x.w, 0);
+  const avg = Object.entries(meanFood).reduce((a, [k, v]) => a + v * A[k].w, 0) / wsum;
+  const avgC = Object.entries(meanCommon).reduce((a, [k, v]) => a + v * A[k].w, 0) / wsum;
+  check(Math.abs(avg - avgC) < 0.3, `by the backgrounds' weights the food a head is about what it was (${avg.toFixed(2)} vs ${avgC.toFixed(2)})`);
+  check(teamFoodCap([{ background: "farmer" }, { background: "cop" }, { background: "hunter" }]) === 5 + 3 + 4 && teamFoodCap([{ background: "office" }, { background: "nurse" }, { background: "teacher" }]) === 9, "the team's food cap: TEAM_MAX a head, a farmer's 5, a hunter's 4");
+  // A fourth brings food by who they were: across seeds, the starts of four with a farmer, a hunter or a trucker
+  // carry more a head than the ones without.
+  const withF = [0, 0], without = [0, 0];
+  for (let seed = 600; seed < 660; seed++) {
+    const st = hc(seed, { startPeople: 4 });
+    const m = partyMembers(st, roadTeam(st));
+    if (m.some((s) => s.background === "prepper")) continue;
+    const per = roadTeam(st).supplies.food / m.length;
+    const into = m.some((s) => ["farmer", "hunter", "trucker"].includes(s.background)) ? withF : without;
+    into[0] += per; into[1]++;
+  }
+  check(withF[1] > 0 && without[1] > 0 && withF[0] / withF[1] > without[0] / without[1], `four with a farmer, hunter or trucker carry more a head (${(withF[0] / Math.max(1, withF[1])).toFixed(2)} vs ${(without[0] / Math.max(1, without[1])).toFixed(2)})`);
+
+  // One or two (HC_START.SMALL): + SKILL per empty seat in Scouting, Stealth and Medicine; the empty seats loaded.
+  const S = C.SMALL;
+  check(emptySeats(1) === 2 && emptySeats(2) === 1 && emptySeats(3) === 0 && emptySeats(4) === 0, "empty seats: 2 alone, 1 for a pair, none for three or four");
+  for (const n of [1, 2]) {
+    const people = Array.from({ length: n }, () => makeSurvivor(st0, 1));
+    const before = people.map((s) => ({ ...s.skills }));
+    check(smallTeamSkills(st0, people) === S.SKILLS, `${n}: the skills bumped are ${S.SKILLS.join(", ")}`);
+    const seats = emptySeats(n);
+    const ok = people.every((s, i) => S.SKILLS.every((k) => { const d = s.skills[k] - (before[i][k] || 0); return s.skills[k] === 20 || (d >= S.SKILL[0] * seats && d <= S.SKILL[1] * seats); })
+      && Object.keys(s.skills).filter((k) => !S.SKILLS.includes(k)).every((k) => s.skills[k] === before[i][k]));
+    check(ok, `${n}: +${S.SKILL[0] * seats}–${S.SKILL[1] * seats} in each, nothing else`);
+  }
+  for (const n of [3, 4]) {
+    const people = Array.from({ length: n }, () => makeSurvivor(st0, 1));
+    const before = JSON.stringify(people.map((s) => s.skills)), r0 = st0.rng.state;
+    check(smallTeamSkills(st0, people) === null && JSON.stringify(people.map((s) => s.skills)) === before && st0.rng.state === r0, `${n}: no bump and no dice drawn`);
+  }
+  const seatFood = { 1: [], 2: [] };
+  for (const n of [1, 2, 3, 4]) for (const seed of [11, 42, 77, 303, 505, 808]) {
+    const st = hc(seed, { startPeople: n });
+    const p = roadTeam(st), seats = emptySeats(n);
+    const owner = st.survivors.find((x) => x.id === st.hardcore.start.carOwner), TR = A[owner.background].trunk;
+    const cs = p.cargo.supplies, line = st.hardcore.start.grabbed[st.hardcore.start.grabbed.length - 1];
+    const tag = `${n} people, seed ${seed}`;
+    if (!seats) {
+      check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && !/empty seat/.test(line) && !st.log.some((l) => /got out (alone|on their own):/.test(l.text)), `${tag}: only the owner's trunk in the back, no seats loaded`);
+      continue;
+    }
+    const ok = Object.entries(S.SEAT).every(([k, [lo, hi]]) => { const q = cs[k] || 0, t = TR[k] || [0, 0]; return q >= lo * seats + t[0] && q <= hi * seats + t[1]; });
+    check(ok, `${tag}: the empty seat${seats > 1 ? "s" : ""} loaded (${JSON.stringify(cs)})`);
+    check(/on the empty seats?, what else they could grab: \d+ food/.test(line) && st.cards[0].text.includes(line), `${tag}: the orders card says what is on the seat${seats > 1 ? "s" : ""}`);
+    check(st.log.some((l) => (n === 1 ? /got out alone: the kind who can look after themselves \(Scouting, Stealth and Medicine up\)/ : /got out on their own: the kind who can look after each other/).test(l.text)), `${tag}: day 1's log says why`);
+    check(!p.burden || p.burden.band <= 2, `${tag}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
+    seatFood[n].push(cs.food || 0);
+  }
+  console.log(`  food in the car, alone: ${seatFood[1].join(", ")}; a pair: ${seatFood[2].join(", ")}`);
+  // Deterministic with the seed, and through a save.
+  const a1 = hc(77, { startPeople: 1 }), b1 = hc(77, { startPeople: 1 });
+  const sig1 = (st) => JSON.stringify([st.survivors.map((s) => s.skills), roadTeam(st).cargo.supplies, roadTeam(st).supplies]);
+  check(sig1(a1) === sig1(b1), "same seed, same small start");
+  a1.cards.length = 0;
+  check(sig1(loadFromString(saveToString(a1))) === sig1(a1), "a save brings the bumped skills and the loaded seats back");
+
+  // The road (wanderers.js HC_SMALL): in hardcore a team of one meets armed strangers half as often and only one of
+  // them; a pair three quarters as often and never more than two. Three or more, and normal games: as before.
+  const { WANDER, smallTeam, sized, hostileCard, rollWanderer } = await import("../src/sim/wanderers.js");
+  const H = WANDER.HC_SMALL;
+  const roads = {};
+  for (const n of [1, 2, 3, 4]) {
+    const st = hc(42, { startPeople: n });
+    const p = roadTeam(st);
+    const sm = smallTeam(st, p);
+    check(n <= 2 ? sm === H[n] : sm === null, `${n}: ${sm ? `aggressive share ×${sm.share}, at most ${sm.max}` : "no small-team rule"}`);
+    const sizes = [2, 3, 4, 5].map((x) => sized(st, p, x));
+    check(n === 1 ? sizes.every((x) => x === 1) : n === 2 ? sizes.every((x) => x === 2) : sizes.every((x, i) => x === Math.max(2, Math.min(i + 2, n + WANDER.HOSTILE_OVER))), `${n}: bands of 2–5 stop it as ${sizes.join("/")}`);
+    const c = hostileCard(st, p, 4, {});
+    const fc = c.choices.find((x) => x.label === "Fight").fight;
+    check(fc.enemy.count === sizes[2] && (n === 1 ? /^A ragged man steps out/.test(c.text) && fc.enemy.name === "the armed stranger" : /ragged people step out/.test(c.text)), `${n}: the hold-up card (${c.text.slice(0, 40)}…)`);
+    // Many road rolls on city ground (the most meetings), hour by hour: the share of aggressive ones.
+    const city = st.tiles.filter((t) => t.terrain === "city").map((t) => t.id);
+    const was = st.wanderers ? { ...st.wanderers.stats } : {};
+    for (let i = 0; i < 4000; i++) {
+      p.lastWander = null;
+      st.hour = 24 * 2 + i; // the dice are hash01 by hour and tile
+      rollWanderer(st, p, city[i % city.length]);
+      st.cards.length = 0;
+    }
+    const stats = st.wanderers.stats, met = {};
+    for (const k of ["neutral", "hostile", "military"]) met[k] = (stats[`road-${k}`] || 0) - (was[`road-${k}`] || 0);
+    roads[n] = met;
+  }
+  const share = (m) => m.hostile / Math.max(1, m.neutral + m.hostile + m.military);
+  const all = (m) => m.neutral + m.hostile + m.military;
+  console.log(`  road meetings on city ground by team size (neutral/aggressive/squads): ${Object.entries(roads).map(([n, m]) => `${n}: ${m.neutral}/${m.hostile}/${m.military} (aggressive ${Math.round(share(m) * 100)}%)`).join("; ")}`);
+  check(share(roads[1]) < share(roads[2]) && share(roads[2]) < share(roads[3]) && Math.abs(share(roads[3]) - share(roads[4])) < 0.06, "aggressive meetings: fewer alone, fewer for a pair, the same for three and four");
+  check(Math.abs(all(roads[1]) - all(roads[3])) / all(roads[3]) < 0.1, `as many people met in all (${all(roads[1])} alone, ${all(roads[3])} for three): the rest are neutrals and squads`);
+  // A fight with one stranger works by the numbers.
+  const st = hc(42, { startPeople: 1 });
+  const p = roadTeam(st);
+  st.cards.length = 0;
+  hostileCard(st, p, 3, {}).choices.find((x) => x.label === "Fight").resolve(st);
+  check(st.cards.some((x) => x.title === "After the fight") || !st.parties.includes(p) || !alive(st).length, "a fight with one armed stranger ends in the usual After the fight card");
+  // A normal game is not touched: a team of one there still meets two.
+  const nw = createWorld({ seed: 55, factionCount: 7 });
+  const q = { id: 999, owner: "player", members: [atBase(nw, hub(nw).id)[0].id] };
+  check(smallTeam(nw, q) === null && sized(nw, q, 3) === 2, "a normal game: no small-team rule (someone alone still meets two)");
 }
 
 // ---------- saves ----------
