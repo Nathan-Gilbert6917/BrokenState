@@ -57,6 +57,13 @@ export const WANDER = {
   // Aggressive survivors: 2–4 (one more in a city; never more than HOSTILE_OVER over the team met), power per head; what they take when you hand it over; the talk DC;
   // the chance one of them asks to come along after a good talk; a share seen robbing others (observed).
   HOSTILE_SIZE: [2, 4], HOSTILE_POWER: 2.6, HOSTILE_OVER: 1, ROB_SHARE: 0.3, TALK_DC: 10, JOIN_AFTER_TALK: 0.15, ROBBERY: 0.4,
+  // Hardcore, a team of one or two (2026-10-07; by its head count, smallTeam): fewer eyes on the road and less worth
+  // robbing. share: × the aggressive survivors' share of the road's meetings (the rest go to neutrals and squads, so
+  // as many people are met); max: the most of them who stop it (in place of the team + HOSTILE_OVER, and below
+  // HOSTILE_SIZE's floor of two for someone alone). Alone: half as often, one of them; a pair: three quarters, two.
+  // Three or more: as before. Only in hardcore, where the team on the road is all you have and the first weeks are
+  // crowded (HC_EARLY).
+  HC_SMALL: { 1: { share: 0.5, max: 1 }, 2: { share: 0.75, max: 2 } },
   // Military squads: size, power per soldier; a share met fighting the dead; goodwill for news, help, an attack.
   SQUAD_SIZE: [3, 5], SQUAD_POWER: 5, FIGHTING: 0.45, GW_NEWS: 2, GW_HELP: 8, GW_ATTACK: -30, GW_ASIDE: 2,
   // The people you left (light simulation, once a day): at most MAX groups remembered; a chance a day to move a tile,
@@ -124,12 +131,13 @@ function squadSource(state, tileId) {
   }
   return best;
 }
-function pickKind(state, tileId, rng, site = false) {
+// hostileMult: × the aggressive survivors' share (a small team on the road in hardcore: HC_SMALL share).
+function pickKind(state, tileId, rng, site = false, hostileMult = 1) {
   const t = state.tiles[tileId];
   const mil = squadSource(state, tileId);
   const opts = [
     { kind: "neutral", w: W.KIND.neutral },
-    { kind: "hostile", w: W.KIND.hostile * (t.terrain === "city" ? W.HOSTILE_CITY : 1) },
+    { kind: "hostile", w: W.KIND.hostile * (t.terrain === "city" ? W.HOSTILE_CITY : 1) * hostileMult },
   ];
   // A hostile military at a site would be a checkpoint in the middle of a search: they only stop you on the road.
   if (mil && !(site && attitude(mil.f) === "Hostile")) opts.push({ kind: "military", w: W.KIND.military * mil.w * 2, f: mil.f });
@@ -166,8 +174,15 @@ function neutralFor(state, tileId, rng) {
   return { g: newNeutralGroup(state, tileId, rng), again: false };
 }
 const hostileCount = (state, tileId, rng) => rng.int(W.HOSTILE_SIZE[0], W.HOSTILE_SIZE[1]) + (state.tiles[tileId].terrain === "city" ? 1 : 0);
-// Loose bands pick on people their own size: never more than HOSTILE_OVER over the team they stop.
-const sized = (state, p, n) => Math.max(W.HOSTILE_SIZE[0], Math.min(n, partyMembers(state, p).length + W.HOSTILE_OVER));
+// A team of one or two in hardcore: its HC_SMALL row ({ share, max }), else null (three or more, or a normal game).
+export const smallTeam = (state, p) => (isHardcore(state) ? W.HC_SMALL[partyMembers(state, p).length] || null : null);
+// Loose bands pick on people their own size: never more than HOSTILE_OVER over the team they stop (a small team in
+// hardcore: never more than its HC_SMALL max).
+export function sized(state, p, n) {
+  const small = smallTeam(state, p);
+  if (small) return Math.max(1, Math.min(n, small.max));
+  return Math.max(W.HOSTILE_SIZE[0], Math.min(n, partyMembers(state, p).length + W.HOSTILE_OVER));
+}
 const squadPower = (f) => Math.round((2.2 + (FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].arms : 1) * 1.6) * 10) / 10;
 const weaponName = (s) => (s.gear.weapon && GEAR[s.gear.weapon.key] ? GEAR[s.gear.weapon.key].name.toLowerCase() : null);
 const lookOf = (n) => (n === 1 ? "someone on their own" : n === 2 ? "two people" : `a group of ${NUM[n] || n}`);
@@ -200,7 +215,8 @@ export function rollWanderer(state, p, tileId) {
   if (state.wanderers) { bump(state, "road-expect", c); bump(state, "road-expect1", roadChance(state, tileId, isNight(state), 1)); }
   if (c <= 0 || hash01(state.seed, "wander-road", teamKey(state, p), tileId, state.hour) >= c) return null;
   const rng = rngFor(state, "wander-road-who", teamKey(state, p), tileId, state.hour);
-  const pick = pickKind(state, tileId, rng);
+  const small = smallTeam(state, p);
+  const pick = pickKind(state, tileId, rng, false, small ? small.share : 1);
   p.lastWander = state.hour;
   bump(state, `road-${pick.kind}`);
   if (pick.kind === "military" && attitude(pick.f) === "Hostile") {
@@ -426,7 +442,7 @@ function odds(state, p, enemy, ambush, allyPower = 0) {
   mine += allyPower;
   return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush });
 }
-const hostileEnemy = (n) => ({ kind: "survivors", count: n, power: W.HOSTILE_POWER, name: "the armed strangers" });
+const hostileEnemy = (n) => ({ kind: "survivors", count: n, power: W.HOSTILE_POWER, name: n === 1 ? "the armed stranger" : "the armed strangers" });
 
 function fight(state, p, c, ambush, lead = "") {
   if (!c.site) halt(p);
@@ -453,8 +469,12 @@ export function hostileCard(state, p, n, opts = {}) {
   const c = { type: "hostile", site: !!opts.site, enemy: hostileEnemy(n) };
   const run = skillChance(bestSkill(state, p, "stealth") + runBonus(state, p), 9);
   const talk = skillChance(talkSkill(state, p), W.TALK_DC);
-  const text = opts.site ? `${cap(NUM[n] || String(n))} armed survivors have holed up in ${tileLabel(state, partyTile(p))} and are not sharing. They come out with a shotgun and a bat: "Turn around, or leave your bags."`
-    : `${cap(NUM[n] || String(n))} ragged people step out from behind a wreck, armed with whatever they could find: "Bags on the ground. Slowly."`;
+  // One of them (a small team in hardcore: HC_SMALL) or a band.
+  const text = n === 1
+    ? (opts.site ? `Someone armed has holed up in ${tileLabel(state, partyTile(p))} and is not sharing. They come out with a shotgun: "Turn around, or leave your bags."`
+      : `A ragged man steps out from behind a wreck with a shotgun leveled at you: "Bags on the ground. Slowly."`)
+    : opts.site ? `${cap(NUM[n] || String(n))} armed survivors have holed up in ${tileLabel(state, partyTile(p))} and are not sharing. They come out with a shotgun and a bat: "Turn around, or leave your bags."`
+      : `${cap(NUM[n] || String(n))} ragged people step out from behind a wreck, armed with whatever they could find: "Bags on the ground. Slowly."`;
   const choices = [
     {
       label: "Hand over some of what you carry", hint: `They take about ${pct(W.ROB_SHARE)} of the team's supplies (not the gear) and let you go`, ai: () => 0.25,
@@ -497,7 +517,8 @@ function hostileSeenCard(state, p, n) {
   n = sized(state, p, n);
   const c = { type: "hostile", enemy: hostileEnemy(n) };
   const sneak = skillChance(bestSkill(state, p, "stealth") + (isNight(state) ? 1 : 0), 8 + Math.round(n / 3));
-  const text = `From cover you see ${NUM[n] || n} armed people crouched behind a wreck by the road, watching the way you were heading. They have not seen you.`;
+  const text = n === 1 ? "From cover you see someone with a shotgun crouched behind a wreck by the road, watching the way you were heading. They have not seen you."
+    : `From cover you see ${NUM[n] || n} armed people crouched behind a wreck by the road, watching the way you were heading. They have not seen you.`;
   return card(state, p, {}, "Armed strangers ahead", text, [
     {
       label: "Slip around them", hint: `Stealth check, ${pct(sneak)}. Failure: they spot you and it turns into a hold-up`, ai: () => sneak,
@@ -522,7 +543,7 @@ function robberyCard(state, p, n, g) {
   const third = [{ side: "neutral", kind: "survivors", count: victims, power: W.NEUTRAL_POWER, name: victims === 1 ? first(g.people[0]) : "the travellers", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health })) }];
   const c = { type: "rescue", enemy: hostileEnemy(n), wid: g.wid, third, allyPower: victims * W.NEUTRAL_POWER * 0.5 };
   const sneak = skillChance(bestSkill(state, p, "stealth") + (isNight(state) ? 1 : 0), 8 + Math.round(n / 3));
-  const text = `Up ahead, ${NUM[n] || n} armed strangers have stopped ${lookOf(victims)} (${names(g.people)}) and are going through their bags at gunpoint. Nobody has noticed you.`;
+  const text = `Up ahead, ${n === 1 ? "an armed stranger has" : `${NUM[n] || n} armed strangers have`} stopped ${lookOf(victims)} (${names(g.people)}) and ${n === 1 ? "is" : "are"} going through their bags at gunpoint. Nobody has noticed you.`;
   return card(state, p, {}, "A robbery", text, [
     fightChoice(state, p, c, "player", "Help them: hit the robbers", "The travellers fight beside you, and will be grateful"),
     {
