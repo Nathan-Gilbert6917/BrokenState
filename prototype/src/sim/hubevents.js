@@ -11,7 +11,7 @@
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES } from "./data.js";
 import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
-import { weather, weatherOnDay, season } from "./weather.js";
+import { weatherOnDay, season } from "./weather.js";
 import { crowdInfo, talker } from "./morale.js";
 import { quarrelBoost, quarrelPair, coupleBoost, couplePair, makePartners, relEvent, memorialWeight, memorialCard } from "./relations.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
@@ -39,9 +39,10 @@ export const THEFT = { share: 0.06, min: 4, max: 25, lockScrap: 4, lockDays: 30,
 function context(state, base) {
   const people = atBase(state, base.id);
   const ci = crowdInfo(state, base);
-  const wxToday = weather(state);
+  // The base's day (weather.js: a storm front that sat over it counts for the day), today and yesterday.
   const d = day(state);
-  const wxYesterday = d > 1 ? weatherOnDay(state, d - 1) : wxToday;
+  const wxToday = weatherOnDay(state, d, base.tile);
+  const wxYesterday = d > 1 ? weatherOnDay(state, d - 1, base.tile) : wxToday;
   const fo = foodOutlook(state, base) || {};
   return {
     base, people, n: people.length, over: ci.over, crowd: ci,

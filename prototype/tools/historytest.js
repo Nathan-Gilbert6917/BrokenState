@@ -174,10 +174,14 @@ console.log(`  history after ${days} days: ${kb(hjson.length)} (${list.length} b
 section("It never changes the world");
 {
   const dd = 25;
-  const A = createWorld({ seed: 7, factionCount: 6 }), B = createWorld({ seed: 7, factionCount: 6 });
+  // One world after the other: ids come from one counter for the whole process (world.js newId), so a world made
+  // while another still runs would number its parties differently (localId), and the dice keyed by them (road
+  // blockages, roadblocks.js) would differ for that reason alone.
+  const A = createWorld({ seed: 7, factionCount: 6 });
   setAutopilot(A, true, "balanced");
-  setAutopilot(B, true, "balanced");
   while (day(A) <= dd && !A.gameOver) tickHour(A);
+  const B = createWorld({ seed: 7, factionCount: 6 });
+  setAutopilot(B, true, "balanced");
   while (day(B) <= dd && !B.gameOver) { delete B.history; tickHour(B); }
   check(A.rng.state === B.rng.state, "the same dice with and without the history (history thrown away every hour)");
   check(JSON.stringify(A.log.map((l) => l.text)) === JSON.stringify(B.log.map((l) => l.text)), "the same log");

@@ -12,6 +12,8 @@
 //     on ice that thaws gets ashore; thin ice only near the freezing point.
 //  5. Save and load mid-storm: the same fronts, the same weather on every tile, the same world after more hours;
 //     a save made before fronts existed (no state.weather.fs) loads and gets them.
+//  6. The weather is a pure function of seed, hour and tile: asked in any order, at any time, with the caches dropped
+//     every hour, the fronts, the ice and an autopilot run come out the same.
 // Usage: node tools/fronttest.js [seeds, default 6]
 import { createWorld, tickHour, hub } from "../src/sim/world.js";
 import { planPath, moveCost, travelHours } from "../src/sim/parties.js";
@@ -19,6 +21,7 @@ import { makeHorde, hordesHour } from "../src/sim/hordes.js";
 import { riversHour } from "../src/sim/rivers.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import * as W from "../src/sim/weather.js";
+import { setAutopilot } from "../src/sim/autopilot.js";
 
 const nSeeds = Number(process.argv[2] || 6);
 let passed = 0, fails = 0;
@@ -277,6 +280,46 @@ console.log("Save and load mid-storm");
     for (let k = 0; k < 24; k++) { tickHour(old); old.cards.length = 0; if (old.combat) old.combat = null; }
     check(Number.isFinite(W.weather(old).temp), "an old save broke after a day");
   }
+}
+
+// ---------- 6. the weather is a pure function of the seed, the hour and the tile ----------
+// Whatever asks, in whatever order and at whatever time, and with the caches dropped every hour: the same fronts, the
+// same ice and the same world. (Worlds are made one after the other: ids come from one counter for the process.)
+console.log("The weather does not depend on who asks or when");
+{
+  const days = 30;
+  const X = createWorld({ seed: 2718, factionCount: 3 });
+  W.weatherOnDay(X, days + 8); // everything ahead first
+  for (let d = days; d >= 0; d--) { X.hour = d * 24 + 5; W.iceIndex(X); W.weatherAt(X, (d * 37) % X.tiles.length); }
+  const Y = createWorld({ seed: 2718, factionCount: 3 });
+  for (let d = 0; d <= days + 7; d++) { Y.hour = d * 24 + 13; W.weatherAt(Y, (d * 53) % Y.tiles.length); W.frontsApproaching(Y); W.dropWeatherCaches(); }
+  W.weatherOnDay(Y, days + 8);
+  const sig = (S) => JSON.stringify([S.weather.fronts.filter((f) => f.t0 < (days + 8) * 24), S.weather.days.slice(0, days + 8).map((d) => d.ice)]);
+  check(sig(X) === sig(Y), "fronts or ice differ with the order they were asked for in");
+  const tiles = [3, 400, 1200, 2000].filter((id) => id < X.tiles.length);
+  let same = true;
+  for (let h = 24 * 3; h < 24 * days; h += 5) for (const id of tiles) { X.hour = Y.hour = h; if (JSON.stringify(W.weatherAt(X, id)) !== JSON.stringify(W.weatherAt(Y, id))) same = false; }
+  check(same, "a tile's weather differs with the order it was asked for in");
+  // Two autopilot runs: one left alone, one that asks for weather all the time and drops the caches every hour.
+  const dd = 12;
+  const run = (busy) => {
+    const S = createWorld({ seed: 7, factionCount: 6 });
+    setAutopilot(S, true, "balanced");
+    while (Math.floor(S.hour / 24) < dd && !S.gameOver) {
+      if (busy) {
+        W.dropWeatherCaches();
+        W.weatherReport(S); W.forecast(S, 5); W.weatherOnDay(S, Math.floor(S.hour / 24) + 20);
+        W.weatherAt(S, (S.hour * 97) % S.tiles.length, S.hour + 30); W.frontsApproaching(S); W.iceRow(S, S.hour + 24 * 9);
+      }
+      tickHour(S);
+    }
+    return S;
+  };
+  const P = run(false), Q = run(true);
+  check(P.rng.state === Q.rng.state, "asking for weather and dropping its caches changed the dice");
+  check(JSON.stringify(P.log.map((l) => l.text)) === JSON.stringify(Q.log.map((l) => l.text)), "asking for weather and dropping its caches changed the log");
+  check(JSON.stringify(P.parties.map((p) => [p.idx, p.progress])) === JSON.stringify(Q.parties.map((p) => [p.idx, p.progress])), "asking for weather and dropping its caches changed where the teams are");
+  console.log(`  same fronts and ice in any order; ${dd} autopilot days the same with the caches dropped every hour (${P.log.length} log lines)`);
 }
 
 console.log(`\n${passed} checks passed, ${fails} failed.`);
