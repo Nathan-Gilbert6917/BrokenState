@@ -7,6 +7,8 @@
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
+import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
+import { FESTIVAL_HELP } from "../sim/festival.js";
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
@@ -67,7 +69,7 @@ const LEGEND = [
   [`<i class="sw" style="background:#c8ccd2">☠</i>`, "Danger", "Skulls under a site's name, shown up close."],
   [`<i class="sw" style="background:#8f2a2a"></i>`, "Hordes", "A crowd of the dead, its size on the badge; a faded \"N?\" is where one was last seen. A grey brute with a concrete fist at its head is a Wallbreaker."],
   [`<i class="sw" style="background:#c0392b"></i>`, "Hives", "A red glowing mound. Its land is tinted dark red (sites there show at least 3 skulls); the ring around it is brighter, with red skulls: much tougher dead."],
-  [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000."],
+  [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000. It grows with the dead massed there; the line under it says how many days until the hive stands, as far as you know (a \"?\" when your last look is old). A dashed red ring: a gathering you marked."],
   [`<i class="sw" style="background:#4a3f36;box-shadow:inset 0 0 0 1.5px #a0603a"></i>`, "Ruins", "Charred wall stubs, a lone chimney and rubble on a smouldering rim: a base burned to the ground in a raid, named \"Ruins of …\" (a torn blue rag: it was yours). The tile panel shows who burned it, the salvage left, the danger and the 5 scrap a new outpost there needs; founding one replaces the ruins."],
   [swatch("known"), "Known area", "Teal hatching (Known area layer): ground your people searched, brighter for the last 30 days, with a thin teal line round it. Unhatched ground has not been looked over for hidden places."],
   [swatch("coalition"), "Coalition land", "A wash in each owner's color with a border where another owner's land begins (Coalition land layer), and a thin gold line round all of the coalition's land; the layer's line shows the share held against the 50% goal."],
@@ -131,6 +133,8 @@ export function helpTopics() {
     add(title, m && (m[2] || m[3]) ? chunk.slice(m[0].length).replace(/^[a-z]/, (c) => c.toUpperCase()) : chunk);
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
+    if (out[out.length - 1].id === "hives-and-hordes") add("Hives being born", HIVE_BIRTH_HELP); // sim/hivebirth.js
+    if (out[out.length - 1].id === "food-and-the-winter") add("The harvest festival", FESTIVAL_HELP); // sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
     if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
@@ -147,6 +151,8 @@ export function helpTopics() {
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
   for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
+  if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
+  if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());
   return out;

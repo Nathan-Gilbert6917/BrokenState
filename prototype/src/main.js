@@ -925,6 +925,11 @@ const actions = {
       actions["xp-open"]({ id: c.uiAction.partyId });
       return;
     }
+    if (c.uiAction && c.uiAction.type === "plan") { // sim/hivebirth.js: the planner aimed at a gathering or a new hive
+      centerOn(state, c.uiAction.tile);
+      actions.plan({ tile: c.uiAction.tile, mission: c.uiAction.mission });
+      return;
+    }
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {

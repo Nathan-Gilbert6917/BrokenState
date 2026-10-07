@@ -67,6 +67,7 @@ import { hiveAt, hiveForce, broodForce, hiveById, zombieToughness } from "./hive
 import { isLate } from "./eras.js";
 import { BREAKOFF } from "./breakoff.js";
 import { growthAt, ensureGrowths, growthForce } from "./hivetech.js";
+import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: culling a gathering before the hive stands
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
@@ -531,6 +532,7 @@ function pickChoice(state, card, opts, p) {
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);
+  if (card.gathering != null) return find(/^Break up/) || find(/^Back off/); // hivebirth.js: sent to break up a gathering (gatheringCands)
   if (/^A horde of /.test(t)) return (P.raid && (p?.supplies.ammo || 0) >= 30 ? find(/killzone/) : null) || find(/^Back off/);
   if (/^Wrecked car/.test(t)) return find(/^Restore/) || find(/^Strip/);
   return null;
@@ -2233,6 +2235,7 @@ function planTrip(state) {
   cands.push(...heatFuelCands(state, h, need, P)); // needs-gauges: fuel for the winter's heating
   cands.push(...woodTripCands(state, h, pool, P)); // woodcutting.js: firewood when the land around the hub gives little
   cands.push(...jobTripCands(state)); // jobs.js: scouting, fetching a package, a horde to cull (Aggressive)
+  cands.push(...gatheringCands(state, h, pool, P, stormValue)); // hivebirth.js: break up the dead massing for a new hive
   cands.sort((a, b) => b.score - a.score);
 
   for (const c of cands.slice(0, P.reserves ? 20 : 8)) {
@@ -2245,6 +2248,7 @@ function planTrip(state) {
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
     if (c.envoy) { (g.lastEnvoy = g.lastEnvoy || {})[c.envoy] = today; res.apEnvoy = c.envoy; }
     if (c.mission === "hive") g.lastHive = today;
+    if (c.gathering != null) res.apGathering = c.gathering; // one such trip at a time
     if (c.mission === "growth") g.lastGrowth = today;
     if (c.mission === "assault") { g.lastAssault = today; const fx = state.factions.find((x) => x.alive && x.bases.includes(c.tile)); if (fx) g.conquestFocus = fx.id; }
     break; // then a survey with the hands still spare (below)
@@ -3147,7 +3151,7 @@ function launchTrip(state, c, pool, spareHands) {
   const h = hub(state);
   const g = gov(state);
   const size = Math.min(c.crew, spareHands);
-  if (size < (c.mission === "rescue" || c.mission === "growth" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : 1)) return null;
+  if (size < (c.mission === "rescue" || c.mission === "growth" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : c.squadMin || 1)) return null;
   const fit = c.fit ? c.fit : c.mission === "assault" ? (s) => (s.health >= (c.minHealth || ASSAULT_HEALTH) && !s.woundInfected ? combatPower(s) : -99) : c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
     (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 - (s.role === "build" || (s.task && (s.task.t === "build" || s.task.t === "craft")) ? 4 : 0) : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);

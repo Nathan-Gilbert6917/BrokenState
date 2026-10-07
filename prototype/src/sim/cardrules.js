@@ -57,9 +57,9 @@ export function cardKind(state, card) {
   if (card.isOrders || card.planCard) return "orders";
   if (DEATH_RE.test(t) || (/^The fight with /.test(t) && /whole team was lost/.test(card.text || ""))) return "death";
   if (card.raidReport || card.lostBase != null || card.radioRaid != null || RAID_RE.test(t)) return "raid";
-  if (HORDE_RE.test(t)) return "horde";
+  if (HORDE_RE.test(t) || card.hiveSite != null) return "horde"; // hivebirth.js: "The dead are massing near …"
   if (card.allianceAsk == null && HOSTILE_RE.test(t)) return "hostile";
-  if (card.kind === "conflict" || (card.choices || []).some((c) => c && c.fight) || COMBAT_RE.test(t)) return "combat";
+  if (card.kind === "conflict" || card.gathering != null || (card.choices || []).some((c) => c && c.fight) || COMBAT_RE.test(t)) return "combat";
   if (card.hcBand != null) return "contact"; // hardcore: a band met on the road (hardcore-groups.js)
   if (card.isCaravan || card.radioFrom != null || TRADE_RE.test(t)) return "trade";
   return "other";
@@ -117,6 +117,7 @@ export function trayStale(state, card) {
   if (card.visitorId != null && !(state.visitors || []).some((v) => v.id === card.visitorId)) return "they have gone";
   const bGone = (id) => !(state.bases || []).some((b) => b.id === id);
   if (card.outbreakBase != null && bGone(card.outbreakBase)) return "the base is gone";
+  if (card.festivalBase != null && bGone(card.festivalBase)) return "the base is gone"; // festival.js
   if (card.raidReport && card.raidReport.baseId != null && bGone(card.raidReport.baseId)) return "the base is gone";
   if (card.recruit && card.recruit.baseId != null && card.recruit.partyId == null && bGone(card.recruit.baseId)) return "the base is gone";
   if (card.jobId != null && state.jobs && Array.isArray(state.jobs.list) && !state.jobs.list.some((j) => j.id === card.jobId)) return "the job is gone";
