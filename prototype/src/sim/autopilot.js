@@ -29,6 +29,7 @@ import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
+import { defaultRolePlan } from "./defenceplan.js"; // the governor's defence plan (governorPlans)
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
@@ -296,6 +297,7 @@ export function autopilotDaily(state) {
   planTrip(state);
   campaignReport(state); // one line a morning: what the campaign waits for
   supplyReport(state); // one line a morning when water or food is short: hauled, traded, made against drunk / eaten
+  governorPlans(state); // defenceplan.js: a plan by role for a base whose battle map changed
   const service = relAutopilotDaily(state); // relations.js: a memorial service when people grieve or spirits are low
   if (service) say(state, service);
   // Jobs, the coalition and wars (alliance.js): deliveries fetched, qualifying groups invited, Aggressive sells
@@ -313,6 +315,26 @@ export function autopilotDaily(state) {
   // food come first when the hub is short of them (needs: 2.5+), the campaign's ammo next (campaignAmmoWant).
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
+}
+
+// ---------- the defence plan (defenceplan.js) ----------
+// Each morning, for a base whose buildings changed since it last looked (a new battle map: walls, a bigger yard), the
+// governor lays its own plan out again from the default posts, every post by role (defaultRolePlan: best shots on
+// the towers, the walkway and the perches, close fighters by the gate and the doors), so the posts hold when people
+// are away, hurt or new. Only on maps that turn to face the attack; never while a battle is open; it draws nothing
+// from state.rng. g.planSig: the buildings each base had when it last looked.
+function governorPlans(state) {
+  const g = gov(state);
+  if (state.combat) return;
+  g.planSig = g.planSig || {};
+  for (const base of state.bases) {
+    if (atBase(state, base.id).length < 2) continue;
+    const sig = base.buildings.map((x) => x.type).sort().join(",");
+    if (g.planSig[base.id] === sig) continue;
+    g.planSig[base.id] = sig;
+    const line = defaultRolePlan(state, base);
+    if (line) say(state, line);
+  }
 }
 
 // Cautious, with a radio station: scan the airwaves once a day (groups in reach become known), then one deal for

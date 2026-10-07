@@ -602,3 +602,6 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .deftab .dshift.now { border-color: #6c8f5a; }
 .deftab .dshname { width: 7rem; font-weight: 700; }
 .deftab button.chip { border: none; cursor: pointer; }
+.deftab .dplan { padding: 0.25rem 0; border-bottom: 1px solid #2c313a; }
+.deftab .dplan:last-of-type { border-bottom: none; }
+.cbactions .dshname { width: 8rem; font-weight: 700; }

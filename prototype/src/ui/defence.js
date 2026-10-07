@@ -1,4 +1,4 @@
-// The Defence tab (a base screen tab): the watch roster (sim/watch.js) and the defence plan (sim/defenceplan.js).
+// The Defence tab (a base screen tab): the watch roster (sim/watch.js) and the defence plans (sim/defenceplan.js).
 // The roster: the watches (preset or by hand), who stands each, and a 24-hour strip of how many are on watch each hour
 // (red: nobody). The plan: where each defender stands when the base is attacked, laid out in a drill on the base's
 // own battle map and taken up by itself at the deploy step of every attack (changed there for that fight if need be).
@@ -10,7 +10,8 @@ import {
   WATCH_PRESETS, SHIFT_MAX, shiftText, shiftHours, watchCoverage, watchLine, watchWhy, setWatchPreset, addShift, removeShift,
   setShiftHours, renameShift, toggleWatch, fillWatch, pruneWatch,
 } from "../sim/watch.js";
-import { startDrill, clearPlan, planPeople, PLAN_MAPS } from "../sim/defenceplan.js";
+import { startDrill, planPeople, plansOf, planTags, deletePlan, PLAN, PLAN_MAPS, PLAN_ROLES } from "../sim/defenceplan.js";
+import { planChange } from "./combat.js"; // the drill's and the deploy step's plan picker, name and tags
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -90,22 +91,35 @@ function coverageStrip(state, b) {
   }).join("")}</div>`;
 }
 
-// ---------- the defence plan ----------
+// ---------- the defence plans ----------
+// Each plan: its name and tags (who attacks, day or night: the attack takes up the one that fits best), the maps it
+// has posts on, who holds a post by name and how many posts go by role; a drill to change it, delete.
 function planCard(state, b, people) {
-  const plans = Object.entries(b.defencePlan || {});
+  const plans = plansOf(b);
   const inPlan = planPeople(state, b);
   const outOf = people.filter((s) => !inPlan.has(s));
-  let html = `<h3>Defence plan</h3><div class="card small">`;
+  let html = `<h3>Defence plans</h3><div class="card small">`;
   if (!plans.length) html += `<div class="muted">No plan yet: in an attack your people take the default posts (the toughest in the gate, the best shots on the towers and the walkway, the rest behind cover).</div>`;
-  for (const [key, p] of plans) {
-    const names = p.posts.map(([sid]) => state.survivors.find((s) => s.id === sid)).filter((s) => s && s.alive).map(first);
-    html += `<div class="spread"><span><b>${esc(PLAN_MAPS[key] ? PLAN_MAPS[key][0].toUpperCase() + PLAN_MAPS[key].slice(1) : key)}</b> <span class="muted">· ${names.length} post${names.length === 1 ? "" : "s"} · day ${p.day}${p.lit ? ` · floodlights ${p.lit}` : ""}</span></span>
-      <button class="mini" data-action="dplan-clear" data-base="${b.id}" data-k="${key}"${tip("Forget this plan: the default posts from now on")}>Clear</button></div>
-      <div class="muted">${esc(names.join(", "))}</div>`;
+  for (const p of plans) {
+    const maps = Object.entries(p.maps);
+    const names = [], roles = {};
+    for (const [, m] of maps) for (const [sid, , , role] of m.posts) {
+      if (role) { roles[role] = (roles[role] || 0) + 1; continue; }
+      const s = state.survivors.find((x) => x.id === sid);
+      if (s && s.alive && !names.includes(first(s))) names.push(first(s));
+    }
+    const roleText = Object.entries(roles).map(([r, n]) => `${n} ${PLAN_ROLES[r].toLowerCase()}${n === 1 ? "" : "s"}`).join(", ");
+    html += `<div class="dplan"><div class="spread"><span><b>${esc(p.name)}</b> <span class="muted">· ${esc(planTags(p))}</span></span>
+      <span><button class="mini" data-action="dplan-drill" data-base="${b.id}" data-id="${p.id}" ${people.length ? "" : "disabled"}${tip(`Change the "${p.name}" plan in a drill (its name and tags too).`)}>Drill</button>
+      <button class="mini" data-action="dplan-del" data-base="${b.id}" data-id="${p.id}"${tip(`Forget the "${p.name}" plan.`)}>✕</button></span></div>
+      <div class="muted">${maps.length ? maps.map(([k, m]) => `${esc(PLAN_MAPS[k] || k)}: ${m.posts.length} post${m.posts.length === 1 ? "" : "s"}, day ${m.day}${m.lit ? `, floodlights ${m.lit}` : ""}`).join(" · ") : "No posts yet: open it in a drill and Save as plan."}</div>
+      ${names.length || roleText ? `<div>${names.length ? `By name: ${esc(names.join(", "))}` : ""}${names.length && roleText ? " · " : ""}${roleText ? `By role: ${esc(roleText)}` : ""}</div>` : ""}</div>`;
   }
-  if (plans.length && outOf.length) html += `<div class="warn" style="margin-top:0.3rem"${tip("People not in the plan take the default posts around the planned ones.")}>Not in the plan: ${esc(outOf.map(first).join(", "))}</div>`;
-  html += `<div class="row" style="margin-top:0.4rem"><button class="primary" data-action="dplan-drill" data-base="${b.id}" ${people.length ? "" : "disabled"}${tip(people.length ? "Open this base's battle map as an attack would lay it out, with everyone here on it and nobody to fight: place them, Save as plan, close. The clock stands still meanwhile." : "Nobody is here to drill.")}>${plans.length ? "Change the plan (drill)" : "Plan the defence (drill)"}</button></div>
-    <div class="muted" style="margin-top:0.3rem">When the base is attacked the plan is taken up by itself at the deploy step, and you can still move people for that fight (Default positions, Planned posts, Save as plan are there too). Fights played out without you start from it as well. A plan is for the map it was made on: when the base grows (walls, more buildings) plan it again.</div>
+  const byRole = plans.some((p) => Object.values(p.maps).some((m) => m.posts.some((q) => q[3])));
+  if (plans.length && outOf.length && !byRole) html += `<div class="warn" style="margin-top:0.3rem"${tip("People not in a plan by name take a post by role if one is free, else the default posts around the planned ones.")}>In no plan by name: ${esc(outOf.map(first).join(", "))}</div>`;
+  html += `<div class="row" style="margin-top:0.4rem"><button class="primary" data-action="dplan-drill" data-base="${b.id}" ${people.length ? "" : "disabled"}${tip(people.length ? "Open this base's battle map as an attack would lay it out, with everyone here on it and nobody to fight: place them, Save as plan, close. In the drill: New plan, its name, who it is for (the dead, people) and when (day, night), posts by role. The clock stands still meanwhile." : "Nobody is here to drill.")}>${plans.length ? "Drill (plans)" : "Plan the defence (drill)"}</button></div>
+    <div class="muted" style="margin-top:0.3rem">When the base is attacked the plan that fits the attack best is taken up by itself at the deploy step (a plan for the dead or for people beats one for any attack, a night or day plan beats one for both), and you can pick another or move people for that fight. Fights played out without you start from it as well. Up to ${PLAN.MAX} plans. A plan is for the map it was made on: when the base grows (walls, more buildings) plan it again. A post by role (best shot, close fighter, anyone) is filled by whoever fits it best, so it holds when people are away or new.</div>
+    <div class="muted" style="margin-top:0.3rem">An attack on a base whose defences are not manned (no warning, no Prepare defenses) finds only the people on watch at their posts: the rest start in the buildings and come out once the attackers have moved.</div>
   </div>`;
   return html;
 }
@@ -117,12 +131,17 @@ export const DEFENCE_ACTIONS = {
   "dwatch-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeShift(state, b, Number(d.i))); },
   "dwatch-fill": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, fillWatch(state, b)); },
   "dwatch-toggle": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, toggleWatch(state, b, Number(d.i), d.id)); },
-  "dplan-drill": (state, ui, d) => { const b = baseOf(state, d); if (!b) return; const err = startDrill(state, b.id); if (err) say(ui, err); else { say(ui, ""); ui.baseView = null; ui.drillFrom = b.id; } }, // main.js tidyUi: back to this tab after
-  "dplan-clear": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, clearPlan(state, b, d.k)); },
+  "dplan-drill": (state, ui, d) => { const b = baseOf(state, d); if (!b) return; const err = startDrill(state, b.id, d.id != null ? Number(d.id) : null); if (err) say(ui, err); else { say(ui, ""); ui.baseView = null; ui.drillFrom = b.id; } }, // main.js tidyUi: back to this tab after
+  "dplan-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, deletePlan(state, b, Number(d.id))); },
 };
 export const DEFENCE_CHANGE = {
   "dwatch-preset": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.value) say(ui, setWatchPreset(state, b, el.value)); },
   "dwatch-hours": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) setShiftHours(state, b, Number(el.dataset.i), el.dataset.k === "from" ? el.value : null, el.dataset.k === "to" ? el.value : null); },
   "dwatch-name": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) renameShift(state, b, Number(el.dataset.i), el.value); },
   "dwatch-addp": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.value) say(ui, toggleWatch(state, b, Number(el.dataset.i), el.value)); },
+  // The battle screen's plan controls (the drill, the deploy step: ui/combat.js planRow).
+  "dplan-pick": (state, ui, el) => planChange(state, "pick", el.value),
+  "dplan-name": (state, ui, el) => planChange(state, "name", el.value),
+  "dplan-who": (state, ui, el) => planChange(state, "who", el.value),
+  "dplan-when": (state, ui, el) => planChange(state, "when", el.value),
 };
