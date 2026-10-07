@@ -43,6 +43,9 @@ import { drawWater, waterIn } from "./water.js";
 import { drinkRate } from "./economy.js";
 
 export const FAMILY = {
+  // Off for now (2026-10-07, the user's call): no couples, pregnancies or births, the new-run box and the Help topic
+  // hidden. Everything else stays; true brings it all back. Children already in a save still grow up.
+  enabled: false,
   coupleAt: 70, coupleChance: 0.04,
   conceive: 0.03, carry: 56, late: 14, lateWork: 0.85, overdueAway: 7, rest: 56,
   baby: 28, youth: 84, adult: 112,
@@ -66,7 +69,7 @@ const lastOf = (name) => String(name).split(" ").slice(1).join(" ") || String(na
 const r1 = (v) => Math.round(v * 10) / 10;
 
 // ---------- state ----------
-export const familyOn = (state) => !!state && !state.childrenOff;
+export const familyOn = (state) => FAMILY.enabled && !!state && !state.childrenOff;
 export function familyState(state) {
   if (!state.family) state.family = { rng: new Rng(((state.seed || 1) * 2246822519 + 0xc41d) >>> 0), births: 0, bornOn: {}, grown: 0, lost: 0 };
   return state.family;
