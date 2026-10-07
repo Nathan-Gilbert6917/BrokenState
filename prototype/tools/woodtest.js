@@ -452,7 +452,8 @@ section("Save / load: old saves start with none; mid-order, and determinism");
     let text = null, world = s2;
     for (let k = 0; k < 24 * 4; k++) {
       tickHour(world);
-      while (world.cards.length) { const c = world.cards.shift(); (c.choices.find((x) => !x.uiAction) || c.choices[0]).resolve(world); }
+      // A greyed-out choice is never pressed (as in the game): an unaffordable bribe re-raises its card, forever.
+      while (world.cards.length) { const c = world.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(world) : x.disabled)) || c.choices[0]).resolve(world); }
       const q = world.parties.find((x) => x.owner === "player" && (x.members || []).includes(crew[0].id));
       if (save && !text && q && q.phase === "task" && q.task.type === "wood" && q.task.done === 4) { text = saveToString(world); world = loadFromString(text); }
     }
