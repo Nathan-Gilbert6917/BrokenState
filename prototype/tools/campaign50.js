@@ -24,7 +24,8 @@ import { fileURLToPath } from "node:url";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { dirname, join } from "node:path";
-import { createWorld, tickHour, day, alive, hub } from "../src/sim/world.js";
+import { createWorld, tickHour, day, alive, hub, residents } from "../src/sim/world.js";
+import { baseBeds } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats } from "../src/sim/hives.js";
 import { goalsProgress, inviteProblem, isMember } from "../src/sim/alliance.js";
@@ -136,7 +137,14 @@ function runOne(job) {
   const sample = () => {
     const gp = goalsProgress(state);
     samples.push({ day: day(state), pop: alive(state).length, bases: state.bases.length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building,
-      members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 100), groupsAlive: state.factions.filter((f) => f.alive).length });
+      members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 100), groupsAlive: state.factions.filter((f) => f.alive).length, ...housing() });
+  };
+  // Housing (since 2026-10-07): the hub's residents and beds, and the outposts' (buildings.js baseBeds).
+  const housing = () => {
+    const h = hub(state);
+    const outs = state.bases.filter((b) => b.type === "outpost");
+    return { hubRes: h ? residents(state, h.id).length : 0, hubBeds: h ? baseBeds(h) : 0,
+      outRes: outs.reduce((a, b) => a + residents(state, b.id).length, 0), outBeds: outs.reduce((a, b) => a + baseBeds(b), 0) };
   };
   sample();
   try {

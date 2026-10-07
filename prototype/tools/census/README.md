@@ -26,7 +26,8 @@ Each entry of `results` is one game:
 - `outcome` (`hives` / `alliance` / `loss` / `going` / `crash`), `day`, `hiveWinDay`, `hubDay` (hardcore: the first
   hub's day), `crashDay`, `error`, `ms`;
 - `samples`: once a month, population, bases, hives left / destroyed / building, coalition members and groups, land
-  held, groups alive;
+  held, groups alive; housing (since 2026-10-07): `hubRes` / `hubBeds` (the hub's residents and beds) and `outRes` /
+  `outBeds` (the same summed over the outposts);
 - `events`: the dated major lines (bases taken, hives destroyed or risen, coalition joins and leaves, groups fallen);
 - `deaths`: by cause (`horde`, `in the field`, `thirst`, `hunger`, `raid`, `hive assault`, `illness`, `worm`, `cold`;
   `left` is people who walked away or changed sides);
