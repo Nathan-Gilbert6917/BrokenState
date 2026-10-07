@@ -31,6 +31,7 @@ import { goalsProgress, inviteProblem, isMember } from "../src/sim/alliance.js";
 import { ensureConquest } from "../src/sim/conquest.js";
 import { clampGroups } from "../src/sim/worldsize.js";
 import { season, SEASONS } from "../src/sim/weather.js";
+import { deathCounter } from "./deathcount.js"; // your people's deaths, one per survivor
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -91,18 +92,6 @@ function sizeOpts(spec) {
 
 // ---------- one campaign ----------
 const EVENT = /Your team took|is no more|has fallen$|moved into|hive was destroyed|hive at .* was destroyed|was destroyed by your team|A new hive has risen|joined The Calder Coalition|left The Calder Coalition|has collapsed|Every hive is destroyed|Calder Coalition holds|holdout has fallen|storming a hive|fell back from the hive|brood drove the team off|\(hive\) to|founded|first hub|staging camp/;
-function deathCause(text) {
-  if (/hunger|starv/.test(text)) return "hunger";
-  if (/thirst/.test(text)) return "thirst";
-  if (/worm|parasite/.test(text)) return "worm";
-  if (/cold|froze|exposure/.test(text)) return "cold";
-  if (/hive/.test(text)) return "hive assault";
-  if (/horde|Wallbreaker|the dead/.test(text) && !/defending|raid/.test(text)) return "horde";
-  if (/defending|raid|overrun|was overrun/.test(text)) return "raid";
-  if (/dysentery|flu|pneumonia|infect|fever|illness|sick|wound/.test(text)) return "illness";
-  return "in the field";
-}
-
 function runOne(job) {
   const { seed, mode, style, groups, size, days, keep, logN, grep } = job;
   const grepRe = grep ? new RegExp(grep, "i") : null, grepLines = [];
@@ -116,6 +105,7 @@ function runOne(job) {
   state.started = true;
   setAutopilot(state, true, style);
   const samples = [], events = [], deaths = {};
+  const newDeaths = deathCounter(state);
   // Thirst and hunger deaths by season (weather.js season): { thirst: { spring, summer, autumn, winter }, hunger: {...} }.
   const bySeason = { thirst: {}, hunger: {} };
   for (const k of SEASON_KEYS) { bySeason.thirst[k] = 0; bySeason.hunger[k] = 0; }
@@ -143,15 +133,18 @@ function runOne(job) {
     while (day(state) <= days) {
       tickHour(state);
       if (hubDay == null && hub(state)) hubDay = day(state);
+      const fresh = [];
       for (let i = 0; i < state.log.length && state.log[i] !== lastTop; i++) {
         const l = state.log[i];
+        fresh.push(l);
         if (EVENT.test(l.text) && (!l.text.startsWith("🤖") || /\(hive\) to/.test(l.text))) { events.push({ day: day(state), text: l.text.replace(/^🤖 /, "") }); lastEventDay = day(state); }
         if (grepRe && grepLines.length < 300 && grepRe.test(l.text)) grepLines.push(`d${day(state)} ${l.text}`);
-        if (l.kind === "death" && / died /.test(l.text)) {
-          const c = deathCause(l.text); deaths[c] = (deaths[c] || 0) + 1;
-          if (bySeason[c]) { const sk = season(state, l.hour ?? state.hour).key; bySeason[c][sk] = (bySeason[c][sk] || 0) + 1; }
-        }
-        else if (/walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
+        if (!(l.kind === "death" && / died /.test(l.text)) && /walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
+      }
+      // One death per survivor (deathcount.js: a worm death logs a second "died" line when they get up again).
+      for (const d of newDeaths(fresh)) {
+        deaths[d.cause] = (deaths[d.cause] || 0) + 1;
+        if (bySeason[d.cause]) { const sk = season(state, d.hour).key; bySeason[d.cause][sk] = (bySeason[d.cause][sk] || 0) + 1; }
       }
       if (state.log[0] !== lastTop) lastLogDay = day(state);
       lastTop = state.log[0];

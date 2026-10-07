@@ -12,10 +12,10 @@ import { addBuilding, count } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
 import { eatFromStore } from "../src/sim/storage.js";
 import { takeMeat, addMeat, expectHunt, huntTeam } from "../src/sim/hunting.js";
-import { launchExpedition, partyMembers } from "../src/sim/parties.js";
+import { launchExpedition, partyMembers, planPath } from "../src/sim/parties.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { readFileSync } from "node:fs";
-import { setAutopilot, governBase } from "../src/sim/autopilot.js";
+import { setAutopilot, governBase, governRoles, wormCureRuns, wormCureAt, wormHoursLeft } from "../src/sim/autopilot.js";
 import { tickHour } from "../src/sim/world.js";
 import { workFactor } from "../src/sim/health.js";
 import { activeHospital } from "../src/sim/medical.js";
@@ -1334,6 +1334,83 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(h2.wormCrop === 5 && h2.wormForage === 2.5 && h2.boiling === false && h2.boilerBurn && h2.boilerBurn.wood === 1.2, "the base's crops and forage with eggs and the cold boiler come back");
   check(near(wormForageIn(p2.cargo), 1.5) && p2.wormHands && p2.wormHands.chance === 0.02, "a team's forage with eggs and the day's hands come back");
   check(f2.wormLost === 3 && f2.wormBoilers && f2.wormBoilers[f.bases[0]] === true, "a group's losses and its boilers come back");
+}
+
+// ---------- 9. the autopilot gets the sick to a cure ----------
+// An outpost with no dewormer and no meds cannot cure the worm: the sick walk to a base that can (a one-way supply
+// run) while there is time before the brain; with no food for the road the hub sends meds for a purge instead; too
+// late (the last gut night gone), nothing is sent. (Huge-map census at 7353bc3: the worm's dead were small outposts'
+// people, spotted on day 1 and never moved.)
+{
+  console.log("The autopilot gets the sick to a cure");
+  const setup = (s0, { outpostFood = 20 } = {}) => {
+    const st = createWorld({ seed: s0, factionCount: 4 });
+    st.started = true; st.visitorsOff = true; st.noNewGangs = true;
+    for (const f of st.factions) f.raidCooldown = 1e9;
+    const h = hub(st);
+    Object.assign(h.stock, { food: 300, water: 100, meds: 20, scrap: 60 });
+    h.armory = h.armory.filter((it) => !(it && it.key === "dewormer"));
+    h.armory.push(newItem("dewormer"));
+    const tile = st.tiles.find((t) => { const d = st.grid.distance(t.id, h.tile); return d >= 3 && d <= 4 && t.terrain !== "water" && !st.bases.some((b) => b.tile === t.id) && !st.factions.some((f) => f.bases.some((b) => st.grid.distance(b, t.id) <= 2)) && !!planPath(st, h.tile, t.id, false); });
+    const o = { id: 99001, tile: tile.id, type: "outpost", name: "Sick Camp", tier: 1, stock: { food: outpostFood, water: 30, fuel: 0, meds: 0, ammo: 10, scrap: 0 }, radio: false, watchtower: false, armory: [], buildings: [], construction: [], boiling: true };
+    st.bases.push(o);
+    const [a, b] = atBase(st, h.id).filter((x) => !x.leader);
+    for (const x of [a, b]) { x.location = { kind: "base", baseId: o.id }; x.role = "rest"; x.health = 100; }
+    catchWorm(st, a, "drinking un-purified water at Sick Camp", "water");
+    a.worm.day = 1; a.worm.since = day(st) - 1; a.worm.seen = day(st);
+    setAutopilot(st, true, "balanced");
+    return { st, h, o, a, b };
+  };
+  // 1. The walk: the patient leaves on a run to the hub and is cured there with the dewormer.
+  {
+    const { st, h, o, a } = setup(seed);
+    check(!wormCureAt(st, o) && wormCureAt(st, h), "the outpost cannot cure it, the hub can (a dewormer)");
+    check(wormHoursLeft(st, a.worm) > 24, `day 1: ${wormHoursLeft(st, a.worm)} hours until the last gut night`);
+    wormCureRuns(st);
+    const p = st.parties.find((x) => x.routeKind === "supply" && x.members.includes(a.id));
+    check(!!p && p.destBaseId === h.id && p.atDest === "disband", "the sick one walks to the hub on a one-way run");
+    setAutopilot(st, false);
+    for (let i = 0; i < 24 * 4 && a.worm; i++) tickHour(st);
+    check(a.alive && !a.worm && a.location.kind === "base" && a.location.baseId === h.id, `cured at the hub (${a.alive ? (a.worm ? `still day ${a.worm.day}` : "clean") : "dead"}, at ${a.location.kind} ${a.location.baseId})`);
+    check(!h.armory.some((it) => it && it.key === "dewormer"), "the hub's dewormer was used");
+  }
+  // 2. No food for the road at the outpost: the hub sends meds and the night's care purges it there.
+  {
+    const { st, h, o, a } = setup(seed + 1, { outpostFood: 0 });
+    o.stock.food = 0;
+    wormCureRuns(st);
+    check(!st.parties.some((x) => x.members.includes(a.id)), "the sick one cannot walk (no food for the road)");
+    const p = st.parties.find((x) => x.routeKind === "supply" && x.destBaseId === o.id);
+    check(!!p && (p.cargo.supplies.meds || 0) >= WORM.PURGE_MEDS, `the hub sends meds (${p ? p.cargo.supplies.meds : 0})`);
+    setAutopilot(st, false);
+    withNums(WORM, { PURGE: 1, PURGE_MAX: 1 }, () => { for (let i = 0; i < 24 * 4 && a.worm; i++) tickHour(st); });
+    check(a.alive && !a.worm, `purged at the outpost (${a.alive ? (a.worm ? `still day ${a.worm.day}` : "clean") : "dead"})`);
+  }
+  // 3. Too late: past the last gut night nothing is sent; and a base that can cure it keeps its sick.
+  {
+    const { st, o, a } = setup(seed + 2);
+    a.worm.day = WORM.BRAIN_FROM - 1;
+    check(wormHoursLeft(st, a.worm) === 0, "on the last gut day there is no time left");
+    wormCureRuns(st);
+    check(!st.parties.some((x) => x.routeKind === "supply"), "nothing is sent");
+    a.worm.day = 1;
+    o.stock.meds = 6;
+    wormCureRuns(st);
+    check(!st.parties.some((x) => x.routeKind === "supply"), "an outpost with meds and someone to purge keeps its sick");
+  }
+  // 4. A boiler queued at an outpost drinking un-purified water is built first, by one of its few hands.
+  {
+    const { st, o, a, b } = setup(seed + 3, { outpostFood: 60 });
+    a.worm = null;
+    o.stock.rawwater = 40; o.stock.water = 0; o.stock.food = 60;
+    o.construction = [{ id: 99101, type: "walls", progress: 0, hours: 12 }, { id: 99102, type: "boiler", progress: 0, hours: 10 }];
+    check(!baseWater(st, o).safe, "the outpost drinks un-purified water");
+    governRoles(st, o);
+    check(o.construction[0].type === "boiler", "the boiler goes to the front of the queue");
+    check([a, b].some((x) => x.role === "build"), `someone builds it (${[a, b].map((x) => x.role).join(", ")})`);
+    for (let i = 0; i < 48 && !count(o, "boiler"); i++) tickHour(st);
+    check(count(o, "boiler") === 1, "the boiler is built within two days");
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);

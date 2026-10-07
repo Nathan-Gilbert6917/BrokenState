@@ -38,11 +38,11 @@ import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
-import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed } from "./medical.js";
+import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
-import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun } from "./supply.js";
+import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
@@ -85,7 +85,7 @@ import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
-import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers } from "./worm.js";
+import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -291,6 +291,7 @@ export function autopilotDaily(state) {
   tidySupplyJobs(state);
   planCampaign(state); // the war on the hives: today's target (its ammo want feeds needs, trades and the stations)
   emergencyTrips(state); // water under a day, food under two: a haul goes out whatever the style's team limit
+  wormCureRuns(state); // the worm where nothing can cure it: the sick walk to a base that can, or meds come to them
   planSupplyRuns(state);
   planTrip(state);
   campaignReport(state); // one line a morning: what the campaign waits for
@@ -1345,6 +1346,21 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   }
 
+  // 1c. The worm (worm.js): a water boiler queued at a base drinking un-purified water, or a cook fire at one eating
+  // food with eggs uncooked, goes to the front of the queue and gets a builder before the plots and the wild food
+  // (while there are two days of food): ten work-hours, and every day without it is a chance of the worm for everyone
+  // here. (Huge-map census at 7353bc3, seed 5041: 27 of 33 boilers the autopilot queued were never built, paid for and
+  // waiting at two- and three-person outposts whose every hand went to the plots and the wild food; their people
+  // caught the worm from the water and the greens and died of it.)
+  if (areas.building && base.construction.length && foodDays >= 2) {
+    const i = base.construction.findIndex((c) => wormJob(state, base, c.type));
+    if (i >= 0) {
+      if (i > 0) base.construction.unshift(base.construction.splice(i, 1)[0]); // builders work on the first job (buildings.js constructionHour)
+      const c = ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed)[0];
+      if (c) give(c, "build");
+    }
+  }
+
   // 2. Farming (farming.js): crops take days to ripen, and more and better farmers per plot give a bigger
   // harvest. Enough farmers for the plots in use (the "ideal" crew when food is short).
   let farmers = people.filter((s) => byPriority(s) && s.role === "farm").length; // farmers by priorities count too (farmShort)
@@ -1778,6 +1794,13 @@ function wormWishes(state, base, queued) {
   if (!baseCooks(base) && !queued("cookhouse") && (wormMeatAt(base) > 0 || base.rawWarned || (working && landBad))) out.push({ type: "cookhouse", why: "game from infected land has to be cooked through (the worm)", save: true });
   else if (!baseCooks(base) && !queued("cookhouse") && (wormVegAt(base).all > 0 || base.rawVegWarned || (growing && cropBad))) out.push({ type: "cookhouse", why: "crops and forage from infected ground have to be boiled (the worm)", save: true });
   return out;
+}
+// A queued job that keeps the worm out (planRoles 1c): the water boiler while the base drinks un-purified water, a
+// cook fire while it eats game, crops or forage with eggs uncooked.
+function wormJob(state, base, type) {
+  if (type === "boiler") return !count(base, "boiler") && !baseWater(state, base).safe;
+  if (type === "cookhouse") return !baseCooks(base) && (wormMeatAt(base) > 0 || wormVegAt(base).all > 0 || !!base.rawWarned || !!base.rawVegWarned);
+  return false;
 }
 // The water carries the worm's eggs and nothing boils it today (no boiler, a cold one, or one the land cannot feed):
 // a queued water filter is crafted before anything else.
@@ -3764,6 +3787,74 @@ function planWaterRun(state) {
   res.party.haulCap = poolAtBand(crew, 2); // Heavy at most: the way home is not a crawl
   say(state, `Water run: ${names(crew)} go to the ${tileLabel(state, shore)} shore to fill every container (about ${Math.round(est.total)}h there and back): ${h.name}'s water is running short.`);
 }
+// ---------- the worm: the sick to a cure (worm.js) ----------
+// Someone with the worm spotted in its gut stage at a base that cannot cure it (no dewormer there, and not the meds
+// and someone to purge it) dies of it within days: the night's care can do nothing, and from day BRAIN_FROM only
+// surgery in a Clinic saves them. Each morning they walk to the nearest base that can cure it (a dewormer there, or
+// meds and someone to purge) on a one-way supply run (supply.js atDest "disband"), when they get there before the
+// last night of the gut stage; failing that, the hub sends meds for two purges to a base with someone to give them.
+// (Huge-map census at 7353bc3, seed 5041: the worm's dead were two- and three-person outposts' people, spotted on day
+// 1 and never moved, a day's walk from a hub with dewormers in the armory.)
+const WORM_CURE_MARGIN = 3; // hours of slack on the way
+export const wormCureAt = (state, base) => baseDewormers(state, base) > 0 || ((base.stock.meds || 0) >= WORM.PURGE_MEDS && treaters(state, base).length > 0);
+// Hours from now until the last night the gut stage can still be cured (the night's care comes after the day's step
+// of the course, worm.js wormDaily): the midnight their course reaches day BRAIN_FROM − 1. 0: too late.
+export function wormHoursLeft(state, w) {
+  const nights = WORM.BRAIN_FROM - 1 - w.day;
+  return nights >= 1 ? 24 - (state.hour % 24) + (nights - 1) * 24 : 0;
+}
+// The sick waiting on a run already set up for them (a walk, or meds on the way to their base).
+const wormRunFor = (state, pred) => supplyRuns(state).some((j) => j.apWorm && pred(j) && (jobParty(state, j) || j.status === "waiting"));
+export function wormCureRuns(state) {
+  const h = hub(state);
+  for (const base of [...state.bases]) {
+    if (wormCureAt(state, base)) continue;
+    const sick = residents(state, base.id).filter((s) => { const w = wormOf(s); return w && w.seen != null && !w.locked && w.stage === "gut" && wormHoursLeft(state, w) > WORM_CURE_MARGIN; });
+    if (!sick.length) continue;
+    const near = state.bases.filter((b) => b !== base && wormCureAt(state, b)).sort((a, b) => state.grid.distance(a.tile, base.tile) - state.grid.distance(b.tile, base.tile)).slice(0, 4);
+    const waiting = [];
+    for (const s of sick) {
+      if (wormRunFor(state, (j) => j.crewIds.includes(s.id))) continue;
+      const left = wormHoursLeft(state, wormOf(s)) - WORM_CURE_MARGIN;
+      let best = null;
+      for (const b of near) {
+        const plan = planSupplyRun(state, { originId: base.id, destId: b.id, crewIds: [s.id], deliver: {}, atDest: "disband", stance: "normal" });
+        if (!plan.error && plan.hoursOut <= left && roadFed(base, plan) && (!best || plan.hoursOut < best.plan.hoursOut)) best = { b, plan };
+      }
+      if (best && wormRun(state, { originId: base.id, destId: best.b.id, crew: [s.id], deliver: [], atDest: "disband" },
+        `${first(s)} walks from ${base.name} to ${best.b.name} for the worm (day ${wormOf(s).day}: ${baseDewormers(state, best.b) ? "a dewormer there" : "a purge there"}, about ${Math.ceil(best.plan.hoursOut)}h; nothing here can cure it)`)) continue;
+      waiting.push(s);
+    }
+    // Meds from the hub for the ones who cannot go: two purges each, to a base with someone to give them.
+    if (!waiting.length || !h || h === base || !treaters(state, base).length || wormRunFor(state, (j) => j.destId === base.id)) continue;
+    const meds = Math.min(WORM.PURGE_MEDS * 2 * waiting.length, Math.floor((h.stock.meds || 0) - 2));
+    if (meds < WORM.PURGE_MEDS) continue;
+    const home = atBase(state, h.id);
+    if (home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac)) < 1) continue; // like the other runs: the style's share stays home
+    const runner = home.filter((x) => x.health >= 70 && !x.leader && !x.inBed && !x.woundInfected && !x.worm).sort((a, b) => combatPower(b) - combatPower(a))[0];
+    if (!runner) continue;
+    const left = Math.min(...waiting.map((s) => wormHoursLeft(state, wormOf(s)))) - WORM_CURE_MARGIN;
+    const plan = planSupplyRun(state, { originId: h.id, destId: base.id, crewIds: [runner.id], deliver: { meds }, atDest: "return", stance: "normal" });
+    if (plan.error || plan.hoursOut > left || !roadFed(h, plan)) continue;
+    wormRun(state, { originId: h.id, destId: base.id, crew: [runner.id], deliver: [{ key: "meds", qty: meds }], atDest: "return" },
+      `${meds} meds to ${base.name} for the worm (${names(waiting)}: nothing there can cure it, and the walk is too far or cannot be made)`);
+  }
+}
+// The food and water for the way out are there (supply.js dispatchSupplyRun would refuse the run).
+const roadFed = (base, plan) => (base.stock.food || 0) >= plan.need && waterIn(base.stock) >= plan.needWater;
+// Sets up and sends a one-off run for the worm; true when it left.
+function wormRun(state, form, why) {
+  const res = saveSupplyRun(state, { jobId: null, vehicleId: null, pickup: [], schedule: "once", every: 5, stance: "normal", allowPartial: false, ...form });
+  if (res.error) return false;
+  res.job.apMade = true;
+  res.job.apWorm = true;
+  dispatchSupplyRun(state, res.job, false);
+  if (!res.job.partyId) { deleteSupplyRun(state, res.job); return false; }
+  gov(state).stats.supplyRuns++;
+  say(state, `Supply run: ${why}.`);
+  return true;
+}
+
 function planSupplyRuns(state) {
   planWaterRun(state);
   const h = hub(state);
