@@ -76,6 +76,9 @@ function legendTopic() {
   return `What the things drawn on the map mean. <table class="helptable">${LEGEND.map(([sw, name, text]) => `<tr><td>${sw}</td><td><b>${esc(name)}</b></td><td>${text}</td></tr>`).join("")}</table>`;
 }
 
+// "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
+const WHY_HELP = `When someone dies or a base is lost, a <b>Why?</b> link sits on its line in the log and the diary, on the memorial wall, on the survivor screen of the dead and on the lost-base card. It opens a short chain of causes written down at the moment it happened: the immediate cause, then up to four things that led to it, drawn from the base, the team and the diary (a well that broke and the scrap that was missing to fix it, a trip that ran overdue, the walls and who was on guard, when a group turned hostile and why). Click a day to open the diary there, or a name or a place to go to it. Deaths from before this was added are pieced together from the diary.`;
+
 // The topics in order: the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
   const out = [];
@@ -95,9 +98,11 @@ export function helpTopics() {
     add(title, m && (m[2] || m[3]) ? chunk.slice(m[0].length).replace(/^[a-z]/, (c) => c.toUpperCase()) : chunk);
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
+    if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP);
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
+  if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
   return out;
 }
 

@@ -54,6 +54,7 @@ import { playerTile } from "./sim/hardcore-start.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
+import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
@@ -900,7 +901,7 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
@@ -1529,6 +1530,7 @@ function closeTopLayer() {
     return true;
   }
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
+  if (ui.why) { ui.why = null; return true; } // ui/causes.js: the "Why?" panel
   if (!ui.started) {
     if (ui.lookEdit == null) return false;
     ui.lookEdit = null;
