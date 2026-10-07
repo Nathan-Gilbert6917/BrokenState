@@ -62,6 +62,7 @@ import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
+import { MAX_SPEED, speedForKey, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden) ironHidden(state, ui); });
@@ -75,7 +76,7 @@ import {
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
-const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
+// MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
 const SLOW_REFRESH_MS = 250;    // above MAX_SPEED the panels are redrawn about 4 times a second, not every tick
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -106,6 +107,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 }
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
+initPacing(options, saveOptions); // Options → Pause for… (ui/pacing.js)
 ui.scale = options.uiScale;
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
@@ -156,7 +158,8 @@ let lastRefresh = 0;
 const paused = () => ui.started && ui.speed === 0;
 function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
-  const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
+  // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
+  const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
     !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
 }
@@ -182,10 +185,14 @@ function step(now) {
   last = now;
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
+  pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
   if (!blocked() && ui.speed > 0 && !ui.moveParty) {
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
+      if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
+      if (blocked()) { acc = 0; break; }       // a default answer that opened a battle
       tickHour(state);
+      afterHour(state, ui); // the pause rules: new cards, deaths, first contacts, groups turning hostile
       acc -= 1;
       ticks++;
       dirty = true;
@@ -344,6 +351,7 @@ function refresh(user = true) {
   noteNames(state);
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
+  afterRefresh(state, ui); // ui/pacing.js: a new red alert slows the clock to 1×, a horde near a base stops it
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
@@ -422,12 +430,12 @@ function renderCombat(user) {
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
-  let html = "";
+  let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
     const waiting = armedList(state, ui);
     const n = waiting.length;
     // One short line; the rest is a hover description and Help → Time ("?").
-    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b> <b>Space</b> to run` +
+    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} <b>Space</b> to run` +
       `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
@@ -907,6 +915,8 @@ for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) a
 for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the card tray, Options → Pause for… (ui/pacing.js)
+actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
@@ -1536,7 +1546,8 @@ function closeTopLayer() {
   }
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
-  if (!state.autopilot && (state.cards.length || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
+  if (trayEsc(state, ui)) return true; // a card opened from the tray goes back to it (ui/pacing.js)
+  if (!state.autopilot && (cardUp(state, ui) || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }
   if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)
@@ -1611,8 +1622,8 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
-  } else if (["Digit1", "Digit2", "Digit3", "Digit4"].includes(e.code)) {
-    ui.speed = [0.5, 1, 2, 3][Number(e.code.slice(5)) - 1];
+  } else if (speedForKey(e.code) != null) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS)
+    ui.speed = speedForKey(e.code);
     ui.lastSpeed = ui.speed;
   } else if (e.code === "KeyH") centerOn(state, playerTile(state));
   else if (e.code === "Backquote") ui.dev = !ui.dev;

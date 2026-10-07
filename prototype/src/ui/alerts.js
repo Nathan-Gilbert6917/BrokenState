@@ -27,6 +27,7 @@ import { roadAlerts } from "./hardcore.js";
 import { baseFoodHint, landFoodHint } from "../sim/foraging.js";
 import { woodShortfall } from "../sim/woodcutting.js";
 import { carried } from "../sim/parties.js";
+import { pileCount } from "./pacing.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -241,7 +242,8 @@ const SECTIONS = {
     out.push(...visitorAlerts(state));
   },
   cards(state, out) {
-    if (state.cards.length > 1) out.push({ key: `cards:${state.cards.length}`, kind: "cards", icon: "🃏", tone: "info", text: `${state.cards.length} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
+    const n = pileCount(state); // cards that stop the clock (the tray shows the rest: ui/pacing.js)
+    if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
 const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "horde", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "caravan", "built"];
