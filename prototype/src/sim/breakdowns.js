@@ -70,6 +70,7 @@ export const FIXTURES = {
   floodlights: { raidOnly: true, outer: true, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "dark walls: no floodlight bonus" },
   watchtower:  { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no lookout post: 2 tiles less vision and later warnings" },
   bunkhouse:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "6 fewer beds" },
+  barracks:    { raidOnly: true, repair: { hours: 12, cost: { scrap: 14 }, min: 0 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "12 fewer beds" },
   cistern:     { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a holed tank: 150 less water room" },
   cellar:      { raidOnly: true, repair: { hours: 6, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a caved-in cellar: 200 less food room" },
   coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" },

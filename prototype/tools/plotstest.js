@@ -1,11 +1,14 @@
-// Headless checks for construction plots, water barrels, storage crates and demolishing (buildings.js PLOTS,
-// WATER_BARREL; economy.js waterCapacity / rawRoom / waterLayout; storage.js storeSpaces).
+// Headless checks for construction plots, water barrels, storage crates, demolishing and housing (buildings.js PLOTS,
+// WATER_BARREL, BEDS and the barracks; economy.js waterCapacity / rawRoom / waterLayout; storage.js storeSpaces;
+// autopilot.js housingAI: barracks when plots are short, expansions, a cramped hub sending people to outposts).
 // Usage: node tools/plotstest.js [seed]
 import { createWorld, hub, newId, makeSurvivor } from "../src/sim/world.js";
 import {
   BUILDINGS, PLOTS, addBuilding, canBuild, queueBuild, cancelBuild, constructionHour, plotCap, plotsUsed, plotsFree,
   barrels, barrelCap, barrelTier, barrelRoom, queueBarrelUpgrade, canUpgradeBarrel, setBarrelHolds, demolish, demolishRefund, SHELTER,
+  BEDS, BARRACKS_UP, baseBeds, queuedBeds, count, canExpandBunkhouse, queueBunkhouseExpand, canDemolish, jobName,
 } from "../src/sim/buildings.js";
+import { housingAI } from "../src/sim/autopilot.js";
 import { waterCapacity, tankCapacity, rawRoom, waterLayout, basesDaily } from "../src/sim/economy.js";
 import { storeCapacity } from "../src/sim/storage.js";
 import { RAW } from "../src/sim/water.js";
@@ -189,6 +192,91 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(o.buildings.length === PLOTS.outpost.building + 2, "the buildings stay");
   check(canBuild(st, o, "cellar").noPlot, "nothing new on the building plots until some come down");
   check(JSON.parse(JSON.stringify(o)).buildings.length === o.buildings.length, "barrels and plots are plain data (save)");
+}
+
+// 8. The barracks (buildings.js BEDS, BARRACKS_UP): 12 beds on one building plot, built new or expanded from a
+// standing bunkhouse where it stands.
+{
+  console.log("Barracks");
+  const st = W();
+  const h = hub(st);
+  bare(h); rich(h); skilled(st, h);
+  check(BUILDINGS.barracks.plot === "building" && BEDS.barracks === 2 * BEDS.bunkhouse && BEDS.bunkhouse === 6, `a barracks sleeps ${BEDS.barracks} on a building plot (a bunkhouse ${BEDS.bunkhouse})`);
+  check(baseBeds(h) === 4, `a bare hub has 4 beds (${baseBeds(h)})`);
+  const bx = addBuilding(h, "barracks");
+  check(baseBeds(h) === 16, `a barracks adds 12 beds (${baseBeds(h)})`);
+  bx.broken = true;
+  check(baseBeds(h) === 4, "a broken barracks sleeps nobody");
+  bare(h);
+  check(!!queueBuild(st, h, "barracks") && queuedBeds(h) === 12 && plotsUsed(h, "building") === 1, `a queued barracks holds a plot and 12 beds to come (${queuedBeds(h)})`);
+  finishAll(st, h);
+  check(count(h, "barracks") === 1 && baseBeds(h) === 16 && queuedBeds(h) === 0, "built, it has its 12 beds");
+  // A shelter has no building plots.
+  const st2 = W();
+  const h2 = hub(st2); h2.tier = 0; bare(h2); rich(h2);
+  check(!canBuild(st2, h2, "barracks").ok, "no barracks at a shelter");
+
+  console.log("Expanding a bunkhouse into a barracks");
+  bare(h);
+  const fill = ["bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "cellar", "cellar", "storehouse", "common_room", "common_room", "chapel", "garage", "cells", "cells", "infirmary"];
+  for (const t of fill) addBuilding(h, t);
+  const bunks = h.buildings.filter((x) => x.type === "bunkhouse");
+  const beds0 = baseBeds(h);
+  check(canBuild(st, h, "barracks").noPlot, "no plot for a new barracks");
+  check(canExpandBunkhouse(st, h, bunks[0].id).ok, "a standing bunkhouse can be expanded with every plot taken");
+  const sc = h.stock.scrap, pa = h.stock.parts;
+  queueBunkhouseExpand(st, h, bunks[0].id);
+  check(h.stock.scrap === sc - BARRACKS_UP.cost.scrap && h.stock.parts === pa - BARRACKS_UP.cost.parts, `it costs ${BARRACKS_UP.cost.scrap} scrap and ${BARRACKS_UP.cost.parts} parts`);
+  check(plotsUsed(h, "building") === PLOTS.hub.building && queuedBeds(h) === 6 && baseBeds(h) === beds0, `no new plot, 6 beds to come, the 6 in use meanwhile (${queuedBeds(h)}, ${baseBeds(h)})`);
+  check(jobName(h.construction[0]) === "Expand a bunkhouse into a barracks", `the queue names it (${jobName(h.construction[0])})`);
+  check(!canExpandBunkhouse(st, h, bunks[0].id).ok && !canDemolish(st, h, bunks[0].id).ok, "not expanded twice, not pulled down while it is");
+  const sc1 = h.stock.scrap;
+  cancelBuild(st, h, h.construction[0].id);
+  check(h.stock.scrap === sc1 + BARRACKS_UP.cost.scrap && !h.construction.length, "cancelled untouched: everything back");
+  queueBunkhouseExpand(st, h, bunks[0].id);
+  finishAll(st, h);
+  check(bunks[0].type === "barracks" && baseBeds(h) === beds0 + 6 && plotsUsed(h, "building") === PLOTS.hub.building, `done: the bunkhouse is a barracks on its own plot (${baseBeds(h)} beds)`);
+  // The max counts expansions in the queue too.
+  for (const b of bunks.slice(1, 4)) queueBunkhouseExpand(st, h, b.id);
+  check(h.construction.length === 3 && !canExpandBunkhouse(st, h, bunks[4].id).ok && /Limit/.test(canExpandBunkhouse(st, h, bunks[4].id).reason), `at most ${BUILDINGS.barracks.max} barracks, queued expansions counted`);
+  check(/Limit/.test(canBuild(st, h, "barracks").reason), "a new barracks is refused at the limit too");
+  bunks[5].broken = true;
+  h.construction = [];
+  check(/Repair/.test(canExpandBunkhouse(st, h, bunks[5].id).reason), "a broken bunkhouse is repaired first");
+
+  console.log("The autopilot's housing plan");
+  const st3 = W();
+  const h3 = hub(st3);
+  bare(h3); rich(h3); skilled(st3, h3);
+  check(housingAI.next(st3, h3).type === "bunkhouse", "plenty of building plots: a bunkhouse");
+  for (const t of fill.slice(6, 6 + 12)) addBuilding(h3, t); // 10 plots taken, 6 free
+  addBuilding(h3, "bunkhouse"); addBuilding(h3, "bunkhouse"); addBuilding(h3, "bunkhouse"); // 13 taken, 3 free: scarce
+  const nx = housingAI.next(st3, h3);
+  check(nx.type === "barracks" && nx.upgrade == null && nx.beds === 12, `building plots scarce: a barracks (${nx.type}, ${nx.beds})`);
+  h3.stock.parts = 0;
+  check(housingAI.next(st3, h3).type === "bunkhouse", "no parts for a barracks: a bunkhouse on a free plot");
+  h3.stock.parts = 50;
+  addBuilding(h3, "garage"); addBuilding(h3, "chapel"); addBuilding(h3, "cells"); // every plot taken
+  const ex = housingAI.next(st3, h3);
+  check(ex && ex.upgrade != null && h3.buildings.find((x) => x.id === ex.upgrade).type === "bunkhouse" && ex.beds === 6, "no plot free: expand a bunkhouse (+6)");
+  const ws = housingAI.wishes(st3, h3);
+  const hw = (() => { while (st3.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === h3.id).length < baseBeds(h3) + 2) skilled(st3, h3); return housingAI.wishes(st3, h3).find((w) => w.type === "barracks"); })();
+  check(!ws.some((w) => w.type === "bunkhouse") && hw && hw.upgrade != null, `crowded with every plot taken, the governor wishes for an expansion (${hw && hw.why})`);
+  check(!housingAI.cramped(st3), "not cramped while bunkhouses can still be expanded");
+  for (const b of h3.buildings.filter((x) => x.type === "bunkhouse")) b.type = "barracks";
+  addBuilding(h3, "barracks"); // the max reached, every plot taken
+  while (st3.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === h3.id).length < baseBeds(h3)) skilled(st3, h3);
+  check(housingAI.next(st3, h3) === null && housingAI.cramped(st3), `nothing more fits and the beds are full: the hub is cramped (${baseBeds(h3)} beds)`);
+  const o3 = mkOutpost(st3, h3.tile);
+  rich(o3); Object.assign(o3.stock, { water: 300 }); h3.stock.food = 2000; // the hub feeds 10 days a head and more
+  addBuilding(o3, "bunkhouse"); addBuilding(o3, "well"); addBuilding(o3, "well"); addBuilding(o3, "cistern");
+  check(housingAI.bedsFree(st3, o3) === 8, `an empty outpost with a bunkhouse has 8 beds free (${housingAI.bedsFree(st3, o3)})`);
+  const mv = housingAI.movers(st3, o3);
+  check(mv >= 1 && mv <= 3, `a cramped hub sends people to an outpost with beds, food and water (${mv})`);
+  while (st3.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === o3.id).length < baseBeds(o3)) skilled(st3, o3);
+  check(housingAI.movers(st3, o3) === 0, "nobody to a full outpost");
+  const ow = housingAI.wishes(st3, o3);
+  check(ow.some((w) => BEDS[w.type]), `the outpost of a cramped hub builds beds ahead (${ow.map((w) => w.type).join(", ")})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
