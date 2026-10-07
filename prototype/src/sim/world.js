@@ -28,16 +28,19 @@ import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
+import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { watchHour, watchDayRoles } from "./watch.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
 import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
+import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
@@ -46,15 +49,20 @@ import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
+import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
 import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { countWord } from "./hardcore-start.js";
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
+import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
+import { familyDaily } from "./family.js"; // children and generations
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -81,7 +89,9 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null }) {
+// startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
+// kept as state.startPeople. A normal start is a full hub of six and ignores it.
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -103,11 +113,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   };
 
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew, crewRoll });
+    hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
     updateVision(state);
-    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
+    log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
     return state;
   }
@@ -132,7 +142,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
+    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -354,7 +364,8 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.station = null;
   s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
-  onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
+  const entry = onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
+  noteDeath(state, s, tileId, cause, entry); // causes.js: why it happened, on the memorial entry
   // Died on the tile of one of your bases (hunger, an infected wound, a scavenging accident, a raid or horde at
   // the walls, a convoy starving while it holds there): their things go to that base's armory. No death site
   // inside the walls: no team could be sent to recover it, and passers-by cannot loot it. The one exception is
@@ -489,6 +500,7 @@ function coalitionWins(state) {
 export function removeBase(state, base, cause = "was lost") {
   const i = state.bases.indexOf(base);
   if (i < 0 || base.type === "hub") return false;
+  noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
   const h = hub(state);
   const fled = [];
   for (const s of state.survivors) {
@@ -633,6 +645,7 @@ export function tickHour(state) {
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
+    watchDayRoles(state); // watch.js: Manual people on watch likewise
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
@@ -651,12 +664,14 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
+    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
   }
@@ -665,9 +680,14 @@ export function tickHour(state) {
   checkGameOver(state);
   updateVision(state);
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
+  hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
+  festivalHour(state); // festival.js: the morning of the harvest festival
+  crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
+  historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
 }

@@ -25,6 +25,7 @@ import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.j
 import { radioDiploBlock } from "./diplomacy.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
+import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -119,7 +120,6 @@ export function tradeWindow(state, ui) {
   const total = tot.offer + tot.ask;
   const pct = total > 0 ? Math.round((tot.offer / total) * 100) : 50;
   const held = ctx.kind === "visit" ? captivesOf(state, f.id) : [];
-  const confirm = c && ui.attackConfirm === c.id;
   return `<div class="box wide tradebox"><h1><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</h1>
     <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)} · your best Speech ${speech}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""}</div>
     <div class="small muted">${where}</div>
@@ -146,9 +146,7 @@ export function tradeWindow(state, ui) {
       <button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>
       ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
       <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Trade pact</button>
-      ${c ? (confirm
-        ? `<span class="danger small">Attack the caravan? ${esc(f.name)} will be your enemies and send raids.</span><button class="danger" data-action="tw-attack-yes" data-id="${c.id}"${tip("A battle at your base against its guards; win and its goods are yours")}>Yes, attack</button><button data-action="tw-attack-no">No</button>`
-        : `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you.`)}>Attack the caravan…</button>`) : ""}`}
+      ${c ? `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you. Asks first.`)}>Attack the caravan…</button>` : ""}`}
       <button data-action="tradeleave" style="margin-left:auto"${tip(c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${c ? "Close" : "Leave"}</button>
     </div></div>`;
 }
@@ -321,9 +319,16 @@ export const TRADE_ACTIONS = {
   gift: (state, ui) => { ui.tradeMsg = giftAll(state); },
   pact: (state, ui, d) => { const f = state.trade && factionById(state, state.trade.factionId); if (f) ui.tradeMsg = proposePact(state, f, d.k); },
   tradeleave: (state, ui) => { endTrade(state); ui.tradeMsg = ""; ui.attackConfirm = null; },
-  "tw-attack": (state, ui, d) => { ui.attackConfirm = Number(d.id); },
+  // Attack the caravan: asks first (ui/confirm.js), then a battle at your base against its guards.
+  "tw-attack": (state, ui, d) => {
+    const c = caravanById(state, d.id), f = c ? factionById(state, c.owner) : null;
+    if (!c || ask(ui, d, "tw-attack", { kind: "rob", title: `Attack ${f ? `${f.name}'s` : "the"} caravan?`, text: `A battle at your base against its ${f ? caravanGuards(f, c) : ""} guards; win and its goods are yours. ${f ? f.name : "Their group"} turn hostile for good and send raids, and other groups think less of you.`, yes: "Attack" })) return;
+    ui.attackConfirm = null; ui.tradeMsg = "";
+    const msg = attackCaravan(state, c);
+    if (msg) ui.tradeMsg = msg;
+  },
   "tw-attack-no": (state, ui) => { ui.attackConfirm = null; },
-  "tw-attack-yes": (state, ui, d) => { const c = caravanById(state, d.id); ui.attackConfirm = null; ui.tradeMsg = ""; if (c) { const msg = attackCaravan(state, c); if (msg) ui.tradeMsg = msg; } },
+  "tw-attack-yes": (state, ui, d) => TRADE_ACTIONS["tw-attack"](state, ui, { ...d, ok: "1" }), // the old inline Yes (asked already)
   "cv-trade": (state, ui, d) => { const c = caravanById(state, d.id); if (c && !openCaravanTrade(state, c)) ui.tradeMsg = ""; ui.baseView = null; },
   // Radio panel.
   radiotalk: (state, ui, d) => { TRADE_ACTIONS["rd-open"](state, ui, d); },

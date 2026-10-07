@@ -1,4 +1,5 @@
 // Canvas renderer for the State Map. Reads the simulation; never changes it.
+import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers } from "../sim/parties.js";
@@ -12,6 +13,8 @@ import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
+import { buildSiteLabel, isMarked } from "../sim/hivebirth.js"; // a build site's days to a hive, a marked gathering
+import { festivalNow } from "../sim/festival.js"; // the hub's harvest festival: extra fires
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
 import { rumoursOf, surveyTip } from "../sim/survey.js";
 import { hasKey } from "../sim/locks.js";
@@ -31,6 +34,7 @@ import {
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
+import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -175,6 +179,11 @@ const sprite = (cv, x, y, w, o) => drawMapSprite(ctx, cv, x, y, w, o, curS);
 // draws only when something changes (IDLE_MS). anim.on (Settings, Map animations) turns it all off.
 export const anim = { on: true };
 export const setMapAnim = (v) => { anim.on = !!v; forceDraw = true; };
+// Readability (Menu → Options → Display, ui/display.js): text drawn on the map (names, badges, crew tags) this many
+// times bigger; still: reduce motion (teams jump from tile to tile instead of gliding, nothing pulses).
+export const readable = { text: 1, still: false };
+export const setReadable = (o) => { Object.assign(readable, o); forceDraw = true; };
+const hourFrac = () => (readable.still ? 0 : view.hourFrac || 0);
 const SLOW_MS = 66;
 let animNeed = Infinity;   // this frame: the shortest frame gap an animation on screen wants
 let animNow = 0;           // this frame's clock (ms)
@@ -767,7 +776,7 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
     for (let a = 0; a < n; a++) {
       const id = list[a];
       if ((G.key[id] & 3) === 2 || !(G.inf[id] > 0)) continue;
-      const color = `rgba(220,40,40,${G.inf[id] * 0.55})`;
+      const color = `rgba(${PAL.infRgb},${G.inf[id] * 0.55})`;
       let l = byColor.get(color);
       if (!l) byColor.set(color, (l = []));
       l.push(id);
@@ -824,13 +833,13 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
   if (F.hordesOn && G.nHives) {
     ctx.beginPath();
     for (let a = 0; a < n; a++) { const id = list[a]; if (((G.key[id] >> 2) & 3) === 2) hexSub(X[id], Y[id], HEX - 0.5); }
-    ctx.fillStyle = "rgba(150,20,30,0.13)";
+    ctx.fillStyle = `rgba(${PAL.hiveRgb},0.13)`;
     ctx.fill();
     ctx.beginPath();
     for (let a = 0; a < n; a++) { const id = list[a]; if (((G.key[id] >> 2) & 3) <= 1) hexSub(X[id], Y[id], HEX - 0.5); }
-    ctx.fillStyle = "rgba(200,25,25,0.22)";
+    ctx.fillStyle = `rgba(${PAL.ringRgb},0.22)`;
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,70,60,0.35)";
+    ctx.strokeStyle = `rgba(${PAL.ringEdgeRgb},0.35)`;
     ctx.lineWidth = 1;
     ctx.stroke();
     if (F.ringSkulls) for (let a = 0; a < n; a++) {
@@ -952,13 +961,14 @@ function moverHash(state) {
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
   h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0) + (state.claims ? Object.keys(state.claims).length * 11 : 0)) % 2147483647; // claims (sim/claims.js) made or lost while paused
+  if (state.mapNotes) h = (h * 31 + notesHash(state)) % 2147483647; // map notes added or edited while paused (ui/mapnotes.js)
   return h;
 }
 function unchanged(state, now) {
   let layers = "";
   for (const k of view.layers) layers += k + ",";
   const live = liveSet(state), hash = moverHash(state), plen = view.preview ? view.preview.length : -1;
-  const fk = last.glide ? Math.floor((view.hourFrac || 0) * GLIDE_STEPS) : 0;
+  const fk = last.glide ? Math.floor(hourFrac() * GLIDE_STEPS) : 0;
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
     last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
@@ -1124,7 +1134,7 @@ export function render(state) {
     labels.push({ text: ruinTitle(state.tiles[id].ruin), x: G.x[id], y: G.y[id] + 7 * s + 4.5 * s + 6, pri: 1, screen: true, color: RUIN_LABEL, size: 9 });
   }
   // Hives you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 420);
+  const pulse = readable.still ? 0.5 : 0.5 + 0.5 * Math.sin(Date.now() / 420);
   for (let a = 0; on("hordes") && a < G.nHives; a++) {
     const id = G.hives[a];
     if (!inView(id)) continue;
@@ -1136,7 +1146,7 @@ export function render(state) {
       animating = true;
       ctx.beginPath();
       ctx.ellipse(px, py + 5 * s, w * 0.55, w * 0.22, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,50,35,${(0.1 + 0.16 * pulse * (1 + level * 0.4)).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${PAL.ringEdgeRgb},${(0.1 + 0.16 * pulse * (1 + level * 0.4)).toFixed(3)})`;
       ctx.fill();
     }
     sprite(hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
@@ -1162,7 +1172,10 @@ export function render(state) {
     const st = isLive ? siteAt.get(id) : k[id] && k[id].site;
     if (!st) continue;
     const px = G.x[id], py = G.y[id];
-    const s = zoomBoost(), w = 26 * s, started = st.started != null && st.started !== false;
+    // sim/hivebirth.js: the mound grows with the dead massed there (as you know it), a red ring when you marked it.
+    const massed = isLive ? (hordeAt.get(id) || { size: 0 }).size : (k[id].hordeSize || 0);
+    const s = zoomBoost(), w = 26 * s * (0.85 + 0.55 * Math.min(1, massed / 600)), started = st.started != null && st.started !== false;
+    if (isMarked(state, id)) { ctx.strokeStyle = "rgba(226,65,47,0.75)"; ctx.lineWidth = 1.5 * s; ctx.setLineDash([3 * s, 3 * s]); ctx.beginPath(); ctx.arc(px, py + 2 * s, w * 0.72, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     if (started && isLive && animOn()) { wantFrames(); const f = 0.5 + 0.5 * Math.sin(animNow / 520 + phaseOf(id) * 6); ctx.beginPath(); ctx.ellipse(px, py + 6 * s, w * 0.5, w * 0.2, 0, 0, Math.PI * 2); ctx.fillStyle = `rgba(226,65,47,${(0.08 + 0.14 * f).toFixed(3)})`; ctx.fill(); }
     sprite(siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
     const bw = 24 * s, bx = px - bw / 2, by = py + 11 * s, frac = Math.max(0, Math.min(1, (st.biomass || 0) / HIVE.SITE_BIOMASS));
@@ -1170,6 +1183,8 @@ export function render(state) {
     ctx.fillRect(bx - 1, by - 1, bw + 2, 4 * s + 2);
     ctx.fillStyle = started ? "#e2412f" : "#8a5a5a";
     ctx.fillRect(bx, by, bw * frac, 4 * s);
+    const eta = buildSiteLabel(state, id); // "Hive in ~12 days" (a "?" when the look is old)
+    if (eta) labels.push({ text: eta, x: px, y: by + 4 * s + 7, pri: 0, screen: true, color: isLive ? "#f08a7a" : "#c99a92", size: 9 });
   }
   // Your staging camp (sim/staging.js): tarps, crates and a barricade going up as the work goes on, on your plate, with
   // a bar of the work done (the lighter part: as far as the materials in its stores allow).
@@ -1211,6 +1226,7 @@ export function render(state) {
         if (look.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 12.5, 16); fireGlow(b.id * 3 + 2, fx, fy, s); }
       } else smokeWisps(b.id * 3 + 1, px - w * 0.16, cy - h / 2 + 3 * s, s, { n: 3, rise: 17, alpha: 0.28 });
     }
+    if (festivalNow(state, b)) for (let i = 0; i < 4; i++) fireGlow(b.id * 7 + 40 + i, px + (i - 1.5) * w * 0.24, cy + h / 2 - (i % 2 ? 1 : 3) * s, s); // sim/festival.js: bonfires on the festival day
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
     labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
@@ -1350,7 +1366,7 @@ export function render(state) {
     ctx.ellipse(x, y + h / 2 - 1.5 * s, w * 0.52, 4 * s, 0, 0, Math.PI * 2);
     ctx.fillStyle = stale ? "rgba(120,20,20,0.18)" : "rgba(120,20,20,0.42)";
     ctx.fill();
-    ctx.strokeStyle = stale ? "rgba(255,120,110,0.5)" : "#ff8a7f";
+    ctx.strokeStyle = stale ? "rgba(255,120,110,0.5)" : PAL.foe;
     ctx.setLineDash(stale ? [3, 3] : []);
     ctx.lineWidth = 1.5;
     ctx.stroke();
@@ -1455,6 +1471,8 @@ export function render(state) {
     const [px, py] = g.toPixel(pin.tile, HEX);
     pill(px, py - 24 * zoomBoost(), `${pin.icon} Job`, "#9a7410", zoomBoost());
   }
+  // The player's map notes (ui/mapnotes.js): a pin per note, its text when zoomed in.
+  if (state.mapNotes && !state.timelapse) drawMapNotes(ctx, state, { toPixel: (id) => [G.x[id], G.y[id]], zoom, boost: zoomBoost(), inView: (px, py) => !(px < minX || px > maxX || py < minY || py > maxY) });
   // Names (and danger skulls) last, so nothing drawn on the map covers them.
   drawLabels(labels, spriteBoxes);
   // Trip preview from the planner.
@@ -1600,7 +1618,7 @@ function ownerPlate(x, y, color, s, rx, besieged) {
   ctx.lineWidth = 2;
   ctx.stroke();
   if (!besieged) return;
-  const t = (Date.now() % 1200) / 1200;
+  const t = readable.still ? 0.35 : (Date.now() % 1200) / 1200;
   ctx.beginPath();
   ctx.ellipse(x, y + 9 * s, (rx + 2 + t * 8) * s, (8 + t * 5) * s, 0, 0, Math.PI * 2);
   ctx.strokeStyle = `rgba(255,90,79,${(1 - t).toFixed(2)})`;
@@ -1620,7 +1638,7 @@ function drawLabels(labels, avoid = []) {
   for (const l of labels) {
     let top = l.y - 5; // top edge of the skull row
     if (l.text) {
-      const size = l.screen && camera.zoom < 1 ? l.size / camera.zoom : l.size;
+      const size = (l.screen && camera.zoom < 1 ? l.size / camera.zoom : l.size) * readable.text;
       ctx.font = `${l.bold ? "bold " : ""}${size.toFixed(1)}px Segoe UI`;
       const w = ctx.measureText(l.text).width + size * 0.4, h = size * 1.2;
       const x0 = l.x - w / 2, y0 = l.y - h / 2;
@@ -1779,6 +1797,7 @@ function drawSurveys(state, minX, maxX, minY, maxY, labels) {
 }
 
 function pill(x, y, text, bg, s) {
+  s *= readable.text;
   ctx.font = `bold ${Math.round(9 * s)}px Segoe UI`;
   const h = 11 * s, w = Math.max(h, ctx.measureText(text).width + 6 * s);
   ctx.beginPath();
@@ -1798,7 +1817,7 @@ function heatBar(px, py, heat) {
   const s = zoomBoost(), w = 22 * s, h = Math.max(2, 3 * s), x = px - w / 2, y = py + 8 * s;
   ctx.fillStyle = "rgba(13,15,18,0.85)";
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
-  ctx.fillStyle = heat < 25 ? "#6cc48a" : heat < 50 ? "#e8d06a" : heat < 75 ? "#e0a84f" : "#e2685f";
+  ctx.fillStyle = heat < 25 ? PAL.good : heat < 50 ? "#e8d06a" : heat < 75 ? PAL.mid : PAL.bad;
   ctx.fillRect(x, y, (w * Math.min(100, heat)) / 100, h);
 }
 
@@ -1818,14 +1837,14 @@ function lightGlow(state, p, x, y) {
 }
 function drawPlayerParty(state, p) {
   const g = state.grid;
-  const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? "#9be39b" : "#7fd0ff";
+  const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";
   const look = partyLook(state, p);
-  const ring = p.kind === "convoy" ? look.color : PHASE_COLOR[p.phase] || "#7fd0ff";
+  const ring = p.kind === "convoy" ? look.color : p.phase === "task" ? PAL.task : PHASE_COLOR[p.phase] || "#7fd0ff";
   // Waiting or working on the spot (camp, repairs): you know where they are.
   if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
-    const gl = state.timelapse ? null : glideAt(state, p, view.hourFrac || 0);
+    const gl = state.timelapse ? null : glideAt(state, p, hourFrac());
     const glide = gl && gl.to !== gl.from && gl.t > 0 ? gl : null;
     const from = glide ? p.path.indexOf(glide.to, p.idx) : p.idx;
     let gx = px, gy = py;
@@ -1937,7 +1956,7 @@ function drawPlayerParty(state, p) {
   // Between this hour's estimate and the next one, along the planned way, by the minutes gone of the hour.
   const i0 = next != null && next !== est ? plan.indexOf(est) : -1, i1 = i0 >= 0 ? plan.indexOf(next) : -1;
   if (i0 >= 0 && i1 >= 0) {
-    const f = i0 + (i1 - i0) * Math.max(0, Math.min(1, view.hourFrac || 0)), a = Math.floor(f), b = Math.min(plan.length - 1, a + 1), k = f - a;
+    const f = i0 + (i1 - i0) * Math.max(0, Math.min(1, hourFrac())), a = Math.floor(f), b = Math.min(plan.length - 1, a + 1), k = f - a;
     if (f > 0 && f !== i0) {
       const [ax, ay] = g.toPixel(plan[a], HEX), [bx, by] = g.toPixel(plan[b], HEX);
       ex = ax + (bx - ax) * k;
@@ -1960,7 +1979,7 @@ function drawPlayerParty(state, p) {
 function crewTag(p, x, y) {
   if (!p.crewName) return;
   const s = zoomBoost();
-  const size = 10 * s;
+  const size = 10 * s * readable.text;
   ctx.save();
   ctx.font = `bold ${size.toFixed(1)}px Segoe UI`;
   ctx.textAlign = "center";
@@ -2014,6 +2033,8 @@ export function tileTooltip(state, id) {
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
   const sd = searchedDay(state, id);
   if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)
+  const nt = noteTip(state, id); // your map notes here (ui/mapnotes.js)
+  if (nt) lines.push(nt);
   return lines.join("<br>");
 }
 

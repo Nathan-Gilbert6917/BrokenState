@@ -1,4 +1,5 @@
-// Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. The topics are
+// Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. "Start here" comes
+// first (the game in plain words, with links to the deeper topics; the first-week guide, ui/guide.js, points at it). The rest are
 // the paragraphs of the game's help text (ui/ui.js helpText, one per bold title) plus the map's layers and legend,
 // which used to be spelled out in the Layers popup on the map. Small "?" buttons around the UI (data-action
 // "help-open" data-sec="<topic id>") open the menu at a topic. Windows and panels (folding, resizing, map only)
@@ -6,6 +7,19 @@
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
+import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
+import { FESTIVAL_HELP } from "../sim/festival.js";
+import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
+import { keyLabel } from "./keymap.js";
+import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
+import { soundHelp } from "./audio.js";
+import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
+import { familyHelp } from "./family.js"; // children and families (sim/family.js)
+import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
+import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
+import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
+import { pacingHelp } from "./pacing.js";
+import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -55,7 +69,7 @@ const LEGEND = [
   [`<i class="sw" style="background:#c8ccd2">☠</i>`, "Danger", "Skulls under a site's name, shown up close."],
   [`<i class="sw" style="background:#8f2a2a"></i>`, "Hordes", "A crowd of the dead, its size on the badge; a faded \"N?\" is where one was last seen. A grey brute with a concrete fist at its head is a Wallbreaker."],
   [`<i class="sw" style="background:#c0392b"></i>`, "Hives", "A red glowing mound. Its land is tinted dark red (sites there show at least 3 skulls); the ring around it is brighter, with red skulls: much tougher dead."],
-  [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000."],
+  [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000. It grows with the dead massed there; the line under it says how many days until the hive stands, as far as you know (a \"?\" when your last look is old). A dashed red ring: a gathering you marked."],
   [`<i class="sw" style="background:#4a3f36;box-shadow:inset 0 0 0 1.5px #a0603a"></i>`, "Ruins", "Charred wall stubs, a lone chimney and rubble on a smouldering rim: a base burned to the ground in a raid, named \"Ruins of …\" (a torn blue rag: it was yours). The tile panel shows who burned it, the salvage left, the danger and the 5 scrap a new outpost there needs; founding one replaces the ruins."],
   [swatch("known"), "Known area", "Teal hatching (Known area layer): ground your people searched, brighter for the last 30 days, with a thin teal line round it. Unhatched ground has not been looked over for hidden places."],
   [swatch("coalition"), "Coalition land", "A wash in each owner's color with a border where another owner's land begins (Coalition land layer), and a thin gold line round all of the coalition's land; the layer's line shows the share held against the 50% goal."],
@@ -76,7 +90,30 @@ function legendTopic() {
   return `What the things drawn on the map mean. <table class="helptable">${LEGEND.map(([sw, name, text]) => `<tr><td>${sw}</td><td><b>${esc(name)}</b></td><td>${text}</td></tr>`).join("")}</table>`;
 }
 
-// The topics in order: the game's help paragraphs, with the map layers and legend right after "Map".
+// The codex (ui/codex.js) and the search box (ui/cmdpalette.js).
+function codexHelp() {
+  const k = (id, d) => `<b>${esc(keyLabel(id) || d)}</b>`;
+  return `<b>Codex</b> (${k("win.codex", "C")}, or 📚 Codex in the top bar): every kind of the dead, every item, building, illness and injury, and the groups and outsiders you can meet, with the numbers from the game's own tables and a line on how to deal with each. An entry opens the first time your people meet the thing: a kind of the dead in a battle or in a horde you can see, an item once someone holds it or it is in a base's armory, a building once one is built or queued at one of your bases, an illness once someone has it (the worm once it has been spotted), a group once you know it. Until then it shows as <i>???</i> with its category. New entries are marked until you look at them; the search box at the top finds any opened entry by name.<br><br>
+    <b>Search</b> (${k("win.palette", "Ctrl+K")}): a box in the middle of the screen that finds anything by a few letters of its name: your people (opens their screen), bases and outposts (centers the map and opens the base), teams (their panel), the other groups (their radio panel, or the map at their base), sites and towns you know, the buildings you can build at the selected base (its Construction tab), the menu (save, load, options, controls), the diary, roster and codex, the Help topics and the codex entries you have opened. ↑ ↓ pick, Enter goes, Esc closes. With nothing typed it lists what you picked last.`;
+}
+
+// "Start here" (first in the list, and what Help opens on): the game in plain words, with links to the deeper topics.
+const see = (...ids) => ` <span class="muted">More:</span> ${ids.map(([id, t]) => `<a class="link" data-action="set-help" data-sec="${id}">${t}</a>`).join(", ")}.`;
+function startHereTopic() {
+  return `Broken State in a few lines. The <b>First-week guide</b> under the alerts on the right walks you through the first days (⚙ Menu → Game shows it again).<br><br>
+    <b>Your people.</b> A handful of survivors in the State of Calder, years after the dead rose (in Hardcore, on the day it falls, with no home yet). Keep them fed, watered, healthy and in good spirits: everything else follows from that.${see(["goal", "Goal"], ["hardcore-mode", "Hardcore mode"])}<br><br>
+    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"])}<br><br>
+    <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
+    <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
+    <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
+    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–5 set the speed (5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
+    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year 8. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
+}
+
+// "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
+const WHY_HELP = `When someone dies or a base is lost, a <b>Why?</b> link sits on its line in the log and the diary, on the memorial wall, on the survivor screen of the dead and on the lost-base card. It opens a short chain of causes written down at the moment it happened: the immediate cause, then up to four things that led to it, drawn from the base, the team and the diary (a well that broke and the scrap that was missing to fix it, a trip that ran overdue, the walls and who was on guard, when a group turned hostile and why). Click a day to open the diary there, or a name or a place to go to it. Deaths from before this was added are pieced together from the diary.`;
+
+// The topics in order: Start here, then the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
   const out = [];
   const seen = new Set();
@@ -86,6 +123,7 @@ export function helpTopics() {
     seen.add(id);
     out.push({ id, title, html });
   };
+  add("Start here", startHereTopic());
   for (const raw of helpText().split(/<br>\s*(?:<br>\s*)?/)) {
     const chunk = raw.trim();
     if (!chunk) continue;
@@ -95,9 +133,28 @@ export function helpTopics() {
     add(title, m && (m[2] || m[3]) ? chunk.slice(m[0].length).replace(/^[a-z]/, (c) => c.toUpperCase()) : chunk);
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
+    if (out[out.length - 1].id === "hives-and-hordes") add("Hives being born", HIVE_BIRTH_HELP); // sim/hivebirth.js
+    if (out[out.length - 1].id === "food-and-the-winter") add("The harvest festival", FESTIVAL_HELP); // sim/festival.js
+    if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
+    if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
+    if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
+    if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
+  if (!seen.has("templates-repeat-trip-and-undo")) add("Templates, Repeat trip and Undo", tripsHelp());
+  if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
+  add("Sound", soundHelp()); // ui/audio.js
+  if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
+  if (!seen.has("children-and-families")) add("Children and families", familyHelp());
+  if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
+  for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
+  if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
+  for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
+  if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
+  if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
+  add("Keys", keysSheet()); // ui/controls.js
+  add("Codex and search", codexHelp());
   return out;
 }
 

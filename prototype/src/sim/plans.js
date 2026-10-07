@@ -31,6 +31,7 @@ import { sweepEstimate, sweepOpts, SURVEY } from "./survey.js";
 import { huntHours } from "./orders.js";
 import {
   HUNT, MEAT_KG, huntTeam, expectHunt, fishKit, expectFish, snareLine, snareHours, expectSnare, packFishingGear, meatIn,
+  huntMixOf, huntArrowsFor, packHuntArrows,
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
@@ -57,7 +58,7 @@ export const STEP_KINDS = {
   water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: un-purified water for a dry base in summer (the base's boiler or filters purify it; on the way a filter, a lit camp fire or purification tablets make it safe to drink)." },
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
   move:     { label: "Move to a site", desc: "Travel on to another known site." },
-  hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
+  hunt:     { label: "Hunt", desc: "Hunt the land around the target for some hours (a rifle or a bow; firearms need ammo and their shots raise Heat and can draw the dead; bows need arrows, and the hub's go along). The hours follow the home base's hunting mix (traps, bows, guns: its Farming tab). Forest and hills are best, autumn the best season. Fresh game weighs twice what packed food does and spoils fast: the estimate counts the expected haul on the way home." },
   forage:   { label: "Forage", desc: "Gather wild food around the target for some hours (foraging.js): berries, nuts, mushrooms, greens, roots and apples. Anyone can; Farming and Scouting help. Forest is best, farmland good, towns little; summer and autumn plentiful, spring some, winter almost nothing. Quiet, but time on one spot builds Heat." },
   wood:     { label: "Cut wood", desc: "Cut firewood around the target for some hours (woodcutting.js): the winter's heating. Forest is best, hills fair, farmland and suburbs little, a city next to nothing. An axe (or a machete or sledgehammer) cuts much faster; daylight only. Firewood is heavy in bulk (0.1 kg a piece: three in a forest for 8 hours cut about 40 kg): a vehicle carries far more home. Loud: time on one spot builds Heat faster than most work." },
   fish:     { label: "Fish", desc: "Fish a river or lake shore for some hours with a fishing rod or net (the hub's goes along if nobody carries one). Quiet. Ice fishing in a freeze needs a crowbar, machete or axe and catches half." },
@@ -176,6 +177,10 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const home0 = baseById(state, homeBaseId || hub(state).id);
   const kitItems = p ? (p.cargo && p.cargo.gear) || [] : (home0 && home0.armory) || [];
   const ammo = p ? Math.max(0, (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies.ammo) || 0)) : supplies.ammo || 0;
+  // Arrows for the bows (hunting.js): what the team carries, or what it packs and takes from home for a hunt (applyPlan).
+  const arrows0 = p ? Math.max(0, (p.supplies.arrows || 0) + ((p.cargo && p.cargo.supplies.arrows) || 0)) : supplies.arrows || 0;
+  const arrows = p ? arrows0 : arrows0 + ((steps || []).some((s) => s.kind === "hunt") ? huntArrowsFor(state, home0, members, arrows0) : 0);
+  const huntMix = huntMixOf(home0); // the home base's hunting mix
   const pv0 = p ? partyVehicle(state, p) : pv;
   const pool0 = p ? poolLoad(p) : supplyLoad(supplies);
   const worn = members.reduce((a, s) => a + wornLoad(s), 0);
@@ -291,7 +296,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
       const eatenNow = members.length ? eat : 0;
       const room = members.length ? Math.max(0, teamLoad(members, 0, pv0).capacity - Math.max(0, pool0 - eatenNow * 1.5) - haulKg) : Infinity;
       if (s.kind === "hunt") {
-        const t = huntTeam(state, members, ammo);
+        const t = huntTeam(state, members, ammo, { arrows, mix: huntMix });
         if (!t.why) got = expectHunt(state, t.team, tile, hours, start, t.loud, room).rations;
       } else if (s.kind === "fish") got = expectFish(state, fishKit(members, kitItems), tile, hours, start, room).rations;
       else if (s.kind === "forage") got = members.length ? expectForage(state, members, tile, hours, start, room).rations : 0;
@@ -349,6 +354,7 @@ export function applyPlan(state, p, plan) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   const members = partyMembers(state, p);
   if (home && steps.some((s) => s.kind === "fish") && !fishKit(members, p.cargo.gear).power) packFishingGear(state, home, p);
+  if (home && steps.some((s) => s.kind === "hunt")) packHuntArrows(state, home, p); // the bows' arrows (hunting.js)
   if (home && steps.some((s) => s.kind === "snare")) {
     const has = members.some((m) => [...(m.pockets || []), ...(((m.gear || {}).backpack || {}).contents || [])].some((it) => it && it.key === "snarewire")) || p.cargo.gear.some((it) => it.key === "snarewire");
     const i = (home.armory || []).findIndex((it) => it && it.key === "snarewire");

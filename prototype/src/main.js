@@ -6,12 +6,16 @@ import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
+import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
+import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
-import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish } from "./sim/buildings.js";
+import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, BUILDINGS, demolishRefund } from "./sim/buildings.js";
+// What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
+const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
 import { refuel, repair } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
@@ -51,31 +55,52 @@ import { REL_ACTIONS } from "./ui/relations.js";
 import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
+import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
+import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
+import { GUIDE_ACTIONS, guideCheck, renderGuide, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts
+import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
+import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
+import { MAX_SPEED, SPEEDS, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
-document.addEventListener("visibilitychange", () => { if (document.hidden) ironHidden(state, ui); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
+import { initCrash, reportCrash, crashUp } from "./ui/crash.js"; // the error screen: an uncaught exception stops the clock, writes the crash save
+import { newCampaignId } from "./sim/savesummary.js"; // each run's id: the save list groups its saves, its autosaves rotate
 import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
+import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
 import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
+import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
+import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
+import { CODEX_ACTIONS, CODEX_CHANGE, codexScan } from "./ui/codex.js"; // the Codex (C): what the player has met
+import { TRIP_ACTIONS, TRIP_CHANGE, useArmedTemplate } from "./ui/trips.js"; // order templates and Repeat trip
+import { rememberLaunch } from "./sim/trips.js";
+import { UNDO_ACTIONS, installUndo, undoKey, undoable } from "./ui/undo.js"; // undo in the planner, build queue and Work tab
+import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made on the spot (ui/soundcues.js says what to play)
+// Display options and their keys (M, `, Shift+P), the minimap, and the one confirmation box (ui/display.js, ui/minimap.js, ui/confirm.js).
+import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
+import { initMinimap, minimapFrame } from "./ui/minimap.js";
+import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
-const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
+// MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
 const SLOW_REFRESH_MS = 250;    // above MAX_SPEED the panels are redrawn about 4 times a second, not every tick
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -96,8 +121,11 @@ const freshUi = () => ({
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
+  codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
+  ledger: null, // ui/ledger.js: the Ledger window is open
+  ask: null, // ui/confirm.js: the question up before an order that cannot be undone
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -106,8 +134,12 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 }
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
+initKeymap(options); // the player's key bindings (ui/keymap.js)
+initPacing(options, saveOptions); // Options → Pause for… (ui/pacing.js)
 ui.scale = options.uiScale;
+ui.guide = guideDefault(options); // the new-run screen's First-week guide box (ui/guide.js): on for the first campaign here
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
+initAudio(options, () => saveOptions(options)); // the Sound options, the first-gesture unlock, button clicks
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
@@ -135,11 +167,19 @@ if (!$("alerts")) {
   al.className = "hidden";
   $("mapwrap").appendChild(al);
 }
+// The confirmation box (ui/confirm.js), over everything.
+if (!$("ask")) {
+  const el = document.createElement("div");
+  el.id = "ask";
+  el.className = "hidden";
+  document.body.appendChild(el);
+}
 // The bars between the map and its panels, the map-only button and resizable windows (ui/windows.js), set up before
 // the map measures itself so a folded panel's room is the map's from the start.
 initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow = true; } });
 initRenderer(canvas);
 initCombatUI($("combatmap"));
+initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -156,21 +196,23 @@ let lastRefresh = 0;
 const paused = () => ui.started && ui.speed === 0;
 function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
-  const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
+  // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
+  const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
 }
 
-// One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
-const frameErrors = new Map();
+// An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
+// which writes the crash save; the loop then waits (no frames run under the screen) instead of throwing every frame.
+const frameErrors = new Map(); // how often each message was thrown (window.game.frameErrors)
 function frame(now) {
+  if (crashUp()) { last = now; requestAnimationFrame(frame); return; }
   try {
     step(now);
   } catch (e) {
     const key = String(e && e.message);
-    const n = (frameErrors.get(key) || 0) + 1;
-    frameErrors.set(key, n);
-    if (n === 1 && frameErrors.size <= 10) console.error("Broken State: error in the frame loop (logged once; the loop keeps running):", e);
+    frameErrors.set(key, (frameErrors.get(key) || 0) + 1);
+    reportCrash(e, "the game loop (a frame: the clock, the autopilot or drawing)");
   }
   requestAnimationFrame(frame);
 }
@@ -182,10 +224,14 @@ function step(now) {
   last = now;
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
+  pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
   if (!blocked() && ui.speed > 0 && !ui.moveParty) {
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
+      if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
+      if (blocked()) { acc = 0; break; }       // a default answer that opened a battle
       tickHour(state);
+      afterHour(state, ui); // the pause rules: new cards, deaths, first contacts, groups turning hostile
       acc -= 1;
       ticks++;
       dirty = true;
@@ -207,7 +253,9 @@ function step(now) {
     if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
+  minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
   if (ui.title) titleFrame(state, ui, now);
+  audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }
@@ -216,7 +264,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts"];
+const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -274,6 +322,7 @@ window.addEventListener("blur", () => {
   dirtyNow = true;
 });
 window.addEventListener("beforeunload", (e) => {
+  if (crashUp()) return; // the error screen is up: the crash save has the world; an Ironman slot keeps its last good save
   if (ironUnload(state, ui)) return; // an Ironman game is saved as the page closes (ui/settings.js): nothing to ask
   if (state.ironman) return;
   if (!options.confirmQuit || settingsApi.desktop || !unsaved(state, ui) || state.gameOver) return;
@@ -290,6 +339,8 @@ function tidyUi() {
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
+  // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
+  if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
 }
 
 // ---------- folded panels ----------
@@ -342,8 +393,11 @@ function refresh(user = true) {
   lastRefresh = last;
   tidyUi();
   noteNames(state);
+  codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
+  guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
+  afterRefresh(state, ui); // ui/pacing.js: a new red alert slows the clock to 1×, a horde near a base stops it
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
@@ -363,9 +417,12 @@ function refresh(user = true) {
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
-  setPanel("alerts", alertsHTML(alerts), user);
+  setPanel("alerts", alertsHTML(alerts) + renderGuide(state, ui), user); // the first-week guide sits under the alerts
+  setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: under the running orders
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
+  syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
+  setPanel("ask", askHtml(ui), user); // ui/confirm.js
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -374,6 +431,7 @@ function refresh(user = true) {
     fps.classList.toggle("fixed", !!state.combat);
   }
   if (tipTarget && tipTarget.isConnected === false) hideTip(); // only when the hovered element was replaced
+  guidePulse(ui); // what the guide's Show me points at (ui/guide.js)
 }
 
 function refreshModal(user) {
@@ -399,6 +457,8 @@ function refreshModal(user) {
       if (nbody && bodyTop) nbody.scrollTop = bodyTop;
       const elog = $("elog");
       if (elog) elog.scrollTop = elog.scrollHeight;
+      modal.classList.remove("hidden"); // shown before the charts measure themselves
+      drawCharts(modal); // the Ledger's and the run summary's charts (ui/ledger.js)
     }
   }
   modal.classList.remove("hidden");
@@ -422,12 +482,12 @@ function renderCombat(user) {
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
-  let html = "";
+  let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
     const waiting = armedList(state, ui);
     const n = waiting.length;
     // One short line; the rest is a hover description and Help → Time ("?").
-    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b> <b>Space</b> to run` +
+    html += `<div class="paused" data-tip="The clock is stopped. Orders you give now start when you unpause."><b class="big">Paused</b>${pauseWhyHTML(ui)} <b>Space</b> to run` +
       `<button data-action="speed" data-speed="${ui.lastSpeed || 1}" data-tip="Run at ${ui.lastSpeed || 1}× (Space)">▶ Run</button>` +
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
@@ -487,25 +547,31 @@ function armDiff(before) {
 }
 
 // ---------- actions ----------
+// The base a planner sends its team from: the hub, or (the move-out planner) the crowded base it was opened for.
+const plannerBase = (pl) => (pl.fromBaseId != null ? baseById(state, pl.fromBaseId) : hub(state));
 function autofill(pl) {
-  const h = hub(state);
+  const h = plannerBase(pl);
   if (!h) return; // no base to send a team from (the planner says so): exiles, hardcore before its first hub
   const ids = [...pl.crew];
   const v = plannerVehicle(state, pl);
+  // Moving out (sim/moveout.js): to the destination picked, or (none yet) just outside the base; MOVE_OUT.days of
+  // food and water on top for the road ahead, and the scrap for an outpost when they may found one.
+  const out = !!pl.moveOut;
   // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
   // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
-    est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies });
-    view.preview = est ? est.path : null;
+    est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
+    view.preview = est && pl.dest != null ? est.path : null;
     if (!est) return;
+    const ahead = out ? n * MOVE_OUT.days : 0;
     const want = {
-      food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
+      food: Math.ceil(est.food * 1.25 + ahead), water: Math.ceil(est.water * 1.25 + ahead * thirstAhead(state, MOVE_OUT.days)),
       fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-      meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      meds: Math.min(2, n), ammo: (out ? MOVE_OUT.ammo : 15) * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
       // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
-      scrap: pl.mission === "outpost" ? 15 : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
+      scrap: pl.mission === "outpost" ? 15 : out ? (pl.dest == null ? MOVE_OUT.scrap : 0) : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };
     for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(h.stock, k)), want[k])); // water: both kinds, purified packed first (sim/water.js)
   }
@@ -526,6 +592,16 @@ function autofill(pl) {
 }
 
 const partyById = (id) => state.parties.find((p) => p.id === Number(id));
+// The move-out planner (ui.js moveOutModal, sim/moveout.js): who leaves a base, their transport and supplies from
+// its stores, and where to (another of your bases, or a tile picked on the map once they are out).
+function openMoveOut(baseId) {
+  if (!baseById(state, baseId)) return;
+  const pl = { moveOut: true, fromBaseId: baseId, dest: null, mission: "move", crew: new Set(), vehicleId: null, stance: "normal", supplies: {} };
+  ui.planner = pl;
+  ui.plannerError = "";
+  endMoveMode();
+  autofill(pl);
+}
 const baseOf = (d) => baseById(state, Number(d.base));
 // A message from a base action: on the base screen when it is open, otherwise in the log.
 function baseSay(msg) {
@@ -557,6 +633,7 @@ const actions = {
   "dev-persona": (d) => { setPersonality(state, d.v); },
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
+  "pal-open": () => openPalette(), // the top bar's 🔍: the search box (ui/cmdpalette.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
   // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), close
   // one completely or open it again (data-p: left, right, log: the strip's ✕, the top bar's ◧ ◨ ⬓, the tab at the
@@ -621,15 +698,19 @@ const actions = {
   "sr-pause": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(pauseSupplyRun(state, j, true)); },
   "sr-resume": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(pauseSupplyRun(state, j, false)); },
   "sr-release": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(releaseHeld(state, j, d.how)); },
-  "sr-delete": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(deleteSupplyRun(state, j)); },
+  "sr-delete": (d) => {
+    const j = supplyRunById(state, Number(d.id));
+    if (!j || ask(ui, d, "sr-delete", { kind: "delrun", title: "Delete this supply run?", text: "Its schedule, crew, cargo lists and stops are gone for good (a convoy already on the road finishes its trip).", yes: "Delete it" })) return;
+    baseSay(deleteSupplyRun(state, j));
+  },
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
-  // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (two clicks) to free its plot.
+  // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   demolish: (d) => {
-    const id = Number(d.id);
-    if (ui.demolishArm !== id) { ui.demolishArm = id; ui.baseMsg = "Click Confirm to pull it down (half its scrap and parts come back)."; return; }
-    ui.demolishArm = null;
-    ui.baseMsg = demolish(state, baseOf(d), id);
+    const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
+    const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
+    if (ask(ui, d, "demolish", { kind: "demolish", title: `Pull down ${name}${b ? ` at ${b.name}` : ""}?`, text: `It is gone for good and its plot is free again. About half its scrap and parts come back${what ? ` (${demolishText(what)})` : ""}.`, yes: "Pull it down" })) return;
+    ui.baseMsg = demolish(state, b, id);
   },
   // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
   campfire: (d) => {
@@ -772,6 +853,8 @@ const actions = {
   cancelroute: (d) => {
     const r = state.routes.find((x) => x.id === Number(d.id));
     if (!r) return;
+    const rf = factionById(state, r.factionId);
+    if (ask(ui, d, "cancelroute", { kind: "endroute", title: `End the trade route${rf ? ` with ${rf.name}` : ""}?`, text: "No more convoys go; its escorts come home. A new route needs the trade pact and the setup again.", yes: "End the route" })) return;
     r.active = false;
     releaseEscorts(state, r);
     log(state, "Trade route ended.", "info");
@@ -783,6 +866,7 @@ const actions = {
     ui.plannerError = "";
     endMoveMode();
     autofill(pl);
+    useArmedTemplate(state, ui, pl, autofill); // a template picked on the Teams tab (ui/trips.js)
     hideCtx();
   },
   "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
@@ -792,12 +876,32 @@ const actions = {
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
   "pl-autofill": () => { autofill(ui.planner); ui.plannerError = ""; },
   "pl-cancel": () => { ui.planner = null; view.preview = null; },
+  // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
+  "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
+  moveout: (d) => openMoveOut(Number(d.base)),
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
+    if (pl.moveOut) {
+      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
+      if (res.error) { ui.plannerError = res.error; return; }
+      ui.planner = null;
+      view.preview = null;
+      ui.baseView = null;
+      // Nowhere picked yet: straight to move mode, so the next click on the map sends them (Esc: they wait outside).
+      if (pl.dest == null) {
+        endMoveMode();
+        ui.moveParty = res.party.id;
+        ui.expedition = res.party.id;
+        ui.xpMsg = "";
+        centerOn(state, partyTile(res.party));
+      }
+      return;
+    }
     const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
+    rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;
     view.preview = null;
   },
@@ -821,6 +925,12 @@ const actions = {
       actions["xp-open"]({ id: c.uiAction.partyId });
       return;
     }
+    if (c.uiAction && c.uiAction.type === "plan") { // sim/hivebirth.js: the planner aimed at a gathering or a new hive
+      centerOn(state, c.uiAction.tile);
+      actions.plan({ tile: c.uiAction.tile, mission: c.uiAction.mission });
+      return;
+    }
+    if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
@@ -854,15 +964,21 @@ const actions = {
     ui.lookEdit = null;
     ui.nrMsg = "";
     state.started = true;
+    state.campaign = newCampaignId(); // ui/saves.js: this run's saves group together and its autosaves rotate
     // Ironman (ui/settings.js): one slot the game writes itself, no saving or loading by hand, no going back.
     if (ui.ironman) {
       state.ironman = { id: `iron${Date.now().toString(36)}`, since: Date.now() };
       log(state, "Ironman: this game saves itself (at dawn, when a battle starts and ends, when you leave it). There is no going back.", "info");
     }
+    if (ui.childrenOff) state.childrenOff = true; // the new-run screen's Children box (sim/family.js)
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
     if (lead) log(state, `${lead.name} leads the group.`, "info");
+    // The first-week guide (ui/guide.js) if its box was ticked; later campaigns start with the box off.
+    startGuide(state, ui.guide);
+    if (!options.guideSeen) { options.guideSeen = true; saveOptions(options); }
+    ui.guide = false;
   },
   restart: () => newWorld(randomSeed()),
   // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
@@ -900,18 +1016,30 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
+for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
 for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the card tray, Options → Pause for… (ui/pacing.js)
+actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
+// The Watching panel and map notes (ui/watchlist.js): pin, go, unpin, the note editor; going there uses center and xp-open.
+for (const [k, fn] of Object.entries(WATCHLIST_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
+// Display options and the minimap's button (ui/display.js); the confirmation box (ui/confirm.js): Yes runs the order again.
+for (const [k, fn] of Object.entries(DISPLAY_ACTIONS)) actions[k] = (d) => fn(ui, d);
+for (const [k, fn] of Object.entries(ASK_ACTIONS)) actions[k] = (d) => fn(ui, d, actions);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
+for (const [k, fn] of Object.entries(CONTROLS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi); // Menu → Controls (ui/controls.js)
+for (const [k, fn] of Object.entries(CODEX_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Codex (ui/codex.js)
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
+// The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
+for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 // The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);
@@ -1056,9 +1184,13 @@ const changeActions = {
   customw: (el) => { ui.customW = clampCustomW(el.value); newWorld(state.seed, true); },
   customh: (el) => { ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
   hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
-  // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore).
+  // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
   ironman: (el) => { ui.ironman = !!el.checked; }, // the new-run screen's Ironman box (ui/newgame.js)
+  "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
+  children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
+  // Starting people (Hardcore only, ui/newgame.js): 1–4 flee together; the same seed and the edited crew (as many as fit).
+  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value); newWorld(state.seed, true); },
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -1085,7 +1217,10 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(CODEX_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the Codex's find box
+for (const [k, fn] of Object.entries(DISPLAY_CHANGE)) changeActions[k] = (el) => fn(ui, el); // ui/display.js
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
 
@@ -1101,7 +1236,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople });
   resetView();
   hideCtx();
   hideTip();
@@ -1121,6 +1256,8 @@ function adopt(st, entry) {
   if (!state.mode) state.mode = "normal"; // saves from before the modes
   ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.ironman = !!state.ironman; // and Ironman, if this one is
+  if (state.mode === "hardcore") ui.startPeople = clampStartPeople(state.startPeople); // and a hardcore game's Starting people
+  ui.childrenOff = !!state.childrenOff; // and children off, if they were
   ui.started = true;
   ui.speed = 0;
   ui.slot = entry ? entry.id : null;
@@ -1166,15 +1303,23 @@ const settingsApi = {
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
-// The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
-// makes a fresh one.
-let titleTicked = false;
-initTitle({
-  options, desktop: settingsApi.desktop, quit: settingsApi.quit, saveOptions: () => saveOptions(options),
-  tick: () => { titleTicked = true; tickHour(state); },
-  newGame: () => { if (titleTicked) { titleTicked = false; newWorld(randomSeed()); } else { resetView(); centerOn(state, playerTile(state)); } },
-});
+initCrash({ state: () => state, ui, adopt, toTitle: settingsApi.toTitle, desktop: settingsApi.desktop, track: settingsApi.track, refresh: settingsApi.refresh });
+initDisplay(options, () => saveOptions(options)); // after initSettings: reduce motion overrides the map animations
+initConfirm(options, () => saveOptions(options));
+// The title screen (ui/title.js).
+initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
+// planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
+const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
+const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
+Object.assign(actions, {
+  "tpl-use": tripAct(TRIP_ACTIONS["tpl-use"]), "tpl-save": tripAct(TRIP_ACTIONS["tpl-save"]), "tpl-plan": tripAct(TRIP_ACTIONS["tpl-plan"]),
+  "tpl-pick": tripAct(TRIP_ACTIONS["tpl-pick"]), "tpl-del": tripAct(TRIP_ACTIONS["tpl-del"]), "tr-repeat": tripAct(TRIP_ACTIONS["tr-repeat"]),
+  "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
+});
+Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
+installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
 function act(fn) {
@@ -1240,6 +1385,7 @@ document.addEventListener("mouseover", (e) => {
   tipTarget = el;
   tipEl.textContent = el.dataset.tip;
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
+  if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
   tipEl.classList.remove("hidden");
   placeTip(e);
 });
@@ -1358,7 +1504,7 @@ canvas.addEventListener("contextmenu", (e) => {
   menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) +
+    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
     (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   menu.style.left = `${e.clientX - r.left}px`;
   menu.style.top = `${e.clientY - r.top}px`;
@@ -1529,14 +1675,17 @@ function closeTopLayer() {
     return true;
   }
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
+  if (ui.why) { ui.why = null; return true; } // ui/causes.js: the "Why?" panel
   if (!ui.started) {
     if (ui.lookEdit == null) return false;
     ui.lookEdit = null;
     return true;
   }
+  if (ui.ledger) { ui.ledger = null; return true; } // ui/ledger.js (it can open over the end screen)
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
-  if (!state.autopilot && (state.cards.length || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
+  if (trayEsc(state, ui)) return true; // a card opened from the tray goes back to it (ui/pacing.js)
+  if (!state.autopilot && (cardUp(state, ui) || state.engagement || state.trade || activeCrawl(state))) return false; // these need an answer
   if (ui.planner) { ui.planner = null; view.preview = null; return true; }
   if (ui.routeSetup) { ui.routeSetup = null; return true; }
   if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)
@@ -1555,6 +1704,7 @@ function closeTopLayer() {
   }
   if (ui.roster) { ui.roster = null; return true; }
   if (ui.diary) { ui.diary = null; return true; }
+  if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
@@ -1562,14 +1712,20 @@ function closeTopLayer() {
 }
 
 window.addEventListener("keydown", (e) => {
+  // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
+  if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
+  // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
+  if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
   if (ui.timelapse) {
     if (tlKey(state, ui, e)) { e.preventDefault(); refresh(); }
     return;
   }
   if (e.code === "Escape" && closeTopLayer()) { e.preventDefault(); refresh(); return; }
+  // The menu's question (ui/settings.js): Enter answers yes, like the map's confirmation box.
+  if (ui.settings && ui.settings.confirm && (e.code === "Enter" || e.code === "NumpadEnter")) { e.preventDefault(); actions["set-yes"]({}); refresh(); return; }
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
@@ -1578,51 +1734,55 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // Ctrl+K or / (ui/keymap.js win.palette): the search box (ui/cmdpalette.js), over any window but a card.
+  if (ui.started && keyIs(e, "win.palette") && !["card", "result", "over", "newrun"].includes(modalKind(state, ui))) { e.preventDefault(); openPalette(); return; }
   // A selected order in the team panel's queue (ui/expedition.js queueBlock): ↑ ↓ move it, Delete removes it.
-  if (ui.expedition != null && ui.qSel != null && ["ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.code) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+  const qk = ui.expedition != null && ui.qSel != null ? keyAction(e, "queue") : null;
+  if (qk) {
     e.preventDefault();
     const p = partyById(ui.expedition);
     if (p) {
-      if (e.code === "Delete" || e.code === "Backspace") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
-      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: e.code === "ArrowUp" ? -1 : 1 });
+      if (qk === "queue.remove") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
+      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: qk === "queue.up" ? -1 : 1 });
     }
     refresh();
     return;
   }
+  if (undoKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // Ctrl+Z in the planner, the build queue, the Work tab (ui/undo.js)
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
-  if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
-  // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
+  if (ui.workHover ? undoable(state, ui, "work", () => workKey(state, ui, e), null, "priority") : workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
+  if (ledgerKey(state, ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; } // E: the Ledger (ui/ledger.js)
+  // M the minimap, ` the dev tools (when they are shown), Shift+P autopilot only with them (ui/display.js).
+  if (displayKey(ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
+  // Tabs, next waiting team, bases, camera spots, diary, roster and codex (ui/alerts.js); J, R and C also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
+  // The rest of the map's keys, by the key table (ui/keymap.js; Menu → Controls rebinds them).
+  const k = keyAction(e, "map");
   // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key
   // opens it whether it is folded or closed completely. Alt + the key closes the panel completely (strip and
   // all), and brings a closed one back.
-  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-    const shut = e.code === "BracketLeft" ? "left" : e.code === "BracketRight" ? "right" : e.code === "KeyL" ? "log" : null;
-    if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
-  }
-  if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-    const fold = e.code === "BracketLeft" ? (e.shiftKey ? "orders" : "left") : e.code === "BracketRight" ? (e.shiftKey ? "alerts" : "right") :
-      e.code === "KeyL" && !e.shiftKey ? "log" : null;
-    if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
-    if (e.code === "Backslash" || e.code === "IntlBackslash") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
-  }
-  if (e.code === "Space") {
+  const shut = { "panel.closeLeft": "left", "panel.closeRight": "right", "panel.closeLog": "log" }[k];
+  if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
+  const fold = { "panel.left": "left", "panel.right": "right", "panel.log": "log", "panel.orders": "orders", "panel.alerts": "alerts" }[k];
+  if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
+  if (k === "panel.all") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
+  const speed = /^time\.speed([1-5])$/.exec(k || "");
+  if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
-  } else if (["Digit1", "Digit2", "Digit3", "Digit4"].includes(e.code)) {
-    ui.speed = [0.5, 1, 2, 3][Number(e.code.slice(5)) - 1];
+  } else if (speed) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS; the keys by the key table)
+    ui.speed = SPEEDS[Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;
-  } else if (e.code === "KeyH") centerOn(state, playerTile(state));
-  else if (e.code === "Backquote") ui.dev = !ui.dev;
-  else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
+  } else if (k === "map.hub") centerOn(state, playerTile(state));
+  else if (k === "map.infection") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {
     const pan = 40 / camera.zoom;
-    if (e.code === "KeyW" || e.code === "ArrowUp") camera.y -= pan;
-    else if (e.code === "KeyS" || e.code === "ArrowDown") camera.y += pan;
-    else if (e.code === "KeyA" || e.code === "ArrowLeft") camera.x -= pan;
-    else if (e.code === "KeyD" || e.code === "ArrowRight") camera.x += pan;
+    if (k === "map.panUp") camera.y -= pan;
+    else if (k === "map.panDown") camera.y += pan;
+    else if (k === "map.panLeft") camera.x -= pan;
+    else if (k === "map.panRight") camera.x += pan;
     else return;
     if (e.code.startsWith("Arrow")) e.preventDefault();
     return; // panning changes no panel
@@ -1636,12 +1796,18 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "Space" && (t.tagName === "BUTTON" || (t.tagName === "INPUT" && t.type === "checkbox"))) e.preventDefault();
 });
 
+initPalette({ getState: () => state, ui, actions, options, refresh: () => refresh() }); // the search box (ui/cmdpalette.js)
+
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
-  frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
+  frameErrors, devSpeeds: DEV_SPEEDS,
+  crashTest: (msg = "a test crash from the console") => reportCrash(new Error(msg), "the console (a test)"), // the error screen (ui/crash.js)
+  options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
+  palette: { open: () => openPalette(), index: () => paletteIndex(state, ui) }, // ui/cmdpalette.js
+  dev: (on = true) => { ui.dev = !!on; refresh(); }, // open the dev tools for this session (tools, the desktop perf driver), whatever Show dev tools says
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {
     ui: cui,

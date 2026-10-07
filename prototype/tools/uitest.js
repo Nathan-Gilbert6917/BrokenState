@@ -23,6 +23,7 @@ import { createWorld, tickHour, hub, day, alive, atBase, residents, makeSurvivor
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { launchExpedition, partyTile } from "../src/sim/parties.js";
 import { makeHorde } from "../src/sim/hordes.js";
+import { towerWatch } from "../src/sim/defences.js";
 import { addCondition } from "../src/sim/health.js";
 import * as Buildings from "../src/sim/buildings.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -35,7 +36,11 @@ import { computeAlerts, renderAlerts, ALERT_ACTIONS, mapHotkey } from "../src/ui
 import { rosterModal, rosterRows, ROSTER_ACTIONS, ROSTER_CHANGE, setRole } from "../src/ui/roster.js";
 import { camera } from "../src/ui/render.js";
 import { repairsTab, EXPLORE_ACTIONS, EXPLORE_CHANGE } from "../src/ui/explore.js";
+import { WATCHLIST_ACTIONS } from "../src/ui/watchlist.js"; // 📌 pins in the panels (main.js registers them)
 import * as BD from "../src/sim/breakdowns.js";
+import * as KEYS from "../src/ui/keymap.js"; // the key table (the panel keys go through it)
+import { CONTROLS_ACTIONS } from "../src/ui/controls.js";
+import { CODEX_ACTIONS } from "../src/ui/codex.js";
 const { raidDamage } = BD;
 
 const days = Number(process.argv[2] || 120);
@@ -68,7 +73,7 @@ const actionsIn = (html) => [...html.matchAll(/<(\w+)([^>]*?)data-action="([^"]+
 // Handlers: the ones in the new modules, plus the names main.js's action tables define (looked up in its source).
 const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS };
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS };
 const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
@@ -395,6 +400,14 @@ section("Alerts: each kind appears and clears");
   let hd = null;
   appearsClears("horde", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "horde near a base");
   appearsClears("breakin", () => { hd = makeHorde(w, { tile: near.id, size: 2000, target: h.tile }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "break-in warning");
+  // The watchtower's alarm (sim/defences.js towerWatch): its own alert, in place of the plain horde one.
+  Buildings.addBuilding(h, "watchtower");
+  const ta = appearsClears("tower", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w); }, "watchtower alarm");
+  check(ta && /Watchtower at .*horde of 30, 2 tiles out/.test(ta.text) && ta.go.tile === near.id, `watchtower alarm: the text and the horde's tile (${ta && ta.text})`);
+  hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w);
+  check(!has("horde").some((a) => a.key === `horde:${hd.id}`), "watchtower alarm: no second (plain) alert for the same horde");
+  w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w);
+  h.buildings = h.buildings.filter((b) => b.type !== "watchtower"); h.watchtower = false;
   // Sick and untreated.
   const patient = atBase(w, h.id)[1];
   let cond = null;
@@ -617,6 +630,21 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     htmlOk(html, "new-run screen (Custom)");
     check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
   }
+  // Starting people (sim/hardcore.js START_PEOPLE): Hardcore only; greyed out with the reason on a normal start.
+  {
+    const normalHtml = newRunScreen(createWorld({ seed: seed + 9, factionCount: 7 }), { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3 });
+    const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
+    check(nsel && /disabled/.test(nsel[1]) && normalHtml.includes("Hardcore only"), "normal start: Starting people shown greyed out, Hardcore only");
+    for (const n of [1, 2, 3, 4]) {
+      const w = createWorld({ seed: seed + 9, factionCount: 7, mode: "hardcore", startPeople: n });
+      const html = newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
+      htmlOk(html, `new-run screen (Hardcore, ${n} starting)`);
+      const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+      check(sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]) && (html.match(/nrcard/g) || []).length === n,
+        `Hardcore: Starting people 1–4 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
+    }
+  }
+  check(inMain("startpeople") && mainSrc.includes("startPeople: ui.startPeople"), "main.js handles Starting people and passes it to createWorld");
   check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
   check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
   console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);
@@ -651,6 +679,9 @@ section("Help: the menu's Help tab, the Layers box and the ? buttons (ui/help.js
   const { LAYERS } = await import("../src/sim/markers.js");
   const { view } = await import("../src/ui/render.js");
   Object.assign(CLICK, SETTINGS_ACTIONS);
+  // The Display rows and the Confirmations row (ui/display.js, ui/confirm.js; main.js registers them).
+  Object.assign(CLICK, (await import("../src/ui/display.js")).DISPLAY_ACTIONS, (await import("../src/ui/confirm.js")).ASK_ACTIONS);
+  Object.assign(CHANGE, (await import("../src/ui/display.js")).DISPLAY_CHANGE);
   const strip = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   const w = createWorld({ seed: seed + 11, factionCount: 6 });
   const topics = helpTopics();
@@ -891,8 +922,10 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   SETTINGS_ACTIONS["set-opt"](w, u3, { k: "autoOpen" }, api);
   check(opts.autoOpen === false && /✗ Auto-open panels on select/.test(settingsModal(w, u3, api)), "the option switches off");
   check(["panel-toggle", "panel-close", "panel-all", "win-reset"].every(inMain) && /setShut\(layout, p, v\)/.test(mainSrc), "main.js handles panel-toggle, panel-close (closing completely), panel-all and win-reset");
-  check(/e\.altKey && !e\.ctrlKey[\s\S]{0,400}"BracketLeft" \? "left"[\s\S]{0,200}actions\["panel-close"\]\(\{ p: shut \}\)/.test(mainSrc) && /Alt\+\[/.test(readme) && /Alt\+\]/.test(L.shutTip(lc, "right")), "Alt+[ / Alt+] / Alt+L close a panel completely (keydown → panel-close); README and the tips say so");
-  check(["BracketLeft", "BracketRight", "\"KeyL\"", "Backslash"].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ])");
+  // The keys go through the key table (ui/keymap.js): the chord gives the action, main.js maps it to the panel.
+  const kev = (code, mods = {}) => ({ code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods });
+  check(KEYS.keyAction(kev("BracketLeft", { altKey: true }), "map") === "panel.closeLeft" && /"panel\.closeLeft": "left"[\s\S]{0,200}actions\["panel-close"\]\(\{ p: shut \}\)/.test(mainSrc) && /Alt\+\[/.test(readme) && /Alt\+\]/.test(L.shutTip(lc, "right")), "Alt+[ / Alt+] / Alt+L close a panel completely (keydown → panel-close); README and the tips say so");
+  check([["BracketLeft", "panel.left"], ["BracketRight", "panel.right"], ["KeyL", "panel.log"], ["Backslash", "panel.all"], ["BracketLeft", "panel.orders", { shiftKey: true }]].every(([c, id, m]) => KEYS.keyAction(kev(c, m), "map") === id) && ["\"panel.left\"", "\"panel.all\""].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ], by the key table)");
   check(/windowFrame\(renderModal\(state, ui\), modalKind\(state, ui\)\)/.test(mainSrc) && /fitWindows\(\)/.test(mainSrc), "every window on screen goes through the frame and gets its remembered size");
   check(/mapClicked = true/.test(mainSrc) && /autoReveal\(layout, picked, now/.test(mainSrc) && /options\.autoOpen/.test(mainSrc), "main.js opens panels on a map click, a pick and the option");
   check(["| [ / ] |", "| L |", "| ✕ on a folded strip, or ◧ ◨ ⬓ in the top bar |", "| Shift+[ / Shift+] |", "| \\ (backslash)", "Window edges, corners, title", "Reset window sizes", "Auto-open panels on select"].every((k) => readme.includes(k)), "the README lists the panel keys, closing a panel completely, window drags and the options");

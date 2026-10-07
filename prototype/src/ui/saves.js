@@ -7,7 +7,11 @@
 //                brokenstate.options        the Options tab (autosave, confirmations, pause on focus loss, UI size, map detail)
 // Nothing here runs at import time, so the headless tools can import it with no browser around.
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
+import { saveSummary, campaignKey } from "../sim/savesummary.js";
+import { readDisplayOptions } from "./displayopts.js"; // the Display options and "Don't ask again" (ui/display.js, ui/confirm.js)
 
+// The one autosave slot of builds before the rotating autosaves (below): still listed and loaded, and replaced by its
+// campaign's first rotating autosave.
 export const AUTOSAVE = "autosave";
 // The battle-start save (ui/settings.js autosaveCheck): one slot, written as each battle opens, so a battle can be
 // played again from its start (the battle panel's Restart battle). Never in an Ironman game.
@@ -28,7 +32,7 @@ const storage = () => {
 
 // ---------- options ----------
 export function loadOptions() {
-  const o = { ...DEFAULT_OPTIONS };
+  const o = readDisplayOptions({ ...DEFAULT_OPTIONS });
   try {
     const raw = storage() && storage().getItem(OPTIONS_KEY);
     if (raw) {
@@ -41,8 +45,11 @@ export function loadOptions() {
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
       if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
       if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)
-      if (typeof v.titleBg === "string") o.titleBg = v.titleBg; // the title screen's background and logo (ui/title.js checks them)
-      if (typeof v.titleStyle === "string") o.titleStyle = v.titleStyle;
+      if (v.keys && typeof v.keys === "object" && !Array.isArray(v.keys)) o.keys = v.keys; // key bindings (ui/keymap.js initKeymap checks them)
+      if (v.sound && typeof v.sound === "object") o.sound = { ...v.sound }; // volumes and mutes (ui/audio.js soundOptions cleans them)
+      if (typeof v.guideSeen === "boolean") o.guideSeen = v.guideSeen; // a campaign was started here: the first-week guide box starts off (ui/guide.js)
+      if (v.pacing && typeof v.pacing === "object") o.pacing = v.pacing; // Options → Pause for… (ui/pacing.js checks each switch)
+      readDisplayOptions(o, v); // Display (palette, map text, reduce motion, minimap, dev tools, map animations) and the confirmations
     }
   } catch { /* unreadable: the defaults */ }
   return o;
@@ -143,8 +150,9 @@ export async function unpackSave(stored) {
 }
 
 // ---------- slots ----------
-// The slots the game writes itself (no Save here, never a target of Save): the autosave, the battle start, an Ironman game's.
-export const autoSlot = (id) => id === AUTOSAVE || id === BATTLE_SAVE || String(id).startsWith("iron");
+// The slots the game writes itself (no Save here, never a target of Save): the autosaves, the battle start, an Ironman
+// game's, the crash save (ui/crash.js).
+export const autoSlot = (id) => id === AUTOSAVE || id === BATTLE_SAVE || id === CRASH_SAVE || String(id).startsWith("iron") || String(id).startsWith(AUTO_PREFIX);
 // Writes the world to a slot. opts: { name, auto, thumb, dropCards, why, bkey (the battle-start save's battle) }. Throws a SaveError (a card is open, the
 // storage is full or blocked). Returns the index entry.
 export async function writeSave(id, state, opts = {}) {
@@ -192,6 +200,51 @@ export function writeSaveSync(id, state, opts = {}) {
   try { writeIndex([entry, ...listSaves().filter((e) => e.id !== id)]); } catch { /* the slot is written; the index keeps the old line */ }
   return entry;
 }
+
+// ---------- rotating autosaves ----------
+// Each campaign (sim/savesummary.js campaignKey) keeps its last AUTO_KEEP autosaves, `auto-<campaign>-1…3`, the
+// oldest written over, each named by its one-line summary ("Day 143 · 31 people · winter · at war with …"). Never in
+// Ironman (its one slot). The crash save (ui/crash.js) is one slot of its own, whatever the game.
+export const AUTO_PREFIX = "auto-";
+export const AUTO_KEEP = 3;
+export const CRASH_SAVE = "crash";
+export const entryCamp = (e) => (e && e.camp) || `seed-${e ? e.seed : "?"}`; // a save from before campaigns: its seed
+export const campaignAutosaves = (key) => listSaves().filter((e) => e.id.startsWith(AUTO_PREFIX) && entryCamp(e) === key);
+// The slot the next autosave of this world goes to: a free one of its campaign's three, else the oldest.
+export function autosaveSlot(state) {
+  const key = campaignKey(state);
+  const mine = campaignAutosaves(key);
+  if (mine.length >= AUTO_KEEP) return mine.reduce((a, e) => ((e.ts || 0) < (a.ts || 0) ? e : a)).id;
+  const used = new Set(mine.map((e) => e.id));
+  for (let i = 1; ; i++) if (!used.has(`${AUTO_PREFIX}${key}-${i}`)) return `${AUTO_PREFIX}${key}-${i}`;
+}
+// Writes the next rotating autosave (opts as writeSave; the name is the summary line). Storage full: the slot being
+// written over is cleared and it tries again, then the campaign's older autosaves one at a time (its newest always
+// stays); still full, the SaveError stands. A one-slot autosave of an older build from the same campaign is removed.
+export async function writeAutosave(state, opts = {}) {
+  const id = autosaveSlot(state), key = campaignKey(state);
+  const o = { ...opts, name: opts.name || saveSummary(state) };
+  const spare = [id, ...campaignAutosaves(key).filter((e) => e.id !== id).sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(0, -1).map((e) => e.id)];
+  let entry = null;
+  for (let i = 0; !entry; i++) {
+    try { entry = await writeSave(id, state, o); } catch (e) {
+      if (!(e instanceof SaveError) || e.code !== "quota" || i >= spare.length) throw e;
+      deleteSave(spare[i]);
+    }
+  }
+  const legacy = saveEntry(AUTOSAVE);
+  if (legacy && entryCamp(legacy) === key) deleteSave(AUTOSAVE);
+  return entry;
+}
+// An Ironman game's crash copy (ui/crash.js writes it beside the game's own slot, never over it) is removed once the
+// game's slot is written again: it was only there to carry the game past the crash, never a way back.
+export function dropIronCrash(ironId) {
+  const c = saveEntry(CRASH_SAVE);
+  if (c && ironId && c.iron === ironId) deleteSave(CRASH_SAVE);
+}
+// Browser storage is about 5 million characters a site (Chrome, Edge, the desktop app, Firefox); the saves' share of it.
+export const STORAGE_CHARS = 5 * 1024 * 1024;
+export const storageShare = () => storageUsed() / 2 / STORAGE_CHARS;
 
 // The save's JSON text from a slot.
 export async function readSaveText(id) {

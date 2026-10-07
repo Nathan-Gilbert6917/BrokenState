@@ -28,6 +28,7 @@ import { RAIDS } from "../src/sim/factions.js";
 import { DEFENCE } from "../src/sim/defences.js";
 import { HORDE_SIZES } from "../src/sim/hordes.js";
 import { ERAS } from "../src/sim/eras.js";
+import { deathCounter } from "./deathcount.js"; // your people's deaths, one per survivor, in buckets
 
 // --tune: try a balance number for this run only (nothing in the game files changes), e.g.
 // --tune HIVE.NEW_CAP=3:5,HIVE.BOSS_DAY=240. Tables: HIVE (hiveconst.js), DEFENCE (defences.js), ALLIANCE
@@ -48,22 +49,13 @@ const FACTIONS = 8;
 
 // ---------- one campaign ----------
 const EVENT = /Your team took|is no more|has fallen$|moved into|hive was destroyed|hive at .* was destroyed|was destroyed by your team|A new hive has risen|joined The Calder Coalition|left The Calder Coalition|has collapsed|Every hive is destroyed|Calder Coalition holds|holdout has fallen|storming a hive|fell back from the hive|brood drove the team off|\(hive\) to/;
-// What a death line says killed them, in a few buckets.
-function deathCause(text) {
-  if (/hunger|starv/.test(text)) return "hunger";
-  if (/thirst/.test(text)) return "thirst";
-  if (/hive/.test(text)) return "hive assault";
-  if (/horde|Wallbreaker|the dead/.test(text) && !/defending|raid/.test(text)) return "horde";
-  if (/defending|raid|overrun|was overrun/.test(text)) return "raid";
-  if (/dysentery|flu|pneumonia|infect|fever|illness|sick|wound/.test(text)) return "illness";
-  return "in the field";
-}
 function runOne({ seed, style, days, keep, logN, tune }) {
   applyTune(tune);
   const state = createWorld({ seed, factionCount: FACTIONS });
   state.started = true;
   setAutopilot(state, true, style);
   const samples = [], events = [], deaths = {};
+  const newDeaths = deathCounter(state);
   let lastTop = state.log[0], hiveWinDay = null, error = null;
   const sample = () => {
     const gp = goalsProgress(state);
@@ -74,12 +66,14 @@ function runOne({ seed, style, days, keep, logN, tune }) {
   try {
     while (day(state) <= days) {
       tickHour(state);
+      const fresh = [];
       for (let i = 0; i < state.log.length && state.log[i] !== lastTop; i++) {
         const l = state.log[i];
+        fresh.push(l);
         if (EVENT.test(l.text) && (!l.text.startsWith("🤖") || /\(hive\) to/.test(l.text))) events.push({ day: day(state), text: l.text.replace(/^🤖 /, "") }); // the governor's own copy of a line is skipped
-        if (l.kind === "death" && / died /.test(l.text)) { const c = deathCause(l.text); deaths[c] = (deaths[c] || 0) + 1; }
-        else if (/walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
+        if (!(l.kind === "death" && / died /.test(l.text)) && /walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
       }
+      for (const d of newDeaths(fresh)) deaths[d.cause] = (deaths[d.cause] || 0) + 1; // one per survivor (deathcount.js)
       lastTop = state.log[0];
       if (state.hour % (24 * 30) === 0) sample();
       if (state.gameOver) {
