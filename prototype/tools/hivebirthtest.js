@@ -15,6 +15,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { inCoverage } from "../src/sim/radio.js";
 import { setAutopilot, PERSONALITIES } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { cardKind, defaultChoice } from "../src/sim/cardrules.js";
 import {
   BIRTH, hiveBirthHour, siteView, buildSiteLabel, gatheringAlerts, gatheringForce, breakGathering, gatheringCands, watchOf, etaDays, isMarked,
 } from "../src/sim/hivebirth.js";
@@ -73,6 +74,7 @@ const t0 = Date.now();
     "first choice opens the planner aimed at the gathering (Cull horde)");
   check(card && card.choices.filter((c) => c.default).length === 1 && card.choices[1].default && /^Mark it/.test(card.choices[1].label), "Mark it is the one default answer");
   check(card && card.choices.every((c) => typeof c.ai === "function") && card.choices[1].ai(st) > card.choices[2].ai(st), "every choice carries an autopilot score; marking beats ignoring");
+  check(card && cardKind(st, card) === "horde" && defaultChoice(st, card) === card.choices[1], "pause rules (cardrules.js): a horde card (it pauses), left in the tray it marks the gathering");
   hiveBirthHour(st);
   check(st.cards.filter((c) => c.hiveSite === site.id).length === 1, "only one card per gathering");
   check(gatheringAlerts(st).length === 0, "no alert before it is marked");
@@ -164,6 +166,7 @@ const t0 = Date.now();
     for (const c of [...st.cards]) if (c !== card && c.gathering == null) { st.cards.splice(st.cards.indexOf(c), 1); const ch = c.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch.length && c.partyId != null) ch[ch.length - 1].resolve(st); }
   }
   check(!!card && /^Break up the gathering/.test(card.choices[0].label) && /^The dead massing /.test(card.title), `the cull card at the gathering: "${card && card.title}", first choice "${card && card.choices[0].label}"`);
+  check(card && cardKind(st, card) === "combat" && /^Back off/.test(defaultChoice(st, card).label), "pause rules: a combat card; its default answer backs off");
   if (card) {
     const m0 = mass(st, site);
     st.cards.splice(st.cards.indexOf(card), 1);
@@ -188,6 +191,7 @@ const t0 = Date.now();
   check(!!hiveAt(st, site.tile), "the hive stands");
   const born = st.cards.find((c) => /^A new hive /.test(c.title));
   check(!!born && born.choices[0].uiAction && born.choices[0].uiAction.mission === "hive" && born.choices.some((c) => c.default), `the card: "${born && born.title}" (plan an attack / not now)`);
+  check(born && cardKind(st, born) === "other" && /^Not now/.test(defaultChoice(st, born).label), "pause rules: it waits in the tray; its default is Not now");
   check(!watchOf(st, site.id), "the watch lets the site go");
 }
 

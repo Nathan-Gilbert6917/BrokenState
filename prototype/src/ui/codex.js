@@ -21,6 +21,7 @@ import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { day } from "../sim/world.js";
+import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
@@ -96,9 +97,11 @@ function hiveEntries() {
     sprite: null,
   }, {
     key: "h:site", cat: "hives", name: "Hive being built", sub: "Hive",
-    stats: [["Stands", `when ${HIVE.SITE_BIOMASS.toLocaleString("en-US")} of the dead have gone into it, at most ${HIVE.SITE_INTAKE} a day`]],
-    text: "A raw mound of bones: hordes gather at a spot the hives picked, and once enough have come it starts turning into a new hive.",
-    how: "Strike while it is a build site: break the hordes gathering there before it stands (about four weeks from the first gathering).",
+    stats: [["Stands", `when ${HIVE.SITE_BIOMASS.toLocaleString("en-US")} of the dead have gone into it, at most ${HIVE.SITE_INTAKE} a day`],
+      ["Break it up", `${BIRTH.FIGHT_MIN}–${BIRTH.FIGHT_MAX} of the dead at power ${BIRTH.FIGHT_POWER}+, no ${BOSS_NAMES.hive}`],
+      ["Setback", `not begun: given up; under way: ${pct(BIRTH.SETBACK)} of its mound lost, unfed ${BIRTH.PAUSE_DAYS} days`]],
+    text: "A raw mound of bones: hordes gather at a spot the hives picked, and once enough have come it starts turning into a new hive. You may hear of it on the radio or from travellers; once you see the dead massing a card asks what to do, and the map shows the days left until it stands.",
+    how: "Strike while it is a build site: send a Cull horde team and Break up the gathering (a battle far smaller than storming a hive) before it stands, about four weeks from the first gathering. Mark it to keep an alert on it.",
     sprite: () => siteSpriteCanvas(true),
   }];
   for (const [k, g] of Object.entries(GROWTHS)) {

@@ -11,6 +11,8 @@ import { season, SEASON_DAYS, START_OFFSET } from "../src/sim/weather.js";
 import { moodFactors, getRel } from "../src/sim/relations.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { newItem } from "../src/sim/inventory.js";
+import { cardKind, defaultChoice, autoAnswer, trayStale } from "../src/sim/cardrules.js";
+import { childrenOf } from "../src/sim/family.js";
 import { FEST, festivalHour, festivalCard, holdFestival, festivalGlow, festivalNow, festivalBlocker } from "../src/sim/festival.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -43,6 +45,14 @@ const t0 = Date.now();
   const card = festCard(st);
   check(!!card && card.title === "The harvest festival" && card.choices.length === 3, `${FEST.HOUR}:00: the card, three choices`);
   check(card && card.choices.filter((c) => c.default).length === 1 && /^A small festival/.test(card.choices.find((c) => c.default).label), "the small festival is the one default answer");
+  check(card && cardKind(st, card) === "other" && defaultChoice(st, card) === card.choices[1], "pause rules (cardrules.js): it waits in the tray; its default is the small festival");
+  const food0 = hub(st).stock.food;
+  const line = card ? autoAnswer(st, card) : "";
+  check(/took its default: A small festival/.test(line) && hub(st).stock.food < food0 && !festCard(st), `left in the tray it holds the small one: "${line.slice(0, 90)}…"`);
+  const h0 = hub(st), c2 = festivalCard(st, h0), at = st.bases.indexOf(h0);
+  st.bases.splice(at, 1);
+  check(trayStale(st, c2) === "the base is gone", "a festival card for a hub that is lost is out of date");
+  st.bases.splice(at, 0, h0);
   st.cards.length = 0;
   morning(st, FEST_DAY + 1); festivalHour(st);
   check(!festCard(st), "the next day: not again");
@@ -85,6 +95,19 @@ const t0 = Date.now();
   check(!festivalNow(st, h), "the fires are out the next day");
   st.hour += FEST.FULL.glowDays * 24;
   check(festivalGlow(st, a) === 0, `after ${FEST.FULL.glowDays} days the afterglow is gone`);
+}
+
+// 2b. Children eat at the festival (half a head each); they have no mood of their own.
+{
+  console.log("Children at the festival");
+  const st = world();
+  const h = stock(st, 300);
+  morning(st, FEST_DAY);
+  const n = residents(st, h.id).length;
+  childrenOf(st).push({ id: 9001, name: "Pip", baseId: h.id, parents: [], bornDay: 1, grown: 30 }, { id: 9002, name: "Wren", baseId: h.id, parents: [], bornDay: 1, grown: 40 });
+  const text = holdFestival(st, h, "FULL");
+  check(h.stock.food === 300 - Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food), `two children at the hub: ${Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food)} food for ${n} people and 2 children`);
+  check(/children ran wild/.test(text), "the diary line mentions them");
 }
 
 // 3. The small one, skipping it, and everyone else's share.
