@@ -35,6 +35,7 @@ import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
 import { hasPerk } from "./skills.js";
 import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
+import { festivalGlow } from "./festival.js";
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -349,6 +350,8 @@ export function moodFactors(state, s) {
   else if (se.key === "winter" && se.dayOfSeason > 14) add(`Cabin fever (day ${se.dayOfSeason} of winter)`, MOODF.winter14, true);
   const grey = gloomDays(state, d);
   if (grey >= 3) add(`${grey} grey days in a row`, MOODF.gloom, true);
+  const glow = festivalGlow(state, s); // festival.js: the harvest festival's afterglow
+  if (glow) add("The harvest festival", glow, true, "A good day together is still on everyone's mind");
   // People.
   const near = together(state, s);
   let fr = 0, rv = 0, partnerHere = false;

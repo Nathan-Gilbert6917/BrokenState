@@ -15,6 +15,7 @@ import { attitude, baseDefense } from "../sim/factions.js";
 import { baseHeat, hordeScore } from "../sim/hordes.js";
 import { holdLimit, wallTier } from "../sim/defences.js";
 import { hiveDanger, hiveTracker, hiveAt } from "../sim/hives.js";
+import { siteText } from "../sim/hivebirth.js"; // a build site: the dead massed and the days to a hive, as known
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES, TECH, SHEPHERD } from "../sim/hiveconst.js";
 import { LADDER, RAM, DROP, CUT } from "../sim/siege.js";
 import { FIRE, FRAG, BLAST } from "../sim/throwables.js";
@@ -455,7 +456,7 @@ export function renderRight(state, ui) {
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission; see Help → Eras and winning).`)}>Hive</div><div class="danger">Yes${liveHive ? ` · tier ${hiveTier(state, liveHive)}` : ""}</div>` : ""}
         ${hiveGrowths.length ? `<div${tip("Structures the hive has grown on the land around it (Burn the growth mission on each one's tile): income, a bigger guard, the special dead its hordes carry, Wallbreakers.")}>Growths</div><div class="danger">${esc(hiveGrowths.join(", "))}</div>` : ""}
         ${info.growth ? `<div${tip(`${GROWTHS[info.growth.kind] ? GROWTHS[info.growth.kind].desc : ""} Burn it (Burn the growth: fight its guard, or 4 fuel / 2 Molotovs a fire) and its hive loses that. It regrows its flesh a little every day.`)}>Hive growth</div><div class="danger">${esc(info.growth.name)}${info.growth.withered ? " · withered (its hive is gone)" : info.growth.growing ? " · still growing" : ` · flesh ${info.growth.hp}%`}${isLive ? "" : " (then)"}</div>` : ""}
-        ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Culling the hordes gathered here sets it back.`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead</div>` : ""}` : ""}
+        ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Send a Cull horde team and Break up the gathering: before the mound is begun the site is given up, after that the hive loses a big part of what has gone in and starts over (Help: Hives being born).`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead${siteText(state, id) ? `<div class="small">${esc(siteText(state, id))}</div>` : ""}</div>` : ""}` : ""}
         ${hz.territory && !info?.hive ? `<div${tip("Land a hive holds: at least 3 danger skulls. On the red-skull ring right around a hive every one of the dead is much tougher (+3 power; +1 elsewhere in its land).")}>Hive land</div><div class="danger">${hz.red ? "Red-skull ground: much tougher dead" : "Yes: tougher dead"}</div>` : ""}
         ${landRows(state, id, teamsHere)}
         ${fromTeamRow(state, id) || `<div>From hub</div><div>${walk ? `${walk.tiles} tiles · ~${Math.ceil(walk.hoursOut)}h on foot` : "No route over land"}</div>`}

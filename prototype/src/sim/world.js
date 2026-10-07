@@ -46,6 +46,8 @@ import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
+import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
 import { surveyDaily } from "./survey.js";
 import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
@@ -665,6 +667,8 @@ export function tickHour(state) {
   checkGameOver(state);
   updateVision(state);
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
+  hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
+  festivalHour(state); // festival.js: the morning of the harvest festival
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)

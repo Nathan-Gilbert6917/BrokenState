@@ -12,6 +12,8 @@ import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
 import { heatInfo } from "../sim/fieldheat.js";
 import { HIVE } from "../sim/hiveconst.js";
+import { buildSiteLabel, isMarked } from "../sim/hivebirth.js"; // a build site's days to a hive, a marked gathering
+import { festivalNow } from "../sim/festival.js"; // the hub's harvest festival: extra fires
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
 import { rumoursOf, surveyTip } from "../sim/survey.js";
 import { hasKey } from "../sim/locks.js";
@@ -1162,7 +1164,10 @@ export function render(state) {
     const st = isLive ? siteAt.get(id) : k[id] && k[id].site;
     if (!st) continue;
     const px = G.x[id], py = G.y[id];
-    const s = zoomBoost(), w = 26 * s, started = st.started != null && st.started !== false;
+    // sim/hivebirth.js: the mound grows with the dead massed there (as you know it), a red ring when you marked it.
+    const massed = isLive ? (hordeAt.get(id) || { size: 0 }).size : (k[id].hordeSize || 0);
+    const s = zoomBoost(), w = 26 * s * (0.85 + 0.55 * Math.min(1, massed / 600)), started = st.started != null && st.started !== false;
+    if (isMarked(state, id)) { ctx.strokeStyle = "rgba(226,65,47,0.75)"; ctx.lineWidth = 1.5 * s; ctx.setLineDash([3 * s, 3 * s]); ctx.beginPath(); ctx.arc(px, py + 2 * s, w * 0.72, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
     if (started && isLive && animOn()) { wantFrames(); const f = 0.5 + 0.5 * Math.sin(animNow / 520 + phaseOf(id) * 6); ctx.beginPath(); ctx.ellipse(px, py + 6 * s, w * 0.5, w * 0.2, 0, 0, Math.PI * 2); ctx.fillStyle = `rgba(226,65,47,${(0.08 + 0.14 * f).toFixed(3)})`; ctx.fill(); }
     sprite(siteSpriteCanvas(started), px, py + 2 * s, w, { alpha: isLive ? 1 : 0.75 });
     const bw = 24 * s, bx = px - bw / 2, by = py + 11 * s, frac = Math.max(0, Math.min(1, (st.biomass || 0) / HIVE.SITE_BIOMASS));
@@ -1170,6 +1175,8 @@ export function render(state) {
     ctx.fillRect(bx - 1, by - 1, bw + 2, 4 * s + 2);
     ctx.fillStyle = started ? "#e2412f" : "#8a5a5a";
     ctx.fillRect(bx, by, bw * frac, 4 * s);
+    const eta = buildSiteLabel(state, id); // "Hive in ~12 days" (a "?" when the look is old)
+    if (eta) labels.push({ text: eta, x: px, y: by + 4 * s + 7, pri: 0, screen: true, color: isLive ? "#f08a7a" : "#c99a92", size: 9 });
   }
   // Your staging camp (sim/staging.js): tarps, crates and a barricade going up as the work goes on, on your plate, with
   // a bar of the work done (the lighter part: as far as the materials in its stores allow).
@@ -1211,6 +1218,7 @@ export function render(state) {
         if (look.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 12.5, 16); fireGlow(b.id * 3 + 2, fx, fy, s); }
       } else smokeWisps(b.id * 3 + 1, px - w * 0.16, cy - h / 2 + 3 * s, s, { n: 3, rise: 17, alpha: 0.28 });
     }
+    if (festivalNow(state, b)) for (let i = 0; i < 4; i++) fireGlow(b.id * 7 + 40 + i, px + (i - 1.5) * w * 0.24, cy + h / 2 - (i % 2 ? 1 : 3) * s, s); // sim/festival.js: bonfires on the festival day
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
     labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).

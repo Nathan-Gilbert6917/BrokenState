@@ -27,6 +27,7 @@ import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
+import { gatheringCull } from "./hivebirth.js"; // hive birth you can see: breaking up a gathering at a build site
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
@@ -1240,7 +1241,7 @@ function arrive(state, p) {
         return "";
       }
       p.phase = "engaged";
-      addCard(state, cullCard(state, p, horde));
+      addCard(state, gatheringCull(state, p, horde, cullCard(state, p, horde))); // hivebirth.js: at a hive build site, Break up the gathering
       return "";
     }
     case "investigate":
