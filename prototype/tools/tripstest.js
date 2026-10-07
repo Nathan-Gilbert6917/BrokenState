@@ -315,7 +315,7 @@ section("Undo: planner, build queue, Work tab, keys");
   undoKey(state, ui, { code: "KeyZ", ctrlKey: true });
   check(cellOf(state, s, k).p === p0, "Ctrl+Z on the Work tab: the cell back");
   const roleId = gen.id, members = state.survivors.filter((x) => x.work && x.work.role === roleId).map((x) => x.id);
-  actions["wrole-del"]({ role: roleId });
+  actions["wrole-del"]({ role: roleId, ok: "1" }); // ok: the confirmation box answered Yes (ui/confirm.js)
   check(!roleById(state, roleId), "role deleted");
   undoStep(state, ui, "work");
   check(roleById(state, roleId) && members.every((id) => survivorById(state, id).work.role === roleId), "undo: the role and its members back");
