@@ -5,7 +5,8 @@
 // keepsakes kept; an errand takes about a day's food and water a day and brings back what is left; heating fuel per head
 // below 0°C (×1.5 below −8°C), the cold without it, a shelter's camp fire; a team at a lit camp fire stays out of the
 // cold; gauges saved, and old saves start full; starving and parched day after day (the morning mood hit grows, resets
-// when they eat, reaches rock bottom on the road before hunger kills) and the starving status icon.
+// when they eat, a base out of food counts from its first day in place of the old flat penalty, reaches rock bottom on
+// the road before hunger kills) and the starving status icon.
 // Usage: node tools/needstest.js [seed]
 import { createWorld, hub, atBase, residents, makeSurvivor, tickHour } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
@@ -14,7 +15,7 @@ import { econStats } from "../src/sim/farming.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import {
   NEEDS, COLD, teamNeedsHour, needsHour, needsWork, needsAim, teamTreats, treatsFor, useTreat, heatDaily, packErrand, teamCold, takeFood,
-  STARVE, starveMood, starvingDaily,
+  STARVE, starveMood, starvingDaily, hungerOf,
 } from "../src/sim/needs.js";
 import { moodFactors } from "../src/sim/relations.js";
 import { SNAP } from "../src/sim/mentalbreaks.js";
@@ -347,6 +348,26 @@ function team(st, n, supplies) {
   starvingDaily(st);
   check(c.mood === 50 && !c.starveDays, "captives are not counted");
   c.location = loc;
+  // A base out of food: everyone living there counts as starving from the first day, whatever the gauge, and that
+  // is the base's whole mood penalty for it (the flat −10 a day is gone); out of water the same as parched.
+  {
+    const sb = W();
+    const hb = quietHub(sb);
+    sb.hour = mildDay(sb) * 24;
+    hb.stock.food = 0; hb.stock.preserved = 0; hb.stock.water = 500;
+    const ppl = residents(sb, hb.id);
+    for (const x of ppl) { x.mood = 70; x.hunger = 100; x.role = "farm"; }
+    const one = ppl.find((x) => !x.leader);
+    const moods = [];
+    for (let d = 0; d < 3; d++) { const m0 = one.mood; basesDaily(sb); moods.push([one.starveDays, r1(m0 - one.mood)]); for (let k = 0; k < 23; k++) sb.hour++; sb.hour++; }
+    check(hb.hungerDays >= 1 && moods[0][0] === 1, `starving from the base's first day out of food (day ${moods[0][0]}, hunger ${Math.round(one.hunger)})`);
+    check(moods.map((m) => m[0]).join(",") === "1,2,3", `counted each morning: ${moods.map((m) => m[0]).join(", ")}`);
+    const f = moodFactors(sb, one).list;
+    check(f.some((x) => /^Starving: day 3 \(.* is out of food/.test(x.label) && x.v === -starveMood(3)) && !f.some((x) => /^Out of food/.test(x.label)), "the breakdown names the base, and the flat 'Out of food' line is gone");
+    hb.stock.food = 500;
+    basesDaily(sb);
+    check(!one.starveDays || hungerOf(one) < NEEDS.starving, "fed again: the count ends");
+  }
   // Saved.
   const s2 = loadFromString(saveToString((st.cards.length = 0, st))).survivors.find((x) => x.id === s.id);
   check(s2.parchDays === s.parchDays && s.parchDays > 0, "the count is saved");

@@ -316,9 +316,7 @@ export function moodFactors(state, s) {
     if (ci.penalty > 0) add(`Crowded: ${ci.people} people in ${ci.beds} beds`, -ci.penalty, false);
     else add("A bed for everyone", 1, false);
     if (ci.lift > 0) add(`Leader ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
-    if (base.thirstDays > 0) add("Out of water", -8, false);
-    if (base.hungerDays > 0) add("Out of food", -10, false);
-    else add("Fed", 1, false);
+    if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
@@ -339,8 +337,8 @@ export function moodFactors(state, s) {
     if (insp.length) add(`Inspired by ${listText(insp.slice(0, 2).map(first))}`, Math.min(MOODF.inspireMax, insp.length * MOODF.inspire), true);
   }
   // Starving or parched, day after day (needs.js starvingDaily: applied there, each morning).
-  if (s.starveDays > 0) add(`Starving: day ${s.starveDays} (hunger below ${NEEDS.starving}; worse each day until they eat)`, -starveMood(s.starveDays, "food"), false);
-  if (s.parchDays > 0) add(`Parched: day ${s.parchDays} (thirst below ${NEEDS.starving}; worse each day until they drink)`, -starveMood(s.parchDays, "water"), false);
+  if (s.starveDays > 0) add(`Starving: day ${s.starveDays} (${base && base.hungerDays > 0 ? `${base.name} is out of food` : `hunger below ${NEEDS.starving}`}; worse each day until they eat)`, -starveMood(s.starveDays, "food"), false);
+  if (s.parchDays > 0) add(`Parched: day ${s.parchDays} (${base && base.thirstDays > 0 ? `${base.name} is out of water` : `thirst below ${NEEDS.starving}`}; worse each day until they drink)`, -starveMood(s.parchDays, "water"), false);
   const ci = comfortInfo(state, s, base);
   if (ci.n > 0) add(`Something to read (${ci.text})`, Math.min(MOODF.comfortMax, ci.n * MOODF.comfortPer), true);
   // Music, cards, keepsakes and toiletries (comforts.js), and the after-effect of a treat (a coffee buzz, a hangover).

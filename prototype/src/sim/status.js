@@ -3,14 +3,14 @@
 // per state that is on now, in a fixed order, each with its detail for the tooltip. Every threshold is in STATUS here.
 //   😞 low mood     mood below STATUS.mood (30: they talk about leaving, morale.js MOOD.warn1); danger below
 //                   STATUS.moodBad (15: they may walk out; under 10 for 3 days they may break, mentalbreaks.js)
-//   🍽 hungry       hunger below STATUS.hunger (25, needs.js NEEDS.low); starving below NEEDS.starving (15): the
-//                   days starving and the mood they cost (needs.js starvingDaily)
-//   💧 thirsty      thirst below STATUS.thirst (25); parched below 15, the same way
+//   🍽 hungry       hunger below STATUS.hunger (25, needs.js NEEDS.low); starving below NEEDS.starving (15) or at a base
+//                   out of food: the days starving and the mood they cost (needs.js starvingDaily)
+//   💧 thirsty      thirst below STATUS.thirst (25); parched below 15 or at a base out of water, the same way
 //   🩸 low health   health below STATUS.health (40); danger below STATUS.healthBad (20)
 //   🦠 infected     an infected wound (medical.js), or the worm once it has been spotted (worm.js)
 //   🤒 sick         an illness, 🩹 when it is only injuries (health.js conditions)
 // The UI draws them (ui/status.js statusIcons); the tests read statusesOf.
-import { NEEDS, hungerOf, thirstOf, hungerWord, thirstWord, starveMood } from "./needs.js";
+import { NEEDS, hungerOf, thirstOf, hungerWord, thirstWord, starveMood, starvingNow } from "./needs.js";
 import { MOOD, moodRisk } from "./morale.js";
 import { CONDITIONS, conditionsOf, conditionText } from "./health.js";
 import { wormSeen, wormLabel } from "./worm.js";
@@ -27,17 +27,20 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const first = (s) => s.name.split(" ")[0];
 
 // A gauge that is running out, with the starving days (needs.js): its line for the tooltip.
-function needLine(s, kind) {
+function needLine(state, s, kind) {
   const food = kind === "food";
+  const now = starvingNow(state, s)[kind];
   const v = food ? hungerOf(s) : thirstOf(s);
   const days = food ? s.starveDays || 0 : s.parchDays || 0;
   const word = food ? hungerWord(v) : thirstWord(v);
   const gauge = food ? "hunger" : "thirst";
-  if (v >= STATUS.starving) return `${word} (${gauge} ${n0(v)}): below ${STATUS.starving} they start losing mood every morning, more each day.`;
+  if (!now && !days) return `${word} (${gauge} ${n0(v)}): below ${STATUS.starving} they start losing mood every morning, more each day.`;
+  if (!now) return `${food ? "Fed" : "Watered"} again (${gauge} ${n0(v)}) after ${days} day${days === 1 ? "" : "s"} ${food ? "starving" : "parched"}: tomorrow morning it no longer costs mood.`;
   const name = food ? "Starving" : "Parched";
   const fix = food ? "eat" : "drink";
-  if (!days) return `${name} (${gauge} ${n0(v)}): from tomorrow morning mood −${starveMood(1, kind)} a day, more each day until they ${fix}.`;
-  return `${name}: day ${days}, mood −${starveMood(days, kind)} a day (${gauge} ${n0(v)}); tomorrow −${starveMood(days + 1, kind)} unless they ${fix}.${v <= 0 ? ` Empty: it costs health${food ? "" : " fast"}.` : ""}`;
+  const why = v < STATUS.starving ? `${gauge} ${n0(v)}` : `their base is out of ${food ? "food" : "water"}; ${gauge} ${n0(v)}`;
+  if (!days) return `${name} (${why}): from tomorrow morning mood −${starveMood(1, kind)} a day, more each day until they ${fix}.`;
+  return `${name}: day ${days}, mood −${starveMood(days, kind)} a day (${why}); tomorrow −${starveMood(days + 1, kind)} unless they ${fix}.${v <= 0 ? ` Empty: it costs health${food ? "" : " fast"}.` : ""}`;
 }
 
 // The states on now: [{ key, icon, name, tone: "warn" | "danger", tip }], in STATUS_KEYS order. skip: keys to leave
@@ -51,10 +54,11 @@ export function statusesOf(state, s, { skip = [] } = {}) {
     const r = moodRisk(s);
     add("mood", STATUS_ICONS.mood, "Low mood", mood < STATUS.moodBad || (r && r.level >= 3) ? "danger" : "warn", `Low mood (${n0(mood)})${r ? `: ${r.text.toLowerCase()}` : ""}. Below ${STATUS.mood} they talk about leaving, below ${STATUS.moodBad} they may walk out, and under 10 for 3 mornings they may break down. Hover their mood for what weighs on them.`);
   }
-  const h = hungerOf(s);
-  if (h < STATUS.hunger) add("hunger", STATUS_ICONS.hunger, h < STATUS.starving ? "Starving" : "Hungry", h < STATUS.starving ? "danger" : "warn", needLine(s, "food"));
-  const t = thirstOf(s);
-  if (t < STATUS.thirst) add("thirst", STATUS_ICONS.thirst, t < STATUS.starving ? "Parched" : "Thirsty", t < STATUS.starving ? "danger" : "warn", needLine(s, "water"));
+  const now = starvingNow(state, s);
+  const h = hungerOf(s), sf = now.food;
+  if (h < STATUS.hunger || sf || s.starveDays > 0) add("hunger", STATUS_ICONS.hunger, sf ? "Starving" : "Hungry", sf ? "danger" : "warn", needLine(state, s, "food"));
+  const t = thirstOf(s), sw = now.water;
+  if (t < STATUS.thirst || sw || s.parchDays > 0) add("thirst", STATUS_ICONS.thirst, sw ? "Parched" : "Thirsty", sw ? "danger" : "warn", needLine(state, s, "water"));
   if (s.health < STATUS.health) add("health", STATUS_ICONS.health, "Low health", s.health < STATUS.healthBad ? "danger" : "warn", `Low health (${n0(s.health)} of 100)${s.health < STATUS.healthBad ? ": one more bad hit could kill them" : ""}. Rest, a bed and a medic heal it; hunger, thirst and the cold slow it.`);
   const worm = wormSeen(s);
   if (s.woundInfected || worm) {

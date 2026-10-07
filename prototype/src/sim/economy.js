@@ -304,10 +304,7 @@ function thirst(state, base, mouths, short) {
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 8);
-    hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
   log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
 }
 
@@ -359,10 +356,7 @@ function starve(state, base, mouths) {
   base.hungerDays = (base.hungerDays || 0) + 1;
   econStats(state).hungerDays++;
   const dmg = hungerDamage(base.hungerDays);
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 10);
-    hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (starving, worse each day)
   log(state, `${base.name} is out of food${base.hungerDays > 1 ? ` (day ${base.hungerDays}: everyone there loses ${dmg} health and nobody heals)` : ""}.`, "danger");
 }
 
