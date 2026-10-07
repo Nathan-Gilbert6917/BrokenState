@@ -13,7 +13,7 @@ import { createWorld, hub, atBase, makeSurvivor, hourOfDay } from "../src/sim/wo
 import { tickHour } from "../src/sim/world.js";
 import { createBattle, combatAct, autoPlayerTurn, runEnemyPhase, registerCombatHandler, active, unitAt } from "../src/sim/combat.js";
 import { addBuilding } from "../src/sim/buildings.js";
-import { deployProblems, canPlace, sideUntf } from "../src/sim/deploy.js";
+import { deployProblems, canPlace, sideUntf, endDeploy } from "../src/sim/deploy.js";
 import { guardHold, holdLimit, raidTier, hordeAttackBase, hordeWarnings } from "../src/sim/defences.js";
 import { workState, assignRole, planBase } from "../src/sim/work.js";
 import { WATCH_PRESETS, setWatchPreset, toggleWatch, fillWatch, watchCoverage, watchHour, watchDayRoles, onWatchNow, watchLine, addShift, setShiftHours, removeShift, readiness, surpriseAt, lookoutsSpot, watchSawText, SURPRISE } from "../src/sim/watch.js";
@@ -416,9 +416,15 @@ section("A surprise battle with a deploy step");
 for (const walls of [true, false]) {
   const st = world(seed + (walls ? 0 : 1));
   const h = armHub(st, walls ? ["walls", "walls", "barricades", "bunkhouse"] : ["barricades", "bunkhouse"]);
+  for (const s of atBase(st, h.id)) s.role = "farm"; // nobody on watch: the surprise
   const b = battleAt(st, h, { enemy: { kind: "raiders", count: 6, power: 3, name: "raiders" }, ambush: "enemy", layout: "baseDefence", deploy: true, context: { night: true, surprise: true } });
   st.combat = b;
-  check(b.phase === "deploy" && playersOf(b).every((u) => u.ap <= 1) && b.setup.context.surprise, `${walls ? "walled" : "open"} base: their volley, then the deploy step, your people 1 action (${b.tier ? b.tier.map : "field"} map)`);
+  // A base battle has one start for a surprise (defenceplan.js openStart): no volley, everyone in the buildings, and
+  // the attackers move first once the deploy step ends.
+  const mine = b.units.filter((u) => u.side === "player");
+  check(b.phase === "deploy" && b.setup.context.surprise && mine.every((u) => u.late && u.hp === u.maxHp), `${walls ? "walled" : "open"} base: no volley, the deploy step, everyone still in the buildings (${b.tier ? b.tier.map : "field"} map)`);
+  endDeploy(b);
+  check(b.tier && b.tier.enemyNext && mine.every((u) => u.ap === 0), "the deploy step ends: the attackers move first");
   for (let i = 0; i < 300 && !b.over; i++) { if (b.phase === "player" || b.phase === "deploy") autoPlayerTurn(st); else runEnemyPhase(st); }
   check(b.over, `and it plays to the end (${b.outcome || (b.result && b.result.outcome) || "over"})`);
   st.combat = null;
