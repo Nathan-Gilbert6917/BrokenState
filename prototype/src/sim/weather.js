@@ -308,6 +308,16 @@ const frontRadius = (f, h) => f.r * Math.min(1, (f.t1 - h) / FRONT.fadeHours, (h
 // all of them): [{ f, x, y, r }] in tile units. Kept for the last few thousand asks (travel estimates ask a lot).
 let memoW = null, memoN = 0;
 const memo = new Map();
+// Drops every cache above (the fronts over the map by the hour, the background skies, the days by tile). They only
+// remember what the state already decides, so the weather never depends on what was asked before: the tools check
+// it by dropping them every hour (tools/fronttest.js).
+export function dropWeatherCaches() {
+  memo.clear();
+  memoW = null;
+  bgCache = new WeakMap();
+  dayCache = new WeakMap();
+  frCache = new WeakMap();
+}
 /** @param {State} state @param {number} hour @param {number} [known] */
 function activeFronts(state, hour, known = Infinity) {
   const w = ensure(state);
@@ -348,7 +358,7 @@ export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
 
 // A day's background sky (the record without its storm, blizzard or fog; the day's temperatures stay the record's:
 // the cold of a blizzard day is the region's): one object per day record. rk: the record's kind.
-const bgCache = new WeakMap();
+let bgCache = new WeakMap();
 // A day a tool forced to one weather for the whole state (d.all: true) has no background of its own.
 function bgRec(d) {
   if (!BG[d.k] || d.all) return d;
@@ -361,7 +371,18 @@ function bgRec(d) {
 }
 // The weather under a front: its kind (rain or snow by the day's cold), cooler or warmer than the day's record for
 // it (a rain belt on a clear day: 3 °C cooler; a blizzard on a blizzard day: the record's), its rain, snow and wind.
+// Kept per front for the last background sky it was asked over (a front sits over one day at a time, mostly).
+let frCache = new WeakMap();
+/** @param {any} b the background sky @param {any} f the front */
 function frontRec(b, f) {
+  const c = frCache.get(f);
+  if (c && c.b === b) return c.r;
+  const r = makeFrontRec(b, f);
+  frCache.set(f, { b, r });
+  return r;
+}
+/** @param {any} b @param {any} f */
+function makeFrontRec(b, f) {
   const k = precip(f.k, (b.hi + b.lo) / 2);
   if (RANK[k] <= RANK[b.k]) return b;
   const dT = TEMP_MOD[k] - TEMP_MOD[b.rk || b.k], p = f.p ?? 0.5;
@@ -391,7 +412,7 @@ export function homeTile(state) {
 // A tile's day (farming, water, thirst, exposure and the like go by home's): the front that sat over the tile for
 // a good part of the day (a storm or blizzard 3 hours, anything else 6), else the background sky; the temperatures
 // are the day record's either way.
-const dayCache = new WeakMap();
+let dayCache = new WeakMap();
 /** @param {State} state @param {number} dayIdx @param {number} [tileId] */
 function dayRec(state, dayIdx, tileId = homeTile(state)) {
   const i = Math.max(0, Math.floor(dayIdx));
