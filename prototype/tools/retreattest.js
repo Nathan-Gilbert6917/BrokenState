@@ -751,7 +751,11 @@ if (N > 0) {
     check(t.on.dead <= t.off.dead, `${s}: the retreat costs no extra lives (${t.off.dead} → ${t.on.dead})`);
     check(t.on.wipes <= t.off.wipes, `${s}: fewer or as many team wipes (${t.off.wipes} → ${t.on.wipes})`);
     check(t.on.retreats === 0 || t.on.winnable / t.on.retreats <= 0.25, `${s}: at most a quarter of its retreats are from fights it would have won (${t.on.winnable}/${t.on.retreats})`);
-    check(t.off.wins - t.on.wins <= Math.max(3, t.n * ({ cautious: 0.06, balanced: 0.03, aggressive: 0.02 }[s] || 0.03)),`${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n})`);
+    // The style's rate of wins given up, plus 2 standard errors of the count (Poisson, sqrt of the expected count):
+    // a few winnable fights abandoned is dice (balanced over 5 seeds of 360 battles gave up 4-12, mean 9, both before
+    // and after the determinism fix), so a flat 3% of 360 (10.8) failed about one seed in five.
+    const giveUp = t.n * ({ cautious: 0.06, balanced: 0.03, aggressive: 0.02 }[s] || 0.03), giveUpMax = Math.max(3, giveUp + 2 * Math.sqrt(giveUp));
+    check(t.off.wins - t.on.wins <= giveUpMax, `${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n}; at most ${giveUpMax.toFixed(1)}: ${giveUp.toFixed(1)} + 2 standard errors)`);
   }
   if (res.cautious && res.aggressive) check(res.cautious.on.retreats >= res.aggressive.on.retreats, `Cautious retreats at least as often as Aggressive (${res.cautious.on.retreats} vs ${res.aggressive.on.retreats})`);
   // By the numbers: the policy saves lives like the map's retreat, and both modes agree on the escape itself.
