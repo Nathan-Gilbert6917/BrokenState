@@ -11,7 +11,9 @@ import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
-import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish } from "./sim/buildings.js";
+import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, BUILDINGS, demolishRefund } from "./sim/buildings.js";
+// What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
+const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
 import { refuel, repair } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
@@ -73,6 +75,10 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+// Display options and their keys (M, `, Shift+P), the minimap, and the one confirmation box (ui/display.js, ui/minimap.js, ui/confirm.js).
+import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
+import { initMinimap, minimapFrame } from "./ui/minimap.js";
+import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -96,6 +102,7 @@ const freshUi = () => ({
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
+  ask: null, // ui/confirm.js: the question up before an order that cannot be undone
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -135,11 +142,19 @@ if (!$("alerts")) {
   al.className = "hidden";
   $("mapwrap").appendChild(al);
 }
+// The confirmation box (ui/confirm.js), over everything.
+if (!$("ask")) {
+  const el = document.createElement("div");
+  el.id = "ask";
+  el.className = "hidden";
+  document.body.appendChild(el);
+}
 // The bars between the map and its panels, the map-only button and resizable windows (ui/windows.js), set up before
 // the map measures itself so a folded panel's room is the map's from the start.
 initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow = true; } });
 initRenderer(canvas);
 initCombatUI($("combatmap"));
+initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -158,7 +173,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   const pending = !state.autopilot && (state.cards.length > 0 || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ask;
 }
 
 // One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
@@ -207,6 +222,7 @@ function step(now) {
     if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
+  minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
   if (ui.title) titleFrame(state, ui, now);
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
@@ -216,7 +232,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts"];
+const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -366,6 +382,7 @@ function refresh(user = true) {
   setPanel("alerts", alertsHTML(alerts), user);
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
+  setPanel("ask", askHtml(ui), user); // ui/confirm.js
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -621,15 +638,19 @@ const actions = {
   "sr-pause": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(pauseSupplyRun(state, j, true)); },
   "sr-resume": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(pauseSupplyRun(state, j, false)); },
   "sr-release": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(releaseHeld(state, j, d.how)); },
-  "sr-delete": (d) => { const j = supplyRunById(state, Number(d.id)); if (j) baseSay(deleteSupplyRun(state, j)); },
+  "sr-delete": (d) => {
+    const j = supplyRunById(state, Number(d.id));
+    if (!j || ask(ui, d, "sr-delete", { kind: "delrun", title: "Delete this supply run?", text: "Its schedule, crew, cargo lists and stops are gone for good (a convoy already on the road finishes its trip).", yes: "Delete it" })) return;
+    baseSay(deleteSupplyRun(state, j));
+  },
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
-  // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (two clicks) to free its plot.
+  // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   demolish: (d) => {
-    const id = Number(d.id);
-    if (ui.demolishArm !== id) { ui.demolishArm = id; ui.baseMsg = "Click Confirm to pull it down (half its scrap and parts come back)."; return; }
-    ui.demolishArm = null;
-    ui.baseMsg = demolish(state, baseOf(d), id);
+    const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
+    const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
+    if (ask(ui, d, "demolish", { kind: "demolish", title: `Pull down ${name}${b ? ` at ${b.name}` : ""}?`, text: `It is gone for good and its plot is free again. About half its scrap and parts come back${what ? ` (${demolishText(what)})` : ""}.`, yes: "Pull it down" })) return;
+    ui.baseMsg = demolish(state, b, id);
   },
   // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
   campfire: (d) => {
@@ -772,6 +793,8 @@ const actions = {
   cancelroute: (d) => {
     const r = state.routes.find((x) => x.id === Number(d.id));
     if (!r) return;
+    const rf = factionById(state, r.factionId);
+    if (ask(ui, d, "cancelroute", { kind: "endroute", title: `End the trade route${rf ? ` with ${rf.name}` : ""}?`, text: "No more convoys go; its escorts come home. A new route needs the trade pact and the setup again.", yes: "End the route" })) return;
     r.active = false;
     releaseEscorts(state, r);
     log(state, "Trade route ended.", "info");
@@ -908,6 +931,9 @@ for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(stat
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
+// Display options and the minimap's button (ui/display.js); the confirmation box (ui/confirm.js): Yes runs the order again.
+for (const [k, fn] of Object.entries(DISPLAY_ACTIONS)) actions[k] = (d) => fn(ui, d);
+for (const [k, fn] of Object.entries(ASK_ACTIONS)) actions[k] = (d) => fn(ui, d, actions);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
@@ -1085,6 +1111,7 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(DISPLAY_CHANGE)) changeActions[k] = (el) => fn(ui, el); // ui/display.js
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
@@ -1166,6 +1193,8 @@ const settingsApi = {
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
+initDisplay(options, () => saveOptions(options)); // after initSettings: reduce motion overrides the map animations
+initConfirm(options, () => saveOptions(options));
 // The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
 // makes a fresh one.
 let titleTicked = false;
@@ -1564,12 +1593,16 @@ function closeTopLayer() {
 window.addEventListener("keydown", (e) => {
   const t = e.target || {};
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
+  // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
+  if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
   if (ui.timelapse) {
     if (tlKey(state, ui, e)) { e.preventDefault(); refresh(); }
     return;
   }
   if (e.code === "Escape" && closeTopLayer()) { e.preventDefault(); refresh(); return; }
+  // The menu's question (ui/settings.js): Enter answers yes, like the map's confirmation box.
+  if (ui.settings && ui.settings.confirm && (e.code === "Enter" || e.code === "NumpadEnter")) { e.preventDefault(); actions["set-yes"]({}); refresh(); return; }
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
@@ -1591,6 +1624,8 @@ window.addEventListener("keydown", (e) => {
   }
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
+  // M the minimap, ` the dev tools (when they are shown), Shift+P autopilot only with them (ui/display.js).
+  if (displayKey(ui, e, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
@@ -1615,7 +1650,6 @@ window.addEventListener("keydown", (e) => {
     ui.speed = [0.5, 1, 2, 3][Number(e.code.slice(5)) - 1];
     ui.lastSpeed = ui.speed;
   } else if (e.code === "KeyH") centerOn(state, playerTile(state));
-  else if (e.code === "Backquote") ui.dev = !ui.dev;
   else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {
     const pan = 40 / camera.zoom;
@@ -1642,6 +1676,7 @@ window.game = {
   frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
+  dev: (on = true) => { ui.dev = !!on; refresh(); }, // open the dev tools for this session (tools, the desktop perf driver), whatever Show dev tools says
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {
     ui: cui,

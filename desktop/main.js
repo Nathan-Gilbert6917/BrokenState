@@ -256,7 +256,7 @@ async function runPerf(win) {
     app.getAppMetrics(); // resets the CPU counters: the next call reports usage over the run
     let result;
     try {
-      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify({ seed: 42, speed: 200, seconds, warmup: 3 })})`, true);
+      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify({ seed: 42, speed: Number(flag("perf-speed")) || 300, seconds, warmup: 3 })})`, true);
     } catch (e) {
       result = { error: String(e && e.message ? e.message : e) };
     }

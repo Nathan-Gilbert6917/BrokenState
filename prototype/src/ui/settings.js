@@ -1,7 +1,8 @@
 // The settings view (⚙ in the top bar, the ⚙ Menu button in a battle, or Esc on the map with nothing else open):
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
-// Options (autosave, confirmations, pause on focus loss, UI size, map detail, the battle's end-turn question, zombie look,
-// the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// Options (autosave, confirmations, pause on focus loss, Display: UI size, map detail and animations, zombie look,
+// colour-blind colours, larger map text, reduce motion, the minimap and the dev tools; Confirmations: the questions not
+// asked any more; the battle's end-turn question, the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
@@ -16,6 +17,8 @@ import { helpTab } from "./help.js";
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
+import { displayRows, applyDisplay } from "./display.js"; // Display: colour-blind colours, map text, reduce motion, minimap, dev tools
+import { askBoxHtml, confirmRows } from "./confirm.js"; // the one confirmation box, and Confirmations (Don't ask again)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -69,10 +72,13 @@ export function settingsModal(state, ui, api = API) {
   return `<div class="box wide settings"><h1>⚙ Menu</h1>${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
+// The menu's question: the same box as the map's orders (ui/confirm.js), Enter / Esc. A question about leaving with
+// progress not saved offers "Don't ask again" (the option Confirm before leaving a game).
 function confirmBox(S) {
   const c = S.confirm;
   if (!c) return "";
-  return `<div class="setconfirm"><span>${esc(c.text)}</span><button class="primary" data-action="set-yes">${esc(c.yes || "Yes")}</button><button data-action="set-no">Cancel</button></div>`;
+  const t = String(c.text), q = t.indexOf("? "); // the question, then what it means
+  return askBoxHtml({ title: q >= 0 ? t.slice(0, q + 1) : t, text: q >= 0 ? t.slice(q + 2) : "", yes: c.yes || "Yes", yesAction: "set-yes", noAction: "set-no", skipAction: c.leave ? "set-noask" : "", skip: !!c.skip, skipLabel: "Don't ask again before leaving a game with progress not saved" });
 }
 
 function gameTab(state, ui, api) {
@@ -146,11 +152,11 @@ const KEYS = [
   ["W A S D, arrows, drag, wheel", "Pan and zoom the map"], ["H", "Center on the hub"], ["I", "Infection overlay"],
   ["B / P / G / T", "Bases / People / Groups / Teams tab"], ["Tab or N", "Next team waiting for orders (Shift+Tab back)"],
   ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
-  ["J", "Diary"], ["R", "Roster"],
+  ["J", "Diary"], ["R", "Roster"], ["M", "Minimap: show or hide (click or drag on it to look there)"],
   ["[ / ] / L", "Fold or show the left panel / right panel / log (or click the bar beside it; drag the bar to resize)"],
   ["Alt+[ / Alt+] / Alt+L", "Close the left panel / right panel / log completely (no strip), again to bring it back; also the ✕ on a folded strip or ◧ ◨ ⬓ in the top bar. The slim tab at the map's edge or the panel's plain key opens it again too"],
   ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
-  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
+  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools (with Show dev tools on, in Display)"], ["Shift+P", "Autopilot (dev; with Show dev tools on)"], ["Enter / Esc", "Answer a question before an order that cannot be undone: yes / cancel"],
   ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Shift+S search, Shift+Q quick search, Shift+D drag a body, Shift+A the AI plays your side (again to take back control), Enter ends the turn; hover a tile for the threat there"],
   ["Battle view", "Drag (or W A S D, the arrow keys, or the mouse at the edge) to pan, the wheel or + / − to zoom, , and . to turn it, V to center on the selected unit, B roofs on / off"],
   ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
@@ -171,11 +177,13 @@ function optionsTab(state, ui, api) {
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
     </div>
     <h3>Display</h3><div class="setrow">
-      <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
+      <label${tip("Interface size: everything but the map's own drawing (Larger map text below is for that). Larger is easier to read from the couch.")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often).")}>Map animations <select data-action="set-mapanim">${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often). Reduce motion below turns them off too.")}>Map animations <select data-action="set-mapanim"${o.calm ? " disabled" : ""}>${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button data-action="zlook-open"${tip("Palette, gore and variants of the dead in battle")}>Zombie look…</button>
     </div>
+    ${displayRows(o)}
+    <h3>Confirmations</h3><div class="setrow">${confirmRows()}</div>
     <h3>Windows and panels</h3><div class="setrow">
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
@@ -214,7 +222,7 @@ function run(ui, api, label, fn) {
 }
 // Asks first when the option is on and there is progress that is not saved.
 function guarded(state, ui, api, confirm, go) {
-  if (api.options.confirmQuit && unsaved(state, ui) && !state.gameOver) { ui.settings.confirm = { ...confirm, go }; return; }
+  if (api.options.confirmQuit && unsaved(state, ui) && !state.gameOver) { ui.settings.confirm = { ...confirm, go, leave: true }; return; }
   go();
 }
 
@@ -260,7 +268,13 @@ export const SETTINGS_ACTIONS = {
     Object.assign(ui.settings, { tab: "help", help: d.sec || "", msg: "", confirm: null });
   },
   "set-no": (state, ui) => { ui.settings.confirm = null; },
-  "set-yes": (state, ui) => { const c = ui.settings.confirm; ui.settings.confirm = null; if (c && c.go) c.go(); },
+  "set-yes": (state, ui, d, api) => {
+    const c = ui.settings.confirm;
+    ui.settings.confirm = null;
+    if (c && c.leave && c.skip && api) { api.options.confirmQuit = false; saveOptions(api.options); } // Don't ask again ticked
+    if (c && c.go) c.go();
+  },
+  "set-noask": (state, ui) => { const c = ui.settings && ui.settings.confirm; if (c) c.skip = !c.skip; },
   // Save to the slot this game came from (or a new one); with data-id, over that slot (asks first).
   "set-save": (state, ui, d, api) => {
     if (ironBlocked(state, ui)) return;
@@ -374,6 +388,7 @@ export const SETTINGS_CHANGE = {
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";
     setMapAnim(api.options.mapAnim);
+    applyDisplay(); // reduce motion keeps them off (ui/display.js)
     saveOptions(api.options);
   },
   "set-mapdetail": (state, ui, el, api) => {

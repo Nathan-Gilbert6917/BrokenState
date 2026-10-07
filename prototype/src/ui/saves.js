@@ -7,6 +7,7 @@
 //                brokenstate.options        the Options tab (autosave, confirmations, pause on focus loss, UI size, map detail)
 // Nothing here runs at import time, so the headless tools can import it with no browser around.
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
+import { readDisplayOptions } from "./displayopts.js"; // the Display options and "Don't ask again" (ui/display.js, ui/confirm.js)
 
 export const AUTOSAVE = "autosave";
 // The battle-start save (ui/settings.js autosaveCheck): one slot, written as each battle opens, so a battle can be
@@ -28,7 +29,7 @@ const storage = () => {
 
 // ---------- options ----------
 export function loadOptions() {
-  const o = { ...DEFAULT_OPTIONS };
+  const o = readDisplayOptions({ ...DEFAULT_OPTIONS });
   try {
     const raw = storage() && storage().getItem(OPTIONS_KEY);
     if (raw) {
@@ -43,6 +44,7 @@ export function loadOptions() {
       if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)
       if (typeof v.titleBg === "string") o.titleBg = v.titleBg; // the title screen's background and logo (ui/title.js checks them)
       if (typeof v.titleStyle === "string") o.titleStyle = v.titleStyle;
+      readDisplayOptions(o, v); // Display (palette, map text, reduce motion, minimap, dev tools, map animations) and the confirmations
     }
   } catch { /* unreadable: the defaults */ }
   return o;

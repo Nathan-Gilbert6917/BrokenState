@@ -28,9 +28,11 @@
     await until(() => g.state.seed === seed, `seed ${seed}`);
     await click('[data-action="begin"]', "the Start button");
     await until(() => g.ui.started, "the game to start");
-    // Dev panel: the ` key, or the Dev button in the top bar.
+    // Dev panel: the ` key or the Dev button in the top bar (both only with Menu → Options → Display → Show dev
+    // tools on), else window.game.dev() opens it for this session without changing the player's options.
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "Backquote", key: "`", bubbles: true }));
     await frame();
+    if (!g.ui.dev && g.dev) g.dev(true);
     if (!g.ui.dev) await click('[data-action="dev-toggle"]', "the Dev button");
     await until(() => g.ui.dev && q('#devpanel input[data-action="dev-reveal"]'), "the dev panel");
     if (!q('#devpanel input[data-action="dev-reveal"]').checked) await click('#devpanel input[data-action="dev-reveal"]');
