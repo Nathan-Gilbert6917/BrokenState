@@ -1355,14 +1355,16 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     UI.drawCombat(ft.st, NOW);
     check(UI.cui.view === "top" && ISO.iso.frames === isoFrames, "Battle view: Top-down draws the flat grid (the isometric renderer is not used)");
     const key = (code, extra = {}) => UI.combatKey(ft.st, { code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...extra });
-    check(key("KeyI") && UI.cui.view === "iso" && key("KeyI") && UI.cui.view === "top" && key("KeyI") && UI.cui.view === "iso", "I switches isometric / top-down in a battle");
+    UI.setBattleView("iso");
+    check(!key("KeyI") && UI.cui.view === "iso", "the battle view is always isometric (I no longer switches to top-down)");
     const r0 = ISO.iso.rot, z0 = ISO.iso.zoom, roofs0 = ISO.iso.roofs;
     check(key("Period") && ISO.iso.rot === (r0 + 1) % 4 && key("Comma") && ISO.iso.rot === r0 && key("Equal") && ISO.iso.zoom === Math.min(ISO.ISO_ZOOMS.length - 1, z0 + 1) && key("Minus") && key("KeyB") && ISO.iso.roofs === !roofs0 && key("KeyB") && ISO.iso.roofs === roofs0 && key("KeyV"), ", . turn the view, + − zoom, B roofs, V centers on the selected unit");
     check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
+    check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
     { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
-    check(["top", "rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: top-down, turn, zoom, center, roofs (main.js handles cb-view)");
-    for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs", "top", "iso"]) UI.combatAction(ft.st, "cb-view", { v });
+    check(!bar.includes(`data-v="top"`) && ["rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: turn, zoom, center, roofs, no top-down (main.js handles cb-view)");
+    for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs"]) UI.combatAction(ft.st, "cb-view", { v });
     check(UI.cui.view === "iso" && ISO.iso.rot === r0, "the view bar's buttons work");
     // Mouse: a press that moves pans (no click), one that does not clicks on release; the wheel zooms.
     ISO.iso.zoom = 4; UI.drawCombat(ft.st, NOW);
@@ -1379,12 +1381,9 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const u5 = { started: true, scale: 1, speed: 0, slot: null, settings: null };
     openSettings(u5, "options");
     const sh = settingsModal(ft.st, u5, { options: { ...DEFAULT_OPTIONS }, desktop: false, autosaveInfo: () => ({}) });
-    SETTINGS_CHANGE["set-battleview"](ft.st, u5, { value: "top" });
-    const wasTop = UI.cui.view;
-    SETTINGS_CHANGE["set-battleview"](ft.st, u5, { value: "iso" });
-    check(/data-action="set-battleview"/.test(sh) && /<option value="iso" selected>Isometric/.test(sh) && wasTop === "top" && UI.cui.view === "iso", "Options → Display → Battle view: Isometric (the default) / Top-down");
+    check(!/set-battleview/.test(sh) && !SETTINGS_CHANGE["set-battleview"], "Options has no Battle view choice (always isometric)");
     const topic = (await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view");
-    check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>I</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
+    check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>W</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     check(/Battle view/.test(readme) && /isoview\.js/.test(readme), "the README describes the battle view");
     // The fallen (ui/downsprites.js): bodies of every kind lie flat in both views (their own pictures, not the

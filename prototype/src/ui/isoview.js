@@ -1,6 +1,5 @@
-// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the default way a battle is drawn. Options
-// → Display → Battle view (or I in a battle, or the panel's view bar) switches to the flat top-down grid of
-// ui/combat.js. A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
+// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the way a battle is drawn (the flat
+// top-down grid of ui/combat.js is kept only for the headless tests). A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
 //
 // Geometry: 2:1 diamonds. In art pixels a tile is 32 × 16 and one height level (a walkway, a flat roof, an upper
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State

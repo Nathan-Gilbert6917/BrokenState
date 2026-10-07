@@ -11,7 +11,7 @@ import {
 import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from "../sim/save.js";
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
-import { cui, setConfirmEnd, setAutoRedeploy, setBattleView } from "./combat.js";
+import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
 import { helpTab } from "./help.js";
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
@@ -141,8 +141,8 @@ const KEYS = [
   ["Alt+[ / Alt+] / Alt+L", "Close the left panel / right panel / log completely (no strip), again to bring it back; also the ✕ on a folded strip or ◧ ◨ ⬓ in the top bar. The slim tab at the map's edge or the panel's plain key opens it again too"],
   ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
   ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
-  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Enter ends the turn"],
-  ["Battle view", "I isometric / top-down; in the isometric view: drag (or the arrow keys, or the mouse at the edge) to pan, the wheel or + / − to zoom, , and . to turn it, V to center on the selected unit, B roofs on / off"],
+  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Shift+S search, Shift+Q quick search, Shift+D drag a body, Enter ends the turn"],
+  ["Battle view", "Drag (or W A S D, the arrow keys, or the mouse at the edge) to pan, the wheel or + / − to zoom, , and . to turn it, V to center on the selected unit, B roofs on / off"],
   ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
 ];
 
@@ -163,7 +163,6 @@ function optionsTab(state, ui, api) {
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label${tip("State Map animations: teams and parties on the move bob in step and vehicles raise dust, the boat rocks, live hordes shamble, herds graze, campfires flicker, bases and camps smoke, a crash's smoke drifts, badges pulse. Off: everything stands still (and the map draws less often).")}>Map animations <select data-action="set-mapanim">${[["on", "On"], ["off", "Off"]].map(([v, l]) => `<option value="${v}" ${(o.mapAnim !== false) === (v === "on") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label${tip("How battles are drawn: Isometric is the pseudo-3D view (walls, roofs cut away when your people are inside, heights; drag, the wheel and , . to pan, zoom and turn it); Top-down is the flat grid. I switches it in a battle.")}>Battle view <select data-action="set-battleview">${[["iso", "Isometric"], ["top", "Top-down"]].map(([v, l]) => `<option value="${v}" ${(cui.view === "top" ? "top" : "iso") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <button data-action="zlook-open"${tip("Palette, gore and variants of the dead in battle")}>Zombie look…</button>
     </div>
     <h3>Windows and panels</h3><div class="setrow">
@@ -326,7 +325,6 @@ export const SETTINGS_ACTIONS = {
 
 export const SETTINGS_CHANGE = {
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
-  "set-battleview": (state, ui, el) => setBattleView(el.value === "top" ? "top" : "iso"),
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";
     setMapAnim(api.options.mapAnim);

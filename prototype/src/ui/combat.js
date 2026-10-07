@@ -45,14 +45,10 @@ export function initCombatUI(cv) {
   ctx = cv.getContext("2d");
 }
 
-// The battle view (ui/isoview.js): "iso" (isometric, the default) or "top" (the flat top-down grid below). Options
-// → Display → Battle view, I in a battle, or the panel's view bar; remembered in this browser.
-const VIEW_KEY = "brokenstate.battleView";
-cui.view = (() => { try { return typeof localStorage !== "undefined" && localStorage.getItem(VIEW_KEY) === "top" ? "top" : "iso"; } catch { return "iso"; } })();
-export function setBattleView(v) {
-  cui.view = v === "top" ? "top" : "iso";
-  try { localStorage.setItem(VIEW_KEY, cui.view); } catch { /* this session only */ }
-}
+// The battle view (ui/isoview.js): always isometric. The flat top-down grid below is no longer offered in play
+// (setBattleView("top") still draws it, for the headless tests).
+cui.view = "iso";
+export function setBattleView(v) { cui.view = v === "top" ? "top" : "iso"; }
 const isIso = () => cui.view !== "top";
 
 // ---------- floors (docs/multi-storey-crawl.md) ----------
@@ -164,7 +160,7 @@ export function combatMouse(state, px, py) {
 export function combatLeave() { cui.hover = null; cui.drag = null; isoEdge(null); }
 
 // The mouse on the battle map (main.js): in the isometric view a press that moves pans the view and a press that
-// does not is a click (left: the usual click; right: cancel the current action); the top-down view clicks at once.
+// does not is a click (left: the usual click; right: cancel the current action); the top-down view (tests only) clicks at once.
 // Returns true when the press was a click main.js should act on now.
 export function combatPress(state, px, py, button) {
   if (!state.combat) return false;
@@ -435,13 +431,12 @@ export function retreatConfirmHtml(b, plan) {
     <button data-action="cb-retreat" data-v="cancel" data-tip="Close this and keep fighting. (Esc)">Keep fighting</button></div></div>`;
 }
 
-// The view's keys: I switches isometric / top-down; PageUp / PageDown change the floor in a building with storeys
-// (both views); in the isometric view , and . turn it, + and − zoom, V centers on the selected unit, B shows or
-// hides the roofs, the arrow keys pan (held).
+// The view's keys: PageUp / PageDown change the floor in a building with storeys; , and . turn the view, + and −
+// zoom, V centers on the selected unit, B shows or hides the roofs, W A S D or the arrow keys pan (held).
 const PAN_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
+const WASD = { KeyW: "ArrowUp", KeyA: "ArrowLeft", KeyS: "ArrowDown", KeyD: "ArrowRight" };
 function viewKey(state, b, e) {
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.code === "KeyI" && !e.shiftKey) { setBattleView(isIso() ? "top" : "iso"); return true; }
   if (e.code === "PageUp" || e.code === "PageDown") {
     if (!floorsOf(b)) return false;
     if (!setViewFloor(b, floorNo(b) + (e.code === "PageUp" ? 1 : -1))) cui.msg = e.code === "PageUp" ? "This is the top floor." : "This is the ground floor.";
@@ -449,6 +444,7 @@ function viewKey(state, b, e) {
   }
   if (!isIso()) return false;
   if (PAN_KEYS.has(e.code)) { iso.keys.add(e.code); return true; }
+  if (WASD[e.code] && !e.shiftKey) { iso.keys.add(WASD[e.code]); return true; }
   if (e.code === "Comma" || e.code === "Period") { isoRotate(b, e.code === "Period" ? 1 : -1); return true; }
   if (e.code === "Equal" || e.code === "NumpadAdd") { isoZoom(b, 1); return true; }
   if (e.code === "Minus" || e.code === "NumpadSubtract") { isoZoom(b, -1); return true; }
@@ -458,6 +454,7 @@ function viewKey(state, b, e) {
 }
 export function combatKeyUp(state, e) {
   if (PAN_KEYS.has(e.code)) iso.keys.delete(e.code);
+  if (WASD[e.code]) iso.keys.delete(WASD[e.code]);
 }
 
 export function combatKey(state, e) {
@@ -498,8 +495,11 @@ export function combatKey(state, e) {
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
-  if (e.code === "KeyS" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; } // a quick rummage (sim/search.js)
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyS: "search", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyD: "drag", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush", KeyJ: "doubletap", KeyP: "pickup", KeyZ: "stowbody" };
+  // W A S D pan the view (viewKey), so search, a quick rummage (sim/search.js) and drag are on Shift.
+  if (e.code === "KeyS" && e.shiftKey) { combatAction(state, "cb-act", { v: "search" }); return true; }
+  if (e.code === "KeyQ" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; }
+  if (e.code === "KeyD" && e.shiftKey) { combatAction(state, "cb-act", { v: "drag" }); return true; }
+  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush", KeyJ: "doubletap", KeyP: "pickup", KeyZ: "stowbody" };
   if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
   return false;
 }
@@ -814,16 +814,15 @@ export function renderCombatPanel(state) {
   return html;
 }
 
-// The view bar: switch the view; in the isometric view turn, zoom, center, roofs; in a building with storeys the
-// floor shown (`Floor 2 of 5 ▲ ▼`, both views).
+// The view bar: turn, zoom, center, roofs; in a building with storeys the floor shown (`Floor 2 of 5 ▲ ▼`).
 export function viewBar(b = cui.battle) {
   const on = isIso();
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
-  let html = `<div class="cbview">${btn(on ? "top" : "iso", on ? "▦ Top-down" : "◇ Isometric", on ? "Show the battle as the flat top-down grid (I). Options → Display → Battle view keeps it." : "Show the battle in the isometric (pseudo-3D) view (I).")}`;
+  let html = `<div class="cbview">`;
   if (on) {
     html += btn("rotl", "⟲", "Turn the view a quarter to the left (,)") + btn("rotr", "⟳", "Turn the view a quarter to the right (.)");
     html += btn("zout", "−", "Zoom out (− or the mouse wheel)") + btn("zin", "+", "Zoom in (+ or the mouse wheel)");
-    html += btn("center", "◎", "Center on the selected unit (V). Drag the map, hold the arrow keys or push the mouse to the edge to pan.");
+    html += btn("center", "◎", "Center on the selected unit (V). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.");
     html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", "Roofs on the buildings (B). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.", iso.roofs);
   }
   const F = b && floorsOf(b);
@@ -877,7 +876,7 @@ function raidHead(state, b, phase) {
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
     </div>
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
-    ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+S, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
+    ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
     ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too, more with a light, and the light is seen from further off: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.sight} (+${L.seen})`).join(", ")}; all the way with night vision goggles. A headlamp works from anywhere on them; the others in the off hand. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
     ${raidKeyLine(state, b)}
@@ -899,7 +898,7 @@ function raidButtons(state, b, u, btn) {
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   const veh = b.raid.hasVehicle ?? b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
-  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧S")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "⇧S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];
@@ -960,7 +959,7 @@ function stealthButtons(state, b, u, btn) {
   const kinds = THROW_KEYS.filter((k) => have[k]);
   let html = btn("subdue", "Subdue", subTip, ap > 0 && near.length > 0, "C");
   html += btn("tie", "Tie up", "1 action: tie up someone knocked out next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it).", ap > 0 && ko.length > 0, "T");
-  html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "D");
+  html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "⇧D");
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
     const T = THROWABLES[k];
@@ -1204,7 +1203,7 @@ function previewHtml(b, state = null) {
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
   if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
   // The knocked out (sim/stealth.js).
-  if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (D) moves them out of sight.</span>`;
+  if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (Shift+D) moves them out of sight.</span>`;
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
@@ -1244,7 +1243,7 @@ function previewHtml(b, state = null) {
       // sim/search.js: rummaged through (more may be hidden) is its own state.
       const where = box.searched ? "searched" : box.quick ? "rummaged through in a hurry: a full search may turn up more" : box.partial ? "something left inside (no room last time)" : "not searched";
       const how = box.quick ? (near ? `Click to open what turned up (free); S searches it in full (${SEARCH.ap} action).` : "Move next to it to search it in full.")
-        : near ? `Click or press S to search (${SEARCH.ap} action, quiet, everything shows). Shift+S: a quick rummage (no action, ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of it, heard ${quickRadius(b, u)} tiles off, Heat +${SEARCH.quick.heat}${state ? `, ${quickHurtPct(state, b, u)} chance of cutting yourself` : ""}).` : "Move next to it to search.";
+        : near ? `Click or press Shift+S to search (${SEARCH.ap} action, quiet, everything shows). Shift+Q: a quick rummage (no action, ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of it, heard ${quickRadius(b, u)} tiles off, Heat +${SEARCH.quick.heat}${state ? `, ${quickHurtPct(state, b, u)} chance of cutting yourself` : ""}).` : "Move next to it to search.";
       return `<b>${esc(box.label)}</b> · ${where}<br><span class="muted">${hint}</span>${box.searched ? "" : `<br>${how}`}`;
     }
     const z = zoneAt(b, h.x, h.y);
