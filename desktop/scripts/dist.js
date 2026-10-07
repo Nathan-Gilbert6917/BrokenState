@@ -1,7 +1,11 @@
-// npm run dist: a portable Windows build in dist/Broken State-win32-x64/ ("Broken State.exe" plus its files;
-// copy the whole folder anywhere, no installer). It bundles a snapshot of the game (index.html, styles.css,
-// src/) taken now, so run this again after changing the game. `npm start` always uses the live files instead.
+// npm run dist: Windows builds in dist/, all bundling a snapshot of the game (index.html, styles.css, src/)
+// taken now, so run this again after changing the game. `npm start` always uses the live files instead.
+//   dist/Broken State-win32-x64/             the unpacked app ("Broken State.exe" plus its files)
+//   dist/Broken State <version> Setup.exe    installer (Start Menu + desktop shortcuts, uninstaller)
+//   dist/Broken State <version> Portable.exe one file, no install (unpacks itself to %TEMP% on each launch)
+// Saves are in %APPDATA%\Broken State whichever one runs.
 //   npm run dist -- --game=<folder>   package another copy of the game folder (default ../prototype)
+//   npm run dist -- --folder-only     skip the installer and the portable exe
 const fs = require("fs");
 const path = require("path");
 const { packager } = require("@electron/packager");
@@ -46,4 +50,32 @@ const STAGE = path.join(DESKTOP, "build", "prototype");
   });
   fs.rmSync(path.join(DESKTOP, "build"), { recursive: true, force: true });
   console.log(`\nBuilt: ${out}\nRun:   "${path.join(out, pkg.productName + ".exe")}"`);
+  if (process.argv.includes("--folder-only")) return;
+
+  // 3. Wrap that folder as an installer and as a single portable exe (electron-builder, from the packaged app as is).
+  const builder = require("electron-builder");
+  const files = await builder.build({
+    prepackaged: out,
+    projectDir: DESKTOP,
+    targets: builder.Platform.WINDOWS.createTarget(["nsis", "portable"], builder.Arch.x64),
+    config: {
+      appId: "com.brokenstate.game",
+      productName: pkg.productName,
+      directories: { output: path.join(DESKTOP, "dist") },
+      win: { icon: path.join(DESKTOP, "icons", "icon.ico"), signAndEditExecutable: false },
+      nsis: {
+        oneClick: false,
+        allowToChangeInstallationDirectory: true,
+        perMachine: false,
+        createDesktopShortcut: true,
+        createStartMenuShortcut: true,
+        shortcutName: pkg.productName,
+        installerIcon: path.join(DESKTOP, "icons", "icon.ico"),
+        uninstallerIcon: path.join(DESKTOP, "icons", "icon.ico"),
+        artifactName: "${productName} ${version} Setup.${ext}",
+      },
+      portable: { artifactName: "${productName} ${version} Portable.${ext}" },
+    },
+  });
+  console.log(`\n${files.filter((f) => f.endsWith(".exe")).map((f) => `Built: ${f}`).join("\n")}`);
 })().catch((e) => { console.error(e); process.exit(1); });
