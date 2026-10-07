@@ -20,12 +20,12 @@ import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
 import { soundOptionsHtml, SOUND_ACTIONS, SOUND_CHANGE } from "./audio.js"; // the Sound section (volumes, mutes, hear a sound)
 import { guideMenuRow, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week guide: shown again or hidden from the Game tab
+import { pacingOptionsHTML, MAX_SPEED, PACE_ACTIONS } from "./pacing.js"; // Options → Pause for… (the card tray, the speeds)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const pad2 = (n) => String(n).padStart(2, "0");
 const kb = (chars) => `${Math.max(1, Math.round((chars * 2) / 1024))} KB`;
-const MAX_SPEED = 3; // main.js: anything faster is a dev fast-forward
 
 // The desktop app (desktop/main.js, Electron): window.close() closes the game's window and quits.
 export const inDesktopApp = () => typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent || "");
@@ -148,7 +148,7 @@ function slotRow(state, ui, e, cannotSave, busy, iron = false) {
 }
 
 const KEYS = [
-  ["Esc", "Close the top window; with nothing open, this menu"], ["Space", "Pause / run"], ["1–4", "Speed 0.5× / 1× / 2× / 3×"],
+  ["Esc", "Close the top window; with nothing open, this menu"], ["Space", "Pause / run"], ["1–5", "Speed 0.5× / 1× / 2× / 3× / 5×"],
   ["W A S D, arrows, drag, wheel", "Pan and zoom the map"], ["H", "Center on the hub"], ["I", "Infection overlay"],
   ["B / P / G / T", "Bases / People / Groups / Teams tab"], ["Tab or N", "Next team waiting for orders (Shift+Tab back)"],
   ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
@@ -177,6 +177,7 @@ function optionsTab(state, ui, api) {
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
     </div>
     ${soundOptionsHtml(o)}
+    ${pacingOptionsHTML()}
     <h3>Display</h3><div class="setrow">
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -262,6 +263,7 @@ export const SETTINGS_ACTIONS = {
   "set-open": (state, ui, d) => openSettings(ui, d.tab || "game"),
   "set-close": (state, ui) => { if (!ui.settings || !ui.settings.busy) ui.settings = null; },
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },
+  "pace-opt": (state, ui, d) => PACE_ACTIONS["pace-opt"](state, ui, d), // Options → Pause for… (ui/pacing.js)
   // Help: a topic of the Help tab; help-open (the "?" buttons, the top bar's Help) opens the menu at a topic.
   "set-help": (state, ui, d) => { if (ui.settings) ui.settings.help = d.sec || ""; },
   "help-open": (state, ui, d) => {

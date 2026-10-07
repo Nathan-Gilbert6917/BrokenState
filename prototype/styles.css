@@ -690,3 +690,16 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 #crash .crasherr { font-family: Consolas, monospace; font-size: 0.9rem; background: var(--panel-2); border-left: 3px solid var(--danger); padding: 0.4rem 0.6rem; border-radius: 4px; overflow-wrap: anywhere; }
 #crash .crashbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.8rem 0 0.6rem; }
 #crash textarea { width: 100%; box-sizing: border-box; font-family: Consolas, monospace; font-size: 0.78rem; margin-top: 0.3rem; resize: vertical; }
+/* The card tray (ui/pacing.js): cards that do not stop the clock wait in a strip at the top of the map. */
+#banner > .tray { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.3rem; max-width: min(64rem, 62%);
+  background: rgba(20,22,26,0.93); border-color: var(--line); padding: 0.25rem 0.45rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.tray-h { color: var(--muted, #9aa3ad); font-size: 0.85rem; margin-right: 0.15rem; }
+.tray-chip { padding: 0.12rem 0.55rem; border-radius: 99px; font-size: 0.85rem; background: #2c3139; white-space: nowrap; }
+.tray-chip .ti { margin-right: 0.3rem; }
+.tray-chip .tl { color: var(--accent); margin-left: 0.2rem; font-size: 0.78rem; }
+.tray-chip.soon { border-color: var(--accent); }
+.tray-chip.soon .tl { color: #ffd166; font-weight: bold; }
+#banner > .tray button.mini { padding: 0.05rem 0.4rem; font-size: 0.78rem; }
+#banner .pause-why { color: #ffe6a8; margin-right: 0.3rem; }
+.tray-note { font-size: 0.85rem; color: var(--muted, #9aa3ad); border-bottom: 1px solid var(--line); padding-bottom: 0.35rem; margin-bottom: 0.45rem; }
+.tray-note button { margin-left: 0.4rem; padding: 0.05rem 0.5rem; }

@@ -14,6 +14,7 @@ import { familyHelp } from "./family.js"; // children and families (sim/family.j
 import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
 import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
 import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
+import { pacingHelp } from "./pacing.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -123,6 +124,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
     if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
+    if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
@@ -133,6 +135,7 @@ export function helpTopics() {
   if (!seen.has("children-and-families")) add("Children and families", familyHelp());
   if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
+  if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
   return out;
 }
 
