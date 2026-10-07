@@ -1,3 +1,4 @@
+// @ts-check
 // Vehicles: fuel tanks, condition, breakdowns, abandonment and recovery; bicycles.
 //
 // Cars (truck, sedan): the people riding feel none of their load (load.js), everything goes in the vehicle.

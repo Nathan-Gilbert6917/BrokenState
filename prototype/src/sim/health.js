@@ -1,3 +1,4 @@
+// @ts-check
 // Illness and work injuries: named conditions people pick up from how they live and work, that cost meds to treat.
 // A condition has a severity (0-100). Each day it gets better or worse (drift: conditionDrift), costs health while it
 // lasts (hp at severity 100, raw damage), cuts how much the person can work, their mood and their aim, may spread to

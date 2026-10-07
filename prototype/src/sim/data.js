@@ -1,3 +1,4 @@
+// @ts-check
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
 
@@ -52,6 +53,7 @@ export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).
+/** @param {string} k a supply key @param {number} n @returns {number} */
 export const supplyFew = (k, n) => n * ((SUPPLIES[k] && SUPPLIES[k].bulk) || 1);
 
 // Pre-apocalypse gear that can be found anywhere, at any time. req = skill needed to use it fully.
@@ -429,6 +431,7 @@ export const SITE_ZONES = {
 export const DANGER_NAMES = ["Low", "Moderate", "High", "Very high"];
 // Danger of a placed site (0–3): its type's danger, capped at 1 in small towns and the countryside (a town pharmacy
 // is quieter than a city one). Open ground is 0.
+/** @param {import("./types").TileLoc | null} loc @returns {number} */
 export const siteDanger = (loc) => {
   if (!loc) return 0;
   const d = LOCATIONS[loc.type].danger ?? 1;

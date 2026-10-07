@@ -1,3 +1,4 @@
+// @ts-check
 // Map markers: what the player knows about points of interest, and when it was last seen.
 // Teams spot things as they travel (a perception roll); like all intel, it reaches you
 // when they get home, or right away over the radio.

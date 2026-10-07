@@ -1,3 +1,4 @@
+// @ts-check
 // Hordes: crowds of the dead on the State Map. Hives (hives.js) build them with resources and give each one a
 // job (role): "guard" stays on its hive, "build" walks to a new hive's build site and becomes part of its "mass",
 // "roam" wanders near home, "attack" marches on a base, and "border" hordes come in from off the map. A horde

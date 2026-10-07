@@ -1,5 +1,7 @@
+// @ts-check
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
+/** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
@@ -9,6 +11,7 @@ import { appearanceFor } from "./appearance.js";
 export { radioBasesInRange };
 
 // Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
+/** @param {State} state @param {number} tileId @returns {Base[]} */
 function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
@@ -73,6 +76,7 @@ let nextId = 1;
 export const newId = () => nextId++;
 // Saves (save.js): the next id is part of a save, so a loaded world hands out the same ids it would have.
 export const peekNextId = () => nextId;
+/** @param {number} n */
 export function setNextId(n) {
   if (Number.isInteger(n) && n >= 1) nextId = n;
 }
@@ -80,6 +84,7 @@ export function setNextId(n) {
 // newId) into the world's dice (hash01, a seed) or into arithmetic (id % n) must use localId instead: the id counted
 // from the world's own start (state.idBase, set in createWorld and saved with the world), the same in every world
 // made from the same seed. Never use it on ids that are already world-local counters (war ids, battle unit ids...).
+/** @type {(state: State, id: any) => any} */
 export const localId = (state, id) => (typeof id === "number" ? id - (state.idBase || 0) : id);
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
@@ -92,11 +97,17 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // new-run screen's Randomize all); left out, the world's seed decides them.
 // startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
 // kept as state.startPeople. A normal start is a full hub of six and ignores it.
+/**
+ * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
+ *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null }} opts
+ * @returns {State}
+ */
 export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
   const map = generateMap(rng, sdef, { hives: clampHives(hives) });
+  /** @type {State} */
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
     idBase: nextId - 1, // localId: this world's ids counted from its own start
@@ -171,14 +182,17 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   return state;
 }
 
+/** @param {State} state @returns {Survivor} */
 export function makeSurvivor(state, quality = 1) {
   const rng = state.rng;
+  /** @type {Survivor["skills"]} */
   const skills = {};
   for (const k of SKILLS) skills[k] = Math.max(0, Math.min(20, Math.round(rng.range(0, 9) * quality)));
   // Each survivor gets one or two specialties.
   for (let i = 0; i < 2; i++) skills[rng.pick(SKILLS)] += rng.int(3, 7);
   for (const k of SKILLS) skills[k] = Math.min(20, skills[k]);
   const traits = rollTraits(rng);
+  /** @type {Survivor} */
   const s = {
     id: newId(),
     name: freshName(state),
@@ -199,6 +213,7 @@ export function makeSurvivor(state, quality = 1) {
 }
 
 // One or two traits, never Brave with Coward (makeSurvivor; the new-run screen's Randomize all).
+/** @param {import("./rng.js").Rng} rng @returns {string[]} */
 export function rollTraits(rng) {
   const traitKeys = Object.keys(TRAITS);
   const traits = [];
@@ -213,6 +228,7 @@ export function rollTraits(rng) {
 // A name nobody in this world has had: no first name twice while one is free (messages use first names), and
 // never a full name twice. Two rng picks, as before, unless a full name has to be re-rolled.
 const firstOf = (name) => String(name).split(" ")[0];
+/** @param {State} state @returns {string} */
 function freshName(state) {
   const rng = state.rng;
   const given = state.namesGiven || (state.namesGiven = []);
@@ -233,6 +249,7 @@ function freshName(state) {
 
 // Renames a survivor. An empty name, or a full name someone else alive already has, is refused.
 // Returns "" when the name is set (or unchanged), else the reason.
+/** @param {State} state @param {Survivor} s @param {string} name @returns {string} */
 export function renameSurvivor(state, s, name) {
   if (!s) return "Nobody to rename.";
   const n = String(name ?? "").trim().replace(/\s+/g, " ");
@@ -244,6 +261,7 @@ export function renameSurvivor(state, s, name) {
 }
 
 // Starting-colonist overrides (new-run screen). Never touches state.rng.
+/** @param {State} state @param {any[]} crew */
 export function applyCrew(state, crew) {
   if (crew.some((c) => c && c.leader)) state.survivors.forEach((s) => (s.leader = false));
   state.survivors.forEach((s, i) => {
@@ -266,6 +284,7 @@ export function applyCrew(state, crew) {
 // bench (the hub opens with plenty of ammo and little food). Also called when the run begins, so skills
 // edited on the new-run screen count.
 const START_ROLES = [["farm", "farming"], ["farm", "farming"], ["scavenge", "scavenging"], ["guard", "shooting"], ["build", "mechanics"]];
+/** @param {State} state */
 export function assignStartingRoles(state) {
   const h = hub(state);
   if (!h) return; // hardcore: no hub yet (hardcore-start.js), the survivors are a team on the road
@@ -281,10 +300,14 @@ export function assignStartingRoles(state) {
 }
 
 // ---------- shared helpers ----------
+/** @type {(state: State) => number} */
 export const day = (state) => Math.floor(state.hour / 24) + 1;
+/** @type {(state: State) => number} */
 export const hourOfDay = (state) => state.hour % 24;
+/** @type {(state: State) => boolean} */
 export const isNight = (state) => hourOfDay(state) < 6 || hourOfDay(state) >= 20;
 
+/** @param {State} state @param {string} text @param {string} [kind] */
 export function log(state, text, kind = "info") {
   text = text.replace(/(\w)\.\.(?=\s|$)/g, "$1."); // a name ending in a full stop at the end of a sentence ("Long Haul Co.."); "..." stays
   const line = { hour: state.hour, text, kind };
@@ -293,25 +316,35 @@ export function log(state, text, kind = "info") {
   diaryRecord(state, line); // every line of the run, day by day (diary.js)
 }
 
+/** @param {State} state @param {Card} card */
 export function addCard(state, card) {
   state.cards.push(card);
 }
 
+/** @type {(state: State) => Base | undefined} */
 export const hub = (state) => state.bases.find((b) => b.type === "hub");
+/** @type {(state: State, id: number) => Base | undefined} */
 export const baseById = (state, id) => state.bases.find((b) => b.id === id);
+/** @type {(state: State, id: number) => Survivor | undefined} */
 export const survivorById = (state, id) => state.survivors.find((s) => s.id === id);
+/** @type {(state: State) => Survivor[]} */
 export const alive = (state) => state.survivors.filter((s) => s.alive);
+/** @type {(state: State, baseId: number) => Survivor[]} */
 export const atBase = (state, baseId) => alive(state).filter((s) => s.location.kind === "base" && s.location.baseId === baseId);
+/** @type {(state: State, id: any) => import("./types").Faction | undefined} */
 export const factionById = (state, id) => state.factions.find((f) => f.id === id);
 // Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips.
 // Waiting escorts eat, heal and can be treated at the hub; they do no base work (atBase leaves them out).
+/** @param {State} state @param {number} baseId @returns {Survivor[]} */
 export function residents(state, baseId) {
   const h = hub(state);
   const hubId = h ? h.id : null;
   return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId));
 }
+/** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
+/** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "medicine" && s.traits.includes("medic")) v += 4;
@@ -321,6 +354,7 @@ export function skill(s, key) {
 }
 
 // Skill gap rule from the design doc: slightly below = weaker, below = weaker + damage risk, really below = unusable.
+/** @param {Survivor} s @param {Item | null} item @returns {{ mult: number, damageChance: number, usable: boolean, gap: number }} */
 export function gearEffect(s, item) {
   if (!item) return { mult: 0, damageChance: 0, usable: false, gap: 0 };
   const def = GEAR[item.key];
@@ -332,6 +366,7 @@ export function gearEffect(s, item) {
   return { mult: 0, damageChance: 0, usable: false, gap };
 }
 
+/** @param {Survivor} s @returns {number} */
 export function combatPower(s) {
   const w = s.gear.weapon ? GEAR[s.gear.weapon.key] : null;
   const eff = gearEffect(s, s.gear.weapon);
@@ -343,11 +378,13 @@ export function combatPower(s) {
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
 
+/** @param {State} state @returns {number} */
 export function playerStrength(state) {
   return alive(state).reduce((sum, s) => sum + combatPower(s), 0);
 }
 
 // opts.raw: damage that armor and toughness do nothing against (hunger, thirst, infection).
+/** @param {State} state @param {Survivor} s @param {number} amount @param {number | null} tileId @param {string} cause @param {{ raw?: boolean }} [opts] */
 export function hurt(state, s, amount, tileId, cause, opts = {}) {
   if (!opts || !opts.raw) {
     if (s.traits.includes("tough")) amount *= 0.75;
@@ -358,6 +395,7 @@ export function hurt(state, s, amount, tileId, cause, opts = {}) {
   else if (!opts || !opts.raw) woundTrauma(state, s, amount); // a real wound may need dressing (health.js)
 }
 
+/** @param {State} state @param {Survivor} s @param {number | null} tileId @param {string} cause @param {any[]} [extraItems] */
 export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   if (!s.alive) return;
   s.alive = false;
@@ -417,7 +455,9 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
 // player picks, since a candidate can die or be captured while the card waits: the pick then falls back to the
 // best one left.
 const LEADER_CARD = "The leader is dead";
+/** @param {State} state */
 const leaderCandidates = (state) => state.survivors.filter(isFree).sort((a, b) => skill(b, "leadership") - skill(a, "leadership"));
+/** @param {State} state @param {string} text @returns {boolean} */
 function leaderCard(state, text) {
   const list = leaderCandidates(state).slice(0, 6);
   if (!list.length) return false; // nobody free right now: ensureLeader asks again once someone is
@@ -443,6 +483,7 @@ function leaderCard(state, text) {
 
 // Daily safety net: a group with no living leader and no card waiting is asked again (every candidate on the
 // last card was lost, or the only people left were captives who have since come home).
+/** @param {State} state */
 export function ensureLeader(state) {
   if (state.gameOver || state.survivors.some((s) => s.alive && s.leader)) return;
   if (state.cards.some((c) => c.title === LEADER_CARD)) return;
@@ -455,6 +496,7 @@ export function ensureLeader(state) {
 // hivesSecured) and the coalition's victory (alliance.js allianceVictory: over half the land, every group still
 // standing in the coalition). The first one ends the run with its screen; after "Keep playing" (state.victoryKept)
 // the other can still come, with its own screen. Both at once: the coalition's is named.
+/** @param {State} state @returns {boolean} */
 export function checkGameOver(state) {
   if (state.gameOver) return true;
   if (alive(state).length) {
@@ -485,6 +527,7 @@ export function checkGameOver(state) {
   return true;
 }
 
+/** @param {State} state */
 function coalitionWins(state) {
   state.victoryReason = "alliance";
   state.allianceWon = true;
@@ -498,6 +541,7 @@ function coalitionWins(state) {
 // A base is lost (overrun by a horde, taken in a raid). One place for everything that has to follow: the
 // people still there flee to the hub, vehicles parked there are left on the tile (abandoned, with a map
 // marker), supply runs to or from it are paused, and the log says what was lost.
+/** @param {State} state @param {Base} base @param {string} [cause] @returns {boolean} */
 export function removeBase(state, base, cause = "was lost") {
   const i = state.bases.indexOf(base);
   if (i < 0 || base.type === "hub") return false;
@@ -548,6 +592,7 @@ export function removeBase(state, base, cause = "was lost") {
   return true;
 }
 
+/** @param {Stock} stock @returns {number} */
 export function supplyValue(stock) {
   return SUPPLY_KEYS.reduce((s, k) => s + (stock[k] || 0) * SUPPLIES[k].value, 0);
 }
@@ -556,11 +601,13 @@ export function supplyValue(stock) {
 // How far a base sees on the map. state given: at night (20:00–06:00) only NIGHT_BASE_VISION tiles round, whatever its
 // watchtower or telescope (a team in the field sees only its own tile: parties.js sightRadius).
 export const NIGHT_BASE_VISION = 1;
+/** @param {Base} base @param {State | null} [state] @returns {number} */
 export function baseVision(base, state = null) {
   if (state && isNight(state)) return NIGHT_BASE_VISION;
   return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
 }
 
+/** @param {State} state @param {number} tileId @returns {TileSnapshot} */
 export function snapshot(state, tileId) {
   const t = state.tiles[tileId];
   const here = state.hordes.filter((h) => h.tile === tileId);
@@ -583,8 +630,10 @@ export function snapshot(state, tileId) {
   };
 }
 
+/** @type {(state: State) => Base[]} */
 export const radioBases = (state) => state.bases.filter((b) => b.radio);
 
+/** @param {State} state @returns {Set<number>} */
 export function liveTiles(state) {
   const set = new Set();
   for (const b of state.bases) for (const id of state.grid.within(b.tile, baseVision(b, state))) set.add(id);
@@ -595,6 +644,7 @@ export function liveTiles(state) {
   return set;
 }
 
+/** @param {State} state */
 export function updateVision(state) {
   const live = liveTiles(state);
   state.live = live;
@@ -608,6 +658,7 @@ export function updateVision(state) {
 }
 
 // who: the team whose report it is (a hidden site it found gets a log line naming it, discovery.js).
+/** @param {State} state @param {Map<number, TileSnapshot>} seen @param {Map<string, Marker> | null} spotted @param {import("./types").Party | null} [who] */
 export function mergeKnowledge(state, seen, spotted, who = null) {
   if (spotted) mergeSpots(state, spotted);
   // seen: Map tileId -> snapshot recorded by a party. Keep the newest per tile.
@@ -625,6 +676,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 }
 
 // ---------- tick ----------
+/** One hour of the world. @param {State} state */
 export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
