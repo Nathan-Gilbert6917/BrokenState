@@ -1038,7 +1038,7 @@ function campScene() {
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 1.5 + 2, cs - 4, cs * 0.75 - 4);
     g.strokeRect(cx - cs / 2 + 2, cy - cs * 0.75 + 2, cs - 4, cs * 0.75 - 4);
     // A tent at the left edge of the light, its door side lit; a sleeping bag rolled by it.
-    const tx = fx - H * 0.46, ty = fy + H * 0.02, tw = H * 0.26, th = H * 0.15;
+    const tx = fx - H * 0.5, ty = fy + H * 0.02, tw = H * 0.4, th = H * 0.24;
     shadow(tx, ty, tw, H * 0.08);
     g.fillStyle = "#17120f";
     g.beginPath(); g.moveTo(tx - tw / 2, ty); g.lineTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.closePath(); g.fill();
@@ -1053,7 +1053,7 @@ function campScene() {
     g.fillStyle = "#2c2318";
     g.beginPath(); g.roundRect(tx + tw * 0.62, ty - H * 0.02, H * 0.07, H * 0.022, H * 0.011); g.fill();
     // A pickup at the right edge, nose to the fire, only its lit side showing.
-    const px = fx + H * 0.46, py = fy + H * 0.012, pw = H * 0.75, ph = H * 0.2;
+    const px = fx + H * 0.46, py = fy + H * 0.012, pw = H * 0.75, ph = H * 0.3;
     shadow(px, py, pw, H * 0.1);
     lg = g.createLinearGradient(px - pw / 2, 0, px + pw / 2, 0);
     lg.addColorStop(0, "#4a3a2c"); lg.addColorStop(1, "#15110e");
