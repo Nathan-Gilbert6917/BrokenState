@@ -12,6 +12,8 @@ import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
 import { familyHelp } from "./family.js"; // children and families (sim/family.js)
 import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
+import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
+import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -130,6 +132,7 @@ export function helpTopics() {
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
   if (!seen.has("children-and-families")) add("Children and families", familyHelp());
   if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
+  for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   return out;
 }
 
