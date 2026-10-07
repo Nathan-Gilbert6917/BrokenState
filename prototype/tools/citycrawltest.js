@@ -4,7 +4,7 @@
 // crawl, the autopilot's crawl, and the normal flow everywhere else unchanged.
 // Usage: node tools/citycrawltest.js [seeds=6] [stats]   (stats: also play map raids with the bot block by block)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
-import { launchExpedition, partyMembers } from "../src/sim/parties.js";
+import { launchExpedition, partyMembers, giveOrder } from "../src/sim/parties.js";
 import { startScavenge } from "../src/sim/scavenge.js";
 import { autoPlayerTurn, runEnemyPhase, finishCombat, combatAct } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -89,6 +89,51 @@ console.log("Entering a city");
   startScavenge(state, p2);
   check(!p2.crawl && !!state.engagement, "headless (tools) a city is searched hour by hour as before");
   check(!CC.crawlTile(state.tiles.find((t) => t.loc && t.loc.type === "town")) && CC.crawlTile(city), "only city tiles are crawled");
+}
+
+// ---------- 1b. moved onto a city: the City crawl card ----------
+console.log("Moved onto a city: the City crawl card");
+{
+  const { state, h, city } = world(3);
+  const town = state.tiles.find((t) => t.loc && t.loc.type === "town");
+  // A team standing on the tile that is given a Move order there arrives as a move does (parties.js arrive).
+  const moveOnto = (tile, n = 1) => { const p = team(state, h, tile, n); p.phase = "waiting"; state.cards.length = 0; giveOrder(state, p, "move"); return p; };
+  const cardOf = (p) => state.cards.find((c) => c.partyId === p.id);
+  const pick = (card, label) => { state.cards.splice(state.cards.indexOf(card), 1); return card.choices.find((c) => c.label === label).resolve(state); };
+  globalThis.window = {};
+  try {
+    const p = moveOnto(city, 2);
+    const card = cardOf(p);
+    check(card && card.title.startsWith("City crawl: ") && card.isOrders, `a team you move onto a city asks to go in ("${card && card.title}")`);
+    check(state.cards.filter((c) => c.partyId === p.id).length === 1, "the City crawl card takes the place of the orders card (one card for the team)");
+    check(card && /block by block/.test(card.text) && /Alert now: \w+ \(\d+\)/.test(card.text), "the card says what a crawl is and the city's Alert");
+    check(card && card.choices.map((c) => c.label).join(" | ") === "Go in block by block | Not now", "two choices: Go in block by block, Not now");
+    const res = pick(card, "Go in block by block");
+    check(!!p.crawl && p.crawl.block === 1 && p.phase === "engaged" && res === "", "Go in block by block starts the crawl at block 1 (no result box over the crawl window)");
+    check(CC.activeCrawl(state) === p, "the crawl window shows it");
+    // Not now: the team's usual orders card comes back, Scavenge on it still crawls.
+    const q = moveOnto(city, 1);
+    pick(cardOf(q), "Not now");
+    const oc = cardOf(q);
+    check(oc && oc.isOrders && !oc.title.startsWith("City crawl") && state.cards[0] === oc, `Not now brings back the orders card, first in line ("${oc && oc.title}")`);
+    check(!q.crawl && q.phase === "waiting", "Not now leaves the team waiting on the tile");
+    // Not a city, a queued order, the autopilot: no City crawl card.
+    const r = moveOnto(town, 1);
+    check(cardOf(r) && !cardOf(r).title.startsWith("City crawl"), "a town gets the orders card, no crawl card");
+    const s1 = team(state, h, city, 1); s1.phase = "waiting"; state.cards.length = 0;
+    s1.orders = [{ type: "camp", hours: 8 }];
+    giveOrder(state, s1, "move");
+    check(!cardOf(s1) && s1.phase === "task", "queued orders carry on at the city: no card");
+    state.autoCombat = true;
+    const u = moveOnto(city, 1);
+    check(cardOf(u) && !cardOf(u).title.startsWith("City crawl"), "with battles resolved by the numbers (the autopilot) the orders card as before");
+    state.autoCombat = false;
+  } finally { delete globalThis.window; }
+  const w2 = world(4);
+  const v = team(w2.state, w2.h, w2.city, 1); v.phase = "waiting"; w2.state.cards.length = 0;
+  giveOrder(w2.state, v, "move");
+  const vc = w2.state.cards.find((c) => c.partyId === v.id);
+  check(vc && !vc.title.startsWith("City crawl"), "headless (tools) the orders card as before");
 }
 
 // ---------- 2. block cards ----------

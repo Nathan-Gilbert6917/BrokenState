@@ -24,7 +24,7 @@ import { hash01, gainXpAll, USE } from "./skills.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
-  partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName,
+  partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName, giveOrder,
 } from "./parties.js";
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec } from "./buildingmaps.js";
@@ -193,19 +193,65 @@ function say2(c, text, k = "info", hour = null) {
 }
 
 // ---------- starting ----------
+// The Alert a crawl starts at: the city's own (more with its Infection), or what is left of the last crawl's Alert,
+// fading 1 an hour since.
+function startAlert(state, t) {
+  const mem = memOf(t);
+  const floor = Math.round(CRAWL.ALERT.start + (t.infection || 0) * CRAWL.ALERT.infection);
+  const left = Math.max(0, (mem.alert || 0) - (state.hour - (mem.hour || 0)));
+  return { floor, alert: Math.max(floor, Math.round(left)) };
+}
+
+// Where a scavenge order would crawl (scavenge.js startScavenge): a team you drive, in the browser, with battles
+// not resolved by the numbers (the autopilot sets that), on a city's tile.
+export const crawlOffered = (state, p) =>
+  !!p && p.owner === "player" && p.crewRole == null && p.kind !== "convoy" && !state.autoCombat && !state.autopilot &&
+  typeof window !== "undefined" && crawlTile(state.tiles[partyTile(p)]);
+
+// A team you moved onto a city (parties.js arrive, a Move order) asks whether to go in: its orders card gives way to
+// this one, and "Not now" brings the orders card back. Not when queued orders carried the team on (no orders card).
+export function offerCrawl(state, p) {
+  if (p.phase !== "waiting" || !crawlOffered(state, p)) return false;
+  const i = state.cards.findIndex((c) => c.isOrders && c.partyId === p.id);
+  if (i < 0) return false;
+  state.cards[i] = crawlCard(state, p, state.cards[i]);
+  return true;
+}
+export function crawlCard(state, p, orders) {
+  const tile = partyTile(p);
+  const t = state.tiles[tile];
+  const city = tileLabel(state, tile);
+  const visits = t.crawlMem ? t.crawlMem.visits : 0;
+  const { alert } = startAlert(state, t);
+  const n = partyMembers(state, p).length;
+  return {
+    title: `City crawl: ${city}`,
+    isOrders: true, // still the team's orders card (one a team: awaitOrders replaces it; the autopilot answers it as one)
+    partyId: p.id,
+    text: `${teamName(state, p)} ${n === 1 ? "stands" : "stand"} at the edge of ${city}. Go in block by block: each block shows the places along its street (each one a building to raid) and what is happening outside, and you choose: go into a place, deal with the street, push deeper (richer, rarer places, and more and tougher dead) or head back out. Noise raises the city's Alert, lying low lets it fade, and every block between you and the edge is a risk on the way out. Alert now: ${alertName(alert)} (${alert}).${visits ? ` You have been in ${visits} time${visits === 1 ? "" : "s"}: the places searched before stay picked over.` : ""}${p.vehicle ? " The vehicle waits at the edge; inside you carry everything on foot." : ""}`,
+    choices: [
+      {
+        label: "Go in block by block", hint: "Start a city crawl here: the first block's card opens.", order: true,
+        resolve: (st) => { const res = giveOrder(st, p, "scavenge"); return p.crawl || st.combat ? "" : res; },
+      },
+      {
+        label: "Not now", hint: "The team's usual orders: survey, claim, move on, return home…", order: true,
+        resolve: (st) => { if (st.parties.includes(p)) st.cards.unshift(orders); return ""; },
+      },
+    ],
+  };
+}
+
 // A team arrives at a city tile to scavenge (scavenge.js startScavenge in the browser): the crawl opens at block 1.
 export function startCrawl(state, p) {
   const t = state.tiles[p.dest];
   const mem = memOf(t);
   mem.visits += 1;
-  const inf = t.infection || 0;
-  const floor = Math.round(CRAWL.ALERT.start + inf * CRAWL.ALERT.infection);
-  // What is left of the last crawl's Alert, fading 1 an hour since.
-  const left = Math.max(0, (mem.alert || 0) - (state.hour - (mem.hour || 0)));
+  const { floor, alert } = startAlert(state, t);
   p.phase = "engaged";
   p.crawl = {
     v: 1, tile: p.dest, city: tileLabel(state, p.dest), visit: mem.visits, started: state.hour,
-    block: 1, deepest: 1, alert: Math.max(floor, Math.round(left)), floor,
+    block: 1, deepest: 1, alert, floor,
     blocks: {}, buildings: {}, enc: null, leaving: null, inside: null,
     tally: { supplies: {}, gear: [] }, kills: 0, lost: [], log: [], hadVehicle: !!p.vehicle,
   };

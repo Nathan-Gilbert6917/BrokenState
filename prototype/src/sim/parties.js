@@ -15,6 +15,7 @@ import {
 } from "./factions.js";
 import { rollTravelEvent, convoyLegEvent } from "./events.js";
 import { startScavenge } from "./scavenge.js";
+import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES,
@@ -1117,6 +1118,7 @@ function arrive(state, p) {
   switch (p.mission) {
     case "move":
       awaitOrders(state, p, `The team reached ${tileLabel(state, p.dest)}.`);
+      offerCrawl(state, p); // a city you drive the team into: the City crawl card instead of the orders card
       return "";
     case "recon":
       awaitOrders(state, p, `The team surveyed around ${tileLabel(state, p.dest)}. ${survey(state, p, 0.25)}`);
