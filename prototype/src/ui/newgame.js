@@ -5,7 +5,8 @@ import { survivorById, skill, rollTraits } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
 import { MODES, isHardcore, START_PEOPLE, clampStartPeople } from "../sim/hardcore.js";
-import { BACKGROUNDS, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
+import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
+import { customLibrary } from "./backgrounds.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
@@ -61,17 +62,39 @@ function traitMod(s, k) {
   return `<i class="nrmod ${eff < s.skills[k] ? "neg" : ""}"${tip(`Counts as ${eff} in play${why ? `: ${why}` : ""}. The points are what you spend; traits are applied on top.`)}>→${eff}</i>`;
 }
 
+// Customize (2026-10-07, user request; not with Ironman): skills set freely 0–20 with no point budget, traits picked,
+// and in Hardcore who they were (a preset or a custom background, ui/backgrounds.js). Anything set this way marks the
+// colonist (s.startCustom): ticking Ironman puts the crew back as rolled, and Start refuses an Ironman run with it.
+const freeEdit = (ui) => !!ui.freeEdit && !ui.ironman;
+const MAX_TRAITS = 3;
+function traitPicker(s) {
+  return `<div class="row" style="gap:0.2rem;margin-top:0.3rem">${Object.keys(TRAITS).map((t) => {
+    const on = s.traits.includes(t);
+    const off = !on && (s.traits.length >= MAX_TRAITS || (t === "brave" && s.traits.includes("coward")) || (t === "coward" && s.traits.includes("brave")));
+    return `<button class="mini ${on ? "active" : ""}" data-action="nr-trait" data-id="${s.id}" data-k="${t}" ${off ? "disabled" : ""}${tip(`${TRAITS[t].desc}${on ? ". Click to remove" : off ? (s.traits.length >= MAX_TRAITS ? `. At most ${MAX_TRAITS} traits` : ". Not Brave and Coward both") : ". Click to add"}`)}>${TRAITS[t].name}</button>`;
+  }).join("")}</div>`;
+}
+// Who they were (Hardcore): the dice (what was drawn, in brackets), a preset, or one of the custom backgrounds.
+function backgroundPicker(state, s) {
+  const cur = s.bgPicked ? s.background : "";
+  const drawn = !s.bgPicked && backgroundInfo(state, s.background);
+  const presets = Object.entries(HC_START.ARCHETYPES).map(([k, a]) => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+  const mine = Object.values(customLibrary()).map((b) => `<option value="${b.id}" ${cur === b.id ? "selected" : ""}>${esc(b.name)}</option>`).join("");
+  return `<label class="small"${tip("Who they were before Calder fell: it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs. A custom background (Backgrounds…) gives exactly what it says. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.")}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
+}
+
 function crewCard(state, ui, s) {
   const left = budgetOf(ui, s) - skillTotal(s.skills);
+  const free = freeEdit(ui), locked = !!ui.ironman;
   if (ui.lookEdit === s.id) {
     return `<div class="card leader-pick nrcard nrwide ${s.leader ? "on" : ""}">
       <div class="spread"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b><span class="muted small">Appearance</span></div>
       ${appearanceEditor(state, s)}</div>`;
   }
   const skills = SKILLS.map((k) => `<div class="nrskill"><span>${SKILL_NAMES[k]}</span>
-      <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="-1" ${s.skills[k] > 0 ? "" : "disabled"}${tip("Move a point back to the pool")}>−</button>
+      <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="-1" ${!locked && s.skills[k] > 0 ? "" : "disabled"}${tip(locked ? "Ironman: skills stay as rolled" : free ? "One lower" : "Move a point back to the pool")}>−</button>
       <b>${s.skills[k]}${traitMod(s, k)}</b>
-      <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="1" ${left > 0 && s.skills[k] < SKILL_MAX ? "" : "disabled"}${tip("Spend a point from the pool")}>+</button></div>`).join("");
+      <button class="mini" data-action="nr-skill" data-id="${s.id}" data-k="${k}" data-d="1" ${!locked && (free || left > 0) && s.skills[k] < SKILL_MAX ? "" : "disabled"}${tip(locked ? "Ironman: skills stay as rolled" : free ? `One higher (up to ${SKILL_MAX}, no point limit)` : "Spend a point from the pool")}>+</button></div>`).join("");
   return `<div class="card leader-pick nrcard ${s.leader ? "on" : ""}">
     <div class="nrtop">
       <div class="nrport" data-action="look-edit" data-id="${s.id}"${tip("Click to customize how they look")}>${spriteImg(survivorURL(s, state.seed), 4.4)}<div class="small muted">Edit look</div></div>
@@ -81,10 +104,15 @@ function crewCard(state, ui, s) {
         <div class="row" style="margin-top:0.3rem">
           <button class="mini ${s.leader ? "active" : ""}" data-action="pickleader" data-id="${s.id}"${tip("The leader's Leadership lifts morale at their base. If they die, you pick a new one.")}>${s.leader ? "★ Leader" : "Make leader"}</button>
           <span class="small muted">${s.gear.weapon ? esc(s.gear.weapon.name) : ""}${s.gear.armor ? `, ${esc(s.gear.armor.name)}` : ""}${s.gear.backpack ? `${s.gear.weapon || s.gear.armor ? ", " : ""}${esc(s.gear.backpack.name)}` : ""}</span></div>
-        <div class="small" style="margin-top:0.2rem">${s.background && BACKGROUNDS[s.background] ? `<span class="chip"${tip(`Who they were before Calder fell (Hardcore): ${BACKGROUNDS[s.background].blurb}. It shaped their skills, what they grabbed and the car.`)}>${esc(BACKGROUNDS[s.background].name)}</span>` : ""}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+        <div class="small" style="margin-top:0.2rem">${bgChip(state, s)}${free ? "" : s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+        ${free && isHardcore(state) ? `<div style="margin-top:0.25rem">${backgroundPicker(state, s)}</div>` : ""}
+        ${free ? traitPicker(s) : ""}
       </div>
     </div>
-    <div class="spread small" style="margin-top:0.35rem"><span class="muted">Skills</span><span${tip("Points can be moved between skills. Randomizing skills keeps the same total, so nobody gets better or worse overall.")}>Points left <b class="${left > 0 ? "warn" : ""}">${left}</b> / ${budgetOf(ui, s)}</span></div>
+    <div class="spread small" style="margin-top:0.35rem"><span class="muted">Skills</span>${locked
+      ? `<span class="muted"${tip("Ironman: the crew starts as rolled (skills, traits and who they were). Names, looks and the leader are yours.")}>Ironman: as rolled</span>`
+      : free ? `<span${tip("Customize is on: any level 0–20, no point limit. Randomizing skills still keeps the current total.")}>Custom, total <b>${skillTotal(s.skills)}</b></span>`
+      : `<span${tip("Points can be moved between skills. Randomizing skills keeps the same total, so nobody gets better or worse overall.")}>Points left <b class="${left > 0 ? "warn" : ""}">${left}</b> / ${budgetOf(ui, s)}</span>`}</div>
     <div class="nrskills">${skills}</div>
     <div class="row nrrand">
       <span class="small muted">Randomize</span>
@@ -94,6 +122,13 @@ function crewCard(state, ui, s) {
       <button class="mini" data-action="nr-all" data-id="${s.id}"${tip("Randomize name, skills and look")}>All</button>
     </div>
   </div>`;
+}
+
+// Who they were (Hardcore): a chip with what it means, a custom one marked.
+function bgChip(state, s) {
+  const b = backgroundInfo(state, s.background);
+  if (!b) return "";
+  return `<span class="chip"${tip(`Who they were before Calder fell (Hardcore)${b.blurb ? `: ${b.blurb}` : ""}. ${b.custom ? "A custom background: it gave exactly what it says." : "It shaped their skills, what they grabbed and the car."}${s.bgPicked ? " Picked on the new-run screen." : ""}`)}>${esc(b.name)}${b.custom ? " ✎" : ""}</span>`;
 }
 
 // World size (sim/worldsize.js) and the group counts that size allows.
@@ -173,7 +208,9 @@ export function newRunScreen(state, ui) {
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
       ${startPeopleSelect(state, ui)}
-      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
+      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
+      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: set any skill level (0–20, no point limit), pick traits, and in Hardcore pick who each one was, a preset or one of your own (Backgrounds…). Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
+      <button data-action="bg-open"${ui.ironman ? " disabled" : ""}${tip(ui.ironman ? "Not with Ironman" : `Make your own backgrounds for Hardcore: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
@@ -206,8 +243,32 @@ function loadButtons() {
 // A normal start's weapon and armor go along (a Hardcore start's gear is what they grabbed, rolled with the world).
 export function crewSnapshot(state) {
   const kit = (s) => (isHardcore(state) ? null : { weapon: s.gear.weapon ? { ...s.gear.weapon } : null, armor: s.gear.armor ? { ...s.gear.armor } : null });
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader }));
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked ? s.background : null, custom: !!s.startCustom }));
 }
+// An Ironman crew (main.js, the Ironman box): only what is yours in Ironman (names, looks, the leader); skills, traits,
+// who they were and the kit go back to the dice.
+export function ironmanCrew(state) {
+  return state.survivors.map((s) => ({ name: s.name, appearance: s.appearance ? { ...s.appearance } : null, leader: !!s.leader }));
+}
+// Anything on the crew past the dice (Customize, moved skill points, a picked background): not for Ironman.
+export const crewCustomized = (state) => state.survivors.some((s) => s.startCustom || s.bgPicked);
+// Backgrounds picked (the nr-bg select; the backgrounds window's Done): the crew to rebuild with. changes: { id: key }
+// ("" or null: back to the dice). A changed colonist's skills, traits and points start over from the new background;
+// the others keep theirs and who they were (rolled: kept, not counted as picked), whatever the new dice draw.
+export function crewWithBackgrounds(state, changes) {
+  const crew = crewSnapshot(state);
+  let any = false;
+  state.survivors.forEach((s, i) => {
+    if (Object.prototype.hasOwnProperty.call(changes, s.id)) {
+      const key = changes[s.id] || null;
+      const { skills, traits, budget, ...rest } = crew[i];
+      crew[i] = { ...rest, background: key, custom: !!key };
+      any = true;
+    } else if (!crew[i].background && s.background) crew[i] = { ...crew[i], background: s.background, rolled: true };
+  });
+  return any ? crew : null;
+}
+export const crewWithBackground = (state, id, key) => crewWithBackgrounds(state, { [id]: key });
 
 // Randomize all: every colonist's name, skills (same total), traits, gear and look. Normal: in place, with the starting
 // weapons and the vest handed out again. Hardcore: the gear comes with who they were, what they grabbed and the car, so
@@ -284,13 +345,25 @@ export const LOOK_ACTIONS = {
   "nr-all": withSurvivor(["name", "skills", "look"]),
   "nr-skill": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
-    if (!s || ui.started) return;
-    const k = d.k, delta = Number(d.d);
+    if (!s || ui.started || ui.ironman) return; // Ironman: skills stay as rolled
+    const k = d.k, delta = Number(d.d), free = freeEdit(ui);
     if (!SKILLS.includes(k)) return;
     const left = budgetOf(ui, s) - skillTotal(s.skills);
-    if (delta > 0 && (left <= 0 || s.skills[k] >= SKILL_MAX)) return;
+    if (delta > 0 && ((!free && left <= 0) || s.skills[k] >= SKILL_MAX)) return;
     if (delta < 0 && s.skills[k] <= 0) return;
     s.skills[k] += delta > 0 ? 1 : -1;
+    if (free) s.skillBudget = Math.max(budgetOf(ui, s), skillTotal(s.skills)); // no limit: the pool follows the total up
+    s.startCustom = true;
+    ui.crewEdited = true;
+  },
+  // Customize: a trait on or off (at most MAX_TRAITS, never Brave with Coward).
+  "nr-trait": (state, ui, d) => {
+    const s = survivorById(state, Number(d.id));
+    if (!s || ui.started || !freeEdit(ui) || !TRAITS[d.k]) return;
+    if (s.traits.includes(d.k)) s.traits = s.traits.filter((t) => t !== d.k);
+    else if (s.traits.length < MAX_TRAITS && !(d.k === "brave" && s.traits.includes("coward")) && !(d.k === "coward" && s.traits.includes("brave"))) s.traits = [...s.traits, d.k];
+    else return;
+    s.startCustom = true;
     ui.crewEdited = true;
   },
   "zlook-open": (state, ui) => { ui.zombieLook = true; },
