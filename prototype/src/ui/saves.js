@@ -9,12 +9,17 @@
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
 
 export const AUTOSAVE = "autosave";
+// The battle-start save (ui/settings.js autosaveCheck): one slot, written as each battle opens, so a battle can be
+// played again from its start (the battle panel's Restart battle). Never in an Ironman game.
+export const BATTLE_SAVE = "battle";
+// An Ironman game (state.ironman) has one slot of its own, `iron…`, that only the game writes: at dawn, when a battle
+// starts and ends, when you leave it. No saving or loading by hand, no export: no going back to an earlier state.
 const INDEX_KEY = "brokenstate.saves";
 const SLOT_KEY = (id) => `brokenstate.save.${id}`;
 const OPTIONS_KEY = "brokenstate.options";
 export const MAX_SLOTS = 12; // manual saves; the autosave is extra
 
-export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true, mapDetail: true };
+export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true, mapDetail: true, battleSave: true };
 export const AUTOSAVE_DAYS = [1, 2, 3, 5, 7];
 
 const storage = () => {
@@ -35,6 +40,7 @@ export function loadOptions() {
       if (typeof v.autoOpen === "boolean") o.autoOpen = v.autoOpen; // folded panels open when you pick what they show (ui/layout.js)
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
       if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
+      if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)
     }
   } catch { /* unreadable: the defaults */ }
   return o;
@@ -135,7 +141,9 @@ export async function unpackSave(stored) {
 }
 
 // ---------- slots ----------
-// Writes the world to a slot. opts: { name, auto, thumb, dropCards }. Throws a SaveError (a card is open, the
+// The slots the game writes itself (no Save here, never a target of Save): the autosave, the battle start, an Ironman game's.
+export const autoSlot = (id) => id === AUTOSAVE || id === BATTLE_SAVE || String(id).startsWith("iron");
+// Writes the world to a slot. opts: { name, auto, thumb, dropCards, why, bkey (the battle-start save's battle) }. Throws a SaveError (a card is open, the
 // storage is full or blocked). Returns the index entry.
 export async function writeSave(id, state, opts = {}) {
   const st = storage();
@@ -150,7 +158,8 @@ export async function writeSave(id, state, opts = {}) {
   }
   const prev = saveEntry(id);
   const entry = {
-    id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: id === AUTOSAVE,
+    id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: autoSlot(id), bkey: opts.bkey || "",
+    iron: state.ironman ? state.ironman.id : "",
     ts: Number.isFinite(opts.ts) ? opts.ts : Date.now(), size: packed.length, raw: json.length, v: save.v, game: save.game,
     thumb: opts.thumb || "", why: opts.why || "", ...save.meta,
   };
@@ -164,6 +173,21 @@ export async function writeSave(id, state, opts = {}) {
       throw new SaveError("Not enough browser storage to list this save. Delete an old save first.", "quota");
     }
   }
+  return entry;
+}
+
+// The same, at once and uncompressed (BSJ1): an Ironman game written as the page closes (beforeunload), when an
+// asynchronous write would not finish. Throws a SaveError like writeSave; on a failure the slot keeps what it had.
+export function writeSaveSync(id, state, opts = {}) {
+  const st = storage();
+  if (!st) throw new SaveError("No storage here.", "storage");
+  const save = serializeState(state);
+  const json = JSON.stringify(save);
+  const packed = `BSJ1|${json}`;
+  try { st.setItem(SLOT_KEY(id), packed); } catch { throw new SaveError("Not enough browser storage.", "quota"); }
+  const prev = saveEntry(id);
+  const entry = { ...(prev || {}), id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: autoSlot(id), ts: Date.now(), size: packed.length, raw: json.length, v: save.v, game: save.game, why: opts.why || "", iron: state.ironman ? state.ironman.id : "", ...save.meta };
+  try { writeIndex([entry, ...listSaves().filter((e) => e.id !== id)]); } catch { /* the slot is written; the index keeps the old line */ }
   return entry;
 }
 

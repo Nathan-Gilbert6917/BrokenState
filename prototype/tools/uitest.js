@@ -1470,7 +1470,9 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
         } catch (e) { if (errs++ < 2) console.log(`  error drawing floor ${f}: ${e.stack}`); }
       }
       check(!errs && nan === n0 && imgs.every((k) => k >= 2), `a ${n}-floor building draws on each floor (${tour.join(", ")}) without errors (${errs}) or NaN, the ground and the blocks drawn (${imgs.join(", ")} images)`);
-      check(builds.every(([s, g, want]) => s === want && g === want), `the scene and ground caches are rebuilt once when the floor changes (the key carries the floor) and not again (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
+      // The ground floor's ground is painted once per battle in map space (isoview.js flatGroundFor) and kept: coming
+      // back down to it repaints nothing. An upper floor's (groundFor) is painted when the floor changes.
+      check(builds.every(([s, g, want], i) => s === want && g === (tour[i] === 0 && i > 0 ? 0 : want)), `the scene cache is rebuilt once when the floor changes (the key carries the floor) and not again; the ground once for an upper floor, the ground floor's kept (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
       check(b.floor === 0 && b.cells === b.floors[0].cells, "back on the ground floor the aliases point at its arrays");
       // The upper floor is raised: a cell's top at its lifted height picks itself (or a nearer cell in front).
       UI.setViewFloor(b, top); UI.drawCombat(st, NOW);

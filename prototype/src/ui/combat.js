@@ -1,7 +1,7 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
-  canSee, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
+  canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, medsLeft, combatAct, enemyStep, playerSees,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
@@ -36,7 +36,7 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" } };
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false }; // autoPlay: the AI plays your side (cb-autoplay)
 let canvas = null, ctx = null;
 const geo = { cs: 40, ox: 0, oy: 0 };
 
@@ -104,6 +104,7 @@ function sync(b) {
   cui.anim.clear();
   cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles
   cui.lastStep = performance.now();
+  cui.autoPlay = false; // a new battle starts in your hands
   for (const f of b.fx) cui.anim.set(f.seq, performance.now());
   autoSelect(b);
 }
@@ -133,6 +134,58 @@ function view(b) {
 }
 
 const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
+
+// ---------- threat preview ----------
+// The enemies you see, per battle revision: whether each can shoot (a gun and rounds) and where one action's walk
+// takes it (then a blow). Unseen ones are not counted: the preview never tells you what your people do not know.
+function threats(b, v) {
+  if (v.threatKey === v.key) return v.threatList;
+  const list = [];
+  for (const e of b.units) {
+    if (e.side !== "enemy" || !active(e) || e.ko || !v.seen.has(e.id) || !onFloor(b, e)) continue;
+    list.push({ e, ranged: isRanged(e) && canFire(b, e), reach: reachable(b, e, e.mob) });
+  }
+  v.threatKey = v.key;
+  v.threatList = list;
+  return list;
+}
+// Who could hit someone standing at (x, y) in the enemy's next turn, from where they stand now: a gun with the tile in
+// sight (the odds against the selected unit standing there, its cover from that side), or a walk of one action to
+// a cell next to it and a blow. [{ e, shot: chance or null, blow }]
+export function threatAt(b, v, x, y) {
+  if (b.over || b.phase !== "player") return [];
+  const u = v.u && active(v.u) ? v.u : null;
+  const stand = u ? { ...u, x, y, hunker: false } : null;
+  const out = [];
+  for (const T of threats(b, v)) {
+    const e = T.e;
+    let shot = null;
+    if (T.ranged && canSeeAt(b, e, x, y)) shot = stand ? shotOdds(b, e, stand).chance : 0;
+    let blow = false;
+    if (shot == null) {
+      for (let dy = -1; dy <= 1 && !blow; dy++) for (let dx = -1; dx <= 1 && !blow; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        if ((e.x === nx && e.y === ny) || isFinite(T.reach.dist[ny * W + nx])) blow = true;
+      }
+    }
+    if (shot != null || blow) out.push({ e, shot, blow });
+  }
+  return out;
+}
+function threatHtml(b, v, x, y, who = "") {
+  if (b.over || b.phase !== "player") return "";
+  const list = threatAt(b, v, x, y);
+  if (!list.length) return `<br><span class="good small">Threat${who}: none of the enemies you see can shoot this tile or reach it next turn.</span>`;
+  const shots = list.filter((t) => t.shot != null).sort((a, c) => c.shot - a.shot);
+  const blows = list.filter((t) => t.blow);
+  const nm = (e) => `${esc(e.name)}${e.aware ? "" : " (unaware)"}`;
+  const parts = [];
+  if (shots.length) parts.push(`can shoot it: ${shots.map((t) => `${nm(t.e)}${v.u ? ` <b class="${t.shot >= 50 ? "danger" : t.shot >= 25 ? "warn" : "muted"}">${t.shot}%</b>` : ""}`).join(", ")}`);
+  if (blows.length) parts.push(`can reach it and strike: ${blows.length > 3 ? `${blows.length} of them (${blows.slice(0, 3).map((t) => nm(t.e)).join(", ")}…)` : blows.map((t) => nm(t.e)).join(", ")}`);
+  return `<br><span class="small"><b class="danger">Threat${who}</b> (enemies you see, from where they stand): ${parts.join("; ")}.</span>`;
+}
 
 // ---------- input ----------
 function cellFromPx(px, py) {
@@ -492,6 +545,7 @@ export function combatKey(state, e) {
   if (fallAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
+  if (e.code === "KeyA" && e.shiftKey) { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (b.phase === "deploy") return false;
   if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
@@ -530,6 +584,14 @@ export function combatAction(state, key, d) {
     return;
   }
   if (key === "cb-end") return void requestEndTurn(state, d.now ? "enter" : "button");
+  // The AI plays your side from here on (combatTick), or you take back control.
+  if (key === "cb-autoplay") {
+    if (b.over) return;
+    cui.autoPlay = !cui.autoPlay;
+    cui.lastStep = 0;
+    cui.msg = cui.autoPlay ? "The AI is playing your side. Shift+A or Take back control to play again." : "Your side is yours again.";
+    return;
+  }
   if (key === "cb-confirm") return void setConfirmEnd(!cui.confirmEnd);
   // Sounding the retreat: ask (the confirm), toggle carrying a downed teammate, go, cancel.
   if (key === "cb-retreat") {
@@ -690,6 +752,18 @@ export function combatTick(state, now) {
   if (!b) return false;
   sync(b);
   if (isRedeploy(b) && cui.autoRedeploy) { act(state, { type: "start" }); return true; }
+  // The AI plays your side (cb-autoplay): your turn (and a deploy step) at the enemy turn's pace, until you take back
+  // control. It may sound the retreat from a fight it judges lost, as the autopilot does.
+  if (cui.autoPlay && !b.over && (b.phase === "player" || b.phase === "deploy")) {
+    if (now - cui.lastStep < ENEMY_STEP_MS) return false;
+    cui.lastStep = now;
+    cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
+    cui.mode = "move";
+    SIM.autoPlayerTurn(state);
+    cui.sel = null;
+    if (state.combat === b && b.phase === "player") autoSelect(b);
+    return true;
+  }
   if (b.over || b.phase !== "enemy") return false;
   if (now - cui.lastStep < ENEMY_STEP_MS) return false;
   cui.lastStep = now;
@@ -807,8 +881,10 @@ export function renderCombatPanel(state) {
     ${wallMap ? `<button class="${fallAskOpen(b) ? "active" : ""}" data-action="cb-fallback" data-v="ask" ${retreatRefusal(b) ? "disabled" : ""} data-tip="${esc(retreatRefusal(b) || "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings. (Shift+R)")}">Fall back to the yard</button>` : ""}
     ${noRetreat != null ? `<button class="${retreatAskOpen(b) ? "active" : ""}" data-action="cb-retreat" data-v="ask" ${noRetreat ? "disabled" : ""} data-tip="${esc(noRetreat || "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried. (Shift+R)")}">Sound the retreat</button>` : ""}
     ${b.phase === "player" && clearEnough(b) ? `<button class="primary" data-action="cb-clear" data-tip="Only a couple of the enemy are left, far off and unaware (or running): the area is clear enough. End the fight as a win and leave them be; or keep playing to hunt them down. (Shift+C)">Area clear: finish</button>` : ""}
-    <button class="primary" data-action="cb-end" ${b.phase === "player" ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
+    <button class="${cui.autoPlay ? "active" : ""}" data-action="cb-autoplay" data-tip="${esc(cui.autoPlay ? "Stop the AI: your side waits for your orders again from your next turn. (Shift+A)" : "Hand your side to the AI for the rest of the battle: it plays each of your turns (moves, shots, searches, the retreat if it judges the fight lost) while you watch. Take back control any time. (Shift+A)")}">${cui.autoPlay ? "✋ Take back control" : "🤖 AI plays my side"}</button>
+    <button class="primary" data-action="cb-end" ${b.phase === "player" && !cui.autoPlay ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
     ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
+    ${restartBtn(state, b)}
   </div>
   <div class="small muted" style="margin-top:0.3rem"><button class="${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button></div>`;
   return html;
@@ -1116,6 +1192,7 @@ function raidResult(state, b) {
     ${b.summary.length ? `<div class="small muted" style="margin-top:0.4rem">${b.summary.map(esc).join("<br>")}</div>` : ""}
     ${prisonersHtml(b)}
     <button class="primary" style="margin-top:0.7rem;width:100%" data-action="cb-close" data-tip="Return to the State Map. The team then waits for orders.">Continue</button>
+    ${restartBtn(state, b, "margin-top:0.4rem;width:100%")}
   </div>
   <h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
 }
@@ -1152,9 +1229,15 @@ function resultHtml(state, b) {
     <button class="primary" style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="1" data-tip="Take everything that fits (supplies first, then the most valuable items) and return to the State Map. (Enter)">Take all and continue</button>
     <button style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="0" data-tip="Return to the State Map. What is left on the bodies stays where they fell: a death site scavengers strip over the next days.">Leave the rest and continue</button>` :
     `<button class="primary" style="margin-top:0.7rem;width:100%" data-action="cb-close" data-tip="Close the battle and return to the State Map.">Continue</button>`}
+    ${restartBtn(state, b, "margin-top:0.4rem;width:100%")}
   </div>
   <h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
 }
+
+// The battle-start save of this battle (ui/settings.js doBattleSave): Restart battle loads it (after a confirm).
+// Never in an Ironman game (no going back).
+const restartable = (state, b) => !!(b && b.saveOk && b.saveKey && !state.ironman);
+const restartBtn = (state, b, style = "") => (restartable(state, b) ? `<button${style ? ` style="${style}"` : ""} data-action="set-battlereload" data-tip="Load the save made as this battle started and play it again from the beginning (asks first). Everything since it began is lost.">↺ Restart battle</button>` : "");
 
 // Odds for the selected unit against a target: shot if it can, melee if adjacent.
 function odds(b, u, t) {
@@ -1207,7 +1290,8 @@ function previewHtml(b, state = null) {
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}`;
+    const thr = active(t) ? threatHtml(b, v, t.x, t.y, ` to ${esc(t.name.split(" ")[0])}`) : "";
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
@@ -1293,7 +1377,7 @@ function previewHtml(b, state = null) {
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
   if (room) s += ` ${esc(room.name)}${room.type ? ` (${esc(areaHint(room.type).replace(/^Likely: /, "likely ").toLowerCase())})` : ""}.`;
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
-  return s;
+  return s + threatHtml(b, v, h.x, h.y);
 }
 
 // ---------- drawing ----------
@@ -1521,6 +1605,7 @@ function drawIsoView(state, b, now, cw, ch) {
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return n - cui.anim.get(f.seq); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
     hits: hitLabels(b, v), retreatOpen: !!plan, plan,
+    threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
   });
 }
 // The selected unit's hit chance against every enemy in sight (the isometric view shows it over their heads).

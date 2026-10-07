@@ -63,6 +63,7 @@ export function saveMeta(state) {
     seed: state.seed, groups: (state.factions || []).length, gameOver: !!state.gameOver, victory: !!state.victory,
     autopilot: !!state.autopilot, world: worldSizeOf(state), // "world", not "size": the save list keeps the byte size under that key (ui/saves.js)
     mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
+    ironman: !!state.ironman, // ui/saves.js: an Ironman game's own slot
   };
 }
 

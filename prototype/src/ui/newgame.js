@@ -157,6 +157,7 @@ export function newRunScreen(state, ui) {
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
+      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(ui)}
       ${groupInput(state, ui)}
