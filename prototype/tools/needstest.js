@@ -4,7 +4,8 @@
 // a base; rations (full / short / none) and who eats first when short; treats used by the simple rule and by hand,
 // keepsakes kept; an errand takes about a day's food and water a day and brings back what is left; heating fuel per head
 // below 0°C (×1.5 below −8°C), the cold without it, a shelter's camp fire; a team at a lit camp fire stays out of the
-// cold; gauges saved, and old saves start full.
+// cold; gauges saved, and old saves start full; starving and parched day after day (the morning mood hit grows, resets
+// when they eat, reaches rock bottom on the road before hunger kills) and the starving status icon.
 // Usage: node tools/needstest.js [seed]
 import { createWorld, hub, atBase, residents, makeSurvivor, tickHour } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
@@ -13,7 +14,11 @@ import { econStats } from "../src/sim/farming.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import {
   NEEDS, COLD, teamNeedsHour, needsHour, needsWork, needsAim, teamTreats, treatsFor, useTreat, heatDaily, packErrand, teamCold, takeFood,
+  STARVE, starveMood, starvingDaily,
 } from "../src/sim/needs.js";
+import { moodFactors } from "../src/sim/relations.js";
+import { SNAP } from "../src/sim/mentalbreaks.js";
+import { statusesOf } from "../src/sim/status.js";
 import { moodWork } from "../src/sim/morale.js";
 import { hubUpkeepDaily } from "../src/sim/hubevents.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -309,6 +314,66 @@ function team(st, n, supplies) {
   strip(raw.state);
   const st3 = loadFromString(JSON.stringify(raw));
   check(st3.survivors.every((x) => x.hunger === 100 && x.thirst === 100), "an old save (no gauges) starts everyone full");
+}
+
+// ---------- 9. starving day after day: the mood hit grows each morning, resets when they eat ----------
+{
+  console.log("Starving and parched day after day");
+  const st = W();
+  quietHub(st);
+  const s = atBase(st, hub(st).id).find((x) => !x.leader);
+  s.mood = 90; s.hunger = 5;
+  const hits = [];
+  for (let d = 1; d <= 5; d++) { const m0 = s.mood; s.hunger = 5; starvingDaily(st); hits.push(r1(m0 - s.mood)); }
+  check(hits.join(",") === [1, 2, 3, 4, 5].map((d) => STARVE.food.step * d).join(","), `the hit grows each morning starving: ${hits.join(", ")}`);
+  check(s.starveDays === 5, `five mornings counted (${s.starveDays})`);
+  check((s.moodNotes || []).some((n) => /Starving \(day 5\)/.test(n.label)), "it shows in the mood notes");
+  check(st.log.some((l) => /has been starving for 3 days/.test(l.text)), "one log line on day 3");
+  s.mood = 60; s.starveDays = 40; s.hunger = 5;
+  starvingDaily(st);
+  check(r1(60 - s.mood) === STARVE.food.max, `capped at −${STARVE.food.max} (${r1(60 - s.mood)})`);
+  s.hunger = 30; s.mood = 60;
+  starvingDaily(st);
+  check(s.starveDays == null && s.mood === 60, "a morning fed again resets it, no mood lost");
+  s.hunger = 100; s.thirst = 5; s.mood = 60;
+  starvingDaily(st); s.thirst = 5; starvingDaily(st);
+  check(s.parchDays === 2 && r1(60 - s.mood) === STARVE.water.step * 3, `parched: −${STARVE.water.step}, then −${STARVE.water.step * 2} (${r1(60 - s.mood)} in all)`);
+  check(starveMood(0) === 0 && starveMood(2, "water") === STARVE.water.step * 2, "starveMood");
+  const mf = moodFactors(st, s).list.find((f) => /^Parched: day 2/.test(f.label));
+  check(mf && mf.v === -STARVE.water.step * 2 && !mf.own, "the mood breakdown lists it (applied in needs.js)");
+  // A captive is not counted.
+  const c = atBase(st, hub(st).id).find((x) => x !== s && !x.leader);
+  c.hunger = 0; c.mood = 50; const loc = c.location; c.location = { kind: "captive", factionId: 1 };
+  starvingDaily(st);
+  check(c.mood === 50 && !c.starveDays, "captives are not counted");
+  c.location = loc;
+  // Saved.
+  const s2 = loadFromString(saveToString((st.cards.length = 0, st))).survivors.find((x) => x.id === s.id);
+  check(s2.parchDays === s.parchDays && s.parchDays > 0, "the count is saved");
+
+  // A team with water but no food, left alone: hunger runs out and the hit grows until rock bottom while they live.
+  const st2 = W();
+  quietHub(st2);
+  st2.hour = mildDay(st2) * 24;
+  const { p, crew } = team(st2, 2, { food: 0, water: 40 });
+  for (const m of crew) { m.mood = 60; m.hunger = 60; }
+  const who = crew[0];
+  let lowAt = null, perDay = [];
+  for (let h = 1; h <= 24 * 14 && who.alive; h++) {
+    st2.hour++;
+    teamNeedsHour(st2, p, crew);
+    if (st2.hour % 24 === 0) { const m0 = who.mood; starvingDaily(st2); if (who.mood > 0) perDay.push(r1(m0 - who.mood)); } // at 0 mood the floor cuts it
+    if (lowAt == null && who.mood < SNAP.at) lowAt = Math.ceil(h / 24);
+  }
+  const steps = perDay.filter((v) => v > 0);
+  check(steps.length >= 3 && steps.every((v, i) => i === 0 || v > steps[i - 1] || v === STARVE.food.max), `on the road the morning hit grows: ${steps.join(", ")}`);
+  check(lowAt != null && lowAt <= 9, `rock bottom (mood under ${SNAP.at}, where breaks start) by day ${lowAt} from mood 60, still alive then`);
+  // The status icons: starving with its day and mood.
+  const st3 = W();
+  const q = atBase(st3, hub(st3).id)[0];
+  plain(q); q.hunger = 4; q.starveDays = 3;
+  const icon = statusesOf(st3, q).find((x) => x.key === "hunger");
+  check(icon && icon.tone === "danger" && icon.tip.includes(`Starving: day 3, mood −${starveMood(3)} a day`), `the starving icon says the day and the mood (${icon && icon.tip})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

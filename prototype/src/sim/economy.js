@@ -23,7 +23,7 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
-import { heatDaily } from "./needs.js";
+import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
@@ -377,6 +377,7 @@ export function basesDaily(state) {
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
+  starvingDaily(state); // needs.js: each morning starving or parched in a row costs more mood (−2, −4, −6 …)
   relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
   mentalBreaksDaily(state); // mentalbreaks.js: days at rock bottom end in a break that changes the colony
 }

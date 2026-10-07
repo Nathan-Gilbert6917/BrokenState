@@ -35,6 +35,7 @@ import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
 import { hasPerk } from "./skills.js";
 import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
+import { starveMood, NEEDS } from "./needs.js"; // starving and parched days (needs.js starvingDaily)
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -337,6 +338,9 @@ export function moodFactors(state, s) {
     const insp = pl.route ? [] : atBase(state, base.id).filter((o) => o !== s && hasPerk(o, "inspiring"));
     if (insp.length) add(`Inspired by ${listText(insp.slice(0, 2).map(first))}`, Math.min(MOODF.inspireMax, insp.length * MOODF.inspire), true);
   }
+  // Starving or parched, day after day (needs.js starvingDaily: applied there, each morning).
+  if (s.starveDays > 0) add(`Starving: day ${s.starveDays} (hunger below ${NEEDS.starving}; worse each day until they eat)`, -starveMood(s.starveDays, "food"), false);
+  if (s.parchDays > 0) add(`Parched: day ${s.parchDays} (thirst below ${NEEDS.starving}; worse each day until they drink)`, -starveMood(s.parchDays, "water"), false);
   const ci = comfortInfo(state, s, base);
   if (ci.n > 0) add(`Something to read (${ci.text})`, Math.min(MOODF.comfortMax, ci.n * MOODF.comfortPer), true);
   // Music, cards, keepsakes and toiletries (comforts.js), and the after-effect of a treat (a coffee buzz, a hangover).

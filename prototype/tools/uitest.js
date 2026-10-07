@@ -499,6 +499,27 @@ section("Roster: sort, filter, roles");
   htmlOk(html, "roster");
   check((html.match(/data-action="ro-open"/g) || []).length === alive(w).length, `a row per survivor (${alive(w).length})`);
   check((html.match(/<select data-action="role"/g) || []).length === alive(w).filter((s) => s.location.kind === "base").length, "a role drop-down for everyone at a base");
+  // Status icons (ui/status.js, sim/status.js): one per state, stacking, with a tooltip; none for the well.
+  {
+    const home = atBase(w, h.id).filter((s) => !s.leader && s !== alive(w)[3] && s !== alive(w)[4]);
+    const [a, b, c, d] = home;
+    for (const s of [a, b, c, d]) Object.assign(s, { health: 100, conditions: [], woundInfected: false, worm: null, mood: 60, hunger: 100, thirst: 100 });
+    a.hunger = 5; a.starveDays = 2; a.thirst = 20; a.mood = 12; a.woundInfected = true; // four at once
+    b.thirst = 8; b.parchDays = 1;
+    addCondition(w, c, "sprain", "", { sev: 40, quiet: true });
+    html = rosterModal(w, ui);
+    htmlOk(html, "roster with status icons");
+    const rowOf = (s) => (html.split("<tr").find((r) => r.includes(`data-action="ro-open" data-id="${s.id}"`)) || "");
+    const icons = (s) => [...rowOf(s).matchAll(/data-st="(\w+)"/g)].map((m) => m[1]);
+    check(icons(a).join(",") === "mood,hunger,thirst,infected", `they stack in order: ${icons(a).join(", ")}`);
+    check(/Starving: day 2, mood −\d+ a day/.test(rowOf(a)), "the starving icon's tooltip has the day and the mood");
+    check(icons(b).join(",") === "thirst" && /Parched: day 1/.test(rowOf(b)), `parched: ${icons(b).join(", ")}`);
+    check(icons(c).join(",") === "sick" && rowOf(c).includes("🩹"), "injured only: the bandage");
+    check(icons(alive(w)[4]).includes("sick") && rowOf(alive(w)[4]).includes("🤒"), "ill: the fever face");
+    check(icons(alive(w)[3]).includes("health"), "low health (35)");
+    check(!icons(d).length, "nobody well gets an icon");
+    for (const s of [a, b]) { s.hunger = 100; s.thirst = 100; s.mood = 60; delete s.starveDays; delete s.parchDays; } a.woundInfected = false;
+  }
   // Sorting: every column, both ways.
   const cols = ["name", "where", "role", "health", "mood", "cond", "weapon", "armor", "traits", ...SKILLS.map((k) => `sk:${k}`)];
   let sorted = 0;
@@ -1363,6 +1384,17 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
     { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    { // The battle roster's status icons: the survivor behind a unit (not low health: the unit's bar shows that).
+      const u = ft.b.units.find((x) => x.side === "player" && x.sid != null && !x.dead);
+      const s = u && ft.st.survivors.find((x) => x.id === u.sid);
+      if (s) {
+        const keep = { hunger: s.hunger, health: s.health };
+        s.hunger = 3; s.health = 20;
+        const html = UI.renderCombatPanel(ft.st);
+        check(html.includes('data-st="hunger"') && !html.includes('data-st="health"'), "the battle roster shows a starving unit's icon, and no low-health one");
+        Object.assign(s, keep);
+      } else console.log("  (no survivor unit in this battle: battle icons skipped)");
+    }
     check(!bar.includes(`data-v="top"`) && ["rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: turn, zoom, center, roofs, no top-down (main.js handles cb-view)");
     for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs"]) UI.combatAction(ft.st, "cb-view", { v });
     check(UI.cui.view === "iso" && ISO.iso.rot === r0, "the view bar's buttons work");
