@@ -11,7 +11,7 @@ import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
-import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish } from "./sim/buildings.js";
+import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, queueBunkhouseExpand } from "./sim/buildings.js";
 import { refuel, repair } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
@@ -625,6 +625,7 @@ const actions = {
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (two clicks) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
+  "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
   demolish: (d) => {
     const id = Number(d.id);
     if (ui.demolishArm !== id) { ui.demolishArm = id; ui.baseMsg = "Click Confirm to pull it down (half its scrap and parts come back)."; return; }

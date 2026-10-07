@@ -331,17 +331,20 @@ export function recruitsDaily(state) {
 }
 
 // ---------- autopilot (autopilot.js pickChoice) ----------
-// roomFor(k): the governor's bed, food and water rule for k more people. Takes everyone if there is room, else the
-// best one, else sends them to a base with free beds, else parts ways when the stores are full, else turns them away.
+// roomFor(k, baseId): the governor's bed, food and water rule for k more people at that base (the card's base for
+// taking them in, the base they would walk to for sending; none for a team's card). Takes everyone if there is room,
+// else the best one, else sends them to a base with free beds, else parts ways when the stores are full, else turns
+// them away.
 export function autoRecruitPick(state, card, opts, roomFor) {
   const r = card.recruit;
   const n = r.candidates.filter((s) => s.pending).length || r.candidates.length;
   const kind = (k) => opts.filter((c) => c.kind === k);
-  if (roomFor(n) && kind("take")[0]) return kind("take")[0];
+  const at = r.partyId != null ? undefined : r.baseId; // taken in here (a team's card: they come along)
+  if (kind("take")[0] && roomFor(n, at)) return kind("take")[0];
   const ones = kind("takeOne").sort((a, b) => Math.max(...Object.values(b.who.skills)) - Math.max(...Object.values(a.who.skills)));
-  if (ones.length && roomFor(1)) return ones[0];
-  const send = kind("send").filter((c) => c.room >= n).sort((a, b) => b.room - a.room)[0];
-  if (send && roomFor(n)) return send;
+  if (ones.length && roomFor(1, at)) return ones[0];
+  const send = kind("send").filter((c) => c.room >= n && roomFor(n, c.sendTo)).sort((a, b) => b.room - a.room)[0];
+  if (send) return send;
   const h = hub(state);
   if (kind("part")[0] && h && (h.stock.food || 0) >= 120 && stockHas(h.stock, "water") >= 40) return kind("part")[0];
   return kind("away")[0] || null;
