@@ -74,12 +74,14 @@ export function setNextId(n) {
 export const localId = (state, id) => (typeof id === "number" ? id - (state.idBase || 0) : id);
 
 // crew (optional): starting-colonist overrides from the new-run screen, by index:
-// [{ name?, skills?, traits?, budget?, appearance?, leader? }]. Headless tools leave it out.
+// [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
 // "custom" with customW × customH hexes (experimental: worldsize.js customDef).
 // hives (optional): how many hives the map starts with, 0–10 (null: what the size makes; mapgen.js).
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null }) {
+// crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
+// new-run screen's Randomize all); left out, the world's seed decides them.
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -101,7 +103,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   };
 
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew });
+    hardcoreCreate(state, { factionCount, crew, crewRoll });
     ensureHives(state);
     hardcoreAfterHives(state);
     updateVision(state);
@@ -165,13 +167,7 @@ export function makeSurvivor(state, quality = 1) {
   // Each survivor gets one or two specialties.
   for (let i = 0; i < 2; i++) skills[rng.pick(SKILLS)] += rng.int(3, 7);
   for (const k of SKILLS) skills[k] = Math.min(20, skills[k]);
-  const traitKeys = Object.keys(TRAITS);
-  const traits = [];
-  const count = rng.chance(0.6) ? 1 : 2;
-  while (traits.length < count) {
-    const t = rng.pick(traitKeys);
-    if (!traits.includes(t) && !(t === "brave" && traits.includes("coward")) && !(t === "coward" && traits.includes("brave"))) traits.push(t);
-  }
+  const traits = rollTraits(rng);
   const s = {
     id: newId(),
     name: freshName(state),
@@ -189,6 +185,18 @@ export function makeSurvivor(state, quality = 1) {
   state.peopleMade = (state.peopleMade || 0) + 1;
   s.appearance = appearanceFor(state.seed, state.peopleMade);
   return s;
+}
+
+// One or two traits, never Brave with Coward (makeSurvivor; the new-run screen's Randomize all).
+export function rollTraits(rng) {
+  const traitKeys = Object.keys(TRAITS);
+  const traits = [];
+  const count = rng.chance(0.6) ? 1 : 2;
+  while (traits.length < count) {
+    const t = rng.pick(traitKeys);
+    if (!traits.includes(t) && !(t === "brave" && traits.includes("coward")) && !(t === "coward" && traits.includes("brave"))) traits.push(t);
+  }
+  return traits;
 }
 
 // A name nobody in this world has had: no first name twice while one is free (messages use first names), and
@@ -236,6 +244,8 @@ export function applyCrew(state, crew) {
     if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))];
     if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
+    // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
+    if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
     if (c.leader) s.leader = true;
   });
 }

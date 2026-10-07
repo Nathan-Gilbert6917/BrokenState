@@ -35,7 +35,7 @@ import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot } from "./ui/newgame.js";
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew } from "./ui/newgame.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
@@ -94,7 +94,7 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", crewEdited: false, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
+const ui = { scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -836,6 +836,8 @@ const actions = {
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
   tradeleave: () => { endTrade(state); ui.tradeMsg = ""; },
   reroll: () => newWorld(randomSeed()),
+  // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
+  "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll) => { newWorld(state.seed, true, { crew, crewRoll }); return state; }); },
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
   begin: () => {
@@ -1077,13 +1079,16 @@ for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
 // speed (a new game starts paused), dev tools and their map overlays.
-// keepCrew: carry colonists edited on the new-run screen into the rebuilt world.
-function newWorld(seed, keepCrew = false) {
-  const crew = keepCrew && ui.crewEdited ? crewSnapshot(state) : null;
+// keepCrew: carry colonists edited on the new-run screen into the rebuilt world (and their Hardcore crew roll).
+// fresh: { crew, crewRoll } from Randomize all, in place of the edited colonists.
+function newWorld(seed, keepCrew = false, fresh = null) {
+  const crew = fresh ? fresh.crew : keepCrew && ui.crewEdited ? crewSnapshot(state) : null;
+  if (fresh) ui.crewRoll = fresh.crewRoll;
+  else if (!crew) ui.crewRoll = null;
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll });
   resetView();
   hideCtx();
   hideTip();

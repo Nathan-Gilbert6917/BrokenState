@@ -32,6 +32,7 @@ import { GEAR, SUPPLY_KEYS, TRAITS } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS } from "./inventory.js";
+import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
@@ -402,9 +403,14 @@ function grabLine(s, got) {
 }
 
 // ---------- setup (hardcore.js hardcoreCreate) ----------
-export function setupHardcoreStart(state, crew) {
+// crewRoll: the three (who they were, what they grabbed, the car) drawn from a seed of their own instead of the world's
+// (the new-run screen's Randomize all). The world's rng is put back after the car, so the rest of the run still
+// follows the world's seed.
+export function setupHardcoreStart(state, crew, crewRoll = null) {
   state.hardcore = state.hardcore || {};
   const tile = spawnTile(state);
+  const worldRng = state.rng;
+  if (crewRoll != null) state.rng = new Rng(crewRoll);
   const people = [];
   for (let i = 0; i < HC_START.CREW; i++) {
     const s = makeSurvivor(state, i === 0 ? 1.3 : 1);
@@ -455,6 +461,7 @@ export function setupHardcoreStart(state, crew) {
   state.parties.push(p);
   // The car one of them fled in, and what was in the back.
   const { owner, car, trunk } = rollCar(state, p, people);
+  state.rng = worldRng;
   lines.push(carLine(owner, car, trunk));
   log(state, `The three of you set off in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));

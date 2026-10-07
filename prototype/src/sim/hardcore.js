@@ -24,8 +24,8 @@ export const isHardcore = (state) => !!state && state.mode === "hardcore";
 
 // createWorld (world.js), in place of the normal hub, crew and groups. Your start first, so the groups can be placed
 // relative to where you are (hardcore-groups.js keeps them a fair distance away).
-export function hardcoreCreate(state, { factionCount, crew }) {
-  setupHardcoreStart(state, crew);
+export function hardcoreCreate(state, { factionCount, crew, crewRoll = null }) {
+  setupHardcoreStart(state, crew, crewRoll);
   setupHardcoreGroups(state, factionCount);
 }
 

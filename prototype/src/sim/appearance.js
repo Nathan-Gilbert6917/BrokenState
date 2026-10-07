@@ -80,6 +80,13 @@ export function randomSkills(rng, budget, quality = 1) {
   for (const k of SKILLS) skills[k] = Math.max(0, Math.min(SKILL_MAX, Math.round(rng.range(0, 9) * quality)));
   for (let i = 0; i < 2; i++) skills[rng.pick(SKILLS)] += rng.int(3, 7);
   for (const k of SKILLS) skills[k] = Math.min(SKILL_MAX, skills[k]);
+  return fitSkills(rng, skills, budget);
+}
+
+// The same skills nudged so the total matches `budget` exactly (a copy; specialties kept). Randomize all in
+// Hardcore fits the skills a new background gave to the colonist's old total.
+export function fitSkills(rng, from, budget) {
+  const skills = { ...from };
   budget = Math.max(0, Math.min(SKILL_MAX * SKILLS.length, Math.round(budget)));
   let diff = budget - skillTotal(skills);
   let guard = 2000;

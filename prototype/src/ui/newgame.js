@@ -1,13 +1,13 @@
 // New-run setup screen, survivor appearance editor and zombie look settings.
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
-import { survivorById, skill } from "../sim/world.js";
+import { survivorById, skill, rollTraits } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
 import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
 import {
-  LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, skillTotal, SKILL_MAX,
+  LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
 import {
   appearanceURL, survivorURL, zombieURL, spriteImg, ZOMBIE_LOOK_OPTIONS, ZOMBIE_VARIANTS, zombieLook, setZombieLook, resetZombieLook,
@@ -162,7 +162,7 @@ export function newRunScreen(state, ui) {
       ${groupInput(state, ui)}
       ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
-      <button data-action="nr-allcrew"${tip("Randomize every colonist's name, skills and look (skill totals stay the same)")}>🎲 Randomize all</button>
+      <button data-action="nr-allcrew"${tip(`Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
     ${customSizeRow(state, ui)}
@@ -184,8 +184,39 @@ function loadButtons() {
 }
 
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
+// A normal start's weapon and armor go along (a Hardcore start's gear is what they grabbed, rolled with the world).
 export function crewSnapshot(state) {
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, leader: !!s.leader }));
+  const kit = (s) => (isHardcore(state) ? null : { weapon: s.gear.weapon ? { ...s.gear.weapon } : null, armor: s.gear.armor ? { ...s.gear.armor } : null });
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader }));
+}
+
+// Randomize all: every colonist's name, skills (same total), traits, gear and look. Normal: in place, with the starting
+// weapons and the vest handed out again. Hardcore: the gear comes with who they were, what they grabbed and the car, so
+// the world is built again on the same seed with a crew roll of its own: rebuild(crew, crewRoll) returns the new state,
+// whose background-shaped skills are then fitted to each colonist's old total. Returns the state to keep.
+export function randomizeAllCrew(state, ui, rebuild) {
+  const rng = freshRng();
+  if (!isHardcore(state)) {
+    const weapons = rng.shuffle(state.survivors.map((s) => s.gear.weapon));
+    const armor = rng.shuffle(state.survivors.map((s) => s.gear.armor));
+    state.survivors.forEach((s, i) => {
+      reroll(state, ui, s, ["name", "skills", "look"]);
+      s.traits = rollTraits(rng);
+      s.gear.weapon = weapons[i];
+      s.gear.armor = armor[i];
+    });
+    return state;
+  }
+  const budgets = state.survivors.map((s) => budgetOf(ui, s));
+  const names = [];
+  const crew = state.survivors.map((s, i) => {
+    const name = randomName(rng, names);
+    names.push(name);
+    return { name, appearance: randomAppearance(rng), budget: budgets[i], leader: !!s.leader };
+  });
+  const next = rebuild(crew, 1 + Math.floor(rng.next() * 2147483646));
+  next.survivors.forEach((s, i) => { if (budgets[i] != null) s.skills = fitSkills(rng, s.skills, budgets[i]); });
+  return next;
 }
 
 // ---------- zombie look settings ----------
@@ -232,7 +263,6 @@ export const LOOK_ACTIONS = {
   "nr-skills": withSurvivor(["skills"]),
   "nr-look": withSurvivor(["look"]),
   "nr-all": withSurvivor(["name", "skills", "look"]),
-  "nr-allcrew": (state, ui) => { for (const s of state.survivors) reroll(state, ui, s, ["name", "skills", "look"]); },
   "nr-skill": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
     if (!s || ui.started) return;
