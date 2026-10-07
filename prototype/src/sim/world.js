@@ -52,6 +52,7 @@ import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone wh
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { countWord } from "./hardcore-start.js";
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
@@ -81,7 +82,9 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null }) {
+// startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
+// kept as state.startPeople. A normal start is a full hub of six and ignores it.
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -103,11 +106,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   };
 
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew, crewRoll });
+    hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
     updateVision(state);
-    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
+    log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
     return state;
   }

@@ -588,6 +588,21 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     htmlOk(html, "new-run screen (Custom)");
     check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
   }
+  // Starting people (sim/hardcore.js START_PEOPLE): Hardcore only; greyed out with the reason on a normal start.
+  {
+    const normalHtml = newRunScreen(createWorld({ seed: seed + 9, factionCount: 7 }), { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3 });
+    const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
+    check(nsel && /disabled/.test(nsel[1]) && normalHtml.includes("Hardcore only"), "normal start: Starting people shown greyed out, Hardcore only");
+    for (const n of [1, 2, 3, 4]) {
+      const w = createWorld({ seed: seed + 9, factionCount: 7, mode: "hardcore", startPeople: n });
+      const html = newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
+      htmlOk(html, `new-run screen (Hardcore, ${n} starting)`);
+      const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+      check(sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]) && (html.match(/nrcard/g) || []).length === n,
+        `Hardcore: Starting people 1–4 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
+    }
+  }
+  check(inMain("startpeople") && mainSrc.includes("startPeople: ui.startPeople"), "main.js handles Starting people and passes it to createWorld");
   check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
   check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
   console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);

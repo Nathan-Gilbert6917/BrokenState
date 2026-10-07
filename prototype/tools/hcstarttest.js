@@ -94,7 +94,8 @@ for (const st of worlds) {
   const sup = p.supplies, n = partyMembers(st, p).length, P = HC_START.PREPPER;
   const prep = partyMembers(st, p).some((x) => x.background === "prepper");
   const pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
-  check(sup.food >= HC_START.TEAM_MIN + pf && sup.food <= HC_START.TEAM_MAX + pf && sup.water >= HC_START.TEAM_MIN + pw && sup.water <= HC_START.TEAM_MAX + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
+  const lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n; // per head (3–9 for three)
+  check(sup.food >= lo + pf && sup.food <= hi + pf && sup.water >= lo + pw && sup.water <= hi + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
   check(sup.food / n <= 3 + pf / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each beyond a prepper's bag`);
   check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 72 + (prep ? P.AMMO : 0) && (sup.meds || 0) <= 6 + (prep ? P.MEDS : 0), `seed ${st.seed}: no fuel, scrap or parts in the packs, little ammo (${sup.ammo || 0}) or meds beyond the bags`);
   check(Object.values(sup).every((v) => Number.isFinite(v) && v >= 0), `seed ${st.seed}: clean supply numbers`);
@@ -645,6 +646,73 @@ function views(st, label) {
     const html = newRunScreen(w, { ...freshUi(), started: false, worldSize: "normal", factionCount: 7 });
     check(!scan(html, mode).length && /data-action="gamemode"/.test(html) && new RegExp(`value="${mode}" selected`).test(html), `new-run screen (${mode}): the Mode select, clean`);
     check((html.match(/nrcard/g) || []).length === (mode === "hardcore" ? 3 : 6), `new-run screen (${mode}): ${mode === "hardcore" ? 3 : 6} colonists to edit`);
+  }
+}
+
+// ---------- starting people ----------
+section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together; the default is the old start");
+{
+  const { START_PEOPLE, clampStartPeople } = await import("../src/sim/hardcore.js");
+  check(START_PEOPLE.MIN === 1 && START_PEOPLE.MAX === 4 && START_PEOPLE.DEF === 3 && HC_START.CREW === 3, "1–4, three by default");
+  check(clampStartPeople(0) === 1 && clampStartPeople(9) === 4 && clampStartPeople("2") === 2 && clampStartPeople("x") === 3 && clampStartPeople(2.6) === 3, "counts are clamped and rounded (junk: three)");
+  const sizes = {};
+  for (let n = 1; n <= 4; n++) {
+    let foodPer = 0, games = 0;
+    for (const seed of [11, 42, 77, 303, 505, 808]) {
+      const st = hc(seed, { startPeople: n });
+      const p = roadTeam(st);
+      const tag = `${n} people, seed ${seed}`;
+      if (!check(!!p, `${tag}: a team on the road`)) continue;
+      const team = partyMembers(st, p);
+      check(st.startPeople === n && st.hardcore.start.people === n && st.survivors.length === n && team.length === n && alive(st).length === n, `${tag}: ${n} on the team (${team.length}, ${st.survivors.length} in all)`);
+      check(st.survivors.filter((s) => s.leader).length === 1 && new Set(team.map((s) => s.background)).size === n && team.every((s) => BACKGROUNDS[s.background]), `${tag}: one leader, ${n} background${n > 1 ? "s, no two alike" : ""}`);
+      check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1, `${tag}: one car`);
+      const prep = team.some((s) => s.background === "prepper"), P = HC_START.PREPPER;
+      const sup = p.supplies, lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
+      check(sup.food >= lo + pf && sup.food <= hi + pf && sup.water >= lo + pw && sup.water <= hi + pw, `${tag}: 1–3 days each${prep ? " plus the prepper's bag" : ""} (${sup.food} food, ${sup.water} water)`);
+      check(n === 1 ? /got out alone/.test(st.log.map((l) => l.text).join(" ")) : st.log.some((l) => new RegExp(`of you got out`).test(l.text)), `${tag}: the day-1 log counts them`);
+      check(st.cards[0] && st.cards[0].isOrders && /Calder is falling/.test(st.cards[0].text), `${tag}: the orders card`);
+      if (!prep) { foodPer += sup.food / n; games++; }
+      try { for (let i = 0; i < 48; i++) { tickHour(st); st.cards.length = 0; } check(true, `${tag}: two days run`); } catch (e) { check(false, `${tag}: two days run: ${e.message}`); }
+    }
+    sizes[n] = games ? (foodPer / games).toFixed(1) : "-";
+  }
+  console.log(`  food a head at the start (no prepper): ${Object.entries(sizes).map(([n, v]) => `${n}: ${v}`).join(", ")}`);
+  // The default: leaving it out, 3 and the old start build the same world.
+  const a = hc(42), b = hc(42, { startPeople: 3 });
+  check(JSON.stringify(a.survivors.map((s) => [s.name, s.background, s.skills])) === JSON.stringify(b.survivors.map((s) => [s.name, s.background, s.skills])) && JSON.stringify(roadTeam(a).supplies) === JSON.stringify(roadTeam(b).supplies) && a.rng.next() === b.rng.next(), "leaving it out is the same as 3");
+  check(hc(42, { startPeople: 0 }).survivors.length === 1 && hc(42, { startPeople: 7 }).survivors.length === 4, "out of range: clamped to 1–4");
+  // A normal start ignores it (a full hub of six).
+  const nw = createWorld({ seed: 42, factionCount: 7, startPeople: 1 });
+  check(nw.mode === "normal" && nw.survivors.length === 6 && nw.startPeople === undefined, "a normal start ignores it (six at the hub)");
+  // Saves: the count comes back, the save list has it, and a hardcore save from before it loads as three.
+  const two = hc(77, { startPeople: 2 });
+  two.cards.length = 0;
+  const text = saveToString(two);
+  const back = loadFromString(text);
+  check(back.startPeople === 2 && JSON.parse(text).meta.startPeople === 2 && partyMembers(back, roadTeam(back)).length === 2, "a save keeps the count (and the save list shows it)");
+  const old = hc(77);
+  old.cards.length = 0;
+  delete old.startPeople;
+  check(loadFromString(saveToString(old)).startPeople === 3, "a hardcore save from before the choice loads as three");
+  // Edited colonists carried into a smaller or bigger start (the new-run screen's crew, by index).
+  const crew = [{ name: "Ada Test" }, { name: "Bo Test", leader: true }, { name: "Cy Test" }];
+  const one = hc(42, { startPeople: 1, crew });
+  check(one.survivors.length === 1 && one.survivors[0].name === "Ada Test" && one.survivors[0].leader, "a crew of three edited, one starts: the first, and the leader falls back to them");
+  const four = hc(42, { startPeople: 4, crew });
+  check(four.survivors.length === 4 && four.survivors[1].name === "Bo Test" && four.survivors[1].leader && four.survivors.filter((s) => s.leader).length === 1, "a crew of three edited, four start: the three and one more");
+  // The new-run screen: the select, set to the count, in Hardcore; greyed out for a normal start.
+  for (let n = 1; n <= 4; n++) {
+    const w = hc(5, { startPeople: n });
+    const html = newRunScreen(w, { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: n });
+    const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+    check(!!sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]), `new-run screen (hardcore, ${n}): Starting people, ${n} selected`);
+    check((html.match(/nrcard/g) || []).length === n && !scan(html, `hardcore ${n}`).length, `new-run screen (hardcore, ${n}): ${n} colonist${n > 1 ? "s" : ""} to edit, clean`);
+  }
+  {
+    const html = newRunScreen(createWorld({ seed: 5, factionCount: 7 }), { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: 2 });
+    const sel = /<select data-action="startpeople"([^>]*)>/.exec(html);
+    check(!!sel && /disabled/.test(sel[1]) && /Hardcore only/.test(html), "new-run screen (normal): Starting people greyed out, Hardcore only");
   }
 }
 

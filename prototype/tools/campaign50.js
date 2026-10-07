@@ -8,6 +8,7 @@
 // Usage: node tools/campaign50.js [games=50] [days=1095] [--size huge|120x80|normal,large,huge,120x80] [--groups 15-20] [--seed 1000]
 //                                [--styles balanced,aggressive,cautious] [--mode both|normal|hardcore] [--preset hardcore-cautious|normal-cautious|all]
 //                                [--out path.json] [--census] [--no-keep] [--log N] [--grep regex] [--fallen-grep]
+//                                [--start-people 1-4] (hardcore starts only: how many flee together, hardcore.js START_PEOPLE; 3 when left out)
 // The testing items of docs/campaign-census-2026-10-06.md (2026-10-06):
 //   - per-season columns: thirst and hunger deaths by season (weather.js season) per run and in the totals;
 //   - `--size a,b,c`: the same set of games on each size, a report block per size and a comparison table at the end;
@@ -31,6 +32,7 @@ import { goalsProgress, inviteProblem, isMember } from "../src/sim/alliance.js";
 import { ensureConquest } from "../src/sim/conquest.js";
 import { clampGroups } from "../src/sim/worldsize.js";
 import { season, SEASONS } from "../src/sim/weather.js";
+import { clampStartPeople } from "../src/sim/hardcore.js";
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -60,6 +62,8 @@ const LOGN = Number(flag("--log", 0));
 const FALLEN_GREP = has("--fallen-grep") || !!PRESET.fallenGrep; // print the grep lines only for the runs that fell
 const GREP = flag("--grep", FALLEN_GREP ? PRESET.grep || "ration|walked away" : null); // collect every log line matching this regex (up to 300 a run), printed per run
 const CENSUS = has("--census");
+// Hardcore's starting team (hardcore.js START_PEOPLE, the new-run screen's Starting people); null: the default three.
+const START_PEOPLE_N = flag("--start-people", null) != null ? clampStartPeople(flag("--start-people", null)) : null;
 const COMMIT = (() => { try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "nocommit"; } })();
 const TODAY = new Date().toISOString().slice(0, 10);
 const CENSUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "census");
@@ -104,12 +108,12 @@ function deathCause(text) {
 }
 
 function runOne(job) {
-  const { seed, mode, style, groups, size, days, keep, logN, grep } = job;
+  const { seed, mode, style, groups, size, days, keep, logN, grep, startPeople } = job;
   const grepRe = grep ? new RegExp(grep, "i") : null, grepLines = [];
   const t0 = Date.now();
   let state, error = null, crashDay = null;
   try {
-    state = createWorld({ seed, factionCount: groups, mode, ...sizeOpts(size) });
+    state = createWorld({ seed, factionCount: groups, mode, ...sizeOpts(size), ...(startPeople != null ? { startPeople } : {}) });
   } catch (e) {
     return { ...job, outcome: "crash", error: `createWorld: ${e.stack.split("\n").slice(0, 4).join(" | ")}`, day: 0, ms: Date.now() - t0, samples: [], events: [], deaths: {}, end: {} };
   }
@@ -235,10 +239,10 @@ async function main() {
     const k = MODE !== "both" || mode === "normal" ? i : i - Math.ceil(GAMES / 2);
     const style = STYLES[k % STYLES.length];
     const groups = clampGroups(size, GMIN + (k % (GMAX - GMIN + 1)));
-    jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP });
+    jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP, startPeople: START_PEOPLE_N });
   }
   const perSize = jobs.filter((j) => j.size === SIZE);
-  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
+  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
   console.log(`legend: h hive win, a coalition win, l loss, g still going at the cap, X crash`);
   const t0 = Date.now();
   const results = (await pool(jobs)).sort((a, b) => SIZES.indexOf(a.size) - SIZES.indexOf(b.size) || a.seed - b.seed);
@@ -249,7 +253,7 @@ async function main() {
   const crashes = results.filter((r) => r.outcome === "crash");
   if (OUT) {
     if (!existsSync(dirname(OUT))) mkdirSync(dirname(OUT), { recursive: true });
-    writeFileSync(OUT, JSON.stringify({ args: { GAMES, DAYS, SIZE, SIZES, GMIN, GMAX, SEED0, STYLES, KEEP, MODE, PRESET: PRESET_NAME }, commit: COMMIT, date: TODAY, ms, results }, null, 1));
+    writeFileSync(OUT, JSON.stringify({ args: { GAMES, DAYS, SIZE, SIZES, GMIN, GMAX, SEED0, STYLES, KEEP, MODE, PRESET: PRESET_NAME, START_PEOPLE: START_PEOPLE_N }, commit: COMMIT, date: TODAY, ms, results }, null, 1));
     console.log(`\nreport written to ${OUT}`);
   }
   console.log(`\n${results.length} runs in ${(ms / 60000).toFixed(1)} min${crashes.length ? `, ${crashes.length} CRASHED` : ""}.`);
