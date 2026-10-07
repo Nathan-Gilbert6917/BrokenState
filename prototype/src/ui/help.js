@@ -11,6 +11,7 @@ import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
 import { familyHelp } from "./family.js"; // children and families (sim/family.js)
+import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -119,6 +120,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
+    if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
@@ -127,6 +129,7 @@ export function helpTopics() {
   add("Sound", soundHelp()); // ui/audio.js
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
   if (!seen.has("children-and-families")) add("Children and families", familyHelp());
+  if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
   return out;
 }
 

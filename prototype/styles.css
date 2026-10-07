@@ -655,3 +655,12 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .rs-bar i { display: block; height: 100%; background: var(--danger); }
 .rs-events { max-width: 75rem; }
 .rs-over { margin: 0.4rem 0 0.9rem; }
+/* The save list grouped by campaign (ui/savelist.js) and the error screen (ui/crash.js). */
+.settings .sgroup { margin: 0.55rem 0 0.05rem; padding: 0 0.2rem 0.15rem; border-bottom: 1px solid var(--line); }
+.settings .sgroup:first-child { margin-top: 0; }
+#crash { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,0.82); }
+#crash .crashbox { background: var(--panel); border: 1px solid var(--danger); border-radius: 12px; padding: 1.1rem 1.4rem; width: min(44rem, 94vw); max-height: 92vh; overflow-y: auto; box-shadow: 0 16px 48px rgba(0,0,0,0.7); line-height: 1.5; }
+#crash h1 { margin: 0 0 0.4rem; color: var(--danger); font-size: 1.4rem; }
+#crash .crasherr { font-family: Consolas, monospace; font-size: 0.9rem; background: var(--panel-2); border-left: 3px solid var(--danger); padding: 0.4rem 0.6rem; border-radius: 4px; overflow-wrap: anywhere; }
+#crash .crashbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.8rem 0 0.6rem; }
+#crash textarea { width: 100%; box-sizing: border-box; font-family: Consolas, monospace; font-size: 0.78rem; margin-top: 0.3rem; resize: vertical; }
