@@ -602,3 +602,21 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .deftab .dshift.now { border-color: #6c8f5a; }
 .deftab .dshname { width: 7rem; font-weight: 700; }
 .deftab button.chip { border: none; cursor: pointer; }
+/* The first-week guide under the alerts (ui/guide.js), and the pulse its Show me puts on the button to press. */
+.guide { background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); padding: 0.3rem 0.45rem 0.4rem 0.55rem; margin-top: 0.25rem; font-size: 0.95rem; }
+.gd-head { display: flex; align-items: center; gap: 0.3rem; }
+.gd-title { flex: 1; font-weight: bold; color: var(--accent); }
+.gd-count { font-size: 0.85rem; color: var(--muted); }
+.gd-btn { border: none; background: none; padding: 0 0.4rem; opacity: 0.65; font-size: 0.9rem; }
+.gd-btn:hover:not(:disabled) { opacity: 1; }
+.gd-next { color: var(--muted); margin-top: 0.1rem; }
+.gd-step { display: flex; align-items: center; gap: 0.3rem; line-height: 1.3; }
+.gd-step.done { opacity: 0.55; padding: 0.12rem 0; }
+.gd-step.done .gd-mark { color: var(--good); }
+.gd-mark { display: inline-block; width: 1.3rem; text-align: center; margin-right: 0.15rem; }
+.gd-go { flex: 1; text-align: left; border: none; background: none; padding: 0.15rem 0; font-size: 0.95rem; }
+.gd-step.cur .gd-go { color: var(--accent); font-weight: bold; }
+.gd-show { font-size: 0.8rem; padding: 0.08rem 0.45rem; white-space: nowrap; }
+.gd-why { font-size: 0.86rem; color: var(--muted); margin: 0 0 0.3rem 1.45rem; line-height: 1.35; }
+.gd-pulse { outline: 2px solid #ffd166; outline-offset: 2px; animation: gdpulse 1s ease-in-out 10; }
+@keyframes gdpulse { 50% { box-shadow: 0 0 0 0.4rem rgba(255,209,102,0.45); outline-color: #fff2c4; } }

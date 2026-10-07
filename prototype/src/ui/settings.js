@@ -17,6 +17,7 @@ import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
 import { soundOptionsHtml, SOUND_ACTIONS, SOUND_CHANGE } from "./audio.js"; // the Sound section (volumes, mutes, hear a sound)
+import { guideMenuRow, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week guide: shown again or hidden from the Game tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -116,6 +117,7 @@ function gameTab(state, ui, api) {
     html += `<div class="setrow">${last ? `<button class="primary" data-action="set-continue"${dis(!busy)}${tip(`Load the latest save: ${last.name}`)}>▶ Continue: ${esc(last.name)}</button>` : `<span class="muted small">No saves yet in this browser.</span>`}
       ${api.desktop ? `<button data-action="set-quitnosave"${dis(!busy)}>Quit</button>` : ""}</div>`;
   }
+  html += guideMenuRow(state, ui); // ui/guide.js
   const auto = api.autosaveInfo();
   html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the autosave · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
   if (auto.error) html += `<div class="small danger">The last autosave failed: ${esc(auto.error)}</div>`;
@@ -253,6 +255,7 @@ function loadSlot(ui, api, id) {
 
 export const SETTINGS_ACTIONS = {
   ...SOUND_ACTIONS, // ui/audio.js
+  ...GUIDE_MENU_ACTIONS, // gd-toggle (ui/guide.js)
   "set-open": (state, ui, d) => openSettings(ui, d.tab || "game"),
   "set-close": (state, ui) => { if (!ui.settings || !ui.settings.busy) ui.settings = null; },
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },

@@ -1,4 +1,5 @@
-// Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. The topics are
+// Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. "Start here" comes
+// first (the game in plain words, with links to the deeper topics; the first-week guide, ui/guide.js, points at it). The rest are
 // the paragraphs of the game's help text (ui/ui.js helpText, one per bold title) plus the map's layers and legend,
 // which used to be spelled out in the Layers popup on the map. Small "?" buttons around the UI (data-action
 // "help-open" data-sec="<topic id>") open the menu at a topic. Windows and panels (folding, resizing, map only)
@@ -78,7 +79,20 @@ function legendTopic() {
   return `What the things drawn on the map mean. <table class="helptable">${LEGEND.map(([sw, name, text]) => `<tr><td>${sw}</td><td><b>${esc(name)}</b></td><td>${text}</td></tr>`).join("")}</table>`;
 }
 
-// The topics in order: the game's help paragraphs, with the map layers and legend right after "Map".
+// "Start here" (first in the list, and what Help opens on): the game in plain words, with links to the deeper topics.
+const see = (...ids) => ` <span class="muted">More:</span> ${ids.map(([id, t]) => `<a class="link" data-action="set-help" data-sec="${id}">${t}</a>`).join(", ")}.`;
+function startHereTopic() {
+  return `Broken State in a few lines. The <b>First-week guide</b> under the alerts on the right walks you through the first days (⚙ Menu → Game shows it again).<br><br>
+    <b>Your people.</b> A handful of survivors in the State of Calder, years after the dead rose (in Hardcore, on the day it falls, with no home yet). Keep them fed, watered, healthy and in good spirits: everything else follows from that.${see(["goal", "Goal"], ["hardcore-mode", "Hardcore mode"])}<br><br>
+    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"])}<br><br>
+    <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
+    <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
+    <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card stops the clock and asks what to do. The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["alerts", "Alerts"])}<br><br>
+    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–4 set the speed; windows and cards stop the clock while they are open.<br><br>
+    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year 8. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
+}
+
+// The topics in order: Start here, then the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
   const out = [];
   const seen = new Set();
@@ -88,6 +102,7 @@ export function helpTopics() {
     seen.add(id);
     out.push({ id, title, html });
   };
+  add("Start here", startHereTopic());
   for (const raw of helpText().split(/<br>\s*(?:<br>\s*)?/)) {
     const chunk = raw.trim();
     if (!chunk) continue;

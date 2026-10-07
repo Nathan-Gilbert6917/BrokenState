@@ -59,6 +59,7 @@ import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
+import { GUIDE_ACTIONS, guideCheck, renderGuide, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
@@ -115,6 +116,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
 ui.scale = options.uiScale;
+ui.guide = guideDefault(options); // the new-run screen's First-week guide box (ui/guide.js): on for the first campaign here
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
 initAudio(options, () => saveOptions(options)); // the Sound options, the first-gesture unlock, button clicks
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
@@ -354,6 +356,7 @@ function refresh(user = true) {
   lastRefresh = last;
   tidyUi();
   noteNames(state);
+  guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
   const tb = topbarParts(state, ui);
@@ -375,7 +378,7 @@ function refresh(user = true) {
   if (ui.started) devSample(state);
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
-  setPanel("alerts", alertsHTML(alerts), user);
+  setPanel("alerts", alertsHTML(alerts) + renderGuide(state, ui), user); // the first-week guide sits under the alerts
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   syncTitle(state, ui); // ui/title.js
@@ -386,6 +389,7 @@ function refresh(user = true) {
     fps.classList.toggle("fixed", !!state.combat);
   }
   if (tipTarget && tipTarget.isConnected === false) hideTip(); // only when the hovered element was replaced
+  guidePulse(ui); // what the guide's Show me points at (ui/guide.js)
 }
 
 function refreshModal(user) {
@@ -913,6 +917,10 @@ const actions = {
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
     if (lead) log(state, `${lead.name} leads the group.`, "info");
+    // The first-week guide (ui/guide.js) if its box was ticked; later campaigns start with the box off.
+    startGuide(state, ui.guide);
+    if (!options.guideSeen) { options.guideSeen = true; saveOptions(options); }
+    ui.guide = false;
   },
   restart: () => newWorld(randomSeed()),
   // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
@@ -950,7 +958,7 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions);
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
@@ -1110,6 +1118,7 @@ const changeActions = {
   hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
   // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
   ironman: (el) => { ui.ironman = !!el.checked; }, // the new-run screen's Ironman box (ui/newgame.js)
+  "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
   // Starting people (Hardcore only, ui/newgame.js): 1–4 flee together; the same seed and the edited crew (as many as fit).
   startpeople: (el) => { ui.startPeople = clampStartPeople(el.value); newWorld(state.seed, true); },
