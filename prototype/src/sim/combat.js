@@ -647,6 +647,13 @@ export function say(b, text, k = "info") {
   b.log.push({ turn: b.turn, text, k });
   if (b.log.length > 80) b.log.shift();
 }
+// A line kept in its place for text known only later: a shot or a blow is logged before the "is dead" its damage says.
+function sayFirst(b) {
+  const line = { turn: b.turn, text: "", k: "info" };
+  b.log.push(line);
+  if (b.log.length > 80) b.log.shift();
+  return line;
+}
 export function fx(b, e) {
   e.seq = ++b.fxSeq;
   if (b.floors) e.f = b.floor || 0; // the floor it happened on (the renderer shows the active floor's)
@@ -1918,6 +1925,7 @@ export function fire(b, a, t, opts = {}) {
   if (a.xpT) a.xpT.shots++;
   const o = shotOdds(b, a, t, a.x, a.y, opts);
   const hit = rng.chance(o.chance / 100);
+  const line = sayFirst(b);
   let text;
   if (hit) {
     const crit = rng.chance(o.crit / 100);
@@ -1930,7 +1938,8 @@ export function fire(b, a, t, opts = {}) {
     text = w.acid ? `${a.name} spits acid at ${t.name} and misses (${o.chance}%).` : `${a.name} shoots at ${t.name} and misses (${o.chance}%).`;
     fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, acid: !!w.acid });
   }
-  say(b, text, a.side === "player" ? (hit ? "good" : "info") : hit ? "danger" : "info");
+  line.text = text;
+  line.k = a.side === "player" ? (hit ? "good" : "info") : hit ? "danger" : "info";
   if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shots still carry." : "The gunshots alert everything nearby.");
   else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), "The muffled shots still carry.");
   else if (noise) alertAll(b, "The gunshots alert everyone nearby.");
@@ -1947,15 +1956,17 @@ function strike(b, a, t) {
   const amb = a.low ? strikeBonus(b, a) : 1; // a crawler out of hiding (zombietypes.js)
   const gap = t.ztype ? stabsGap(a, t) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js)
   const hit = rng.chance(o.chance / 100) || sure;
+  const line = sayFirst(b);
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
     const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
-    say(b, `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`, a.side === "player" ? "good" : "danger");
+    line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`;
+    line.k = a.side === "player" ? "good" : "danger";
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
   } else {
-    say(b, `${a.name} lunges at ${t.name} and misses.`, "info");
+    line.text = `${a.name} lunges at ${t.name} and misses.`;
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side });
   }
   // A struck sleeper that survives wakes its group.
@@ -2461,10 +2472,11 @@ function scoreCell(b, u, x, y, foes, cost, field) {
 }
 
 // A base battle (deploy.js, interior.js): your people do not go out past the wall line to chase the attackers (the
-// gate and the breaches themselves are held from where they are).
+// gate and the breaches themselves are held from where they are). Only when the base is yours: storming a group's
+// base (conquest.js, holders "enemy") your people start outside its wall and have to get in.
 const WALL_LINE = new Set(["gate", "breach", "palisade"]);
 function outsideBase(b, u, i) {
-  return u.side === "player" && !!b.tier && !!b.tier.interior && !b.tier.interior[i] && !WALL_LINE.has(b.cells[i].k);
+  return u.side === "player" && (b.holders || "player") === "player" && !!b.tier && !!b.tier.interior && !b.tier.interior[i] && !WALL_LINE.has(b.cells[i].k);
 }
 
 function bestMove(b, u, foes, field = null) {

@@ -12,7 +12,8 @@ import { addBuilding, baseWalls } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath } from "../src/sim/parties.js";
 import { attitude, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
-import { createBattle, finishCombat, inEvac } from "../src/sim/combat.js";
+import { createBattle, finishCombat, inEvac, autoPlayerTurn, runEnemyPhase } from "../src/sim/combat.js";
+import { battles as isoBattles } from "./isobattles.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import * as A from "../src/sim/alliance.js";
@@ -673,6 +674,36 @@ section("The autopilot conquers (Aggressive, 400 days)");
   const s = st.conquest.stats;
   console.log(`  day ${day(st)}: ${s.assaults} assaults (${s.won} won), ${s.taken} bases taken (${s.retaken} retaken), ${s.defeated} groups broken, ${s.basesLost} bases lost, infamy ${C.infamy(st).toFixed(0)}, land ${(A.controlledLand(st).pct * 100).toFixed(1)}%`);
   check(s.assaults > 0 && s.taken > 0, "it storms bases and takes some");
+}
+
+// Storming a group's base on its map with the AI playing your side (the battle's Auto, or a turn handed over): your
+// people start outside its wall and get in (combat.js outsideBase holds only your own base's defenders inside), and
+// every shot or blow is logged before the "is dead" it causes.
+section("A base assault played by the AI on both sides");
+{
+  let stalled = 0, late = 0;
+  const N = 12;
+  for (let sd = 1; sd <= N; sd++) {
+    const { st, b } = isoBattles(sd, ["base-assault"])[0];
+    for (let g = 0; !b.over && g < 100; g++) { autoPlayerTurn(st); if (!b.over) runEnemyPhase(st); }
+    if (!b.over) stalled++;
+    const L = b.log.map((l) => l.text);
+    for (let i = 1; i < L.length; i++) {
+      const m = /^(.+) is dead\.$/.exec(L[i - 1]);
+      if (m && (L[i].includes(`shoots ${m[1]}:`) || L[i].includes(`strikes ${m[1]} for`) || L[i].includes(`tears into ${m[1]} for`))) late++;
+    }
+  }
+  // The autopilot switched on while the assault is still at its deploy step (autopilot.js finishLiveBattle) plays it
+  // out to an outcome, not drops it.
+  {
+    const { st, b } = isoBattles(3, ["base-assault"])[0];
+    const phase = b.phase;
+    setAutopilot(st, true);
+    check(phase === "deploy" && b.over && ["victory", "defeat", "retreat"].includes(b.result && b.result.outcome) && !st.combat, `the autopilot taking over at the deploy step plays the assault out (${phase} → ${(b.result && b.result.outcome) || "dropped"} on turn ${b.turn})`);
+  }
+  check(!stalled, `${N} base assaults on the AI's Auto all end within 100 turns (${stalled} stalled: your people stuck outside the wall)`);
+  check(!late, `no shot or blow logged after the death it caused (${late})`);
+  console.log(`  ${N} base assaults: ${stalled} stalled, ${late} kill lines out of order`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);
