@@ -959,16 +959,137 @@ function skylineScene() {
 
 // ---------- background: a campfire at night ----------
 function campScene() {
-  let W = 0, H = 0, res = 1, sky, trees, fog, fx = 0, fy = 0, horizon = 0;
-  const flames = [], sparks = [], smoke = [], eyes = [];
-  let edge = [];
+  let W = 0, H = 0, res = 1, sky, trees, ground, fog, fx = 0, fy = 0, horizon = 0, groundY = 0;
+  const flames = [], sparks = [], smoke = [], eyes = [], flies = [];
+  let edge = [], clouds = [];
   const flameY = puff("255,226,150", 0.15), flameO = puff("255,140,40", 0.1), flameR = puff("200,50,20"), glowP = puff("255,130,50"), smokeP = puff("60,58,64"), moonGlow = puff("170,190,220");
   const cloud = puff("22,27,40"), cloudLit = puff("70,80,100");
-  let clouds = [];
+  // How much the fire lights a spot: 1 at the fire, 0 beyond its reach (the ground is a flat plane, so distance across
+  // the screen is distance on the ground, foreshortened top to bottom).
+  const lightAt = (x, y) => { const d = Math.hypot(x - fx, (y - fy) * 2.2); return Math.max(0, 1 - d / (H * 0.62)) ** 1.6; };
+  const mix = (a, b, f) => `rgb(${Math.round(lerp(a[0], b[0], f))},${Math.round(lerp(a[1], b[1], f))},${Math.round(lerp(a[2], b[2], f))})`;
+  const DARK = [8, 9, 13], WARM = [118, 74, 38], GRASS_D = [10, 14, 12], GRASS_L = [96, 86, 36];
+
+  // The clearing: trodden dirt around the fire, grass beyond, stones, roots; the camp's things on it (the log and
+  // the crate the people sit on, a tent, a pickup, packs, a pot on a tripod over the fire), all lit from the fire.
+  function groundLayer() {
+    const L = layer(W, H - groundY, res), R = rng(606), g = L.g;
+    g.translate(0, -groundY);
+    const gr = g.createLinearGradient(0, groundY, 0, H);
+    gr.addColorStop(0, "#07080c"); gr.addColorStop(1, "#0b0a0a");
+    g.fillStyle = gr;
+    g.fillRect(0, groundY, W, H - groundY);
+    // The firelight on the ground, warm, fading with distance.
+    const lit = g.createRadialGradient(fx, fy, 0, fx, fy, H * 0.62);
+    lit.addColorStop(0, "rgba(140,88,44,0.95)"); lit.addColorStop(0.25, "rgba(110,66,34,0.7)"); lit.addColorStop(0.6, "rgba(50,32,20,0.3)"); lit.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = lit;
+    g.save(); g.translate(fx, fy); g.scale(1, 1 / 2.2); g.beginPath(); g.arc(0, 0, H * 0.62, 0, Math.PI * 2); g.fill(); g.restore();
+    // Trodden dirt by the fire, darker patches where the grass has gone.
+    g.fillStyle = "rgba(60,40,26,0.35)";
+    for (let i = 0; i < 16; i++) { const a = R() * Math.PI * 2, d = R() * H * 0.16; g.beginPath(); g.ellipse(fx + Math.cos(a) * d, fy + Math.sin(a) * d * 0.4, H * (0.02 + R() * 0.04), H * (0.008 + R() * 0.014), 0, 0, Math.PI * 2); g.fill(); }
+    // Grass: tufts everywhere, each lit by how close it is to the fire; thicker further out.
+    g.lineCap = "round";
+    for (let i = 0; i < 2600; i++) {
+      const x = R() * W, y = groundY + Math.pow(R(), 0.8) * (H - groundY), f = (y - groundY) / (H - groundY);
+      const near = Math.hypot(x - fx, (y - fy) * 2.2) < H * 0.14;
+      if (near && R() < 0.75) continue;
+      const l = lightAt(x, y);
+      g.strokeStyle = mix(GRASS_D, GRASS_L, l);
+      g.lineWidth = 0.8 + f * 1.4;
+      const h = (3 + R() * 7) * (0.5 + f), lean = (R() - 0.5) * 6;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + lean * 0.4, y - h * 0.6, x + lean, y - h); g.stroke();
+      if (R() < 0.5) { g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x - lean * 0.3, y - h * 0.5, x - lean * 0.8, y - h * 0.8); g.stroke(); }
+    }
+    // Stones and roots.
+    for (let i = 0; i < 40; i++) {
+      const x = R() * W, y = groundY + R() * (H - groundY), f = (y - groundY) / (H - groundY), l = lightAt(x, y);
+      const s = H * (0.004 + R() * 0.008) * (0.5 + f);
+      g.fillStyle = mix([12, 12, 14], [120, 96, 70], l);
+      g.beginPath(); g.ellipse(x, y, s * 1.6, s, (R() - 0.5) * 0.6, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(0,0,0,0.5)";
+      g.beginPath(); g.ellipse(x + s * 0.2, y + s * 0.5, s * 1.5, s * 0.5, 0, 0, Math.PI * 2); g.fill();
+    }
+    // A thing's shadow on the ground, cast away from the fire.
+    const shadow = (x, y, w, len) => {
+      const dir = Math.sign(x - fx) || 1;
+      g.fillStyle = "rgba(0,0,0,0.55)";
+      g.beginPath(); g.ellipse(x + dir * len * 0.55, y, len * 0.7 + w * 0.3, w * 0.22, 0, 0, Math.PI * 2); g.fill();
+    };
+    // A fallen log to the left of the fire (two sit on it) and a crate to the right (one sits on that).
+    const lx = fx - H * 0.155, ly = fy + H * 0.012, lw = H * 0.19, lh = H * 0.052;
+    shadow(lx, ly + lh * 0.2, lw, H * 0.05);
+    let lg = g.createLinearGradient(lx, ly - lh, lx, ly);
+    lg.addColorStop(0, "#5a3d26"); lg.addColorStop(0.5, "#3a2617"); lg.addColorStop(1, "#160e09");
+    g.fillStyle = lg;
+    g.beginPath(); g.roundRect(lx - lw / 2, ly - lh, lw, lh, lh / 2); g.fill();
+    g.fillStyle = "#6a4a2e";
+    g.beginPath(); g.ellipse(lx + lw / 2, ly - lh / 2, lh * 0.3, lh / 2, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#3a2516";
+    g.beginPath(); g.ellipse(lx + lw / 2, ly - lh / 2, lh * 0.18, lh * 0.3, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = 1;
+    for (let i = 0; i < 6; i++) { g.beginPath(); g.moveTo(lx - lw / 2 + 6 + R() * (lw - 12), ly - lh + 2); g.lineTo(lx - lw / 2 + 6 + R() * (lw - 12), ly - 2); g.stroke(); }
+    const cx = fx + H * 0.13, cy = fy + H * 0.012, cs = H * 0.045;
+    shadow(cx, cy + 2, cs, H * 0.04);
+    g.fillStyle = "#4a3520";
+    g.fillRect(cx - cs / 2, cy - cs * 1.5, cs, cs * 1.5);
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.fillRect(cx - cs / 2, cy - cs * 1.5, cs * 0.5, cs * 1.5);
+    g.strokeStyle = "rgba(0,0,0,0.5)"; g.lineWidth = 1.5;
+    g.strokeRect(cx - cs / 2 + 2, cy - cs * 1.5 + 2, cs - 4, cs * 0.75 - 4);
+    g.strokeRect(cx - cs / 2 + 2, cy - cs * 0.75 + 2, cs - 4, cs * 0.75 - 4);
+    // A tent at the left edge of the light, its door side lit; a sleeping bag rolled by it.
+    const tx = fx - H * 0.46, ty = fy + H * 0.02, tw = H * 0.26, th = H * 0.15;
+    shadow(tx, ty, tw, H * 0.08);
+    g.fillStyle = "#17120f";
+    g.beginPath(); g.moveTo(tx - tw / 2, ty); g.lineTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.closePath(); g.fill();
+    lg = g.createLinearGradient(tx - tw * 0.1, 0, tx + tw * 0.55, 0);
+    lg.addColorStop(0, "#3d2c1c"); lg.addColorStop(1, "#6b4a2a");
+    g.fillStyle = lg;
+    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.12, ty); g.closePath(); g.fill();
+    g.fillStyle = "#0a0806";
+    g.beginPath(); g.moveTo(tx + tw * 0.2, ty); g.lineTo(tx + tw * 0.05, ty - th * 0.55); g.lineTo(tx + tw * 0.38, ty); g.closePath(); g.fill();
+    g.strokeStyle = "#8a6a44"; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(tx - tw * 0.1, ty - th); g.lineTo(tx - tw * 0.2, ty + H * 0.01); g.moveTo(tx + tw * 0.55, ty); g.lineTo(tx + tw * 0.62, ty + H * 0.012); g.stroke();
+    g.fillStyle = "#2c2318";
+    g.beginPath(); g.roundRect(tx + tw * 0.62, ty - H * 0.02, H * 0.07, H * 0.022, H * 0.011); g.fill();
+    // A pickup at the right edge, nose to the fire, only its lit side showing.
+    const px = fx + H * 0.46, py = fy + H * 0.012, pw = H * 0.75, ph = H * 0.2;
+    shadow(px, py, pw, H * 0.1);
+    lg = g.createLinearGradient(px - pw / 2, 0, px + pw / 2, 0);
+    lg.addColorStop(0, "#4a3a2c"); lg.addColorStop(1, "#15110e");
+    g.fillStyle = lg;
+    g.beginPath();
+    g.moveTo(px - pw / 2, py); g.lineTo(px - pw / 2, py - ph * 0.55); g.lineTo(px - pw * 0.3, py - ph * 0.6); g.lineTo(px - pw * 0.2, py - ph); g.lineTo(px + pw * 0.12, py - ph); g.lineTo(px + pw * 0.15, py - ph * 0.6); g.lineTo(px + pw / 2, py - ph * 0.58); g.lineTo(px + pw / 2, py); g.closePath(); g.fill();
+    g.fillStyle = "rgba(255,200,140,0.12)";
+    g.beginPath(); g.moveTo(px - pw * 0.27, py - ph * 0.62); g.lineTo(px - pw * 0.18, py - ph * 0.95); g.lineTo(px + pw * 0.1, py - ph * 0.95); g.lineTo(px + pw * 0.12, py - ph * 0.62); g.closePath(); g.fill();
+    g.fillStyle = "#0a0908";
+    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.22, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = "#2a241e";
+    for (const wx of [px - pw * 0.32, px + pw * 0.32]) { g.beginPath(); g.arc(wx, py, ph * 0.09, 0, Math.PI * 2); g.fill(); }
+    // Packs and a jerrycan by the log; firewood stacked.
+    g.fillStyle = "#3a2e22";
+    g.beginPath(); g.roundRect(lx - lw * 0.75, ly - H * 0.04, H * 0.035, H * 0.045, 4); g.fill();
+    g.fillStyle = "#2a3a22";
+    g.beginPath(); g.roundRect(lx - lw * 0.62, ly - H * 0.03, H * 0.028, H * 0.035, 3); g.fill();
+    g.fillStyle = "#3b2a18";
+    for (let i = 0; i < 5; i++) { g.beginPath(); g.roundRect(cx + cs * 0.8 + (i % 3) * H * 0.013, cy - H * 0.012 - Math.floor(i / 3) * H * 0.012, H * 0.012, H * 0.011, 3); g.fill(); }
+    // The fire's ring of stones and the tripod with a pot over it (the flames are drawn each frame).
+    for (let i = 0; i < 11; i++) { const a = (i / 11) * Math.PI * 2, sx = fx + Math.cos(a) * H * 0.07, sy = fy + Math.sin(a) * H * 0.016 + H * 0.004; g.fillStyle = mix([30, 24, 20], [150, 110, 70], Math.sin(a) > 0 ? 0.6 : 0.25); g.beginPath(); g.ellipse(sx, sy, H * 0.013, H * 0.0075, 0, 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = "#1a1410"; g.lineWidth = Math.max(2, H * 0.004); g.lineCap = "round";
+    g.beginPath(); g.moveTo(fx - H * 0.06, fy); g.lineTo(fx, fy - H * 0.13); g.lineTo(fx + H * 0.06, fy); g.moveTo(fx, fy - H * 0.13); g.lineTo(fx + H * 0.015, fy - H * 0.005); g.stroke();
+    g.lineWidth = 1.5; g.strokeStyle = "#2a2420";
+    g.beginPath(); g.moveTo(fx, fy - H * 0.13); g.lineTo(fx, fy - H * 0.085); g.stroke();
+    g.fillStyle = "#26201c";
+    g.beginPath(); g.roundRect(fx - H * 0.022, fy - H * 0.085, H * 0.044, H * 0.03, 4); g.fill();
+    g.fillStyle = "#3a3028";
+    g.fillRect(fx - H * 0.024, fy - H * 0.088, H * 0.048, H * 0.006);
+    return L;
+  }
 
   function resize(w, h, r) {
     W = w; H = h; res = r;
     horizon = H * 0.6;
+    groundY = horizon + H * 0.075;
     fx = W * 0.56; fy = H * 0.84;
     const R = rng(2024);
     sky = layer(W, H, res);
@@ -1000,14 +1121,29 @@ function campScene() {
     trees = layer(W, H * 0.5, res);
     const tg = trees.g;
     tg.translate(0, -H * 0.4);
+    // A pine: dark, with the side facing the fire picking up its light when it stands near enough.
     const pine = (x, base, h, c) => {
+      const l = lightAt(x, base) * 0.8;
       tg.fillStyle = c;
-      tg.beginPath(); tg.moveTo(x, base - h);
-      const tiers = 5;
-      for (let i = 1; i <= tiers; i++) { const y = base - h + (h * i) / tiers, w = h * 0.07 + (h * 0.2 * i) / tiers; tg.lineTo(x + w, y); tg.lineTo(x + w * 0.45, y - h * 0.04); }
-      for (let i = tiers; i >= 1; i--) { const y = base - h + (h * i) / tiers, w = h * 0.07 + (h * 0.2 * i) / tiers; tg.lineTo(x - w * 0.45, y - h * 0.04); tg.lineTo(x - w, y); }
-      tg.closePath(); tg.fill();
+      const outline = (side) => {
+        tg.beginPath(); tg.moveTo(x, base - h);
+        const tiers = 5;
+        for (let i = 1; i <= tiers; i++) { const y = base - h + (h * i) / tiers, w = h * 0.07 + (h * 0.2 * i) / tiers; tg.lineTo(x + w, y); tg.lineTo(x + w * 0.45, y - h * 0.04); }
+        for (let i = tiers; i >= 1; i--) { const y = base - h + (h * i) / tiers, w = h * 0.07 + (h * 0.2 * i) / tiers; tg.lineTo(x - w * 0.45, y - h * 0.04); tg.lineTo(x - w, y); }
+        tg.closePath();
+      };
+      outline();
+      tg.fill();
       tg.fillRect(x - h * 0.012, base - h * 0.05, h * 0.024, h * 0.08);
+      if (l > 0.05) { // the lit side: the same shape, clipped to the half facing the fire, in a warm tone
+        tg.save(); outline(); tg.clip();
+        const dir = Math.sign(fx - x) || 1;
+        const lg = tg.createLinearGradient(x, 0, x + dir * h * 0.25, 0);
+        lg.addColorStop(0, `rgba(120,70,30,0)`); lg.addColorStop(1, `rgba(120,70,30,${(l * 0.6).toFixed(2)})`);
+        tg.fillStyle = lg;
+        tg.fillRect(x - h * 0.3, base - h, h * 0.6, h);
+        tg.restore();
+      }
     };
     for (let x = -20; x < W + 20; x += 6 + R() * 16) {
       const gap = Math.max(0, 1 - Math.abs(x - W * 0.5) / (W * 0.22));
@@ -1018,11 +1154,12 @@ function campScene() {
       if (d < 0.45) continue;
       pine(x, horizon + H * (0.08 + R() * 0.04), H * (0.2 + R() * 0.16) * d, "#020305");
     }
-    tg.fillStyle = "#040406";
-    tg.fillRect(0, horizon + H * 0.075, W, H);
+    ground = groundLayer();
     fog = fogStrip(W, H * 0.16, "90,105,135", 31, res, 1);
     clouds = Array.from({ length: 9 }, (_, i) => ({ x: R() * (W + 600) - 300, y: H * (0.05 + R() * 0.25), r: H * (0.08 + R() * 0.1), v: 3 + R() * 5, k: i }));
-    edge = walkers(4, 55, {});
+    edge = walkers(5, 55, {}).map((z) => ({ ...z, k: { ...z.k, crawl: false } }));
+    flies.length = 0;
+    for (let i = 0; i < 14; i++) flies.push({ x: R() * W, y: groundY + R() * (H - groundY) * 0.7, k: R() * 9, on: R() * 4 });
     flames.length = sparks.length = smoke.length = eyes.length = 0;
     for (let i = 0; i < 120; i++) step(1 / 30, i / 30);
   }
@@ -1034,10 +1171,10 @@ function campScene() {
     }
     if (Math.random() < dt * (wob(t * 0.7, 2) > 0.5 ? 18 : 4)) sparks.push({ x: fx + (Math.random() - 0.5) * 20, y: fy - H * 0.03, vx: (Math.random() - 0.4) * 30, vy: -(H * 0.12 + Math.random() * H * 0.18), life: 1.5 + Math.random() * 2.5, age: 0, k: Math.random() * 9 });
     if (Math.random() < dt * 3) smoke.push({ x: fx, y: fy - H * 0.1, vx: 6 + Math.random() * 6, vy: -(H * 0.03 + Math.random() * H * 0.02), r: H * 0.03, life: 7 + Math.random() * 5, age: 0 });
-    // Eyes at the edge of the light, a pair at a time.
+    // Eyes at the edge of the light, a pair at a time, low in the grass or up in the trees.
     if (eyes.length < 3 && Math.random() < dt * 0.35) {
       const side = Math.random() < 0.5 ? -1 : 1;
-      eyes.push({ x: fx + side * W * (0.18 + Math.random() * 0.28), y: horizon + H * (0.03 + Math.random() * 0.1), life: 4 + Math.random() * 6, age: 0, sep: H * (0.006 + Math.random() * 0.004), k: Math.random() * 9, red: Math.random() < 0.4 });
+      eyes.push({ x: fx + side * W * (0.2 + Math.random() * 0.28), y: horizon + H * (0.03 + Math.random() * 0.12), life: 4 + Math.random() * 6, age: 0, sep: H * (0.006 + Math.random() * 0.004), k: Math.random() * 9, red: Math.random() < 0.4 });
     }
     for (const list of [flames, sparks, smoke, eyes]) for (let i = list.length - 1; i >= 0; i--) {
       const p = list[i];
@@ -1050,9 +1187,10 @@ function campScene() {
       if (list === smoke) p.r += dt * H * 0.012;
       if (list === flames) p.vx += (fx - p.x) * dt * 2.5;
     }
+    for (const f of flies) { f.x += Math.sin(t * 0.9 + f.k) * 12 * dt; f.y += Math.cos(t * 1.3 + f.k * 2) * 8 * dt; }
   }
 
-  // A survivor by the fire: a dark shape lit on the side that faces it.
+  // A survivor by the fire: a dark shape lit on the side that faces it, feet (or seat) on the ground at (x, y).
   function person(g, x, y, s, pose, t, k, flick) {
     const toFire = Math.sign(fx - x) || 1;
     g.save();
@@ -1061,38 +1199,43 @@ function campScene() {
     const gr = g.createLinearGradient(-40 * toFire, 0, 40 * toFire, 0);
     gr.addColorStop(0, "#030304");
     gr.addColorStop(0.55, "#0c0807");
-    gr.addColorStop(1, `rgb(${Math.round(95 * flick)},${Math.round(44 * flick)},${Math.round(20 * flick)})`);
+    gr.addColorStop(1, `rgb(${Math.round(105 * flick)},${Math.round(50 * flick)},${Math.round(22 * flick)})`);
     g.fillStyle = g.strokeStyle = gr;
     g.lineCap = g.lineJoin = "round";
     const breathe = Math.sin(t * 1.3 + k) * 0.8;
-    if (pose === "sit") { // on a log, hunched towards the fire, hands out
+    if (pose === "sit") { // on the log, hunched towards the fire, hands held out to it
       g.lineWidth = 12;
-      g.beginPath(); g.moveTo(-6 * toFire, -30); g.lineTo(14 * toFire, -34); g.lineTo(16 * toFire, -6); g.stroke(); // thigh and shin
+      g.beginPath(); g.moveTo(-6 * toFire, -30); g.lineTo(14 * toFire, -33); g.lineTo(17 * toFire, -2); g.stroke();
+      g.lineWidth = 6;
+      g.beginPath(); g.moveTo(17 * toFire, -2); g.lineTo(26 * toFire, 0); g.stroke();
       g.lineWidth = 20;
-      g.beginPath(); g.moveTo(-8 * toFire, -32); g.quadraticCurveTo(-10 * toFire, -55, 2 * toFire, -66 + breathe); g.stroke(); // back
+      g.beginPath(); g.moveTo(-8 * toFire, -32); g.quadraticCurveTo(-10 * toFire, -55, 2 * toFire, -66 + breathe); g.stroke();
       g.beginPath(); g.arc(10 * toFire, -76 + breathe, 9.5, 0, Math.PI * 2); g.fill();
       g.lineWidth = 7;
       g.beginPath(); g.moveTo(4 * toFire, -60 + breathe); g.lineTo(22 * toFire, -46); g.lineTo(34 * toFire, -48 + Math.sin(t * 0.5 + k) * 2); g.stroke();
-      g.fillRect(-26, -30, 52, 8); // the log
-    } else if (pose === "crate") { // sitting upright, a cup in hand
+    } else if (pose === "crate") { // sitting upright on the crate, a cup in hand
       g.lineWidth = 12;
-      g.beginPath(); g.moveTo(0, -30); g.lineTo(18 * toFire, -30); g.lineTo(20 * toFire, 0); g.stroke();
+      g.beginPath(); g.moveTo(0, -34); g.lineTo(18 * toFire, -32); g.lineTo(20 * toFire, -2); g.stroke();
+      g.lineWidth = 6;
+      g.beginPath(); g.moveTo(20 * toFire, -2); g.lineTo(29 * toFire, 0); g.stroke();
       g.lineWidth = 19;
-      g.beginPath(); g.moveTo(0, -32); g.lineTo(2 * toFire, -70 + breathe); g.stroke();
-      g.beginPath(); g.arc(5 * toFire, -84 + breathe, 9.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(0, -36); g.lineTo(2 * toFire, -72 + breathe); g.stroke();
+      g.beginPath(); g.arc(5 * toFire, -86 + breathe, 9.5, 0, Math.PI * 2); g.fill();
       g.lineWidth = 7;
       const lift = Math.max(0, Math.sin(t * 0.35 + k)) ** 8;
-      g.beginPath(); g.moveTo(4 * toFire, -64 + breathe); g.lineTo(14 * toFire, -48 - lift * 14); g.lineTo(20 * toFire, -60 - lift * 14); g.stroke();
-      g.fillRect(-16, -30, 32, 30); // the crate
+      g.beginPath(); g.moveTo(4 * toFire, -66 + breathe); g.lineTo(14 * toFire, -50 - lift * 14); g.lineTo(20 * toFire, -62 - lift * 14); g.stroke();
+      g.beginPath(); g.arc(21 * toFire, -64 - lift * 14, 3.5, 0, Math.PI * 2); g.fill();
     } else { // the guard: standing, rifle over the shoulder, looking out into the dark and back
       const look = Math.sin(t * 0.22 + k) > 0.2 ? -toFire : toFire;
       g.lineWidth = 11;
-      g.beginPath(); g.moveTo(-6, 0); g.lineTo(-3, -52); g.lineTo(3, -52); g.lineTo(7, 0); g.stroke();
+      g.beginPath(); g.moveTo(-7, 0); g.lineTo(-3, -52); g.lineTo(3, -52); g.lineTo(8, 0); g.stroke();
+      g.lineWidth = 5;
+      g.beginPath(); g.moveTo(-7, 0); g.lineTo(-14, 0); g.moveTo(8, 0); g.lineTo(15, 0); g.stroke();
       g.lineWidth = 20;
       g.beginPath(); g.moveTo(0, -52); g.lineTo(0, -98 + breathe); g.stroke();
       g.beginPath(); g.arc(3 * look, -110 + breathe, 9.5, 0, Math.PI * 2); g.fill();
       g.lineWidth = 4;
-      g.beginPath(); g.moveTo(-12 * toFire, -52); g.lineTo(14 * toFire, -128); g.stroke(); // the rifle
+      g.beginPath(); g.moveTo(-12 * toFire, -52); g.lineTo(14 * toFire, -128); g.stroke();
       g.lineWidth = 7;
       g.beginPath(); g.moveTo(4 * toFire, -92); g.lineTo(9 * toFire, -76); g.lineTo(6 * toFire, -100); g.stroke();
     }
@@ -1112,18 +1255,27 @@ function campScene() {
       if (near) { g.globalAlpha = 0.25 * near; g.drawImage(cloudLit, x - c.r * 1.6, c.y - c.r * 0.5, c.r * 3.2, c.r); }
     }
     g.globalAlpha = 1;
-    // Moonlit fog in the trees, and the dead moving through it.
+    // Moonlit fog in the trees, the treeline, then the ground with the camp on it.
     drawStrip(g, fog, t * 5, horizon - H * 0.07, W, H * 0.16);
+    g.drawImage(trees.c, 0, H * 0.4, W, trees.h);
+    g.drawImage(ground.c, 0, groundY, W, ground.h);
+    // A low mist along the far edge of the clearing.
+    g.globalAlpha = 0.6;
+    drawStrip(g, fog, -t * 8 + W * 0.5, groundY - H * 0.06, W, H * 0.1);
+    g.globalAlpha = 1;
+    // The dead at the far edge of the clearing, moving along the treeline on the ground, lit faintly by the fire.
     for (const z of edge) {
       const s = H * (0.05 + z.depth * 0.025), span = W + s * 2;
-      z.pos = (z.pos ?? z.x * span) + z.speed * s * 0.12 * dt * z.dir;
+      const gait = z.k.idle ? 0 : z.speed * s * 0.12;
+      z.pos = (z.pos ?? z.x * span) + gait * dt * z.dir;
       const x = ((z.pos % span) + span) % span - s;
-      const lightNear = Math.max(0, 1 - Math.abs(x - fx) / (W * 0.25));
-      shambler(g, x, horizon + H * 0.035 + z.depth * H * 0.015, s, t * 2 * z.speed + z.ph, z.dir, z.k, `rgb(${10 + Math.round(lightNear * 20)},${12 + Math.round(lightNear * 8)},${18})`);
+      const y = groundY + H * 0.012 + z.depth * H * 0.03;
+      const l = lightAt(x, y) * flick;
+      g.fillStyle = `rgba(0,0,0,${(0.3 + l * 0.4).toFixed(2)})`;
+      g.beginPath(); g.ellipse(x, y + 1, s * 0.2, s * 0.03, 0, 0, Math.PI * 2); g.fill();
+      shambler(g, x, y, s, t * 2 * z.speed + z.ph, z.dir, z.k, `rgb(${Math.round(9 + l * 60)},${Math.round(11 + l * 30)},${Math.round(16 + l * 12)})`, l > 0.04 ? `rgba(200,120,60,${(l * 0.7).toFixed(2)})` : null);
     }
-    g.drawImage(trees.c, 0, H * 0.4, W, trees.h);
-    drawStrip(g, fog, -t * 8 + W * 0.5, horizon + H * 0.02, W, H * 0.14);
-    // Eyes catching the firelight.
+    // Eyes catching the firelight; fireflies in the grass.
     g.globalCompositeOperation = "lighter";
     for (const e of eyes) {
       const a = Math.min(1, e.age / 1.2, (e.life - e.age) / 1.2);
@@ -1132,29 +1284,36 @@ function campScene() {
       g.fillStyle = e.red ? "rgb(255,90,40)" : "rgb(230,220,120)";
       for (const dx of [-e.sep, e.sep]) { g.beginPath(); g.arc(e.x + dx, e.y, H * 0.0022, 0, Math.PI * 2); g.fill(); }
     }
-    // The firelight on the ground and the trees.
-    const r = H * 0.6 * flick;
-    g.globalAlpha = 0.5;
+    g.fillStyle = "rgb(190,230,90)";
+    for (const f of flies) {
+      const on = Math.max(0, Math.sin(t * 1.1 + f.on * 2)) ** 6;
+      if (on < 0.05 || lightAt(f.x, f.y) > 0.5) continue;
+      g.globalAlpha = on * 0.8;
+      g.fillRect(f.x, f.y - 6, 1.6, 1.6);
+    }
+    // The firelight's flicker on everything around it (the steady part is painted into the ground).
+    const r = H * 0.55;
+    g.globalAlpha = 0.22 * flick;
     g.drawImage(glowP, fx - r * 1.4, fy - r * 0.75, r * 2.8, r * 1.2);
-    g.globalAlpha = 0.28;
+    g.globalAlpha = 0.18 * flick;
     g.drawImage(glowP, fx - r * 0.7, fy - r * 0.9, r * 1.4, r * 1.4);
     g.globalAlpha = 1;
     g.globalCompositeOperation = "source-over";
-    // Long shadows away from the fire, then the people.
+    // The people: long shadows away from the fire, then the figures, each on its seat or its feet.
     const people = [[-0.2, "sit", 1.0], [-0.11, "sit", 0.95], [0.13, "crate", 1.0], [0.27, "guard", 1.05]];
-    g.fillStyle = "rgba(0,0,0,0.45)";
-    for (const [dx, , sc] of people) {
-      const x = fx + dx * H, len = H * 0.18 * sc;
-      g.beginPath(); g.ellipse(x + Math.sign(dx) * len * 0.6, fy + H * 0.01, len * 0.7, H * 0.012, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "rgba(0,0,0,0.5)";
+    for (const [dx, pose, sc] of people) {
+      const x = fx + dx * H, len = H * 0.18 * sc * (pose === "guard" ? 1.3 : 0.9);
+      g.beginPath(); g.ellipse(x + Math.sign(dx) * len * 0.6, fy + H * 0.012, len * 0.7, H * 0.012, 0, 0, Math.PI * 2); g.fill();
     }
     people.forEach(([dx, pose, sc], i) => person(g, fx + dx * H, fy + H * 0.012, H * 0.2 * sc, pose, t, i * 2.3, flick));
-    // The fire: logs, flames, sparks and a little smoke.
+    // The fire itself: embers under the flames, the flames, the sparks and a little smoke.
+    g.fillStyle = `rgba(255,${Math.round(120 * flick)},30,0.9)`;
+    g.beginPath(); g.ellipse(fx, fy - H * 0.004, H * 0.035, H * 0.008, 0, 0, Math.PI * 2); g.fill();
     g.strokeStyle = "#1a0c06";
     g.lineWidth = H * 0.012;
     g.lineCap = "round";
     g.beginPath(); g.moveTo(fx - H * 0.05, fy + H * 0.005); g.lineTo(fx + H * 0.04, fy - H * 0.012); g.moveTo(fx + H * 0.05, fy + H * 0.006); g.lineTo(fx - H * 0.035, fy - H * 0.014); g.stroke();
-    g.fillStyle = "#0c0908";
-    for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; g.beginPath(); g.ellipse(fx + Math.cos(a) * H * 0.065, fy + Math.sin(a) * H * 0.012 + H * 0.004, H * 0.012, H * 0.007, 0, 0, Math.PI * 2); g.fill(); }
     for (const p of smoke) {
       g.globalAlpha = Math.min(1, p.age) * (1 - p.age / p.life) * 0.25;
       g.drawImage(smokeP, p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
