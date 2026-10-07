@@ -112,7 +112,7 @@ console.log("Ironman");
   while (day(st) === d0 || st.hour % 24 < 7) { tickHour(st); st.cards.length = 0; }
   await frame(st, ui, api);
   check(Saves.saveEntry("ironT").day === day(st) && Saves.saveEntry("ironT").why === "dawn", `saved at dawn (day ${Saves.saveEntry("ironT").day})`);
-  check(!Saves.saveEntry(Saves.AUTOSAVE) && !Saves.saveEntry(Saves.BATTLE_SAVE), "never the autosave slot or a battle-start save");
+  check(!Saves.saveEntry(Saves.AUTOSAVE) && !Saves.saveEntry(Saves.BATTLE_SAVE) && !Saves.listSaves().some((e) => e.id.startsWith(Saves.AUTO_PREFIX)), "never an autosave slot (rotating or old) or a battle-start save");
   // A card waiting holds the save.
   addCard(st, { title: "Wait", text: "", choices: [{ label: "OK", resolve: () => "" }] });
   const d1 = day(st);

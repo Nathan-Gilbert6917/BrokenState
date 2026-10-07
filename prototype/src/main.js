@@ -64,7 +64,9 @@ import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traf
 import { activeCrawl } from "./sim/citycrawl.js";
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
-document.addEventListener("visibilitychange", () => { if (document.hidden) ironHidden(state, ui); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
+import { initCrash, reportCrash, crashUp } from "./ui/crash.js"; // the error screen: an uncaught exception stops the clock, writes the crash save
+import { newCampaignId } from "./sim/savesummary.js"; // each run's id: the save list groups its saves, its autosaves rotate
 import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
@@ -161,16 +163,17 @@ function blocked() {
     !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings;
 }
 
-// One exception must not stop the game for good: it is logged once (per message) and the loop goes on.
-const frameErrors = new Map();
+// An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
+// which writes the crash save; the loop then waits (no frames run under the screen) instead of throwing every frame.
+const frameErrors = new Map(); // how often each message was thrown (window.game.frameErrors)
 function frame(now) {
+  if (crashUp()) { last = now; requestAnimationFrame(frame); return; }
   try {
     step(now);
   } catch (e) {
     const key = String(e && e.message);
-    const n = (frameErrors.get(key) || 0) + 1;
-    frameErrors.set(key, n);
-    if (n === 1 && frameErrors.size <= 10) console.error("Broken State: error in the frame loop (logged once; the loop keeps running):", e);
+    frameErrors.set(key, (frameErrors.get(key) || 0) + 1);
+    reportCrash(e, "the game loop (a frame: the clock, the autopilot or drawing)");
   }
   requestAnimationFrame(frame);
 }
@@ -274,6 +277,7 @@ window.addEventListener("blur", () => {
   dirtyNow = true;
 });
 window.addEventListener("beforeunload", (e) => {
+  if (crashUp()) return; // the error screen is up: the crash save has the world; an Ironman slot keeps its last good save
   if (ironUnload(state, ui)) return; // an Ironman game is saved as the page closes (ui/settings.js): nothing to ask
   if (state.ironman) return;
   if (!options.confirmQuit || settingsApi.desktop || !unsaved(state, ui) || state.gameOver) return;
@@ -854,6 +858,7 @@ const actions = {
     ui.lookEdit = null;
     ui.nrMsg = "";
     state.started = true;
+    state.campaign = newCampaignId(); // ui/saves.js: this run's saves group together and its autosaves rotate
     // Ironman (ui/settings.js): one slot the game writes itself, no saving or loading by hand, no going back.
     if (ui.ironman) {
       state.ironman = { id: `iron${Date.now().toString(36)}`, since: Date.now() };
@@ -1166,6 +1171,7 @@ const settingsApi = {
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
+initCrash({ state: () => state, ui, adopt, toTitle: settingsApi.toTitle, desktop: settingsApi.desktop, track: settingsApi.track, refresh: settingsApi.refresh });
 // The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
 // makes a fresh one.
 let titleTicked = false;
@@ -1639,7 +1645,8 @@ window.addEventListener("keyup", (e) => {
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
-  frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
+  frameErrors, devSpeeds: DEV_SPEEDS,
+  crashTest: (msg = "a test crash from the console") => reportCrash(new Error(msg), "the console (a test)"), // the error screen (ui/crash.js) options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },

@@ -7,7 +7,7 @@
 //   npm start            run from source: serves ../prototype live (Ctrl+R picks up game changes)
 //   packaged build       serves the copy in resources/prototype
 //   --perf               hidden performance test (perf/driver.js), prints JSON and quits
-const { app, BrowserWindow, Menu, protocol, screen, session } = require("electron");
+const { app, BrowserWindow, Menu, protocol, screen, session, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -83,6 +83,9 @@ async function serve(request) {
   if (rel === "/" || rel === "") rel = "/index.html";
   const file = path.normalize(path.join(GAME_ROOT, rel));
   if (file !== GAME_ROOT && !file.startsWith(GAME_ROOT + path.sep)) return new Response("Forbidden", { status: 403 });
+  // build.json (the error screen's report, src/ui/crash.js): a packaged build has the stamp npm run dist wrote; run
+  // from source, the commit of the checkout.
+  if (rel === "/build.json" && !fs.existsSync(file)) return new Response(sourceBuild(), { status: 200, headers: { "Content-Type": TYPES[".json"], "Cache-Control": "no-store" } });
   try {
     const data = await fs.promises.readFile(file);
     return new Response(data, {
@@ -95,6 +98,17 @@ async function serve(request) {
   } catch {
     return new Response("Not found", { status: 404 });
   }
+}
+
+let sourceStamp = null;
+function sourceBuild() {
+  if (!sourceStamp) {
+    try {
+      const git = (...a) => require("child_process").execFileSync("git", ["-C", GAME_ROOT, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim();
+      sourceStamp = { commit: git("rev-parse", "--short", "HEAD"), date: git("log", "-1", "--format=%cd", "--date=short"), source: true };
+    } catch { sourceStamp = { source: true }; }
+  }
+  return JSON.stringify(sourceStamp);
 }
 
 // ---------- window size, position, fullscreen and zoom, remembered between launches ----------
@@ -195,6 +209,25 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // the game never opens other windows
   win.webContents.on("will-navigate", (e, url) => { if (!url.startsWith(ORIGIN + "/")) e.preventDefault(); });
   win.webContents.on("did-finish-load", () => { if (!PERF && st.zoom !== 1) win.webContents.setZoomFactor(st.zoom); });
+
+  // The game's own errors open its error screen (src/ui/crash.js). What the page cannot catch itself: its process
+  // dying (out of memory, a GPU fault) or hanging. Each asks before reloading; the game opens on its title screen
+  // again, and the last autosave (and a crash save, if one was written) are in the save list.
+  if (!PERF) {
+    win.webContents.on("render-process-gone", (_e, d) => {
+      if (!d || d.reason === "clean-exit" || win.isDestroyed()) return;
+      dialog.showMessageBox(win, { type: "error", title: TITLE, message: "The game stopped unexpectedly.", detail: `Its page closed (${d.reason}, code ${d.exitCode}). Reload opens the title screen again: your autosaves and saves are in Load game.`, buttons: ["Reload", "Quit"], defaultId: 0, cancelId: 1 })
+        .then((r) => { if (win.isDestroyed()) return; if (r.response === 0) win.webContents.reload(); else app.quit(); });
+    });
+    let asking = null; // the question on screen; it closes by itself (as Wait) if the game comes back
+    win.on("responsive", () => { if (asking) asking.abort(); });
+    win.on("unresponsive", () => {
+      if (asking || win.isDestroyed()) return;
+      asking = new AbortController();
+      dialog.showMessageBox(win, { signal: asking.signal, type: "warning", title: TITLE, message: "The game is not responding.", detail: "It may be busy (a big map at a high speed) or stuck. Wait gives it more time; Reload opens the title screen again (your autosaves are in Load game).", buttons: ["Wait", "Reload"], defaultId: 0, cancelId: 0 })
+        .then((r) => { asking = null; if (r.response === 1 && !win.isDestroyed()) win.webContents.reload(); });
+    });
+  }
 
   win.once("ready-to-show", () => {
     if (PERF) return;

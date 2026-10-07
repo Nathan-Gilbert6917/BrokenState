@@ -8,6 +8,8 @@ import {
   listSaves, latestSave, saveEntry, writeSave, writeSaveSync, readSave, deleteSave, exportSave, importSaveText, readSaveFile, newSlotId,
   defaultSaveName, AUTOSAVE, BATTLE_SAVE, AUTOSAVE_DAYS, MAX_SLOTS, saveOptions, storageUsed, downloadText, canCompress,
 } from "./saves.js";
+import { writeAutosave, dropIronCrash, autoSlot } from "./saves.js"; // the rotating autosaves; an Ironman game's crash copy goes once its slot is written again
+import { savesByCampaign, storageWarning } from "./savelist.js"; // the save list grouped by campaign (ui/savelist.js)
 import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from "../sim/save.js";
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
@@ -116,9 +118,10 @@ function gameTab(state, ui, api) {
       ${api.desktop ? `<button data-action="set-quitnosave"${dis(!busy)}>Quit</button>` : ""}</div>`;
   }
   const auto = api.autosaveInfo();
-  html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the autosave · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
+  html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the last 3 autosaves of each campaign · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
   if (auto.error) html += `<div class="small danger">The last autosave failed: ${esc(auto.error)}</div>`;
-  html += saves.length ? `<div class="slots">${saves.map((e) => slotRow(state, ui, e, !!blocker || !ui.started, busy, iron)).join("")}</div>` : `<div class="muted small">No saves yet. ${ui.started ? "Save above, or wait for the autosave at dawn." : ""}</div>`;
+  html += storageWarning();
+  html += saves.length ? `<div class="slots">${savesByCampaign(state, ui, saves, (e) => slotRow(state, ui, e, !!blocker || !ui.started, busy, iron))}</div>` : `<div class="muted small">No saves yet. ${ui.started ? "Save above, or wait for the autosave at dawn." : ""}</div>`;
   html += `<div class="setrow" style="margin-top:0.6rem"><label class="btnlike${busy || iron ? " disabled" : ""}"${tip(iron ? "Ironman: leave this game first (Save and exit)" : "Load a .bsave file (it is also added to the list)")}>📂 Load from file…<input type="file" accept=".bsave,.json,application/json" data-action="set-import" class="hidden"${busy || iron ? " disabled" : ""}></label>
     <span class="small muted">Saves are kept in this browser${api.desktop ? " (the desktop app keeps them in its own profile)" : ""}; Export makes a file you can keep or move.</span></div>`;
   return html;
@@ -131,7 +134,7 @@ function slotRow(state, ui, e, cannotSave, busy, iron = false) {
   const dis = (on) => (on ? "" : " disabled");
   return `<div class="slot${cur ? " cur" : ""}">${thumb}
     <div class="sinfo"><b>${esc(e.name)}</b>${e.ironman || e.iron ? ` <span class="tag">ironman</span>` : e.id === BATTLE_SAVE ? ` <span class="tag">battle start</span>` : e.auto ? ` <span class="tag">autosave${e.why ? `: ${esc(e.why)}` : ""}</span>` : ""}${cur ? ` <span class="tag">this game</span>` : ""}
-      <div class="small muted">${entryLine(e)}</div>
+      ${e.summary && !e.id.startsWith("auto-") ? `<div class="small">${esc(e.summary)}</div>` : ""}<div class="small muted">${entryLine(e)}</div>
       <div class="small muted">${esc(ago(e.ts))} · ${kb(e.size || 0)}${e.v && e.v !== SAVE_VERSION ? ` · save format ${e.v}` : ""}</div></div>
     <div class="sbtns">
       <button data-action="set-load" data-id="${esc(e.id)}"${dis(!busy && !iron)}${tip(iron ? "Ironman: leave this game first (Save and exit)" : "Load this save (the game is paused after loading)")}>Load</button>
@@ -160,7 +163,7 @@ function optionsTab(state, ui, api) {
   const o = api.options;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="set-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   return `<h3>Saving</h3><div class="setrow">
-      ${box("autosave", o.autosave, "Autosave", "Save to the autosave slot at dawn, when a hive assault starts and when the run ends. It waits while a card needs an answer.")}
+      ${box("autosave", o.autosave, "Autosave", "Save at dawn, when a hive assault starts and when the run ends; each campaign keeps its last 3 autosaves (the oldest is written over). It waits while a card needs an answer.")}
       <label${tip("How often the dawn autosave runs")}>every <select data-action="set-autodays"${o.autosave ? "" : " disabled"}>${AUTOSAVE_DAYS.map((d) => `<option value="${d}" ${o.autosaveDays === d ? "selected" : ""}>${d === 1 ? "day" : `${d} days`}</option>`).join("")}</select></label>
       ${box("battleSave", o.battleSave !== false, "Save as each battle starts", "Keep a save of every battle's start (one slot, the latest battle) so it can be played again: Restart battle in the battle panel. Not in Ironman games.")}
       ${box("confirmQuit", o.confirmQuit, "Confirm before leaving a game", "Ask before loading, exiting or starting a new campaign with progress that is not saved (and, in a browser tab, before closing it)")}
@@ -506,13 +509,15 @@ function doAutosave(state, ui, api, why, opts, now) {
   auto.busy = true;
   auto.pending = null;
   auto.lastReal = now;
-  const d = day(state), h = hub(state), hour = state.hour; // the world keeps running while the save is compressed
-  const p = writeSave(opts.id || AUTOSAVE, state, { name: opts.name || `Autosave: ${h ? h.name : "holdout"}, day ${d}`, why, thumb: api.thumb(), dropCards: !!opts.dropCards })
-    .then(() => {
+  const d = day(state), hour = state.hour; // the world keeps running while the save is compressed
+  const o = { name: opts.name, why, thumb: api.thumb(), dropCards: !!opts.dropCards };
+  const p = (opts.id ? writeSave(opts.id, state, o) : writeAutosave(state, o)) // the campaign's last 3 autosaves rotate (ui/saves.js)
+    .then((entry) => {
+      if (opts.id) dropIronCrash(opts.id);
       auto.lastDay = d;
       auto.error = "";
       auto.lastAt = { day: d, why };
-      if (!ui.slot || opts.id) ui.slot = opts.id || AUTOSAVE;
+      if (!ui.slot || opts.id || autoSlot(ui.slot)) ui.slot = entry.id; // a game played from an autosave follows the newest one
       markSaved(state, ui, hour);
     }, (e) => {
       auto.error = e && e.message ? e.message : String(e);
