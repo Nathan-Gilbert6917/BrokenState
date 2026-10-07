@@ -30,6 +30,7 @@ import { PRISON, prisonFoodAt } from "./prisoners.js";
 import { DOG } from "./hubevents.js";
 import { eatMult } from "./skills.js";
 import * as Weather from "./weather.js";
+import { childRations, childrenAt } from "./family.js"; // children (family.js): fed here, eaten in familyDaily
 
 export const UPKEEP = { food: 1, water: 1, guest: 1, crew: 1 };
 
@@ -51,7 +52,8 @@ export const crewAt = (state, base) => (state.parties || []).filter((p) => p.rou
 export function mouthsAt(state, base) {
   const res = residents(state, base.id).length;
   const prisoners = prisonersAt(state, base), guests = guestsAt(state, base), crew = crewAt(state, base);
-  return { residents: res, prisoners, guests, crew, dog: base.dog ? 1 : 0, heads: res + prisoners + guests + crew };
+  const children = state.children && state.children.length ? childrenAt(state, base.id).length : 0; // family.js
+  return { residents: res, prisoners, guests, crew, children, dog: base.dog ? 1 : 0, heads: res + prisoners + guests + crew + children };
 }
 
 // Food a day from a base's stores, per head × heads, by group: { rate (a resident's), cold, groups: [{ key, label, n,
@@ -67,6 +69,8 @@ export function foodUse(state, base, dayIdx) {
   add("prisoners", m.prisoners === 1 ? "prisoner" : "prisoners", m.prisoners, (m.prisoners ? prisonFoodAt(state, base) / m.prisoners : PRISON.FOOD) * cold);
   add("guests", m.guests === 1 ? "guest" : "guests", m.guests, UPKEEP.guest * cold);
   add("crew", "convoy crew", m.crew, UPKEEP.crew * cold);
+  // family.js: a quarter of a ration for a baby, half for a child, three quarters for a youngster (eaten in familyDaily).
+  if (m.children) add("children", m.children === 1 ? "child" : "children", m.children, (rate * childRations(state, base)) / m.children);
   add("dog", "the dog", m.dog, DOG.food);
   const total = groups.reduce((a, g) => a + g.total, 0);
   return { rate: r2(rate), cold, groups, residents: m.residents * rate, total, heads: m.heads, mouths: m };

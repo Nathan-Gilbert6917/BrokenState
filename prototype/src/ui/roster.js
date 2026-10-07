@@ -17,6 +17,7 @@ import { roleOf, roleById, toManual } from "../sim/work.js";
 import { roleSelect, taskChip, applyRoleChoice } from "./work.js";
 import { gaugeMini } from "./needs.js";
 import { hungerOf, thirstOf } from "../sim/needs.js";
+import { rosterChildren } from "./family.js"; // the children under the table (sim/family.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -162,7 +163,7 @@ export function rosterModal(state, ui) {
       ${th("name", "Name")}${th("where", "Where")}${th("role", "Role")}${th("health", "Health")}${th("mood", "Mood")}${th("needs", "Needs", "Hunger, thirst and mood bars (sorted by the lower of hunger and thirst).")}${th("cond", "Conditions")}
       ${SKILLS.map((k) => th(`sk:${k}`, SHORT[k] || k, SKILL_NAMES[k] + ".")).join("")}
       ${th("weapon", "Weapon")}${th("armor", "Armor", "Body armor and the armor of all worn pieces.")}${th("traits", "Traits")}
-    </tr></thead><tbody>${body || `<tr><td colspan="${11 + SKILLS.length}" class="muted">Nobody matches the filters.</td></tr>`}</tbody></table></div>
+    </tr></thead><tbody>${body || `<tr><td colspan="${11 + SKILLS.length}" class="muted">Nobody matches the filters.</td></tr>`}</tbody></table>${rosterChildren(state)}</div>
   </div>`;
 }
 
