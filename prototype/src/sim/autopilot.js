@@ -43,7 +43,7 @@ import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } f
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun } from "./supply.js";
-import { autoPlayerTurn, runEnemyPhase, closeCombat, WEAPONS } from "./combat.js";
+import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
@@ -391,14 +391,20 @@ function resolvePending(state) {
 }
 
 // A battle already open when the autopilot took over: the AI plays both sides to the end, takes all it can carry.
+// Its deploy step too (deploy.js: the default posts; autoPlayerTurn ends it), as defences.js fightNow does.
 function finishLiveBattle(state) {
   for (let i = 0; i < 400 && state.combat; i++) {
     const b = state.combat;
     if (b.over) closeCombat(state, { take: true });
-    else if (b.phase === "player") autoPlayerTurn(state);
+    else if (b.phase === "player" || b.phase === "deploy") autoPlayerTurn(state);
     else runEnemyPhase(state);
   }
-  if (state.combat) state.combat = null; // never hang on a battle
+  // Never hang on a battle: one still going is ended with an outcome (the handler settles the team, the base, the
+  // raid), not dropped.
+  const b = state.combat;
+  if (b && !b.over) endBattleNow(state, b.setup && b.setup.canRetreat ? "retreat" : "defeat");
+  if (state.combat) closeCombat(state, { take: true });
+  if (state.combat) state.combat = null;
 }
 
 // ======================================================================================
