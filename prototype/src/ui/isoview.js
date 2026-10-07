@@ -55,8 +55,8 @@ export function setRoofs(on) {
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); }
 const spriteCache = new Map();
-let groundCache = null, fogCache = null, sceneCache = null;
-export function clearIsoCache() { spriteCache.clear(); groundCache = fogCache = sceneCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
+let groundCache = null, fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
+export function clearIsoCache() { spriteCache.clear(); groundCache = fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
 
 // ---------- small helpers ----------
@@ -746,6 +746,43 @@ function groundFor(b, scene) {
   iso.builds.ground++;
   return groundCache;
 }
+// The ground on one storey (no floor raised), painted once per battle in map space: 16 × 16 texels a tile, the
+// texels floorColor works in, so the colours are the same; drawIso stretches it onto the diamonds with one affine
+// transform for the view's rotation (groundXform). Half the pixels of the view-space picture and no repaint when the
+// view turns (groundFor took about 300 ms on a 72 × 72 fort, at the open and on every turn of the view).
+const TEX = 16;
+function flatGroundFor(b, scene) {
+  const key = scene.groundKey;
+  if (flatGroundCache && flatGroundCache.b === b && flatGroundCache.key === key) return flatGroundCache;
+  const tw = b.w * TEX, th = b.h * TEX;
+  const mud = new Float32Array(b.w * b.h);
+  for (let i = 0; i < b.cells.length; i++) if (b.cells[i].k === "hivewall") {
+    const x = i % b.w, y = (i / b.w) | 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
+  }
+  const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x];
+    for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
+      let col = floorColor(cell, cell.k, x, y, (tx + 0.5) / TEX, (ty + 0.5) / TEX, m);
+      if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
+      const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
+      buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
+    }
+  }
+  c.putImageData(img, 0, 0);
+  flatGroundCache = toBitmap({ b, key, cv });
+  iso.builds.ground++;
+  return flatGroundCache;
+}
+// The affine map from a map-space picture (`per` pixels a tile) to the screen: map (x, y) → view (u, v) for the
+// rotation (toView, continuous) → the diamond's art px (ax = (u − v)·HW + Hv·HW, ay = (u + v)·HH) → × S from (gx, gy).
+function groundXform(b, r, per, S, gx, gy, Hv) {
+  const W = b.w, H = b.h;
+  const [au, bu, cu, av, bv, cv] = [[1, 0, 0, 0, 1, 0], [0, -1, H, 1, 0, 0], [-1, 0, W, 0, -1, H], [0, 1, 0, -1, 0, W]][r & 3];
+  return [S * HW * (au - av) / per, S * HH * (au + av) / per, S * HW * (bu - bv) / per, S * HH * (bu + bv) / per, gx + S * HW * Hv + S * HW * (cu - cv), gy + S * HH * (cu + cv)];
+}
+
 // A finished picture as an ImageBitmap (the browser keeps it on the GPU; a canvas may be uploaded again and again),
 // swapped in when it is ready; until then, and without createImageBitmap (the tools), the canvas itself.
 function toBitmap(o) {
@@ -777,6 +814,30 @@ function fogFor(b, vis) {
   fogCache = toBitmap({ b, key, cv, canvas: cv, oy: lift });
   iso.builds.fog++;
   return fogCache;
+}
+
+// The fog on one storey (no floor raised): a picture one pixel a tile in view order, stretched onto the diamonds when
+// it is drawn (drawIso: an affine transform takes the unit square (u, v) onto that tile's diamond, nearest pixel).
+// Rebuilt with what your people see after every move, so it must be cheap: a few thousand pixels, not a path of
+// thousands of diamonds filled on a canvas the size of the whole map (about 100 ms on a 72 × 72 fort, every action).
+const FOG_DAY = [10, 12, 18, 148], FOG_NIGHT = [4, 6, 16, 184]; // fogFor's rgba(10,12,18,0.58) and rgba(4,6,16,0.72)
+function fogMaskFor(b, vis) {
+  let sig = 0;
+  for (let i = 0; i < vis.length; i++) sig = (Math.imul(sig, 31) + vis[i] + i * 3) | 0;
+  const r = iso.rot, key = `${b.w}x${b.h}:${r}:${sig}:${b.night ? 1 : 0}`;
+  if (fogMaskCache && fogMaskCache.b === b && fogMaskCache.key === key) return fogMaskCache;
+  const [Wv, Hv] = viewDims(b, r);
+  const cv = fogMaskCache && fogMaskCache.Wv === Wv && fogMaskCache.Hv === Hv ? fogMaskCache.cv : mkCanvas(Wv, Hv);
+  const c = cv.getContext("2d"), img = c.createImageData(Wv, Hv), d = img.data, col = b.night ? FOG_NIGHT : FOG_DAY;
+  for (let i = 0; i < vis.length; i++) {
+    if (vis[i]) continue;
+    const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h), p = (v * Wv + u) * 4;
+    d[p] = col[0]; d[p + 1] = col[1]; d[p + 2] = col[2]; d[p + 3] = col[3];
+  }
+  c.putImageData(img, 0, 0);
+  fogMaskCache = { b, key, cv, Wv, Hv };
+  iso.builds.fog++;
+  return fogMaskCache;
 }
 
 // ---------- per-cell looks ----------
@@ -1184,13 +1245,32 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
 
   // The ground and the fog.
-  const g = groundFor(b, scene);
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
-  ctx.drawImage(g.cv, gx, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
+  let g = null;
+  if (!lift) { // painted in map space, stretched onto the diamonds (flatGroundFor)
+    const fg0 = flatGroundFor(b, scene);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.transform(...groundXform(b, iso.rot, TEX, S, gx, gy, Hv));
+    ctx.drawImage(fg0.cv, 0, 0);
+    ctx.restore();
+  } else {
+    g = groundFor(b, scene);
+    ctx.drawImage(g.cv, gx, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
+  }
   const vis = v.vis;
-  const fg = fogFor(b, vis);
-  ctx.drawImage(fg.cv, gx, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
+  if (!lift) { // one pixel a tile, stretched onto the diamonds (fogMaskFor)
+    const m = fogMaskFor(b, vis);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.transform(S * HW, S * HH, -S * HW, S * HH, gx + S * Hv * HW, gy);
+    ctx.drawImage(m.cv, 0, 0);
+    ctx.restore();
+  } else {
+    const fg = fogFor(b, vis);
+    ctx.drawImage(fg.cv, gx, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
+  }
 
   // Highlights on the ground: the floodlit area, the evac strip, a raid's zones, the deploy cells, the move range.
   const N = b.w * b.h;
@@ -1604,6 +1684,22 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         if (x < 0 || y < 0 || x >= b.w || y >= b.h || !cdef(b.cells[y * b.w + x]).walk) continue;
         if ((dx || dy) && H.unitAt(x, y)) continue;
         shieldsIso(ctx, b, x, y, dx || dy ? 0.55 : 1);
+      }
+    }
+    // The threat preview (ui/combat.js threatAt): a line from each enemy you see that could shoot this tile (solid red,
+    // its odds over its head) or walk up and strike it (dashed amber) in its next turn.
+    const onTile = H.unitAt(h.x, h.y);
+    if (H.threat && b.phase === "player" && !b.over && H.mode === "move" && cdef(b.cells[hi]).walk && (!onTile || onTile.side === "player")) {
+      const [TX, TY] = project(h.x + 0.5, h.y + 0.5, zt + UNIT_H * 0.5);
+      for (const T of H.threat(h.x, h.y)) {
+        const e = T.e, shot = T.shot != null;
+        const [EX, EY] = project(e.x + 0.5, e.y + 0.5, standZ(b, e.x, e.y) + UNIT_H * 0.6);
+        ctx.strokeStyle = shot ? "rgba(226,104,95,0.85)" : "rgba(224,168,79,0.8)";
+        ctx.lineWidth = 1.5;
+        if (!shot) ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(EX, EY); ctx.lineTo(TX, TY); ctx.stroke();
+        ctx.setLineDash([]);
+        if (shot && u) tag(ctx, `⚠ ${T.shot}%`, EX, EY - 10, T.shot >= 50 ? "#e2685f" : T.shot >= 25 ? "#e0a84f" : "#9aa0a8", Math.max(10, 3.2 * S));
       }
     }
     if (u && active(u) && b.phase === "player") {
