@@ -74,6 +74,7 @@ import { fixtures, fixtureName } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -548,6 +549,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   if (i < 0 || !f) return null;
   f.known = true; // they took it: you know who they are
   const wasHub = base.type === "hub";
+  noteBaseLoss(state, base, opts.retreated ? "retreat" : "taken", f); // causes.js: why it was lost (before the people leave)
   if (!opts.retreated) evacuate(state, base, f, `${f.name} took it`);
   // Anyone left there (nobody, normally) is gone with it; prisoners of that group walk free; others are left to
   // prisoners.js (a base that is gone).
@@ -617,6 +619,7 @@ export function razePlayerBase(state, base, f) {
   const i = state.bases.indexOf(base);
   if (i < 0) return false;
   const wasHub = base.type === "hub";
+  noteBaseLoss(state, base, "razed", f); // causes.js: why it was lost (before the people leave)
   evacuate(state, base, f, f ? `${f.name} burned it` : "it burned");
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f ? f.id : null, tile: base.tile, since: state.hour };
   for (const pr of [...prisonersOf(state)]) if (pr.at && pr.at.kind === "base" && pr.at.baseId === base.id && f && pr.factionId === f.id) { state.prisoners.splice(state.prisoners.indexOf(pr), 1); f.pop += 1; }
@@ -643,7 +646,7 @@ export function razePlayerBase(state, base, f) {
   const text = `${f ? f.name : "Raiders"} burned ${base.name} to the ground: ${nBuild ? `all ${nBuild} building${nBuild === 1 ? "" : "s"}` : "everything"} and its stores${burned.length ? `, and the ${burned.map((v) => v.name).join(" and ")}` : ""}. Only ruins are left: a new outpost there needs just 5 scrap (the rest is salvage).` +
     `${newHub ? ` ${newHub.name} is your hub now.` : wasHub && !hub(state) ? " You have no base left." : ""}`;
   log(state, text, "death");
-  addCard(state, { title: `${base.name} burned`, text, choices: [{ label: "OK", resolve: () => "" }] });
+  addCard(state, { title: `${base.name} burned`, text, lostBase: base.tile, choices: [{ label: "OK", resolve: () => "" }] });
   return true;
 }
 
