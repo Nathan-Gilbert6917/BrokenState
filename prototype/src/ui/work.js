@@ -18,6 +18,7 @@ import {
   renameRole, deleteRole, roleMembers, everyoneOnPriorities, setNewcomers, taskLabel, taskWhy, planBase, MOOD_LOW, MOOD_BACK,
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
+import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -111,6 +112,7 @@ export function workTab(state, b, ui) {
       <span${tip("The role new people get when they join (recruits, strangers, rescued people). Manual: they keep the job they come with.")}>Newcomers join</span>
       <select data-action="wnew">${[["", "Manual"], ...roles.map((r) => [r.id, r.name])].map(([v, l]) => `<option value="${esc(v)}" ${String(newcomers || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
       <span class="muted small">${managed} of ${people.length} here on priorities</span>
+      ${undoBtn(state, ui, "work")}
     </div>
     ${pr.msg ? `<div class="result small">${esc(pr.msg)}</div>` : ""}
     <div class="wscroll"><table class="t worktbl">${head}${rows || `<tr><td colspan="${WORK_KEYS.length + 3}" class="muted">Nobody here matches.</td></tr>`}</table></div>

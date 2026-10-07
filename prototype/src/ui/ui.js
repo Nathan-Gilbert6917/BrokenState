@@ -55,6 +55,8 @@ import { renderExpedition, startsWhenUnpaused } from "./expedition.js";
 import { shortName } from "./names.js";
 import { orderStatus, contactable } from "../sim/orders.js";
 import { planSection, planAutofill, planEstimate } from "./plan.js";
+import { plannerTrips, teamsTrips } from "./trips.js"; // order templates, recent trips (Repeat trip)
+import { undoBtn, buildMoveBtns } from "./undo.js"; // undo, and the build queue's ▲ ▼
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { teamRadioLine } from "./radiolisten.js"; // a team's receiver out of contact: what it hears (sim/radiolisten.js)
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS } from "../sim/weather.js";
@@ -311,7 +313,7 @@ function renderGroups(state) {
 
 function renderTeams(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player");
-  if (!mine.length) return `<div class="muted small">No teams out. Select a tile on the map and choose an action, or right-click a tile.</div>`;
+  if (!mine.length) return `<div class="muted small">No teams out. Select a tile on the map and choose an action, or right-click a tile.</div>${teamsTrips(state, ui)}`;
   return mine.map((p) => {
     const members = partyMembers(state, p);
     const v = partyVehicle(state, p);
@@ -349,7 +351,7 @@ function renderTeams(state, ui) {
         ${baseById(state, sjob.originId) ? `<button class="mini" data-action="openbase" data-id="${sjob.originId}" data-tab="convoys"${tip("Open the Supply runs tab of the home base")}>Supply runs…</button>` : `<span class="muted"${tip("The base this run started from was lost. The convoy finishes its trip.")}>home base lost</span>`}
       </div>` : ""}
     </div>`;
-  }).join("");
+  }).join("") + teamsTrips(state, ui);
 }
 
 // ---------- right panel ----------
@@ -876,6 +878,7 @@ function plannerModal(state, ui) {
   const missions = Object.entries(MISSIONS).filter(([, m]) => !m.hidden);
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
+    ${plannerTrips(state, ui) /* ui/trips.js: templates, retreat policy, undo */}
     ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
     ${pl.mission === "assault" ? assaultNote(state, pl.dest) : ""}
     <div class="row" style="margin-bottom:0.6rem">Mission
@@ -1421,7 +1424,7 @@ function baseConstruction(state, b, ui) {
         <div style="margin-top:0.4rem">${plotBar("utility")}</div>
         <div class="muted" style="margin-top:0.4rem">By base size (building / utility): ${sizes}. Demolish a building to free its plot.</div>
       </div>
-      <h3>Queue</h3>
+      <h3>Queue ${undoBtn(state, ui, "build", b.id)}</h3>
       <div class="small muted" style="margin-bottom:0.4rem">${builders.length ? `Builders: ${builders.map((x) => first(x) + bedTag(x)).join(", ")} (${n1(rate)} work-hours per hour${builders.some((x) => x.inBed) ? "; people in a hospital bed do not build" : ""})` : "No builders. Set someone's role to Build."}</div>
       ${b.construction.length ? b.construction.map((job, i) => {
         const left = job.hours - job.progress;
@@ -1429,7 +1432,7 @@ function baseConstruction(state, b, ui) {
         const eta = rate > 0 ? Math.ceil(elapsed / rate) : null;
         const plot = BUILDINGS[job.type].plot;
         return `<div class="card small">
-          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(buildJobName(job))}</b><button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></div>
+          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(buildJobName(job))}</b><span>${buildMoveBtns(b, i)}<button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></span></div>
           ${bar((job.progress / job.hours) * 100, "var(--accent)")}
           <span class="muted">${i === 0 ? `${n1(left)} work-hours left` : "Waiting in queue"} · ${eta != null ? `done in about ${eta}h` : "paused"}${plot && !job.target ? ` · ${PLOT_NAMES[plot].toLowerCase()}` : ""}</span>
         </div>`;
