@@ -336,8 +336,9 @@ export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
 // A day's background sky (the record without its storm, blizzard or fog; the day's temperatures stay the record's:
 // the cold of a blizzard day is the region's): one object per day record. rk: the record's kind.
 const bgCache = new WeakMap();
+// A day a tool forced to one weather for the whole state (d.all: true) has no background of its own.
 function bgRec(d) {
-  if (!BG[d.k]) return d;
+  if (!BG[d.k] || d.all) return d;
   let b = bgCache.get(d);
   if (b) return b;
   const k = BG[d.k];
