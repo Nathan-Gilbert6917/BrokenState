@@ -38,7 +38,7 @@ export function titleMenuHTML(ui, api = API) {
   const last = latestSave();
   const n = listSaves().length;
   const items = [];
-  if (last) items.push(`<button class="tt-item primary" data-action="set-continue"${tip(`Load the latest save: ${last.name}`)}>Continue<small>${esc(last.name)} · day ${esc(last.day ?? "?")}</small></button>`);
+  if (last) items.push(`<button class="tt-item primary" data-action="set-continue"${tip(`Load the latest save: ${last.name}`)}>Continue<small>${esc(last.name)}${/day d/i.test(last.name || "") ? "" : ` · day ${esc(last.day ?? "?")}`}</small></button>`);
   items.push(`<button class="tt-item${last ? "" : " primary"}" data-action="title-new"${tip("Pick the map, the mode and your people, then start")}>New game</button>`);
   items.push(`<button class="tt-item" data-action="title-load"${n ? "" : " disabled"}${tip(n ? `Pick one of your ${n} save${n === 1 ? "" : "s"}, or load a save file` : "No saves yet")}>Load game</button>`);
   items.push(`<button class="tt-item" data-action="title-settings"${tip("Autosave, confirmations, display, the keys")}>Settings</button>`);
