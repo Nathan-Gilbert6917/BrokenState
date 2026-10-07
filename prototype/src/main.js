@@ -6,6 +6,8 @@ import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
+import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
+import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
@@ -487,25 +489,31 @@ function armDiff(before) {
 }
 
 // ---------- actions ----------
+// The base a planner sends its team from: the hub, or (the move-out planner) the crowded base it was opened for.
+const plannerBase = (pl) => (pl.fromBaseId != null ? baseById(state, pl.fromBaseId) : hub(state));
 function autofill(pl) {
-  const h = hub(state);
+  const h = plannerBase(pl);
   if (!h) return; // no base to send a team from (the planner says so): exiles, hardcore before its first hub
   const ids = [...pl.crew];
   const v = plannerVehicle(state, pl);
+  // Moving out (sim/moveout.js): to the destination picked, or (none yet) just outside the base; MOVE_OUT.days of
+  // food and water on top for the road ahead, and the scrap for an outpost when they may found one.
+  const out = !!pl.moveOut;
   // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
   // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
-    est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies });
-    view.preview = est ? est.path : null;
+    est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
+    view.preview = est && pl.dest != null ? est.path : null;
     if (!est) return;
+    const ahead = out ? n * MOVE_OUT.days : 0;
     const want = {
-      food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
+      food: Math.ceil(est.food * 1.25 + ahead), water: Math.ceil(est.water * 1.25 + ahead * thirstAhead(state, MOVE_OUT.days)),
       fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-      meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      meds: Math.min(2, n), ammo: (out ? MOVE_OUT.ammo : 15) * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
       // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
-      scrap: pl.mission === "outpost" ? 15 : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
+      scrap: pl.mission === "outpost" ? 15 : out ? (pl.dest == null ? MOVE_OUT.scrap : 0) : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };
     for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(h.stock, k)), want[k])); // water: both kinds, purified packed first (sim/water.js)
   }
@@ -526,6 +534,16 @@ function autofill(pl) {
 }
 
 const partyById = (id) => state.parties.find((p) => p.id === Number(id));
+// The move-out planner (ui.js moveOutModal, sim/moveout.js): who leaves a base, their transport and supplies from
+// its stores, and where to (another of your bases, or a tile picked on the map once they are out).
+function openMoveOut(baseId) {
+  if (!baseById(state, baseId)) return;
+  const pl = { moveOut: true, fromBaseId: baseId, dest: null, mission: "move", crew: new Set(), vehicleId: null, stance: "normal", supplies: {} };
+  ui.planner = pl;
+  ui.plannerError = "";
+  endMoveMode();
+  autofill(pl);
+}
 const baseOf = (d) => baseById(state, Number(d.base));
 // A message from a base action: on the base screen when it is open, otherwise in the log.
 function baseSay(msg) {
@@ -792,10 +810,29 @@ const actions = {
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
   "pl-autofill": () => { autofill(ui.planner); ui.plannerError = ""; },
   "pl-cancel": () => { ui.planner = null; view.preview = null; },
+  // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
+  "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
+  moveout: (d) => openMoveOut(Number(d.base)),
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
+    if (pl.moveOut) {
+      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
+      if (res.error) { ui.plannerError = res.error; return; }
+      ui.planner = null;
+      view.preview = null;
+      ui.baseView = null;
+      // Nowhere picked yet: straight to move mode, so the next click on the map sends them (Esc: they wait outside).
+      if (pl.dest == null) {
+        endMoveMode();
+        ui.moveParty = res.party.id;
+        ui.expedition = res.party.id;
+        ui.xpMsg = "";
+        centerOn(state, partyTile(res.party));
+      }
+      return;
+    }
     const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     ui.planner = null;
@@ -821,6 +858,7 @@ const actions = {
       actions["xp-open"]({ id: c.uiAction.partyId });
       return;
     }
+    if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
