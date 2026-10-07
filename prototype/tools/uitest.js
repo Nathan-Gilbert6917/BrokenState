@@ -1199,9 +1199,10 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
     const time = (layers) => {
       R.view.layers = new Set(layers);
       draw(st, 0.65);
-      const t0 = performance.now();
-      for (let i = 0; i < 30; i++) { R.camera.x += 11; R.render(st); }
-      return (performance.now() - t0) / 30;
+      // The median frame: a GC pause or a busy machine (the suite runs tools side by side) stalls a frame or two.
+      const ms = [];
+      for (let i = 0; i < 31; i++) { const t0 = performance.now(); R.camera.x += 11; R.render(st); ms.push(performance.now() - t0); }
+      return ms.sort((a, b) => a - b)[15];
     };
     const base = time(["pois", "territory", "teams", "hordes"]), withOv = time(["pois", "territory", "teams", "hordes", "known", "coalition"]);
     const t1 = performance.now();
