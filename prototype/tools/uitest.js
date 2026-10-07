@@ -36,6 +36,9 @@ import { rosterModal, rosterRows, ROSTER_ACTIONS, ROSTER_CHANGE, setRole } from 
 import { camera } from "../src/ui/render.js";
 import { repairsTab, EXPLORE_ACTIONS, EXPLORE_CHANGE } from "../src/ui/explore.js";
 import * as BD from "../src/sim/breakdowns.js";
+import * as KEYS from "../src/ui/keymap.js"; // the key table (the panel keys go through it)
+import { CONTROLS_ACTIONS } from "../src/ui/controls.js";
+import { CODEX_ACTIONS } from "../src/ui/codex.js";
 const { raidDamage } = BD;
 
 const days = Number(process.argv[2] || 120);
@@ -68,7 +71,7 @@ const actionsIn = (html) => [...html.matchAll(/<(\w+)([^>]*?)data-action="([^"]+
 // Handlers: the ones in the new modules, plus the names main.js's action tables define (looked up in its source).
 const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS };
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS };
 const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
@@ -862,8 +865,10 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   SETTINGS_ACTIONS["set-opt"](w, u3, { k: "autoOpen" }, api);
   check(opts.autoOpen === false && /✗ Auto-open panels on select/.test(settingsModal(w, u3, api)), "the option switches off");
   check(["panel-toggle", "panel-close", "panel-all", "win-reset"].every(inMain) && /setShut\(layout, p, v\)/.test(mainSrc), "main.js handles panel-toggle, panel-close (closing completely), panel-all and win-reset");
-  check(/e\.altKey && !e\.ctrlKey[\s\S]{0,400}"BracketLeft" \? "left"[\s\S]{0,200}actions\["panel-close"\]\(\{ p: shut \}\)/.test(mainSrc) && /Alt\+\[/.test(readme) && /Alt\+\]/.test(L.shutTip(lc, "right")), "Alt+[ / Alt+] / Alt+L close a panel completely (keydown → panel-close); README and the tips say so");
-  check(["BracketLeft", "BracketRight", "\"KeyL\"", "Backslash"].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ])");
+  // The keys go through the key table (ui/keymap.js): the chord gives the action, main.js maps it to the panel.
+  const kev = (code, mods = {}) => ({ code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods });
+  check(KEYS.keyAction(kev("BracketLeft", { altKey: true }), "map") === "panel.closeLeft" && /"panel\.closeLeft": "left"[\s\S]{0,200}actions\["panel-close"\]\(\{ p: shut \}\)/.test(mainSrc) && /Alt\+\[/.test(readme) && /Alt\+\]/.test(L.shutTip(lc, "right")), "Alt+[ / Alt+] / Alt+L close a panel completely (keydown → panel-close); README and the tips say so");
+  check([["BracketLeft", "panel.left"], ["BracketRight", "panel.right"], ["KeyL", "panel.log"], ["Backslash", "panel.all"], ["BracketLeft", "panel.orders", { shiftKey: true }]].every(([c, id, m]) => KEYS.keyAction(kev(c, m), "map") === id) && ["\"panel.left\"", "\"panel.all\""].every((k) => mainSrc.includes(k)), "main.js has the panel keys ([ ] L \\ and Shift+[ ], by the key table)");
   check(/windowFrame\(renderModal\(state, ui\), modalKind\(state, ui\)\)/.test(mainSrc) && /fitWindows\(\)/.test(mainSrc), "every window on screen goes through the frame and gets its remembered size");
   check(/mapClicked = true/.test(mainSrc) && /autoReveal\(layout, picked, now/.test(mainSrc) && /options\.autoOpen/.test(mainSrc), "main.js opens panels on a map click, a pick and the option");
   check(["| [ / ] |", "| L |", "| ✕ on a folded strip, or ◧ ◨ ⬓ in the top bar |", "| Shift+[ / Shift+] |", "| \\ (backslash)", "Window edges, corners, title", "Reset window sizes", "Auto-open panels on select"].every((k) => readme.includes(k)), "the README lists the panel keys, closing a panel completely, window drags and the options");

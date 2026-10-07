@@ -1,7 +1,7 @@
 // The settings view (⚙ in the top bar, the ⚙ Menu button in a battle, or Esc on the map with nothing else open):
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
-// Options (autosave, confirmations, pause on focus loss, UI size, map detail, the battle's end-turn question, zombie look,
-// the keys), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// Options (autosave, confirmations, pause on focus loss, UI size, map detail, the battle's end-turn question, zombie look),
+// Controls (every key, rebindable: ui/controls.js), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
@@ -13,6 +13,7 @@ import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
 import { helpTab } from "./help.js";
+import { controlsTab } from "./controls.js"; // the Controls tab: every key, rebindable (ui/keymap.js)
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
@@ -61,11 +62,11 @@ const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ir
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {
   const S = ui.settings;
-  const tabs = [["game", "Game"], ["options", "Options"], ["help", "Help"], ["about", "About"]];
+  const tabs = [["game", "Game"], ["options", "Options"], ["controls", "Controls"], ["help", "Help"], ["about", "About"]];
   const head = `<div class="row settabs">${tabs.map(([k, l]) => `<button data-action="set-tab" data-tab="${k}" class="${S.tab === k ? "active" : ""}">${l}</button>`).join("")}
     <span style="margin-left:auto"></span><button class="primary" data-action="set-close"${tip("Back to the game (Esc)")}>${ui.started ? "Resume" : "Back"}</button></div>`;
   const msg = S.msg ? `<div class="setmsg ${S.err ? "danger" : "good"}">${esc(S.msg)}</div>` : "";
-  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help) : gameTab(state, ui, api);
+  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "controls" ? controlsTab(ui) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help) : gameTab(state, ui, api);
   return `<div class="box wide settings"><h1>⚙ Menu</h1>${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
@@ -141,19 +142,12 @@ function slotRow(state, ui, e, cannotSave, busy, iron = false) {
     </div></div>`;
 }
 
-const KEYS = [
-  ["Esc", "Close the top window; with nothing open, this menu"], ["Space", "Pause / run"], ["1–4", "Speed 0.5× / 1× / 2× / 3×"],
-  ["W A S D, arrows, drag, wheel", "Pan and zoom the map"], ["H", "Center on the hub"], ["I", "Infection overlay"],
-  ["B / P / G / T", "Bases / People / Groups / Teams tab"], ["Tab or N", "Next team waiting for orders (Shift+Tab back)"],
-  ["F1–F9", "Jump to your bases"], ["Ctrl+1–9 (Alt+1–9)", "Save a camera spot; Shift+1–9 goes back to it"],
-  ["J", "Diary"], ["R", "Roster"],
-  ["[ / ] / L", "Fold or show the left panel / right panel / log (or click the bar beside it; drag the bar to resize)"],
-  ["Alt+[ / Alt+] / Alt+L", "Close the left panel / right panel / log completely (no strip), again to bring it back; also the ✕ on a folded strip or ◧ ◨ ⬓ in the top bar. The slim tab at the map's edge or the panel's plain key opens it again too"],
-  ["Shift+[ / Shift+]", "Fold or show the running orders / the alerts"], ["\\ (backslash)", "Map only: fold every panel, again to bring them back"],
-  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"], ["` (backquote)", "Dev tools"], ["Shift+P", "Autopilot (dev)"],
-  ["Battle", "Click a unit, then a tile or an enemy; F shoot, E melee, O overwatch, H hunker, M meds, R retreat (from the strip), Shift+R sound the retreat (everyone; on a base's wall map: fall back to the yard), Shift+S search, Shift+Q quick search, Shift+D drag a body, Shift+A the AI plays your side (again to take back control), Enter ends the turn; hover a tile for the threat there"],
-  ["Battle view", "Drag (or W A S D, the arrow keys, or the mouse at the edge) to pan, the wheel or + / − to zoom, , and . to turn it, V to center on the selected unit, B roofs on / off"],
-  ["Timelapse", "Space play, ← / → a day, 1–4 speed, Esc close"],
+// What the mouse does (the keys are in the Controls tab, ui/controls.js).
+const MOUSE = [
+  ["Left-click, right-click", "Inspect a tile; actions for a tile, or move a waiting team there"], ["Drag, wheel", "Pan and zoom the map"],
+  ["The bar beside a panel", "Click to fold or show the panel, drag to make it wider or narrower"],
+  ["✕ on a folded strip, or ◧ ◨ ⬓ in the top bar", "Close the left panel / right panel / log completely (no strip), again to bring it back; the slim tab at the map's edge opens it again too"],
+  ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"],
 ];
 
 function optionsTab(state, ui, api) {
@@ -181,7 +175,8 @@ function optionsTab(state, ui, api) {
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
       <button class="mini" data-action="help-open" data-sec="windows-and-panels"${tip("Help: windows and panels")}>?</button>
     </div>
-    <h3>Keys</h3><table class="setkeys">${KEYS.map(([k, d]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(d)}</td></tr>`).join("")}</table>`;
+    <h3>Keys and mouse</h3><div class="setrow"><button data-action="set-tab" data-tab="controls"${tip("Every key, by group: change any of them")}>Controls…</button><button data-action="help-open" data-sec="keys"${tip("Every key as it is set now, ready to print")}>Key sheet…</button></div>
+    <table class="setkeys">${MOUSE.map(([k, d]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(d)}</td></tr>`).join("")}</table>`;
 }
 
 function aboutTab(state, ui, api) {

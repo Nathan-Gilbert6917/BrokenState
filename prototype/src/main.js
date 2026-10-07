@@ -73,6 +73,10 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
+import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
+import { initPalette, openPalette, paletteIndex } from "./ui/palette.js"; // the search box (Ctrl+K or /)
+import { CODEX_ACTIONS, CODEX_CHANGE, codexScan } from "./ui/codex.js"; // the Codex (C): what the player has met
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 const MAX_SPEED = 3;            // the fastest normal speed; anything above is a dev fast-forward
@@ -96,6 +100,7 @@ const freshUi = () => ({
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
+  codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/palette.js recent picks and a build button to light up
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -106,6 +111,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 }
 // The Options tab (ui/settings.js), remembered in the browser (ui/saves.js): autosave, confirmations, pause on focus loss, UI size.
 const options = loadOptions();
+initKeymap(options); // the player's key bindings (ui/keymap.js)
 ui.scale = options.uiScale;
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
@@ -342,6 +348,7 @@ function refresh(user = true) {
   lastRefresh = last;
   tidyUi();
   noteNames(state);
+  codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
   const tb = topbarParts(state, ui);
@@ -557,6 +564,7 @@ const actions = {
   "dev-persona": (d) => { setPersonality(state, d.v); },
   center: (d) => { centerOn(state, Number(d.tile)); ui.selected = Number(d.tile); view.selected = ui.selected; },
   help: () => openSettings(ui, "help"), // the menu's Help tab (ui/settings.js, ui/help.js)
+  "pal-open": () => openPalette(), // the top bar's 🔍: the search box (ui/palette.js)
   legendtoggle: () => { ui.legendCollapsed = !ui.legendCollapsed; },
   // Panels around the map (ui/layout.js): fold or show one (data-p: left, right, log, alerts, orders, legend), close
   // one completely or open it again (data-p: left, right, log: the strip's ✕, the top bar's ◧ ◨ ⬓, the tab at the
@@ -910,6 +918,8 @@ for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(stat
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
+for (const [k, fn] of Object.entries(CONTROLS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi); // Menu → Controls (ui/controls.js)
+for (const [k, fn] of Object.entries(CODEX_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Codex (ui/codex.js)
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 
@@ -1085,6 +1095,7 @@ for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { 
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
+for (const [k, fn] of Object.entries(CODEX_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the Codex's find box
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
@@ -1555,6 +1566,7 @@ function closeTopLayer() {
   }
   if (ui.roster) { ui.roster = null; return true; }
   if (ui.diary) { ui.diary = null; return true; }
+  if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
@@ -1562,6 +1574,8 @@ function closeTopLayer() {
 }
 
 window.addEventListener("keydown", (e) => {
+  // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
+  if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
@@ -1578,51 +1592,52 @@ window.addEventListener("keydown", (e) => {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
   }
+  // Ctrl+K or / (ui/keymap.js win.palette): the search box (ui/palette.js), over any window but a card.
+  if (ui.started && keyIs(e, "win.palette") && !["card", "result", "over", "newrun"].includes(modalKind(state, ui))) { e.preventDefault(); openPalette(); return; }
   // A selected order in the team panel's queue (ui/expedition.js queueBlock): ↑ ↓ move it, Delete removes it.
-  if (ui.expedition != null && ui.qSel != null && ["ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.code) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+  const qk = ui.expedition != null && ui.qSel != null ? keyAction(e, "queue") : null;
+  if (qk) {
     e.preventDefault();
     const p = partyById(ui.expedition);
     if (p) {
-      if (e.code === "Delete" || e.code === "Backspace") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
-      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: e.code === "ArrowUp" ? -1 : 1 });
+      if (qk === "queue.remove") actions["xp-unqueue"]({ id: p.id, i: ui.qSel });
+      else actions["xp-qmove"]({ id: p.id, i: ui.qSel, dir: qk === "queue.up" ? -1 : 1 });
     }
     refresh();
     return;
   }
   // The Work tab: 1–5, 0 / Backspace / Delete and R on the cell under the mouse (ui/work.js).
   if (workKey(state, ui, e)) { e.preventDefault(); refresh(); return; }
-  // Tabs, next waiting team, bases, camera spots, diary and roster (ui/alerts.js); J and R also close their window.
+  // Tabs, next waiting team, bases, camera spots, diary, roster and codex (ui/alerts.js); J, R and C also close their window.
   if (mapHotkey(state, ui, e, actions, modalKind(state, ui))) { e.preventDefault(); refresh(); return; }
   // Map shortcuts do nothing behind a window (a card, the planner, a base, help) or on the new-run screen.
   if (modalKind(state, ui)) return;
+  // The rest of the map's keys, by the key table (ui/keymap.js; Menu → Controls rebinds them).
+  const k = keyAction(e, "map");
   // Panels (ui/layout.js): [ left, ] right, L log, Shift+[ running orders, Shift+] alerts, \ map only. A panel's key
   // opens it whether it is folded or closed completely. Alt + the key closes the panel completely (strip and
   // all), and brings a closed one back.
-  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-    const shut = e.code === "BracketLeft" ? "left" : e.code === "BracketRight" ? "right" : e.code === "KeyL" ? "log" : null;
-    if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
-  }
-  if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-    const fold = e.code === "BracketLeft" ? (e.shiftKey ? "orders" : "left") : e.code === "BracketRight" ? (e.shiftKey ? "alerts" : "right") :
-      e.code === "KeyL" && !e.shiftKey ? "log" : null;
-    if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
-    if (e.code === "Backslash" || e.code === "IntlBackslash") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
-  }
-  if (e.code === "Space") {
+  const shut = { "panel.closeLeft": "left", "panel.closeRight": "right", "panel.closeLog": "log" }[k];
+  if (shut) { e.preventDefault(); actions["panel-close"]({ p: shut }); refresh(); return; }
+  const fold = { "panel.left": "left", "panel.right": "right", "panel.log": "log", "panel.orders": "orders", "panel.alerts": "alerts" }[k];
+  if (fold) { e.preventDefault(); actions["panel-toggle"]({ p: fold }); refresh(); return; }
+  if (k === "panel.all") { e.preventDefault(); actions["panel-all"](); refresh(); return; }
+  const speed = /^time\.speed([1-4])$/.exec(k || "");
+  if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
-  } else if (["Digit1", "Digit2", "Digit3", "Digit4"].includes(e.code)) {
-    ui.speed = [0.5, 1, 2, 3][Number(e.code.slice(5)) - 1];
+  } else if (speed) {
+    ui.speed = [0.5, 1, 2, 3][Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;
-  } else if (e.code === "KeyH") centerOn(state, playerTile(state));
-  else if (e.code === "Backquote") ui.dev = !ui.dev;
-  else if (e.code === "KeyI") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
+  } else if (k === "map.hub") centerOn(state, playerTile(state));
+  else if (k === "dev.tools") ui.dev = !ui.dev;
+  else if (k === "map.infection") view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection");
   else {
     const pan = 40 / camera.zoom;
-    if (e.code === "KeyW" || e.code === "ArrowUp") camera.y -= pan;
-    else if (e.code === "KeyS" || e.code === "ArrowDown") camera.y += pan;
-    else if (e.code === "KeyA" || e.code === "ArrowLeft") camera.x -= pan;
-    else if (e.code === "KeyD" || e.code === "ArrowRight") camera.x += pan;
+    if (k === "map.panUp") camera.y -= pan;
+    else if (k === "map.panDown") camera.y += pan;
+    else if (k === "map.panLeft") camera.x -= pan;
+    else if (k === "map.panRight") camera.x += pan;
     else return;
     if (e.code.startsWith("Arrow")) e.preventDefault();
     return; // panning changes no panel
@@ -1636,12 +1651,15 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "Space" && (t.tagName === "BUTTON" || (t.tagName === "INPUT" && t.type === "checkbox"))) e.preventDefault();
 });
 
+initPalette({ getState: () => state, ui, actions, refresh: () => refresh() }); // the search box (ui/palette.js)
+
 // Expose for debugging in the console.
 window.game = {
   get state() { return state; }, ui, tickHour: () => { tickHour(state); refresh(); }, refresh: () => refresh(),
   frameErrors, devSpeeds: DEV_SPEEDS, options, layout, windowSizes,
   // Saves and loads in flight (ui/settings.js): await game.settle() before reading their result.
   skipTitle: () => { ui.title = false; refresh(); }, // the title screen's New game without a fresh world
+  palette: { open: () => openPalette(), index: () => paletteIndex(state, ui) }, // ui/palette.js
   settle: async () => { while (pendingIo.size) await Promise.allSettled([...pendingIo]); refresh(); },
   combat: {
     ui: cui,

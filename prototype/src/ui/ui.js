@@ -68,6 +68,8 @@ import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
+import { codexModal, codexButton } from "./codex.js"; // the Codex window (C) and its top-bar button
+import { keyLabel } from "./keymap.js"; // a key as it is bound now (Menu → Controls)
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { claimText, wellText, CLAIM, WELL_SHORE, WELL_YIELD } from "../sim/claims.js"; // land claims and wells (the tile panel, the help)
@@ -135,6 +137,7 @@ export function topbarParts(state, ui) {
       <button data-action="dev-toggle" class="${ui.dev ? "active" : ""}"${tip("Dev tools: reveal the map, autopilot, fast forward, frame rate, and a tracker of groups and zombie hotzones (\` key)")}>Dev</button>
       <button data-action="dy-open"${tip("Diary: the whole run day by day, with filters and search (J)")}>📖 Diary</button>
       <button data-action="ro-toggle"${tip("Roster: everyone in one table, sortable, with roles you can change for many at once (R)")}>👥 Roster</button>
+      ${codexButton(state)}<button data-action="pal-open"${tip(`Search: people, bases, teams, groups, places, buildings, help (${keyLabel("win.palette")})`)}>🔍</button>
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
@@ -574,6 +577,7 @@ function pickModal(state, ui) {
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
   if (ui.roster) return ["roster", () => rosterModal(state, ui)]; // ui/roster.js (the survivor and base screens open over it)
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
+  if (ui.codex) return ["codex", () => codexModal(state, ui)];    // ui/codex.js
   return null;
 }
 // The planner's line for an assault: the defenders, and a strong warning when the group is not hostile.

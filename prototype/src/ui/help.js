@@ -6,6 +6,8 @@
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
+import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
+import { keyLabel } from "./keymap.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -76,6 +78,13 @@ function legendTopic() {
   return `What the things drawn on the map mean. <table class="helptable">${LEGEND.map(([sw, name, text]) => `<tr><td>${sw}</td><td><b>${esc(name)}</b></td><td>${text}</td></tr>`).join("")}</table>`;
 }
 
+// The codex (ui/codex.js) and the search box (ui/palette.js).
+function codexHelp() {
+  const k = (id, d) => `<b>${esc(keyLabel(id) || d)}</b>`;
+  return `<b>Codex</b> (${k("win.codex", "C")}, or 📚 Codex in the top bar): every kind of the dead, every item, building, illness and injury, and the groups and outsiders you can meet, with the numbers from the game's own tables and a line on how to deal with each. An entry opens the first time your people meet the thing: a kind of the dead in a battle or in a horde you can see, an item once someone holds it or it is in a base's armory, a building once one is built or queued at one of your bases, an illness once someone has it (the worm once it has been spotted), a group once you know it. Until then it shows as <i>???</i> with its category. New entries are marked until you look at them; the search box at the top finds any opened entry by name.<br><br>
+    <b>Search</b> (${k("win.palette", "Ctrl+K")}): a box in the middle of the screen that finds anything by a few letters of its name: your people (opens their screen), bases and outposts (centers the map and opens the base), teams (their panel), the other groups (their radio panel, or the map at their base), sites and towns you know, the buildings you can build at the selected base (its Construction tab), the menu (save, load, options, controls), the diary, roster and codex, the Help topics and the codex entries you have opened. ↑ ↓ pick, Enter goes, Esc closes. With nothing typed it lists what you picked last.`;
+}
+
 // The topics in order: the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
   const out = [];
@@ -98,6 +107,8 @@ export function helpTopics() {
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
+  add("Keys", keysSheet()); // ui/controls.js
+  add("Codex and search", codexHelp());
   return out;
 }
 

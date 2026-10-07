@@ -8,6 +8,7 @@ import { render, resize, camera, view, HEX } from "./render.js";
 import { chronicleReader, finishChronicle, INF_Q } from "../sim/chronicle.js";
 import { drawMapSprite, markerSpriteCanvas } from "./mapsprites.js";
 import { seasonOfDay } from "../sim/weather.js";
+import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 export const TL_SPEEDS = [1, 2, 5, 10]; // in-game days per second
 const PLAYER_COLOR = "#4f8fd6";
@@ -119,24 +120,26 @@ export const TL_ACTIONS = {
   },
 };
 
-// Keyboard while the timelapse is open. Returns true when the key was used.
+// Keyboard while the timelapse is open, by the key table (ui/keymap.js "timelapse"; Esc always closes). Returns
+// true when the key was used.
 export function tlKey(state, ui, e) {
   const s = ui.timelapse, pan = 40 / camera.zoom;
-  const speedKey = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(e.code);
-  if (e.code === "Space") TL_ACTIONS["tl-play"](state, ui);
-  else if (e.code === "ArrowLeft") step(s, -1);
-  else if (e.code === "ArrowRight") step(s, 1);
-  else if (e.code === "Home") seek(s, s.reader.h0);
-  else if (e.code === "End") seek(s, s.reader.h1);
-  else if (speedKey >= 0) { s.speed = TL_SPEEDS[speedKey]; s.dirty = true; }
-  else if (e.code === "KeyF") fit(s);
-  else if (e.code === "KeyI") TL_ACTIONS["tl-layer"](state, ui, { k: "infection" });
-  else if (e.code === "KeyT") TL_ACTIONS["tl-layer"](state, ui, { k: "territory" });
+  const k = keyAction(e, "timelapse");
+  const speedKey = /^tl\.speed([1-4])$/.exec(k || "");
+  if (k === "tl.play") TL_ACTIONS["tl-play"](state, ui);
+  else if (k === "tl.back") step(s, -1);
+  else if (k === "tl.fwd") step(s, 1);
+  else if (k === "tl.start") seek(s, s.reader.h0);
+  else if (k === "tl.end") seek(s, s.reader.h1);
+  else if (speedKey) { s.speed = TL_SPEEDS[Number(speedKey[1]) - 1]; s.dirty = true; }
+  else if (k === "tl.fit") fit(s);
+  else if (k === "tl.infection") TL_ACTIONS["tl-layer"](state, ui, { k: "infection" });
+  else if (k === "tl.territory") TL_ACTIONS["tl-layer"](state, ui, { k: "territory" });
   else if (e.code === "Escape") closeTimelapse(state, ui);
-  else if (e.code === "KeyW" || e.code === "ArrowUp") camera.y -= pan;
-  else if (e.code === "KeyS" || e.code === "ArrowDown") camera.y += pan;
-  else if (e.code === "KeyA") camera.x -= pan;
-  else if (e.code === "KeyD") camera.x += pan;
+  else if (k === "tl.panUp") camera.y -= pan;
+  else if (k === "tl.panDown") camera.y += pan;
+  else if (k === "tl.panLeft") camera.x -= pan;
+  else if (k === "tl.panRight") camera.x += pan;
   else return false;
   return true;
 }

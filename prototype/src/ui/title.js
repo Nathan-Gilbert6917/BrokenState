@@ -10,6 +10,7 @@ import { latestSave, listSaves } from "./saves.js";
 import { openSettings } from "./settings.js";
 import { camera, view, HEX } from "./render.js";
 import { GAME_VERSION } from "../sim/save.js";
+import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 export const TITLE_BGS = [["skyline", "Ruined skyline"], ["map", "Living State Map"], ["camp", "Campfire at night"]];
 export const TITLE_STYLES = [["stencil", "Cracked stencil"], ["blood", "Blood-red serif"], ["spray", "Spray-painted"], ["minimal", "Clean minimal"]];
@@ -65,11 +66,12 @@ export const TITLE_ACTIONS = {
 
 // Up and down move between the buttons, Enter presses one (the browser's own). Returns true when it used the key.
 export function titleKey(ui, e) {
-  if (e.code !== "ArrowUp" && e.code !== "ArrowDown") return false;
+  const k = keyAction(e, "title"); // ui/keymap.js: ↑ ↓ by default
+  if (k !== "title.up" && k !== "title.down") return false;
   const list = [...document.querySelectorAll("#tt-menu .tt-item:not(:disabled)")];
   if (!list.length) return false;
   const i = list.indexOf(document.activeElement);
-  const next = i < 0 ? 0 : (i + (e.code === "ArrowDown" ? 1 : -1) + list.length) % list.length;
+  const next = i < 0 ? 0 : (i + (k === "title.down" ? 1 : -1) + list.length) % list.length;
   list[next].focus();
   return true;
 }
