@@ -332,6 +332,12 @@ node tools/savetest.js 120
 
 Saving and loading (`src/sim/save.js`, `src/ui/saves.js`, `src/ui/settings.js`): for seeds 42, 7 and 1234 (or `node tools/savetest.js [days] [seeds...]`) the Balanced autopilot plays 120 days; on day 60 the world is saved (through a JSON string) and loaded again after another world has run in the same process; the original and the loaded world both play to day 120 and must end identical, by the dettest digest (`tools/digest.js`) and by the whole saved state; then one seed again in a fresh Node process. Saves made mid-way through a team's plan, with prisoners in the cells and mid-battle (a fight at the hub, a raid, a break-in on the deploy step, a hive assault) must play on the same after loading; an open card cannot be saved (the message names it) and can once answered. A Small and a Huge world are saved, played on and loaded the same way (they keep their size; the save list shows it), and a save without a size loads as a Normal map (a 100 × 66 one as Huge). It reports the size at day 365 (JSON, gzip and what browser storage holds) and the times, checks the storage layer (slots, index, compression, a full storage, newer and unknown versions refused, damaged and cut-off saves refused, the values JSON loses) and renders the settings view for every tab, Help with several topics included (no undefined / NaN, every button handled).
 
+```
+node tools/titletest.js
+```
+
+The title screen (`src/ui/title.js`, `title.css`): the game opens on it (the desktop app fullscreen the first time, then as you left it; `?notitle` in the URL skips it). Continue (the latest save), New game (the new-run screen), Load game, Settings and How to play (the menu at its tab, over the title), Quit in the desktop app; Exit and Save and exit in the menu come back to it. Three animated backgrounds drawn in code (a ruined skyline at dusk, the living State Map: the game's own map panning while its world runs, a campfire at night) and four logo styles (cracked stencil, blood-red serif, spray-painted, clean minimal), picked in its bottom-right corner and kept with the options. The test checks the menu with and without saves, the pickers, the buttons and the hooks in main.js, ui.js and settings.js.
+
 ```bash
 node tools/ironmantest.js
 ```

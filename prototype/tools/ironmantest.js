@@ -25,7 +25,7 @@ const adopted = [];
 let left = 0;
 const mkApi = (opts = {}) => ({
   options: { ...Saves.DEFAULT_OPTIONS, ...opts }, desktop: false, autosaveInfo: () => ({ error: "" }), refresh() {}, thumb: () => "",
-  track: (p) => pending.push(p), adopt: (st, entry) => adopted.push({ st, entry }), newWorld: () => { left++; }, quit() {},
+  track: (p) => pending.push(p), adopt: (st, entry) => adopted.push({ st, entry }), newWorld: () => { left++; }, toTitle: () => { left++; }, quit() {},
 });
 const settle = async () => { while (pending.length) await pending.shift(); };
 let clock = 0;
