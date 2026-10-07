@@ -1,3 +1,4 @@
+// @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
 import { log, atBase, skill, newId } from "./world.js";
 import { SKILL_NAMES } from "./data.js";

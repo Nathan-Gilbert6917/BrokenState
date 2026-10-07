@@ -1,3 +1,4 @@
+// @ts-check
 // Survivor inventory: RPG-style equipment slots, pockets and a pack, plus bodies to loot after a battle.
 // s.gear stays the source of truth for what is worn or held, so combat, medical and crafting keep reading it:
 //   weapon = Hands (main weapon), tool = Off hand (a tool in use: med kit, radio, goggles, crowbar),

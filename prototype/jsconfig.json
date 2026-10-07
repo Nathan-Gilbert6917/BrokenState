@@ -1,0 +1,19 @@
+{
+  // Type checking with no build step and no runtime dependency (README "Type checking"). The game still runs the
+  // .js files as they are; TypeScript only reads them. Only files that start with // @ts-check are checked
+  // (checkJs is off), so a module opts in one at a time. Run: npm run typecheck (or node tools/typecheck.js).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": [],
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts"]
+}

@@ -1,3 +1,4 @@
+// @ts-check
 // Seasons and weather: a statewide sky (the season, temperatures, the ground) with regional weather fronts on top.
 //
 // A year is 4 seasons of 28 days (112 days), and day 1 of a campaign is day 15 of spring.
@@ -50,6 +51,7 @@
 import { Rng } from "./rng.js";
 import * as data from "./data.js";
 import { log, hurt, hub } from "./world.js";
+/** @import { State, Party, Survivor } from "./types" */
 
 export const SEASON_DAYS = 28;
 export const YEAR_DAYS = SEASON_DAYS * 4;
@@ -94,6 +96,7 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 // ---------- seasons ----------
 // dayIdx: 0 = campaign day 1.
+/** @param {number} dayIdx */
 export function seasonOfDay(dayIdx) {
   const d = Math.max(0, Math.floor(dayIdx)) + START_OFFSET;
   const index = Math.floor(d / SEASON_DAYS) % 4;
@@ -101,16 +104,20 @@ export function seasonOfDay(dayIdx) {
   const s = SEASONS[index];
   return { key: s.key, name: s.name, icon: s.icon, desc: s.desc, index, dayOfSeason, daysLeft: SEASON_DAYS - dayOfSeason, year: Math.floor(d / YEAR_DAYS) + 1 };
 }
+/** @param {State} state @param {number} [hour] */
 export const dayIndex = (state, hour = state.hour) => Math.floor(Math.max(0, hour) / 24);
+/** @param {State} state @param {number} [hour] */
 export const season = (state, hour = state.hour) => seasonOfDay(dayIndex(state, hour));
 
 // Mean temperature of the calendar day, before the day's weather: 21 °C in midsummer, -3 °C in midwinter.
+/** @param {number} dayIdx */
 function seasonalMean(dayIdx) {
   const y = ((dayIdx + START_OFFSET + 0.5) % YEAR_DAYS) / YEAR_DAYS;
   return 9 + 12 * Math.cos(2 * Math.PI * (y - 0.375));
 }
 
 // ---------- state and generation ----------
+/** @param {State} state */
 function ensure(state) {
   let w = state.weather;
   if (!w || !Array.isArray(w.days)) {
@@ -200,6 +207,7 @@ function travelTable(d) {
 }
 
 // The record of a day (generated on demand, in order), with the fronts that come in that day.
+/** @param {State} state @param {number} dayIdx */
 function rec(state, dayIdx) {
   const w = ensure(state);
   const i = Math.max(0, Math.floor(dayIdx));
@@ -237,10 +245,12 @@ const precip = (k, mean) => (mean < -0.5 ? (k === "rain" ? "snow" : k === "storm
 
 // Map geometry in tile units (neighbouring tiles 1 apart): odd rows sit half a tile right, rows are 0.866 apart.
 const ROW = Math.sqrt(3) / 2;
+/** @param {State} state */
 const dims = (state) => {
   const g = state.grid;
   return g ? { W: g.width, H: g.height, w: g.width - 0.5, h: (g.height - 1) * ROW } : { W: 64, H: 42, w: 63.5, h: 41 * ROW };
 };
+/** @param {State} state */
 export function tileUnits(state, id) {
   const W = state.grid ? state.grid.width : 64, x = id % W, y = (id - x) / W;
   return [x + 0.5 * (y & 1), y * ROW];
@@ -248,6 +258,7 @@ export function tileUnits(state, id) {
 
 // The fronts that come in on day i: each from a map edge, heading for a point inside the map, gone when it has
 // crossed (or after FRONT.maxLife hours, fading over the last FRONT.fadeHours).
+/** @param {State} state */
 function makeFronts(state, w, upTo) {
   const D = dims(state), size = Math.max(0.8, Math.min(1.4, Math.sqrt((D.W * D.H) / (64 * 42))));
   for (let i = w.fd; i <= upTo; i++) {
@@ -297,6 +308,7 @@ const frontRadius = (f, h) => f.r * Math.min(1, (f.t1 - h) / FRONT.fadeHours, (h
 // all of them): [{ f, x, y, r }] in tile units. Kept for the last few thousand asks (travel estimates ask a lot).
 let memoW = null, memoN = 0;
 const memo = new Map();
+/** @param {State} state @param {number} hour @param {number} [known] */
 function activeFronts(state, hour, known = Infinity) {
   const w = ensure(state);
   rec(state, Math.floor(hour / 24));
@@ -320,6 +332,7 @@ function activeFronts(state, hour, known = Infinity) {
 }
 
 // The strongest front over a tile at `hour` (as known at `known`), or null.
+/** @param {State} state @param {number} tileId @param {number} [hour] @param {number} [known] */
 export function frontAt(state, tileId, hour = state.hour, known = Infinity) {
   if (tileId == null || tileId < 0) return null;
   const list = activeFronts(state, hour, known);
@@ -358,6 +371,7 @@ function frontRec(b, f) {
   return { ...b, k, hi: r1(b.hi + dT), lo: r1(b.lo + dT), rain: r2(rain), snow: r2(snow), wind: r2(wind), front: f };
 }
 // The weather of a tile at an hour (as known at `known`).
+/** @param {State} state @param {number} tileId @param {number} hour @param {number} [known] */
 function localRec(state, tileId, hour, known = Infinity) {
   const b = bgRec(rec(state, Math.floor(hour / 24)));
   const a = tileId == null ? null : frontAt(state, tileId, hour, known);
@@ -365,6 +379,7 @@ function localRec(state, tileId, hour, known = Infinity) {
 }
 
 // Home: the hub's tile, or before there is a hub (the hardcore start) your first team's.
+/** @param {State} state */
 export function homeTile(state) {
   if (!Array.isArray(state.bases)) return null; // a bare state (farming.js climate tables): no home, no fronts
   const b = hubBase(state);
@@ -377,6 +392,7 @@ export function homeTile(state) {
 // a good part of the day (a storm or blizzard 3 hours, anything else 6), else the background sky; the temperatures
 // are the day record's either way.
 const dayCache = new WeakMap();
+/** @param {State} state @param {number} dayIdx @param {number} [tileId] */
 function dayRec(state, dayIdx, tileId = homeTile(state)) {
   const i = Math.max(0, Math.floor(dayIdx));
   const d = rec(state, i);
@@ -409,6 +425,7 @@ function tempAt(d, hourOfDay) {
   return r1((d.hi + d.lo) / 2 + ((d.hi - d.lo) / 2) * Math.cos((2 * Math.PI * (hourOfDay - 15)) / 24));
 }
 
+/** @param {number} hour */
 function describe(d, hour) {
   const def = WEATHER[d.k];
   return {
@@ -421,14 +438,19 @@ function describe(d, hour) {
 }
 
 // The weather now (or at a given hour) at home, or on a given tile: the background sky, or the front over it.
+/** @param {State} state @param {number} [hour] @param {number} [tileId] */
 export function weather(state, hour = state.hour, tileId = homeTile(state)) {
   return describe(localRec(state, tileId, hour), hour);
 }
+/** @param {State} state @param {number} tileId @param {number} [hour] */
 export const weatherAt = (state, tileId, hour = state.hour) => weather(state, hour, tileId);
+/** @param {State} state @param {number} x @param {number} y @param {number} [hour] */
 export const wxAt = (state, x, y, hour = state.hour) => weather(state, hour, y * (state.grid ? state.grid.width : 64) + x);
 // The weather of a campaign day at home (1-based day number, as the clock shows it). For the diary, timelapse, tools.
+/** @param {State} state @param {number} dayNumber */
 export const weatherOnDay = (state, dayNumber) => describe(dayRec(state, dayNumber - 1), 12);
 // The region's weather that day (the day record, storms and all): what the forecast foretells.
+/** @param {State} state @param {number} dayNumber */
 export const regionOnDay = (state, dayNumber) => describe(rec(state, dayNumber - 1), 12);
 
 // ---------- forecast (what the player is told) ----------
@@ -438,11 +460,13 @@ function hash(a, b, c) {
   return h >>> 0;
 }
 
+/** @param {State} state */
 function hubBase(state) {
   try { return hub(state); } catch { return null; }
 }
 
 // How many days ahead the holdout can forecast: reading the sky gives 3; a watchtower 4; a radio station 5.
+/** @param {State} state */
 export function forecastRange(state) {
   const bases = (state.bases || []).filter((b) => b.owner == null || b.owner === "player");
   if (bases.some((b) => b.radio)) return 5;
@@ -453,6 +477,7 @@ export function forecastRange(state) {
 // The coming days as the holdout expects them. Tomorrow is nearly always right; further out the guess can be wrong
 // (a neighbouring kind of weather, temperatures off by a few degrees). A radio station or a watchtower helps.
 // The same day asks give the same answers (no flicker), and the forecast is redrawn each morning.
+/** @param {State} state @param {number} [days] */
 export function forecast(state, days = forecastRange(state)) {
   const w = ensure(state);
   const today = dayIndex(state);
@@ -484,6 +509,7 @@ export function forecast(state, days = forecastRange(state)) {
 }
 
 // True if the forecast (what the holdout believes) has a storm or blizzard within `days` days, today included.
+/** @param {State} state @param {number} [days] */
 export function severeSoon(state, days = 1) {
   if (weather(state).severe) return true;
   return forecast(state, Math.min(days, forecastRange(state))).some((f) => f.severe);
@@ -494,6 +520,7 @@ export function severeSoon(state, days = 1) {
 // Movement (parties.js stepAlong) and every estimate (travelHours) call this with the hour being simulated.
 // The day's table is the ground and the background sky; a front over the tile adds its own share (KIND_TF).
 // known: estimates pass the hour they are made in, so only fronts already on the map count (Infinity: all).
+/** @param {State} state @param {{ vehicle?: boolean | "bike", tileId?: number | null, from?: number | null, hour?: number, known?: number }} [opts] */
 export function travelFactor(state, { vehicle = false, tileId = null, from = null, hour = state.hour, known = Infinity } = {}) {
   let road = false;
   if (tileId != null) {
@@ -503,6 +530,7 @@ export function travelFactor(state, { vehicle = false, tileId = null, from = nul
   return localTable(state, tileId, hour, known)[(vehicle ? 2 : 0) + (road ? 0 : 1)];
 }
 // The four multipliers on a tile at an hour: the day's table, plus what a front over it adds.
+/** @param {State} state @param {number} tileId @param {number} hour @param {number} [known] */
 function localTable(state, tileId, hour, known = Infinity) {
   const d = rec(state, Math.floor(hour / 24));
   const a = tileId == null ? null : frontAt(state, tileId, hour, known);
@@ -515,6 +543,7 @@ function localTable(state, tileId, hour, known = Infinity) {
 
 // Everything weather does to a team on the move right now (at home, or on `tileId`: where the team is), plus
 // plain-text lines for panels and tooltips.
+/** @param {State} state @param {number} [hour] @param {number} [tileId] */
 export function travelEffects(state, hour = state.hour, tileId = homeTile(state)) {
   const d = localRec(state, tileId, hour);
   const [footRoad, footOff, vehRoad, vehOff] = localTable(state, tileId, hour);
@@ -543,6 +572,7 @@ export function travelEffects(state, hour = state.hour, tileId = homeTile(state)
 // Called by parties.js once an hour for a player team that moved: storms and blizzards can hurt someone.
 // Returns the survivor who was hurt, or null. Uses the play RNG only in severe weather.
 // The weather where the team is (a storm or blizzard front over it).
+/** @param {State} state @param {Party} p @param {Survivor[]} members */
 export function travelHazard(state, p, members) {
   const d = localRec(state, p.path ? p.path[p.idx] : homeTile(state), state.hour);
   if (!WEATHER[d.k].severe || !members.length) return null;
@@ -576,6 +606,7 @@ export const CROP_CLIMATE = {
   turnip:  { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.3, tMin: 0, tOpt: [6, 18], tall: 0 },
   kale:    { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.4, tMin: 0, tOpt: [6, 18], tall: 0.1 },
 };
+/** @param {string} key */
 export function registerCrop(key, climate) {
   CROP_CLIMATE[key] = { ...CROP_DEFAULT, ...climate };
 }
@@ -583,6 +614,7 @@ const CLIMATE_FIELDS = ["seasons", "hardy", "thirst", "tMin", "tOpt", "tall", "s
 export function cropClimate(crop) {
   if (crop && typeof crop === "object") return { ...CROP_DEFAULT, ...(crop.climate || crop) };
   const key = String(crop || "").toLowerCase();
+  // @ts-expect-error data.js has no CROPS (the hook is unused: farming.js registers its crops with registerCrop)
   const def = data.CROPS?.[crop] || data.CROPS?.[key];
   const fromData = {};
   if (def) for (const f of CLIMATE_FIELDS) if (def[f] != null) fromData[f] = def[f];
@@ -590,10 +622,12 @@ export function cropClimate(crop) {
 }
 
 // A crop grows only in its seasons (a hardy winter crop lists "winter").
+/** @param {State} state @param {number} [dayIdx] */
 export function isGrowingSeason(state, crop, dayIdx = dayIndex(state)) {
   return cropClimate(crop).seasons.includes(seasonOfDay(dayIdx).key);
 }
 // Days of growing season left for this crop, today included (0 when out of season). For "will it ripen in time?".
+/** @param {State} state @param {number} [dayIdx] */
 export function growingDaysLeft(state, crop, dayIdx = dayIndex(state)) {
   const seasons = cropClimate(crop).seasons;
   if (seasons.length >= 4) return Infinity;
@@ -604,6 +638,7 @@ export function growingDaysLeft(state, crop, dayIdx = dayIndex(state)) {
 
 // Growth multiplier for one day: 0 out of season or too cold, about 1 in fair weather, up to 1.3 on a warm day
 // with moist soil and sun.
+/** @param {State} state @param {number} [dayIdx] */
 export function growthFactor(state, crop, dayIdx = dayIndex(state)) {
   const c = cropClimate(crop);
   const d = dayRec(state, dayIdx);
@@ -622,9 +657,11 @@ export function growthFactor(state, crop, dayIdx = dayIndex(state)) {
 
 // Daily chances that a standing crop dies (kill) and that a ripe crop or a harvest in the field rots (rot).
 // reason names the main cause ("" when there is no risk): frost, hard freeze, blizzard, drought, heat, storm, wet, snow.
+/** @param {State} state @param {number} [dayIdx] */
 export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
   const c = cropClimate(crop);
   const d = dayRec(state, dayIdx);
+  /** @type {[string, number][]} */
   const causes = [];
   const tender = 1 - clamp(c.hardy, 0, 1);
   const shelter = c.sheltered || (c.seasons.length >= 4 && c.hardy >= 1 && !c.tall);
@@ -649,11 +686,13 @@ export function cropDamage(state, crop, dayIdx = dayIndex(state)) {
 }
 
 // Water one rain collector (barrel, tarp) gathers today. A wet day gives about 2-3.5, a storm 4.5-6, melting snow a little.
+/** @param {State} state @param {number} [dayIdx] */
 export function rainWater(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   return r1(d.rain * 6 + d.snow * 1.5);
 }
 // Multiplier on what a well or a stream gives: less in a dry spell, a little more after wet weeks.
+/** @param {State} state @param {number} [dayIdx] */
 export function wellFactor(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   if (d.k === "drought" || d.dry >= 6 || d.soil < 0.15) return 0.6;
@@ -667,13 +706,16 @@ export function wellFactor(state, dayIdx = dayIndex(state)) {
 // top), prisoners and guests, and to every water estimate (economy.js, parties.js, plans.js).
 export const THIRST = { spring: 1, summer: 1.3, autumn: 1, winter: 0.9, heat: 1.6 };
 export const hotDay = (d) => d.k === "heat" || d.hi >= 30;
+/** @param {State} state @param {number} [dayIdx] */
 export function thirstFactor(state, dayIdx = dayIndex(state)) {
   const s = THIRST[seasonOfDay(dayIdx).key] ?? 1;
   return hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
 }
 // The factor for the hour a team drinks in (parties.js consume runs after the clock moves on).
+/** @param {State} state @param {number} [hour] */
 export const thirstAt = (state, hour = state.hour) => thirstFactor(state, dayIndex(state, hour));
 // The highest factor over the next `days` days, today included (packing with a margin: crews, caravans).
+/** @param {State} state @param {number} [days] */
 export function thirstAhead(state, days = 1) {
   const today = dayIndex(state);
   let f = 0;
@@ -685,6 +727,7 @@ const thirstNote = (f) => (f > 1.001 ? `everyone drinks ${Math.round((f - 1) * 1
 // ---------- people and the dead ----------
 // Chance per person per day spent outdoors (travel, farm work, scavenging) of falling ill from cold or heat.
 // sheltered: indoors with a roof and a fire (a quarter of the risk).
+/** @param {State} state */
 export function exposureRisk(state, { sheltered = false, dayIdx = dayIndex(state) } = {}) {
   const d = dayRec(state, dayIdx);
   let chance = 0, kind = null, reason = "";
@@ -699,6 +742,7 @@ export function exposureRisk(state, { sheltered = false, dayIdx = dayIndex(state
 }
 
 // Speed multiplier for hordes: the dead stiffen in the cold and flounder in deep snow.
+/** @param {State} state @param {number} [dayIdx] */
 export function hordeSpeedFactor(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   const mean = (d.hi + d.lo) / 2;
@@ -708,6 +752,7 @@ export function hordeSpeedFactor(state, dayIdx = dayIndex(state)) {
 }
 
 // The same for one horde, by the weather where it is this hour (a blizzard over it halves its pace).
+/** @param {State} state @param {number} tileId @param {number} [hour] */
 export function hordeSpeedAt(state, tileId, hour = state.hour) {
   const d = localRec(state, tileId, hour);
   const mean = (d.hi + d.lo) / 2;
@@ -717,12 +762,14 @@ export function hordeSpeedAt(state, tileId, hour = state.hour) {
 }
 
 // The mean temperature of a day (°C): what heating (upkeep.js heatRate) and the cold's appetite go by.
+/** @param {State} state @param {number} [dayIdx] */
 export function dayMeanTemp(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   return (d.hi + d.lo) / 2;
 }
 
 // People burn more food keeping warm.
+/** @param {State} state @param {number} [dayIdx] */
 export function foodNeedFactor(state, dayIdx = dayIndex(state)) {
   const d = dayRec(state, dayIdx);
   const mean = (d.hi + d.lo) / 2;
@@ -730,7 +777,9 @@ export function foodNeedFactor(state, dayIdx = dayIndex(state)) {
 }
 // The factor for the hour a team eats in (as thirstAt: parties.js consume runs after the clock moves on), and the
 // highest over the next `days` days, today included (packing with a margin, as thirstAhead).
+/** @param {State} state @param {number} [hour] */
 export const coldAt = (state, hour = state.hour) => foodNeedFactor(state, dayIndex(state, hour));
+/** @param {State} state @param {number} [days] */
 export function coldAhead(state, days = 1) {
   const today = dayIndex(state);
   let f = 0;
@@ -741,6 +790,7 @@ export function coldAhead(state, days = 1) {
 // ---------- ticks ----------
 // Once a day (world.js, at midnight): the new day's weather is fixed and anything notable goes in the log. The day
 // record is the region's: its storms, blizzards and fog come as fronts that may or may not pass over you.
+/** @param {State} state */
 export function weatherDaily(state) {
   const w = ensure(state);
   const i = dayIndex(state);
@@ -763,18 +813,21 @@ export function weatherDaily(state) {
 }
 
 // Once an hour (world.js): nothing to roll (the day's weather is fixed); keeps old states working.
+/** @param {State} state */
 export function weatherHour(state) {
   const w = ensure(state);
   if (w.days.length <= dayIndex(state)) rec(state, dayIndex(state));
 }
 
 // ---------- text for the UI ----------
+/** @param {State} state */
 export function weatherSummary(state) {
   const s = season(state), w = weather(state);
   return `${s.icon} ${s.name} ${s.dayOfSeason}/${SEASON_DAYS} · ${w.icon} ${w.name} ${Math.round(w.temp)}°C`;
 }
 
 // Multi-line plain text: season, today, effects on travel and farming, and the forecast. Used as a tooltip.
+/** @param {State} state */
 export function weatherReport(state) {
   const s = season(state), w = weather(state), fx = travelEffects(state);
   const lines = [
@@ -815,6 +868,7 @@ export function weatherReport(state) {
 // ---------- map look ----------
 // A light wash over the land for the map renderer (render.js, "Weather" layer): snow whitens it, rain and storms
 // darken it, fog greys it, heat and dry spells warm it, autumn browns it a little. null = no wash.
+/** @param {State} state @param {number} [hour] */
 export function weatherTint(state, hour = state.hour) {
   const d = bgRec(rec(state, dayIndex(state, hour))); // the statewide sky: the fronts are drawn on their own (ui/wxmap.js)
   const s = seasonOfDay(dayIndex(state, hour)).key;
@@ -836,6 +890,7 @@ const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-wes
 export const compass = (dx, dy) => COMPASS[(Math.round(Math.atan2(-dy, dx) / (Math.PI / 4)) + 8) % 8];
 
 // When something `h` hours from now happens, in words: "within the hour", "by evening (5 h)", "tomorrow morning (19 h)".
+/** @param {State} state */
 export function whenText(state, h) {
   if (h <= 1) return "within the hour";
   const at = state.hour + h, hod = at % 24, days = Math.floor(at / 24) - Math.floor(state.hour / 24);
@@ -848,6 +903,7 @@ export function whenText(state, h) {
 }
 
 // " (clears in about N h)" for a front over a tile.
+/** @param {State} state @param {number} tileId @param {number} [hour] */
 function frontLeaves(state, tileId, f, hour = state.hour) {
   if (tileId == null) return "";
   const [ux, uy] = tileUnits(state, tileId);
@@ -861,6 +917,7 @@ function frontLeaves(state, tileId, f, hour = state.hour) {
 
 // The fronts on the map now (as you see them) and what they will do at a tile (home by default): over it now,
 // arriving in `eta` hours (straight on at their speed, as everyone can see), or passing by. Nearest first.
+/** @param {State} state @param {number} [tileId] @param {number} [horizon] */
 export function frontsApproaching(state, tileId = homeTile(state), horizon = 48) {
   const now = state.hour, out = [];
   if (tileId == null || !state.tiles) return out;
@@ -878,11 +935,12 @@ export function frontsApproaching(state, tileId = homeTile(state), horizon = 48)
     const def = WEATHER[k];
     out.push({ f, k, name: FRONT_KINDS[k]?.name || def.name, icon: def.icon, severe: !!def.severe, dist: Math.max(0, Math.round(dist - a.r)), dir: compass(a.x - ux, a.y - uy), heading: compass(f.vx, f.vy), over, eta });
   }
-  return out.sort((x, y) => (y.over - x.over) || ((x.eta ?? 999) - (y.eta ?? 999)) || x.dist - y.dist);
+  return out.sort((x, y) => (+y.over - +x.over) || ((x.eta ?? 999) - (y.eta ?? 999)) || x.dist - y.dist);
 }
 
 // The fronts to draw on the map: the ones on it now, where they are `frac` of the way into the coming hour
 // (they glide), in tile units, with the kind they bring (rain or snow by the cold). For ui/wxmap.js.
+/** @param {State} state @param {number} [frac] */
 export function visibleFronts(state, frac = 0) {
   const now = state.hour, out = [];
   if (!state.weather || !state.tiles) return out;
@@ -907,22 +965,28 @@ function nextIce(prev, d) {
   const mean = (d.hi + d.lo) / 2;
   return r1(clamp((prev || 0) + (mean < 0 ? -mean : -mean * ICE.thaw), 0, ICE.cap));
 }
+/** @param {State} state @param {number} [hour] */
 export const iceIndex = (state, hour = state.hour) => rec(state, dayIndex(state, hour)).ice || 0;
+/** @param {State} state @param {number} y */
 const iceNeed = (state, y) => ICE.freeze + ICE.south * (y / Math.max(1, (state.grid ? state.grid.height : 42) - 1));
 // The southernmost row whose rivers are frozen (-1: none).
+/** @param {State} state @param {number} [hour] */
 export function iceRow(state, hour = state.hour) {
   const ice = iceIndex(state, hour), H = state.grid ? state.grid.height : 42;
   if (ice < ICE.freeze) return -1;
   return Math.min(H - 1, Math.floor(((ice - ICE.freeze) / ICE.south) * (H - 1)));
 }
+/** @param {State} state @param {number} tileId @param {number} [hour] */
 export function riverFrozen(state, tileId, hour = state.hour) {
   const t = state.tiles && state.tiles[tileId];
   return !!t && t.terrain === "water" && !t.bridge && t.y <= iceRow(state, hour);
 }
+/** @param {State} state @param {number} tileId @param {number} [hour] */
 export function thinIce(state, tileId, hour = state.hour) {
   return riverFrozen(state, tileId, hour) && iceIndex(state, hour) - iceNeed(state, state.tiles[tileId].y) < ICE.thin;
 }
 // A line for the weather report: how far down the rivers are frozen, or how close they are to it.
+/** @param {State} state */
 export function iceText(state) {
   const row = iceRow(state), H = state.grid ? state.grid.height : 42;
   if (row < 0) return iceIndex(state) >= ICE.freeze * 0.6 ? "The rivers are icing up: a few more freezing days and they can be walked across" : "";

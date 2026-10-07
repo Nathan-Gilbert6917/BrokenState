@@ -1,3 +1,4 @@
+// @ts-check
 // Supply runs: convoy jobs between your own bases (hub <-> outpost, outpost <-> outpost).
 // A job is a saved template: crew, optional vehicle, goods to deliver, goods to pick up, what the convoy
 // does at the destination (come back, hold there, or disband into that base) and a schedule (once, or

@@ -1,3 +1,4 @@
+// @ts-check
 // Shared numbers for the hives and their bosses (hives.js, defences.js, hordes.js and the UI). A leaf module: it
 // imports nothing, so it is safe to read at load time whatever order the circular sim imports are evaluated in.
 export const HIVE = {

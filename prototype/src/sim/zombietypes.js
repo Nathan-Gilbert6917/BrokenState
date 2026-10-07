@@ -1,3 +1,4 @@
+// @ts-check
 // The special dead a hive breeds once it has grown the structure for them (hivetech.js, numbers in hiveconst.js
 // ZTYPES): runners, brutes, spitters, screamers and crawlers. Each one asks for a different answer:
 // - Runner: very fast (6 tiles an action). Walls and overwatch stop them; in the open they are on you in a turn.

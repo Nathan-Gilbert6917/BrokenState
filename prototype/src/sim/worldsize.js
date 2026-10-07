@@ -1,3 +1,4 @@
+// @ts-check
 // World sizes (new-run screen): the map's width and height in hexes, and how many AI groups fit on it. A leaf
 // module (no imports), safe to read at load time from anywhere. Normal is the original 64 × 42 State of Calder:
 // its seeds build exactly the maps they always did, and a save without a size is a Normal world.

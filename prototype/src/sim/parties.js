@@ -1,6 +1,14 @@
+// @ts-check
 // Everything that travels across the State Map: your expeditions and convoys, AI raids and convoys.
 // Travel drains supplies hour by hour and rolls events tile by tile. When a team finishes a job
 // it waits for orders: act here, move anywhere, or go home.
+/** @import { State, Survivor, Base, Party, Faction, Vehicle, Card, Horde, Item, Stock, Cargo, Order } from "./types" */
+/**
+ * travelHours' options: the way of travel and pace, where on the path it starts, the fuel there is, the hours to
+ * step through and whether the weather counts.
+ * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
+ *   idx?: number, fuel?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
+ */
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter } from "./roadblocks.js";
@@ -109,6 +117,7 @@ const MIN_STEP = { car: ROAD_COST.vehicle, bike: BIKE_ROAD, walk: Math.min(ROAD_
 // but its own people and their allies (your coalition, alliance.js). Nobody passes through; the tile can still be the
 // destination (a raid, an assault, a trade visit), and the river can still be crossed by boat elsewhere (crossing.js).
 // who: "player", a group's id, or undefined for nobody in particular (no bridge is closed to them).
+/** @param {State} state @param {number} tile */
 export function bridgeHolder(state, tile) {
   const t = state.tiles[tile];
   if (!t || !t.bridge) return null;
@@ -116,16 +125,19 @@ export function bridgeHolder(state, tile) {
   const f = state.factions.find((x) => x.alive && x.bases.includes(tile));
   return f ? f.id : null;
 }
+/** @param {State} state @param {number} tile @param {string | number} who */
 export function bridgeClosedTo(state, tile, who) {
   if (who === undefined) return false;
   const holder = bridgeHolder(state, tile);
   if (holder == null || holder === who) return false;
+  /** @param {string | number} id */
   const allied = (id) => !!(state.alliance && state.alliance.members && state.alliance.members.includes(id));
   if (holder === "player") return !allied(who);
   if (who === "player") return !allied(holder);
   return true;
 }
 // hour: the hour the step is taken in (a river frozen in deep winter can be walked, never driven: weather.js ICE).
+/** @param {State} state @param {number} from @param {number} to @param {boolean | "bike"} vehicle @param {string | number} who @param {number} [hour] */
 export function moveCost(state, from, to, vehicle, who, hour = state.hour) {
   const t = state.tiles[to];
   const mode = vehicle === true ? "vehicle" : "walk";
@@ -142,12 +154,14 @@ export function moveCost(state, from, to, vehicle, who, hour = state.hour) {
 
 // who: whose way it is ("player" by default): a bridge barricaded by someone else is closed to them, except as the
 // destination itself.
+/** @param {State} state @param {number} from @param {number} to @param {boolean | "bike"} vehicle @param {string | number} [who] */
 export function planPath(state, from, to, vehicle, who = "player") {
   const h = vehicle === true ? MIN_STEP.car : vehicle === "bike" ? MIN_STEP.bike : MIN_STEP.walk;
   return findPath(state.grid, from, to, (a, b) => moveCost(state, a, b, vehicle, b === to ? undefined : who), Infinity, h);
 }
 
 // Fuel a car burns along a path (road 0.6, off-road 1.5 a tile) times its load multiplier (vehicles.js fuelMultFor).
+/** @param {State} state @param {number[]} path @param {number} [mult] */
 export function fuelForPath(state, path, mult = 1) {
   let fuel = 0;
   for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult);
@@ -156,23 +170,30 @@ export function fuelForPath(state, path, mult = 1) {
 
 // Most kg of supplies and cargo these people (and their vehicle) can carry: everyone's max load less what they wear,
 // plus the bikes' racks, or a car's payload up to 125% (load.js teamLoad). vehicle: an object, or true for a truck.
+/** @param {State} state @param {Survivor[]} members @param {Vehicle | boolean | "bike" | { type: string } | null} vehicle */
 export function carryCapacity(state, members, vehicle) {
   const v = typeof vehicle === "object" ? vehicle : vehicle ? { type: "truck" } : null;
   return Math.round(teamLoad(members, 0, v).capacity * 100) / 100;
 }
+/** @param {State} state @param {Party} p */
 export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(state, p), partyVehicle(state, p));
 
+/** @param {Stock} supplies */
 export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (SUPPLIES[k] && Number.isFinite(v) && v > 0 ? v * SUPPLIES[k].weight : 0), 0);
 // Kg of found cargo: supplies, and items by weight (a pack in the cargo also counts what is inside it, inventory.js itemLoad).
 // Fresh game (hunting.js) is food that weighs MEAT_KG a ration instead of 0.5: carcasses, bones and hide.
 // A body brought home in the car (carriers.js stowBody / endBodies): the body itself (hiveconst.js CARRIER.BODY_KG) and its things.
 export const bodyLoad = (body) => CARRIER.BODY_KG + supplyLoad(body.supplies) + (body.items || []).reduce((s, g) => s + itemLoad(g), 0);
+/** @param {Cargo} cargo */
 export const bodiesLoad = (cargo) => (cargo && cargo.bodies ? cargo.bodies.reduce((s, body) => s + bodyLoad(body), 0) : 0);
+/** @param {Cargo} cargo */
 export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) + bodiesLoad(cargo) : 0);
 // Everything the team shares out: packed supplies and found cargo (load.js).
+/** @param {Party} p */
 export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 // Room left for more (found goods): what the team can carry less what it already does. A team the autopilot packs
 // may keep its loot to a band (p.haulBand, load.js): it stops picking things up before it gets that heavy on foot.
+/** @param {State} state @param {Party} p */
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
@@ -183,6 +204,7 @@ export function cargoRoom(state, p) {
 // The team is weighed (p.burden) when it sets off, when it stops (each hour it waits), when its people or vehicle
 // change, and when its load goes up on the move (something picked up). Eating on the way does not lighten it until
 // it stops, so every estimate made when it sets off holds.
+/** @param {State} state @param {Party} p */
 export function weighTeam(state, p) {
   if (!p || p.owner !== "player" || p.kind === "convoy") return null;
   const members = partyMembers(state, p);
@@ -190,6 +212,7 @@ export function weighTeam(state, p) {
   p.burden = burdenRecord(teamLoad(members, poolLoad(p), v), members, v);
   return p.burden;
 }
+/** @param {State} state @param {Party} p */
 function reweigh(state, p) {
   if (p.owner !== "player" || p.kind === "convoy") return;
   const b = p.burden;
@@ -211,17 +234,23 @@ function reweigh(state, p) {
   }
 }
 // The team's load as it is now (for the panels): people, bands, a car's fill. Not what its pace uses (p.burden).
+/** @param {State} state @param {Party} p */
 export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad(p), partyVehicle(state, p));
 // How many units of a supply fit in the remaining space.
+/** @param {number} room @param {string} key */
 export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / SUPPLIES[key].weight));
 // What a team carries of one supply: packed plus found (never negative).
+/** @param {Party} p @param {string} key */
 export const carried = (p, key) => Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0);
 // A supply a team carries for a check or a cost, water counting both kinds (water.js), and taking it (water: purified
 // first).
+/** @param {Party} p @param {string} key */
 export const carriedAny = (p, key) => (key === "water" ? teamWaterIn(p) : carried(p, key));
+/** @param {Party} p @param {string} key @param {number} qty */
 export const takeAny = (p, key, qty) => (key === "water" ? takeTeamWater(p, qty).got : takeSupply(p, key, qty));
 // Uses up carried supplies, found cargo first, then packed. Takes what is there and never goes below zero
 // (callers check `carried` first when the full amount is required). Returns the amount taken.
+/** @param {Party} p @param {string} key @param {number} qty */
 export function takeSupply(p, key, qty) {
   const want = Math.max(0, Number(qty) || 0);
   const fromCargo = Math.min(want, Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
@@ -232,10 +261,12 @@ export function takeSupply(p, key, qty) {
   return fromCargo + fromPacked;
 }
 
+/** @param {State} state @param {Party} p */
 export function partyMembers(state, p) {
   return (p.members || []).map((id) => survivorById(state, id)).filter((s) => s && s.alive);
 }
 
+/** @param {State} state @param {Party} p @param {string} key */
 export function bestSkill(state, p, key) {
   return Math.max(0, ...partyMembers(state, p).map((s) => skill(s, key) + checkBonus(s, key))); // checkBonus: Shadow (skills.js)
 }
@@ -245,7 +276,9 @@ export function bestSkill(state, p, key) {
 // into a horde or a war party it never saw on the map, and sharing a tile with them means a fight (conflicts.js
 // contactAttack). Fog and blizzards cannot take it below its own tile.
 export const NIGHT_SIGHT = { dark: 0, goggles: 1, GOGGLES: ["nvg", "thermal"] };
+/** @param {Survivor[]} members */
 export const nightEyesOn = (members) => members.some((s) => s.gear && s.gear.tool && NIGHT_SIGHT.GOGGLES.includes(s.gear.tool.key));
+/** @param {State} state @param {Party} p */
 export function sightRadius(state, p) {
   const m = partyMembers(state, p);
   const fx = travelEffects(state, state.hour, partyTile(p)); // fog or a blizzard where the team is (weather.js)
@@ -259,14 +292,17 @@ export function sightRadius(state, p) {
   return Math.max(1, r + fx.sight); // fog and blizzards cut sight by a tile (weather.js)
 }
 
+/** @param {State} state @param {Party} p */
 function hasMilRadio(state, p) {
   return partyMembers(state, p).some((s) => s.gear.tool && s.gear.tool.key === "milradio" && gearEffect(s, s.gear.tool).usable);
 }
 
 // A team is called after the mission it left with (later orders do not rename it).
+/** @param {State} state @param {Party} p */
 export const teamName = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} team (${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")})`;
 
 // A site the player has not found yet (discovery.js) goes by its ground.
+/** @param {State} state @param {number} id */
 export function tileLabel(state, id) {
   const t = state.tiles[id];
   return t.loc && siteNamed(state, id) ? t.loc.name : `${TERRAIN[t.terrain].name.toLowerCase()} (${t.x},${t.y})`;
@@ -275,6 +311,7 @@ export function tileLabel(state, id) {
 // A name for a new outpost: the site it stands on, else the nearest town, city or stand-alone site with the
 // direction from it ("North of Dunmore Outpost"). No two bases share a name; the player can rename it on the
 // base screen. Uses no random numbers.
+/** @param {State} state @param {number} tile */
 export function outpostName(state, tile) {
   const t = state.tiles[tile], g = state.grid;
   let place = t.loc ? t.loc.name : null;
@@ -305,17 +342,24 @@ export function outpostName(state, tile) {
 // Travel speed per hour for a player team (trade-route convoys keep a steady pace).
 // p.perkSpeed: Pathfinder's +10% on foot (set each hour by skills.js skillsHour).
 // p.burden: the team's load when it was last weighed (weighTeam): its pace on foot or riding (load.js).
+/** @param {Party} p @param {boolean | "bike"} [mode] */
 export const loadPace = (p, mode = p.vehicle) => (!p.burden ? 1 : mode ? p.burden.ride ?? 1 : p.burden.foot ?? 1);
+/** @param {Party} p */
 export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1) * (p.prisonSpeed || 1) * loadPace(p)); // prisonSpeed: prisoners walking with the team (prisoners.js)
 // The pace on foot (after a vehicle runs dry or is left: estimates switch to it, as the real team does).
+/** @param {Party} p */
 export const footSpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.vehicle ? 1 : (p.perkSpeed || 1) * (p.prisonSpeed || 1)) * loadPace(p, false));
 // The pace in a given mode (false, true or "bike"): the team's own when it moves that way now.
+/** @param {Party} p @param {boolean | "bike"} mode */
 export const modeSpeed = (p, mode) => (!!mode === !!p.vehicle ? partySpeed(p) : mode ? (STANCES[p.stance]?.speed || 1) * loadPace(p, mode) : footSpeed(p));
+/** @param {Party} p */
 export const fuelMultOf = (p) =>(p.burden && p.vehicle === true ? p.burden.fuelMult || 1 : 1);
 // The options travelHours needs for a team as it is: { speed, footSpeed, fuelMult }.
+/** @param {Party} p */
 export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p), fuelMult: fuelMultOf(p) });
 
 // The same for a team already out, from its last weighing (p.burden).
+/** @param {State} state @param {Party} p */
 export function partyPace(state, p) {
   const members = partyMembers(state, p);
   return {
@@ -327,6 +371,7 @@ export function partyPace(state, p) {
 // Pace and rations a planned team would have (the planner and launch): stance × load (× Pathfinder on foot, as the
 // trip gets from its first hour, skills.js skillsHour). members: survivors; supplies: what it packs; v: its vehicle.
 // extraKg: more on top of the packed supplies (the planner's expected haul of fresh game, plans.js).
+/** @param {State} state */
 export function plannedPace(state, { members, supplies = {}, v = null, stance = "normal", extraKg = 0 }) {
   const t = teamLoad(members, supplyLoad(supplies) + Math.max(0, extraKg), v);
   const st = STANCES[stance]?.speed || 1;
@@ -354,6 +399,7 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 // rideHours: hours started in the vehicle (rations: the rest are on foot).
 // known: the hour the estimate is made in (now): only the weather fronts already on the map by then count (weather.js),
 // so a front that forms later can still make the trip slower than estimated.
+/** @param {State} state @param {number[]} path @param {TravelOpts} [opts] */
 export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: vehicle || false };
   let f = fuel, hours = 0, dryAt = null, rideHours = 0;
@@ -373,6 +419,7 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
 }
 
 // The plan the hub knows about: a new move given while in contact replaces it (no way back assumed).
+/** @param {State} state @param {Party} p @param {number | null} etaBack */
 function setPlan(state, p, etaBack) {
   p.planPath = [...p.path];
   p.planStart = state.hour;
@@ -386,6 +433,7 @@ function setPlan(state, p, etaBack) {
 // planned path, then 6 hours on site, then the same path back (if a way back was planned). Delays from
 // events are unknown at the hub, so this can run ahead of the real team.
 // now: the hour to place it at (the map asks for the next hour too, to glide it between the two).
+/** @param {State} state @param {Party} p @param {number} [now] */
 export function plannedTile(state, p, now = state.hour) {
   const plan = p.planPath || p.path;
   const start = p.planStart ?? p.departed;
@@ -401,6 +449,7 @@ export function plannedTile(state, p, now = state.hour) {
 }
 
 // Hours left for a team on its current path (what the order queue and the panels show).
+/** @param {State} state @param {Party} p */
 export function hoursLeft(state, p) {
   if (!p.path || p.idx >= p.path.length - 1) return 0;
   return travelHours(state, p.path.slice(p.idx), { vehicle: p.vehicle, ...paceOpts(p), progress: p.progress, fuel: p.vehicle === true ? partyFuel(state, p) : 0 }).hours;
@@ -408,9 +457,10 @@ export function hoursLeft(state, p) {
 
 // The vehicle a planner or estimate means: v (an object or an id), else `vehicle` (true: a truck, "bike": bikes
 // for everyone).
+/** @param {State} state @param {boolean | "bike"} vehicle @param {Vehicle | number | null} v @returns {Vehicle | { type: string, fuel: number, condition: number, count?: number } | null} */
 export function plannedVehicle(state, vehicle, v, n = 1) {
   if (v != null && typeof v !== "object") v = vehicleById(state, v);
-  if (v) return v;
+  if (v) return /** @type {Vehicle} */ (v);
   if (vehicle === "bike") return { type: "bike", count: Math.max(1, n), condition: 100, fuel: 0 };
   return vehicle ? { type: "truck", fuel: 0, condition: 100 } : null;
 }
@@ -419,6 +469,7 @@ export const rationsFor = (pace, hours, rideHours, rest, n) => (pace.eatMove * r
 // Water for stretches of a trip, one after the other from startHour: segs = [[hours, rations a day], ...]. Each hour
 // is drunk at that day's thirst (weather.js thirstFactor: the season, a hot day), the hour after the clock moves on,
 // as consume does. With no season or heat it equals the food rations.
+/** @param {State} state @param {number} startHour */
 export function waterForHours(state, startHour, segs) {
   let h = startHour, w = 0;
   for (const [hours, rate] of segs) for (let i = 0; i < hours; i++) { h += 1; w += (rate / 24) * thirstAt(state, h); }
@@ -427,6 +478,7 @@ export function waterForHours(state, startHour, segs) {
 // Food the same way: each hour eaten at that day's cold (weather.js coldAt: ×1.1 below 0°C, ×1.2 below −8°C, as
 // needs.js teamCold), except stretches by a lit camp fire (segs = [[hours, rations a day, warm], ...]: warm true).
 // With no cold it equals rationsFor.
+/** @param {State} state @param {number} startHour */
 export function foodForHours(state, startHour, segs) {
   let h = startHour, f = 0;
   for (const [hours, rate, warm] of segs) for (let i = 0; i < hours; i++) { h += 1; f += (rate / 24) * (warm ? 1 : coldAt(state, h)); }
@@ -435,6 +487,7 @@ export function foodForHours(state, startHour, segs) {
 
 // fuel: what the vehicle can burn (tank + cans); leave it out to assume enough. supplies: what the team packs (its
 // load sets its pace and rations, load.js); v: the vehicle (object or id) when there is one.
+/** @param {State} state */
 export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBaseId, fuel, supplies = {}, v = null }) {
   const home = baseById(state, homeBaseId || (hub(state) || {}).id);
   if (!home) return null; // no base left (conquest.js exiles)
@@ -486,10 +539,12 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 // Missions after which the team waits at the destination (or stays for good): no way back is planned.
 export const STAY_MISSIONS = ["move", "recon", "outpost"];
 // Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
+/** @param {State} state @param {number} tile */
 export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
+/** @param {State} state @param {number} tile @param {string} mission */
 export function missionProblem(state, tile, mission) {
   const t = state.tiles[tile];
   if (!t) return "There is no such tile.";
@@ -508,6 +563,7 @@ export function missionProblem(state, tile, mission) {
 // opts.fromBaseId: the base the team leaves from and comes home to (default the hub; moveout.js sends a team out
 // of a crowded outpost); its people, vehicles, stores and armory are the ones used. opts.quiet: no "left for" line
 // (the caller says it its own way).
+/** @param {State} state */
 export function launchExpedition(state, opts) {
   const { dest, mission, stance } = opts;
   const memberIds = [...new Set(opts.memberIds || [])];
@@ -516,6 +572,7 @@ export function launchExpedition(state, opts) {
   if (!home) return { error: opts.fromBaseId != null ? "That base is no longer yours." : "You have no base to send a team from." };
   const at = home.type === "hub" ? "the hub" : home.name; // "Not enough water at the hub."
   // Every supply key is present and a plain number (no missing keys, NaN or negative amounts later on).
+  /** @type {Stock} */
   const supplies = {};
   for (const k of Object.keys(SUPPLIES)) supplies[k] = 0;
   for (const [k, q] of Object.entries(opts.supplies || {})) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) supplies[k] = q;
@@ -569,6 +626,7 @@ export function launchExpedition(state, opts) {
   }
   Object.assign(supplies, packed);
   const stays = STAY_MISSIONS.includes(mission);
+  /** @type {Party} */
   const p = {
     id: newId(), owner: "player", kind: "expedition", mission, teamMission: mission, dest, homeBaseId: home.id,
     members: [...memberIds], stance, vehicle: travelMode(v), vehicleId: v ? v.id : null, supplies,
@@ -604,6 +662,7 @@ export function launchExpedition(state, opts) {
   return { party: p };
 }
 
+/** @param {State} state @param {Party} raidParty @param {Faction} target */
 export function sendHelpSquad(state, raidParty, target) {
   const h = hub(state);
   const fighters = atBase(state, h.id).sort((a, b) => combatPower(b) - combatPower(a)).slice(0, 3);
@@ -621,6 +680,7 @@ export function sendHelpSquad(state, raidParty, target) {
 }
 
 // ---------- AI parties ----------
+/** @param {State} state @param {Faction} f @param {string} kind @param {number} fromTile @param {number} toTile */
 export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
   const vehicle = kind === "convoy" || !!opts.vehicle; // opts.vehicle: a scavenging party that drives out (aiscav.js)
   let res = planPath(state, fromTile, toTile, vehicle, f.id); // a bridge barricaded by someone else is closed to them (bridgeClosedTo)
@@ -637,6 +697,7 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
 }
 
 // ---------- hourly movement ----------
+/** @param {State} state */
 export function movePartiesHour(state) {
   for (const p of [...state.parties]) {
     if (!state.parties.includes(p)) continue;
@@ -651,6 +712,7 @@ export function movePartiesHour(state) {
 // A player team with no living members is always wiped the same way (wipeParty): what it carried stays at a
 // death site and the vehicle is left there, marked on the map. Called after any loss of a member, when a team
 // reports in or arrives, and every hour for every team as a safety net. Returns true if the team is gone.
+/** @param {State} state @param {Party} p */
 export function wipeIfEmpty(state, p) {
   if (!p || !state.parties.includes(p)) return true;
   if (p.owner !== "player" || partyMembers(state, p).length) return false;
@@ -659,6 +721,7 @@ export function wipeIfEmpty(state, p) {
 }
 
 // Cards about a team that no longer exists, or about someone who has died or left that team, are out of date.
+/** @param {State} state @param {Card} card */
 export function cardStale(state, card) {
   if (!card || card.partyId == null) return false;
   const p = state.parties.find((q) => q.id === card.partyId);
@@ -675,12 +738,15 @@ export function cardStale(state, card) {
 
 // Drops out-of-date cards. Runs every hour, when a team is removed, and after a card is answered (main.js,
 // autopilot.js), so a stale card never reaches the front of the queue.
+/** @param {State} state */
 export function pruneCards(state) {
   for (let i = state.cards.length - 1; i >= 0; i--) if (cardStale(state, state.cards[i])) state.cards.splice(i, 1);
 }
 
 // hour: the hour this step is taken in (the weather of that hour sets the cost); null = fair weather.
 // known: estimates count only the weather fronts on the map by then (travelHours); the real step, all of them.
+// p: a team, or travelHours' stand-in for one (its path, place on it and way of travel).
+/** @param {State} state @param {Pick<Party, "path" | "idx" | "progress" | "vehicle"> & Partial<Party>} p @param {number} speed @param {number | null} [hour] @param {number} [known] */
 function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   if (p.idx >= p.path.length - 1) return [];
   p.progress += speed;
@@ -703,11 +769,13 @@ function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   return entered;
 }
 
+/** @param {Party} p */
 export const partyTile = (p) => p.path[p.idx];
 
 // Where a moving team is part-way through the coming hour, frac (0–1) of it gone: the map draws it gliding between
 // tiles as the minutes pass (main.js). The same stepping as stepAlong (the hour's weather, a delay paid off first),
 // on a copy: nothing in the sim changes. Returns { from, to, t }: t of the way from tile `from` to `to`.
+/** @param {State} state @param {Party} p @param {number} frac */
 export function glideAt(state, p, frac) {
   const at = partyTile(p);
   if (!onTheMove(p)) return { from: at, to: at, t: 0 };
@@ -724,6 +792,7 @@ export function glideAt(state, p, frac) {
   return { from: end, to: end, t: 0 };
 }
 
+/** @param {State} state @param {Party} p */
 function updateRadio(state, p) {
   // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
@@ -739,6 +808,7 @@ function updateRadio(state, p) {
 
 // A team that lost people (dead, captured, gone home) may hold more found cargo than those left can carry:
 // the excess stays on the tile, at the death site there (or as a cargo cache), and the team knows where.
+/** @param {State} state @param {Party} p */
 function shedOverload(state, p) {
   if (p.kind === "convoy" || poolLoad(p) <= partyCapacity(state, p) + 1e-9) return;
   const tile = partyTile(p);
@@ -765,6 +835,7 @@ function shedOverload(state, p) {
   log(state, `${teamName(state, p)} can no longer carry everything: ${drop.text} left ${base ? `at ${base.name}` : `behind near ${tileLabel(state, tile)}`}.`, "danger");
 }
 
+/** @param {State} state @param {Party} p */
 function playerPartyHour(state, p) {
   // Hourly sweep: however the last member was lost, the team ends as a wiped team (never silently deleted).
   if (wipeIfEmpty(state, p)) return;
@@ -810,10 +881,13 @@ function playerPartyHour(state, p) {
 }
 
 // True while the team is on its way somewhere (not resting, working or waiting).
+/** @param {Party} p */
 export const onTheMove = (p) => (p.phase === "out" || p.phase === "back") && Array.isArray(p.path) && p.idx < p.path.length - 1;
 // Food the team eats an hour: one ration a person a day, more on the move under a load (load.js). Water is the
 // same times the day's thirst (weather.js: the season, a hot day): waterPerHour.
+/** @param {State} state @param {Party} p @param {Survivor[]} [members] */
 export const rationsPerHour = (state, p, members = partyMembers(state, p)) => rationRate(p.burden, members, p.vehicle, onTheMove(p) || sweeping(p)) / 24; // a survey walks about (survey.js)
+/** @param {State} state @param {Party} p @param {Survivor[]} [members] @param {number} [hour] */
 export const waterPerHour = (state, p, members = partyMembers(state, p), hour = state.hour) => rationsPerHour(state, p, members) * thirstAt(state, hour);
 
 // Eating and drinking, person by person (needs.js): each member's hunger and thirst gauges fall by their own ration
@@ -821,14 +895,17 @@ export const waterPerHour = (state, p, members = partyMembers(state, p), hour = 
 // (fresh game first, packed food, packed preserved, then what was found; the team's ration and share settings). An
 // empty gauge costs health (raw: armor and toughness do not help). p.noFood / p.noWater: orders.js (no camp healing)
 // and health.js (illness) read them.
+/** @param {State} state @param {Party} p @param {Survivor[]} members */
 function consume(state, p, members) {
   teamNeedsHour(state, p, members);
   if (!wipeIfEmpty(state, p) && partyMembers(state, p).length < members.length) shedOverload(state, p);
 }
 
 // True while the team has run out of food or water.
+/** @param {Party} p */
 export const starving = (p) => !!(p.noFood || p.noWater);
 
+/** @param {State} state @param {Party} p @param {number} tileId */
 function onEnterTile(state, p, tileId) {
   const members = partyMembers(state, p);
   if (p.vehicle) {
@@ -874,6 +951,7 @@ function onEnterTile(state, p, tileId) {
 // Brings the found cargo down to what the team can carry (after losing its vehicle, a person or a pack): the
 // cheapest goods per carry unit go first, then the cheapest items. What is dropped goes into `into` (a
 // { supplies, gear } store, e.g. the vehicle left behind) if given. Returns the dropped goods: { supplies, gear, text }.
+/** @param {State} state @param {Party} p */
 export function trimCargo(state, p, into = null) {
   const dropped = { supplies: {}, gear: [], text: "" };
   let over = poolLoad(p) - partyCapacity(state, p); // found cargo goes first; packed supplies stay with the team
@@ -914,11 +992,13 @@ export function trimCargo(state, p, into = null) {
 }
 
 // Cargo left inside an abandoned vehicle (leaveVehicle).
+/** @param {Vehicle} v */
 export const vehicleCargo = (v) => (v && v.cargo && (v.cargo.gear.length || Object.values(v.cargo.supplies).some((q) => q >= 1)) ? v.cargo : null);
 
 // The team leaves its vehicle on a tile (out of fuel, broken down, no road home, a boat, a raid site). What the
 // people cannot carry stays inside it, is noted on its map marker, and comes back with the vehicle when it is
 // recovered (recoverVehicle). Returns what was left as text ("" if everything could be carried).
+/** @param {State} state @param {Party} p @param {number} tile @param {string} reason */
 export function leaveVehicle(state, p, tile, reason) {
   const v = partyVehicle(state, p);
   if (!v) return "";
@@ -937,6 +1017,7 @@ export function leaveVehicle(state, p, tile, reason) {
   return left;
 }
 
+/** @param {State} state @param {Party} p @param {string} key @param {number} qty */
 function addCargo(state, p, key, qty) {
   const room = cargoRoom(state, p);
   const take = Math.max(0, Math.min(unitsThatFit(room, key), Math.floor(qty) || 0));
@@ -946,6 +1027,7 @@ function addCargo(state, p, key, qty) {
 
 // Puts an item in the team's cargo if the team can carry its weight too (inventory.js itemLoad: a pack counts what is
 // inside it). Returns false, and leaves the item where it is, when it does not fit: the caller says what stayed behind.
+/** @param {State} state @param {Party} p @param {Item} item */
 export function addGearToCargo(state, p, item) {
   if (!item) return false;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
@@ -956,6 +1038,7 @@ export function addGearToCargo(state, p, item) {
 
 // ---------- orders ----------
 // What the team can do on the tile where it stands.
+/** @param {State} state @param {Party} p */
 export function orderOptions(state, p) {
   const tile = partyTile(p);
   const t = state.tiles[tile];
@@ -1003,6 +1086,7 @@ const RESTART_FUEL = 2; // fuel (tank plus carried) an abandoned vehicle needs t
 // doneLabel: the order that just finished (the card then doubles as its "done" notice).
 // title: replaces the usual title (e.g. "Cannot go home").
 // Choices marked order: true start timed work; the game resumes and skips the result screen.
+/** @param {State} state @param {Party} p @param {string} text @param {string} doneLabel @param {string} title */
 export function ordersCard(state, p, text, doneLabel, title) {
   const tile = partyTile(p);
   const opts = orderOptions(state, p);
@@ -1042,6 +1126,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");
 // opts.hold: queued orders stay on hold instead of carrying on; opts.title: a title for the card; opts.card: a card
 // to ask instead of the orders card (moveout.js: "Enter <base>?"), made as card(state, p).
+/** @param {State} state @param {Party} p @param {string} text */
 export function awaitOrders(state, p, text, opts = {}) {
   if (!state.parties.includes(p)) return;
   if (wipeIfEmpty(state, p)) return;
@@ -1068,6 +1153,7 @@ export function awaitOrders(state, p, text, opts = {}) {
 // A team stopped on the way while orders are queued behind the trip: the unfinished trip (and the mission it
 // was on) goes back to the front of the queue, so "Resume queued orders" carries on to the right tile
 // instead of running the next order where the team happens to stand.
+/** @param {State} state @param {Party} p */
 function requeueInterrupted(state, p) {
   if (!p.orders || !p.orders.length) return;
   if (p.phase === "task" && p.task && p.task.type === "cross" && !p.task.afloat) {
@@ -1077,12 +1163,14 @@ function requeueInterrupted(state, p) {
   }
   // Only a trip toward p.dest (on the way home the path ends at the base, and the queue is empty anyway).
   if ((p.phase !== "out" && p.phase !== "engaged") || p.dest == null || p.path[p.path.length - 1] !== p.dest) return;
+  /** @type {Order[]} */
   const back = [{ type: "move", tile: p.dest }];
   const m = p.mission === "recon" ? "survey" : p.mission;
   if (m !== "move" && MISSIONS[m] && (!MISSIONS[m].hidden || m === "survey")) back.push({ type: "mission", mission: m, at: p.dest });
   p.orders.unshift(...back);
 }
 
+/** @param {State} state @param {Party} p @param {string} mission */
 export function giveOrder(state, p, mission) {
   p.mission = mission;
   p.dest = partyTile(p);
@@ -1090,6 +1178,7 @@ export function giveOrder(state, p, mission) {
   return arrive(state, p) || "";
 }
 
+/** @param {State} state @param {Party} p @param {number} tile */
 export function orderMove(state, p, tile) {
   if (tile === partyTile(p)) return "The team is already there.";
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands.";
@@ -1108,6 +1197,7 @@ export function orderMove(state, p, tile) {
 }
 
 // debit: take the two hours from the next move (recon); a timed Look around order already spent them.
+/** @param {State} state @param {Party} p @param {number} bonus @param {boolean} [debit] */
 export function survey(state, p, bonus, debit = true) {
   const tile = partyTile(p);
   const members = partyMembers(state, p);
@@ -1124,6 +1214,7 @@ export function survey(state, p, bonus, debit = true) {
 }
 
 // ---------- arriving and acting ----------
+/** @param {State} state @param {Party} p */
 function arrive(state, p) {
   if (wipeIfEmpty(state, p)) return "";
   // Stopped short at a bridge someone barricaded after the way was planned (stepAlong): the team waits at its foot.
@@ -1294,6 +1385,7 @@ function arrive(state, p) {
   return "";
 }
 
+/** @param {State} state @param {Party} p */
 function investigate(state, p) {
   const tile = partyTile(p);
   const t = state.tiles[tile];
@@ -1378,6 +1470,7 @@ function investigate(state, p) {
 
 // Moves what was left inside a vehicle (leaveVehicle) into the team's cargo, as far as it fits. Returns
 // { got, left } as text lists; what does not fit stays in the vehicle.
+/** @param {State} state @param {Party} p @param {Vehicle} v */
 function takeVehicleCargo(state, p, v) {
   const got = [], left = [];
   const c = vehicleCargo(v);
@@ -1397,6 +1490,7 @@ function takeVehicleCargo(state, p, v) {
   return { got, left };
 }
 
+/** @param {State} state @param {Party} p */
 function recoverVehicle(state, p) {
   const tile = partyTile(p);
   const v = state.vehicles.find((x) => x.loc.kind === "abandoned" && x.loc.tile === tile);
@@ -1456,6 +1550,7 @@ function recoverVehicle(state, p) {
   return "";
 }
 
+/** @param {State} state @param {Party} p @param {Horde} horde */
 function cullCard(state, p, horde) {
   const power0 = partyMembers(state, p).reduce((s, m) => s + combatPower(m), 0);
   // The horde may be gone by the time the card is answered (merged into another, or spent on a base).
@@ -1508,6 +1603,7 @@ function cullCard(state, p, horde) {
 
 // Sends the team home. Returns "" when it is on its way (or already home), otherwise why it could not leave
 // (the team then waits with a "Cannot go home" card, or lands first).
+/** @param {State} state @param {Party} p */
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
   const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
@@ -1549,6 +1645,7 @@ export function startReturn(state, p) {
 
 // Adds carried supplies to a base's stock: whole, finite, positive amounts only (a NaN or negative figure on a
 // team must never reach a base).
+/** @param {Base} base @param {Stock} supplies */
 function addStock(base, supplies) {
   for (const [k, v] of Object.entries(supplies || {})) {
     if (!Number.isFinite(v) || v < 1) continue;
@@ -1558,6 +1655,7 @@ function addStock(base, supplies) {
 
 // A team that founds a base moves in for good: what it carries goes into the stores and the armory, its vehicle is
 // parked there, its people live there (Build outpost; the staging camp becoming the hub, staging.js).
+/** @param {State} state @param {Party} p @param {Base} base */
 export function settleInto(state, p, base) {
   const members = partyMembers(state, p);
   wormHome(state, p, members, base); // worm.js: the hands that searched today, washed if the water here is safe
@@ -1577,6 +1675,7 @@ export function settleInto(state, p, base) {
   removeParty(state, p);
 }
 
+/** @param {State} state @param {Party} p */
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
@@ -1615,6 +1714,7 @@ function returnHome(state, p) {
   removeParty(state, p);
 }
 
+/** @param {State} state @param {Party} p */
 export function removeParty(state, p) {
   const i = state.parties.indexOf(p);
   if (i >= 0) state.parties.splice(i, 1);
@@ -1626,6 +1726,7 @@ export function removeParty(state, p) {
 // Everyone on the team is dead (or gone): what it carried stays at a death site on its tile and the vehicle is
 // left there, both marked on the map so they can be recovered. On one of your own bases the goods go into that
 // base instead. Always use this (through wipeIfEmpty) rather than removeParty for a team that lost its people.
+/** @param {State} state @param {Party} p */
 export function wipeParty(state, p) {
   if (!state.parties.includes(p)) return;
   const tile = partyTile(p);
@@ -1666,6 +1767,7 @@ export function wipeParty(state, p) {
 }
 
 // ---------- player trade-route convoys ----------
+/** @param {State} state */
 export function dispatchConvoy(state, route) {
   const h = hub(state);
   const f = factionById(state, route.factionId);
@@ -1711,6 +1813,7 @@ export function dispatchConvoy(state, route) {
   log(state, `Convoy left for ${f.name} with ${route.sendQty} ${route.sendKey} (${route.escort} escort, ${useTruck ? `in the ${v.name}` : "with hand carts"}).`, "info");
 }
 
+/** @param {State} state @param {Party} p */
 function convoyArrive(state, p) {
   if (p.routeKind === "supply") return supplyArrive(state, p);
   const route = state.routes.find((r) => r.id === p.routeId);
@@ -1726,6 +1829,7 @@ function convoyArrive(state, p) {
 }
 
 // ---------- AI parties ----------
+/** @param {State} state @param {Party} p */
 function aiPartyHour(state, p) {
   // Turned back (a raid bought off with tribute, even one already at the walls): gone, nothing more to settle.
   if (p.returning) {
@@ -1830,6 +1934,7 @@ function aiPartyHour(state, p) {
 
 const RAID_WARN_TILES = 4; // a raid on your base is warned of this far out when the lookouts see it (watch.js lookoutsSpot)
 
+/** @param {State} state @param {Party} p */
 function finishSiege(state, p) {
   if (p.target.kind === "player") {
     resolveRaidOnPlayer(state, p);
