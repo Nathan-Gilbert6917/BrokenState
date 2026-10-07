@@ -6,7 +6,7 @@
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
-import { WATCH_HELP } from "./watch.js"; // the Watching panel and map notes
+import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
 import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -100,7 +100,7 @@ export function helpTopics() {
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
-  for (const t of [BULK_HELP, WATCH_HELP]) add(t.title, t.html);
+  for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   return out;
 }
 

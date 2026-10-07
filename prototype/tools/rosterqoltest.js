@@ -1,5 +1,5 @@
-// Headless checks for the roster's bulk actions (sim/bulk.js, ui/rosterbulk.js), the Watching panel (sim/watch.js,
-// ui/watch.js) and map notes (sim/mapnotes.js, ui/mapnotes.js).
+// Headless checks for the roster's bulk actions (sim/bulk.js, ui/rosterbulk.js), the Watching panel (sim/watchlist.js,
+// ui/watchlist.js) and map notes (sim/mapnotes.js, ui/mapnotes.js).
 // Usage: node tools/rosterqoltest.js [seed]
 // - Equip best available: upgrades only, from the person's own base's armory, nothing changes hands for anyone not
 //   ticked, items are conserved, the weight rule holds, a pack keeps its contents, people away are skipped with why
@@ -25,8 +25,8 @@ import { equipBest, weightOk, hospitalPlan, sendToHospital, moveToBase, needsCar
 import { itemScore } from "../src/sim/autopilot.js";
 import { rosterModal, ROSTER_ACTIONS, ROSTER_CHANGE } from "../src/ui/roster.js";
 import { bulkState } from "../src/ui/rosterbulk.js";
-import { watchList, toggleWatch, isWatched, WATCH_MAX } from "../src/sim/watch.js";
-import { renderWatch, watchStatus, watchPin, ctxWatch, WATCH_ACTIONS } from "../src/ui/watch.js";
+import { watchlistOf, toggleWatchlist, onWatchlist, WATCHLIST_MAX } from "../src/sim/watchlist.js";
+import { renderWatchlist, watchlistStatus, watchlistPin, ctxWatchlist, WATCHLIST_ACTIONS } from "../src/ui/watchlist.js";
 import { mapNotes, addNote, notesAt, NOTE_KEYS, NOTE_TEXT_MAX } from "../src/sim/mapnotes.js";
 import { drawMapNotes, noteTip, notesHash } from "../src/ui/mapnotes.js";
 import { helpTopics } from "../src/ui/help.js";
@@ -222,84 +222,84 @@ const stubAct = (ui, calls) => ({
   const ui = { started: true };
   const calls = [];
   const act = stubAct(ui, calls);
-  const H = { ...WATCH_ACTIONS };
-  check(renderWatch(st, ui) === "", "nothing pinned, no notes: no panel");
+  const H = { ...WATCHLIST_ACTIONS };
+  check(renderWatchlist(st, ui) === "", "nothing pinned, no notes: no panel");
   const s = atBase(st, h.id)[1];
-  check(toggleWatch(st, "person", s.id, s.name) === true && isWatched(st, "person", s.id), "pin a person");
-  check(/data-action="wt-pin"[^>]*class|wt-pin on/.test(watchPin(st, "person", s.id, s.name)), "the pin shows as on");
-  toggleWatch(st, "base", h.id, h.name);
+  check(toggleWatchlist(st, "person", s.id, s.name) === true && onWatchlist(st, "person", s.id), "pin a person");
+  check(/data-action="wl-pin"[^>]*class|wl-pin on/.test(watchlistPin(st, "person", s.id, s.name)), "the pin shows as on");
+  toggleWatchlist(st, "base", h.id, h.name);
   const f = st.factions[0];
   f.known = true;
-  toggleWatch(st, "group", f.id, f.name);
+  toggleWatchlist(st, "group", f.id, f.name);
   // A horde two tiles from the hub, in sight.
   const ht = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 2);
   const horde = makeHorde(st, { tile: ht.id, size: 40, target: h.tile });
   st.live.add(ht.id);
-  WATCH_ACTIONS["wt-pin"](st, ui, { kind: "horde", id: String(horde.id), name: "horde of 40" });
+  WATCHLIST_ACTIONS["wl-pin"](st, ui, { kind: "horde", id: String(horde.id), name: "horde of 40" });
   // A team.
   const crew = atBase(st, h.id).slice(2, 4);
   const dest = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 4 && planPath(st, h.tile, t.id, false));
   const lr = launchExpedition(st, { memberIds: crew.map((x) => x.id), dest: dest.id, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
   const team = st.parties.find((p) => p.id === lr.party?.id) || st.parties.find((p) => p.owner === "player" && p.members.includes(crew[0].id));
-  toggleWatch(st, "team", team.id, "team");
-  check(watchList(st).items.length === 5, "five pinned");
-  let html = renderWatch(st, ui);
+  toggleWatchlist(st, "team", team.id, "team");
+  check(watchlistOf(st).items.length === 5, "five pinned");
+  let html = renderWatchlist(st, ui);
   htmlOk(html, "Watching panel", H);
-  check((html.match(/class="wt-row /g) || []).length === 5, "a row each");
-  const sp = watchStatus(st, watchList(st).items[0]);
+  check((html.match(/class="wl-row /g) || []).length === 5, "a row each");
+  const sp = watchlistStatus(st, watchlistOf(st).items[0]);
   check(/HP \d+ · mood \d+/.test(sp.line) && new RegExp(h.name).test(sp.line), `person: "${sp.line}"`);
-  const sb = watchStatus(st, watchList(st).items[1]);
+  const sb = watchlistStatus(st, watchlistOf(st).items[1]);
   check(/food .* · water .*/.test(sb.line) && /horde of 40/.test(sb.line) && sb.tone === "danger", `base: "${sb.line}"`);
-  const sg = watchStatus(st, watchList(st).items[2]);
+  const sg = watchlistStatus(st, watchlistOf(st).items[2]);
   check(/(Hostile|Neutral|Friendly|Allied) \(-?\d+\)/.test(sg.line) && /people/.test(sg.line), `group: "${sg.line}"`);
-  const sh = watchStatus(st, watchList(st).items[3]);
+  const sh = watchlistStatus(st, watchlistOf(st).items[3]);
   check(/^40 · heading for /.test(sh.line) && /2 tiles from/.test(sh.line), `horde: "${sh.line}"`);
   tick(st, 1);
-  const stm = watchStatus(st, watchList(st).items[4]);
+  const stm = watchlistStatus(st, watchlistOf(st).items[4]);
   check(/no contact · arrives around day \d+/.test(stm.line) || /ETA \d+h/.test(stm.line), `team on the way: "${stm.line}"`);
   for (let i = 0; i < 24 && team.phase !== "waiting"; i++) tick(st, 1);
-  const stw = watchStatus(st, watchList(st).items[4]);
+  const stw = watchlistStatus(st, watchlistOf(st).items[4]);
   check(team.phase === "waiting" && /food \d+ · water \d+ · Heat \d+/.test(stw.line) && stw.tone === "warn", `team waiting: "${stw.line}"`);
   // Click goes there.
-  WATCH_ACTIONS["wt-go"](st, ui, { kind: "base", id: String(h.id) }, act);
+  WATCHLIST_ACTIONS["wl-go"](st, ui, { kind: "base", id: String(h.id) }, act);
   check(calls.some((c) => c[0] === "center" && c[1] === h.tile), "a base row centers on it");
-  WATCH_ACTIONS["wt-go"](st, ui, { kind: "person", id: String(s.id) }, act);
+  WATCHLIST_ACTIONS["wl-go"](st, ui, { kind: "person", id: String(s.id) }, act);
   check(ui.survivor === s.id, "a person row opens their screen");
-  WATCH_ACTIONS["wt-go"](st, ui, { kind: "group", id: String(f.id) }, act);
+  WATCHLIST_ACTIONS["wl-go"](st, ui, { kind: "group", id: String(f.id) }, act);
   check(ui.tab === "groups", "a group row opens the Groups tab");
   // A horde out of sight: where it was last seen, not where it is.
   st.live.delete(horde.tile);
   const far = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 12 && !st.live.has(t.id));
   horde.tile = far.id;
-  const hidden = watchStatus(st, watchList(st).items[3]);
+  const hidden = watchlistStatus(st, watchlistOf(st).items[3]);
   check(/out of sight · last seen/.test(hidden.line) && hidden.go && hidden.go.tile === ht.id, `out of sight: "${hidden.line}" at the old tile`);
   // Gone: the person dies, the horde disappears from where you can see.
   killSurvivor(st, s, h.tile, "in a test");
   st.hordes.splice(st.hordes.indexOf(horde), 1);
   st.live.add(ht.id);
-  html = renderWatch(st, ui);
-  check(watchStatus(st, watchList(st).items[0]).gone && /died/.test(html), "the dead grey out");
-  check(watchStatus(st, watchList(st).items[3]).gone, "a horde no longer where you can see it is gone");
-  check((html.match(/class="wt-row gone"/g) || []).length >= 2, "both rows greyed");
-  WATCH_ACTIONS["wt-remove"](st, ui, { kind: "person", id: String(s.id) });
-  check(!isWatched(st, "person", s.id), "✕ drops the row");
-  WATCH_ACTIONS["wt-collapse"](st, ui, { v: "1" });
-  check(/data-action="wt-collapse" data-v="0"/.test(renderWatch(st, ui)) && !/wt-row/.test(renderWatch(st, ui)), "▾ folds it to a button");
-  WATCH_ACTIONS["wt-collapse"](st, ui, { v: "0" });
-  check(/wt-row/.test(renderWatch(st, ui, { folded: true })) === false, "map only folds it too");
+  html = renderWatchlist(st, ui);
+  check(watchlistStatus(st, watchlistOf(st).items[0]).gone && /died/.test(html), "the dead grey out");
+  check(watchlistStatus(st, watchlistOf(st).items[3]).gone, "a horde no longer where you can see it is gone");
+  check((html.match(/class="wl-row gone"/g) || []).length >= 2, "both rows greyed");
+  WATCHLIST_ACTIONS["wl-remove"](st, ui, { kind: "person", id: String(s.id) });
+  check(!onWatchlist(st, "person", s.id), "✕ drops the row");
+  WATCHLIST_ACTIONS["wl-collapse"](st, ui, { v: "1" });
+  check(/data-action="wl-collapse" data-v="0"/.test(renderWatchlist(st, ui)) && !/wl-row/.test(renderWatchlist(st, ui)), "▾ folds it to a button");
+  WATCHLIST_ACTIONS["wl-collapse"](st, ui, { v: "0" });
+  check(/wl-row/.test(renderWatchlist(st, ui, { folded: true })) === false, "map only folds it too");
   // The limit.
-  for (let i = 0; i < WATCH_MAX + 2; i++) toggleWatch(st, "base", 100000 + i, "x");
-  check(watchList(st).items.length === WATCH_MAX, `the list holds ${WATCH_MAX}`);
+  for (let i = 0; i < WATCHLIST_MAX + 2; i++) toggleWatchlist(st, "base", 100000 + i, "x");
+  check(watchlistOf(st).items.length === WATCHLIST_MAX, `the list holds ${WATCHLIST_MAX}`);
   // Saved and loaded; an older save has none.
-  const keep = watchList(st).items.length;
+  const keep = watchlistOf(st).items.length;
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
-  check(back.watch && back.watch.items.length === keep, "saved with the campaign");
-  delete back.watch;
-  check(renderWatch(back, ui) === "" && !isWatched(back, "base", h.id), "an older save (no list) loads with nothing pinned");
+  check(back.watchList && back.watchList.items.length === keep, "saved with the campaign");
+  delete back.watchList;
+  check(renderWatchlist(back, ui) === "" && !onWatchlist(back, "base", h.id), "an older save (no list) loads with nothing pinned");
   // The right-click menu and the pins in the panels.
-  const menu = ctxWatch(st, h.tile);
+  const menu = ctxWatchlist(st, h.tile);
   htmlOk(menu, "right-click menu extras", H);
-  check(/📌 (Watch|Stop watching) /.test(menu) && /data-action="mn-add"/.test(menu), "the menu offers 📌 and Add note");
+  check(/📌 (Pin|Unpin) /.test(menu) && /data-action="mn-add"/.test(menu), "the menu offers 📌 and Add note");
 }
 
 // ---------- 6. Map notes ----------
@@ -310,12 +310,12 @@ const stubAct = (ui, calls) => ({
   const ui = { started: true };
   const calls = [];
   const act = stubAct(ui, calls);
-  const H = { ...WATCH_ACTIONS };
+  const H = { ...WATCHLIST_ACTIONS };
   const t = st.tiles.find((x) => x.terrain !== "water" && st.grid.distance(x.id, h.tile) === 3);
-  WATCH_ACTIONS["mn-add"](st, ui, { tile: String(t.id) });
+  WATCHLIST_ACTIONS["mn-add"](st, ui, { tile: String(t.id) });
   check(ui.noteEdit && ui.noteEdit.tile === t.id && ui.noteEdit.id == null, "Add note opens the editor for the tile");
-  WATCH_ACTIONS["mn-icon"](st, ui, { icon: "bridge" });
-  WATCH_ACTIONS["mn-save"](st, ui, { text: "  Bridge   to clear  " });
+  WATCHLIST_ACTIONS["mn-icon"](st, ui, { icon: "bridge" });
+  WATCHLIST_ACTIONS["mn-save"](st, ui, { text: "  Bridge   to clear  " });
   const n = mapNotes(st).list[0];
   check(n && n.icon === "bridge" && n.text === "Bridge to clear" && !ui.noteEdit, "saved: icon and trimmed text, editor closed");
   check(notesAt(st, t.id).length === 1, "listed on its tile");
@@ -323,23 +323,23 @@ const stubAct = (ui, calls) => ({
   check(mapNotes(st).list[1].text.length === NOTE_TEXT_MAX, "text is capped");
   check(addNote(st, t.id, "nonsense", "").icon === "flag", "an unknown icon becomes a flag");
   check(NOTE_KEYS.length === 8, "eight icons");
-  let html = renderWatch(st, ui);
+  let html = renderWatchlist(st, ui);
   htmlOk(html, "Watching panel with notes", H);
-  check((html.match(/class="wt-note"/g) || []).length === 3 && /Bridge to clear/.test(html), "the Notes section lists them");
+  check((html.match(/class="wl-note"/g) || []).length === 3 && /Bridge to clear/.test(html), "the Notes section lists them");
   // Edit.
   const h0 = notesHash(st);
-  WATCH_ACTIONS["mn-edit"](st, ui, { id: String(n.id) });
+  WATCHLIST_ACTIONS["mn-edit"](st, ui, { id: String(n.id) });
   check(ui.noteEdit && ui.noteEdit.id === n.id && ui.noteEdit.icon === "bridge", "✎ opens the editor on the note");
-  WATCH_ACTIONS["mn-icon"](st, ui, { icon: "target" });
-  WATCH_ACTIONS["mn-save"](st, ui, { text: "Clear the bridge" });
+  WATCHLIST_ACTIONS["mn-icon"](st, ui, { icon: "target" });
+  WATCHLIST_ACTIONS["mn-save"](st, ui, { text: "Clear the bridge" });
   check(n.icon === "target" && n.text === "Clear the bridge" && mapNotes(st).list.length === 3, "edited in place");
   check(notesHash(st) !== h0, "the map's redraw fingerprint changes");
   // Go, delete (twice), hide.
-  WATCH_ACTIONS["mn-go"](st, ui, { id: String(n.id) }, act);
+  WATCHLIST_ACTIONS["mn-go"](st, ui, { id: String(n.id) }, act);
   check(calls.some((c) => c[0] === "center" && c[1] === t.id), "a note row centers on its tile");
-  WATCH_ACTIONS["mn-del"](st, ui, { id: String(n.id) });
-  check(mapNotes(st).list.length === 3 && /Delete\?/.test(renderWatch(st, ui)), "the first ✕ only arms it");
-  WATCH_ACTIONS["mn-del"](st, ui, { id: String(n.id) });
+  WATCHLIST_ACTIONS["mn-del"](st, ui, { id: String(n.id) });
+  check(mapNotes(st).list.length === 3 && /Delete\?/.test(renderWatchlist(st, ui)), "the first ✕ only arms it");
+  WATCHLIST_ACTIONS["mn-del"](st, ui, { id: String(n.id) });
   check(mapNotes(st).list.length === 2, "the second ✕ deletes it");
   // The tooltip and drawing.
   check(/💀/.test(noteTip(st, t.id)), "the tile's hover description lists its notes");
@@ -347,26 +347,26 @@ const stubAct = (ui, calls) => ({
   const opts = { toPixel: (id) => st.grid.toPixel(id, 26), zoom: 1.6, boost: 1, inView: () => true };
   check(drawMapNotes(stub, st, opts) === 2 && stub.calls > 0, `both notes drawn (${stub.calls} calls)`);
   check(drawMapNotes(stub, st, { ...opts, inView: () => false }) === 0, "off screen: nothing drawn");
-  WATCH_ACTIONS["mn-hide"](st, ui, {});
+  WATCHLIST_ACTIONS["mn-hide"](st, ui, {});
   check(mapNotes(st).hidden && drawMapNotes(stub, st, opts) === 0 && noteTip(st, t.id) === "", "hidden: not drawn, not in the tooltip");
-  check(/🚫 Hidden/.test(renderWatch(st, ui)), "the list says they are hidden");
-  WATCH_ACTIONS["mn-hide"](st, ui, {});
+  check(/🚫 Hidden/.test(renderWatchlist(st, ui)), "the list says they are hidden");
+  WATCHLIST_ACTIONS["mn-hide"](st, ui, {});
   // The editor's Delete removes the note it is editing; Cancel just closes.
   const m2 = mapNotes(st).list[0];
-  WATCH_ACTIONS["mn-edit"](st, ui, { id: String(m2.id) });
-  WATCH_ACTIONS["mn-cancel"](st, ui, {});
+  WATCHLIST_ACTIONS["mn-edit"](st, ui, { id: String(m2.id) });
+  WATCHLIST_ACTIONS["mn-cancel"](st, ui, {});
   check(!ui.noteEdit && mapNotes(st).list.length === 2, "Cancel closes the editor, nothing changes");
-  WATCH_ACTIONS["mn-edit"](st, ui, { id: String(m2.id) });
-  WATCH_ACTIONS["mn-del"](st, ui, { id: String(m2.id) });
+  WATCHLIST_ACTIONS["mn-edit"](st, ui, { id: String(m2.id) });
+  WATCHLIST_ACTIONS["mn-del"](st, ui, { id: String(m2.id) });
   check(!ui.noteEdit && mapNotes(st).list.length === 1, "the editor's Delete removes the note at once");
   // The right-click menu offers to edit a tile's notes.
-  const menu = ctxWatch(st, t.id);
+  const menu = ctxWatchlist(st, t.id);
   check(/data-action="mn-edit"/.test(menu), "right-click a tile with a note: Edit note");
   // Saved and loaded.
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
   check(back.mapNotes && back.mapNotes.list.length === 1 && back.mapNotes.list[0].tile === mapNotes(st).list[0].tile, "notes are saved with the campaign");
   delete back.mapNotes;
-  check(drawMapNotes(stub, back, opts) === 0 && renderWatch(back, ui) === "", "an older save (no notes) draws none");
+  check(drawMapNotes(stub, back, opts) === 0 && renderWatchlist(back, ui) === "", "an older save (no notes) draws none");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

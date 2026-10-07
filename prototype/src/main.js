@@ -56,7 +56,7 @@ import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
-import { WATCH_ACTIONS, renderWatch, syncWatch, ctxWatch } from "./ui/watch.js"; // the Watching panel (📌) and map notes
+import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
@@ -217,7 +217,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watch"];
+const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -365,10 +365,10 @@ function refresh(user = true) {
   setPanel("devpanel", ui.started ? renderDevPanel(state, ui) : "", user);
   setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", user);
   setPanel("alerts", alertsHTML(alerts), user);
-  setPanel("watch", ui.started ? renderWatch(state, ui, { folded: !!layout.all }) : "", user); // ui/watch.js: under the running orders
+  setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", user); // ui/watchlist.js: under the running orders
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
-  syncWatch(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
+  syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -911,8 +911,8 @@ for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(stat
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
-// The Watching panel and map notes (ui/watch.js): pin, go, unpin, the note editor; going there uses center and xp-open.
-for (const [k, fn] of Object.entries(WATCH_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
+// The Watching panel and map notes (ui/watchlist.js): pin, go, unpin, the note editor; going there uses center and xp-open.
+for (const [k, fn] of Object.entries(WATCHLIST_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
 // The menu: save, load, save and exit, options (ui/settings.js; settingsApi below).
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
@@ -1363,7 +1363,7 @@ canvas.addEventListener("contextmenu", (e) => {
   menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
     waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatch(state, id) + // 📌 watch, map notes (ui/watch.js)
+    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
     (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
   menu.style.left = `${e.clientX - r.left}px`;
   menu.style.top = `${e.clientY - r.top}px`;

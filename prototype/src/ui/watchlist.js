@@ -1,13 +1,13 @@
 // The Watching panel on the map (top left, under the Running orders and above the Layers box): what the player pinned
-// with 📌 (sim/watch.js) with its live status, and the player's map notes (sim/mapnotes.js) below it.
+// with 📌 (sim/watchlist.js) with its live status, and the player's map notes (sim/mapnotes.js) below it.
 //   person: where, health, mood, what they do · team: where, ETA, food and water, Heat · horde: size, heading, how far
 //   from the nearest base · group: attitude, size and strength · base: days of food and water, threats in sight.
 // Click a row to go there; a dead or gone entry greys out with ✕ to drop it. Status follows the game's own rules of
 // what you know: a team out of radio contact shows its expected return, a horde out of sight where it was last seen.
-// Pins: watchPin (the survivor screen, the team panel, the Groups and Bases tabs, the tile panel's horde row) and the
-// right-click menu (ctxWatch: the base, group base, hordes and teams on the tile, plus Add note / Edit note).
+// Pins: watchlistPin (the survivor screen, the team panel, the Groups and Bases tabs, the tile panel's horde row) and the
+// right-click menu (ctxWatchlist: the base, group base, hordes and teams on the tile, plus Add note / Edit note).
 // The note editor is a small box on the map (#noteedit), kept apart from the panels so a redraw never eats the typing.
-import { watchList, isWatched, toggleWatch, unwatch, WATCH_MAX } from "../sim/watch.js";
+import { watchlistOf, onWatchlist, toggleWatchlist, unpinWatchlist, WATCHLIST_MAX } from "../sim/watchlist.js";
 import { mapNotes, noteById, notesAt, addNote, editNote, deleteNote, setNotesHidden, NOTE_ICONS, NOTE_KEYS, NOTE_TEXT_MAX } from "../sim/mapnotes.js";
 import { survivorById, baseById, factionById, playerStrength } from "../sim/world.js";
 import { partyTile, partyMembers, MISSIONS, tileLabel } from "../sim/parties.js";
@@ -23,7 +23,7 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const first = (name) => String(name || "").split(" ")[0];
 const hasDoc = () => typeof document !== "undefined" && !!document && typeof document.getElementById === "function";
-export const WATCH_NEAR = 6; // tiles: a horde or raiders this close to a base you watch is a threat (the alerts' horde distance)
+export const WATCHLIST_NEAR = 6; // tiles: a horde or raiders this close to a base you watch is a threat (the alerts' horde distance)
 const KIND_ICON = { person: "👤", team: "🚶", horde: "🧟", group: "🏴", base: "🏠" };
 const live = (state, tile) => !!(state.live && state.live.has(tile));
 
@@ -103,7 +103,7 @@ function hordeStatus(state, it) {
     const target = state.bases.find((b) => (h.goal && h.goal.baseId === b.id) || h.target === b.tile);
     const dir = target ? `heading for ${target.name}` : h.target != null && h.target !== h.tile ? `heading ${heading(state, h.tile, h.target)}` : "drifting";
     return {
-      name: `Horde of ${h.size}`, tone: target || (nb && nb.dist <= WATCH_NEAR) ? "danger" : "",
+      name: `Horde of ${h.size}`, tone: target || (nb && nb.dist <= WATCHLIST_NEAR) ? "danger" : "",
       line: `${h.size}${h.bosses ? " + Wallbreaker" : ""} · ${dir}${nb ? ` · ${nb.dist} tile${nb.dist === 1 ? "" : "s"} from ${nb.b.name}` : ""}`,
       go: { tile: h.tile },
     };
@@ -127,18 +127,18 @@ function groupStatus(state, it) {
     go: { group: f.id, tile: f.known && f.bases.length ? f.bases[0] : null },
   };
 }
-// Threats near a base that you can see: hordes within WATCH_NEAR tiles or heading for it, other groups' raids.
+// Threats near a base that you can see: hordes within WATCHLIST_NEAR tiles or heading for it, other groups' raids.
 export function baseThreats(state, b) {
   const g = state.grid, out = [];
   for (const h of state.hordes) {
     if (!live(state, h.tile)) continue;
     const d = g.distance(h.tile, b.tile), coming = (h.goal && h.goal.baseId === b.id) || h.target === b.tile;
-    if (coming || d <= WATCH_NEAR) out.push({ text: `horde of ${h.size} ${d} tile${d === 1 ? "" : "s"} ${heading(state, b.tile, h.tile)}${coming ? ", coming" : ""}`, danger: coming || d <= 2, size: h.size });
+    if (coming || d <= WATCHLIST_NEAR) out.push({ text: `horde of ${h.size} ${d} tile${d === 1 ? "" : "s"} ${heading(state, b.tile, h.tile)}${coming ? ", coming" : ""}`, danger: coming || d <= 2, size: h.size });
   }
   for (const p of state.parties) {
     if (p.owner === "player" || p.kind !== "raid" || !p.path || !live(state, partyTile(p))) continue;
     const d = g.distance(partyTile(p), b.tile);
-    if (d <= WATCH_NEAR) out.push({ text: `raiders ${d} tile${d === 1 ? "" : "s"} ${heading(state, b.tile, partyTile(p))}`, danger: true, size: 0 });
+    if (d <= WATCHLIST_NEAR) out.push({ text: `raiders ${d} tile${d === 1 ? "" : "s"} ${heading(state, b.tile, partyTile(p))}`, danger: true, size: 0 });
   }
   return out.sort((a, c) => (c.danger - a.danger) || c.size - a.size);
 }
@@ -157,24 +157,24 @@ function baseStatus(state, it) {
   };
 }
 const STATUS = { person: personStatus, team: teamStatus, horde: hordeStatus, group: groupStatus, base: baseStatus };
-export function watchStatus(state, it) {
+export function watchlistStatus(state, it) {
   const st = (STATUS[it.kind] || (() => ({ gone: true, line: "gone" })))(state, it);
   if (st.name && !st.gone) it.name = st.name; // the latest name, kept for when it is gone
   return { ...st, name: st.name || it.name || it.kind };
 }
 
 // ---------- the panel ----------
-export function renderWatch(state, ui, opts = {}) {
-  const w = state.watch, m = state.mapNotes;
+export function renderWatchlist(state, ui, opts = {}) {
+  const w = state.watchList, m = state.mapNotes;
   const items = w && w.items ? w.items : [];
   const notes = m && m.list ? m.list : [];
   if (!items.length && !notes.length) return "";
   const collapsed = (w && w.collapsed) || opts.folded;
-  if (collapsed) return `<button class="mini" data-action="wt-collapse" data-v="0"${tip("Show the Watching panel: what you pinned with 📌, and your map notes")}>👁 Watching (${items.length})${notes.length ? ` · 📝 ${notes.length}` : ""} ▸</button>`;
+  if (collapsed) return `<button class="mini" data-action="wl-collapse" data-v="0"${tip("Show the Watching panel: what you pinned with 📌, and your map notes")}>👁 Watching (${items.length})${notes.length ? ` · 📝 ${notes.length}` : ""} ▸</button>`;
   const rows = items.map((it) => {
-    const st = watchStatus(state, it);
-    return `<div class="wt-row ${st.gone ? "gone" : ""}" ${st.go ? `data-action="wt-go" data-kind="${it.kind}" data-id="${it.id}"` : ""}${tip(`${st.tip ? `${st.tip} ` : ""}${st.go ? "Click to go there." : ""}`)}>
-      <div class="spread"><span class="wt-name">${KIND_ICON[it.kind] || ""} ${esc(st.name)}</span><button class="mini wt-x" data-action="wt-remove" data-kind="${it.kind}" data-id="${it.id}"${tip("Stop watching (unpin)")}>✕</button></div>
+    const st = watchlistStatus(state, it);
+    return `<div class="wl-row ${st.gone ? "gone" : ""}" ${st.go ? `data-action="wl-go" data-kind="${it.kind}" data-id="${it.id}"` : ""}${tip(`${st.tip ? `${st.tip} ` : ""}${st.go ? "Click to go there." : ""}`)}>
+      <div class="spread"><span class="wl-name">${KIND_ICON[it.kind] || ""} ${esc(st.name)}</span><button class="mini wl-x" data-action="wl-remove" data-kind="${it.kind}" data-id="${it.id}"${tip("Stop watching (unpin)")}>✕</button></div>
       <div class="small ${st.gone ? "muted" : st.tone || ""}">${esc(st.line)}</div>
     </div>`;
   }).join("");
@@ -183,28 +183,28 @@ export function renderWatch(state, ui, opts = {}) {
   const noteRows = open ? notes.map((n) => {
     const ic = NOTE_ICONS[n.icon] || NOTE_ICONS.flag;
     const arm = ui.mnDelArm === n.id;
-    return `<div class="wt-note" data-action="mn-go" data-id="${n.id}"${tip(`${ic.name} at ${tileLabel(state, n.tile)}. Click to go there.`)}>
-      <span class="wt-glyph">${ic.glyph}</span><span class="wt-ntext">${esc(n.text || ic.name)}</span>
+    return `<div class="wl-note" data-action="mn-go" data-id="${n.id}"${tip(`${ic.name} at ${tileLabel(state, n.tile)}. Click to go there.`)}>
+      <span class="wl-glyph">${ic.glyph}</span><span class="wl-ntext">${esc(n.text || ic.name)}</span>
       <button class="mini" data-action="mn-edit" data-id="${n.id}"${tip("Edit this note")}>✎</button><button class="mini ${arm ? "danger" : ""}" data-action="mn-del" data-id="${n.id}"${tip(arm ? "Click again to delete the note" : "Delete this note (click twice)")}>${arm ? "Delete?" : "✕"}</button>
     </div>`;
   }).join("") : "";
-  return `<div class="spread wt-head"><b${tip(`What you pinned with 📌 (up to ${WATCH_MAX}): a person's screen, a team's panel, the Groups and Bases tabs, a horde in the tile panel, or right-click a tile.`)}>👁 Watching${items.length ? ` (${items.length})` : ""}</b><button class="mini" data-action="wt-collapse" data-v="1"${tip("Fold this panel")}>▾</button></div>
+  return `<div class="spread wl-head"><b${tip(`What you pinned with 📌 (up to ${WATCHLIST_MAX}): a person's screen, a team's panel, the Groups and Bases tabs, a horde in the tile panel, or right-click a tile.`)}>👁 Watching${items.length ? ` (${items.length})` : ""}</b><button class="mini" data-action="wl-collapse" data-v="1"${tip("Fold this panel")}>▾</button></div>
     ${rows || `<div class="small muted">Nothing pinned. 📌 on a person, team, horde, group or base adds it here.</div>`}
-    ${notes.length ? `<div class="spread wt-head wt-sub"><b${tip("Your notes on the map. Right-click a tile → Add note.")}>📝 Notes (${notes.length})</b><span class="row"><button class="mini ${hidden ? "active" : ""}" data-action="mn-hide"${tip(hidden ? "Notes are hidden on the map: show them" : "Hide all notes on the map (they stay in this list)")}>${hidden ? "🚫 Hidden" : "👁 Shown"}</button><button class="mini" data-action="wt-notes"${tip(open ? "Fold the notes list" : "Show the notes list")}>${open ? "▾" : "▸"}</button></span></div>${noteRows}` : ""}`;
+    ${notes.length ? `<div class="spread wl-head wl-sub"><b${tip("Your notes on the map. Right-click a tile → Add note.")}>📝 Notes (${notes.length})</b><span class="row"><button class="mini ${hidden ? "active" : ""}" data-action="mn-hide"${tip(hidden ? "Notes are hidden on the map: show them" : "Hide all notes on the map (they stay in this list)")}>${hidden ? "🚫 Hidden" : "👁 Shown"}</button><button class="mini" data-action="wl-notes"${tip(open ? "Fold the notes list" : "Show the notes list")}>${open ? "▾" : "▸"}</button></span></div>${noteRows}` : ""}`;
 }
 
 // A 📌 button (opts.label: with "Watch" / "Watching" after it).
-export function watchPin(state, kind, id, name = "", opts = {}) {
-  const on = isWatched(state, kind, id);
-  return `<button class="mini wt-pin ${on ? "on" : ""}" data-action="wt-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}"${tip(on ? `Watching${name ? ` ${name}` : ""}: click to unpin it from the Watching panel` : `Watch${name ? ` ${name}` : ""}: pin it to the Watching panel on the map (its status, live)`)}>📌${opts.label ? (on ? " Watching" : " Watch") : ""}</button>`;
+export function watchlistPin(state, kind, id, name = "", opts = {}) {
+  const on = onWatchlist(state, kind, id);
+  return `<button class="mini wl-pin ${on ? "on" : ""}" data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}"${tip(on ? `Pinned${name ? `: ${name}` : ""}. Click to unpin it from the Watching panel` : `Pin${name ? ` ${name}` : ""} to the Watching panel on the map (its status, live)`)}>📌${opts.label ? (on ? " Pinned" : " Pin") : ""}</button>`;
 }
 
 // Extra right-click menu buttons for a tile: watch what is on it, add a note, edit its notes.
-export function ctxWatch(state, tile) {
+export function ctxWatchlist(state, tile) {
   const out = [];
   const pin = (kind, id, name) => {
-    const on = isWatched(state, kind, id);
-    out.push(`<button data-action="wt-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}" data-ctx="1"${tip(on ? "Unpin it from the Watching panel" : "Pin it to the Watching panel on the map (top left): its status, live")}>📌 ${on ? "Stop watching" : "Watch"} ${esc(name)}</button>`);
+    const on = onWatchlist(state, kind, id);
+    out.push(`<button data-action="wl-pin" data-kind="${kind}" data-id="${id}" data-name="${esc(name)}" data-ctx="1"${tip(on ? "Unpin it from the Watching panel" : "Pin it to the Watching panel on the map (top left): its status, live")}>📌 ${on ? "Unpin" : "Pin"} ${esc(name)}</button>`);
   };
   const base = state.bases.find((b) => b.tile === tile);
   if (base) pin("base", base.id, base.name);
@@ -224,8 +224,8 @@ function ctxSpot() {
   const c = document.getElementById("ctxmenu");
   return c && c.style.left ? { x: parseFloat(c.style.left) || 0, y: parseFloat(c.style.top) || 0 } : null;
 }
-function goWatch(state, ui, it, act) {
-  const st = watchStatus(state, it);
+function goWatchlist(state, ui, it, act) {
+  const st = watchlistStatus(state, it);
   const g = st.go;
   if (!g) return;
   ui.roster = null; ui.diary = null;
@@ -236,17 +236,17 @@ function goWatch(state, ui, it, act) {
 }
 const flash = (ui, text) => { ui.flash = { text, at: typeof performance !== "undefined" ? performance.now() : 0 }; };
 
-export const WATCH_ACTIONS = {
-  "wt-pin": (state, ui, d) => {
-    const r = toggleWatch(state, d.kind, Number(d.id), d.name || "");
+export const WATCHLIST_ACTIONS = {
+  "wl-pin": (state, ui, d) => {
+    const r = toggleWatchlist(state, d.kind, Number(d.id), d.name || "");
     if (typeof r === "string") flash(ui, r);
-    if (r === true) { const it = watchList(state).items.find((x) => x.kind === d.kind && x.id === Number(d.id)); if (it) watchStatus(state, it); } // a horde: where it is now
+    if (r === true) { const it = watchlistOf(state).items.find((x) => x.kind === d.kind && x.id === Number(d.id)); if (it) watchlistStatus(state, it); } // a horde: where it is now
     if (d.ctx) hideCtx();
   },
-  "wt-remove": (state, ui, d) => { unwatch(state, d.kind, Number(d.id)); },
-  "wt-go": (state, ui, d, act) => { const it = watchList(state).items.find((x) => x.kind === d.kind && x.id === Number(d.id)); if (it) goWatch(state, ui, it, act); },
-  "wt-collapse": (state, ui, d) => { const w = watchList(state); w.collapsed = d.v === undefined ? !w.collapsed : d.v === "1"; },
-  "wt-notes": (state) => { const w = watchList(state); w.notesOpen = w.notesOpen === false; },
+  "wl-remove": (state, ui, d) => { unpinWatchlist(state, d.kind, Number(d.id)); },
+  "wl-go": (state, ui, d, act) => { const it = watchlistOf(state).items.find((x) => x.kind === d.kind && x.id === Number(d.id)); if (it) goWatchlist(state, ui, it, act); },
+  "wl-collapse": (state, ui, d) => { const w = watchlistOf(state); w.collapsed = d.v === undefined ? !w.collapsed : d.v === "1"; },
+  "wl-notes": (state) => { const w = watchlistOf(state); w.notesOpen = w.notesOpen === false; },
   // Notes: the editor (ui.noteEdit: { tile, id (null for a new one), icon, text, x, y }) and the list.
   "mn-add": (state, ui, d) => { const s = d.ctx ? ctxSpot() : null; ui.noteEdit = { tile: Number(d.tile), id: null, icon: "flag", text: "", x: s ? s.x : null, y: s ? s.y : null, st: state }; if (d.ctx) hideCtx(); },
   "mn-edit": (state, ui, d) => {
@@ -323,7 +323,7 @@ function syncEditor(state, ui, hooks) {
   el.innerHTML = editorHTML(state, e);
   el.classList.remove("hidden");
   // Where: at the right-click, else beside the Watching panel; inside the map either way.
-  const watch = document.getElementById("watch");
+  const watch = document.getElementById("watchlist");
   let x = e.x, y = e.y;
   if (x == null) { x = watch && !watch.classList.contains("hidden") ? watch.offsetLeft + watch.offsetWidth + 8 : 16; y = watch && !watch.classList.contains("hidden") ? watch.offsetTop : 16; }
   x = Math.max(4, Math.min(x, wrap.clientWidth - el.offsetWidth - 4));
@@ -334,8 +334,8 @@ function syncEditor(state, ui, hooks) {
   if (input) { input.focus(); input.select(); }
 }
 // The Watching panel goes under the Running orders (or the paused banner) and stops above the Layers box.
-function placeWatch() {
-  const el = document.getElementById("watch");
+function placeWatchlist() {
+  const el = document.getElementById("watchlist");
   if (!el || el.classList.contains("hidden")) return;
   const wrap = el.parentElement, orders = document.getElementById("orders"), legend = document.getElementById("legend"), banner = document.getElementById("banner");
   const gap = Math.round((parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) * 0.5);
@@ -348,14 +348,14 @@ function placeWatch() {
 }
 // After each refresh (main.js): place the panel, keep the note editor in step. hooks: { act (main.js's action
 // table), refresh } for the editor's Enter and Esc keys.
-export function syncWatch(state, ui, hooks = {}) {
+export function syncWatchlist(state, ui, hooks = {}) {
   if (!hasDoc()) return;
-  placeWatch();
+  placeWatchlist();
   syncEditor(state, ui, hooks);
 }
 
 // Help → Watch list and map notes (ui/help.js).
-export const WATCH_HELP = {
+export const WATCHLIST_HELP = {
   title: "Watch list and map notes",
-  html: `<b>📌 Watch</b> a person (their survivor screen), a team (its panel), a group (Groups tab), a base (Bases tab or the tile panel) or a horde you can see (the tile panel's Horde row), or right-click a tile for the base, group, hordes and teams on it. They go in the <b>Watching</b> panel at the top left of the map, under the Running orders (▾ folds it; Map only folds it too), up to ${WATCH_MAX} at a time, saved with the campaign. Each row keeps its status live: <i>a person</i> where they are, health, mood and what they are doing; <i>a team</i> its order, ETA, place, food, water and Heat; <i>a horde</i> its size, where it is heading and how far it is from your nearest base; <i>a group</i> its attitude and goodwill, size, bases and strength against yours; <i>a base</i> its days of food and water and the threats you can see (hordes within ${WATCH_NEAR} tiles or heading for it, raiders). What you cannot know stays unknown: a team out of radio contact shows when it is due, a horde out of sight where you last saw it. Click a row to go there; the dead, the lost and the gone grey out, and ✕ drops a row. <b>📝 Map notes</b>: right-click a tile → <i>Add note here</i>, pick an icon (flag, cache, danger, bridge, target, star, question, skull) and type a short text (Enter saves, Esc closes). Notes show as small pins on the map, their text in the tile's hover description and beside the pin when zoomed in. They are listed under Notes in the Watching panel: click one to go there, ✎ to edit, ✕ twice to delete, 👁 to hide them all on the map.`,
+  html: `<b>📌 Pin</b> a person (their survivor screen), a team (its panel), a group (Groups tab), a base (Bases tab or the tile panel) or a horde you can see (the tile panel's Horde row), or right-click a tile for the base, group, hordes and teams on it. They go in the <b>Watching</b> panel at the top left of the map, under the Running orders (▾ folds it; Map only folds it too), up to ${WATCHLIST_MAX} at a time, saved with the campaign. Each row keeps its status live: <i>a person</i> where they are, health, mood and what they are doing; <i>a team</i> its order, ETA, place, food, water and Heat; <i>a horde</i> its size, where it is heading and how far it is from your nearest base; <i>a group</i> its attitude and goodwill, size, bases and strength against yours; <i>a base</i> its days of food and water and the threats you can see (hordes within ${WATCHLIST_NEAR} tiles or heading for it, raiders). What you cannot know stays unknown: a team out of radio contact shows when it is due, a horde out of sight where you last saw it. Click a row to go there; the dead, the lost and the gone grey out, and ✕ drops a row. <b>📝 Map notes</b>: right-click a tile → <i>Add note here</i>, pick an icon (flag, cache, danger, bridge, target, star, question, skull) and type a short text (Enter saves, Esc closes). Notes show as small pins on the map, their text in the tile's hover description and beside the pin when zoomed in. They are listed under Notes in the Watching panel: click one to go there, ✎ to edit, ✕ twice to delete, 👁 to hide them all on the map.`,
 };

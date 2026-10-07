@@ -90,7 +90,7 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, stageRows, fireButton } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
-import { watchPin } from "./watch.js"; // 📌 pin to the Watching panel
+import { watchlistPin } from "./watchlist.js"; // 📌 pin to the Watching panel
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -194,7 +194,7 @@ function renderBases(state) {
     const rate = buildRate(state, b);
     const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
     return `<div class="card">
-      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchPin(state, "base", b.id, b.name)}</span></div>
+      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchlistPin(state, "base", b.id, b.name)}</span></div>
       <div class="kv small" style="margin-top:0.4rem">
         <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
         <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
@@ -279,7 +279,7 @@ function renderGroups(state) {
       const a = attitude(f);
       const route = routes.find((r) => r.factionId === f.id);
       return `<div class="card">
-        <div class="spread"><b><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span>${f.alive ? `<span style="color:${attColor(a)}">${a}</span> ${watchPin(state, "group", f.id, f.name)}` : `<span class="muted">Collapsed</span>`}</span></div>
+        <div class="spread"><b><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span>${f.alive ? `<span style="color:${attColor(a)}">${a}</span> ${watchlistPin(state, "group", f.id, f.name)}` : `<span class="muted">Collapsed</span>`}</span></div>
         <div class="small muted">${FACTION_TYPES[f.type].label} · about ${f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</div>
         <div class="row small"><span class="muted" style="width:4.5rem"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>Goodwill</span><div style="flex:1">${bar((f.goodwill + 100) / 2, attColor(a))}</div><span>${Math.round(f.goodwill)}</span></div>
         ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
@@ -451,7 +451,7 @@ export function renderRight(state, ui) {
         ${claimText(state, id) ? `<div${tip("A marker post (sim/claims.js): the tile counts as land the coalition holds. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.")}>Claim</div><div>${esc(claimText(state, id))}${wellText(state, id) ? ` · ${esc(wellText(state, id))}` : ""}</div>` : ""}
         <div${tip("How thick the worm’s eggs lie in the ground and the water here (Help: The dead and the worm). Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
         <div${tip("How much is left to scavenge here, against what it held untouched: rich, some, little, picked clean. Nothing grows back, and other groups strip sites too: what you have not seen lately may be gone.")}>Loot</div><div>${lootCell(info.loot)}</div>
-        <div>Horde</div><div>${isLive ? here.map((h) => watchPin(state, "horde", h.id, `horde of ${h.size}`)).join("") + " " : ""}${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
+        <div>Horde</div><div>${isLive ? here.map((h) => watchlistPin(state, "horde", h.id, `horde of ${h.size}`)).join("") + " " : ""}${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
         ${info.hordeSize && info.hordeMix ? `<div${tip(specialTip(info.hordeMix))}>Special dead</div><div class="danger">${esc(mixText(info.hordeMix, info.hordeSize))}</div>` : ""}
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission; see Help → Eras and winning).`)}>Hive</div><div class="danger">Yes${liveHive ? ` · tier ${hiveTier(state, liveHive)}` : ""}</div>` : ""}
         ${hiveGrowths.length ? `<div${tip("Structures the hive has grown on the land around it (Burn the growth mission on each one's tile): income, a bigger guard, the special dead its hordes carry, Wallbreakers.")}>Growths</div><div class="danger">${esc(hiveGrowths.join(", "))}</div>` : ""}
@@ -464,7 +464,7 @@ export function renderRight(state, ui) {
       ${walk || base || stagingView(state) ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
     ${stagingTileCard(state, id)}
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchPin(state, "base", base.id, base.name)}<button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchlistPin(state, "base", base.id, base.name)}<button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
       <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
@@ -1035,7 +1035,7 @@ function survivorModal(state, ui) {
   ensureInv(s);
   const carried = s.pockets.filter(Boolean).length + (s.gear.backpack && s.gear.backpack.contents ? s.gear.backpack.contents.filter(Boolean).length : 0);
   return `<div class="box"><div class="spread"><h1><span class="surv-port" data-action="look-edit" data-id="${s.id}"${tip("Customize how they look")}>${spriteImg(survivorURL(s, state.seed), 3)}</span>${s.leader ? "★ " : ""}${esc(s.name)}</h1>
-      <span class="row">${s.alive ? watchPin(state, "person", s.id, s.name, { label: true }) : ""}<button class="mini ${ui.lookEdit === s.id ? "active" : ""}" data-action="look-edit" data-id="${s.id}"${tip("Change their look: build, hair, clothes, accessory. Shown in battle.")}>Customize look</button></span></div>
+      <span class="row">${s.alive ? watchlistPin(state, "person", s.id, s.name, { label: true }) : ""}<button class="mini ${ui.lookEdit === s.id ? "active" : ""}" data-action="look-edit" data-id="${s.id}"${tip("Change their look: build, hair, clothes, accessory. Shown in battle.")}>Customize look</button></span></div>
     ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
     <div class="where">${s.leader ? "Leader · " : ""}${inContact(state, s) ? `Health ${n0(s.health)} · Mood ${n0(s.mood)}` : "Health and mood unknown (no contact)"} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${inContact(state, s) && s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
