@@ -4,14 +4,22 @@
 // Network
 // - A radio station (buildings.js "radio") reaches RADIO_RANGE (12) tiles around its base. A base holding a Military
 //   encrypted radio (data.js milradio, a loot item) in its armory is a station too, reaching MIL_RADIO_RANGE (24).
-// - A radio relay (buildings.js "relay", outposts only) reaches RELAY_RANGE (6) tiles. It is an unmanned repeater:
-//   it needs no operator but uses 1 part every RELAY_UPKEEP_DAYS (10) days (from its outpost, else from the hub).
-//   With no part it goes offline until one is there (checked each day).
+// - A radio relay (buildings.js "relay": a utility plot at any base, the hub included) reaches RELAY_RANGE (6)
+//   tiles. It is an unmanned repeater: it needs no operator but uses 1 part every RELAY_UPKEEP_DAYS (10) days (from
+//   its base, else from the hub). With no part it goes offline until one is there (checked each day).
 // - A relay only works when it is linked: it stands within range of a station or of another linked relay
 //   (a chain back to a station). Coverage is the union of the ranges of every station and linked relay.
+// - A base with a station is a station node, whatever else stands there: a relay at the same base adds nothing (its
+//   6 tiles sit inside the station's 12), so none can be built where a station stands (buildings.js canBuild), and
+//   one already there (a station built after it) stands idle, using no parts, until the station is gone or broken.
+//   A relay at a hub without a station is like any other: it works once a station or linked relay reaches it.
 // - Your teams in coverage report live (world.js radioBasesInRange); groups whose base is within coverage plus
-//   GROUP_REACH (6) tiles (their own sets reach that far) can be called. A chain runs through your own bases only
-//   (every node is one of state.bases); the coalition's NEIGHBOUR / MEMBER_RELAY rules (alliance.js) do the rest.
+//   GROUP_REACH (6) tiles (their own sets reach that far) can be called (canRadioGroup), and that is what "in radio
+//   reach" means for the coalition too (alliance.js reachVia: a relay that brings a group's base within coverage + 6
+//   makes it invitable). A chain runs through your own bases only (every node is one of state.bases); the
+//   coalition's other ways in (a team at their gates, a base of yours or a member's next door) are alliance.js's.
+// - relayReach / relaySpotFor: the groups a relay at a base would bring into reach, and the base where one would
+//   bring a given group in (the invitation's "out of radio reach" line, the radio panel, the autopilot's relay wish).
 // - Networks (radioNetworks, networksAt): yours, and one per group around each of its bases (GROUP_NET_RANGE by
 //   type). Receivers hear a network only inside its coverage; Listen in tunes one to a channel (radiolisten.js).
 //
@@ -136,12 +144,15 @@ export function canHearGroup(state, f) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------- network ----------
-// Every transmitter: { base, tile, range, kind: "station" | "relay", linked, offline }.
-export function radioNodes(state) {
+// Every transmitter: { base, tile, range, kind: "station" | "relay", linked, offline }. A base with a station is a
+// station node and nothing else (a relay there stands idle). plus: a base counted as if a working relay stood there
+// (relayReach: what one would add).
+export const hasStation = (b) => !!b.radio || hasMilRadio(b);
+export function radioNodes(state, plus = null) {
   const nodes = [];
   for (const b of state.bases) {
-    if (b.radio || hasMilRadio(b)) nodes.push({ base: b, tile: b.tile, range: (hasMilRadio(b) ? MIL_RADIO_RANGE : RADIO_RANGE) + radioBoost(b), kind: "station", linked: true, offline: false, military: hasMilRadio(b) }); // +2 on generator power (power.js)
-    else if (count(b, "relay")) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: !!b.relayOffline });
+    if (hasStation(b)) nodes.push({ base: b, tile: b.tile, range: (hasMilRadio(b) ? MIL_RADIO_RANGE : RADIO_RANGE) + radioBoost(b), kind: "station", linked: true, offline: false, military: hasMilRadio(b) }); // +2 on generator power (power.js)
+    else if (count(b, "relay") || b === plus) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: b === plus ? false : !!b.relayOffline });
   }
   const g = state.grid;
   for (let grew = true; grew;) {
@@ -159,15 +170,53 @@ export function coverNodes(state, tile, extra = 0) {
 }
 export const inCoverage = (state, tile, extra = 0) => coverNodes(state, tile, extra).length > 0;
 export const hasNetwork = (state) => radioNodes(state).some((n) => n.linked);
+// The groups a relay at this base would bring into call reach (canRadioGroup) that are out of it now: none where a
+// station or a relay already stands, or where the new relay would not link (no station or linked relay reaches the
+// base: a relay links within the other node's range, so coverage + 6 is not enough). It counts a chain it completes
+// (a relay standing unlinked further out that this one links). groups: the ones to look at (default every group).
+// outOfReach: the caller knows every group in `groups` is out of call reach now (spares canRadioGroup).
+export function relayReach(state, base, groups = null, outOfReach = false) {
+  if (!base || hasStation(base) || count(base, "relay")) return [];
+  const nodes = radioNodes(state, base).filter((n) => n.linked); // the cheap test first: would it link at all?
+  if (!nodes.some((n) => n.base === base)) return [];
+  const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && (outOfReach || !canRadioGroup(state, f)));
+  if (!list.length) return [];
+  const g = state.grid;
+  return list.filter((f) => f.bases.some((t) => nodes.some((n) => g.distance(n.tile, t) <= n.range + GROUP_REACH)));
+}
+// The base of yours (nearest to them first) where a relay would bring this group into call reach, or null. Asked
+// for every group outside the coalition many times a day (alliance.js inviteProblem: the daily ask, goalsProgress,
+// the Groups tab), so it is kept for the hour and the network as it stands (state.relaySpots, not saved).
+export function relaySpotFor(state, f) {
+  if (!f || !f.alive || !f.bases.length) return null;
+  const key = `${state.hour}|${state.bases.map((b) => `${b.id}:${b.tile}${hasStation(b) ? "s" : ""}${count(b, "relay") ? (b.relayOffline ? "o" : "r") : ""}`).join(",")}`;
+  let c = state.relaySpots;
+  if (!c || c.key !== key) {
+    c = { key, by: new Map() };
+    Object.defineProperty(state, "relaySpots", { value: c, writable: true, configurable: true, enumerable: false });
+  }
+  const fk = `${f.id}|${f.bases.join(",")}`;
+  if (!c.by.has(fk)) c.by.set(fk, relaySpotNow(state, f));
+  return c.by.get(fk);
+}
+function relaySpotNow(state, f) {
+  const cur = radioNodes(state).filter((n) => n.linked);
+  if (!cur.length || canRadioGroup(state, f)) return null;
+  const g = state.grid;
+  const near = (b) => Math.min(...f.bases.map((t) => g.distance(t, b.tile)));
+  // Only a base a linked node reaches can link a new relay (radioNodes): the rest are never worth the full test.
+  const cands = state.bases.filter((b) => !hasStation(b) && !count(b, "relay") && cur.some((n) => g.distance(n.tile, b.tile) <= n.range));
+  return cands.sort((a, b) => near(a) - near(b) || a.id - b.id).find((b) => relayReach(state, b, [f], true).length > 0) || null;
+}
 
 // One line for the base screen.
 export function radioSummary(state, base) {
   const n = radioNodes(state).find((x) => x.base === base);
   const tuned = base.tuned != null ? networkById(state, base.tuned) : null; // radiolisten.js Listen in
   const ear = tuned ? `. Tuned to ${tuned.name}${netCovers(state, tuned, base.tile) ? "" : " (out of range)"}` : "";
-  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}${ear}`;
+  if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}${count(base, "relay") ? ". The relay here stands idle (the station covers more)" : ""}${ear}`;
   if (n) {
-    if (n.offline) return "Relay offline: it needs 1 part (from this outpost or the hub)";
+    if (n.offline) return `Relay offline: it needs 1 part (from ${base.type === "hub" ? "this base" : "this base or the hub"})`;
     if (!n.linked) return `Relay not linked: no station or linked relay within range (it reaches ${n.range} tiles)`;
     return `Relay linked: ${n.range} tiles of coverage. Upkeep 1 part every ${RELAY_UPKEEP_DAYS} days, next on day ${base.relayDue ?? day(state) + RELAY_UPKEEP_DAYS}`;
   }
@@ -175,12 +224,14 @@ export function radioSummary(state, base) {
   return (by ? `In coverage (from ${by.base.name})` : baseListens(state, base) ? "A hand-crank radio: it listens, calls nobody" : "No radio here, and out of coverage") + ear;
 }
 
-// Relays use a part every few days; without one they go offline until one turns up.
+// Relays use a part every few days; without one they go offline until one turns up. A relay idle beside a station
+// (radioNodes) uses nothing; its clock starts again when it is back on the air.
 function relayUpkeep(state) {
   const today = day(state);
   const h = hub(state);
   for (const b of state.bases) {
     if (!count(b, "relay")) continue;
+    if (hasStation(b)) { b.relayDue = null; b.relayOffline = false; continue; }
     if (b.relayDue == null) b.relayDue = today + RELAY_UPKEEP_DAYS;
     if (today < b.relayDue && !b.relayOffline) continue;
     const from = (b.stock.parts || 0) >= 1 ? b : h && (h.stock.parts || 0) >= 1 ? h : null;
@@ -191,7 +242,7 @@ function relayUpkeep(state) {
       b.relayOffline = false;
     } else if (!b.relayOffline) {
       b.relayOffline = true;
-      log(state, `The radio relay at ${b.name} went off the air: it needs 1 part (at the outpost or the hub).`, "danger");
+      log(state, `The radio relay at ${b.name} went off the air: it needs 1 part (at ${b.type === "hub" ? "the hub" : "that base or the hub"}).`, "danger");
     }
   }
 }

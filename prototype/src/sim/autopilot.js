@@ -26,7 +26,7 @@ import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
 import { autoCaravanTrade } from "./caravans.js";
 import { autoVisitorTrade } from "./visitors.js";
-import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, RELAY_RANGE, GROUP_REACH } from "./radio.js";
+import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan } from "./defenceplan.js"; // the governor's defence plan (governorPlans)
@@ -51,7 +51,7 @@ import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
-import { planBlueprintStudy } from "./blueprints.js";
+import { planBlueprintStudy, buildLock } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
 import { POWER, powerWanted } from "./power.js";
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
@@ -1862,11 +1862,17 @@ function buildWishes(state, base) {
   const hz = hordeThreat(state, base);
   if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
-  // A radio relay (radio.js) at an outpost within reach of the network, when it would bring a group you know into
-  // radio reach: greetings, pacts and the coalition need it.
-  if (!isHub && !count(base, "relay") && !queued("relay") && hasNetwork(state) && inCoverage(state, base.tile, RELAY_RANGE)) {
-    const gain = state.factions.some((f) => f.alive && f.known && !canRadioGroup(state, f) && f.bases.some((b) => state.grid.distance(b, base.tile) <= RELAY_RANGE + GROUP_REACH));
-    if (gain) add("relay", "radio reach to a group out of contact");
+  // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
+  // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
+  // reachVia). radio.js relayReach rules out a base with a station (it adds nothing there) and one the relay would
+  // not link from (it used to be wished for anywhere within coverage + 6, where it never linked). Only when it can
+  // go up here but for materials (a Mechanics 3+ builder, the Radio Engineering Handbook studied), so the supply
+  // runs (planSupplyRuns) do not carry scrap and parts out for a mast nobody can raise.
+  if (!count(base, "relay") && !queued("relay") && !base.radio && hasNetwork(state) && best("mechanics") >= (BUILDINGS.relay.req.mechanics || 0) && !buildLock(state, base, "relay")) {
+    const gain = relayReach(state, base, state.factions.filter((f) => f.alive && f.known && attitude(f) !== "Hostile"));
+    // Saved up for (the wishes after it wait) when radio reach is what keeps one of them out of the coalition.
+    const blocked = gain.filter((f) => !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)));
+    if (gain.length) add("relay", `radio reach to ${gain.map((f) => f.name).join(", ")}${blocked.length ? " for the coalition" : ""}`, blocked.length > 0);
   }
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
@@ -2399,8 +2405,8 @@ function planTrip(state) {
 
 // ---------- envoys (alliance.js) ----------
 // The coalition needs every group in it, and the radio reaches only 12 tiles from the hub (more with relays at
-// outposts): a group out of reach is courted in person. Two people take the hub's surplus (food, ammo, meds) to
-// the nearest such group that is not hostile and not a member, at most one envoy out and one visit per group every
+// your other bases: buildWishes): a group out of reach is courted in person. Two people take the hub's surplus
+// (food, ammo, meds) to the nearest such group that is not hostile and not a member, at most one envoy out and one visit per group every
 // ENVOY_EVERY days; at their gates the team gives what it brought as a gift while their goodwill is short (up to
 // 15 goodwill a day), proposes a pact and invites them once they qualify (handleTrade). A team at their gates
 // also hears of jobs (jobs.js), and a job done for them is what the invitation needs without a council.
@@ -4051,17 +4057,21 @@ function planSupplyRuns(state) {
     } else {
       const wish = buildWishes(state, o).find((w) => { if (!BUILDINGS[w.type]) return false; const c = wishCheck(state, o, w); return !c.noPlot && !/^Limit reached/.test(c.reason || ""); }); // no plot free: no scrap run for it
       const scrap = wish ? wishCost(wish).scrap || 0 : 0;
-      if (wish && (o.stock.scrap || 0) < scrap && (h.stock.scrap || 0) >= scrap + 25 && home.length >= 5 && crewPool.length >= 1) {
-        const deliver = [{ key: "scrap", qty: scrap + 2 }];
-        const parts = wishCost(wish).parts || 0; // a well needs a part too (a barracks two)
-        if (parts && (o.stock.parts || 0) < parts && (h.stock.parts || 0) >= parts + 2) deliver.push({ key: "parts", qty: parts });
+      // A well needs a part too, a barracks two, a radio relay 3; one more when it is not saved for (planBuilds keeps 1 back then).
+      const parts = wish && wishCost(wish).parts ? wishCost(wish).parts + (wish.save ? 0 : 1) : 0;
+      const partsShort = parts > 0 && (o.stock.parts || 0) < parts && (h.stock.parts || 0) >= parts + 2;
+      // Scrap short (the hub can spare it), or only the parts (an outpost seldom has 3 for a relay: it makes none).
+      const scrapShort = (o.stock.scrap || 0) < scrap;
+      if (wish && (scrapShort ? (h.stock.scrap || 0) >= scrap + 25 : partsShort) && home.length >= 5 && crewPool.length >= 1) {
+        const deliver = scrapShort ? [{ key: "scrap", qty: scrap + 2 }] : [];
+        if (partsShort) deliver.push({ key: "parts", qty: parts - Math.floor(o.stock.parts || 0) });
         if ((o.stock.food || 0) < staff * 3) deliver.push({ key: "food", qty: 8 });
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
         const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
         const crew = [];
         for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, Math.max(1, Math.floor(home.length / 3)))) crew.push(s);
         if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };
-        why = `scrap for ${wish.upgrade != null ? "expanding a bunkhouse into a barracks" : `a ${BUILDINGS[wish.type].name.toLowerCase()}`} (${wish.why})`;
+        why = `${scrapShort ? (partsShort ? "scrap and parts" : "scrap") : "parts"} for ${wish.upgrade != null ? "expanding a bunkhouse into a barracks" : `a ${BUILDINGS[wish.type].name.toLowerCase()}`} (${wish.why})`;
       }
     }
     if (!form) continue;

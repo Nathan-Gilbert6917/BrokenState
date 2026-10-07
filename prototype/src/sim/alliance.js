@@ -2,10 +2,12 @@
 // and the alliance victory.
 //
 // Joining
-// - A group can be invited (Groups tab or the radio panel) when it is alive, known, in radio reach (or one of your
-//   teams is at its gates), not at war with a member, its goodwill toward you is 50+ and it has a pact with you,
-//   and either you have done a job for it or the council votes it in (with members, each member votes yes when its
-//   relations with the group are 10+; a majority carries it).
+// - A group can be invited (Groups tab or the radio panel) when it is alive, known, in radio reach (reachVia: a base
+//   of theirs within your radio coverage + 6, stations and linked relays at any of your bases; or one of your teams
+//   at its gates, a base of yours within NEIGHBOUR 8 tiles, a member's within MEMBER_RELAY 12), not at war with a
+//   member, its goodwill toward you is 50+ and it has a pact with you, and either you have done a job for it or the
+//   council votes it in (with members, each member votes yes when its relations with the group are 10+; a majority
+//   carries it).
 // - A group that qualifies may also ask to join (3% a day): a card (Welcome them / Not now).
 // - A member leaves when its goodwill falls below 20, its pact with you is gone, or it goes to war with another
 //   member (then the one that started it is expelled).
@@ -36,10 +38,10 @@
 // with the square root of the area (Small 7 / 5, Large 11 / 9, Huge 14 / 11), so it takes about as many bases on any
 // map; plus every tile your teams claimed (claims.js: a marker post on a tile bordering land you hold).
 // world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
-import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive } from "./world.js";
+import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
-import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen } from "./radio.js";
+import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, GROUP_REACH, RELAY_RANGE } from "./radio.js";
 import { available, need } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
 import { count } from "./buildings.js";
@@ -67,11 +69,30 @@ export const isMember = (state, f) => !!f && !!state.alliance && state.alliance.
 export const allianceMembers = (state) => (state.alliance ? state.alliance.members.map((id) => factionById(state, id)).filter((f) => f && f.alive) : []);
 
 // ---------- joining ----------
-// members' radios carry the invitation), or a base of yours within NEIGHBOUR tiles of theirs.
-// members' radios carry the invitation).
-const reachable = (state, f) => canRadioGroup(state, f) || state.parties.some((p) => p.owner === "player" && f.bases.includes(partyTile(p)) && (p.phase === "waiting" || p.phase === "engaged")) ||
-  allianceMembers(state).some((m) => m !== f && m.bases.some((b) => f.bases.some((x) => state.grid.distance(b, x) <= ALLIANCE.MEMBER_RELAY))) ||
-  state.bases.some((b) => f.bases.some((x) => state.grid.distance(b.tile, x) <= ALLIANCE.NEIGHBOUR)); // a base of yours next door: you talk over the fence
+// How an invitation reaches a group (the "in radio reach" condition), the first way that works, "" for none:
+// - "radio": one of its bases lies within your radio coverage + GROUP_REACH (radio.js canRadioGroup: the stations'
+//   range and RELAY_RANGE around every linked relay, at any of your bases, plus 6 for their own sets). A relay that
+//   brings a group's base into that reach makes it invitable (radio.js relaySpotFor names the base for one);
+// - "gates": one of your teams waits or trades at one of its bases;
+// - "member": a member has a base within MEMBER_RELAY tiles of one of theirs (the member's radio carries it);
+// - "neighbour": a base of yours within NEIGHBOUR tiles of one of theirs (you talk over the fence).
+export function reachVia(state, f) {
+  if (!f || !f.alive) return "";
+  if (canRadioGroup(state, f)) return "radio";
+  if (state.parties.some((p) => p.owner === "player" && f.bases.includes(partyTile(p)) && (p.phase === "waiting" || p.phase === "engaged"))) return "gates";
+  if (allianceMembers(state).some((m) => m !== f && m.bases.some((b) => f.bases.some((x) => state.grid.distance(b, x) <= ALLIANCE.MEMBER_RELAY)))) return "member";
+  if (state.bases.some((b) => f.bases.some((x) => state.grid.distance(b.tile, x) <= ALLIANCE.NEIGHBOUR))) return "neighbour";
+  return "";
+}
+const reachable = (state, f) => reachVia(state, f) !== "";
+// The "out of radio reach" line: every way in, and the base where a relay would do it when there is one.
+function outOfReach(state, f) {
+  const spot = relaySpotFor(state, f);
+  const radio = spot ? `build a radio relay at ${spot.name} (it would bring them into your coverage)`
+    : hasNetwork(state) ? `bring their base within ${GROUP_REACH} tiles of your radio coverage (a station reaches ${RADIO_RANGE} tiles, each linked relay ${RELAY_RANGE} more around its base)`
+    : `build a radio station (${RADIO_RANGE} tiles, +${GROUP_REACH} for their own sets; relays at your other bases chain it ${RELAY_RANGE} tiles further each)`;
+  return `${f.name} is out of radio reach (${radio}, send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them).`;
+}
 // The council's vote on a candidate: { yes, no, passes } (no members: no vote).
 export function councilVote(state, f) {
   const ms = allianceMembers(state).filter((m) => m !== f);
@@ -83,7 +104,7 @@ export function inviteProblem(state, f) {
   if (!f || !f.alive) return "They are gone.";
   if (isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (!f.known) return "You have not met them.";
-  if (!reachable(state, f)) return `${f.name} is out of radio reach (send a team to their gates, hold a base within ${ALLIANCE.NEIGHBOUR} tiles of theirs, or win a member within ${ALLIANCE.MEMBER_RELAY} tiles of them).`;
+  if (!reachable(state, f)) return outOfReach(state, f);
   if (attitude(f) === "Hostile") return `${f.name} is hostile.`;
   const want = inviteGoodwill(state, f, ALLIANCE.GOODWILL); // conquest.js: peaceful groups want more from a conqueror
   if (f.goodwill < want) return `${f.name} needs goodwill ${want}${want > ALLIANCE.GOODWILL ? ` (${ALLIANCE.GOODWILL}, more because of the groups you have conquered)` : ""} (now ${Math.round(f.goodwill)}).`;

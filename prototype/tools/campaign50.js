@@ -32,6 +32,7 @@ import { baseBeds } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats } from "../src/sim/hives.js";
 import { goalsProgress, inviteProblem, isMember } from "../src/sim/alliance.js";
+import { relaySpotFor } from "../src/sim/radio.js";
 import { ensureConquest } from "../src/sim/conquest.js";
 import { clampGroups } from "../src/sim/worldsize.js";
 import { season, SEASONS } from "../src/sim/weather.js";
@@ -196,6 +197,10 @@ function runOne(job) {
       pop: alive(state).length, bases: state.bases.length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building,
       members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round((gp.alliance.land.pct || 0) * 1000) / 10, outside,
       outposts: state.bases.filter((b) => b.type === "outpost").length, built: (() => { try { return hiveStats(state).built; } catch { return null; } })(),
+      relays: state.bases.filter((b) => b.buildings.some((x) => x.type === "relay")).length, // radio relays standing (radio.js)
+      stations: state.bases.filter((b) => b.radio).length, // radio stations on the air
+      // Known groups outside the coalition, out of radio reach, that a relay at one of your bases would bring in.
+      relaySpots: state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)) && relaySpotFor(state, f)).length,
       reason: state.victoryReason || null, conquest, mapW: state.grid.width, mapH: state.grid.height,
       world: { collapsed: state.factions.filter((f) => !f.alive).length, newGangs: state.stats.newGangs || 0, razedYours: state.stats.razedYours || 0, razedGroups: state.stats.razedGroups || 0 },
     },
@@ -345,6 +350,8 @@ function report(results, label) {
     for (const k of seen) console.log("  " + pad(k, 22) + labels.map((l) => rpad(bl[l][k] || 0, 12)).join(""));
     console.log("  " + pad("groups outside", 22) + labels.map((l) => rpad(Object.values(bl[l]).reduce((a, v) => a + v, 0), 12)).join(""));
   }
+  const ends = results.filter((r) => r.end);
+  if (ends.length) console.log(`  members at the end: ${ends.reduce((a, r) => a + (r.end.members || 0), 0)} over ${ends.length} runs; radio relays standing: ${ends.reduce((a, r) => a + (r.end.relays || 0), 0)} (in ${ends.filter((r) => r.end.relays).length} runs); runs with a radio station on the air: ${ends.filter((r) => r.end.stations).length}; groups out of radio reach a relay would bring in: ${ends.reduce((a, r) => a + (r.end.relaySpots || 0), 0)}`);
 
   // Hive storm rejections (the census's testing item 4): why the autopilot offered no storm each morning, summed.
   const withRej = results.filter((r) => r.hiveRejects);
