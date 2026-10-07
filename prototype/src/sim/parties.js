@@ -42,7 +42,8 @@ import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt } from "./weather.js";
+import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
+import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
@@ -123,10 +124,11 @@ export function bridgeClosedTo(state, tile, who) {
   if (who === "player") return !allied(holder);
   return true;
 }
-export function moveCost(state, from, to, vehicle, who) {
+// hour: the hour the step is taken in (a river frozen in deep winter can be walked, never driven: weather.js ICE).
+export function moveCost(state, from, to, vehicle, who, hour = state.hour) {
   const t = state.tiles[to];
   const mode = vehicle === true ? "vehicle" : "walk";
-  if (t.terrain === "water" && !t.bridge) return Infinity;
+  if (t.terrain === "water" && !t.bridge) return vehicle || !riverFrozen(state, to, hour) ? Infinity : ICE.walk;
   if (t.bridge && bridgeClosedTo(state, to, who)) return Infinity; // someone else's barricade across the bridge
   const f = state.tiles[from];
   // On a bridge the only way is along it: off the side is the river. (Without this a team could step off a bridge
@@ -245,12 +247,12 @@ export const NIGHT_SIGHT = { dark: 0, goggles: 1, GOGGLES: ["nvg", "thermal"] };
 export const nightEyesOn = (members) => members.some((s) => s.gear && s.gear.tool && NIGHT_SIGHT.GOGGLES.includes(s.gear.tool.key));
 export function sightRadius(state, p) {
   const m = partyMembers(state, p);
-  if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, travelEffects(state).sight));
+  const fx = travelEffects(state, state.hour, partyTile(p)); // fog or a blizzard where the team is (weather.js)
+  if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, fx.sight));
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
   if (m.some((s) => hasPerk(s, "lookout"))) r += 1; // Lookout (skills.js)
-  const fx = travelEffects(state);
   // Binoculars a tile more by day; a thermal at night and in fog (optics.js). A spotting scope only while it stays put.
   r += opticsFor(m, p.cargo, { still: !onTheMove(p), night: state.hour % 24 < 6 || state.hour % 24 >= 20, fog: fx.sight < 0 }).sight;
   return Math.max(1, r + fx.sight); // fog and blizzards cut sight by a tile (weather.js)
@@ -349,14 +351,16 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 // vehicle: false, true (a car) or "bike"; speed: the pace in that mode; footSpeed: the pace on foot once a car runs
 // dry (the team's load is no longer carried for it); fuelMult: the car's load multiplier on fuel (vehicles.js).
 // rideHours: hours started in the vehicle (rations: the rest are on foot).
-export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true } = {}) {
+// known: the hour the estimate is made in (now): only the weather fronts already on the map by then count (weather.js),
+// so a front that forms later can still make the trip slower than estimated.
+export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: vehicle || false };
   let f = fuel, hours = 0, dryAt = null, rideHours = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
     if (sim.vehicle) rideHours += 1;
     const sp = sim.vehicle || footSpeed == null ? speed : footSpeed;
-    for (const tileId of stepAlong(state, sim, sp, weather ? startHour + hours : null)) {
+    for (const tileId of stepAlong(state, sim, sp, weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
       const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult);
@@ -386,7 +390,7 @@ export function plannedTile(state, p, now = state.hour) {
   const start = p.planStart ?? p.departed;
   const t = now - start;
   const mode = p.planVehicle === true || p.planVehicle === "bike" ? p.planVehicle : false;
-  const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start };
+  const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start, known: start }; // the fronts the hub knew of then
   if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
   const stay = p.planStay ?? 6; // hours at the target before heading back (a plan sets its own, plans.js)
   const tb = t - p.etaOut - stay;
@@ -675,7 +679,8 @@ export function pruneCards(state) {
 }
 
 // hour: the hour this step is taken in (the weather of that hour sets the cost); null = fair weather.
-function stepAlong(state, p, speed, hour = state.hour) {
+// known: estimates count only the weather fronts on the map by then (travelHours); the real step, all of them.
+function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   if (p.idx >= p.path.length - 1) return [];
   p.progress += speed;
   const entered = [];
@@ -683,7 +688,7 @@ function stepAlong(state, p, speed, hour = state.hour) {
     const from = p.path[p.idx], to = p.path[p.idx + 1];
     // A bridge barricaded since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the
     // way is the destination itself and is never closed.
-    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }));
+    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour, known }));
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
       if (p.owner === "player" && p.phase === "out" && state.tiles[to].bridge) p.bridgeStop = to; // told on arrival (arrive)
@@ -709,7 +714,7 @@ export function glideAt(state, p, frac) {
   const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
   for (let i = p.idx; i < p.path.length - 1; i++) {
     const from = p.path[i], to = p.path[i + 1];
-    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour });
+    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner, hour) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour });
     if (!(cost > 0) || !isFinite(cost)) return { from, to: from, t: 0 };
     if (prog < cost) return { from, to, t: Math.max(0, prog / cost) };
     prog -= cost;
@@ -790,6 +795,7 @@ function playerPartyHour(state, p) {
   }
   const entered = stepAlong(state, p, partySpeed(p));
   for (const tileId of entered) {
+    thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
     onEnterTile(state, p, tileId);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
   }

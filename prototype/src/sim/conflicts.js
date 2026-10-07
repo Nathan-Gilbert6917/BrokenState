@@ -355,9 +355,10 @@ export function spotFirstChance(state, p) {
   if (p.stance === "stealthy") c += 0.25;
   if (p.stance === "rushed") c -= 0.1;
   if (p.vehicle) c -= 0.1;
-  c -= travelEffects(state).ambush; // fog and whiteouts hide the other side until it is close (weather.js)
+  const fx = travelEffects(state, state.hour, partyTile(p)); // the weather where the team is (weather.js)
+  c -= fx.ambush; // fog and whiteouts hide the other side until it is close
   if (isNight(state) && members.some((m) => m.traits.includes("nightowl") || (m.gear.tool && m.gear.tool.key === "nvg"))) c += 0.15;
-  c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: travelEffects(state).sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
+  c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: fx.sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
   return clamp(c, 0.05, 0.9);
 }
 

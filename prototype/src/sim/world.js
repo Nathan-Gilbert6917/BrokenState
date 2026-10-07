@@ -37,6 +37,7 @@ import { watchHour, watchDayRoles } from "./watch.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
+import { riversHour } from "./rivers.js"; // frozen rivers: freeze and thaw (who is on the ice, ways over it)
 import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
@@ -628,6 +629,7 @@ export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
+  riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   movePartiesHour(state);
   stagingHour(state); // staging.js: the staging camp with no base (work, stores, looters; done: the hub)

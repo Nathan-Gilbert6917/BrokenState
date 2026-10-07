@@ -14,10 +14,12 @@ import { partyTile, plannedTile } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
 import { camera, view, HEX, liveSet, coalitionLand } from "./render.js";
 import { PAL } from "./palette.js";
+import { iceRow } from "../sim/weather.js"; // frozen rivers show as ice
 
 const SQ3 = Math.sqrt(3);
 const SHADES = [1, 0.72, 0.42]; // live, reported, unknown (render.js SHADES)
 const ROAD = [205, 187, 138];   // render.js road colour
+const ICE_RGB = [205, 225, 238]; // a frozen river (render.js ICE_FILL)
 const PLAYER = "#4f8fd6";       // your bases (render.js PLAYER_COLOR)
 const DATA_MS = 500, DRAW_MS = 33;
 
@@ -132,10 +134,11 @@ function updateLand(state) {
   const owners = new Map(state.factions.map((f) => [f.id, rgb(f.color)]));
   const mine = rgb(PLAYER), infRgb = PAL.infRgb.split(",").map(Number), coalRgb = coal ? coal.owners.map((o) => (o ? rgb(o.color) : null)) : null;
   let changed = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  const ice = state.weather ? iceRow(state) : -1; // rivers frozen down to this row (sim/weather.js ICE): pale ice
   for (let i = 0; i < n; i++) {
     const t = state.tiles[i], isLive = live.has(i), snap = isLive ? null : k[i];
     const fog = isLive ? 0 : snap ? 1 : 2;
-    let [r, gg, b] = TERR_RGB[t.terrain] || TERR_RGB.plains || [90, 90, 90];
+    let [r, gg, b] = t.terrain === "water" && !t.bridge && t.y <= ice ? ICE_RGB : TERR_RGB[t.terrain] || TERR_RGB.plains || [90, 90, 90];
     if (t.terrain !== "water" && t.roadLinks && t.roadLinks.length) { r = (r + ROAD[0]) / 2; gg = (gg + ROAD[1]) / 2; b = (b + ROAD[2]) / 2; }
     // Tints, strongest last: Territory (who holds the tile, as far as you know), Infection, Coalition.
     let tc = null, ta = 0;

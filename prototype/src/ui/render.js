@@ -8,7 +8,8 @@ import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team hel
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
-import { weatherTint, season } from "../sim/weather.js";
+import { weatherTint, season, iceRow } from "../sim/weather.js";
+import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
 import { tunedNetworks } from "../sim/radiolisten.js"; // a channel you listen in on: its coverage in the group's colour
 import { heatInfo } from "../sim/fieldheat.js";
@@ -169,6 +170,7 @@ const SHADES = [1, 0.72, 0.42]; // terrain brightness: live, known from a report
 const FAR = 1 << 20;       // hive distance when there is no hive
 const MAX_LEVELS = 4;      // zoom levels kept
 
+let lastFrac = 0; // the clock's minutes at the last frame: the fronts glide while they change
 let curS = 1; // device pixels per world pixel this frame: passed to drawMapSprite so it need not read the transform
 const sprite = (cv, x, y, w, o) => drawMapSprite(ctx, cv, x, y, w, o, curS);
 // ---------- animation ----------
@@ -383,8 +385,9 @@ function tilesIn(G, x0, y0, x1, y1, out) {
 // This frame's switches for the cached layers.
 // deco: how much terrain detail shows (0 flat .. 1, ui/terraindeco.js decoAlpha), dsc its atlas scale, snow: the
 // snow-capped decals (the weather's snow-cover wash is on); season: broadleaf trees green, turning or bare.
-const F = { zoom: 1, tint: null, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
+const F = { zoom: 1, tint: null, iceRow: -1, infOn: false, terrOn: false, hordesOn: false, poisOn: false, knownOn: false, coalOn: false, ringSkulls: false, deco: 0, dsc: null, snow: false, season: "spring" };
 const WATER_RGB = [1, 3, 5].map((k) => parseInt(TERRAIN.water.color.slice(k, k + 2), 16));
+const ICE_FILL = ["rgba(214,232,244,0.88)", "rgba(170,188,200,0.7)", "rgba(110,122,132,0.5)"]; // frozen river: live, reported, unknown
 const DECO_REACH = 35; // a tile's decals reach at most this far from its center (terraindeco.js MAX_REACH + 1)
 // The current world's decal placement (ui/terraindeco.js placeDecor), for the headless tools.
 export const mapDecor = () => (geo ? geo.deco : null);
@@ -763,6 +766,24 @@ function drawGround(state, n, nr, x0, y0, x1, y1) {
     drawDecor(ctx, G.deco, list, n, G.key, G.clr, decoAtlas(F.dsc.R), F.snow, F.deco, SEASON_LOOK[F.season]);
     ctx.imageSmoothingEnabled = sm0;
   }
+  // Frozen rivers (sim/weather.js ICE: the rows down to F.iceRow): pale ice over the water, as bright as the land
+  // around it (live, reported, unknown). Only the chunks of rows that freeze or thaw are drawn again (render).
+  if (F.iceRow >= 0) {
+    for (let f = 0; f < 3; f++) {
+      let k = 0;
+      ctx.beginPath();
+      for (let a = 0; a < n; a++) {
+        const id = list[a];
+        if (G.water[id] && G.r[id] <= F.iceRow && (G.key[id] & 3) === f && G.angle[id] !== G.angle[id]) { hexSub(X[id], Y[id], HEX + 0.5); k++; }
+      }
+      if (!k) continue;
+      ctx.fillStyle = ICE_FILL[f];
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,150,175,0.35)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
   // Season and weather wash over the land (weather.js): one fill for every land tile.
   if (F.tint) {
     ctx.beginPath();
@@ -1006,6 +1027,13 @@ export function render(state) {
   F.knownOn = on("known") && !state.timelapse;
   F.coalOn = on("coalition") && !state.timelapse;
   F.tint =on("weather") && (state.weather || !state.timelapse) ? weatherTint(state) : null;
+  // Frozen rivers: the rows that froze or thawed since the last frame are drawn again (their chunks, every zoom level).
+  const ir = state.timelapse || !state.weather ? -1 : iceRow(state);
+  if (ir !== F.iceRow) {
+    const a = Math.min(ir, F.iceRow) + 1, b = Math.max(ir, F.iceRow);
+    markDirty(-HEX * 2, a * HEX * 1.5 - HEX * 2, G.cols * HEX * Math.sqrt(3) + HEX * 2, b * HEX * 1.5 + HEX * 2);
+    F.iceRow = ir;
+  }
   F.ringSkulls = zoom > SKULL_ZOOM * 0.7;
   // Terrain detail: none zoomed out or with the Flat option; snow caps while the snow-cover wash is on (weather.js).
   F.deco = decoAlpha(zoom);
@@ -1084,6 +1112,13 @@ export function render(state) {
   ctx.lineCap = "round";
   const minX = camera.x - HEX * 2, minY = camera.y - HEX * 2;
   const maxX = camera.x + W / camera.zoom + HEX * 2, maxY = camera.y + H / camera.zoom + HEX * 2;
+  // Weather fronts drifting over the land (ui/wxmap.js): faint on the Weather layer, strong with Weather fronts.
+  if (!state.timelapse && (on("weather") || on("fronts"))) {
+    // They glide while the clock runs (Reduce motion: they jump an hour at a time, nothing asks for frames).
+    const moving = view.hourFrac !== lastFrac;
+    lastFrac = view.hourFrac;
+    if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: on("fronts"), zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
+  }
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;
   glidingNow = false;
@@ -2031,6 +2066,7 @@ export function tileTooltip(state, id) {
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   const ru = ownHere ? null : ruinInfo(state, id);
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
+  for (const line of weatherTipLines(state, id)) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: a front over it, ice
   const sd = searchedDay(state, id);
   if (sd) lines.push(`<span style="color:#8fd8cf">Searched by your people on day ${sd}</span>`); // sim/discovery.js (Known area layer)
   const nt = noteTip(state, id); // your map notes here (ui/mapnotes.js)

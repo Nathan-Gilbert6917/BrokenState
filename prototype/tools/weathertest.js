@@ -3,11 +3,13 @@
 //  2. Determinism: the same seed gives the same weather; other seeds differ; weather never draws from state.rng,
 //     so a world that looks at the weather a lot plays out exactly like one that does not.
 //  3. Climate per season over many seeds (weather mix, temperatures, snow cover) and every factor in range.
-//  4. Forecast: length by buildings, tomorrow nearly always right, further days less so.
+//  4. Forecast: length by buildings, tomorrow nearly always right, further days less so (the regional outlook:
+//     the day records; storms, blizzards and fog come as fronts that may miss the hub, see fronttest.js).
 //  5. ETA exactness: teams on multi-day trips (on foot / by truck, each stance), a redirect and a queue
 //     (move, camp, move) under (a) the real winter weather and (b) forced weather that flips between fair and
 //     very slow every day; estimates must match the real hours when no road event delayed the team, also for
-//     trips that start beyond the days rolled so far.
+//     trips that start beyond the days rolled so far. Estimates count only the weather fronts already on the map
+//     (weather.js `known`): a trip a front that formed after the estimate crossed is counted apart, like a delay.
 //  6. Two years (224 days) of play without NaN in the weather, people or stock.
 // Usage: node tools/weathertest.js [seeds for the climate table, default 20]
 import { createWorld, tickHour, hub, atBase, survivorById, alive, day } from "../src/sim/world.js";
@@ -131,7 +133,7 @@ console.log("Forecast");
     const fc = W.forecast(st, 5);
     check(JSON.stringify(fc) === JSON.stringify(W.forecast(st, 5)), "the forecast flickers within a day");
     n++;
-    fc.forEach((f, j) => { if (f.key === W.weatherOnDay(st, f.day).key) right[j]++; });
+    fc.forEach((f, j) => { if (f.key === W.regionOnDay(st, f.day).key) right[j]++; });
   }
   console.log(`  forecast right (with a radio station): ${right.map((r, j) => `+${j + 1}d ${Math.round((r / n) * 100)}%`).join(", ")}`);
   check(right[0] / n >= 0.85, "tomorrow's forecast is wrong too often");
@@ -158,6 +160,15 @@ function resolveCards(state, p, stats) {
   }
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders) state.cards.splice(i, 1);
 }
+// A front that came onto the map after hour h0 and was over the way (path) at some hour before h1: the estimate made
+// at h0 could not know it.
+function unforeseen(state, path, h0, h1) {
+  for (let h = h0 + 1; h <= h1; h++) for (const id of path) {
+    const a = W.frontAt(state, id, h);
+    if (a && a.f.t0 > h0) return true;
+  }
+  return false;
+}
 function runUntil(state, p, done, stats) {
   const start = state.hour;
   for (let n = 0; n < 24 * 60; n++) {
@@ -178,7 +189,7 @@ function forceFlip(state, days) {
   state.weather.days.forEach((d, i) => { d.tf = i % 2 ? [2.2, 2.7, 2.4, 3] : [1, 1, 1, 1]; });
 }
 const rows = [];
-let exact = 0, clean = 0, slowed = 0;
+let exact = 0, clean = 0, slowed = 0, fronts = 0;
 for (const mode of ["winter", "flip"]) {
   for (let c = 0; c < 12; c++) {
     const state = createWorld({ seed: 900 + c * 13, factionCount: 4 });
@@ -202,7 +213,9 @@ for (const mode of ["winter", "flip"]) {
     const p = res.party;
     if (mode === "flip") state.weather.days.forEach((d, i) => { d.tf = i % 2 ? [2.2, 2.7, 2.4, 3] : [1, 1, 1, 1]; });
     const st1 = { cards: 0, delay: 0 };
+    const h1 = state.hour, way1 = [...p.path];
     const leg = runUntil(state, p, (q) => q.phase === "waiting", st1);
+    if (unforeseen(state, way1, h1, state.hour)) { st1.delay += 1; fronts++; }
     if (est.weatherOut) slowed++;
     rows.push({ mode, how: `${byTruck ? "truck" : "foot"} ${stance}`, est: est.hoursOut, wx: est.weatherOut, actual: leg.hours, delay: st1.delay });
     if (!st1.delay && !leg.gone) { clean++; if (check(leg.hours === est.hoursOut, `${mode} seed ${900 + c * 13} ${byTruck ? "truck" : "foot"}: estimate ${est.hoursOut}h, took ${leg.hours}h`)) exact++; }
@@ -220,7 +233,9 @@ for (const mode of ["winter", "flip"]) {
     queueOrder(state, p, { type: "move", tile: qb });
     const est2 = curLeft + queueEstimate(state, p).reduce((s, x) => s + (x.hours ?? 0), 0);
     const st2 = { cards: 0, delay: 0 };
+    const h2 = state.hour, way2 = state.tiles.map((t) => t.id).filter((id) => state.grid.distance(id, here) <= 8);
     const leg2 = runUntil(state, p, (q) => q.phase === "waiting" && !q.orders.length && !state.cards.length, st2);
+    if (unforeseen(state, way2, h2, state.hour)) { st2.delay += 1; fronts++; }
     rows.push({ mode, how: "queue: move, camp 5h, move", est: est2, wx: null, actual: leg2.hours, delay: st2.delay });
     if (!st2.delay && !leg2.gone) { clean++; if (check(leg2.hours === est2, `${mode} queue: estimate ${est2}h, took ${leg2.hours}h`)) exact++; }
     if (leg2.gone || !state.parties.includes(p)) continue;
@@ -235,13 +250,15 @@ for (const mode of ["winter", "flip"]) {
     orderMove(state, p, state.rng.pick(tgt).id);
     const est3 = hoursLeft(state, p);
     const st3 = { cards: 0, delay: 0 };
+    const h3 = state.hour, way3 = [...p.path];
     const leg3 = runUntil(state, p, (q) => q.phase === "waiting", st3);
+    if (unforeseen(state, way3, h3, state.hour)) { st3.delay += 1; fronts++; }
     rows.push({ mode, how: "redirect on the move", est: est3, wx: null, actual: leg3.hours, delay: st3.delay });
     if (!st3.delay && !leg3.gone) { clean++; if (check(leg3.hours === est3, `${mode} redirect: estimate ${est3}h, took ${leg3.hours}h`)) exact++; }
   }
 }
 for (const r of rows) console.log(`  ${r.mode.padEnd(7)}${r.how.padEnd(30)}est ${String(r.est).padStart(4)}h${r.wx != null ? ` (weather ${r.wx >= 0 ? "+" : ""}${r.wx}h)` : ""}`.padEnd(66) + `actual ${r.actual}h${r.delay ? ` (${r.delay} delay card(s))` : ""}`);
-console.log(`  ${exact}/${clean} trips without event delays matched the estimate to the hour; ${slowed} launches were slowed by weather.`);
+console.log(`  ${exact}/${clean} trips without event delays matched the estimate to the hour; ${slowed} launches were slowed by weather; ${fronts} crossed by a front that formed after the estimate (counted as delays).`);
 check(clean >= 20, `only ${clean} clean trips`);
 check(slowed >= 6, "weather slowed too few launches: the test is not testing weather");
 

@@ -35,6 +35,7 @@ export const LAYER_SWATCH = {
   finds: { glyph: "◆", bg: "#c8ccd2" },
   infection: { bg: "rgba(210,40,40,0.75)" },
   weather: { bg: "linear-gradient(135deg,#e8f1ff,#7d9cc0)" },
+  fronts: { bg: "radial-gradient(circle,#3a4a78 0 45%,rgba(120,140,190,0.5) 70%,transparent 72%)" },
   known: { bg: "repeating-linear-gradient(135deg,rgba(165,240,230,0.85) 0 2px,rgba(30,60,58,0.9) 2px 5px)" },
   coalition: { bg: "linear-gradient(90deg,rgba(79,143,214,0.55) 0 50%,rgba(150,200,110,0.55) 50%)", border: "#f3d27a" },
 };
@@ -55,7 +56,8 @@ const LAYER_HELP = {
   vehicles: "Vehicles you left behind: a red can needs fuel, smoke means damaged.",
   finds: "Caches, wrecked cars and abandoned camps your teams spotted, with how long ago.",
   infection: "A red wash over the land: the redder, the more infected. Hives radiate it; it fades once the hive is gone. Also the I key.",
-  weather: "Today's weather as a wash over the land: snow, rain, fog and heat.",
+  weather: "The season and the statewide sky as a wash over the land (snow cover, rain, heat), with faint drifting clouds where weather fronts pass: dark for thunderstorms and rain belts, white for blizzards and snow squalls, grey for fog banks. A front's weather is only under it.",
+  fronts: "The weather fronts drawn strongly: each one's edge (dashed: inside it, its weather), its name and an arrow to where it will be in 6 hours. Fronts come in from the map's edges (mostly the west) and cross it in hours to a couple of days; fog forms where it lies before dawn and burns off by midday. Hover a tile for the front over it. Off by default (Shift+W toggles it).",
   known: "Teal hatching where your people looked hard for hidden places and finds: the spots a Survey covered hour by hour, what a Look around took in, the sites they searched. Brighter (with a faint teal wash) for the last 30 days, fainter before; a thin teal line runs round the searched ground. Unhatched land is where nobody has looked yet: survey there. A team's looks reach the map with its report (radio contact or home). The tile panel says on which day a tile was searched. Off by default.",
   coalition: "The land the coalition controls (you and its members: the land the alliance victory counts), each tile in the color of the nearest base's owner: blue for you, a member's color for its land, with a border in that color where another owner's land begins, and a thin gold line round the coalition's land as a whole (rivers and lakes inside it do not count as land). The layer's line shows the share held against the goal: more than 50% (with every group still standing in the coalition) wins. Other groups' land is on the Territory layer. Off by default.",
 };

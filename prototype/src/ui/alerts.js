@@ -31,6 +31,7 @@ import { baseFoodHint, landFoodHint } from "../sim/foraging.js";
 import { woodShortfall } from "../sim/woodcutting.js";
 import { carried } from "../sim/parties.js";
 import { gatheringAlerts } from "../sim/hivebirth.js";
+import { weatherAlerts } from "../sim/rivers.js"; // a frozen river by a base, a storm heading for the hub
 import { tripAlerts } from "./trips.js"; // a team sent from the planner is home: repeat the trip?
 import { pileCount } from "./pacing.js";
 
@@ -255,6 +256,9 @@ const SECTIONS = {
     }
   },
   gatherings(state, out) { out.push(...gatheringAlerts(state)); }, // sim/hivebirth.js: the dead massing for a hive you marked
+  weather(state, out) { // a frozen river by a base (the dead can cross), a storm or blizzard front heading for the hub
+    out.push(...weatherAlerts(state));
+  },
   trips: tripAlerts,
   outsiders(state, out) { // raiders from outside near a base, merchants at one (ui/visitors.js)
     out.push(...visitorAlerts(state));
@@ -264,7 +268,7 @@ const SECTIONS = {
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
 
 export function computeAlerts(state) {
   const out = [];
