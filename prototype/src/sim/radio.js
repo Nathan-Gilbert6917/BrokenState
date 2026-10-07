@@ -174,21 +174,39 @@ export const hasNetwork = (state) => radioNodes(state).some((n) => n.linked);
 // station or a relay already stands, or where the new relay would not link (no station or linked relay reaches the
 // base: a relay links within the other node's range, so coverage + 6 is not enough). It counts a chain it completes
 // (a relay standing unlinked further out that this one links). groups: the ones to look at (default every group).
-export function relayReach(state, base, groups = null) {
+// outOfReach: the caller knows every group in `groups` is out of call reach now (spares canRadioGroup).
+export function relayReach(state, base, groups = null, outOfReach = false) {
   if (!base || hasStation(base) || count(base, "relay")) return [];
   const nodes = radioNodes(state, base).filter((n) => n.linked); // the cheap test first: would it link at all?
   if (!nodes.some((n) => n.base === base)) return [];
-  const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && !canRadioGroup(state, f));
+  const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && (outOfReach || !canRadioGroup(state, f)));
   if (!list.length) return [];
   const g = state.grid;
   return list.filter((f) => f.bases.some((t) => nodes.some((n) => g.distance(n.tile, t) <= n.range + GROUP_REACH)));
 }
-// The base of yours (nearest to them first) where a relay would bring this group into call reach, or null.
+// The base of yours (nearest to them first) where a relay would bring this group into call reach, or null. Asked
+// for every group outside the coalition many times a day (alliance.js inviteProblem: the daily ask, goalsProgress,
+// the Groups tab), so it is kept for the hour and the network as it stands (state.relaySpots, not saved).
 export function relaySpotFor(state, f) {
-  if (!f || !f.alive || !f.bases.length || canRadioGroup(state, f) || !hasNetwork(state)) return null;
+  if (!f || !f.alive || !f.bases.length) return null;
+  const key = `${state.hour}|${state.bases.map((b) => `${b.id}:${b.tile}${hasStation(b) ? "s" : ""}${count(b, "relay") ? (b.relayOffline ? "o" : "r") : ""}`).join(",")}`;
+  let c = state.relaySpots;
+  if (!c || c.key !== key) {
+    c = { key, by: new Map() };
+    Object.defineProperty(state, "relaySpots", { value: c, writable: true, configurable: true, enumerable: false });
+  }
+  const fk = `${f.id}|${f.bases.join(",")}`;
+  if (!c.by.has(fk)) c.by.set(fk, relaySpotNow(state, f));
+  return c.by.get(fk);
+}
+function relaySpotNow(state, f) {
+  const cur = radioNodes(state).filter((n) => n.linked);
+  if (!cur.length || canRadioGroup(state, f)) return null;
   const g = state.grid;
   const near = (b) => Math.min(...f.bases.map((t) => g.distance(t, b.tile)));
-  return [...state.bases].sort((a, b) => near(a) - near(b) || a.id - b.id).find((b) => relayReach(state, b, [f]).length > 0) || null;
+  // Only a base a linked node reaches can link a new relay (radioNodes): the rest are never worth the full test.
+  const cands = state.bases.filter((b) => !hasStation(b) && !count(b, "relay") && cur.some((n) => g.distance(n.tile, b.tile) <= n.range));
+  return cands.sort((a, b) => near(a) - near(b) || a.id - b.id).find((b) => relayReach(state, b, [f], true).length > 0) || null;
 }
 
 // One line for the base screen.
