@@ -4,15 +4,26 @@
 // limit; the defence drill (the base's battle map, nobody to fight, nothing starts), saving a plan, the plan taken up
 // at the deploy step of a real attack (on the fort map and on a map turned to face the attack), changed there and
 // saved back, a map that changed (the plan is not used), headless battles, saving and loading.
+// Tiredness (sleep.js): a normal day never Tired, a night watch slept off, back-to-back watches warned of and Tired in
+// play, the costs (aim, mood, the hold limit), away from base. Unwatched nights: surprise (nobody on guard, a dozing
+// exhausted watcher, the alert and a tripwire undo it), a raid and a horde by the numbers, the cards and the log say
+// why, a surprise battle with a deploy step played out; the watch's early warning. The governor's night watch.
 // Usage: node tools/watchplantest.js [seed]
 import { createWorld, hub, atBase, makeSurvivor, hourOfDay } from "../src/sim/world.js";
 import { tickHour } from "../src/sim/world.js";
-import { createBattle, combatAct, autoPlayerTurn, registerCombatHandler, active, unitAt } from "../src/sim/combat.js";
+import { createBattle, combatAct, autoPlayerTurn, runEnemyPhase, registerCombatHandler, active, unitAt } from "../src/sim/combat.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { deployProblems, canPlace, sideUntf } from "../src/sim/deploy.js";
-import { guardHold } from "../src/sim/defences.js";
+import { guardHold, holdLimit, raidTier, hordeAttackBase, hordeWarnings } from "../src/sim/defences.js";
 import { workState, assignRole, planBase } from "../src/sim/work.js";
-import { WATCH_PRESETS, setWatchPreset, toggleWatch, fillWatch, watchCoverage, watchHour, watchDayRoles, onWatchNow, watchLine, addShift, setShiftHours, removeShift } from "../src/sim/watch.js";
+import { WATCH_PRESETS, setWatchPreset, toggleWatch, fillWatch, watchCoverage, watchHour, watchDayRoles, onWatchNow, watchLine, addShift, setShiftHours, removeShift, readiness, surpriseAt, lookoutsSpot, watchSawText, SURPRISE } from "../src/sim/watch.js";
+import { TIRED, TIRED_WORDS, tiredHour, tiredLevel, tiredAim, tiredText, sleepingIn, rosterStrain } from "../src/sim/sleep.js";
+import { baseDefense, resolveRaidOnPlayer } from "../src/sim/factions.js";
+import { spawnAiParty, movePartiesHour } from "../src/sim/parties.js";
+import { makeHorde } from "../src/sim/hordes.js";
+import { setAutopilot } from "../src/sim/autopilot.js";
+import { defenceTab } from "../src/ui/defence.js";
+import { gaugeRows } from "../src/ui/needs.js";
 import { startDrill, endDrill, savePlan, applyPlan, planFor, planKey, planStale, clearPlan } from "../src/sim/defenceplan.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -238,6 +249,207 @@ section("Headless battles take the plan up; save and load");
   check(back[0] === target[0] && back[1] === target[1] && r.phase !== "deploy", "an auto-played battle starts from the plan too");
   st.combat = null;
   void applyPlan; void savePlan;
+}
+
+// ---------- tiredness (sleep.js) ----------
+// Runs hours by hand: the work planner (priorities), the Manual watch, then the sleep pass, as tickHour does.
+const runHours = (st, h, n) => {
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    st.hour++; planBase(st, h); watchHour(st); tiredHour(st);
+    for (const s of atBase(st, h.id)) peak = Math.max(peak, s.tired || 0);
+  }
+  return peak;
+};
+const battleAt = (st, h, setup) => { globalThis.window = {}; try { return createBattle(st, { tile: h.tile, baseId: h.id, canRetreat: true, handler: "wp", ...setup }); } finally { delete globalThis.window; } };
+section("Tiredness: a normal day, a night watch, back-to-back watches");
+{
+  const st = world();
+  const h = armHub(st);
+  workState(st);
+  const [a, m, x] = atBase(st, h.id);
+  assignRole(st, a, st.work.roles.find((r) => r.name === "Generalist").id); // on priorities, Anytime schedule
+  m.role = "farm"; m.work = null;                                          // Manual
+  setHour(st, 6);
+  const peak = runHours(st, h, 72);
+  check(peak <= 16 && atBase(st, h.id).every((s) => tiredLevel(s) === 0), `no roster: a normal day peaks at ${peak} h owed (Tired from ${TIRED.TIRED}), nobody Tired`);
+  // A night watch, 22–06, for both.
+  setWatchPreset(st, h, "three");
+  toggleWatch(st, h, 2, a.id); toggleWatch(st, h, 2, m.id);
+  setHour(st, 21);
+  runHours(st, h, 8); // the hour 05:00
+  st.hour++;
+  check(sleepingIn(st, h, a) && sleepingIn(st, h, m), `off the night watch at 06:00 they sleep in (owing ${a.tired}, ${m.tired})`);
+  st.hour--;
+  runHours(st, h, 2);
+  check(a.role === "rest" && a.task && /Sleeping off the watch/.test(a.task.why), `on priorities: put to bed for it (${a.task && a.task.why})`);
+  const p2 = runHours(st, h, 24 * 4);
+  check(p2 < TIRED.TIRED && tiredLevel(a) === 0 && tiredLevel(m) === 0, `night after night on the 22–06 watch nobody gets Tired (most owed ${p2})`);
+  check(rosterStrain(st, h, a).level === 0 && !/would end up/.test(defenceTab(st, h, {})), "the roster card's forecast agrees (no warning)");
+  // The same person on the night and the morning watch: 16 hours on watch in a row.
+  toggleWatch(st, h, 0, m.id);
+  const sm = rosterStrain(st, h, m);
+  check(sm.run === 16 && sm.level >= 1, `night then morning watch: ${sm.run} hours in a row, forecast ${TIRED_WORDS[sm.level]} (most owed ${sm.peak})`);
+  const tab = defenceTab(st, h, {});
+  check(/back to back/.test(tab) && /would end up (Tired|Exhausted)/.test(tab), "the roster card warns: back to back, and Tired");
+  const p3 = runHours(st, h, 24 * 3);
+  check(p3 >= TIRED.TIRED, `and in play they do get Tired (most owed ${p3}, now ${m.tired})`);
+  m.tired = 25;
+  check(/>Tired</.test(defenceTab(st, h, {})) && gaugeRows(m).includes("Tired"), "a Tired chip on the roster and a line under the survivor's gauges");
+  // What it costs: aim, mood, the walls.
+  check(tiredAim(m) === TIRED.AIM[1] && tiredText(m).startsWith("Tired"), `Tired: aim ${tiredAim(m)}`);
+  m.tired = 40;
+  check(tiredAim(m) === TIRED.AIM[2], `Exhausted: aim ${tiredAim(m)}`);
+  const um = battleAt(st, h, { enemy: { kind: "zombies", count: 4, power: 2 }, ambush: null, context: {} }).units.find((u) => u.sid === m.id);
+  m.tired = 0;
+  const um2 = battleAt(st, h, { enemy: { kind: "zombies", count: 4, power: 2 }, ambush: null, context: {} }).units.find((u) => u.sid === m.id);
+  check(um && um2 && Math.round(um.aim - um2.aim) === TIRED.AIM[2], `on the battle map: aim ${um && Math.round(um.aim)} exhausted, ${um2 && Math.round(um2.aim)} rested`);
+  for (const s of atBase(st, h.id)) { s.role = "farm"; s.tired = 0; s.work = null; }
+  setWatchPreset(st, h, "none");
+  m.role = "guard";
+  const fresh = guardHold(st, h);
+  m.tired = 40;
+  check(Math.abs(guardHold(st, h) - fresh * TIRED.GUARD) < 0.01, `an exhausted guard counts half in the hold limit (${Math.round(fresh)} → ${Math.round(guardHold(st, h))})`);
+  const mood = m.mood;
+  setHour(st, 12); tiredHour(st);
+  check(m.mood < mood, `and loses mood (${mood.toFixed(1)} → ${m.mood.toFixed(1)})`);
+  // Away: no more tired; asleep at night on the road.
+  m.location = { kind: "party", partyId: 999 }; m.tired = 10;
+  setHour(st, 14); tiredHour(st);
+  check(m.tired === 10, "away from the base by day: no more tired");
+  setHour(st, 23); tiredHour(st);
+  check(m.tired === 10 - TIRED.AWAY, `at night on the road: −${TIRED.AWAY} an hour`);
+  m.location = { kind: "base", baseId: h.id };
+  void x;
+}
+
+// ---------- unwatched nights ----------
+section("Unwatched nights: surprise, and the watch's early warning");
+{
+  const st = world();
+  const h = armHub(st, ["walls", "walls", "barricades", "barricades", "gate", "bunkhouse"]);
+  for (const s of atBase(st, h.id)) { s.role = "farm"; s.tired = 0; s.work = null; }
+  setHour(st, 2);
+  const sp = surpriseAt(st, h);
+  check(sp && /^Nobody was on watch at /.test(sp.why), `at night with nobody on guard: caught asleep ("${sp && sp.why}")`);
+  setHour(st, 13);
+  check(!surpriseAt(st, h), "by day: no surprise");
+  setHour(st, 2);
+  const g = atBase(st, h.id)[0];
+  g.role = "guard";
+  const r = readiness(st, h);
+  check(!surpriseAt(st, h) && r.watchers.includes(g.id) && r.alert === 1 && !r.dozing.length, "one awake on guard: no surprise (readiness: alert 1)");
+  g.tired = 40;
+  let caught = 0, why = "";
+  for (let i = 0; i < 40; i++) { st.hour += 24; const x = surpriseAt(st, h); if (x) { caught++; why = x.why; } }
+  check(readiness(st, h).dozing.includes(g.id) && caught > 5 && caught < 35 && /dozed off on watch/.test(why), `an exhausted lone watcher dozes off about half the nights (${caught} of 40): "${why}"`);
+  g.tired = 0; g.role = "farm";
+  h.alert = true;
+  check(!surpriseAt(st, h), "defences manned (Prepare defenses): no surprise");
+  h.alert = false;
+  h.armory = (h.armory || []).concat([newItem("tripwire")]);
+  check(!surpriseAt(st, h), "a tripwire alarm in the armory wakes everyone: no surprise");
+  h.armory = h.armory.filter((it) => it.key !== "tripwire");
+  // By the numbers.
+  const def = baseDefense(st, h), defS = baseDefense(st, h, true);
+  check(defS < def, `a raid that catches them asleep: everyone but the guards ${SURPRISE.ASLEEP}× (defence ${Math.round(def)} → ${Math.round(defS)})`);
+  const rt = raidTier(st, h, 50, 40, 1.2, 0.8), rtS = raidTier(st, h, 50, 40, 1.2, 0.8, null, true);
+  check(rt.mults.wall > 1 && rtS.mults.wall === 1 && rtS.ratio < rt.ratio, `and the walls do not count (wall tier ×${rt.mults.wall.toFixed(2)} → ×1)`);
+  const lim = holdLimit(st, h), limS = holdLimit(st, h, 0, true);
+  check(limS < lim, `a horde on an unwatched night: the defence buildings count half (hold ${lim} → ${limS})`);
+  // A raid party arriving at night, not seen coming: the card and the result say why.
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  const from = st.grid.within(h.tile, 3).find((id) => st.grid.distance(id, h.tile) === 3 && st.tiles[id].terrain !== "water");
+  const p = spawnAiParty(st, f, "raid", from, h.tile, { strength: 30, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  check(!!p, "a raid party on its way");
+  if (p) {
+    p.idx = p.path.length - 1;
+    const cards = st.cards.length;
+    setHour(st, 1);
+    st.live = new Set(st.grid.within(h.tile, 1));
+    movePartiesHour(st);
+    const card = st.cards.slice(cards).find((c) => /^Raiders heading for/.test(c.title));
+    check(p.phase === "siege" && /^Nobody was on watch/.test(p.surprise || "") && card && /over the wall before anyone woke/.test(card.text), "at the walls at 01:00 unseen: caught asleep, and the card says why");
+    const res = resolveRaidOnPlayer(st, p);
+    check(res && /over the wall before anyone woke/.test(res.text), `the raid's report says it too (${res && res.outcome})`);
+  }
+  // The early warning (watch.js lookoutsSpot).
+  const three = st.grid.within(h.tile, 3).find((id) => st.grid.distance(id, h.tile) === 3);
+  setHour(st, 23);
+  st.live = new Set(st.grid.within(h.tile, 1));
+  check(!lookoutsSpot(st, h, three, 4) && !lookoutsSpot(st, h, st.grid.neighbors(h.tile)[0], 4), "night, nobody on watch: nothing seen coming, not even next to the walls");
+  g.role = "guard";
+  check(lookoutsSpot(st, h, three, 4), "someone on watch sees it 3 tiles out in the dark");
+  setHour(st, 12);
+  const six = st.grid.within(h.tile, 6).find((id) => st.grid.distance(id, h.tile) === 6);
+  st.live = new Set(st.grid.within(h.tile, 8));
+  check(lookoutsSpot(st, h, six, 4) && watchSawText(st, h, six, 4) !== "", "by day the watch warns 2 tiles further out (6 for a raid), and the card says the watch saw them early");
+  g.role = "farm";
+  check(!lookoutsSpot(st, h, six, 4) && lookoutsSpot(st, h, three, 4), "by day without a watch: as before (in sight, within 4)");
+  // A horde coming at night: unwatched, no warning card; watched, a card that says the watch saw it.
+  setHour(st, 23);
+  st.live = new Set(st.grid.within(h.tile, 1));
+  const coming = makeHorde(st, { tile: three, size: 40, role: "attack", target: h.tile });
+  hordeWarnings(st);
+  check(!coming.warned, "a horde coming at night to an unwatched base: no warning");
+  g.role = "guard";
+  const c0 = st.cards.length;
+  hordeWarnings(st);
+  const hc = st.cards.slice(c0).find((c) => /^Horde heading for/.test(c.title));
+  check(coming.warned && hc && /The watch on the walls saw them early/.test(hc.text), "with someone on watch: warned, and the card says the watch saw it");
+  st.hordes.splice(st.hordes.indexOf(coming), 1);
+  g.role = "farm";
+  // A horde at the walls of an unwatched base at night: the log says why.
+  setHour(st, 3);
+  const hd = makeHorde(st, { tile: h.tile, size: 60, role: "attack" });
+  st.combat = null;
+  const before = JSON.stringify(st.log.slice(0, 5));
+  hordeAttackBase(st, hd, h);
+  const all = st.log.map((x) => (typeof x === "string" ? x : x.text || "")).join(" | ");
+  check(JSON.stringify(st.log.slice(0, 5)) !== before && /Nobody was on watch at .*before anyone woke/.test(all), "a horde at night: the log says nobody was on watch");
+}
+
+section("A surprise battle with a deploy step");
+for (const walls of [true, false]) {
+  const st = world(seed + (walls ? 0 : 1));
+  const h = armHub(st, walls ? ["walls", "walls", "barricades", "bunkhouse"] : ["barricades", "bunkhouse"]);
+  const b = battleAt(st, h, { enemy: { kind: "raiders", count: 6, power: 3, name: "raiders" }, ambush: "enemy", layout: "baseDefence", deploy: true, context: { night: true, surprise: true } });
+  st.combat = b;
+  check(b.phase === "deploy" && playersOf(b).every((u) => u.ap <= 1) && b.setup.context.surprise, `${walls ? "walled" : "open"} base: their volley, then the deploy step, your people 1 action (${b.tier ? b.tier.map : "field"} map)`);
+  for (let i = 0; i < 300 && !b.over; i++) { if (b.phase === "player" || b.phase === "deploy") autoPlayerTurn(st); else runEnemyPhase(st); }
+  check(b.over, `and it plays to the end (${b.outcome || (b.result && b.result.outcome) || "over"})`);
+  st.combat = null;
+}
+
+// ---------- the governor's night watch ----------
+section("The governor's night watch (autopilot.js govWatch)");
+{
+  const st = world();
+  const h = armHub(st, ["walls", "bunkhouse", "bunkhouse"], 5);
+  setAutopilot(st, true, "balanced");
+  setHour(st, 17);
+  for (let i = 0; i < 6; i++) tickHour(st); // to 23:00
+  const W = h.watch;
+  check(W && W.gov && W.shifts.length === 2 && W.shifts.every((sh) => sh.ids.length >= 1), `a base of ${atBase(st, h.id).length}: a night watch in two shifts (${W ? W.shifts.map((sh) => `${sh.name} ${sh.from}–${sh.to}: ${sh.ids.length}`).join(", ") : "none"})`);
+  const tonight = W ? W.shifts.flatMap((sh) => sh.ids) : [];
+  const fw = W ? st.survivors.find((s) => s.id === W.shifts[0].ids[0]) : null;
+  check(fw && fw.role === "guard" && fw.govWatch, `at 23:00 the first watch stands guard, their job kept (${fw && fw.govWatch && fw.govWatch.role})`);
+  check(!surpriseAt(st, h), "so the base is not caught asleep");
+  watchDayRoles(st);
+  check(fw && fw.role !== "guard" && !fw.govWatch, `at midnight they count at their own job in the day's work (${fw && fw.role})`);
+  for (let i = 0; i < 24; i++) tickHour(st);
+  const next = h.watch ? h.watch.shifts.flatMap((sh) => sh.ids) : [];
+  check(next.length && next.some((id) => !tonight.includes(id)), `the next night others take it (${next.filter((id) => !tonight.includes(id)).length} of ${next.length} new)`);
+  let peak = 0;
+  for (let i = 0; i < 24 * 8; i++) { tickHour(st); for (const s of atBase(st, h.id)) peak = Math.max(peak, s.tired || 0); }
+  check(peak < TIRED.TIRED, `eight days on the governor's watch: nobody Tired (most owed ${peak})`);
+  const small = world(seed + 3);
+  const sh = hub(small);
+  setAutopilot(small, true, "balanced");
+  const keep = new Set(atBase(small, sh.id).slice(0, 2).map((s) => s.id));
+  small.survivors = small.survivors.filter((s) => keep.has(s.id));
+  for (let i = 0; i < 3; i++) tickHour(small);
+  check(!sh.watch || !sh.watch.gov, `two people at a base: no roster (${atBase(small, sh.id).length} there)`);
 }
 
 console.log(`\nwatchplantest: ${pass} passed, ${fail} failed`);

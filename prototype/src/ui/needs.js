@@ -6,6 +6,7 @@ import { NEEDS, RATIONS, SHARES, hungerOf, thirstOf, hungerWord, thirstWord, nee
 import { useText } from "../sim/comforts.js";
 import { GEAR } from "../sim/data.js";
 import { partyMembers } from "../sim/parties.js";
+import { tiredLevel, tiredText, TIRED, TIRED_WORDS } from "../sim/sleep.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -21,13 +22,20 @@ export function gaugeRows(s, { mood = true, label = "3.5rem" } = {}) {
   const h = hungerOf(s), t = thirstOf(s);
   const row = (name, v, color, t2) => `<div class="row small"${tip(t2)}><span style="width:${label}" class="muted">${name}</span><div style="flex:1">${bar(v, color)}</div><span style="width:2.2rem;text-align:right">${n0(v)}</span></div>`;
   return row("Hunger", h, tone(h), `${hungerWord(h)} (${n0(h)}). ${HUNGER_TIP}`) + row("Thirst", t, tone(t), `${thirstWord(t)} (${n0(t)}). ${THIRST_TIP}`) +
-    (mood ? row("Mood", s.mood, "var(--info)", "Mood: rest, a bed, food, a good leader, comforts and treats lift it; crowding, short rations, hunger, thirst and the cold lower it.") : "");
+    (mood ? row("Mood", s.mood, "var(--info)", "Mood: rest, a bed, food, a good leader, comforts and treats lift it; crowding, short rations, hunger, thirst and the cold lower it.") : "") + tiredRow(s);
 }
+// Tired or Exhausted (sim/sleep.js): a line under the gauges, nothing when rested.
+const TIRED_TIP = `Sleep owed: +${TIRED.AWAKE} an hour awake, −${TIRED.SLEEP} an hour asleep (a normal day peaks at 16). A watch in someone's sleep hours keeps them up; off a long one they sleep until rested. Tired from ${TIRED.TIRED}: aim ${TIRED.AIM[1]}, mood falls. Exhausted from ${TIRED.EXHAUSTED}: aim ${TIRED.AIM[2]}, counts half on guard and may doze off on watch.`;
+export function tiredRow(s) {
+  const lv = tiredLevel(s);
+  return lv ? `<div class="${lv === 2 ? "danger" : "warn"} small"${tip(TIRED_TIP)}>${esc(tiredText(s))}</div>` : "";
+}
+export const tiredChip = (s) => { const lv = tiredLevel(s); return lv ? ` <span class="${lv === 2 ? "danger" : "warn"}"${tip(`${tiredText(s)}. ${TIRED_TIP}`)}>${TIRED_WORDS[lv]}</span>` : ""; };
 // Three thin bars in one cell (the roster table).
 export function gaugeMini(s) {
   const h = hungerOf(s), t = thirstOf(s);
   const one = (v, color, label) => `<span class="ro-xp" style="display:block;width:3.2rem;margin:1px 0"${tip(`${label} ${n0(v)}`)}><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></span>`;
-  return `<div${tip(`Hunger ${n0(h)} (${hungerWord(h)}) · Thirst ${n0(t)} (${thirstWord(t)}) · Mood ${n0(s.mood)}`)}>${one(h, tone(h), "Hunger")}${one(t, tone(t), "Thirst")}${one(s.mood, "var(--info)", "Mood")}</div>`;
+  return `<div${tip(`Hunger ${n0(h)} (${hungerWord(h)}) · Thirst ${n0(t)} (${thirstWord(t)}) · Mood ${n0(s.mood)}${tiredLevel(s) ? ` · ${TIRED_WORDS[tiredLevel(s)]} (owes ${Math.ceil(s.tired)} h of sleep)` : ""}`)}>${one(h, tone(h), "Hunger")}${one(t, tone(t), "Thirst")}${one(s.mood, "var(--info)", "Mood")}${tiredLevel(s) ? `<span class="${tiredLevel(s) === 2 ? "danger" : "warn"}" style="display:block;font-size:0.65rem;line-height:1">${TIRED_WORDS[tiredLevel(s)]}</span>` : ""}</div>`;
 }
 // What hunger and thirst do to someone now (a line, "" when nothing).
 export function needsEffectText(s) {

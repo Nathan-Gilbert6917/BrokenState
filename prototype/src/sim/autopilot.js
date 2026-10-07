@@ -71,7 +71,9 @@ import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
 import { autopilotPrisoners } from "./prisoners.js";
-import { isManaged } from "./work.js";
+import { isManaged, healthRest } from "./work.js";
+import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
+import { tiredLevel } from "./sleep.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
@@ -229,6 +231,7 @@ export function autopilotHour(state) {
     for (const b of [...state.bases]) governBase(state, b);
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
+    for (const b of state.bases) govWatch(state, b); // the night watch's roster (before the roles: planRoles 1a)
     for (const b of state.bases) governRoles(state, b);
     resolvePending(state);
     autoFires(state);
@@ -1335,6 +1338,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
   for (const s of [...free]) if (s.inBed) give(s, "rest");
   const low = [...free].filter((s) => (s.mood < P.restMood || wantsRest(state, s)) && !s.leader).sort((a, b) => a.mood - b.mood); // wantsRest: low after a rough trip (relations.js)
   low.forEach((s, i) => { if (s.mood < 18 || (i < Math.floor(people.length / 3) && foodDays >= 3)) give(s, "rest"); });
+
+  // 1a. The watch roster (govWatch, watch.js): whoever stands their watch now is on guard before any other work (and
+  // counts among the guards posted below). s.govWatch keeps the job they had, for the day's work (watch.js
+  // watchDayRoles at midnight).
+  if (areas.defence && base.watch) {
+    for (const s of [...free]) {
+      if (!onWatchNow(state, base, s)) continue;
+      if (s.role !== "guard" && !s.govWatch) s.govWatch = { role: s.role, station: s.station ?? null };
+      give(s, "guard");
+    }
+  }
+  for (const s of people) if (s.govWatch && (!base.watch || !onWatchNow(state, base, s))) delete s.govWatch;
 
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
   // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
@@ -3953,3 +3968,44 @@ export const crewAI = {
   outpostThirsty: (state, o) => outpostThirsty(state, o),
   isDisabled,
 };
+
+// ---------- the night watch (watch.js, sleep.js) ----------
+// The governor keeps a night watch at every base of GOV_WATCH.min (3) or more people, so no night finds a base asleep
+// (watch.js surpriseAt: raiders over the wall, a horde at the walls before anyone woke): two short watches,
+// GOV_WATCH.shifts (20–00 and 00–06), so nobody stands more than six hours past their bedtime and nobody comes off one
+// Tired (sleep.js: they sleep in after it). Each watch takes 1, +1 at GOV_WATCH.big (12) people, +1 while a threat is
+// known (a horde in sight or a hive near: defences.js hordeThreat; raiders in reach or on the way: threatAt), at most a
+// third of the fit people. Picked every day at GOV_WATCH.hour (18:00): the best shots first, those who stood last
+// night after everyone else, the Tired last (so it rotates); a watch on now whose people are all gone, hurt or away is
+// given one more. planRoles 1a puts whoever is on watch now on guard ahead of any other work (they count among the
+// guards it posts: the hub's standing lookouts, a threat's guards). A roster the governor did not make
+// (base.watch.gov unset) is left as it is and stood all the same. Cheap: one sort a base a day, else a look at the
+// watch on now.
+export const GOV_WATCH = { min: 3, big: 12, hour: 18, shifts: [["First watch", 20, 0], ["Second watch", 0, 6]] };
+function govWatch(state, base) {
+  const W = base.watch;
+  if (W && !W.gov) return; // the player's own roster
+  const people = atBase(state, base.id);
+  if (people.length < GOV_WATCH.min) { if (W) delete base.watch; return; }
+  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s);
+  const h = hourOfDay(state);
+  const rank = (list, last) => list.slice().sort((a, b) => (last.has(a.id) - last.has(b.id)) || (tiredLevel(a) - tiredLevel(b)) || (skill(b, "shooting") - skill(a, "shooting")) || (a.id - b.id));
+  if (W && h !== GOV_WATCH.hour) {
+    for (const sh of W.shifts) {
+      if (!inShift(sh, h) || sh.ids.some((id) => { const s = people.find((x) => x.id === id); return s && fit(s); })) continue;
+      const taken = new Set(W.shifts.flatMap((x) => x.ids));
+      const pick = rank(people.filter((s) => fit(s) && !taken.has(s.id)), new Set())[0];
+      if (pick) sh.ids.push(pick.id);
+    }
+    return;
+  }
+  const ok = people.filter(fit);
+  const t = threatAt(state, base);
+  const threat = t.urgent > 0 || t.standing > 0 || hordeThreat(state, base).size > 0;
+  const per = Math.max(1, Math.min(1 + (people.length >= GOV_WATCH.big ? 1 : 0) + (threat ? 1 : 0), Math.floor(ok.length / 3)));
+  const order = rank(ok, new Set(W ? W.shifts.flatMap((sh) => sh.ids) : []));
+  const shifts = GOV_WATCH.shifts.map(([name, from, to]) => ({ name, from, to, ids: [] }));
+  let k = 0;
+  for (let r = 0; r < per; r++) for (const sh of shifts) if (k < order.length) sh.ids.push(order[k++].id);
+  base.watch = { preset: null, gov: true, shifts };
+}
