@@ -5,7 +5,7 @@
 // Mechanics shortens the build. Runs as a timed order (orders.js, task type "cross"): build hours on
 // this shore, then the crossing itself; materials are used when the boat goes into the water.
 // "Gather materials" is a short timed task that turns up scrap on the shore when the team is short.
-import { TERRAIN, SUPPLIES } from "./data.js";
+import { TERRAIN, SUPPLIES, supplyFew } from "./data.js";
 import { log, hurt, snapshot } from "./world.js";
 import {
   partyMembers, bestSkill, supplyLoad, cargoLoad, cargoRoom, carryCapacity, partyCapacity, unitsThatFit, tileLabel, leaveVehicle, sightRadius,
@@ -133,7 +133,7 @@ export function landBoat(state, p) {
     const v = partyVehicle(state, p);
     const roll = rng.int(0, v && t.mode === "raft" ? 2 : 1);
     if (roll === 0) {
-      const keys = Object.keys(SUPPLIES).filter((k) => carried(p, k) >= 2);
+      const keys = Object.keys(SUPPLIES).filter((k) => carried(p, k) >= supplyFew(k, 2));
       if (keys.length) {
         const k = rng.pick(keys);
         const lost = Math.max(1, Math.floor(carried(p, k) * (0.25 + rng.next() * 0.25)));

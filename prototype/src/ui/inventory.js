@@ -143,9 +143,11 @@ function storageBox(state, ui, place, user) {
     const l = `${loc}:${i}`;
     return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}</div>`;
   }).join("");
-  const sup = st.o === "cargo" ? Object.entries(st.party.cargo.supplies).filter(([, v]) => v >= 1).map(([k, v]) => `${Math.floor(v)} ${k}`).join(", ") : "";
+  // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
+  const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
+  const sup = Object.entries(pool).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()} (${kg(SUPPLIES[k].weight * v)} kg)`).join(" · ");
   return `${head}<div class="istore" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${tiles || `<span class="small muted">Empty. Drop items here.</span>`}</div>
-    ${sup ? `<div class="small muted">Found supplies: ${esc(sup)}</div>` : ""}`;
+    ${sup ? `<div class="small muted">${st.o === "cargo" ? "Found supplies" : "In the stores"}: ${esc(sup)}</div>` : ""}`;
 }
 
 // People who can swap items with each other here, as tabs.
@@ -173,7 +175,7 @@ function burnButtons(state, ui, item, from) {
   if (!(bd.wood > 0) || from.o === "body") return "";
   const confirm = ui.invBurnConfirm === ui.invSel;
   const junk = isJunk(item);
-  const btn = `<button class="mini ${confirm ? "danger" : ""}" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood (${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: click again to confirm."}` : bd.reason)}>${confirm ? `Really break it down? (+${bd.wood})` : `Break down for firewood (+${bd.wood})`}</button>`;
+  const btn = `<button class="mini ${confirm ? "danger" : ""}" data-action="inv-breakdown" ${bd.ok ? "" : "disabled"}${tip(bd.ok ? `Break the ${item.name} down for firewood: +${bd.wood} firewood, by its weight (${kg(bd.wood * SUPPLIES.wood.weight)} kg of its ${kg(GEAR[item.key].weight || 0)} kg burns; ${bd.place.startsWith("base") ? "into the base's stores" : "into the team's cargo: the camp fire burns it"}). The ${item.name} is gone. No time: it is kindling.${junk ? "" : " It is worth more than junk: click again to confirm."}` : bd.reason)}>${confirm ? `Really break it down? (+${bd.wood})` : `Break down for firewood (+${bd.wood})`}</button>`;
   if (from.o !== "armory") return btn;
   const b = baseById(state, from.id);
   const mark = item.fire === "burn" ? "burn" : item.fire === "keep" ? "keep" : "";

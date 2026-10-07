@@ -73,7 +73,7 @@
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
 import { Rng } from "./rng.js";
-import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
   supplyValue, skill, baseVision, localId,
@@ -1180,7 +1180,7 @@ function merchantCall(state, v) {
   });
 }
 export function goodsText(v) {
-  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= 5).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => SUPPLIES[k].name.toLowerCase());
+  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => SUPPLIES[k].name.toLowerCase());
   const items = v.wares.slice(0, 4).map((g) => g.name);
   return [...sup, ...items].join(", ") + (v.wares.length > 4 ? ` and ${v.wares.length - 4} more item${v.wares.length - 4 === 1 ? "" : "s"}` : "") || "very little";
 }

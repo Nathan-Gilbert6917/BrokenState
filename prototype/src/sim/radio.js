@@ -32,7 +32,7 @@
 // they need) or a request (they need something, paying with their surplus): 15% a day for traders, 10% for a
 // commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out.
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
-import { SUPPLIES, SUPPLY_KEYS, GEAR } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import { count } from "./buildings.js";
 import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
@@ -432,8 +432,8 @@ export function offerCard(state, f) {
   // What they are short of and you can spare; what they have plenty of: this week's wants and surplus lists
   // (trade.js marketOf), most wanted / most plentiful first.
   const m = marketOf(state, f);
-  const wants = m.wants.map((x) => x.key).filter((k) => hubSpare(state, k) >= 3);
-  const spare = m.surplus.map((x) => x.key).filter((k) => available(f, k) >= 5);
+  const wants = m.wants.map((x) => x.key).filter((k) => hubSpare(state, k) >= supplyFew(k, 3));
+  const spare = m.surplus.map((x) => x.key).filter((k) => available(f, k) >= supplyFew(k, 5));
   if (!spare.length) return null;
   const rng = state.rng;
   const payKey = spare[0];
@@ -487,7 +487,7 @@ export function offerCard(state, f) {
     ],
   };
 }
-const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 20 }; // wood: woodcutting.js
+const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)
 
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has
@@ -496,7 +496,7 @@ export function radioTradeIfShort(state, needs) {
   if (!hasNetwork(state)) return "";
   if (state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.8).sort((a, b) => needs[b] - needs[a]);
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k) >= 5).sort((a, b) => needs[a] - needs[b]);
+  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
   if (!short.length || !plenty.length) return "";
   const speech = radioSpeech(state);
   for (const want of short) {

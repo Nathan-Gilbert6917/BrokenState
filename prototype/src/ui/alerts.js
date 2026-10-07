@@ -4,7 +4,8 @@
 // bases, camera spots, the diary and the roster.
 import { day, alive, residents, survivorById, baseById } from "../sim/world.js";
 import { foodOutlook, waterOutlook } from "../sim/economy.js";
-import { useText } from "../sim/upkeep.js";
+import { useText, HEAT, woodFor } from "../sim/upkeep.js";
+import { SUPPLIES } from "../sim/data.js";
 import { waterUseText } from "./farming.js";
 import * as Buildings from "../sim/buildings.js";
 import { holdLimit } from "../sim/defences.js";
@@ -67,7 +68,7 @@ const SECTIONS = {
       const ws = woodShortfall(state, b);
       if (ws && (ws.cold || ws.toCold <= 28 || ws.boiler > 0)) { // the water boiler (worm.js) burns firewood in every season
         const hint = ws.why ? `${ws.why}: send a team to cut wood, or trade for it` : `a woodcutter brings in about ${ws.perDay} a day here`;
-        out.push({ key: `wood:${b.id}`, kind: "wood", icon: "🪵", tone: ws.cold || ws.toCold <= 7 ? "danger" : "warn", text: `${b.name}: ${ws.cold ? "cold, and" : ws.boiler > 0 && ws.toCold > 28 ? "the water boiler burns it:" : "winter is coming:"} firewood ${Math.floor(ws.have)} of ${ws.need}`, tip: `${ws.boiler > 0 ? `The water boiler burns ${ws.boiler} firewood a day (0.2 a head) every day the water carries the worm's eggs; a cold boiler means unboiled water. ` : ""}The cold ahead (about ${Math.round(ws.days)} freezing days${ws.cold ? "" : `, from about ${ws.toCold} days from now`}) needs about ${ws.need} firewood for the ${ws.heads} fed here (0.2 a head a day; fuel covers what the wood does not, 0.1 a head). In store: ${Math.floor(ws.have)} firewood and ${Math.floor(b.stock.fuel || 0)} fuel. Without them everyone is cold: mood and health a day, and illness. ${hint[0].toUpperCase()}${hint.slice(1)}: put people on Cut wood (Work tab). Click to open the base.`, go: { base: b.id, tab: "farming" } });
+        out.push({ key: `wood:${b.id}`, kind: "wood", icon: "🪵", tone: ws.cold || ws.toCold <= 7 ? "danger" : "warn", text: `${b.name}: ${ws.cold ? "cold, and" : ws.boiler > 0 && ws.toCold > 28 ? "the water boiler burns it:" : "winter is coming:"} firewood ${Math.floor(ws.have)} of ${ws.need}`, tip: `${ws.boiler > 0 ? `The water boiler burns ${ws.boiler} firewood a day (${WORM.BOILER_WOOD_HEAD} a head) every day the water carries the worm's eggs; a cold boiler means unboiled water. ` : ""}The cold ahead (about ${Math.round(ws.days)} freezing days${ws.cold ? "" : `, from about ${ws.toCold} days from now`}) needs about ${ws.need} firewood for the ${ws.heads} fed here (${woodFor(HEAT.fuel)} a head a day, ${woodFor(HEAT.fuel) * SUPPLIES.wood.weight} kg; fuel covers what the wood does not, ${HEAT.fuel} a head). In store: ${Math.floor(ws.have)} firewood and ${Math.floor(b.stock.fuel || 0)} fuel. Without them everyone is cold: mood and health a day, and illness. ${hint[0].toUpperCase()}${hint.slice(1)}: put people on Cut wood (Work tab). Click to open the base.`, go: { base: b.id, tab: "farming" } });
       }
       if (b.thirstDays > 0 || (b.stock.water || 0) + (b.stock.rawwater || 0) < 1) out.push({ key: `thirst:${b.id}`, kind: "thirst", icon: "🚱", tone: "danger", text: `${b.name} is out of water`, tip: "Thirst kills faster than hunger: everyone there loses health every day. Wells, rain catchers, filters or a supply run. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {

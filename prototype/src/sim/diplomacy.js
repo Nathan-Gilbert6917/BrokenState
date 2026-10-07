@@ -44,7 +44,7 @@
 //   your side wins you get half the tribute, and land taken in the terms is left free for your outpost (reserved
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
 import { Rng } from "./rng.js";
-import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { spawnAiParty, tileLabel } from "./parties.js";
@@ -604,7 +604,7 @@ export function brokerCeasefire(state, warId) {
   for (const f of [a, b]) {
     changeGoodwill(state, f, 8, "you brokered a ceasefire");
     f.lastDiplomacy = day(state);
-    const k = SUPPLY_KEYS.filter((x) => available(f, x) >= 3 && x !== "water" && x !== "rawwater").sort((x, y) => need(f, x) - need(f, y))[0];
+    const k = SUPPLY_KEYS.filter((x) => available(f, x) >= supplyFew(x, 3) && x !== "water" && x !== "rawwater").sort((x, y) => need(f, x) - need(f, y))[0];
     if (!k) continue;
     const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (SUPPLIES[k].value * Math.max(0.5, need(f, k))))));
     f.stock[k] -= q;

@@ -24,6 +24,7 @@ import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
+import { WOOD_UNITS } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js"; // the line-of-sight cache of a loaded battle (sparse on a big yard)
 
 export const SAVE_FORMAT = "broken-state-save";
@@ -118,6 +119,12 @@ export function deserializeState(save) {
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
     state.woodcutting = 1;
   }
+  // Firewood of 0.1 kg (data.js SUPPLIES.wood; it was a 3 kg bundle): a save from before (woodcutting mark under 2)
+  // has every firewood amount scaled by WOOD_UNITS (scaleSavedWood), once: the mark goes to 2.
+  if (!(state.woodcutting >= 2)) {
+    scaleSavedWood(state, WOOD_UNITS);
+    state.woodcutting = 2;
+  }
   // water.js: saves from before purified and un-purified water (no state.rawWater) keep all their water as purified
   // water; un-purified water starts at 0 everywhere (bases, teams' supplies and cargo, the staging camp's stores), and
   // the water a team carried marked unboiled (worm.js's old p.wormWater) becomes un-purified water (cargo first) at
@@ -153,6 +160,34 @@ export function deserializeState(save) {
     for (const u of b.units || []) u.away = (u.f || 0) !== b.floor;
   }
   return state;
+}
+
+// Firewood amounts × k (a save from before firewood was 0.1 kg a unit): every number kept under the key "wood" anywhere
+// in the world (bases' stock and the day's heating and boiler figures, teams' supplies and cargo and a Cut wood order's
+// haul, groups', caravans', visitors' and the staging camp's stores, sites, containers and bodies, trades and deals;
+// an object reached twice is scaled once), except the work roles' priorities and minimums that share the key (pri,
+// over, a role's min); a Cut wood order's left-behind, the day's cut, the boiler's items' worth and the economy's
+// tallies too. The groups' markets (prices per firewood) are made afresh. state.wood (the land's levels) is not an amount.
+export function scaleSavedWood(state, k) {
+  const seen = new Set();
+  const walk = (o, key, parent) => {
+    if (!o || typeof o !== "object" || seen.has(o) || ArrayBuffer.isView(o) || o instanceof WeakMap || o instanceof WeakSet) return;
+    seen.add(o);
+    if (key === "pri" || key === "over" || (key === "min" && parent && parent.pri)) return; // work.js roles: priorities, not firewood
+    if (o instanceof Map) { for (const v of o.values()) walk(v, "", o); return; }
+    if (o instanceof Set || Array.isArray(o)) { for (const v of o) walk(v, "", o); return; }
+    for (const name of Object.keys(o)) {
+      const v = o[name];
+      if (name === "wood" && typeof v === "number" && Number.isFinite(v)) o[name] = v * k;
+      else walk(v, name, o);
+    }
+  };
+  walk(state, "", null);
+  const times = (o, name) => { if (o && Number.isFinite(o[name])) o[name] *= k; };
+  for (const b of state.bases || []) { times(b, "woodToday"); times(b.boilerBurn, "itemWood"); }
+  for (const p of state.parties || []) if (p.task && p.task.type === "wood") times(p.task.got, "left");
+  for (const name of ["heatWood", "woodCut", "woodField"]) times(state.econStats, name);
+  for (const f of state.factions || []) delete f.market; // trade.js marketOf makes it again at today's prices
 }
 
 // String forms (a save file is this JSON).

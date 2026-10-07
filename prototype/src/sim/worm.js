@@ -58,10 +58,12 @@
 // locked, paid }): no silent days. From the day it is caught (day 0) each day costs DAY_HP[day − 1] health (3, 6, 10,
 // 15, 20, 24, 30: about 108 in seven days, then LATE_HP a day) and DAY_MOOD[day − 1] mood (2 … 8, through
 // relations.js addMood: the mood floor, the breaks and the notes follow). While it is in them every healing heals
-// HEAL (half) of the usual (wormHealMult: medical.js rest, hospital beds, treatments and field treatment, orders.js
-// camp rest, a holding convoy, a prisoner's rations, a battle's patch-up): the ramp outpaces it. Untreated at full
-// health they die on day 7 with no rest (on the move), day 8 resting at a base, day 9 in a Clinic's or a Trauma
-// hospital's bed with a medic (default admit line, Medicine 6), up to day 10–11 with the best care; hurt, sooner.
+// HEAL (half) of the usual (wormHealMult: medical.js rest, hospital beds without meds, treatments and field
+// treatment, orders.js camp rest, a holding convoy, a prisoner's rations, a battle's patch-up), but the full rate in a
+// hospital bed on a day their care used meds (a wound treated, an illness dosed, a purge): the ramp outpaces it.
+// Untreated at full health they die on day 7 with no rest (on the move), day 8 resting at a base, day 9 in a Clinic's
+// bed with a medic and no meds (default admit line, Medicine 6), later in a hospital bed treated with meds every day
+// (wormtest prints the day); hurt, sooner.
 //   gut    days 1 to BRAIN_FROM − 1: they eat GUT_EAT more a day and work at GUT_WORK. A dewormer cures it surely,
 //          a purge by the odds.
 //   brain  from day BRAIN_FROM: fits and staggering (it gives itself away: BRAIN_SPOT), work at BRAIN_WORK; only
@@ -176,7 +178,7 @@ export const WORM = {
   RISE: { NOTICE: 0.2, NOTICE_SKILL: 0.06, NOTICE_MAX: 0.9, PUT_HURT: [8, 25], HURT_MIN: 0.06, HURT_MAX: 0.6, HOST_LOSS: 0.15, ENVOY_GOODWILL: -5, CAPTIVE: 0.5 },
   // Clean water and cooked meat: a camp fire an hour; the base's water boiler a day (firewood a head, like heating;
   // BOILER_DAYS: the days of its firewood a base keeps in store)
-  BOIL: 6, STOVE: 2, COOK: 12, BOILER_WOOD_HEAD: 0.2, BOILER_DAYS: 14,
+  BOIL: 6, STOVE: 2, COOK: 12, BOILER_WOOD_HEAD: 6, BOILER_DAYS: 14, // BOILER_WOOD_HEAD: firewood of 0.1 kg (0.6 kg a head a day)
   // Purification tablets (data.js puritabs): water one tablet makes safe (teams; a base only in the no-firewood
   // emergency); a base's water filter purifies PURIFY_FILTER water a day
   TABS_WATER: 10, PURIFY_FILTER: 10,
@@ -231,9 +233,10 @@ export function clearWorm(s) {
   if (s) s.worm = null;
 }
 // Healing while the worm is in them (rest at a base and in its hospital, a treatment's heal, camp rest, field
-// treatment, a holding convoy's rest, a prisoner's rations, a battle's patch-up): HEAL of the usual. The ramp outpaces
-// it: untreated it still kills in about a week.
-export const wormHealMult = (s) => (s && s.worm ? WORM.HEAL : 1);
+// treatment, a holding convoy's rest, a prisoner's rations, a battle's patch-up): HEAL of the usual, except in a
+// hospital bed (a base with a hospital tier, medical.js) on a day their care used meds (care: { bed, meds }; medical.js
+// healRatePerHour and a treatment's heal): the full rate there. The ramp outpaces it: untreated it still kills.
+export const wormHealMult = (s, care = null) => (s && s.worm ? (care && care.bed && care.meds ? 1 : WORM.HEAL) : 1);
 // Known to you: spotted at a base or by the team.
 export const wormSeen = (s) => { const w = wormOf(s); return !!w && w.seen != null; };
 // How much they can work (health.js workFactor): 1 unless the worm has hatched.
@@ -343,10 +346,10 @@ export function baseWater(state, base) {
 // The base's water boiler: what it burns a day: BOILER_WOOD_HEAD firewood a head (everyone fed here). It burns
 // anything burnable, in this order: firewood; then the armory's burnable gear the base allows (woodcutting.js
 // boilerBurnables: items marked to burn, and cheap junk with "Boiler may burn spare wooden items and paper" on), each
-// worth its GEAR `burn` in firewood; then fuel for the rest (HEAT.wood fuel a firewood, as heating).
+// worth its firewood by weight (woodcutting.js burnOf); then fuel for the rest (HEAT.wood fuel a firewood, as heating).
 // { active (it has work here: the water filters do not purify the day's drinking: any un-purified water can carry the worm),
 // heads, wood (firewood on a day it burns), fuel (the same in fuel), share (the share of days it burns), lit (base.boiling),
-// text ("25 people × 0.2 = 5.0 firewood a day (or burnable junk, or 1.0 fuel)") }. On a given day it burns only when
+// text ("25 people × 6 = 150 firewood a day (or burnable junk, or 1.0 fuel)") }. On a given day it burns only when
 // un-purified water would be drunk (boilerDaily).
 export function boilerUse(state, base) {
   const heads = mouthsAt(state, base).heads;
@@ -856,6 +859,7 @@ export function applyWormTreat(state, base, s, info) {
   const w = s.worm;
   w.treatedDay = day(state);
   const ok = payTreat(state, base, info);
+  if (info.kind !== "dewormer" && info.cost > 0) s.medsHour = state.hour; // medical.js medsToday: a hospital bed heals at the full rate today
   if (info.kind === "dewormer") {
     cureWorm(state, s);
     hurt(state, s, WORM.DEWORM_HP, base.tile, "of the worm", { raw: true });
@@ -1594,7 +1598,7 @@ export function wormTip(state, s) {
   const w = wormOf(s);
   if (!w) return "";
   const next = w.day + 1;
-  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and they heal at half the rate while it is in them. Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
+  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and they heal at half the rate while it is in them (the full rate in a hospital bed on a day their care uses meds). Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
   if (w.stage === "gut") bits.push(`In the gut: eats ${WORM.GUT_EAT} more food a day, works at ${Math.round(WORM.GUT_WORK * 100)}%.`);
   else bits.push(`In the brain: fits and staggering, works at ${Math.round(WORM.BRAIN_WORK * 100)}%.${w.locked ? " Locked away: nobody will be hurt when they turn." : ""}`);
   bits.push(wormCureText(s));
