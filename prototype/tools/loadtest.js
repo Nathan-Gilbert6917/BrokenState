@@ -347,7 +347,8 @@ section("Summer and heat: water at the day's thirst, the estimate = the trip");
     const dest = destFrom(st, h.tile, 5, 7);
     const e = estimateTrip(st, { memberIds: ids, dest, vehicle: false, stance: "normal", supplies: sup });
     const eat = rationsFor(e.pace, e.hoursOut + e.hoursBack, 0, 6, 2);
-    check(e.water > e.food && near(e.waterExact, eat * THIRST.summer, 1e-6), `summer: the trip needs ${THIRST.summer}× the rations in water (${e.food} food, ${e.water} water; ${r1(eat * THIRST.summer)})`);
+    // The exact figures: on a short trip food and water can round up to the same whole ration.
+    check(e.waterExact > eat + 1e-9 && e.water >= e.food && near(e.waterExact, eat * THIRST.summer, 1e-6), `summer: the trip needs ${THIRST.summer}× the rations in water (${e.food} food, ${e.water} water; ${r1(eat * THIRST.summer)})`);
     const res = launchExpedition(st, { memberIds: ids, dest, mission: "move", stance: "normal", supplies: sup });
     check(!res.error, `launch: ${res.error}`);
     const p = res.party;

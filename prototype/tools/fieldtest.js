@@ -295,6 +295,7 @@ section("ETA and rations for a whole plan match the trip");
       for (let i = 0; i < 24 * 5 && !home(state, p); i++) {
         p.lastConflict = state.hour + 1; state.hordes.length = 0;
         tickHour(state);
+        if (p.roadblock && p.roadblock.hour === state.hour) delay += p.roadblock.mins / 60; // a road blockage (sim/roadblocks.js) is a delay like a card's, as in etatest
         for (let k = state.cards.length - 1; k >= 0; k--) {
           const c = state.cards[k];
           if (c.isOrders || c.planCard) { state.cards.splice(k, 1); continue; }
@@ -310,7 +311,7 @@ section("ETA and rations for a whole plan match the trip");
       const took = state.hour - t0;
       total++;
       if (!delay) { check(took === est.total, `seed ${seed} ${mission}${v ? " by vehicle" : ""}: home in ${took}h, planned ${est.total}h${cards ? ` (${cards} card(s) without delay)` : ""}`); matched += took === est.total ? 1 : 0; }
-      else note(`seed ${seed} ${mission}: road cards added ~${Math.round(delay)}h: ${took}h vs ${est.total}h planned`);
+      else note(`seed ${seed} ${mission}: road cards and blockages added ~${Math.round(delay)}h: ${took}h vs ${est.total}h planned`);
     }
   }
   note(`${matched}/${total} plans without road cards matched to the hour`);

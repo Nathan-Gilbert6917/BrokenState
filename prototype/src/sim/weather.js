@@ -426,8 +426,9 @@ export function weather(state, hour = state.hour, tileId = homeTile(state)) {
 }
 export const weatherAt = (state, tileId, hour = state.hour) => weather(state, hour, tileId);
 export const wxAt = (state, x, y, hour = state.hour) => weather(state, hour, y * (state.grid ? state.grid.width : 64) + x);
-// The weather of a campaign day at home (1-based day number, as the clock shows it). For the diary, timelapse, tools.
-export const weatherOnDay = (state, dayNumber) => describe(dayRec(state, dayNumber - 1), 12);
+// The weather of a campaign day at home, or on a tile (1-based day number, as the clock shows it): the front that
+// sat over it a good part of the day, else the day's sky. For the diary, hub events, the timelapse, tools.
+export const weatherOnDay = (state, dayNumber, tileId = homeTile(state)) => describe(dayRec(state, dayNumber - 1, tileId), 12);
 // The region's weather that day (the day record, storms and all): what the forecast foretells.
 export const regionOnDay = (state, dayNumber) => describe(rec(state, dayNumber - 1), 12);
 
