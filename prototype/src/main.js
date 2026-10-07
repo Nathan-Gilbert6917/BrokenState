@@ -918,6 +918,7 @@ const actions = {
       state.ironman = { id: `iron${Date.now().toString(36)}`, since: Date.now() };
       log(state, "Ironman: this game saves itself (at dawn, when a battle starts and ends, when you leave it). There is no going back.", "info");
     }
+    if (ui.childrenOff) state.childrenOff = true; // the new-run screen's Children box (sim/family.js)
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -1125,6 +1126,7 @@ const changeActions = {
   // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
   ironman: (el) => { ui.ironman = !!el.checked; }, // the new-run screen's Ironman box (ui/newgame.js)
   "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
+  children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
   // Starting people (Hardcore only, ui/newgame.js): 1–4 flee together; the same seed and the edited crew (as many as fit).
   startpeople: (el) => { ui.startPeople = clampStartPeople(el.value); newWorld(state.seed, true); },
@@ -1192,6 +1194,7 @@ function adopt(st, entry) {
   ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.ironman = !!state.ironman; // and Ironman, if this one is
   if (state.mode === "hardcore") ui.startPeople = clampStartPeople(state.startPeople); // and a hardcore game's Starting people
+  ui.childrenOff = !!state.childrenOff; // and children off, if they were
   ui.started = true;
   ui.speed = 0;
   ui.slot = entry ? entry.id : null;

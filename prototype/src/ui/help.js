@@ -10,6 +10,7 @@ import { windowsHelp } from "./layout.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
+import { familyHelp } from "./family.js"; // children and families (sim/family.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -125,6 +126,7 @@ export function helpTopics() {
   if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
   add("Sound", soundHelp()); // ui/audio.js
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
+  if (!seen.has("children-and-families")) add("Children and families", familyHelp());
   return out;
 }
 

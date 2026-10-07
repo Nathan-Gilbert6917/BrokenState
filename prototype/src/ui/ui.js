@@ -71,6 +71,7 @@ import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were before 
 import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { whyModal, cardWhy } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
+import { familyChip, familyBlock, childrenPeople } from "./family.js"; // children and families (sim/family.js)
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
@@ -248,7 +249,7 @@ function personCard(state, s) {
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
     ${isSick(s) ? `<div class="row small" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}
     ${gaugeRows(s, { mood: false })}
-    <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}</div>` : ""}` :
+    <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) || familyChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}${familyChip(state, s)}</div>` : ""}` :
     isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
     <div>${topSkills}${s.background && BACKGROUNDS[s.background] ? `<span class="chip"${tip(`Who they were before Calder fell: ${BACKGROUNDS[s.background].blurb}`)}>${esc(BACKGROUNDS[s.background].name)}</span>` : ""}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
   </div>`;
@@ -274,7 +275,7 @@ function renderPeople(state) {
   if (errands.length) groups.push(["Away on personal errands", errands]);
   const held = alive(state).filter(isCaptive);
   if (held.length) groups.push(["Held captive", held]);
-  return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("");
+  return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("") + childrenPeople(state); // ui/family.js
 }
 
 function renderGroups(state) {
@@ -1153,6 +1154,7 @@ function survivorModal(state, ui) {
       </div>
     </div>
     ${s.alive ? `${studyBlock(state, s)}${skillTree(state, s, ui)}` : ""}
+    ${familyBlock(state, s)}
     ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;
 }

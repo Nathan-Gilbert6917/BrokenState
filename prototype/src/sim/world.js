@@ -60,6 +60,7 @@ import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
+import { familyDaily } from "./family.js"; // children and generations
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -661,6 +662,7 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
