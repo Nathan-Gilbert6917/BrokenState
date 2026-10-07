@@ -4,8 +4,8 @@ import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill, rollTraits } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
-import { MODES, isHardcore } from "../sim/hardcore.js";
-import { BACKGROUNDS } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
+import { MODES, isHardcore, START_PEOPLE, clampStartPeople } from "../sim/hardcore.js";
+import { BACKGROUNDS, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -143,21 +143,37 @@ function hiveSelect(state, ui) {
 function modeSelect(state) {
   const cur = isHardcore(state) ? "hardcore" : "normal";
   const opts = Object.entries(MODES).map(([k, m]) => `<option value="${k}" ${k === cur ? "selected" : ""}${tip(m.tip)}>${esc(m.label)}</option>`).join("");
-  return `<label${tip(`${MODES[cur].tip}. Changing it builds the world again on the same seed (your edited colonists are kept: the first three in Hardcore).`)}>Mode <select data-action="gamemode">${opts}</select></label>`;
+  return `<label${tip(`${MODES[cur].tip}. Changing it builds the world again on the same seed (your edited colonists are kept: in Hardcore the first ${countWord(START_PEOPLE.DEF)}, or as many as Starting people says).`)}>Mode <select data-action="gamemode">${opts}</select></label>`;
+}
+
+// Starting people (Hardcore only, sim/hardcore.js START_PEOPLE): how many flee together on day 1. A normal start is a
+// full hub of six, so the select is shown greyed out there with the reason.
+// The count shown: the world's own (Hardcore), else the screen's setting (kept for when Hardcore is picked).
+function startPeopleSelect(state, ui) {
+  const hard = isHardcore(state);
+  const cur = hard && Number.isFinite(state.startPeople) ? state.startPeople : clampStartPeople(ui.startPeople ?? START_PEOPLE.DEF);
+  const opts = [];
+  for (let v = START_PEOPLE.MIN; v <= START_PEOPLE.MAX; v++) opts.push(`<option value="${v}" ${v === cur ? "selected" : ""}>${v}${v === START_PEOPLE.DEF ? " (default)" : ""}</option>`);
+  const t = hard
+    ? `How many of you flee together on the day Calder falls, ${START_PEOPLE.MIN}–${START_PEOPLE.MAX} (${START_PEOPLE.DEF} by default). Each one brings what they grabbed (1–3 days of food and water each), so fewer hands carry less, scavenge, build the first camp and fight slower; the car, what is in its back and a prepper's bag are one of each whatever the count, so a small team has more of those to share. Changing it builds the world again on the same seed`
+    : `Hardcore only: a normal start is a hub with six survivors. Pick Hardcore under Mode to choose how many flee together (${START_PEOPLE.MIN}–${START_PEOPLE.MAX})`;
+  return `<label${tip(t)}${hard ? "" : ` class="muted"`}>Starting people <select data-action="startpeople"${hard ? "" : " disabled"}>${opts.join("")}</select>${hard ? "" : ` <span class="small">(Hardcore only)</span>`}</label>`;
 }
 
 export function newRunScreen(state, ui) {
   const people = state.survivors;
   const hard = isHardcore(state);
   const intro = hard
-    ? `Hardcore. The day the State of Calder falls. Three of you get out with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
+    ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
     : `Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes.`;
   return `<div class="box wide">
     <h1>Broken State — New run</h1>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
+      ${startPeopleSelect(state, ui)}
       <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
+      <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
       ${worldSizeSelect(ui)}
       ${groupInput(state, ui)}

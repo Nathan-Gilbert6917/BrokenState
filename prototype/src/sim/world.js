@@ -28,10 +28,12 @@ import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
 import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
+import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { watchHour, watchDayRoles } from "./watch.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
@@ -52,9 +54,11 @@ import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone wh
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { countWord } from "./hardcore-start.js";
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
+import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -81,7 +85,9 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null }) {
+// startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
+// kept as state.startPeople. A normal start is a full hub of six and ignores it.
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -103,11 +109,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   };
 
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew, crewRoll });
+    hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
     updateVision(state);
-    log(state, `Day 1. Calder is falling. Three of you got out with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
+    log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
     return state;
   }
@@ -132,7 +138,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
+    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -633,6 +639,7 @@ export function tickHour(state) {
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
+    watchDayRoles(state); // watch.js: Manual people on watch likewise
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
@@ -665,9 +672,12 @@ export function tickHour(state) {
   checkGameOver(state);
   updateVision(state);
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
+  crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
+  historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
 }

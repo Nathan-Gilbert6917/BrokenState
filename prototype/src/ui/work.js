@@ -18,6 +18,7 @@ import {
   renameRole, deleteRole, roleMembers, everyoneOnPriorities, setNewcomers, taskLabel, taskWhy, planBase, MOOD_LOW, MOOD_BACK,
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
+import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -72,10 +73,10 @@ export function applyRoleChoice(state, s, value) {
 
 // ---------- cells ----------
 function cellHtml(c, attrs, title, extra = "") {
-  const cls = `wcell p${c.p}${c.over ? " over" : ""}${extra}`;
+  const cls = `wcell p${c.p}${c.over ? " over" : ""}${c.watch ? " watch" : ""}${extra}`;
   return `<button class="${cls}" ${attrs}${tip(title)}>${c.p || ""}</button>`;
 }
-const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.`;
+const cellTip = (T, c, who, role) => `${T.name} for ${who}: ${c.p ? `priority ${PNAME[c.p]}` : "never"}${c.watch ? ` (moved up from ${c.watch} by the watchtower's alarm: a horde is near; back to ${c.watch} when it has gone, or set it yourself to end that)` : c.over ? ` (their own; ${role.name}: ${c.def ? c.def : "never"})` : ` (${role.name}'s default)`}. ${T.desc} Left-click up, right-click down, Shift+click: the whole role, 1–5 / 0 / R on the keyboard.`;
 
 // ---------- the tab ----------
 export function workTab(state, b, ui) {
@@ -111,10 +112,11 @@ export function workTab(state, b, ui) {
       <span${tip("The role new people get when they join (recruits, strangers, rescued people). Manual: they keep the job they come with.")}>Newcomers join</span>
       <select data-action="wnew">${[["", "Manual"], ...roles.map((r) => [r.id, r.name])].map(([v, l]) => `<option value="${esc(v)}" ${String(newcomers || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
       <span class="muted small">${managed} of ${people.length} here on priorities</span>
+      ${undoBtn(state, ui, "work")}
     </div>
     ${pr.msg ? `<div class="result small">${esc(pr.msg)}</div>` : ""}
     <div class="wscroll"><table class="t worktbl">${head}${rows || `<tr><td colspan="${WORK_KEYS.length + 3}" class="muted">Nobody here matches.</td></tr>`}</table></div>
-    <div class="small muted whelp">Every hour each person does the first work type, priority 1 first, that has work and room for more hands; at the same priority the most urgent work and the best skilled go first. Nothing at 1: they try 2, and so on; nothing at all: they rest. Before that: the badly hurt and the sick rest; a raid or horde warning sends everyone with Guard set to the walls; the role's schedule (guard watch, free time, sleep); mood below ${MOOD_LOW} means free time until ${MOOD_BACK}. Manual people keep their fixed job and pinned people theirs; stewards only move Manual people. Stations follow their standing orders (Workshops tab).</div>
+    <div class="small muted whelp">Every hour each person does the first work type, priority 1 first, that has work and room for more hands; at the same priority the most urgent work and the best skilled go first. Nothing at 1: they try 2, and so on; nothing at all: they rest. Before that: the badly hurt and the sick rest; a raid or horde warning sends everyone with Guard set to the walls; while a watchtower sees a horde near, Guard counts as priority 1 for anyone who has it lower (a backup job: the cell turns red) and the walls take more lookouts, until it has gone; the role's schedule (guard watch, free time, sleep); mood below ${MOOD_LOW} means free time until ${MOOD_BACK}. Manual people keep their fixed job and pinned people theirs; stewards only move Manual people. Stations follow their standing orders (Workshops tab).</div>
     ${roleEditor(state, ui, b)}
     ${crewsSection(state, ui)}
   </div>`;

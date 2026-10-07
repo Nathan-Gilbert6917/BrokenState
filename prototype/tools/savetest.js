@@ -24,6 +24,8 @@ import { launchExpedition, partyTile, planPath } from "../src/sim/parties.js";
 import { PRESETS } from "../src/sim/plans.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, closeCombat } from "../src/sim/combat.js";
 import { addBuilding } from "../src/sim/buildings.js";
+import { newItem } from "../src/sim/inventory.js";
+import { setHuntMix } from "../src/sim/hunting.js";
 import { captiveRecords, capturePrisoners, prisonersAt } from "../src/sim/prisoners.js";
 import { assaultHive } from "../src/sim/hives.js";
 import { raidDamage, startAllRepairs } from "../src/sim/breakdowns.js";
@@ -213,6 +215,25 @@ console.log("Saved at awkward moments");
   check(prisonersAt(st, h.id).length === 2, `two prisoners in ${h.name}'s cells`);
   tickHour(st);
   branch("with prisoners, 20 more days", st, (w) => playTo(w, day(w) + 20), (w) => JSON.stringify((w.prisoners || []).map((x) => [x.name, x.at, Math.round(x.opinion * 1000)])));
+}
+{
+  // A hunting cabin with a hunting mix part way through its hours (hunting.js: base.huntMix, the hour carried to the
+  // next day in base.huntCarry), bows and arrows: the cabin's hunters on the Hunt role, hand-set (the governor off).
+  const st = world(42, 8);
+  setAutopilot(st, false);
+  const h = hub(st);
+  addBuilding(h, "huntcabin");
+  const hunters = atBase(st, h.id).slice(0, 2);
+  hunters[0].gear.weapon = newItem("compbow");
+  for (const s of hunters) { s.role = "hunt"; s.work = null; s.pinned = true; }
+  h.stock.arrows = 40;
+  setHuntMix(h, { traps: 30, bows: 50, guns: 20 });
+  tickHour(st);
+  for (let i = 0; i < 48; i++) { tickHour(st); while (st.cards.length) { const c = st.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)) || c.choices[0]).resolve(st); } }
+  check(JSON.stringify(h.huntMix) === JSON.stringify({ traps: 30, bows: 50, guns: 20 }) && !saveBlocker(st), `the hub hunts by its mix (${JSON.stringify(h.huntMix)}, carried ${JSON.stringify(h.huntCarry || {})}, yesterday ${JSON.stringify(h.huntLast && h.huntLast.hrs)})`);
+  const B = branch("a hunting mix and arrows, 10 more days", st, (w) => { for (let i = 0; i < 240; i++) { tickHour(w); while (w.cards.length) { const c = w.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(w) : x.disabled)) || c.choices[0]).resolve(w); } } },
+    (w) => JSON.stringify([hub(w).huntMix, hub(w).huntCarry, hub(w).huntLast, hub(w).stock.arrows]));
+  check(JSON.stringify(hub(B).huntMix) === JSON.stringify({ traps: 30, bows: 50, guns: 20 }), "the hunting mix is kept through a save and load");
 }
 {
   // Raid damage (breakdowns.js raidDamage): wrecked and damaged buildings, the last raid's report and the repairs

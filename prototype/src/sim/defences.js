@@ -14,7 +14,7 @@
 // the tactical battle; headless and on autopilot the same battle is played out by the AI on both sides, so the
 // odds match. Losing it overruns the base: people hurt (and killed), stores spoiled, an outpost lost. A hub with
 // nobody left alive ends the game.
-import { log, addCard, atBase, hurt, combatPower, removeBase, isNight } from "./world.js";
+import { log, addCard, atBase, hurt, combatPower, removeBase, isNight, baseVision } from "./world.js";
 import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
@@ -28,6 +28,7 @@ import { BOSS_NAMES, ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { siegeWallCut } from "./siege.js";
 import { DECOY_KEYS, THROWABLES } from "./stealth.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
+import { applyPlan } from "./defenceplan.js"; // the base's defence plan at the deploy step
 import { fortable, fortDefence, fortSize } from "./fort.js"; // a walled base on land: the whole battle on one fort map
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
@@ -420,6 +421,50 @@ export function hordeWarnings(state) {
   }
 }
 
+// The watchtower's alarm (hourly, after hordeWarnings): a base with a watchtower that sees a horde within its view
+// (world.js baseVision: 4 tiles at an outpost, 5 at the hub, more with a telescope; a tile at night) that is coming
+// for it or is within WATCH.close tiles of it puts that horde on its watch: a log line once, an alert while it lasts
+// (ui/alerts.js), and people at the base with Guard as a backup job move it up to priority 1 until it has gone
+// (work.js watchPromotions; the governor posts its guards early, autopilot.js planRoles 3). No card: one that is
+// coming gets the lookouts' warning card above as before. A horde stays on the watch, seen or not, while it is still
+// coming within a tile past the tower's day view, or within WATCH.close + 1 tiles; it is off once it is beyond that,
+// gone, or beaten off or lured away (it shuns the base). base.towerWatch = { ids: [horde id…], since } while on.
+export const WATCH = { close: 3 };
+const comingFor = (h, base) => (h.goal && h.goal.baseId === base.id) || h.target === base.tile;
+const shunning = (state, h, base) => !!(h.shun && h.shun.tile === base.tile && state.hour < h.shun.until);
+export function towerWatch(state) {
+  const g = state.grid;
+  for (const base of state.bases) {
+    if (!base.watchtower) { if (base.towerWatch) delete base.towerWatch; continue; } // no tower (or it burnt): no watch
+    const was = base.towerWatch ? base.towerWatch.ids : [];
+    const view = baseVision(base, state), dayView = baseVision(base);
+    const ids = [], fresh = [];
+    for (const h of state.hordes) {
+      if (h.tile === base.tile) continue; // at the gate: the fight (hordeAttackBase) has it
+      const d = g.distance(h.tile, base.tile);
+      const coming = comingFor(h, base) && !shunning(state, h, base);
+      if (was.includes(h.id)) {
+        if ((coming && d <= dayView + 1) || (d <= WATCH.close + 1 && !shunning(state, h, base))) ids.push(h.id);
+        continue;
+      }
+      if (!state.live.has(h.tile) || d > view || !(coming || (d <= WATCH.close && !shunning(state, h, base)))) continue;
+      ids.push(h.id);
+      fresh.push({ h, d, coming });
+    }
+    if (!ids.length) { if (base.towerWatch) { delete base.towerWatch; log(state, `The watchtower at ${base.name} stands down: the horde has gone.`, "info"); } continue; }
+    base.towerWatch = { ids, since: base.towerWatch ? base.towerWatch.since : state.hour };
+    for (const { h, d, coming } of fresh) {
+      const lim = holdLimit(state, base, Math.min(2, h.bosses || 0));
+      log(state, `The watchtower at ${base.name} sees a horde of about ${h.size}${h.bosses ? ` with a ${BOSS_NAMES.horde}` : ""}, ${d} tile${d === 1 ? "" : "s"} out${coming ? " and coming this way" : ""}. The defences hold about ${Math.round(lim)}${h.size > lim ? ": it would break in" : ""}. People there on work priorities with Guard as a backup job put it first until the horde has gone.`, "danger");
+    }
+  }
+}
+// The hordes on a base's watch now (biggest first).
+export function towerHordes(state, base) {
+  if (!base || !base.towerWatch) return [];
+  return state.hordes.filter((h) => base.towerWatch.ids.includes(h.id)).sort((a, b) => b.size - a.size);
+}
+
 // Luring a coming horde off (the warning card): a decoy fire (DECOY_FUEL fuel) or decoys from the armory (alarm
 // clocks, radios, noise makers, firecrackers, hand warmers, heat packs: stealth.js DECOY_KEYS; up to DECOY_ITEMS of
 // them). The chance falls with the horde's size, a Wallbreaker rarely turns, and a horde led by a Shepherd turns only
@@ -559,7 +604,11 @@ registerBattleSize("baseDefence", (state, setup) => {
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
   const base = ctx.state.bases.find((x) => x.id === setup.baseId) || null;
-  if (fortable(ctx.state, base, c)) return fortDefence(b, ctx, base, c); // fort.js: both phases (a bridge barricade keeps the deck map below)
+  if (fortable(ctx.state, base, c)) { // fort.js: both phases (a bridge barricade keeps the deck map below)
+    fortDefence(b, ctx, base, c);
+    if (ctx.phase === "units") applyPlan(ctx.state, b); // defenceplan.js: the base's defence plan, if it has one
+    return;
+  }
   if (ctx.phase === "map") return deployMap(b, ctx, base, c);
   // Units: the Wallbreakers come in with the dead; then the defenders' posts and the turn of the map.
   for (let i = 0; i < (setup.enemy.bosses || 0); i++) {
@@ -567,6 +616,7 @@ registerBattleLayout("baseDefence", (b, ctx) => {
     if (placeUnitRight(b, ctx, boss, ctx.W - 6)) b.units.push(boss);
   }
   deployUnits(b, ctx, base, c);
+  applyPlan(ctx.state, b); // defenceplan.js: the base's defence plan, if it has one
 });
 
 // ---------- autopilot help ----------

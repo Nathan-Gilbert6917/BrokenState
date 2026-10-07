@@ -17,6 +17,8 @@ import { controlsTab } from "./controls.js"; // the Controls tab: every key, reb
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
 import { setMapAnim } from "./render.js"; // the State Map's animations (walking teams, hordes, smoke, fires)
+import { soundOptionsHtml, SOUND_ACTIONS, SOUND_CHANGE } from "./audio.js"; // the Sound section (volumes, mutes, hear a sound)
+import { guideMenuRow, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week guide: shown again or hidden from the Game tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -57,7 +59,7 @@ function ago(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? "Hardcore · " : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
+const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? `Hardcore${e.startPeople && e.startPeople !== 3 ? ` (${e.startPeople} at the start)` : ""} · ` : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
 
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {
@@ -116,6 +118,7 @@ function gameTab(state, ui, api) {
     html += `<div class="setrow">${last ? `<button class="primary" data-action="set-continue"${dis(!busy)}${tip(`Load the latest save: ${last.name}`)}>▶ Continue: ${esc(last.name)}</button>` : `<span class="muted small">No saves yet in this browser.</span>`}
       ${api.desktop ? `<button data-action="set-quitnosave"${dis(!busy)}>Quit</button>` : ""}</div>`;
   }
+  html += guideMenuRow(state, ui); // ui/guide.js
   const auto = api.autosaveInfo();
   html += `<h3>Saves <span class="small muted">(${manual} of ${MAX_SLOTS} slots, plus the autosave · ${kb(storageUsed() / 2)} in this browser${canCompress() ? ", compressed" : ""})</span></h3>`;
   if (auto.error) html += `<div class="small danger">The last autosave failed: ${esc(auto.error)}</div>`;
@@ -164,6 +167,7 @@ function optionsTab(state, ui, api) {
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
     </div>
+    ${soundOptionsHtml(o)}
     <h3>Display</h3><div class="setrow">
       <label${tip("Interface size (also in the top bar)")}>UI size <select data-action="uiscale">${[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((v) => `<option value="${v}" ${ui.scale === v ? "selected" : ""}>${Math.round(v * 100)}%</option>`).join("")}</select></label>
       <label${tip("State Map terrain: Detailed scatters trees, fields, rocks, houses and wrecks over the ground and ripples the water when zoomed in; Flat keeps plain colors at every zoom")}>Map detail <select data-action="set-mapdetail">${[["detailed", "Detailed"], ["flat", "Flat"]].map(([v, l]) => `<option value="${v}" ${(o.mapDetail !== false) === (v === "detailed") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -245,6 +249,8 @@ function loadSlot(ui, api, id) {
 }
 
 export const SETTINGS_ACTIONS = {
+  ...SOUND_ACTIONS, // ui/audio.js
+  ...GUIDE_MENU_ACTIONS, // gd-toggle (ui/guide.js)
   "set-open": (state, ui, d) => openSettings(ui, d.tab || "game"),
   "set-close": (state, ui) => { if (!ui.settings || !ui.settings.busy) ui.settings = null; },
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },
@@ -365,6 +371,7 @@ export const SETTINGS_ACTIONS = {
 };
 
 export const SETTINGS_CHANGE = {
+  ...SOUND_CHANGE, // ui/audio.js: the volume sliders, the sound to hear
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";
@@ -415,7 +422,7 @@ export function autosaveCheck(state, ui, api, now) {
   // The battle-start save (its own slot): as each battle opens, before anything is done in it, so it can be played
   // again (Restart battle). Open cards are left out of it (a card's choices cannot be saved). Not on autopilot.
   const bt = state.combat;
-  if (bt && auto.battle !== bt && !bt.over && o.battleSave !== false && !state.autopilot) {
+  if (bt && auto.battle !== bt && !bt.over && !bt.drill && o.battleSave !== false && !state.autopilot) { // not a defence drill (sim/defenceplan.js)
     auto.battle = bt;
     if (bt.turn <= 1 && !bt.acted) doBattleSave(state, ui, api, bt, now);
     return;
@@ -468,7 +475,7 @@ function ironCheck(state, ui, api, now) {
   }
   auto.over = false;
   const bt = state.combat;
-  if (bt && auto.battle !== bt) { auto.battle = bt; auto.pending = "a battle started"; }
+  if (bt && auto.battle !== bt && !bt.drill) { auto.battle = bt; auto.pending = "a battle started"; } // a defence drill is not a battle
   if (!bt && auto.battle) { auto.battle = null; auto.pending = "a battle ended"; }
   const di = dawnIndex(state);
   if (di > auto.dawn) { auto.dawn = di; auto.pending = auto.pending || "dawn"; }

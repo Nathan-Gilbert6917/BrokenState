@@ -10,7 +10,8 @@
 //
 // A binding is a chord: the modifiers in the order Ctrl, Alt, Shift, Meta, then the key's e.code ("Shift+KeyP",
 // "Ctrl+Digit4", "BracketLeft"). A key press matches a chord exactly: Shift+H is not H. ctx: where the key works
-// ("map": the State Map and its panels, "queue": a selected order in the team panel's queue, "battle", "timelapse",
+// ("map": the State Map and its panels, "queue": a selected order in the team panel's queue, "edit": the screens with
+// an undo list (the planner, a build queue, the Work tab), "battle", "timelapse",
 // "title": the title screen's menu, "work": a base's Work tab). Two actions of one context on the same chord are a
 // conflict (the Controls tab warns; the first in the table wins). fixed: shown in the lists, not rebindable, and
 // matched by its own handler (Esc, the Work tab's number keys).
@@ -20,9 +21,9 @@
 
 const range = (n, from = 1) => Array.from({ length: n }, (_, i) => i + from);
 
-export const KEY_GROUPS = ["Time", "Map", "Panels", "Windows", "Teams", "Bases", "Camera spots", "Dev", "Team queue",
+export const KEY_GROUPS = ["Time", "Map", "Panels", "Windows", "Teams", "Bases", "Camera spots", "Dev", "Team queue", "Undo",
   "Battle", "Battle orders", "Battle view", "Battle units", "Timelapse", "Title menu", "Work tab"];
-export const KEY_CTX = { map: "Map", queue: "Team queue", battle: "Battle", timelapse: "Timelapse", title: "Title menu", work: "Work tab" };
+export const KEY_CTX = { map: "Map", queue: "Team queue", edit: "Planner, build queue, Work tab", battle: "Battle", timelapse: "Timelapse", title: "Title menu", work: "Work tab" };
 
 export const KEYMAP = [
   // ---------- the State Map (main.js keydown, ui/alerts.js mapHotkey) ----------
@@ -51,6 +52,7 @@ export const KEYMAP = [
   { id: "win.diary", label: "Diary", group: "Windows", ctx: "map", keys: ["KeyJ"] },
   { id: "win.roster", label: "Roster", group: "Windows", ctx: "map", keys: ["KeyR"] },
   { id: "win.codex", label: "Codex", group: "Windows", ctx: "map", keys: ["KeyC"] },
+  { id: "win.ledger", label: "Ledger and run summary", group: "Windows", ctx: "map", keys: ["KeyE"] }, // ui/ledger.js ledgerKey
   { id: "win.palette", label: "Search (command palette)", group: "Windows", ctx: "map", keys: ["Ctrl+KeyK", "Slash"] },
   { id: "team.next", label: "Next team waiting for orders", group: "Teams", ctx: "map", keys: ["Tab", "KeyN"] },
   { id: "team.prev", label: "Previous team waiting for orders", group: "Teams", ctx: "map", keys: ["Shift+Tab", "Shift+KeyN"] },
@@ -63,6 +65,8 @@ export const KEYMAP = [
   { id: "queue.up", label: "Move the selected order up", group: "Team queue", ctx: "queue", keys: ["ArrowUp"] },
   { id: "queue.down", label: "Move the selected order down", group: "Team queue", ctx: "queue", keys: ["ArrowDown"] },
   { id: "queue.remove", label: "Remove the selected order", group: "Team queue", ctx: "queue", keys: ["Delete", "Backspace"] },
+  // Undo on the screens that keep an undo list (ui/undo.js undoKey): the planner, a base's build queue, the Work tab. Never in battle.
+  { id: "edit.undo", label: "Undo the last change (planner, build queue, Work tab)", group: "Undo", ctx: "edit", keys: ["Ctrl+KeyZ", "Meta+KeyZ"] },
 
   // ---------- battle (ui/combat.js combatKey; the view's keys first) ----------
   { id: "bview.panUp", label: "Pan up (held)", group: "Battle view", ctx: "battle", keys: ["KeyW", "ArrowUp"] },

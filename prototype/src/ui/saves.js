@@ -41,9 +41,9 @@ export function loadOptions() {
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
       if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
       if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)
-      if (typeof v.titleBg === "string") o.titleBg = v.titleBg; // the title screen's background and logo (ui/title.js checks them)
-      if (typeof v.titleStyle === "string") o.titleStyle = v.titleStyle;
       if (v.keys && typeof v.keys === "object" && !Array.isArray(v.keys)) o.keys = v.keys; // key bindings (ui/keymap.js initKeymap checks them)
+      if (v.sound && typeof v.sound === "object") o.sound = { ...v.sound }; // volumes and mutes (ui/audio.js soundOptions cleans them)
+      if (typeof v.guideSeen === "boolean") o.guideSeen = v.guideSeen; // a campaign was started here: the first-week guide box starts off (ui/guide.js)
     }
   } catch { /* unreadable: the defaults */ }
   return o;

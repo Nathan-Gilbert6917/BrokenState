@@ -35,7 +35,7 @@ import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
-import { rollAreaFind, rollAreaWood } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { illnessAim } from "./health.js";
@@ -47,6 +47,7 @@ import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
+import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
@@ -2013,6 +2014,7 @@ export function combatAct(state, act) {
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
+  if (b.setup.drill) { const err = drillAct(state, b, act); if (!err && state.combat === b) bump(b); return err; } // defenceplan.js: a defence drill, nothing is fought
   if (act.type === "building") return chooseBuilding(state, act.id);
   // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry. On a base's wall map that is
   // falling back to the yard and the buildings instead (interior.js), as is act "fallBack".
@@ -3865,6 +3867,9 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
+      // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
+      const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
+      if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
       if (def.alarm && box.kind === "car" && rng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");

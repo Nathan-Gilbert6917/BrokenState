@@ -24,6 +24,9 @@ import { paletteIndex, paletteSearch, paletteGo, matchScore } from "../src/ui/pa
 import { codexEntries, codexScan, codexSeen, codexModal, codexState, CODEX_ACTIONS, CODEX_CATS } from "../src/ui/codex.js";
 import { helpTopics } from "../src/ui/help.js";
 import { saveOptions, loadOptions } from "../src/ui/saves.js";
+import { ledgerKey } from "../src/ui/ledger.js";
+import { undoKey } from "../src/ui/undo.js";
+import { historyOf } from "../src/sim/history.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -71,6 +74,8 @@ section("Keys: the defaults are the keys of before");
     ["ArrowUp", "title", "title.up"], ["ArrowDown", "title", "title.down"],
     // New with this table: the codex and the search box.
     ["KeyC", "map", "win.codex"], ["Ctrl+KeyK", "map", "win.palette"], ["Slash", "map", "win.palette"],
+    // Folded in from the other branches: the Ledger and undo.
+    ["KeyE", "map", "win.ledger"], ["Ctrl+KeyZ", "edit", "edit.undo"], ["Meta+KeyZ", "edit", "edit.undo"],
   ];
   const bad = OLD.filter(([c, ctx, id]) => K.keyAction(parse(c), ctx) !== id);
   check(!bad.length, `every old key fires its old action (wrong: ${bad.map(([c, ctx, id]) => `${c}/${ctx} → ${K.keyAction(parse(c), ctx)} not ${id}`).join(", ")})`);
@@ -93,6 +98,20 @@ section("Keys: the defaults are the keys of before");
   check(mapHotkey(w, ui, ev("KeyC"), act, "diary") && !ui.diary && ui.codex, "C over the diary switches to the codex");
   check(mapHotkey(w, ui, ev("KeyC"), act, "codex") && !ui.codex, "C again closes it");
   check(!mapHotkey(w, ui, ev("KeyC"), act, "base"), "no codex key behind a base screen");
+  // The Ledger (ui/ledger.js ledgerKey) through the table; never a battle key; C, J, R from it.
+  check(ledgerKey(w, ui, ev("KeyE"), null) && ui.ledger, "E opens the Ledger");
+  check(!ledgerKey(w, ui, ev("KeyC"), "ledger") && !ui.ledger && mapHotkey(w, ui, ev("KeyC"), act, null) && ui.codex, "C from the Ledger closes it and opens the codex");
+  check(ledgerKey(w, ui, ev("KeyE"), "codex") && ui.ledger && !ui.codex, "E from the codex switches to the Ledger");
+  check(ledgerKey(w, ui, ev("KeyE"), "ledger") && !ui.ledger, "E again closes it");
+  check(!ledgerKey(w, ui, ev("KeyE", { shiftKey: true }), null) && !ui.ledger, "Shift+E is not E");
+  check(K.keyAction(ev("KeyE"), "battle") === "battle.melee" && K.keyAction(ev("KeyZ", { ctrlKey: true }), "battle") === null, "in battle E is still melee and Ctrl+Z nothing");
+  // Undo (ui/undo.js undoKey) only on a screen with an undo list.
+  check(!undoKey(w, { ...freshUi() }, ev("KeyZ", { ctrlKey: true })), "Ctrl+Z on the bare map does nothing");
+  const uw = { ...freshUi(), baseView: { id: hub(w).id, tab: "work" } };
+  check(undoKey(w, uw, ev("KeyZ", { ctrlKey: true })) && !undoKey(w, uw, ev("KeyZ")), "Ctrl+Z on the Work tab is undo (Z alone is not)");
+  K.setBinding("edit.undo", 0, "Ctrl+KeyU");
+  check(undoKey(w, uw, ev("KeyU", { ctrlKey: true })) && K.keysOf("edit.undo")[0] === "Ctrl+KeyU", "undo rebinds like any key");
+  K.resetAll();
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -184,6 +203,11 @@ section("The search box: 50 people, 50 groups");
   check(tIndex < 150 && tSearch < 15, "fast enough to rebuild on open and search on every key");
   const kinds = new Set(index.map((e) => e.kind));
   check(["person", "base", "group", "site", "build", "menu", "help"].every((k) => kinds.has(k)), `people, bases, groups, sites, build buttons, menu and help are indexed (${[...kinds].join(", ")})`);
+  check(["menu:ledger", "menu:summary", "menu:guide", "menu:sound", "menu:templates", "help:sound", "help:start-here"].every((id) => index.some((e) => e.id === id)), "the Ledger, run summary, guide, sound and templates are in the menu, their Help topics too");
+  const rl = paletteSearch(index, "ledger", [])[0];
+  paletteGo(w, ui, rl, act);
+  check(ui.ledger && rl.id === "menu:ledger", "\"ledger\": opens the Ledger");
+  ui.ledger = null;
 
   const s = w.survivors[7];
   const first = s.name.split(" ")[0];
@@ -311,6 +335,14 @@ section("The codex");
   delete old.codex;
   codexScan(old, ui, true);
   check(codexSeen(old, "z:walker") && codexSeen(old, `i:${newItem}`) && !old.codex.fresh.length, "an older save without a codex opens what its world shows, quietly");
+  // After a load the codex keeps scanning and the Ledger's history keeps recording (sim/history.js, in tickHour).
+  const rows0 = (historyOf(back) && historyOf(back).all.rows.length) || 0;
+  const it2 = Object.keys(GEAR).find((k) => !codexSeen(back, `i:${k}`) && GEAR[k].slot !== "cargo");
+  hub(back).armory.push({ key: it2, id: 99992 });
+  for (let i = 0; i < 25; i++) tickHour(back);
+  const got2 = codexScan(back, ui);
+  check(got2.includes(`i:${it2}`), "a loaded campaign: the codex opens a new item");
+  check(historyOf(back) && historyOf(back).all.rows.length > rows0, `a loaded campaign: the Ledger records the next day (${rows0} → ${historyOf(back) ? historyOf(back).all.rows.length : 0} rows)`);
 }
 
 console.log(`${passes} passed, ${fails} failed`);

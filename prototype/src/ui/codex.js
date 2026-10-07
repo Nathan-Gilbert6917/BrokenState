@@ -160,6 +160,7 @@ const SUPPLY_HOW = {
   fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the firewood.",
   meds: "Treat wounds and illnesses (a dose each). Rare: keep a reserve, and a med station makes more.",
   ammo: "Every gunshot costs it (an assault rifle two). An ammo bench makes more from scrap.",
+  arrows: "Bows and crossbows lose some when they hunt (in a fight they are picked up again). Made by hand from firewood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
   parts: "Buildings, vehicle repairs and gear need them. A machine shop makes them from scrap.",
   scrap: "What almost everything is built and crafted from. Scavenging brings it in.",
   preserved: "Eaten after the fresh food; barely spoils, needs no cellar, lighter on a trip and sells well.",

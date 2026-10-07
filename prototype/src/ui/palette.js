@@ -21,6 +21,10 @@ import { openRoster } from "./roster.js";
 import { codexEntries, codexSeen, CODEX_ACTIONS, openCodex } from "./codex.js";
 import { helpTopics } from "./help.js";
 import { keyLabel } from "./keymap.js";
+import { openLedger } from "./ledger.js"; // the Ledger and the run summary
+import { guideOn, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week guide
+import { SOUND_ACTIONS } from "./audio.js";
+import { undoScreen, UNDO_ACTIONS, undoCount } from "./undo.js"; // the planner's, build queue's and Work tab's undo
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const MAX_RESULTS = 40;
@@ -37,7 +41,8 @@ const NEVER = /^(Limit reached|Outposts only|Shelters only|Not at a shelter|Alre
 
 // ---------- the index ----------
 // [{ id, kind, label, hint, go(state, ui, act) }] for everything the box can find right now.
-export function paletteIndex(state, ui) {
+// options: the machine options (the sound's mute), when main.js has them.
+export function paletteIndex(state, ui, options = API && API.options) {
   const out = [];
   // match: the text the letters are matched against (the label unless given: a build button matches its building's name).
   const add = (id, kind, label, hint, go, match = label) => out.push({ id, kind, label: String(label), hint: String(hint || ""), lc: String(match).toLowerCase(), go });
@@ -88,8 +93,15 @@ export function paletteIndex(state, ui) {
     ["diary", "Diary", keyLabel("win.diary"), (st, u) => openDiary(u)],
     ["roster", "Roster", keyLabel("win.roster"), (st, u) => openRoster(u)],
     ["codex", "Codex", keyLabel("win.codex"), (st, u) => openCodex(u)],
+    ["ledger", "Ledger", `Production, stock, people and mood over time · ${keyLabel("win.ledger")}`, (st, u) => openLedger(u, "ledger")],
+    ["summary", "Run summary", "The run so far: timeline, best people, worst day", (st, u) => openLedger(u, "summary")],
+    ["guide", `${guideOn(state) ? "Hide" : "Show"} the first-week guide`, "The checklist under the alerts", (st, u) => GUIDE_MENU_ACTIONS["gd-toggle"](st, u)],
+    ["sound", `Sound: ${options && options.sound && options.sound.mute ? "unmute" : "mute"}`, "Volumes are in Menu → Options", (st, u) => SOUND_ACTIONS["snd-opt"](st, u, { k: "on" })],
+    ["templates", "Order templates and Repeat trip", "Help topic: saved team setups, Repeat trip, Undo", (st, u) => openSettings(u, "help", "templates-repeat-trip-and-undo")],
     ["help", "Help", "Menu → Help", (st, u) => openSettings(u, "help")],
   ];
+  const undo = undoScreen(state, ui); // the screen under the box keeps an undo list: undo is one pick away
+  if (undo && undoCount(state, ui, undo.kind, undo.baseId)) menu.push(["undo", "Undo the last change", `${undo.kind === "plan" ? "Planner" : undo.kind === "build" ? "Build queue" : "Work tab"} · ${keyLabel("edit.undo", 1)}`, (st, u) => UNDO_ACTIONS["undo-step"](st, u, { kind: undo.kind, base: undo.baseId })]);
   for (const [id, label, hint, go] of menu) add(`menu:${id}`, "menu", label, hint, go);
   for (const t of helpTopics()) add(`help:${t.id}`, "help", t.title, "Help topic", (st, u) => openSettings(u, "help", t.id));
   for (const e of codexEntries()) if (codexSeen(state, e.key)) add(`codex:${e.key}`, "codex", e.name, e.sub, (st, u) => CODEX_ACTIONS["cx-open"](st, u, { key: e.key }));
@@ -144,7 +156,7 @@ export function paletteSearch(index, q, recent = []) {
 export function paletteGo(state, ui, entry, act) {
   if (!entry) return;
   ui.paletteRecent = [entry.id, ...(ui.paletteRecent || []).filter((id) => id !== entry.id)].slice(0, RECENT_MAX);
-  ui.diary = null; ui.roster = null; ui.codex = entry.kind === "codex" ? ui.codex : null; // a jump leaves the list windows
+  ui.diary = null; ui.roster = null; ui.ledger = null; ui.codex = entry.kind === "codex" ? ui.codex : null; // a jump leaves the list windows
   entry.go(state, ui, act);
 }
 

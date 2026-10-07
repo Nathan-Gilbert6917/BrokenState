@@ -534,6 +534,7 @@ button.wcell.p3 { background: #48472a; color: #f3f0c8; border-color: #8c8650; }
 button.wcell.p4 { background: #4d3b25; color: #f5dfbf; border-color: #8e6a3e; }
 button.wcell.p5 { background: #3b3236; color: #d9c9cf; border-color: #6b5960; }
 button.wcell.over { box-shadow: 0 0 0 2px var(--accent) inset; text-decoration: underline; }
+button.wcell.watch { box-shadow: 0 0 0 2px #e05a4a inset; background: #5a2622; color: #ffe2dc; } /* Guard moved up by the watchtower's alarm (sim/work.js watchPromotions) */
 button.wcell.below { opacity: 0.45; }
 .worktab .wmanual td { opacity: 0.85; }
 .worktab .wtask, .wtask { margin-left: 0.3rem; }
@@ -658,3 +659,60 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 .palette .palhint { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 18rem; }
 .palette .palfoot, .palette .palnone { padding: 0.35rem 0.5rem 0; }
 .palflash { outline: 2px solid var(--accent); box-shadow: 0 0 12px var(--accent); }
+
+/* The Defence tab (ui/defence.js): the watch roster's 24-hour strip and its watches. */
+.deftab .dcov { display: flex; gap: 2px; height: 2.6rem; align-items: stretch; margin: 0.4rem 0 0.1rem; }
+.deftab .dcell { flex: 1; position: relative; background: #23272e; border-radius: 2px; display: flex; flex-direction: column; justify-content: flex-end; }
+.deftab .dcell i { display: block; background: #3f6b48; border-radius: 2px; min-height: 0; }
+.deftab .dcell.gap { background: #3a2222; }
+.deftab .dcell.cur { outline: 1px solid var(--accent, #e0a84f); }
+.deftab .dcell span { position: absolute; bottom: -1.05rem; left: 0; font-size: 0.65rem; color: var(--muted); }
+.deftab .dcov + div { margin-top: 1.1rem !important; }
+.deftab .dshift.now { border-color: #6c8f5a; }
+.deftab .dshname { width: 7rem; font-weight: 700; }
+.deftab button.chip { border: none; cursor: pointer; }
+/* The first-week guide under the alerts (ui/guide.js), and the pulse its Show me puts on the button to press. */
+.guide { background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); padding: 0.3rem 0.45rem 0.4rem 0.55rem; margin-top: 0.25rem; font-size: 0.95rem; }
+.gd-head { display: flex; align-items: center; gap: 0.3rem; }
+.gd-title { flex: 1; font-weight: bold; color: var(--accent); }
+.gd-count { font-size: 0.85rem; color: var(--muted); }
+.gd-btn { border: none; background: none; padding: 0 0.4rem; opacity: 0.65; font-size: 0.9rem; }
+.gd-btn:hover:not(:disabled) { opacity: 1; }
+.gd-next { color: var(--muted); margin-top: 0.1rem; }
+.gd-step { display: flex; align-items: center; gap: 0.3rem; line-height: 1.3; }
+.gd-step.done { opacity: 0.55; padding: 0.12rem 0; }
+.gd-step.done .gd-mark { color: var(--good); }
+.gd-mark { display: inline-block; width: 1.3rem; text-align: center; margin-right: 0.15rem; }
+.gd-go { flex: 1; text-align: left; border: none; background: none; padding: 0.15rem 0; font-size: 0.95rem; }
+.gd-step.cur .gd-go { color: var(--accent); font-weight: bold; }
+.gd-show { font-size: 0.8rem; padding: 0.08rem 0.45rem; white-space: nowrap; }
+.gd-why { font-size: 0.86rem; color: var(--muted); margin: 0 0 0.3rem 1.45rem; line-height: 1.35; }
+.gd-pulse { outline: 2px solid #ffd166; outline-offset: 2px; animation: gdpulse 1s ease-in-out 10; }
+@keyframes gdpulse { 50% { box-shadow: 0 0 0 0.4rem rgba(255,209,102,0.45); outline-color: #fff2c4; } }
+/* The Ledger, the run summary and the top bar's stock trends (ui/ledger.js). */
+#modal .box.ledgerbox { width: min(100rem, 96vw); height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+#modal .win.sized > .box.ledgerbox { display: flex; flex-direction: column; }
+.ld-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.4rem; margin-top: 0.3rem; }
+.ld-row { border-top: 1px solid var(--line); padding: 0.45rem 0 0.4rem; }
+.ld-row.ld-empty { padding: 0.3rem 0; }
+.ld-head { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; font-size: 1.05rem; }
+.ld-legend { margin-left: auto; }
+.ld-key::before { content: ""; display: inline-block; width: 0.9em; height: 0.3em; margin-right: 0.3em; vertical-align: middle; background: var(--c); border-radius: 2px; }
+.ld-read { min-height: 1.4em; margin: 0.1rem 0 0.25rem; font-variant-numeric: tabular-nums; }
+.ld-read .info { color: var(--info); }
+.ld-charts { display: grid; gap: 0.8rem; grid-template-columns: 1fr; }
+.ld-charts.ld-n2 { grid-template-columns: 3fr 2fr; }
+.ld-chart { width: 100%; height: 6.5rem; display: block; background: var(--panel-2); border-radius: 6px; cursor: crosshair; }
+#topbar .stock .trend { font-size: 0.8em; margin-left: 0.1rem; }
+.tip-spark { margin-top: 0.35rem; display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; }
+.tip-spark svg { width: 11rem; height: 2.4rem; background: var(--panel-2); border-radius: 4px; }
+#modal .box.rsbox { width: min(90rem, 96vw); }
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(26rem, 100%), 1fr)); gap: 0 1.1rem; }
+.rs-grid .ld-chart { height: 7rem; }
+.rs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
+.rs-causes { display: grid; gap: 0.3rem; max-width: 48rem; }
+.rs-cause { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr 3rem; align-items: center; gap: 0.6rem; }
+.rs-bar { height: 0.8rem; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.rs-bar i { display: block; height: 100%; background: var(--danger); }
+.rs-events { max-width: 75rem; }
+.rs-over { margin: 0.4rem 0 0.9rem; }
