@@ -439,7 +439,7 @@ section("Save / load mid-forage, and determinism");
     let text = null, world = st;
     for (let k = 0; k < 24 * 4; k++) {
       tickHour(world);
-      while (world.cards.length) { const c = world.cards.shift(); (c.choices.find((x) => !x.uiAction) || c.choices[0]).resolve(world); }
+      while (world.cards.length) { const c = world.cards.shift(); (c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(world) : x.disabled)) || c.choices[0]).resolve(world); } // an enabled choice: a disabled one can put its card back (an unpayable bribe)
       const q = world.parties.find((x) => x.members.includes(crew[0].id));
       if (save && !text && q && q.phase === "task" && q.task.type === "forage" && q.task.done === 4) { text = saveToString(world); world = loadFromString(text); }
     }

@@ -1522,6 +1522,19 @@ function meetings(state) {
   }
 }
 
+// Contact (conflicts.js contactAttack): outsiders who would rob you, on the same tile as your team, always stop it:
+// raiders, and robbers posing as travellers, on the move or searching (not those who let this team go already).
+export function hostileOutsiderOn(state, p, tile, fresh = () => true) {
+  return visitorsOf(state).find((v) => v.tile === tile && ["travel", "search", "stop"].includes(v.phase) &&
+    (v.kind === "raiders" || (v.kind === "explorers" && v.hostile)) && !(v.spared || []).includes(`p${p.id}`) && fresh(`v${v.id}`)) || null;
+}
+// Their card: fight, pay the toll, talk, or run (the card they give a team they catch on the road).
+export function outsiderAttackCard(state, v, p) {
+  v.met[p.id] = state.hour;
+  v.known = true;
+  v.seen = { tile: v.tile, hour: state.hour };
+  return stopCard(state, v, p);
+}
 function meetCard(state, v, p) {
   const rng = vrng(state);
   const spotted = rng.chance(spotFirstChance(state, p));
@@ -1811,7 +1824,7 @@ function sight(state, v) {
 
 function announce(state, v, live) {
   const near = placeOf(state, v.tile);
-  const tower = live ? state.bases.find((b) => b.watchtower && state.grid.distance(b.tile, v.tile) <= baseVision(b)) : null;
+  const tower = live ? state.bases.find((b) => b.watchtower && state.grid.distance(b.tile, v.tile) <= baseVision(b, state)) : null;
   const by = live ? (tower ? `The watchtower at ${tower.name} spots` : "Lookouts spot") : "Radio chatter:";
   if (v.kind === "raiders") {
     log(state, live ? `${by} raiders from outside the state: about ${v.size} of ${v.name}, with ${gearText(v.power)}, ${near}.` : `${by} raiders from beyond the border (${v.name}, about ${v.size}) are on the move ${near}.`, "danger");

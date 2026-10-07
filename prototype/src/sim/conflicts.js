@@ -42,6 +42,7 @@ import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -402,8 +403,9 @@ export function stationaryEncounter(state, p, opts = {}) {
 // on the map and can steer round them; at night it sees only its own tile (parties.js sightRadius: night vision
 // goggles a tile round) and can walk straight into them. Checked on every tile a team enters (parties.js onEnterTile:
 // the team stops on that tile) and every hour for teams standing still (tickHour: the enemy came to them).
-// The same horde or party does not attack the same team again for CONTACT.AGAIN hours (it ran, or won).
-export const CONTACT = { AGAIN: 12, HORDE_MIN: 5 };
+// The same horde, party or band does not attack the same team again for CONTACT.AGAIN hours (it ran, or won). Outsider
+// raiders and robbers (visitors.js) on the same tile stop the team too, with their own card.
+export const CONTACT = { AGAIN: 3, HORDE_MIN: 5 };
 // Is this party an enemy to your teams? A group at war with you (Hostile), or raiders and expansionists you have no
 // pact or alliance with; a raid is always an enemy. Sieges are fought at the walls, not here.
 export function enemyParty(state, q) {
@@ -418,8 +420,13 @@ export function enemyParty(state, q) {
 export function contactOn(state, p, tile) {
   const seen = p.contacts || {};
   const fresh = (key) => seen[key] == null || state.hour - seen[key] >= CONTACT.AGAIN;
-  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`));
+  // A team sent to cull this horde, or to storm the hive or growth it guards, meets it on its own terms (parties.js
+  // arrive: the cull card, the hive's battle), not as an ambush.
+  const culling = (h) => ["cull", "hive", "growth"].includes(p.mission) && p.dest != null && state.grid.distance(h.tile, p.dest) <= 1;
+  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`) && !culling(h));
   if (horde) return { horde, key: `h${horde.id}` };
+  const v = hostileOutsiderOn(state, p, tile, fresh); // visitors.js: raiders from beyond the border, robbers on the road
+  if (v) return { visitor: v, key: `v${v.id}` };
   for (const q of state.parties) {
     if (q.owner === "player" || !q.path || partyTile(q) !== tile) continue;
     const f = enemyParty(state, q);
@@ -442,7 +449,8 @@ export function contactAttack(state, p, tile = partyTile(p)) {
   if (!hit) return null;
   const dark = isNight(state);
   let card;
-  if (hit.horde) {
+  if (hit.visitor) card = outsiderAttackCard(state, hit.visitor, p);
+  else if (hit.horde) {
     const h = hit.horde, scale = Math.min(2.2, 1.2 + h.size / 150);
     const enemy = enemyGroup(state, p, null, scale, h);
     card = forcedCard(state, p, makeConflict(state, p, "surge", null, enemy, {

@@ -3,7 +3,7 @@
 // horde or an enemy group's party is attacked (conflicts.js contactAttack): on the tile it enters (it stops there),
 // and every hour when the enemy comes to it; not by a friendly group, not at a base, not twice in 12 hours by the same.
 // Usage: node tools/nighttest.js [seed]
-import { createWorld, tickHour, hub, atBase, newId } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, newId, baseVision, NIGHT_BASE_VISION } from "../src/sim/world.js";
 import { launchExpedition, sightRadius, partyTile, planPath, NIGHT_SIGHT } from "../src/sim/parties.js";
 import { contactAttack, contactOn, enemyParty, CONTACT } from "../src/sim/conflicts.js";
 import { makeHorde } from "../src/sim/hordes.js";
@@ -78,6 +78,11 @@ console.log("Same tile as a horde");
   check(!contactAttack(st, p), `the same horde does not come again within ${CONTACT.AGAIN} hours`);
   st.hour += CONTACT.AGAIN;
   check(!!contactAttack(st, p), "after that it does");
+  // A team sent to cull this horde gets the cull card on arrival instead (parties.js arrive).
+  st.cards.length = 0; p.phase = "waiting"; p.contacts = {};
+  p.mission = "cull"; p.dest = tile;
+  check(!contactAttack(st, p), "a team sent to cull it is not ambushed by it");
+  p.mission = "move";
   // A small knot of the dead is not a horde.
   st.cards.length = 0; p.phase = "waiting"; clearHordes(st); p.contacts = {};
   makeHorde(st, { tile, size: 3, job: "roam" });
@@ -128,6 +133,44 @@ console.log("Same tile as an enemy party");
   check(!contactAttack(st, p), "a party laying siege is fought at the walls, not here");
   q.phase = "out"; f.goodwill = 0; f.type = "raider";
   check(!!contactAttack(st, p), "raiders with no pact attack even when not at war");
+}
+
+console.log("Bases at night");
+{
+  const st = world();
+  const h = hub(st);
+  h.watchtower = true;
+  atHour(st, 12);
+  const day = baseVision(h, st);
+  atHour(st, 23);
+  check(day > NIGHT_BASE_VISION && baseVision(h, st) === NIGHT_BASE_VISION, `the hub sees ${day} tiles by day (watchtower), ${baseVision(h, st)} at night`);
+  st.hordes.length = 0;
+  const far = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 3).id;
+  const near = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 1).id;
+  tickHour(st);
+  check(st.live.has(near) && !st.live.has(far), "at night the map shows the hub's own ring, not 3 tiles out");
+}
+
+console.log("Outsiders on the same tile");
+{
+  const st = world();
+  const { p } = team(st);
+  clearHordes(st);
+  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, hub(st).tile) === 6).id;
+  park(p, tile);
+  atHour(st, 2);
+  st.visitors = st.visitors || [];
+  const v = { id: newId(), kind: "raiders", name: "the Kessler gang", home: "the north", size: 6, power: 3, tile, phase: "travel", stock: {}, met: {}, goal: null };
+  st.visitors.push(v);
+  const card = contactAttack(st, p);
+  check(!!card && card.visitorId === v.id && p.phase === "engaged", `raiders from outside on the tile stop the team (${card && card.title})`);
+  st.cards.length = 0; p.phase = "waiting";
+  check(!contactAttack(st, p), `not again within ${CONTACT.AGAIN} hours`);
+  st.hour += CONTACT.AGAIN;
+  check(!!contactAttack(st, p), `again after ${CONTACT.AGAIN} hours`);
+  st.cards.length = 0; p.phase = "waiting"; p.contacts = {};
+  v.kind = "merchants";
+  check(!contactAttack(st, p), "merchants on the tile do not attack");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

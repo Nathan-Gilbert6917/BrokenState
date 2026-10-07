@@ -529,7 +529,11 @@ export function supplyValue(stock) {
 }
 
 // ---------- vision and knowledge ----------
-export function baseVision(base) {
+// How far a base sees on the map. state given: at night (20:00–06:00) only NIGHT_BASE_VISION tiles round, whatever its
+// watchtower or telescope (a team in the field sees only its own tile: parties.js sightRadius).
+export const NIGHT_BASE_VISION = 1;
+export function baseVision(base, state = null) {
+  if (state && isNight(state)) return NIGHT_BASE_VISION;
   return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
 }
 
@@ -559,7 +563,7 @@ export const radioBases = (state) => state.bases.filter((b) => b.radio);
 
 export function liveTiles(state) {
   const set = new Set();
-  for (const b of state.bases) for (const id of state.grid.within(b.tile, baseVision(b))) set.add(id);
+  for (const b of state.bases) for (const id of state.grid.within(b.tile, baseVision(b, state))) set.add(id);
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
     if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
@@ -575,7 +579,7 @@ export function updateVision(state) {
     for (const f of state.factions) if (f.bases.includes(id)) f.known = true;
   }
   // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.
-  for (const b of state.bases) noteFinds(state, state.grid.within(b.tile, baseVision(b)), { base: b });
+  for (const b of state.bases) noteFinds(state, state.grid.within(b.tile, baseVision(b, state)), { base: b });
   updateLiveMarkers(state);
 }
 
