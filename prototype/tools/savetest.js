@@ -34,6 +34,8 @@ import {
 } from "../src/sim/save.js";
 import * as Saves from "../src/ui/saves.js";
 import { settingsModal, openSettings, SETTINGS_ACTIONS, SETTINGS_CHANGE } from "../src/ui/settings.js";
+import { DISPLAY_ACTIONS, DISPLAY_CHANGE } from "../src/ui/display.js"; // Options → Display rows (main.js registers them)
+import { ASK_ACTIONS } from "../src/ui/confirm.js"; // Options → Confirmations
 import { digest } from "./digest.js";
 
 const child = process.argv[2] === "--continue"; // child mode: load the handed-over save, play on, print the digest hash
@@ -424,7 +426,7 @@ console.log("The settings view");
   };
   const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const NG = await import("../src/ui/newgame.js");
-  const handled = (a) => !!(SETTINGS_ACTIONS[a] || SETTINGS_CHANGE[a] || NG.LOOK_ACTIONS[a] || new RegExp(`(^|[\\s{,])("${a}"|${/^[a-z]\w*$/i.test(a) ? a : "\\u0000"})\\s*:`, "m").test(mainSrc));
+  const handled = (a) => !!(SETTINGS_ACTIONS[a] || SETTINGS_CHANGE[a] || DISPLAY_ACTIONS[a] || DISPLAY_CHANGE[a] || ASK_ACTIONS[a] || NG.LOOK_ACTIONS[a] || new RegExp(`(^|[\\s{,])("${a}"|${/^[a-z]\w*$/i.test(a) ? a : "\\u0000"})\\s*:`, "m").test(mainSrc));
   const api = { options: Saves.loadOptions(), desktop: true, autosaveInfo: () => ({ error: "" }), refresh() {}, track() {}, thumb: () => "" };
   const st = world(7, 4);
   const views = [];

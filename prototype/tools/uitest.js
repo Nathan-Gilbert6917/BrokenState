@@ -73,7 +73,8 @@ const actionsIn = (html) => [...html.matchAll(/<(\w+)([^>]*?)data-action="([^"]+
 // Handlers: the ones in the new modules, plus the names main.js's action tables define (looked up in its source).
 const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS };
+import { WHY_ACTIONS } from "../src/ui/causes.js"; // Why? links on deaths and lost bases
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS };
 const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
