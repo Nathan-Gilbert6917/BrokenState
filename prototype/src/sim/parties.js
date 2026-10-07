@@ -27,6 +27,7 @@ import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
+import { gatheringCull } from "./hivebirth.js"; // hive birth you can see: breaking up a gathering at a build site
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
@@ -41,21 +42,25 @@ import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
-import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt } from "./weather.js";
+import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
+import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
+import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
 import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
 import { teamNeedsHour } from "./needs.js";
 import { wormTeamHour, packWater, wormHome, unloadWormForage, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
+import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
+import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
@@ -83,6 +88,7 @@ export const MISSIONS = {
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
+  moveout:     { name: "Moving out",       desc: "People who left a crowded base, on their way to found an outpost or to another of your bases (moveout.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
   establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into a shelter (then, later, a base): bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
@@ -119,10 +125,11 @@ export function bridgeClosedTo(state, tile, who) {
   if (who === "player") return !allied(holder);
   return true;
 }
-export function moveCost(state, from, to, vehicle, who) {
+// hour: the hour the step is taken in (a river frozen in deep winter can be walked, never driven: weather.js ICE).
+export function moveCost(state, from, to, vehicle, who, hour = state.hour) {
   const t = state.tiles[to];
   const mode = vehicle === true ? "vehicle" : "walk";
-  if (t.terrain === "water" && !t.bridge) return Infinity;
+  if (t.terrain === "water" && !t.bridge) return vehicle || !riverFrozen(state, to, hour) ? Infinity : ICE.walk;
   if (t.bridge && bridgeClosedTo(state, to, who)) return Infinity; // someone else's barricade across the bridge
   const f = state.tiles[from];
   // On a bridge the only way is along it: off the side is the river. (Without this a team could step off a bridge
@@ -241,12 +248,12 @@ export const NIGHT_SIGHT = { dark: 0, goggles: 1, GOGGLES: ["nvg", "thermal"] };
 export const nightEyesOn = (members) => members.some((s) => s.gear && s.gear.tool && NIGHT_SIGHT.GOGGLES.includes(s.gear.tool.key));
 export function sightRadius(state, p) {
   const m = partyMembers(state, p);
-  if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, travelEffects(state).sight));
+  const fx = travelEffects(state, state.hour, partyTile(p)); // fog or a blizzard where the team is (weather.js)
+  if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, fx.sight));
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
   if (m.some((s) => hasPerk(s, "lookout"))) r += 1; // Lookout (skills.js)
-  const fx = travelEffects(state);
   // Binoculars a tile more by day; a thermal at night and in fog (optics.js). A spotting scope only while it stays put.
   r += opticsFor(m, p.cargo, { still: !onTheMove(p), night: state.hour % 24 < 6 || state.hour % 24 >= 20, fog: fx.sight < 0 }).sight;
   return Math.max(1, r + fx.sight); // fog and blizzards cut sight by a tile (weather.js)
@@ -345,14 +352,16 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 // vehicle: false, true (a car) or "bike"; speed: the pace in that mode; footSpeed: the pace on foot once a car runs
 // dry (the team's load is no longer carried for it); fuelMult: the car's load multiplier on fuel (vehicles.js).
 // rideHours: hours started in the vehicle (rations: the rest are on foot).
-export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true } = {}) {
+// known: the hour the estimate is made in (now): only the weather fronts already on the map by then count (weather.js),
+// so a front that forms later can still make the trip slower than estimated.
+export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: vehicle || false };
   let f = fuel, hours = 0, dryAt = null, rideHours = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
     if (sim.vehicle) rideHours += 1;
     const sp = sim.vehicle || footSpeed == null ? speed : footSpeed;
-    for (const tileId of stepAlong(state, sim, sp, weather ? startHour + hours : null)) {
+    for (const tileId of stepAlong(state, sim, sp, weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
       const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult);
@@ -382,7 +391,7 @@ export function plannedTile(state, p, now = state.hour) {
   const start = p.planStart ?? p.departed;
   const t = now - start;
   const mode = p.planVehicle === true || p.planVehicle === "bike" ? p.planVehicle : false;
-  const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start };
+  const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start, known: start }; // the fronts the hub knew of then
   if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
   const stay = p.planStay ?? 6; // hours at the target before heading back (a plan sets its own, plans.js)
   const tb = t - p.etaOut - stay;
@@ -496,12 +505,16 @@ export function missionProblem(state, tile, mission) {
   return null;
 }
 
+// opts.fromBaseId: the base the team leaves from and comes home to (default the hub; moveout.js sends a team out
+// of a crowded outpost); its people, vehicles, stores and armory are the ones used. opts.quiet: no "left for" line
+// (the caller says it its own way).
 export function launchExpedition(state, opts) {
   const { dest, mission, stance } = opts;
   const memberIds = [...new Set(opts.memberIds || [])];
   const vehicleId = opts.vehicleId || null;
-  const home = hub(state);
-  if (!home) return { error: "You have no base to send a team from." };
+  const home = opts.fromBaseId != null ? baseById(state, opts.fromBaseId) : hub(state);
+  if (!home) return { error: opts.fromBaseId != null ? "That base is no longer yours." : "You have no base to send a team from." };
+  const at = home.type === "hub" ? "the hub" : home.name; // "Not enough water at the hub."
   // Every supply key is present and a plain number (no missing keys, NaN or negative amounts later on).
   const supplies = {};
   for (const k of Object.keys(SUPPLIES)) supplies[k] = 0;
@@ -520,13 +533,13 @@ export function launchExpedition(state, opts) {
   const why = missionProblem(state, dest, mission);
   if (why) return { error: why };
   let v = vehicleId ? vehicleById(state, vehicleId) : null;
-  if (vehicleId && (!v || v.loc.kind !== "base" || v.loc.baseId !== home.id)) return { error: "That vehicle is not at the hub." };
+  if (vehicleId && (!v || v.loc.kind !== "base" || v.loc.baseId !== home.id)) return { error: `That vehicle is not at ${at}.` };
   if (v && v.condition <= 0) return { error: "That vehicle needs repairs first." };
   // Bikes: one each, taken from the hub's bikes (vehicles.js takeBikes).
   const bikes = isBike(v);
   if (bikes) {
     const have = state.vehicles.filter((x) => isBike(x) && x.loc.kind === "base" && x.loc.baseId === home.id).reduce((a, x) => a + (x.count || 1), 0);
-    if (have < members.length) return { error: `Not enough bikes: ${members.length} people, ${have} bike${have === 1 ? "" : "s"} at the hub (one each).` };
+    if (have < members.length) return { error: `Not enough bikes: ${members.length} people, ${have} bike${have === 1 ? "" : "s"} at ${at} (one each).` };
   }
   const plannedV = bikes ? { ...v, count: members.length } : v;
   // Lights (lights.js): a light each from the armory, before the estimate so the pace counts their weight; put back if
@@ -534,11 +547,11 @@ export function launchExpedition(state, opts) {
   const lightItems = [];
   const lights = opts.lights ? packLights(home, members, lightItems) : [];
   const fail = (error) => { unpackLights(home, members, lightItems); return { error }; };
-  const est = estimateTrip(state, { memberIds, dest, vehicle: travelMode(v), stance, fuel: v ? v.fuel + (supplies.fuel || 0) : 0, supplies, v: plannedV });
+  const est = estimateTrip(state, { memberIds, dest, vehicle: travelMode(v), stance, homeBaseId: home.id, fuel: v ? v.fuel + (supplies.fuel || 0) : 0, supplies, v: plannedV });
   if (!est) return fail(v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile.");
   // Water: purified and un-purified together (water.js), purified packed first.
   const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : home.stock[k] || 0);
-  for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at the hub.`);
+  for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at ${at}.`);
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
   const cap = carryCapacity(state, members, plannedV);
@@ -587,7 +600,7 @@ export function launchExpedition(state, opts) {
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
-  log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
+  if (!opts.quiet) log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
   return { party: p };
 }
 
@@ -667,7 +680,8 @@ export function pruneCards(state) {
 }
 
 // hour: the hour this step is taken in (the weather of that hour sets the cost); null = fair weather.
-function stepAlong(state, p, speed, hour = state.hour) {
+// known: estimates count only the weather fronts on the map by then (travelHours); the real step, all of them.
+function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   if (p.idx >= p.path.length - 1) return [];
   p.progress += speed;
   const entered = [];
@@ -675,7 +689,7 @@ function stepAlong(state, p, speed, hour = state.hour) {
     const from = p.path[p.idx], to = p.path[p.idx + 1];
     // A bridge barricaded since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the
     // way is the destination itself and is never closed.
-    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }));
+    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour, known }));
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
       if (p.owner === "player" && p.phase === "out" && state.tiles[to].bridge) p.bridgeStop = to; // told on arrival (arrive)
@@ -701,7 +715,7 @@ export function glideAt(state, p, frac) {
   const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
   for (let i = p.idx; i < p.path.length - 1; i++) {
     const from = p.path[i], to = p.path[i + 1];
-    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour });
+    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner, hour) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour });
     if (!(cost > 0) || !isFinite(cost)) return { from, to: from, t: 0 };
     if (prog < cost) return { from, to, t: Math.max(0, prog / cost) };
     prog -= cost;
@@ -782,6 +796,7 @@ function playerPartyHour(state, p) {
   }
   const entered = stepAlong(state, p, partySpeed(p));
   for (const tileId of entered) {
+    thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
     onEnterTile(state, p, tileId);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
   }
@@ -1025,7 +1040,8 @@ export function ordersCard(state, p, text, doneLabel, title) {
 }
 
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");
-// opts.hold: queued orders stay on hold instead of carrying on; opts.title: a title for the card.
+// opts.hold: queued orders stay on hold instead of carrying on; opts.title: a title for the card; opts.card: a card
+// to ask instead of the orders card (moveout.js: "Enter <base>?"), made as card(state, p).
 export function awaitOrders(state, p, text, opts = {}) {
   if (!state.parties.includes(p)) return;
   if (wipeIfEmpty(state, p)) return;
@@ -1046,7 +1062,7 @@ export function awaitOrders(state, p, text, opts = {}) {
   // When it checks in for orders, the team reports what it has spotted (the full map update waits for its return).
   mergeSpots(state, p.spotted);
   if (finished && !opts.hold && continueQueue(state, p, text)) return;
-  addCard(state, ordersCard(state, p, text, doneLabel, opts.title));
+  addCard(state, opts.card ? opts.card(state, p) : ordersCard(state, p, text, doneLabel, opts.title));
 }
 
 // A team stopped on the way while orders are queued behind the trip: the unfinished trip (and the mission it
@@ -1123,10 +1139,14 @@ function arrive(state, p) {
   const t = state.tiles[p.dest];
   const members = partyMembers(state, p);
   switch (p.mission) {
-    case "move":
+    case "move": {
+      // One of your other bases, with nothing queued after it: "Enter <base>?" instead of the orders card (moveout.js).
+      const into = !(p.orders && p.orders.length) ? enterTarget(state, p) : null;
+      if (into) { awaitOrders(state, p, "", { card: (st, q) => enterCard(st, q, into) }); return ""; }
       awaitOrders(state, p, `The team reached ${tileLabel(state, p.dest)}.`);
       offerCrawl(state, p); // a city you drive the team into: the City crawl card instead of the orders card
       return "";
+    }
     case "recon":
       awaitOrders(state, p, `The team surveyed around ${tileLabel(state, p.dest)}. ${survey(state, p, 0.25)}`);
       return "";
@@ -1240,7 +1260,7 @@ function arrive(state, p) {
         return "";
       }
       p.phase = "engaged";
-      addCard(state, cullCard(state, p, horde));
+      addCard(state, gatheringCull(state, p, horde, cullCard(state, p, horde))); // hivebirth.js: at a hive build site, Break up the gathering
       return "";
     }
     case "investigate":
@@ -1574,6 +1594,7 @@ function returnHome(state, p) {
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
   if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
+  if (p.tripSpec) noteTripHome(state, p); // trips.js: a trip sent from the planner goes to the recent trips (Repeat trip)
   if (p.owner === "player") prisonersHome(state, p, home); // prisoners.js: prisoners taken on the trip go to the cells
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
@@ -1588,7 +1609,8 @@ function returnHome(state, p) {
     const route = state.routes.find((r) => r.id === p.routeId);
     log(state, `Convoy back from ${route ? factionById(state, route.factionId)?.name : "the route"}${loot.length ? `: ${loot.join(", ")}` : ""}.`, "good");
   } else {
-    log(state, `${teamName(state, p)} is home${loot.length ? ` with ${loot.join(", ")}` : ""}.${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
+    // p.movingIn: a team that moved into another of your bases (moveout.js joinBase): it lives there now.
+    log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${loot.length ? ` with ${loot.join(", ")}` : ""}.${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
   }
   removeParty(state, p);
 }
@@ -1766,11 +1788,13 @@ function aiPartyHour(state, p) {
     removeParty(state, p);
     return;
   }
-  // Raid warnings when lookouts can see them coming.
+  // Raid warnings when lookouts can see them coming (watch.js lookoutsSpot: RAID_WARN_TILES, 2 more with someone
+  // awake on watch, and nobody sees them come on an unwatched night).
   if (p.kind === "raid" && p.target.kind === "player" && !p.warned) {
     const base = baseById(state, p.target.baseId);
-    if (base && state.live.has(partyTile(p)) && state.grid.distance(partyTile(p), base.tile) <= 4) {
+    if (base && lookoutsSpot(state, base, partyTile(p), RAID_WARN_TILES)) {
       p.warned = true;
+      p.watchSaw = watchSawText(state, base, partyTile(p), RAID_WARN_TILES);
       raidWarning(state, p);
     }
   }
@@ -1794,12 +1818,17 @@ function aiPartyHour(state, p) {
       p.siegeLeft = p.target.kind === "player" ? 8 : 18;
       if (p.target.kind === "player" && !p.warned) {
         p.warned = true;
+        // Not seen coming, at night, nobody awake on watch (watch.js surpriseAt): over the wall before anyone woke.
+        const sp = surpriseAt(state, baseById(state, p.target.baseId));
+        if (sp) p.surprise = sp.why;
         raidWarning(state, p);
       }
       if (p.target.kind === "faction") maybeCallForHelp(state, p);
     }
   }
 }
+
+const RAID_WARN_TILES = 4; // a raid on your base is warned of this far out when the lookouts see it (watch.js lookoutsSpot)
 
 function finishSiege(state, p) {
   if (p.target.kind === "player") {

@@ -483,7 +483,7 @@ function prisonWorld(s, n = 2, cells = 1) {
     const from = side === "east" ? w.grid.id(x0 + 1, y0) : side === "west" ? w.grid.id(x0 - 1, y0) : side === "north" ? w.grid.id(x0, y0 - 2) : w.grid.id(x0, y0 + 2);
     globalThis.window = {}; // a battle on the map, as in the browser
     try {
-      w.combat = createBattle(w, { tile: hh.tile, baseId: hh.id, enemy: { kind: "zombies", count: 14, power: 3, name: "the horde" }, ambush: null, canRetreat: false, handler: "st", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, through: 200, fromTile: from } });
+      w.combat = createBattle(w, { tile: hh.tile, baseId: hh.id, enemy: { kind: "zombies", count: 14, power: 3, name: "the horde" }, ambush: null, canRetreat: false, handler: "st", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, through: 200, fromTile: from, ready: { manned: true } } }); // ready: everyone at a post (defenceplan.js openStart)
     } finally { delete globalThis.window; }
     return { w, b: w.combat, hh };
   };
@@ -519,7 +519,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   addBuilding(fh, "walls"); addBuilding(fh, "floodlights");
   fh.stock.fuel = 10;
   globalThis.window = {};
-  try { fw.combat = createBattle(fw, { tile: fh.tile, baseId: fh.id, enemy: { kind: "zombies", count: 8, power: 2 }, ambush: null, canRetreat: false, handler: "st", layout: "baseDefence", deploy: true, context: { strip: true, floodlit: true, night: true } }); } finally { delete globalThis.window; }
+  try { fw.combat = createBattle(fw, { tile: fh.tile, baseId: fh.id, enemy: { kind: "zombies", count: 8, power: 2 }, ambush: null, canRetreat: false, handler: "st", layout: "baseDefence", deploy: true, context: { strip: true, floodlit: true, night: true, ready: { manned: true } } }); } finally { delete globalThis.window; }
   const fb = fw.combat;
   const litCount = () => fb.lit.reduce((a, v) => a + v, 0);
   const center = litCount();

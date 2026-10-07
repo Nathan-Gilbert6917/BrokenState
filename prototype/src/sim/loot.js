@@ -304,5 +304,34 @@ export function rollAreaWood(state, tileId, areaType, boxKind, salt = "") {
   return w[1] + Math.floor(hash01(state.seed, "areawoodqty", tileId, salt) * (w[2] - w[1] + 1));
 }
 
+// ---------- arrows (data.js SUPPLIES.arrows; hunting.js) ----------
+// A quiver in a hunting lodge, a box of bolts behind a gun counter, target arrows in a sports shop or a camp: arrows turn
+// up where bows are kept. Their own dice (hash01), so the rest of a search or a raid is unchanged. [chance, min, max].
+// Site searches (scavenge.js searchHour), a roll each search hour × the site's loot left:
+export const SITE_ARROWS = {
+  lodge: [0.3, 6, 18], gunstore: [0.25, 6, 24], mall: [0.08, 6, 12], campground: [0.12, 4, 12], cabin: [0.12, 3, 10],
+  ranger: [0.1, 4, 12], hardware: [0.05, 4, 10], farm: [0.04, 3, 8], ranch: [0.05, 3, 8],
+};
+// Raid map containers (combat.js, a building's rooms too): by the room's type (lockers, shelves and crates in full,
+// anything else half).
+export const AREA_ARROWS = { cabin: [0.12, 4, 12], campsite: [0.06, 3, 8], store: [0.03, 4, 10] };
+const ARROW_BOX = { locker: 1, shelf: 1, crate: 1 };
+// Arrows found this search hour at a site, or 0.
+export function rollSiteArrows(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const a = t && t.loc ? SITE_ARROWS[t.loc.type] : null;
+  if (!a) return 0;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "arrows", tileId, state.hour, salt) >= a[0] * loot * mult) return 0;
+  return a[1] + Math.floor(hash01(state.seed, "arrowsqty", tileId, state.hour, salt) * (a[2] - a[1] + 1));
+}
+// Arrows in a raid container of this area type (boxKind: the container's kind), or 0.
+export function rollAreaArrows(state, tileId, areaType, boxKind, salt = "") {
+  const a = AREA_ARROWS[areaType];
+  if (!a) return 0;
+  if (hash01(state.seed, "areaarrows", tileId, salt) >= a[0] * (ARROW_BOX[boxKind] || 0.5)) return 0;
+  return a[1] + Math.floor(hash01(state.seed, "areaarrowsqty", tileId, salt) * (a[2] - a[1] + 1));
+}
+
 // Does an item fit a place (shares a theme tag)? place: tags array.
 export const fitsTags = (key, tags) => (ITEM_TAGS[key] || []).some((t) => tags.includes(t));

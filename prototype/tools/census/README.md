@@ -26,7 +26,8 @@ Each entry of `results` is one game:
 - `outcome` (`hives` / `alliance` / `loss` / `going` / `crash`), `day`, `hiveWinDay`, `hubDay` (hardcore: the first
   hub's day), `crashDay`, `error`, `ms`;
 - `samples`: once a month, population, bases, hives left / destroyed / building, coalition members and groups, land
-  held, groups alive;
+  held, groups alive; housing (since 2026-10-07): `hubRes` / `hubBeds` (the hub's residents and beds) and `outRes` /
+  `outBeds` (the same summed over the outposts);
 - `events`: the dated major lines (bases taken, hives destroyed or risen, coalition joins and leaves, groups fallen);
 - `deaths`: by cause (`horde`, `in the field`, `thirst`, `hunger`, `raid`, `hive assault`, `illness`, `worm`, `cold`;
   `left` is people who walked away or changed sides);
@@ -53,5 +54,10 @@ note in the write-up what moved. A `--size normal,large,huge,120x80` sweep write
     node tools/campaign50.js 50 1095 --groups 15-20 --seed 5000 --census
     node tools/campaign50.js --preset hardcore-cautious --census        # 25 hardcore cautious games, grep on the fallen
     node tools/campaign50.js 25 1095 --size normal,large,huge,120x80 --groups 15-20 --seed 5000 --census
+    node tools/campaign50.js 30 450 --size normal --groups 5-10 --seed 5050 --mode hardcore --start-people 1   # hardcore starting team of 1-4 (default 3)
+
+`--start-people N` (1–4) sets how many flee together in the hardcore starts (the new-run screen's Starting people,
+`createWorld({ startPeople })`); the JSON's `args.START_PEOPLE` records it (null: the default three). Normal starts
+ignore it.
 
 A quick self-check that the runner and its columns work: `node tools/campaign50.js 2 10 --size normal --groups 7-7`.

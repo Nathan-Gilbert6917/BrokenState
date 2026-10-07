@@ -55,7 +55,7 @@ let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const W = (s = 42) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; return st; };
 const land = (st, t) => st.tiles[t].terrain !== "water";
-const forceWeather = (st, key, fromHour = st.hour, days = 4) => { for (let d = 0; d < days; d++) { const dn = Math.floor(fromHour / 24) + d + 1; weatherOnDay(st, dn); st.weather.days[dn - 1].k = key; } };
+const forceWeather = (st, key, fromHour = st.hour, days = 4) => { for (let d = 0; d < days; d++) { const dn = Math.floor(fromHour / 24) + d + 1; weatherOnDay(st, dn); Object.assign(st.weather.days[dn - 1], { k: key, all: true }); } }; // all: the whole state, fronts or not (weather.js)
 const pct = (v) => `${Math.round(v * 100)}%`;
 // A person with a set Scouting (and no traits that change it).
 const scoutOf = (st, n, scout) => atBase(st, hub(st).id).slice(0, n).map((s) => { s.skills.scouting = scout; s.traits = s.traits.filter((t) => !["keeneye", "lucky"].includes(t)); s.perks = []; return s; });

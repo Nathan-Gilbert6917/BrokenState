@@ -141,6 +141,8 @@ export const siteById = (state, id) => (ensureHives(state), state.hiveSites.find
 export const clusterSize = (state, hive) => state.hives.filter((o) => state.grid.distance(o.tile, hive.tile) <= HIVE.CLUSTER).length;
 const ownedBy = (state, hive) => state.hordes.filter((h) => h.hive === hive.id);
 const needsDead = (site) => site.biomass < HIVE.SITE_BIOMASS;
+// A gathering your team broke up (hivebirth.js breakGathering): the hives do not feed it until brokenUntil.
+export const siteResting = (state, site) => site.brokenUntil != null && state.hour < site.brokenUntil;
 
 // ---------- the daily tick (called from hordes.js hordesDaily) ----------
 export function hivesDaily(state) {
@@ -288,7 +290,7 @@ function supportSite(state, hive) {
   let best = null, bd = Infinity;
   for (const s of state.hiveSites) {
     const d = state.grid.distance(s.tile, hive.tile);
-    if (d <= HIVE.SUPPORT && needsDead(s) && d < bd && !(s.noPath && s.noPath.includes(hive.id))) { best = s; bd = d; }
+    if (d <= HIVE.SUPPORT && needsDead(s) && !siteResting(state, s) && d < bd && !(s.noPath && s.noPath.includes(hive.id))) { best = s; bd = d; }
   }
   return best;
 }
@@ -348,7 +350,7 @@ export function deliverToSite(state, h, site) {
 export function drawnToSite(state, h) {
   ensureHives(state);
   for (const s of state.hiveSites) {
-    if (!needsDead(s) || state.grid.distance(s.tile, h.tile) > HIVE.DRAW) continue;
+    if (!needsDead(s) || siteResting(state, s) || state.grid.distance(s.tile, h.tile) > HIVE.DRAW) continue;
     if (s.biomass + incoming(state, s) >= HIVE.SITE_BIOMASS * 1.1) continue; // enough of the dead already on the way
     if (!state.rng.chance(0.5)) return false;
     h.role = "build";

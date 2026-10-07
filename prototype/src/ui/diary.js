@@ -7,6 +7,7 @@ import { day, survivorById, baseById, factionById } from "../sim/world.js";
 import { seasonOfDay, weatherOnDay, SEASON_DAYS } from "../sim/weather.js";
 import { partyTile } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
+import { whyLink } from "./causes.js"; // the "Why?" link on a death or a lost base
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -83,7 +84,7 @@ export function renderLogPanel(state, ui) {
   for (const l of state.log) {
     const e = { cat: l.c || "w", robot: String(l.text).startsWith(ROBOT), text: String(l.text), refs: l.r || "" };
     if (!passes(e, f.cats, f.robot, "", base)) continue;
-    lines.push(`<div class="k-${l.kind}"><span class="t">D${Math.floor(l.hour / 24) + 1} ${hh(l.hour % 24)}</span>${linkText(e.text, e.refs)}</div>`);
+    lines.push(`<div class="k-${l.kind}"><span class="t">D${Math.floor(l.hour / 24) + 1} ${hh(l.hour % 24)}</span>${linkText(e.text, e.refs)}${whyLink(state, e.text, l.kind, e.refs, Math.floor(l.hour / 24) + 1)}</div>`);
     if (lines.length >= 80) break;
   }
   const all = f.cats === ALL_CATS;
@@ -151,8 +152,9 @@ function dayHead(state, dayNo) {
   return { icons: `${se.icon}${w.icon}`, text: `${se.icon} ${se.name} ${se.dayOfSeason}/${SEASON_DAYS} · ${w.icon} ${w.name}, ${Math.round(w.lo)} to ${Math.round(w.hi)} °C` };
 }
 
-function entryLine(e, dayNo) {
-  return `<div class="k-${e.kind} dy-line"><span class="t">${dayNo != null ? `D${dayNo} ` : ""}${hh(e.hour)}</span>${linkText(e.text, e.refs)}</div>`;
+// onDay: the day the line was written (for its "Why?" link: sim/causes.js).
+function entryLine(e, dayNo, state = null, onDay = dayNo) {
+  return `<div class="k-${e.kind} dy-line"><span class="t">${dayNo != null ? `D${dayNo} ` : ""}${hh(e.hour)}</span>${linkText(e.text, e.refs)}${state ? whyLink(state, e.text, e.kind, e.refs, onDay) : ""}</div>`;
 }
 
 export function diaryModal(state, ui) {
@@ -193,7 +195,7 @@ export function diaryModal(state, ui) {
       const m = match.get(d);
       if (!m.length) continue;
       out.push(`<h3 class="dy-link" data-action="dy-day" data-d="${d}"${tip("Open this day")}>Day ${d}</h3>`);
-      for (const e of m) { if (n++ >= 300) break; out.push(entryLine(e, null)); }
+      for (const e of m) { if (n++ >= 300) break; out.push(entryLine(e, null, state, d)); }
     }
     const total = [...match.values()].reduce((a, m) => a + m.length, 0);
     body = `<div class="dy-dayhead"><b>${plural(total, "line")} with “${esc(p.q)}”</b>${total > 300 ? ` <span class="muted small">(the newest 300 shown)</span>` : ""}</div>${out.join("") || `<div class="muted">Nothing in the diary matches.</div>`}`;
@@ -204,7 +206,7 @@ export function diaryModal(state, ui) {
     const le = leaderEntry(state, sel);
     const groups = CATEGORIES.map(([c, , label, icon]) => {
       const list = entries.filter((e) => e.cat === c);
-      return list.length ? `<h3>${icon} ${label} (${list.length})</h3>${list.map((e) => entryLine(e, null)).join("")}` : "";
+      return list.length ? `<h3>${icon} ${label} (${list.length})</h3>${list.map((e) => entryLine(e, null, state, sel)).join("")}` : "";
     }).join("");
     const bits = summaryChips(sum);
     body = `<div class="dy-dayhead"><b class="dy-big">Day ${sel}</b> <span class="muted">${esc(head.text)}</span>

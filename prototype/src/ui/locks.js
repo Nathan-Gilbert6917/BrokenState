@@ -1,6 +1,7 @@
 // Raid screen pieces for locks (sim/locks.js): the Open buttons with odds next to a locked container or door, the
 // key line in the raid header, the hover text, and the doors and padlocks drawn on the raid map. ui/combat.js calls
 // these; the "lk-open" handler is registered in main.js (LOCK_ACTIONS).
+import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { combatAct } from "../sim/combat.js";
 import { LOCKS, PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
 import { survivorById, skill } from "../sim/world.js";
@@ -87,7 +88,7 @@ export function drawLocks(ctx, b, ox, oy, cs) {
   for (const c of b.raid.containers) {
     if (!c.lock || c.searched) continue;
     const px = ox + Math.round(c.x + ((c.w || 1) - 1) / 2) * cs, py = oy + Math.round(c.y + ((c.h || 1) - 1) / 2) * cs; // over a car's middle cell
-    padlock(ctx, px + cs * 0.24, py + cs * 0.24, cs * 0.15, c.lock.open ? "#6cc48a" : "#ff9f43");
+    padlock(ctx, px + cs * 0.24, py + cs * 0.24, cs * 0.15, c.lock.open ? PAL.good : "#ff9f43");
   }
 }
 function padlock(ctx, x, y, r, color) {

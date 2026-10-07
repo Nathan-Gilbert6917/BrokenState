@@ -74,7 +74,8 @@ export function moodWork(s) {
   if (!s || s.mood == null) return 1;
   if (s.onBreak) return 0;
   const grief = s.grief ? 1 - 0.2 * Math.min(1, s.grief.bond || 0) : 1;
-  return Math.round(moodCurve(s.mood) * grief * buzzWork(s) * needsWork(s) * 1000) / 1000; // a coffee buzz or a hangover (comforts.js); hunger and thirst below 50 (needs.js)
+  const late = s.expecting && s.expecting.late ? 0.85 : 1; // family.js FAMILY.lateWork: the last weeks of a pregnancy
+  return Math.round(moodCurve(s.mood) * grief * late * buzzWork(s) * needsWork(s) * 1000) / 1000; // a coffee buzz or a hangover (comforts.js); hunger and thirst below 50 (needs.js)
 }
 
 // What the People tab shows next to someone's mood.

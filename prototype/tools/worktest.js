@@ -23,12 +23,13 @@ import { createWorld, tickHour, hub, atBase, makeSurvivor, day, alive } from "..
 import { addBuilding, stations, RECIPES } from "../src/sim/buildings.js";
 import { hospitalDef } from "../src/sim/medical.js";
 import { setSteward, stewardHour, setPinned } from "../src/sim/steward.js";
-import { setAutopilot } from "../src/sim/autopilot.js";
+import { setAutopilot, governRoles } from "../src/sim/autopilot.js";
 import { productionHour, setStationOrder } from "../src/sim/production.js";
 import { craftQueue } from "../src/sim/crafting.js";
 import { econStats, farmersWanted } from "../src/sim/farming.js";
 import { season } from "../src/sim/weather.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { towerWatch } from "../src/sim/defences.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -288,6 +289,125 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
     check(ppl[1].role === "build" && ppl[1].task.t === "repair" && h.repairs[0].who === ppl[1].id, `a broken pump: Repair 5 is pulled to it (${ppl[1].task.why})`);
     pump.broken = null; h.repairs = [];
   } else check(true, "no pump fixture on this map");
+}
+
+// ---------- 4b. the watchtower's alarm ----------
+{
+  section("The watchtower's alarm: a horde near, a warning once, Guard as a backup job moves up to 1 and back");
+  const { st, h, ppl } = quiet();
+  const gen = role(st, "Gen", { farm: 1, guard: 4, scavenge: 3 });
+  const grd = role(st, "Grd", { guard: 1, farm: 3 });
+  const f = role(st, "Farm only", { farm: 1, scavenge: 3 });
+  join(st, ppl.slice(0, 3), gen);
+  join(st, [ppl[3]], grd);
+  join(st, ppl.slice(4, 6), f);
+  ppl[3].skills.shooting = 9; // the Guard role's lookout is the best shot
+  at(st, 10);
+  const ring = (d) => st.grid.within(h.tile, d).find((id) => st.grid.distance(id, h.tile) === d && st.tiles[id].terrain !== "water");
+  const hz = { id: 881, tile: ring(3), size: 60, bosses: 0, target: null, goal: null };
+  st.hordes.push(hz); st.live.add(hz.tile);
+  const alarmLines = () => st.log.filter((l) => /The watchtower at .* sees a horde/.test(l.text)).length;
+  // No watchtower: no alarm (the lookouts' standing guard only).
+  towerWatch(st);
+  Work.workHour(st);
+  const guardsBefore = ppl.filter((s) => s.role === "guard").length;
+  check(!h.towerWatch && alarmLines() === 0 && ppl.every((s) => !s.work.watch), "no watchtower: no alarm, nobody moved up");
+  addBuilding(h, "watchtower");
+  towerWatch(st);
+  check(h.towerWatch && h.towerWatch.ids.includes(hz.id) && alarmLines() === 1, `a watchtower and a horde 3 tiles out: the alarm (${st.log[0].text})`);
+  Work.workHour(st);
+  st.hour++; towerWatch(st); Work.workHour(st);
+  st.hour++; towerWatch(st); Work.workHour(st);
+  check(alarmLines() === 1, "the warning fires once while the horde stays near");
+  check(st.log.filter((l) => /Watchtower alarm at .*move Guard up to priority 1/.test(l.text)).length === 1, "one log line for the people moved up");
+  check(ppl.slice(0, 3).every((s) => s.work.watch && s.work.watch.was === 4 && cellOf(st, s, "guard").p === 1 && cellOf(st, s, "guard").watch === 4), "Guard 4 (a backup job): moved up to priority 1, the old 4 remembered");
+  check(!ppl[3].work.watch && !ppl[4].work.watch && cellOf(st, ppl[4], "guard").p === 0, "Guard already first, or not set at all: untouched");
+  check(ppl.slice(0, 3).every((s) => !s.work.over.guard), "their own cells are not touched");
+  const guardsNow = ppl.filter((s) => s.role === "guard").length;
+  check(guardsNow > guardsBefore && ppl[3].role === "guard", `more on the walls while the alarm is on (${guardsBefore} → ${guardsNow})`);
+  const raised = ppl.slice(0, 3).find((s) => s.role === "guard");
+  check(!!raised && /moved up: the watchtower sees a horde/.test(raised.task.why), `the why line says so (${raised && raised.task.why})`);
+  check(ppl.slice(4, 6).every((s) => s.role === "farm"), "people without Guard keep farming");
+  // A big horde: as many as it takes to hold it.
+  hz.size = 5000;
+  Work.workHour(st);
+  check(ppl.slice(0, 4).every((s) => s.role === "guard"), "a horde of 5000 in view: everyone with Guard set on the walls");
+  hz.size = 60;
+  // Set by hand during the alarm: that person is left alone until it is over.
+  setCell(st, ppl[0], "guard", 3);
+  Work.workHour(st);
+  check(ppl[0].work.watch && ppl[0].work.watch.off && cellOf(st, ppl[0], "guard").p === 3 && !cellOf(st, ppl[0], "guard").watch, "Guard set by hand: their 3 holds, not moved up again");
+  // Saved and loaded mid-alarm.
+  const st2 = loadFromString(saveToString(st));
+  const h2 = hub(st2), p2 = atBase(st2, h2.id).find((s) => s.id === ppl[1].id);
+  check(h2.towerWatch && h2.towerWatch.ids.includes(hz.id) && cellOf(st2, p2, "guard").p === 1 && cellOf(st2, p2, "guard").watch === 4, "save / load keeps the alarm and who was moved up");
+  // The horde moves off: the alarm stands down and everyone is back where they were.
+  hz.tile = ring(9);
+  st.hour++; towerWatch(st); Work.workHour(st);
+  check(!h.towerWatch && st.log.some((l) => /stands down/.test(l.text)), "the horde gone: the watchtower stands down");
+  check(ppl.slice(0, 3).every((s) => !s.work.watch), "the flags are gone");
+  check(cellOf(st, ppl[1], "guard").p === 4 && cellOf(st, ppl[2], "guard").p === 4 && cellOf(st, ppl[0], "guard").p === 3, "Guard back to 4 (and the hand-set 3 kept)");
+  check(st.log.some((l) => /back to the usual order of work/.test(l.text)), "a log line for the way back");
+  check(ppl.slice(1, 3).every((s) => s.role === "farm"), `back to their first priority, farming (${ppl.slice(1, 3).map((s) => s.role).join(", ")})`);
+  // Leaving the base ends it for that person.
+  hz.tile = ring(2); st.live.add(hz.tile);
+  st.hour++; towerWatch(st); Work.workHour(st);
+  check(alarmLines() === 2 && !!ppl[1].work.watch, "the horde back within 3 tiles: a new warning, moved up again");
+  ppl[1].location = { kind: "party", partyId: 1 };
+  Work.workHour(st);
+  check(!ppl[1].work.watch && cellOf(st, ppl[1], "guard").p === 4, "out on a team: no longer moved up");
+  ppl[1].location = { kind: "base", baseId: h.id };
+  // A horde beaten off (it shuns the base) is off the watch; one far out is on it only while it is coming.
+  hz.shun = { tile: h.tile, until: st.hour + 240 };
+  st.hour++; towerWatch(st);
+  check(!h.towerWatch, "a horde that was beaten off (it shuns the base): off the watch");
+  hz.shun = null;
+  hz.tile = ring(5); st.live.add(hz.tile);
+  st.hour++; towerWatch(st);
+  check(!h.towerWatch, "5 tiles out and roaming: not a threat");
+  hz.target = h.tile;
+  st.hour++; towerWatch(st);
+  check(h.towerWatch && alarmLines() === 3, "5 tiles out and coming for the base: the alarm");
+  hz.tile = ring(6);
+  st.hour++; towerWatch(st);
+  check(!!h.towerWatch, "still coming, a tile past the tower's view: kept on the watch");
+  hz.target = null; hz.tile = ring(9);
+  st.hour++; towerWatch(st);
+  // At night the tower sees only a tile.
+  at(st, 23); st.hour += 24;
+  hz.tile = ring(3); st.live.add(hz.tile);
+  towerWatch(st);
+  check(!h.towerWatch, "at night (a tile of view): a horde 3 tiles out goes unseen");
+  hz.tile = ring(1); st.live.add(hz.tile);
+  towerWatch(st);
+  check(!!h.towerWatch, "at night: one a tile out is seen");
+  // The dev autopilot with its own roles leaves the flags alone (and clears old ones).
+  const gov0 = st.governor;
+  st.autopilot = true; st.governor = { priorityRoles: false };
+  Work.workHour(st);
+  check(ppl.every((s) => !s.work.watch), "the dev autopilot running every role: no one moved up");
+  st.autopilot = false; st.governor = gov0;
+  st.hordes = [];
+}
+{
+  // The governor (a steward, the autopilot): the watchtower's alarm puts its guards on the walls in step 3, before
+  // the medics, the farm crew and the stations take the hands.
+  const { st, h, ppl } = quiet(42, 8);
+  addBuilding(h, "watchtower");
+  at(st, 10);
+  for (const s of ppl) s.skills.shooting = 6;
+  const tile = st.grid.within(h.tile, 3).find((id) => st.grid.distance(id, h.tile) === 3 && st.tiles[id].terrain !== "water");
+  const hz = { id: 882, tile, size: 900, bosses: 0, target: null, goal: null };
+  st.hordes.push(hz); st.live.add(tile);
+  governRoles(st, h);
+  const before = ppl.filter((s) => s.role === "guard").length;
+  towerWatch(st);
+  governRoles(st, h);
+  const during = ppl.filter((s) => s.role === "guard").length;
+  check(h.towerWatch && during > before && during <= Math.ceil(ppl.length * 0.5), `the governor: more guards on the alarm, at most half (${before} → ${during} of ${ppl.length})`);
+  hz.tile = st.grid.within(h.tile, 9).find((id) => st.grid.distance(id, h.tile) === 9);
+  towerWatch(st);
+  check(!h.towerWatch, "the horde gone: the alarm is off for the governor too");
 }
 
 // ---------- 5. schedule and mood ----------

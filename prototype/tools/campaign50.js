@@ -7,7 +7,10 @@
 // and writes a JSON report for later reading. Seeds run in parallel worker threads (tools/wintest.js's pool).
 // Usage: node tools/campaign50.js [games=50] [days=1095] [--size huge|120x80|normal,large,huge,120x80] [--groups 15-20] [--seed 1000]
 //                                [--styles balanced,aggressive,cautious] [--mode both|normal|hardcore] [--preset hardcore-cautious|normal-cautious|all]
-//                                [--out path.json] [--census] [--no-keep] [--log N] [--grep regex] [--fallen-grep]
+//                                [--out path.json] [--census] [--no-keep] [--log N] [--grep regex] [--fallen-grep] [--jsonl path]
+//                                [--start-people 1-4] (hardcore starts only: how many flee together, hardcore.js START_PEOPLE; 3 when left out)
+// --jsonl path: every game is appended to that file as it finishes, and the games already in it are not run again
+// (they join the report): a long census killed half way picks up where it stopped when run again.
 // The testing items of docs/campaign-census-2026-10-06.md (2026-10-06):
 //   - per-season columns: thirst and hunger deaths by season (weather.js season) per run and in the totals;
 //   - `--size a,b,c`: the same set of games on each size, a report block per size and a comparison table at the end;
@@ -21,10 +24,11 @@
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, appendFileSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { dirname, join } from "node:path";
-import { createWorld, tickHour, day, alive, hub } from "../src/sim/world.js";
+import { createWorld, tickHour, day, alive, hub, residents } from "../src/sim/world.js";
+import { baseBeds } from "../src/sim/buildings.js";
 import { setAutopilot, autopilotStats, PERSONALITIES } from "../src/sim/autopilot.js";
 import { hiveStats } from "../src/sim/hives.js";
 import { goalsProgress, inviteProblem, isMember } from "../src/sim/alliance.js";
@@ -32,6 +36,8 @@ import { relaySpotFor } from "../src/sim/radio.js";
 import { ensureConquest } from "../src/sim/conquest.js";
 import { clampGroups } from "../src/sim/worldsize.js";
 import { season, SEASONS } from "../src/sim/weather.js";
+import { deathCounter } from "./deathcount.js"; // your people's deaths, one per survivor
+import { clampStartPeople } from "../src/sim/hardcore.js";
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -61,10 +67,13 @@ const LOGN = Number(flag("--log", 0));
 const FALLEN_GREP = has("--fallen-grep") || !!PRESET.fallenGrep; // print the grep lines only for the runs that fell
 const GREP = flag("--grep", FALLEN_GREP ? PRESET.grep || "ration|walked away" : null); // collect every log line matching this regex (up to 300 a run), printed per run
 const CENSUS = has("--census");
+// Hardcore's starting team (hardcore.js START_PEOPLE, the new-run screen's Starting people); null: the default three.
+const START_PEOPLE_N = flag("--start-people", null) != null ? clampStartPeople(flag("--start-people", null)) : null;
 const COMMIT = (() => { try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "nocommit"; } })();
 const TODAY = new Date().toISOString().slice(0, 10);
 const CENSUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "census");
 const OUT = flag("--out", CENSUS ? join(CENSUS_DIR, `${TODAY}-${COMMIT}.json`) : null);
+const JSONL = flag("--jsonl", null);
 const STUCK_DAYS = 60; // a run with no log line of any kind for this long is reported as possibly stuck
 const MONTHS = [12, 24]; // coalition blockers are recorded at these months and at the end
 const SEASON_KEYS = SEASONS.map((s) => s.key);
@@ -92,31 +101,20 @@ function sizeOpts(spec) {
 
 // ---------- one campaign ----------
 const EVENT = /Your team took|is no more|has fallen$|moved into|hive was destroyed|hive at .* was destroyed|was destroyed by your team|A new hive has risen|joined The Calder Coalition|left The Calder Coalition|has collapsed|Every hive is destroyed|Calder Coalition holds|holdout has fallen|storming a hive|fell back from the hive|brood drove the team off|\(hive\) to|founded|first hub|staging camp/;
-function deathCause(text) {
-  if (/hunger|starv/.test(text)) return "hunger";
-  if (/thirst/.test(text)) return "thirst";
-  if (/worm|parasite/.test(text)) return "worm";
-  if (/cold|froze|exposure/.test(text)) return "cold";
-  if (/hive/.test(text)) return "hive assault";
-  if (/horde|Wallbreaker|the dead/.test(text) && !/defending|raid/.test(text)) return "horde";
-  if (/defending|raid|overrun|was overrun/.test(text)) return "raid";
-  if (/dysentery|flu|pneumonia|infect|fever|illness|sick|wound/.test(text)) return "illness";
-  return "in the field";
-}
-
 function runOne(job) {
-  const { seed, mode, style, groups, size, days, keep, logN, grep } = job;
+  const { seed, mode, style, groups, size, days, keep, logN, grep, startPeople } = job;
   const grepRe = grep ? new RegExp(grep, "i") : null, grepLines = [];
   const t0 = Date.now();
   let state, error = null, crashDay = null;
   try {
-    state = createWorld({ seed, factionCount: groups, mode, ...sizeOpts(size) });
+    state = createWorld({ seed, factionCount: groups, mode, ...sizeOpts(size), ...(startPeople != null ? { startPeople } : {}) });
   } catch (e) {
     return { ...job, outcome: "crash", error: `createWorld: ${e.stack.split("\n").slice(0, 4).join(" | ")}`, day: 0, ms: Date.now() - t0, samples: [], events: [], deaths: {}, end: {} };
   }
   state.started = true;
   setAutopilot(state, true, style);
   const samples = [], events = [], deaths = {};
+  const newDeaths = deathCounter(state);
   // Thirst and hunger deaths by season (weather.js season): { thirst: { spring, summer, autumn, winter }, hunger: {...} }.
   const bySeason = { thirst: {}, hunger: {} };
   for (const k of SEASON_KEYS) { bySeason.thirst[k] = 0; bySeason.hunger[k] = 0; }
@@ -137,22 +135,32 @@ function runOne(job) {
   const sample = () => {
     const gp = goalsProgress(state);
     samples.push({ day: day(state), pop: alive(state).length, bases: state.bases.length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building,
-      members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 100), groupsAlive: state.factions.filter((f) => f.alive).length });
+      members: gp.alliance.members, groups: gp.alliance.groups, land: Math.round(gp.alliance.land.pct * 100), groupsAlive: state.factions.filter((f) => f.alive).length, ...housing() });
+  };
+  // Housing (since 2026-10-07): the hub's residents and beds, and the outposts' (buildings.js baseBeds).
+  const housing = () => {
+    const h = hub(state);
+    const outs = state.bases.filter((b) => b.type === "outpost");
+    return { hubRes: h ? residents(state, h.id).length : 0, hubBeds: h ? baseBeds(h) : 0,
+      outRes: outs.reduce((a, b) => a + residents(state, b.id).length, 0), outBeds: outs.reduce((a, b) => a + baseBeds(b), 0) };
   };
   sample();
   try {
     while (day(state) <= days) {
       tickHour(state);
       if (hubDay == null && hub(state)) hubDay = day(state);
+      const fresh = [];
       for (let i = 0; i < state.log.length && state.log[i] !== lastTop; i++) {
         const l = state.log[i];
+        fresh.push(l);
         if (EVENT.test(l.text) && (!l.text.startsWith("🤖") || /\(hive\) to/.test(l.text))) { events.push({ day: day(state), text: l.text.replace(/^🤖 /, "") }); lastEventDay = day(state); }
         if (grepRe && grepLines.length < 300 && grepRe.test(l.text)) grepLines.push(`d${day(state)} ${l.text}`);
-        if (l.kind === "death" && / died /.test(l.text)) {
-          const c = deathCause(l.text); deaths[c] = (deaths[c] || 0) + 1;
-          if (bySeason[c]) { const sk = season(state, l.hour ?? state.hour).key; bySeason[c][sk] = (bySeason[c][sk] || 0) + 1; }
-        }
-        else if (/walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
+        if (!(l.kind === "death" && / died /.test(l.text)) && /walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
+      }
+      // One death per survivor (deathcount.js: a worm death logs a second "died" line when they get up again).
+      for (const d of newDeaths(fresh)) {
+        deaths[d.cause] = (deaths[d.cause] || 0) + 1;
+        if (bySeason[d.cause]) { const sk = season(state, d.hour).key; bySeason[d.cause][sk] = (bySeason[d.cause][sk] || 0) + 1; }
       }
       if (state.log[0] !== lastTop) lastLogDay = day(state);
       lastTop = state.log[0];
@@ -217,7 +225,7 @@ function pool(jobs) {
       const w = new Worker(fileURLToPath(import.meta.url));
       let current = null;
       const feed = () => { if (next < jobs.length) { current = jobs[next++]; w.postMessage(current); } else { w.postMessage("done"); if (--live === 0) resolve(out); } };
-      w.on("message", (r) => { out.push(r); process.stdout.write(r.outcome === "crash" ? "X" : r.outcome[0]); feed(); });
+      w.on("message", (r) => { out.push(r); if (JSONL) appendFileSync(JSONL, JSON.stringify(r) + "\n"); process.stdout.write(r.outcome === "crash" ? "X" : r.outcome[0]); feed(); });
       w.on("error", (e) => { console.log(`\nworker error: ${e.stack}`); out.push({ ...(current || {}), outcome: "crash", error: `worker: ${String(e.stack || e)}`, samples: [], events: [], deaths: {}, end: {} }); feed(); });
       feed();
     }
@@ -240,13 +248,18 @@ async function main() {
     const k = MODE !== "both" || mode === "normal" ? i : i - Math.ceil(GAMES / 2);
     const style = STYLES[k % STYLES.length];
     const groups = clampGroups(size, GMIN + (k % (GMAX - GMIN + 1)));
-    jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP });
+    jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP, startPeople: START_PEOPLE_N });
   }
   const perSize = jobs.filter((j) => j.size === SIZE);
-  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
+  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
   console.log(`legend: h hive win, a coalition win, l loss, g still going at the cap, X crash`);
   const t0 = Date.now();
-  const results = (await pool(jobs)).sort((a, b) => SIZES.indexOf(a.size) - SIZES.indexOf(b.size) || a.seed - b.seed);
+  // --jsonl: the games already done (the same seed, size, mode and days) are read back instead of run again.
+  const done = JSONL && existsSync(JSONL) ? readFileSync(JSONL, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const key = (j) => `${j.seed}|${j.size}|${j.mode}|${j.days}`;
+  const doneKeys = new Set(done.map(key));
+  if (done.length) console.log(`${done.filter((r) => jobs.some((j) => key(j) === key(r))).length} games read back from ${JSONL}`);
+  const results = [...done.filter((r) => jobs.some((j) => key(j) === key(r))), ...(await pool(jobs.filter((j) => !doneKeys.has(key(j)))))].sort((a, b) => SIZES.indexOf(a.size) - SIZES.indexOf(b.size) || a.seed - b.seed);
   const ms = Date.now() - t0;
   console.log("\n");
   for (const size of SIZES) report(results.filter((r) => r.size === size), SIZES.length > 1 ? size : "");
@@ -254,7 +267,7 @@ async function main() {
   const crashes = results.filter((r) => r.outcome === "crash");
   if (OUT) {
     if (!existsSync(dirname(OUT))) mkdirSync(dirname(OUT), { recursive: true });
-    writeFileSync(OUT, JSON.stringify({ args: { GAMES, DAYS, SIZE, SIZES, GMIN, GMAX, SEED0, STYLES, KEEP, MODE, PRESET: PRESET_NAME }, commit: COMMIT, date: TODAY, ms, results }, null, 1));
+    writeFileSync(OUT, JSON.stringify({ args: { GAMES, DAYS, SIZE, SIZES, GMIN, GMAX, SEED0, STYLES, KEEP, MODE, PRESET: PRESET_NAME, START_PEOPLE: START_PEOPLE_N }, commit: COMMIT, date: TODAY, ms, results }, null, 1));
     console.log(`\nreport written to ${OUT}`);
   }
   console.log(`\n${results.length} runs in ${(ms / 60000).toFixed(1)} min${crashes.length ? `, ${crashes.length} CRASHED` : ""}.`);

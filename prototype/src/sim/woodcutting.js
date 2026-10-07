@@ -115,7 +115,7 @@ export function woodTime(hour) {
   if (h === 5 || h === 6 || h === 19) return WOOD.dusk;
   return WOOD.night;
 }
-const weatherMult = (state, hour) => (Weather.weather(state, hour).severe ? WOOD.storm : 1);
+const weatherMult = (state, hour, tile) => (Weather.weather(state, hour, tile).severe ? WOOD.storm : 1); // a storm over that tile (weather.js)
 
 // ---------- people and tools ----------
 export const woodSkill = (s) => 0.7 * skill(s, "farming") + 0.3 * skill(s, "mechanics");
@@ -157,7 +157,7 @@ const teamSpare = (p) => ((p && p.cargo && p.cargo.gear) || []);
 // ---------- rates and estimates ----------
 // Firewood an hour on this tile at this level for a crew of power `power` (no randomness).
 export function woodRate(state, tile, hour, power, level = woodLevel(state, tile, hour)) {
-  return WOOD.rate * woodAbundance(state, tile) * level * seasonWood(state, hour) * woodTime(hour) * weatherMult(state, hour) * power;
+  return WOOD.rate * woodAbundance(state, tile) * level * seasonWood(state, hour) * woodTime(hour) * weatherMult(state, hour, tile) * power;
 }
 // Expected haul of `hours` of cutting from startHour, the land thinning as it goes; room = kg the team can still carry
 // (the haul is capped by it; all = what was cut).

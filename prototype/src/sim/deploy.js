@@ -37,6 +37,7 @@ import { poweredType } from "./power.js";
 import { armoryDefence } from "./defences.js";
 import { isNight } from "./world.js";
 import { interiorMap, interiorUnits } from "./interior.js";
+import { applyPlan, planFor, planStale, savePlan, planAct, PLAN_ACTS, lateAtStart } from "./defenceplan.js"; // the base's defence plans
 
 export const DEPLOY = {
   WALL_X: 12, LINE_X: 11, BARRICADE_X: [8, 10], SPIKE_X: [13, 15], TRENCH_X: 14, ENEMY_X: 15, ZONE_OPEN: 7,
@@ -325,7 +326,7 @@ export function setLit(b, zone) {
 export const inZone = (b, x, y) => !!(b.deploy && x >= 0 && y >= 0 && x < b.w && y < b.h && b.deploy.zone[y * b.w + x]);
 // The post a defender placed by hand takes (the battle AI keeps them there): the gate or a breach, a tower, the
 // walkway; on the yard map an upper floor or a roof ("perch") and inside a building ("inside", interior.js).
-const postAt = (b, x, y) => {
+export const postAt = (b, x, y) => {
   const k = b.cells[y * b.w + x].k;
   if (k === "gate" || k === "breach") return "gate";
   if (k === "tower") return "tower";
@@ -341,15 +342,20 @@ export function canPlace(b, x, y) {
 export function deployAct(state, b, act) {
   if (!b.deploy) { endDeploy(b); return ""; }
   const u = act.unit != null ? unitById(b, act.unit) : null;
+  // Not on watch when the attack hit (defenceplan.js openStart): still in the buildings, out after the attackers move.
+  const lateMsg = (p) => `${p.name.split(" ")[0]} was not on watch: still ${b.tier && b.tier.map === "wall" ? "at the back" : "in the buildings"}, out once the attackers have moved.`;
+  if (PLAN_ACTS.includes(act.type)) { const err = planAct(state, b, act); if (!err) b.rev++; return err; } // defenceplan.js: pick a plan, posts by role
   switch (act.type) {
     case "place": {
       if (!u || u.side !== "player" || !active(u)) return "Pick one of your people.";
+      if (u.late) return lateMsg(u);
       const x = Number(act.x), y = Number(act.y);
       if (!canPlace(b, x, y)) return b.tier && b.tier.map === "interior" ? "Defenders go on the green cells: the yard and the buildings, away from the attackers." : "Defenders go on the green cells: inside the walls, on the walkway, in the gate or a breach.";
       const other = unitAt(b, x, y);
       if (other && other !== u) {
         if (other.side !== "player") return "Taken.";
         if (!active(other)) return "Someone is lying there.";
+        if (other.late) return lateMsg(other);
         other.x = u.x; other.y = u.y; other.post = postAt(b, other.x, other.y);
       }
       u.x = x; u.y = y; u.post = postAt(b, x, y);
@@ -357,6 +363,7 @@ export function deployAct(state, b, act) {
     }
     case "gate": {
       if (!u || u.side !== "player" || !active(u)) return "Pick one of your people.";
+      if (u.late) return lateMsg(u);
       const cells = [...b.deploy.gate, ...b.deploy.breaches];
       if (!cells.length) return b.tier && b.tier.map === "interior" ? "The wall is behind you now: hold the yard and the buildings." : "There is no wall here, so no gate to hold.";
       if (cells.some(([x, y]) => u.x === x && u.y === y)) return `${u.name} already holds it.`;
@@ -375,7 +382,18 @@ export function deployAct(state, b, act) {
       setLit(b, act.zone);
       break;
     }
+    case "plan": { // defenceplan.js: back to the base's defence plan
+      if (!planFor(state, b)) return planStale(state, b) || "This base has no defence plan for this map yet: place everyone, then Save as plan.";
+      applyPlan(state, b);
+      break;
+    }
+    case "savePlan": {
+      const msg = savePlan(state, b);
+      say(b, msg, "good");
+      break;
+    }
     case "start":
+      if (b.setup.drill) return "This is a drill: save the plan, or close it.";
       endDeploy(b);
       break;
     default:
@@ -386,9 +404,10 @@ export function deployAct(state, b, act) {
 }
 
 export function endDeploy(b) {
-  if (!b || b.phase !== "deploy") return;
+  if (!b || b.phase !== "deploy" || b.setup.drill) return; // a drill (defenceplan.js) never starts
   b.phase = "player";
   b.acted = true; // no auto-resolve once the defenders are placed
+  lateAtStart(b); // defenceplan.js: those not on watch sit out this turn (nobody else: the attackers move first)
   const interior = b.tier && b.tier.map === "interior";
   say(b, interior ? (b.tier.fellBackTurn ? "Hold the yard! If it falls, make your last stand in the buildings." : "Here they come! Hold the yard, and the buildings if it falls.") : b.deploy && b.deploy.walled ? "They are at the walls. Hold them!" : "Here they come!", "danger");
   b.rev++;

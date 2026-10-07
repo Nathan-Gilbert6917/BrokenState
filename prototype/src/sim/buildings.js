@@ -29,6 +29,9 @@ export const BUILDINGS = {
   med_station:  { name: "Med station",    plot: "utility", cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
   machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
   bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
+  // Housing (BEDS, baseBeds): twice a bunkhouse's beds on one building plot, for a base whose plots run short. from: a
+  // standing bunkhouse can be expanded into one where it stands (BARRACKS_UP: no new plot; its jobs count against max).
+  barracks:     { name: "Barracks",       plot: "building", cost: { scrap: 40, parts: 2 },  hours: 54, max: 4, from: "bunkhouse", desc: "+12 beds on one building plot (a bunkhouse gives 6): bunks three high, a stove and lockers, for a base whose plots run short. A standing bunkhouse can also be expanded into a barracks where it stands (Construction, On the building plots: Expand; 24 scrap and 2 parts, 30 work-hours, no new plot; its 6 beds stay in use meanwhile). Overcrowding lowers mood every day." },
   walls:        { name: "Walls",          cost: { scrap: 25 },            hours: 36, max: 3, desc: "+3 wall strength (each point adds 2 defense against raids, and holds back 18 more of a horde). In a base battle: the wall map (tier 1), with a walkway behind the wall to shoot down from; each wall section has 40 + 12 hit points a point of wall strength." },
   // Defences against hordes (defences.js): they raise the size of horde the base holds out, and show up on the
   // base's battle map when the dead break in anyway.
@@ -176,8 +179,34 @@ export function setBarrelHolds(base, id, kind) {
   b.holds = kind === "water" ? "water" : "rawwater";
   return `${barrelName(b)} now holds ${b.holds === "water" ? "purified" : "un-purified"} water.`;
 }
-// The name of a queue job: a new building, or a barrel's upgrade.
-export const jobName = (job) => (job.target ? `Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
+// ---------- expanding a bunkhouse into a barracks ----------
+// A standing bunkhouse becomes a barracks where it stands (12 beds instead of 6, no new plot): a queue job
+// { type: "barracks", target: the bunkhouse's id, cost }. The bunkhouse sleeps its 6 until the job is done, cannot be
+// pulled down meanwhile (canDemolish), and the job counts against the barracks' max (canBuild). The whole way costs a
+// little more than a new barracks (20 + 24 scrap, 2 parts, 30 + 30 work-hours): the price of the plot it saves.
+export const BARRACKS_UP = { cost: { scrap: 24, parts: 2 }, hours: 30 };
+export function canExpandBunkhouse(state, base, id) {
+  const b = base && base.buildings.find((x) => x.id === id && x.type === "bunkhouse");
+  if (!b) return { ok: false, reason: "That bunkhouse is gone" };
+  if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
+  if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being expanded already" };
+  const queued = base.construction.filter((c) => c.type === "barracks").length;
+  if (countAll(base, "barracks") + queued >= BUILDINGS.barracks.max) return { ok: false, reason: `Limit reached (${BUILDINGS.barracks.max} barracks)` };
+  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
+  const lock = buildLock(state, base, "barracks");
+  if (lock) return { ok: false, reason: lock, locked: true };
+  return { ok: true };
+}
+export function queueBunkhouseExpand(state, base, id) {
+  const chk = canExpandBunkhouse(state, base, id);
+  if (!chk.ok) return chk.reason;
+  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) base.stock[k] -= v;
+  base.construction.push({ id: newId(), type: "barracks", target: id, cost: { ...BARRACKS_UP.cost }, progress: 0, hours: BARRACKS_UP.hours });
+  return `Bunkhouse → barracks queued at ${base.name}.`;
+}
+
+// The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
+export const jobName = (job) => (job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
 // Pulls a building down to free its plot: half its scrap and parts back (rounded down), and for a barrel half of its
@@ -254,7 +283,14 @@ export const baseWalls = (base) => (isShelter(base) ? SHELTER.walls : base.type 
 export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
-export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + count(base, "bunkhouse") * 6;
+// Beds: the hub 4, an outpost 2, a shelter SHELTER.beds, plus BEDS for each working bunkhouse or barracks (a broken one
+// sleeps nobody until it is repaired).
+export const BEDS = { bunkhouse: 6, barracks: 12 };
+// Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
+export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
+// Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
+// barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
+export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);
 // Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
 export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
@@ -364,7 +400,7 @@ export function runStations(state, base) {
 
 export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
-  const queued = base.construction.filter((c) => c.type === type && !c.target).length; // a barrel's upgrade is not a new one
+  const queued = base.construction.filter((c) => c.type === type && (!c.target || def.from)).length; // a barrel's upgrade is not a new one; a bunkhouse expanded into a barracks is one more barracks
   if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
   if (def.family) {
     // Tiered buildings: one step at a time, and only one upgrade in the queue.
@@ -436,6 +472,11 @@ export function constructionHour(state) {
     if (job.progress >= job.hours) {
       base.construction.shift();
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
+      if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
+        const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");
+        if (b) { b.type = "barracks"; log(state, `${base.name}: a bunkhouse is now a barracks (12 beds).`, "good"); }
+        continue;
+      }
       if (job.target) { // a water barrel's upgrade (WATER_BARREL); nothing if it was pulled down meanwhile
         const b = base.buildings.find((x) => x.id === job.target);
         if (b) { b.tier = Math.max(barrelTier(b), job.tier); log(state, `${base.name}: a water barrel is now a ${barrelName(b).toLowerCase()} (${barrelCap(b)} water).`, "good"); }

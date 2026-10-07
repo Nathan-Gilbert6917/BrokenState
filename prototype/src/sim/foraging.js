@@ -41,7 +41,7 @@ import { SUPPLIES } from "./data.js";
 import { econStats, farmFoodPerDay } from "./farming.js";
 import { foodUse } from "./upkeep.js"; // landFoodGap: everyone fed here
 import { edibleFood } from "./storage.js";
-import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot } from "./hunting.js";
+import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, partyHuntMix } from "./hunting.js";
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 
 // ---------- numbers ----------
@@ -116,7 +116,7 @@ export function forageTime(hour) {
   return FORAGE.night;
 }
 const daylight = (hour) => forageTime(hour) >= 1;
-const weatherMult = (state, hour) => (Weather.weather(state, hour).severe ? FORAGE.storm : 1);
+const weatherMult = (state, hour, tile) => (Weather.weather(state, hour, tile).severe ? FORAGE.storm : 1); // a storm over that tile (weather.js)
 const seasonKey = (state, hour = state.hour) => Weather.season(state, hour).key;
 
 // ---------- people ----------
@@ -136,7 +136,7 @@ export function foragePower(members) {
 // ---------- rates and estimates ----------
 // Rations an hour on this tile at this level for a team of power `power` (no randomness).
 export function forageRate(state, tile, hour, power, level = forageLevel(state, tile, hour)) {
-  return FORAGE.rate * forageAbundance(state, tile) * level * seasonForage(state, hour) * forageTime(hour) * weatherMult(state, hour) * power;
+  return FORAGE.rate * forageAbundance(state, tile) * level * seasonForage(state, hour) * forageTime(hour) * weatherMult(state, hour, tile) * power;
 }
 // Expected haul of `hours` of foraging from startHour, the land depleting as it goes; room = kg the team can still
 // carry (the haul is capped by it; all = what was gathered).
@@ -383,7 +383,7 @@ export function landFoodOptions(state, p, { range = 1, hours = FORAGE.defHours, 
     const at = startHour + Math.round(travel);
     const push = (kind, rations) => { if (rations > 0) out.push({ kind, tile: id, rations: r1(rations), hours, travel: r1(travel), dist, dir: dirWord(state, from, id), terrain: t.terrain, score: rations / (hours + travel) }); };
     if (kinds.includes("forage") && forageAbundance(state, id) >= 0.02) push("forage", expectForage(state, members, id, hours, at, room, power).rations);
-    if (huntOk && !huntProblem(state, p, id)) push("hunt", (huntInfo(state, id, { members, ammo, hours, startHour: at, room }).est || { rations: 0 }).rations);
+    if (huntOk && !huntProblem(state, p, id)) push("hunt", (huntInfo(state, id, { members, ammo, arrows: carried(p, "arrows"), mix: partyHuntMix(state, p), hours, startHour: at, room }).est || { rations: 0 }).rations);
     if (kinds.includes("fish") && fishSpot(state, id) && kit.power && !fishProblem(state, p, id)) push("fish", expectFish(state, kit, id, hours, at, room).rations);
   }
   return out.sort((a, b) => b.score - a.score || a.dist - b.dist || a.tile - b.tile);

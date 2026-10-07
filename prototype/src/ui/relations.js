@@ -11,6 +11,7 @@ import {
 } from "../sim/relations.js";
 import { moodWork, MOOD_WORK } from "../sim/morale.js";
 import { survivorURL, spriteImg } from "./sprites.js";
+import { whyButton } from "./causes.js"; // the "Why?" link of a death (sim/causes.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -95,7 +96,7 @@ function recordBlock(state, s, r) {
 }
 
 function memorialHeader(state, m) {
-  return `<div class="card small"><b>In memory</b> · died on day ${m.died}${m.cause ? ` ${esc(m.cause)}` : ""} (${esc(m.place)}), after ${m.days} day${m.days === 1 ? "" : "s"} with the group.${m.grievedBy.length ? ` Grieved by ${esc(m.grievedBy.join(", "))}.` : ""}</div>`;
+  return `<div class="card small"><b>In memory</b> · died on day ${m.died}${m.cause ? ` ${esc(m.cause)}` : ""} (${esc(m.place)}) ${whyButton(m)}, after ${m.days} day${m.days === 1 ? "" : "s"} with the group.${m.grievedBy.length ? ` Grieved by ${esc(m.grievedBy.join(", "))}.` : ""}</div>`;
 }
 
 // ---------- the memorial wall ----------
@@ -124,7 +125,7 @@ export function memorialModal(state, ui) {
       const s = survivorById(state, m.id);
       return `<div class="card small mem">
         <div class="spread"><b>${s ? spriteImg(survivorURL(s, state.seed), 1.6) : ""}<a data-action="survivor" data-id="${m.id}" class="link">${esc(m.name)}</a>${m.leader ? " · leader" : ""}</b><span class="muted">day ${m.joined}–${m.died} · ${m.days} day${m.days === 1 ? "" : "s"}</span></div>
-        <div>Died ${esc(m.cause || "")} <span class="muted">(${esc(m.place)})</span></div>
+        <div>Died ${esc(m.cause || "")} <span class="muted">(${esc(m.place)})</span> ${whyButton(m)}</div>
         ${highlights(m) ? `<div class="muted">${esc(highlights(m))}</div>` : ""}
         ${m.moments.length ? `<div>${m.moments.slice(0, 2).map((x) => esc(x.t)).join("<br>")}</div>` : ""}
         <div class="muted">${m.partner ? `Partner: ${esc(m.partner)} · ` : ""}${m.grievedBy.length ? `Grieved by ${esc(m.grievedBy.join(", "))}` : "Nobody close enough to grieve"}${m.honored ? ` · remembered on day ${m.honored}` : ""}</div>

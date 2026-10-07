@@ -355,9 +355,10 @@ export function spotFirstChance(state, p) {
   if (p.stance === "stealthy") c += 0.25;
   if (p.stance === "rushed") c -= 0.1;
   if (p.vehicle) c -= 0.1;
-  c -= travelEffects(state).ambush; // fog and whiteouts hide the other side until it is close (weather.js)
+  const fx = travelEffects(state, state.hour, partyTile(p)); // the weather where the team is (weather.js)
+  c -= fx.ambush; // fog and whiteouts hide the other side until it is close
   if (isNight(state) && members.some((m) => m.traits.includes("nightowl") || (m.gear.tool && m.gear.tool.key === "nvg"))) c += 0.15;
-  c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: travelEffects(state).sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
+  c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: fx.sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
   return clamp(c, 0.05, 0.9);
 }
 
@@ -1567,7 +1568,8 @@ export function defendInPerson(state, raid) {
   startCombat(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null }, // siege.js: their ladders, ram and grenades
-    ambush: base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id }, // the way out: away from the attack (deploy.js)
+    // raid.surprise (watch.js surpriseAt: an unwatched night): they are over the wall and have the first move.
+    ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise }, // the way out: away from the attack (deploy.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first
   });
   return "";

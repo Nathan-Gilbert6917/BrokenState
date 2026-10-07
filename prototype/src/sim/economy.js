@@ -23,12 +23,13 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
-import { heatDaily } from "./needs.js";
+import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
+import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -40,7 +41,7 @@ export const ROLES = {
   medic:    { name: "Medic",    desc: "Staffs the infirmary or hospital (each tier needs 1–3 medics to run; unstaffed it works like no hospital). The best medic's Medicine speeds up healing for patients in beds; with no medic only slow natural healing and weak meds. Medics are never admitted as patients, and catch contagious illness more easily." },
   craft:    { name: "Craft",    desc: "Makes makeshift gear and supplies by hand from the craft queue (base Crafting tab). No station needed; Mechanics (or Medicine for kits) sets what they can make and how fast." },
   teach:    { name: "Teach",    desc: "Teaches one skill to up to 2 people at this base whose skill is at least 4 below theirs (pick the skill and learners on their survivor screen, or leave it to them). Learners gain 4 + 0.4 × the teacher's skill + 0.15 × the teacher's Leadership and Speech XP a day and keep their own jobs; the teacher does no other work." },
-  hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, with their own weapon (a rifle or a bow best; firearms use the base's ammo; no weapon: snares). Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
+  hunt:     { name: "Hunt",     desc: "Hunts the land within 2 tiles of a base with a Hunting cabin, 3 hours a day at dawn and dusk, by the base's hunting mix (Farming tab): traps (silent, small game), bows (silent, the base's arrows) or guns (the base's ammo; shots add Heat and can draw the dead); no weapon: snares. Brings in fresh game, which spoils fast unless it is eaten, dried or smoked. Hunted hard, the land runs out of game for weeks." },
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod or net (carried, or in the armory: one each). Brings in fresh fish, which spoils fast." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
@@ -304,10 +305,7 @@ function thirst(state, base, mouths, short) {
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 8);
-    hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
   log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
 }
 
@@ -359,10 +357,7 @@ function starve(state, base, mouths) {
   base.hungerDays = (base.hungerDays || 0) + 1;
   econStats(state).hungerDays++;
   const dmg = hungerDamage(base.hungerDays);
-  for (const s of mouths) {
-    s.mood = Math.max(0, s.mood - 10);
-    hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true });
-  }
+  for (const s of mouths) hurt(state, s, dmg, base.tile, `of hunger at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (starving, worse each day)
   log(state, `${base.name} is out of food${base.hungerDays > 1 ? ` (day ${base.hungerDays}: everyone there loses ${dmg} health and nobody heals)` : ""}.`, "danger");
 }
 
@@ -373,10 +368,13 @@ export function basesDaily(state) {
   wormDaily(state); // worm.js: catching the worm (water, raw meat), its stages, spotting, care, turning; infested herds
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
+  markAll(state); // history.js: the outposts' surplus run is stock moved, not made or used
   shipFromOutposts(state);
+  markAll(state, "move");
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
+  starvingDaily(state); // needs.js: each morning starving or parched in a row costs more mood (−2, −4, −6 …)
   relationsDaily(state); // relations.js: opinions, grief, the new mood factors and breaks
   mentalBreaksDaily(state); // mentalbreaks.js: days at rock bottom end in a break that changes the colony
 }
@@ -407,6 +405,7 @@ function baseDaily(state, base) {
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
+  flowMark(state, base); // history.js: the day's production so far is in (before anyone drinks or eats)
 
   // Purifying (worm.js purifyDaily): the boiler (it burns its firewood now), the water filters and a shelter's fire
   // turn un-purified water into purified water before anyone drinks.
@@ -427,6 +426,7 @@ function baseDaily(state, base) {
   base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
   const give = drawWater(st, need.crops, { rawFirst: true }).got;
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+  flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
   // Eating: fresh food first, then preserved (storage.js). An outpost that runs short is covered from the hub
   // afterwards (shipFromOutposts). Under a week of food left, everyone goes on short rations (60%): it stretches
