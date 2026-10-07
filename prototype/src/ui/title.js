@@ -12,7 +12,7 @@ import { camera, view, HEX } from "./render.js";
 import { GAME_VERSION } from "../sim/save.js";
 
 export const TITLE_BGS = [["skyline", "Ruined skyline"], ["map", "Living State Map"], ["camp", "Campfire at night"]];
-export const TITLE_STYLES = [["stencil", "Cracked stencil"], ["blood", "Blood-red serif"], ["spray", "Spray-painted"], ["minimal", "Clean minimal"]];
+export const TITLE_STYLES = [["spray", "Spray-painted"], ["stencil", "Cracked stencil"], ["blood", "Blood-red serif"], ["minimal", "Clean minimal"]];
 const MAP_TICK_S = 0.7; // the living map's world runs an hour every this many seconds
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -124,7 +124,7 @@ export function titleFrame(state, ui, now) {
   const bg = titleBg(API.options);
   if (bg === "map") { mapFrame(state, dt); return; }
   if (sceneKey !== bg) { scene = bg === "camp" ? campScene() : skylineScene(); sceneKey = bg; scene.size = ""; }
-  const dpr = window.devicePixelRatio || 1, res = Math.min(dpr, 1.25);
+  const dpr = window.devicePixelRatio || 1, res = Math.min(dpr, 2);
   const W = window.innerWidth, H = window.innerHeight;
   const size = `${W}x${H}x${res}`;
   if (scene.size !== size) {
@@ -356,65 +356,119 @@ function drawStrip(g, L, x, y, w, h) {
   g.drawImage(L.c, off, y, w, h);
 }
 
-// A shambling dead silhouette, feet at (x, y), s pixels tall, walking towards dir (±1). ph: the step's phase.
-function shambler(g, x, y, s, ph, dir, k, color) {
-  g.save();
-  g.translate(x, y);
-  g.scale((dir * s) / 100, s / 100);
-  g.strokeStyle = g.fillStyle = color;
-  g.lineCap = "round";
-  g.lineJoin = "round";
-  const step = Math.sin(ph), bob = Math.abs(Math.cos(ph)) * 2.5;
-  const lean = (k.lean || 10) + Math.sin(ph * 0.5 + k.seed) * 3;
-  const hipX = 0, hipY = -50 + bob;
-  // Legs: one swings, the dragging one barely leaves the ground.
-  g.lineWidth = 8.5;
-  const leg = (sw, drag) => {
-    const a = sw * (drag ? 0.25 : 0.42);
-    const kx = hipX + Math.sin(a) * 25, ky = hipY + Math.cos(a) * 25;
-    const fx = kx + Math.sin(a - 0.25 - (drag ? 0 : Math.max(0, -sw) * 0.4)) * 25, fy = Math.min(0, ky + Math.cos(a) * 25);
-    g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(kx, ky); g.lineTo(fx, fy); g.stroke();
-  };
-  leg(step, k.limp);
-  leg(-step, false);
-  // Torso, leaning into the walk.
-  const rad = (lean * Math.PI) / 180;
-  const shX = hipX + Math.sin(rad) * 32, shY = hipY - Math.cos(rad) * 32;
-  g.lineWidth = 15;
-  g.beginPath(); g.moveTo(hipX, hipY); g.lineTo(shX, shY); g.stroke();
-  // Head, hanging forward and to the side.
-  const hx = shX + 6 + (k.droop || 0) + Math.sin(ph * 0.5) * 1.5, hy = shY - 9 + Math.abs(k.droop || 0) * 0.4;
-  g.beginPath(); g.arc(hx, hy, 7.5, 0, Math.PI * 2); g.fill();
-  // Arms: one reaching out, one hanging (or both reaching).
-  g.lineWidth = 6.5;
-  const reach = (k.reach || 0.35) + Math.sin(ph + k.seed) * 0.08;
-  g.beginPath(); g.moveTo(shX, shY + 4); g.lineTo(shX + Math.cos(reach) * 19, shY + 4 + Math.sin(reach) * 19); g.lineTo(shX + Math.cos(reach) * 36, shY + 4 + Math.sin(reach + 0.15) * 36); g.stroke();
-  const hang = k.both ? reach + 0.25 : 1.35 + Math.sin(ph) * 0.12;
-  g.beginPath(); g.moveTo(shX - 2, shY + 5); g.lineTo(shX - 2 + Math.cos(hang) * 18, shY + 5 + Math.sin(hang) * 18); g.lineTo(shX - 2 + Math.cos(hang + 0.2) * 34, shY + 5 + Math.sin(hang + 0.2) * 34); g.stroke();
-  g.restore();
-}
+// ---------- the dead ----------
+// Builds and gaits, so no two of them walk alike: some drag a foot, some lurch, a few crawl, a few just stand and sway.
 function walkers(n, seed, opts) {
   const R = rng(seed), out = [];
   for (let i = 0; i < n; i++) {
+    const kind = R();
     out.push({
-      x: R(), depth: R(), dir: R() < 0.5 ? -1 : 1, ph: R() * 6.28, speed: 0.55 + R() * 0.5,
-      k: { seed: R() * 6, lean: 6 + R() * 16, droop: (R() - 0.3) * 8, reach: 0.1 + R() * 0.6, both: R() < 0.3, limp: R() < 0.45 },
+      x: R(), depth: R(), dir: R() < 0.5 ? -1 : 1, ph: R() * 6.28, speed: 0.5 + R() * 0.6,
+      k: {
+        seed: R() * 6, lean: 4 + R() * 18, droop: (R() - 0.3) * 8, reach: 0.6 + R() * 0.9, both: R() < 0.3, limp: R() < 0.5,
+        bulk: 0.8 + R() * 0.5, tall: 0.85 + R() * 0.3, coat: R() < 0.55, hair: R() < 0.4, lurch: R() < 0.3,
+        crawl: kind < 0.08, idle: kind >= 0.08 && kind < 0.2,
+      },
       ...opts,
     });
   }
   return out;
 }
 
+// One of the dead, feet at (x, y), s pixels tall (drawn in units of 100 = full height), facing dir (±1). ph: the
+// step's phase. rim: a colour for a thin edge of backlight around the silhouette.
+function shambler(g, x, y, s, ph, dir, k, color, rim) {
+  g.save();
+  g.translate(x, y);
+  g.scale((dir * s * k.tall) / 100, (s * k.tall) / 100);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  const B = k.bulk;
+  const paint = (extra, col) => {
+    g.strokeStyle = g.fillStyle = col;
+    const lw = (w) => { g.lineWidth = w * B + extra * 2; };
+    const seg = (pts) => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.stroke(); };
+    const dot = (cx, cy, r) => { g.beginPath(); g.arc(cx, cy, r * B + extra, 0, Math.PI * 2); g.fill(); };
+    if (k.crawl) { // on its belly, pulling itself along by the arms, the legs trailing
+      const pull = Math.sin(ph), by = -9;
+      lw(7); seg([[-18, by + 2], [-30, -2], [-38, 0]]); seg([[-16, by + 3], [-27, -1 + pull], [-35, 0]]);
+      lw(13); seg([[-18, by + 2 - Math.max(0, pull)], [8, by]]);
+      lw(5); seg([[8, by], [15, by - 4]]);
+      dot(17, by - 6, 7);
+      lw(6);
+      const a1 = 10 + pull * 8, a2 = 10 - pull * 8;
+      seg([[8, by - 2], [14 + a1, -4], [22 + a1, 0]]);
+      seg([[6, by], [12 + a2, -3], [20 + a2, 0]]);
+      return;
+    }
+    const sway = k.idle ? Math.sin(ph * 0.35 + k.seed) : 0;
+    const bob = k.idle ? 0 : Math.abs(Math.cos(ph)) * (k.lurch ? 3 : 2);
+    const lean = (k.idle ? 6 : k.lean) + Math.sin(ph * 0.5 + k.seed) * 3 + sway * 4;
+    const legL = 46, hipY = -legL + bob, hipX = sway * 2;
+    const rad = (lean * Math.PI) / 180, spine = 36;
+    const shX = hipX + Math.sin(rad) * spine, shY = hipY - Math.cos(rad) * spine;
+    // Legs: thigh, shin and foot; the knee bends on the swing, a dragged foot trails toe down.
+    const leg = (sw, v, drag) => {
+      const thigh = 24, shin = 22;
+      const a = k.idle ? sw * 0.12 : drag ? sw * 0.22 + 0.1 : sw * 0.45;
+      const bend = drag ? 0.55 : k.idle ? 0 : Math.max(0, v) * 0.9;
+      const kx = hipX + Math.sin(a) * thigh, ky = hipY + Math.cos(a) * thigh;
+      const ax = kx + Math.sin(a - bend) * shin, ay = Math.min(0, ky + Math.cos(a - bend) * shin);
+      lw(8.5);
+      seg([[hipX, hipY], [kx, ky], [ax, ay]]);
+      lw(5);
+      if (drag) seg([[ax, ay], [ax - 9, Math.min(0, ay + 2)]]);
+      else seg([[ax, ay], [ax + 8, Math.min(0, ay + 1)]]);
+    };
+    const sw = k.idle ? sway : Math.sin(ph), v = Math.cos(ph);
+    leg(k.idle ? -0.8 : sw, v, k.limp);
+    leg(k.idle ? 0.8 : -sw, -v, false);
+    // A coat or rags hanging from the hips, flapping.
+    if (k.coat) {
+      const hem = hipY + 12;
+      g.beginPath();
+      g.moveTo(hipX - 9 * B, hipY - 6); g.lineTo(shX - 8 * B, shY + 2); g.lineTo(shX + 8 * B, shY + 2); g.lineTo(hipX + 10 * B, hipY - 4);
+      for (let i = 0; i < 5; i++) { const fx = hipX + 10 * B - (i * 19 * B) / 4; g.lineTo(fx, hem + (i % 2 ? -4 : 3) + Math.sin(ph * 2 + i + k.seed) * 2 - (i === 0 || i === 4 ? 2 : 0)); }
+      g.closePath(); g.fill();
+    }
+    lw(15);
+    seg([[hipX, hipY], [shX, shY]]);
+    // Head on a bent neck, matted hair on some.
+    lw(5);
+    const hx = shX + 5 + (k.droop || 0) + Math.sin(ph * 0.5 + k.seed) * 1.5, hy = shY - 8 + Math.abs(k.droop || 0) * 0.35 + (k.idle ? Math.sin(ph * 0.5) * 1.5 : 0);
+    seg([[shX, shY], [hx, hy + 4]]);
+    dot(hx, hy, 7.5);
+    if (k.hair) { g.beginPath(); g.arc(hx - 2, hy - 2, 7.5 * B + extra, Math.PI * 1.05, Math.PI * 1.95); g.lineTo(hx - 9 * B, hy + 6); g.lineTo(hx - 4, hy + 2); g.closePath(); g.fill(); }
+    // Arms: upper arm, forearm, hand. One reaching, one hanging (or both reaching).
+    const arm = (r1, r2, w) => {
+      const sx = shX, sy = shY + 3, up = 16, fo = 16;
+      const ex = sx + Math.sin(r1) * up, ey = sy + Math.cos(r1) * up;
+      const wx = ex + Math.sin(r2) * fo, wy = ey + Math.cos(r2) * fo;
+      lw(w); seg([[sx, sy], [ex, ey], [wx, wy]]);
+      dot(wx + Math.sin(r2) * 2, wy + Math.cos(r2) * 2, 2.6);
+    };
+    const reach = k.reach + Math.sin(ph + k.seed) * 0.08;
+    arm(reach, reach + 0.25 + Math.sin(ph * 1.3 + k.seed) * 0.15, 6.5);
+    const hang = k.both ? reach - 0.25 : 0.1 + Math.sin(ph) * 0.18 * (k.idle ? 0.4 : 1);
+    arm(hang, hang + 0.12, 6);
+  };
+  if (rim) paint(1.6, rim);
+  paint(0, color);
+  g.restore();
+}
+
 // ---------- background: a ruined skyline at dusk ----------
 function skylineScene() {
-  let W = 0, H = 0, res = 1, sky, far, mid, near, ground, fogBack, fogFront, haze;
-  let horizon = 0, streetY = 0, P = 0;
+  let W = 0, H = 0, res = 1, sky, far, mid, near, street, props, fore, fogBack, fogFront, haze;
+  let horizon = 0, streetY = 0, P = 0, lampX = 0, lampY = 0;
   const lights = []; // lit windows: [layer, x, y, w, h, phase]
-  const smoke = [], embers = [];
-  let crowd = [], crows = [];
-  const sources = [0.22, 0.47, 0.81]; // where the fires burn, as fractions of the mid layer
-  const dark = puff("26,22,25"), lit = puff("125,62,38"), glowP = puff("255,118,40"), ember = puff("255,170,80", 0.3);
+  const fires = [];  // windows with fire behind them, mid layer: [x, y, w, h, phase]
+  let sources = [];  // where the smoke rises (fractions of the mid layer)
+  const smoke = [], embers = [], ash = [];
+  let crowd = [], crows = [], flare = null, heli = null;
+  const dark = puff("26,22,25"), lit = puff("125,62,38"), glowP = puff("255,118,40"), ember = puff("255,170,80", 0.3), flameP = puff("255,170,60", 0.2), flash = puff("255,210,150");
 
+  // One layer of buildings: a silhouette strip P wide that scrolls (drawn twice). windows: the window size (0: none).
   function buildingLayer(seed, top, base, minH, maxH, minW, maxW, color, windows, idx) {
     const L = layer(P, H - top, res), R = rng(seed), g = L.g;
     g.translate(0, -top);
@@ -425,8 +479,10 @@ function skylineScene() {
       shapes.push([x, w, h, R() * 1e6 | 0]);
       x += w * (0.7 + R() * 0.45);
     }
+    let nb = 0;
     for (const [x0, w, h, s] of shapes) for (const dx of [0, -P, P]) {
       const r = rng(s), x = x0 + dx, y = base - h, kind = r();
+      g.fillStyle = color;
       g.beginPath();
       g.moveTo(x, H);
       g.lineTo(x, y + (kind < 0.2 ? h * 0.08 * r() : 0));
@@ -445,81 +501,180 @@ function skylineScene() {
       const extra = r();
       g.lineWidth = Math.max(1.2, w * 0.03);
       g.strokeStyle = color;
-      if (kind >= 0.62 && extra < 0.3) { // antenna
+      if (kind >= 0.62 && extra < 0.25) { // antenna
         g.beginPath(); g.moveTo(x + w * 0.5, y); g.lineTo(x + w * 0.5 + (r() - 0.5) * 8, y - h * (0.15 + r() * 0.2)); g.stroke();
-      } else if (kind >= 0.62 && extra < 0.5) { // water tower
+      } else if (kind >= 0.62 && extra < 0.42) { // water tower
         const tx = x + w * (0.25 + r() * 0.4), tw = Math.min(26, w * 0.3), th = tw * 0.8;
         g.beginPath(); g.moveTo(tx, y); g.lineTo(tx + 3, y - th * 0.7); g.moveTo(tx + tw, y); g.lineTo(tx + tw - 3, y - th * 0.7); g.stroke();
         g.fillRect(tx, y - th * 1.5, tw, th * 0.8);
         g.beginPath(); g.moveTo(tx - 2, y - th * 1.5); g.lineTo(tx + tw / 2, y - th * 1.9); g.lineTo(tx + tw + 2, y - th * 1.5); g.fill();
-      } else if (kind >= 0.62 && extra < 0.65) { // the bare frame of the floors that are gone
+      } else if (kind >= 0.62 && extra < 0.55) { // the bare frame of the floors that are gone
         const fh = h * 0.35, cols = 3 + (r() * 3) | 0;
         for (let i = 0; i <= cols; i++) { if (r() < 0.3) continue; g.beginPath(); g.moveTo(x + (w * i) / cols, y); g.lineTo(x + (w * i) / cols, y - fh * (0.4 + r() * 0.6)); g.stroke(); }
         for (let j = 1; j < 3; j++) { g.beginPath(); g.moveTo(x, y - (fh * j) / 3); g.lineTo(x + w * (0.3 + r() * 0.7), y - (fh * j) / 3); g.stroke(); }
+      } else if (kind >= 0.62 && extra < 0.68 && idx === 2 && w > W * 0.07) { // a billboard on legs, its poster hanging off in strips
+        const bw = w * 0.7, bh = bw * 0.38, bx = x + w * 0.15, by = y - bh - h * 0.06;
+        g.lineWidth = 2.5;
+        for (const lx of [bx + bw * 0.2, bx + bw * 0.8]) { g.beginPath(); g.moveTo(lx, y); g.lineTo(lx, by + bh); g.stroke(); }
+        g.fillRect(bx, by, bw, bh);
+        g.fillStyle = "#2b2426";
+        g.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
+        g.fillStyle = "#4e3f3a";
+        for (let i = 0; i < 4; i++) { const sx = bx + 3 + (bw - 6) * (i / 4), sw = (bw - 6) / 4 - 2; g.fillRect(sx, by + 3, sw, (bh - 6) * (0.4 + r() * 0.6)); }
+        g.fillStyle = color;
       }
-      // Windows: a few lit ones flicker (kept in `lights`), and in the nearer layers the dead ones show faintly.
+      // Windows: the glass shows faintly against the wall, some are boarded or gone; a few are lit (`lights`); in
+      // one building out of eight in the middle layer a fire burns on the upper floors (`fires`).
       if (windows && dx === 0) {
+        nb++;
+        const burning = idx === 1 && nb % 8 === 3 && h > H * 0.16;
+        if (burning) sources.push(x0 + w * 0.5);
         const cw = windows, rows = Math.floor((h * 0.85) / (cw * 2.4)), cols = Math.floor((w * 0.8) / (cw * 2));
         for (let j = 1; j < rows; j++) for (let i = 0; i < cols; i++) {
           const wx = x + w * 0.1 + i * cw * 2, wy = base - h * 0.9 + j * cw * 2.4;
           if (wy < y + h * 0.4 && kind < 0.38) continue;
           const v = r();
+          if (burning && j <= Math.max(2, rows * 0.35) && v < 0.8) { fires.push([wx, wy, cw, cw * 1.3, r() * 100]); continue; }
           if (v < 0.012) lights.push([idx, wx, wy, cw, cw * 1.3, r() * 100]);
-          else if (v < 0.35 && idx > 0) { g.fillStyle = "rgba(255,190,140,0.035)"; g.fillRect(wx, wy, cw, cw * 1.3); g.fillStyle = color; }
+          else if (v < 0.55) { g.fillStyle = idx === 2 ? "rgba(140,105,95,0.13)" : "rgba(255,190,140,0.05)"; g.fillRect(wx, wy, cw, cw * 1.3); }
+          else if (v < 0.62 && idx === 2) { g.fillStyle = "rgba(60,45,40,0.5)"; g.fillRect(wx, wy, cw, cw * 1.3); } // boarded
+          g.fillStyle = color;
         }
       }
     }
     return L;
   }
 
-  function groundLayer() {
-    const top = streetY - H * 0.02;
+  // The street under the dead: cracked asphalt lit from behind by the fires, lane marks, puddles, rubbish.
+  function streetLayer() {
+    const top = streetY;
     const L = layer(W, H - top, res), R = rng(404), g = L.g;
     g.translate(0, -top);
-    const base = H * 0.9;
-    // Rubble along the front: an uneven heap with slabs and rebar sticking out.
-    g.fillStyle = "#060507";
-    g.beginPath();
-    g.moveTo(0, H);
-    for (let x = 0; x <= W + 20; x += 14 + R() * 26) g.lineTo(x, base - R() * H * 0.035 - (Math.sin(x * 0.004) + 1) * H * 0.012);
-    g.lineTo(W, H);
-    g.fill();
-    g.strokeStyle = "#060507";
-    g.lineWidth = 2;
-    for (let i = 0; i < 26; i++) {
-      const x = R() * W, y = base - R() * H * 0.03;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (R() - 0.5) * 30, y - 10 - R() * 26); g.stroke();
+    const gr = g.createLinearGradient(0, streetY, 0, H);
+    gr.addColorStop(0, "#5a4a40"); gr.addColorStop(0.08, "#463a33"); gr.addColorStop(0.4, "#2e2724"); gr.addColorStop(1, "#1a1514");
+    g.fillStyle = gr;
+    g.fillRect(0, streetY, W, H - streetY);
+    // Grain: thousands of flecks, lighter near the camera.
+    for (let i = 0; i < 2600; i++) {
+      const y = streetY + Math.pow(R(), 0.7) * (H - streetY), v = R();
+      g.fillStyle = v < 0.5 ? `rgba(120,100,90,${(0.03 + R() * 0.07).toFixed(3)})` : `rgba(0,0,0,${(0.05 + R() * 0.1).toFixed(3)})`;
+      const sz = 1 + R() * 2 * (y - streetY) / (H - streetY) * 2;
+      g.fillRect(R() * W, y, sz, sz * 0.6);
     }
-    // A wrecked car on its side, left.
-    g.save();
-    g.translate(W * 0.1, base - H * 0.01);
-    g.rotate(-0.12);
-    const cw = H * 0.2, ch = H * 0.06;
-    g.beginPath();
-    g.moveTo(0, 0); g.lineTo(0, -ch * 0.55); g.lineTo(cw * 0.18, -ch * 0.6); g.lineTo(cw * 0.32, -ch); g.lineTo(cw * 0.7, -ch); g.lineTo(cw * 0.84, -ch * 0.6); g.lineTo(cw, -ch * 0.5); g.lineTo(cw, 0); g.closePath();
-    g.fill();
-    g.fillStyle = "rgba(160,90,60,0.07)";
-    g.fillRect(cw * 0.36, -ch * 0.9, cw * 0.14, ch * 0.3);
-    g.fillStyle = "#060507";
-    g.beginPath(); g.arc(cw * 0.2, 0, ch * 0.28, 0, Math.PI * 2); g.arc(cw * 0.8, 0, ch * 0.28, 0, Math.PI * 2); g.fill();
-    g.restore();
-    // A bent street lamp, right (its light is drawn every frame).
+    // The kerb: a pale lip along the far edge, the gutter dark under it.
+    g.fillStyle = "#6a5a4e";
+    g.fillRect(0, streetY, W, Math.max(2, H * 0.004));
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.fillRect(0, streetY + H * 0.004, W, H * 0.006);
+    // The road runs across the screen: a faded dashed centre line and a worn edge line, bent by the camber.
+    const cy = streetY + H * 0.052;
+    g.fillStyle = "rgba(190,160,90,0.14)";
+    for (let x = -H * 0.02 + R() * H * 0.04; x < W; x += H * 0.09) if (R() < 0.8) g.fillRect(x, cy + Math.sin(x * 0.01) * 1.5, H * 0.045, Math.max(2, H * 0.004));
+    g.fillStyle = "rgba(200,190,170,0.08)";
+    for (let x = 0; x < W; x += H * 0.03) if (R() < 0.75) g.fillRect(x, streetY + H * 0.013, H * 0.028, Math.max(1.5, H * 0.0025));
+    // Cracks: dark polylines, a few with grass pushing through.
+    g.lineCap = "round";
+    for (let i = 0; i < 34; i++) {
+      let x = R() * W, y = streetY + H * 0.01 + R() * (H - streetY) * 0.95;
+      const f = (y - streetY) / (H - streetY);
+      g.strokeStyle = `rgba(10,8,8,${(0.35 + f * 0.4).toFixed(2)})`;
+      g.lineWidth = 0.8 + f * 2.2;
+      g.beginPath(); g.moveTo(x, y);
+      for (let j = 0; j < 4 + R() * 5; j++) { x += (R() - 0.5) * H * 0.08 * (0.4 + f); y += (R() - 0.3) * H * 0.02 * (0.4 + f); g.lineTo(x, y); }
+      g.stroke();
+      if (R() < 0.4) { // grass in the crack
+        g.strokeStyle = "rgba(70,75,40,0.7)"; g.lineWidth = 1 + f;
+        for (let b = 0; b < 6; b++) { g.beginPath(); g.moveTo(x + (R() - 0.5) * 8, y); g.lineTo(x + (R() - 0.5) * 16, y - (3 + R() * 6) * (0.5 + f)); g.stroke(); }
+      }
+    }
+    // Puddles and potholes: dark, with the fires' glow mirrored in them.
+    for (let i = 0; i < 9; i++) {
+      const y = streetY + H * 0.02 + R() * (H - streetY) * 0.9, f = (y - streetY) / (H - streetY), x = R() * W;
+      const rx = H * (0.02 + R() * 0.05) * (0.4 + f), ry = rx * (0.18 + f * 0.12);
+      const hole = R() < 0.35;
+      g.fillStyle = hole ? "#120e0d" : "#1b1716";
+      g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+      if (!hole) {
+        const rg = g.createLinearGradient(0, y - ry, 0, y + ry);
+        rg.addColorStop(0, "rgba(190,95,50,0.35)"); rg.addColorStop(0.5, "rgba(120,60,40,0.1)"); rg.addColorStop(1, "rgba(60,40,40,0.05)");
+        g.fillStyle = rg;
+        g.beginPath(); g.ellipse(x, y, rx * 0.92, ry * 0.85, 0, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // Rubbish: bricks, paper, bottles, a tyre, a suitcase, bones.
+    for (let i = 0; i < 70; i++) {
+      const y = streetY + H * 0.012 + R() * (H - streetY) * 0.9, f = (y - streetY) / (H - streetY), x = R() * W, k = R(), sc = (0.4 + f) * H * 0.0034;
+      g.save(); g.translate(x, y); g.rotate((R() - 0.5) * 0.8);
+      if (k < 0.3) { g.fillStyle = "#3b2a24"; g.fillRect(-sc * 1.6, -sc * 0.7, sc * 3.2, sc * 1.4); g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(-sc * 1.6, sc * 0.3, sc * 3.2, sc * 0.5); }
+      else if (k < 0.6) { g.fillStyle = `rgba(150,140,120,${(0.25 + R() * 0.3).toFixed(2)})`; g.beginPath(); g.moveTo(-sc * 2, 0); g.lineTo(sc * 1.5, -sc * 1.2); g.lineTo(sc * 2.2, sc * 0.5); g.lineTo(-sc * 0.8, sc * 1.1); g.closePath(); g.fill(); }
+      else if (k < 0.78) { g.fillStyle = "#1e1a18"; g.fillRect(-sc * 2, -sc * 0.5, sc * 4, sc); g.fillStyle = "rgba(255,170,110,0.18)"; g.fillRect(sc * 0.5, -sc * 0.5, sc, sc * 0.3); }
+      else if (k < 0.88) { g.strokeStyle = "#141010"; g.lineWidth = sc * 1.2; g.beginPath(); g.ellipse(0, 0, sc * 3, sc * 1.2, 0, 0, Math.PI * 2); g.stroke(); }
+      else { g.fillStyle = "#2a1f1b"; g.fillRect(-sc * 3, -sc * 2, sc * 6, sc * 4); g.fillStyle = "rgba(0,0,0,0.4)"; g.fillRect(-sc * 3, -sc * 2, sc * 6, sc * 0.6); }
+      g.restore();
+    }
+    // Dark stains along the far edge, where the fires' light cannot reach the ground under the walls.
+    const sh = g.createLinearGradient(0, streetY, 0, streetY + H * 0.05);
+    sh.addColorStop(0, "rgba(0,0,0,0.45)"); sh.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = sh;
+    g.fillRect(0, streetY, W, H * 0.05);
+    return L;
+  }
+
+  // Things standing on the kerb behind the dead: power poles and their sagging wires, the street lamp, the
+  // quarantine fence, a bus shelter.
+  function propsLayer() {
+    const L = layer(W, H, res), R = rng(77), g = L.g;
+    const base = streetY + H * 0.008;
+    g.lineCap = "round";
+    // Poles with wires between them, one wire down.
+    const poles = [];
+    for (let x = W * 0.05 + R() * W * 0.1; x < W; x += W * (0.2 + R() * 0.12)) poles.push(x);
+    g.strokeStyle = "#0a0808";
+    for (const x of poles) {
+      g.lineWidth = Math.max(3, H * 0.007);
+      g.beginPath(); g.moveTo(x, base); g.lineTo(x + (R() - 0.5) * 6, base - H * 0.34); g.stroke();
+      g.lineWidth = Math.max(2, H * 0.004);
+      g.beginPath(); g.moveTo(x - H * 0.03, base - H * 0.31); g.lineTo(x + H * 0.03, base - H * 0.31); g.stroke();
+      g.beginPath(); g.moveTo(x - H * 0.022, base - H * 0.33); g.lineTo(x + H * 0.022, base - H * 0.33); g.stroke();
+    }
+    g.lineWidth = 1.1;
+    g.strokeStyle = "rgba(8,6,6,0.85)";
+    for (let i = 0; i + 1 < poles.length; i++) for (const dy of [0.31, 0.33]) {
+      const x0 = poles[i], x1 = poles[i + 1], y0 = base - H * dy;
+      if (R() < 0.18) { // a wire down, hanging to the road
+        g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(x0 + (x1 - x0) * 0.3, y0 + H * 0.2, x0 + (x1 - x0) * 0.35, base + H * 0.02); g.stroke();
+        continue;
+      }
+      g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2, y0 + H * 0.035, x1, y0); g.stroke();
+    }
+    // The street lamp, bent over the road; its head is where the light comes from (drawn every frame).
     const lx = W * 0.8;
-    g.lineWidth = Math.max(3, H * 0.006);
-    g.beginPath(); g.moveTo(lx, base); g.lineTo(lx + 4, base - H * 0.3); g.quadraticCurveTo(lx + 8, base - H * 0.36, lx + H * 0.06, base - H * 0.345); g.stroke();
-    g.fillRect(lx + H * 0.05, base - H * 0.352, H * 0.03, H * 0.012);
-    // A chain-link fence with a warning sign, sagging between its posts.
-    const f0 = W * 0.52, f1 = W * 0.7, fy = base - H * 0.005, fh = H * 0.11;
+    lampX = lx + H * 0.062; lampY = base - H * 0.33;
+    g.strokeStyle = "#0a0808";
+    g.lineWidth = Math.max(3.5, H * 0.007);
+    g.beginPath(); g.moveTo(lx, base); g.lineTo(lx + 3, base - H * 0.28); g.quadraticCurveTo(lx + 7, base - H * 0.345, lampX, lampY + H * 0.006); g.stroke();
+    g.fillStyle = "#0a0808";
+    g.fillRect(lampX - H * 0.016, lampY - H * 0.006, H * 0.032, H * 0.012);
+    // A bus shelter, its glass gone.
+    const bx = W * 0.3, bw = H * 0.16, bh = H * 0.09;
+    g.lineWidth = Math.max(2, H * 0.004);
+    for (const px of [bx, bx + bw * 0.5, bx + bw]) { g.beginPath(); g.moveTo(px, base); g.lineTo(px, base - bh); g.stroke(); }
+    g.fillRect(bx - 4, base - bh - H * 0.012, bw + 8, H * 0.012);
+    g.fillStyle = "rgba(40,30,30,0.5)";
+    g.fillRect(bx + bw * 0.5 + 2, base - bh * 0.9, bw * 0.5 - 4, bh * 0.75);
+    // Chain-link fence with the warning sign, sagging between its posts.
+    const f0 = W * 0.52, f1 = W * 0.7, fy = base, fh = H * 0.11;
+    g.strokeStyle = "#0a0808";
     g.lineWidth = 3;
     for (let x = f0; x <= f1; x += (f1 - f0) / 4) { g.beginPath(); g.moveTo(x, fy); g.lineTo(x + (R() - 0.5) * 6, fy - fh); g.stroke(); }
-    g.strokeStyle = "rgba(6,5,7,0.55)";
+    g.strokeStyle = "rgba(10,8,8,0.55)";
     g.lineWidth = 1;
     for (let x = f0; x < f1; x += 7) {
       const sag = Math.sin(((x - f0) / ((f1 - f0) / 4)) * Math.PI) * 6;
       g.beginPath(); g.moveTo(x, fy); g.lineTo(x + 12, fy - fh + sag); g.moveTo(x + 12, fy); g.lineTo(x, fy - fh + sag); g.stroke();
     }
-    g.fillStyle = "#4a3f1c";
-    const sx = f0 + (f1 - f0) * 0.3, sy = fy - fh * 0.75, sw = (f1 - f0) * 0.22;
+    g.fillStyle = "#5a4c20";
+    const sx = f0 + (f1 - f0) * 0.3, sy = fy - fh * 0.78, sw = (f1 - f0) * 0.24;
     g.save(); g.translate(sx, sy); g.rotate(0.06);
     g.fillRect(0, 0, sw, sw * 0.42);
     g.fillStyle = "#17130a";
@@ -531,11 +686,54 @@ function skylineScene() {
     return L;
   }
 
+  // In front of the dead: a car on its side at the left, a heap of rubble and a shopping trolley at the right.
+  function foreLayer() {
+    const top = streetY + H * 0.05;
+    const L = layer(W, H - top, res), R = rng(909), g = L.g;
+    g.translate(0, -top);
+    // The car, hatchback, on its side, cropped by the screen's edge.
+    g.save();
+    g.translate(W * 0.02, H * 0.985);
+    g.rotate(-0.06);
+    const cw = H * 0.34, ch = H * 0.1;
+    g.fillStyle = "#07060a";
+    g.beginPath();
+    g.moveTo(-cw * 0.2, 0); g.lineTo(-cw * 0.2, -ch * 0.5); g.lineTo(cw * 0.1, -ch * 0.58); g.lineTo(cw * 0.28, -ch); g.lineTo(cw * 0.68, -ch); g.lineTo(cw * 0.84, -ch * 0.62); g.lineTo(cw, -ch * 0.48); g.lineTo(cw, 0); g.closePath();
+    g.fill();
+    g.fillStyle = "rgba(150,110,80,0.09)";
+    g.beginPath(); g.moveTo(cw * 0.32, -ch * 0.92); g.lineTo(cw * 0.48, -ch * 0.92); g.lineTo(cw * 0.46, -ch * 0.62); g.lineTo(cw * 0.26, -ch * 0.62); g.fill();
+    g.beginPath(); g.moveTo(cw * 0.52, -ch * 0.92); g.lineTo(cw * 0.66, -ch * 0.92); g.lineTo(cw * 0.76, -ch * 0.62); g.lineTo(cw * 0.5, -ch * 0.62); g.fill();
+    g.fillStyle = "#07060a";
+    g.beginPath(); g.arc(cw * 0.1, 0, ch * 0.3, 0, Math.PI * 2); g.arc(cw * 0.78, 0, ch * 0.3, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#1a1715";
+    g.beginPath(); g.arc(cw * 0.1, 0, ch * 0.13, 0, Math.PI * 2); g.arc(cw * 0.78, 0, ch * 0.13, 0, Math.PI * 2); g.fill();
+    g.restore();
+    // Rubble: a dark heap with slabs, rebar and a trolley on its side.
+    g.fillStyle = "#070608";
+    g.beginPath();
+    g.moveTo(W * 0.58, H);
+    for (let x = W * 0.58; x <= W + 20; x += 14 + R() * 26) g.lineTo(x, H - R() * H * 0.04 - Math.sin((x - W * 0.58) / (W * 0.42) * Math.PI) * H * 0.07);
+    g.lineTo(W, H);
+    g.fill();
+    g.strokeStyle = "#070608";
+    for (let i = 0; i < 22; i++) {
+      const x = W * 0.6 + R() * W * 0.4, y = H - R() * H * 0.05 - H * 0.03;
+      g.lineWidth = 1.5 + R() * 2;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (R() - 0.5) * 40, y - 12 - R() * 34); g.stroke();
+    }
+    g.lineWidth = 2.5;
+    g.save(); g.translate(W * 0.9, H * 0.96); g.rotate(0.9);
+    g.strokeRect(-H * 0.03, -H * 0.045, H * 0.06, H * 0.045);
+    for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(-H * 0.03 + (H * 0.06 * i) / 4, -H * 0.045); g.lineTo(-H * 0.03 + (H * 0.06 * i) / 4, 0); g.stroke(); }
+    g.restore();
+    return L;
+  }
+
   function resize(w, h, r) {
     W = w; H = h; res = r;
-    horizon = H * 0.64; streetY = H * 0.84;
+    horizon = H * 0.64; streetY = H * 0.8;
     P = Math.ceil(W * 1.3);
-    lights.length = 0;
+    lights.length = 0; fires.length = 0; sources = [];
     // Sky: bruised dark above, the burning city's glow at the horizon.
     sky = layer(W, H, res);
     const gr = sky.g.createLinearGradient(0, 0, 0, H);
@@ -544,30 +742,44 @@ function skylineScene() {
     sky.g.fillRect(0, 0, W, H);
     far = buildingLayer(11, H * 0.3, horizon + H * 0.04, H * 0.06, H * 0.2, W * 0.025, W * 0.06, "#3b2427", 0, 0);
     mid = buildingLayer(23, H * 0.22, horizon + H * 0.1, H * 0.1, H * 0.32, W * 0.035, W * 0.08, "#1e1417", Math.max(2, H * 0.004), 1);
-    near = buildingLayer(37, H * 0.25, streetY - H * 0.005, H * 0.12, H * 0.42, W * 0.05, W * 0.11, "#0d0a0c", Math.max(2.5, H * 0.005), 2);
-    ground = groundLayer();
+    near = buildingLayer(37, H * 0.25, streetY - H * 0.003, H * 0.12, H * 0.42, W * 0.05, W * 0.11, "#0d0a0c", Math.max(2.5, H * 0.005), 2);
+    if (sources.length < 2) sources.push(P * 0.22, P * 0.81);
+    sources = sources.map((x) => x / P);
+    street = streetLayer();
+    props = propsLayer();
+    fore = foreLayer();
     fogBack = fogStrip(W, H * 0.3, "150,82,58", 5, res, 1.2);
     fogFront = fogStrip(W, H * 0.22, "70,48,46", 8, res, 0.9);
     haze = fogStrip(W, H * 0.25, "120,58,40", 13, res, 0.8);
-    crowd = walkers(9, 77, {});
+    crowd = walkers(15, 77, {});
     crows = walkers(4, 99, {}).map((c) => ({ ...c, y: 0.1 + c.depth * 0.25 }));
-    smoke.length = 0;
-    embers.length = 0;
+    heli = { x: -W * 0.3, y: H * 0.1, v: 22 + Math.random() * 10 };
+    smoke.length = 0; embers.length = 0; ash.length = 0;
+    const R = rng(5);
+    for (let i = 0; i < 60; i++) ash.push({ x: R() * W, y: R() * H, vy: 6 + R() * 14, k: R() * 9, s: 1 + R() * 1.5 });
+    flare = null;
     // Start with the plumes already up, not growing from nothing.
     for (let i = 0; i < 400; i++) step(1 / 20, i / 20, true);
   }
 
-  // The particles: smoke from the fires (behind the near buildings) and embers in the air.
+  // The particles: smoke from the fires (behind the near buildings), embers and ash in the air, now and then a
+  // blast somewhere in the city.
   function step(dt, t, warm) {
     const off = t * 3; // the mid layer's drift
     for (const f of sources) {
       if (Math.random() < dt * 7) {
-        const sx = (((f * P - off * 0.6) % P) + P) % P - (P - W) / 2;
+        const sx = (((f * P - off) % P) + P) % P - (P - W) / 2;
         smoke.push({ x: sx + (Math.random() - 0.5) * 30, y: horizon + H * 0.02, vx: 4 + Math.random() * 6, vy: -(14 + Math.random() * 10), r: H * 0.03, life: 14 + Math.random() * 8, age: 0 });
-        if (!warm && Math.random() < 0.6) embers.push({ x: sx, y: horizon + H * 0.03, vx: (Math.random() - 0.3) * 16, vy: -(20 + Math.random() * 30), life: 3 + Math.random() * 4, age: 0, k: Math.random() * 9 });
+        if (!warm && Math.random() < 0.7) embers.push({ x: sx, y: horizon + H * 0.03, vx: (Math.random() - 0.3) * 16, vy: -(20 + Math.random() * 30), life: 3 + Math.random() * 4, age: 0, k: Math.random() * 9 });
       }
     }
     if (!warm && Math.random() < dt * 5) embers.push({ x: Math.random() * W, y: H * (0.85 + Math.random() * 0.1), vx: 6 + Math.random() * 10, vy: -(12 + Math.random() * 22), life: 4 + Math.random() * 5, age: 0, k: Math.random() * 9 });
+    if (!warm && !flare && Math.random() < dt / 28) {
+      flare = { x: W * (0.1 + Math.random() * 0.8), age: 0 };
+      for (let i = 0; i < 40; i++) embers.push({ x: flare.x + (Math.random() - 0.5) * 40, y: horizon + H * 0.02, vx: (Math.random() - 0.5) * 90, vy: -(40 + Math.random() * 90), life: 2 + Math.random() * 3, age: 0, k: Math.random() * 9 });
+      for (let i = 0; i < 6; i++) smoke.push({ x: flare.x + (Math.random() - 0.5) * 40, y: horizon + H * 0.02, vx: 4 + Math.random() * 6, vy: -(30 + Math.random() * 20), r: H * 0.04, life: 16, age: 0 });
+    }
+    if (flare) { flare.age += dt; if (flare.age > 3.5) flare = null; }
     for (let i = smoke.length - 1; i >= 0; i--) {
       const p = smoke[i];
       p.age += dt;
@@ -583,25 +795,56 @@ function skylineScene() {
       if (p.age > p.life) { embers.splice(i, 1); continue; }
       p.x += (p.vx + Math.sin(p.age * 3 + p.k) * 14) * dt;
       p.y += p.vy * dt;
+      p.vy += 12 * dt; // slowing as they rise, then drifting down
     }
+    for (const a of ash) {
+      a.y += a.vy * dt;
+      a.x += (6 + Math.sin(t * 0.7 + a.k) * 10) * dt;
+      if (a.y > H) { a.y = -4; a.x = Math.random() * W; }
+      if (a.x > W + 4) a.x = -4;
+    }
+    if (heli) { heli.x += heli.v * dt; if (heli.x > W + W * 0.3) { heli.x = -W * 0.3; heli.y = H * (0.06 + Math.random() * 0.1); } }
   }
 
   function frame(g, t, dt) {
     step(dt, t, false);
     g.drawImage(sky.c, 0, 0, W, H);
-    // The fires' glow on the clouds and the haze, flickering.
+    // The fires' glow on the clouds and the haze, flickering; the flash of a blast.
     g.globalCompositeOperation = "lighter";
     for (let i = 0; i < sources.length; i++) {
-      const sx = (((sources[i] * P - t * 1.8) % P) + P) % P - (P - W) / 2;
+      const sx = (((sources[i] * P - t * 3) % P) + P) % P - (P - W) / 2;
       const r = H * (0.42 + 0.04 * wob(t * 0.8, i * 3));
       g.globalAlpha = 0.16 + 0.05 * wob(t * 1.3, i);
       g.drawImage(glowP, sx - r, horizon - r * 0.7, r * 2, r * 1.4);
+    }
+    if (flare) {
+      const a = flare.age < 0.2 ? flare.age / 0.2 : Math.max(0, 1 - (flare.age - 0.2) / 3), r = H * (0.2 + flare.age * 0.08);
+      g.globalAlpha = a * 0.9;
+      g.drawImage(flash, flare.x - r, horizon - r * 0.8, r * 2, r * 1.5);
+      g.globalAlpha = Math.max(0, 1 - flare.age / 0.35) * 0.18;
+      g.fillStyle = "rgb(255,200,140)";
+      g.fillRect(0, 0, W, H);
     }
     g.globalAlpha = 1;
     g.globalCompositeOperation = "source-over";
     // High smoke drifting across the sky.
     drawStrip(g, haze, -t * 6, H * 0.06, W, H * 0.25);
     drawStrip(g, haze, -t * 11 + W * 0.4, H * 0.24, W, H * 0.22);
+    // A helicopter far off, its lights blinking, a searchlight sweeping the ground below it.
+    if (heli) {
+      const hx = heli.x, hy = heli.y + Math.sin(t * 0.5) * 4;
+      const sw = Math.sin(t * 0.35) * H * 0.08;
+      const cone = g.createLinearGradient(0, hy, 0, horizon + H * 0.05);
+      cone.addColorStop(0, "rgba(255,240,210,0.07)"); cone.addColorStop(1, "rgba(255,240,210,0)");
+      g.fillStyle = cone;
+      g.beginPath(); g.moveTo(hx - 2, hy); g.lineTo(hx + 2, hy); g.lineTo(hx + sw + H * 0.06, horizon + H * 0.05); g.lineTo(hx + sw - H * 0.06, horizon + H * 0.05); g.fill();
+      g.fillStyle = "#0b0a0e";
+      g.fillRect(hx - 7, hy - 2, 14, 4);
+      g.fillRect(hx + 6, hy - 1, 9, 2);
+      g.fillRect(hx - 9, hy - 3.5, 18, 1);
+      if (t % 1 < 0.12) { g.fillStyle = "#ff3030"; g.fillRect(hx - 1, hy + 2, 2, 2); }
+      if (t % 1.6 < 0.06) { g.fillStyle = "#fff"; g.fillRect(hx + 13, hy - 1, 2, 2); }
+    }
     // Crows, far off.
     g.strokeStyle = "#120c0e";
     g.lineWidth = 1.6;
@@ -623,12 +866,29 @@ function skylineScene() {
     }
     g.globalAlpha = 1;
     layerAt(mid, H * 0.22, 3);
+    // The burning floors: flames licking out of the windows, a glow on the wall around them.
+    const midOff = (((-t * 3) % P) + P) % P - (P - W) / 2;
+    g.globalCompositeOperation = "lighter";
+    for (const [x, y, w, h, ph] of fires) {
+      let sx = x + midOff;
+      if (sx > W + 10) sx -= P;
+      if (sx < -10 - w) continue;
+      const f = 0.6 + 0.4 * wob(t * 6, ph);
+      g.globalAlpha = 0.35 * f;
+      g.drawImage(glowP, sx - w * 2, y - h * 2, w * 5, h * 4.5);
+      g.globalAlpha = 0.9 * f;
+      g.fillStyle = `rgb(255,${120 + ((ph * 7) % 60) | 0},30)`;
+      g.fillRect(sx, y, w, h);
+      g.globalAlpha = 0.55 * f;
+      g.drawImage(flameP, sx - w * 0.4 + Math.sin(t * 9 + ph) * 1.5, y - h * (0.9 + 0.5 * f), w * 1.8, h * 1.6);
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
     drawStrip(g, fogBack, -t * 7 + W * 0.3, horizon - H * 0.02, W, H * 0.3);
     layerAt(near, H * 0.25, 5);
     // Lit windows: a few, flickering like candles and failing bulbs.
     for (const [li, x, y, w, h, ph] of lights) {
-      const speed = [1.8, 3, 5][li], top = [H * 0.3, H * 0.22, H * 0.25][li];
-      const off = (((-t * speed) % P) + P) % P - (P - W) / 2;
+      const speed = [1.8, 3, 5][li], off = (((-t * speed) % P) + P) % P - (P - W) / 2;
       let sx = x + off;
       if (sx > W + 10) sx -= P;
       if (sx < -10 - w) continue;
@@ -637,40 +897,52 @@ function skylineScene() {
       g.fillStyle = `rgba(255,${150 + (ph % 50) | 0},70,${(0.35 + f * 0.45) * (li === 0 ? 0.5 : 1)})`;
       g.fillRect(sx, y, w, h);
     }
-    // The street: fog lit from behind, so the dead walking it stand out against it.
-    const sg = g.createLinearGradient(0, streetY - H * 0.12, 0, streetY + H * 0.06);
-    sg.addColorStop(0, "rgba(120,62,44,0)"); sg.addColorStop(0.65, "rgba(120,62,44,0.55)"); sg.addColorStop(1, "rgba(70,40,34,0.3)");
+    // Fog lit from behind along the far side of the street, so the dead stand out against it.
+    const sg = g.createLinearGradient(0, streetY - H * 0.14, 0, streetY + H * 0.01);
+    sg.addColorStop(0, "rgba(120,62,44,0)"); sg.addColorStop(0.75, "rgba(130,66,46,0.5)"); sg.addColorStop(1, "rgba(130,66,46,0.55)");
     g.fillStyle = sg;
-    g.fillRect(0, streetY - H * 0.12, W, H * 0.18);
-    drawStrip(g, fogBack, t * 9, streetY - H * 0.2, W, H * 0.3);
-    // The street lamp: on, off, buzzing back.
+    g.fillRect(0, streetY - H * 0.14, W, H * 0.15);
+    drawStrip(g, fogBack, t * 9, streetY - H * 0.24, W, H * 0.3);
+    g.drawImage(props.c, 0, 0, W, H);
+    g.drawImage(street.c, 0, streetY, W, street.h);
+    // The street lamp: on, off, buzzing back; a pool of light on the road under it.
     const lampOn = wob(t * 2.3, 4) > -0.55 && (t % 7.3) > 0.25;
     if (lampOn) {
-      const lx = W * 0.8 + H * 0.065, ly = H * 0.9 - H * 0.34;
-      const cone = g.createLinearGradient(0, ly, 0, H * 0.92);
-      cone.addColorStop(0, "rgba(255,214,150,0.32)"); cone.addColorStop(1, "rgba(255,214,150,0)");
+      const poolY = streetY + H * 0.055;
+      const cone = g.createLinearGradient(0, lampY, 0, poolY + H * 0.05);
+      cone.addColorStop(0, "rgba(255,214,150,0.3)"); cone.addColorStop(1, "rgba(255,214,150,0)");
       g.fillStyle = cone;
-      g.beginPath(); g.moveTo(lx - 6, ly); g.lineTo(lx + 6, ly); g.lineTo(lx + H * 0.14, H * 0.92); g.lineTo(lx - H * 0.14, H * 0.92); g.fill();
+      g.beginPath(); g.moveTo(lampX - 6, lampY); g.lineTo(lampX + 6, lampY); g.lineTo(lampX + H * 0.15, poolY + H * 0.05); g.lineTo(lampX - H * 0.15, poolY + H * 0.05); g.fill();
+      const pool = g.createRadialGradient(lampX, poolY, 0, lampX, poolY, H * 0.16);
+      pool.addColorStop(0, "rgba(255,214,150,0.28)"); pool.addColorStop(1, "rgba(255,214,150,0)");
+      g.fillStyle = pool;
+      g.save(); g.translate(lampX, poolY); g.scale(1, 0.32); g.beginPath(); g.arc(0, 0, H * 0.16, 0, Math.PI * 2); g.fill(); g.restore();
       g.globalCompositeOperation = "lighter";
       g.globalAlpha = 0.5;
-      g.drawImage(glowP, lx - 18, ly - 10, 36, 24);
+      g.drawImage(glowP, lampX - 18, lampY - 10, 36, 24);
       g.globalAlpha = 1;
       g.globalCompositeOperation = "source-over";
     }
-    // The dead, shambling along the street, the far ones smaller and greyer.
+    // The dead on the street, the far ones smaller and greyer, each with its shadow and a thin rim of firelight;
+    // those under the lamp are lit by it. Mist drifts over the road between the far and the near ones.
     const sorted = crowd.slice().sort((a, b) => a.depth - b.depth);
+    let mist = false;
     for (const z of sorted) {
-      const s = H * (0.075 + z.depth * 0.06), span = W + s * 2;
-      const pace = z.speed * (0.6 + 0.4 * Math.max(0, Math.sin(t * 0.9 + z.ph))) * s * 0.18;
-      z.pos = (z.pos ?? z.x * span) + pace * dt * z.dir;
+      if (!mist && z.depth > 0.5) { drawStrip(g, fogFront, -t * 10 + W * 0.2, streetY - H * 0.02, W, H * 0.12); mist = true; }
+      const s = H * (0.085 + z.depth * 0.1), span = W + s * 2;
+      const gait = z.k.crawl ? 0.25 : z.k.idle ? 0 : z.speed * (0.6 + 0.4 * Math.max(0, Math.sin(t * 0.9 + z.ph))) * (z.k.lurch && Math.sin(t * 1.7 + z.ph) > 0.6 ? 2.2 : 1);
+      z.pos = (z.pos ?? z.x * span) + gait * s * 0.18 * dt * z.dir;
       const x = ((z.pos % span) + span) % span - s;
-      const y = streetY + H * 0.005 + z.depth * H * 0.045;
-      const shade = Math.round(28 - z.depth * 22);
-      shambler(g, x, y, s, t * 2.2 * z.speed + z.ph, z.dir, z.k, `rgb(${shade},${shade - 6},${shade - 4})`);
+      const y = streetY + H * 0.015 + z.depth * H * 0.14;
+      const litBy = lampOn ? Math.max(0, 1 - Math.abs(x - lampX) / (H * 0.14)) * (0.5 + z.depth * 0.5) : 0;
+      const shade = Math.round(30 - z.depth * 22 + litBy * 70);
+      g.fillStyle = `rgba(0,0,0,${(0.35 + z.depth * 0.25).toFixed(2)})`;
+      g.beginPath(); g.ellipse(x, y + 1, s * (z.k.crawl ? 0.3 : 0.2), s * 0.03, 0, 0, Math.PI * 2); g.fill();
+      shambler(g, x, y, s, t * 2.2 * z.speed + z.ph, z.dir, z.k, `rgb(${shade},${Math.round(shade * 0.82)},${Math.round(shade * 0.72)})`, `rgba(${150 + litBy * 80},${80 + litBy * 90},${50 + litBy * 60},${(0.42 - z.depth * 0.15 + litBy * 0.3).toFixed(2)})`);
     }
-    g.drawImage(ground.c, 0, streetY - H * 0.02, W, ground.h);
-    drawStrip(g, fogFront, -t * 12, H * 0.8, W, H * 0.22);
-    // Embers.
+    g.drawImage(fore.c, 0, streetY + H * 0.05, W, fore.h);
+    drawStrip(g, fogFront, -t * 12, H * 0.82, W, H * 0.22);
+    // Embers and ash.
     g.globalCompositeOperation = "lighter";
     for (const p of embers) {
       const a = Math.min(1, p.age * 2) * (1 - p.age / p.life) * (0.6 + 0.4 * Math.sin(p.age * 20 + p.k));
@@ -679,6 +951,8 @@ function skylineScene() {
     }
     g.globalAlpha = 1;
     g.globalCompositeOperation = "source-over";
+    g.fillStyle = "rgba(150,140,135,0.35)";
+    for (const a of ash) g.fillRect(a.x, a.y, a.s, a.s);
   }
   return { resize, frame };
 }
