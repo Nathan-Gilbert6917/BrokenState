@@ -12,6 +12,7 @@ import {
 import { rec, daysWith } from "../sim/relations.js";
 import { diaryEntries } from "../sim/diary.js";
 import { openDiary } from "./diary.js";
+import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -40,6 +41,7 @@ export function openLedger(ui, tab = null) {
   if (tab) p.tab = tab;
   ui.diary = null;
   ui.roster = null;
+  ui.codex = null; // ui/codex.js
   ui.ledger = true;
 }
 
@@ -54,12 +56,14 @@ export const LEDGER_ACTIONS = {
 
 // E opens and closes the Ledger (from the map, the game-over screen, the diary or the roster). J and R from the
 // Ledger close it and let alerts.js open the diary or the roster. True when the key was used.
+// The keys come from the key table (ui/keymap.js win.ledger; Menu → Controls rebinds them); C from the Ledger opens the codex.
 export function ledgerKey(state, ui, e, modal) {
-  if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || !ui.started || state.combat) return false;
-  if (modal === "ledger" && (e.code === "KeyJ" || e.code === "KeyR")) { ui.ledger = null; return false; }
-  if (e.code !== "KeyE") return false;
+  if (!ui.started || state.combat) return false;
+  const k = keyAction(e, "map");
+  if (modal === "ledger" && ["win.diary", "win.roster", "win.codex"].includes(k)) { ui.ledger = null; return false; }
+  if (k !== "win.ledger") return false;
   if (modal === "ledger") { ui.ledger = null; return true; }
-  if (modal && !["diary", "roster", "over"].includes(modal)) return false;
+  if (modal && !["diary", "roster", "codex", "over"].includes(modal)) return false;
   openLedger(ui);
   return true;
 }

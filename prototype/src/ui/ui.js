@@ -74,6 +74,8 @@ import { whyModal, cardWhy } from "./causes.js"; // "Why?": the chain of causes 
 import { familyChip, familyBlock, childrenPeople } from "./family.js"; // children and families (sim/family.js)
 import { diaryModal } from "./diary.js";
 import { rosterModal } from "./roster.js";
+import { codexModal, codexButton } from "./codex.js"; // the Codex window (C) and its top-bar button
+import { keyLabel } from "./keymap.js"; // a key as it is bound now (Menu → Controls)
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { claimText, wellText, CLAIM, WELL_SHORE, WELL_YIELD } from "../sim/claims.js"; // land claims and wells (the tile panel, the help)
@@ -142,9 +144,11 @@ export function topbarParts(state, ui) {
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
-      <button data-action="ld-open"${tip("Ledger: production and use of every resource, stock, people, mood and Heat day by day, per base; and the run summary (E)")}>📈 Ledger</button>
-      <button data-action="dy-open"${tip("Diary: the whole run day by day, with filters and search (J)")}>📖 Diary</button>
-      <button data-action="ro-toggle"${tip("Roster: everyone in one table, sortable, with roles you can change for many at once (R)")}>👥 Roster</button>
+      <button data-action="ld-open"${tip(`Ledger: production and use of every resource, stock, people, mood and Heat day by day, per base; and the run summary (${keyLabel("win.ledger")})`)}>📈 Ledger</button>
+      <button data-action="dy-open"${tip(`Diary: the whole run day by day, with filters and search (${keyLabel("win.diary")})`)}>📖 Diary</button>
+      <button data-action="ro-toggle"${tip(`Roster: everyone in one table, sortable, with roles you can change for many at once (${keyLabel("win.roster")})`)}>👥 Roster</button>
+      ${codexButton(state)}
+      <button data-action="pal-open"${tip(`Search: people, bases, teams, groups, places, buildings, the menu and help (${keyLabel("win.palette")})`)}>🔍 Search</button>
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
@@ -590,6 +594,7 @@ function pickModal(state, ui) {
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
   if (ui.roster) return ["roster", () => rosterModal(state, ui)]; // ui/roster.js (the survivor and base screens open over it)
   if (ui.diary) return ["diary", () => diaryModal(state, ui)];    // ui/diary.js
+  if (ui.codex) return ["codex", () => codexModal(state, ui)];    // ui/codex.js
   if (ui.ledger) return ["ledger", () => ledgerModal(state, ui)]; // ui/ledger.js
   return null;
 }

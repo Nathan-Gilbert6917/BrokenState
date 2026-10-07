@@ -31,6 +31,7 @@ import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, ba
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
+import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -486,78 +487,76 @@ export function retreatConfirmHtml(b, plan) {
     <button data-action="cb-retreat" data-v="cancel" data-tip="Close this and keep fighting. (Esc)">Keep fighting</button></div></div>`;
 }
 
-// The view's keys: PageUp / PageDown change the floor in a building with storeys; , and . turn the view, + and −
-// zoom, V centers on the selected unit, B shows or hides the roofs, W A S D or the arrow keys pan (held).
-const PAN_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
-const WASD = { KeyW: "ArrowUp", KeyA: "ArrowLeft", KeyS: "ArrowDown", KeyD: "ArrowRight" };
-function viewKey(state, b, e) {
-  if (e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.code === "PageUp" || e.code === "PageDown") {
+// The view's keys (by the key table, ui/keymap.js "battle"; these are the defaults): PageUp / PageDown change the
+// floor in a building with storeys; , and . turn the view, + and − zoom, V centers on the selected unit, B shows or
+// hides the roofs, W A S D or the arrow keys pan (held: iso.keys holds the direction, ui/isoview.js).
+const PAN_DIR = { "bview.panUp": "ArrowUp", "bview.panDown": "ArrowDown", "bview.panLeft": "ArrowLeft", "bview.panRight": "ArrowRight" };
+function viewKey(state, b, e, k) {
+  if (k === "bview.floorUp" || k === "bview.floorDown") {
     if (!floorsOf(b)) return false;
-    if (!setViewFloor(b, floorNo(b) + (e.code === "PageUp" ? 1 : -1))) cui.msg = e.code === "PageUp" ? "This is the top floor." : "This is the ground floor.";
+    const up = k === "bview.floorUp";
+    if (!setViewFloor(b, floorNo(b) + (up ? 1 : -1))) cui.msg = up ? "This is the top floor." : "This is the ground floor.";
     return true;
   }
   if (!isIso()) return false;
-  if (PAN_KEYS.has(e.code)) { iso.keys.add(e.code); return true; }
-  if (WASD[e.code] && !e.shiftKey) { iso.keys.add(WASD[e.code]); return true; }
-  if (e.code === "Comma" || e.code === "Period") { isoRotate(b, e.code === "Period" ? 1 : -1); return true; }
-  if (e.code === "Equal" || e.code === "NumpadAdd") { isoZoom(b, 1); return true; }
-  if (e.code === "Minus" || e.code === "NumpadSubtract") { isoZoom(b, -1); return true; }
-  if (e.code === "KeyB" && !e.shiftKey) { setRoofs(!iso.roofs); return true; }
-  if (e.code === "KeyV" && !e.shiftKey) { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
+  if (PAN_DIR[k]) { iso.keys.add(PAN_DIR[k]); return true; }
+  if (k === "bview.rotLeft" || k === "bview.rotRight") { isoRotate(b, k === "bview.rotRight" ? 1 : -1); return true; }
+  if (k === "bview.zoomIn" || k === "bview.zoomOut") { isoZoom(b, k === "bview.zoomIn" ? 1 : -1); return true; }
+  if (k === "bview.roofs") { setRoofs(!iso.roofs); return true; }
+  if (k === "bview.center") { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
   return false;
 }
+// A pan key let go: whatever modifiers are down now, the direction it held stops.
 export function combatKeyUp(state, e) {
-  if (PAN_KEYS.has(e.code)) iso.keys.delete(e.code);
-  if (WASD[e.code]) iso.keys.delete(WASD[e.code]);
+  for (const id of actionsOfCode(e.code, "battle")) if (PAN_DIR[id]) iso.keys.delete(PAN_DIR[id]);
 }
 
 export function combatKey(state, e) {
   const b = state.combat;
   if (!b) return false;
   sync(b);
-  if (viewKey(state, b, e)) return true;
+  const k = keyAction(e, "battle"); // ui/keymap.js
+  if (viewKey(state, b, e, k)) return true;
+  const confirm = k === "battle.confirm", space = k === "battle.endTurn";
   if (b.over) {
-    if (e.code === "Enter" || e.code === "Space") { closeCombat(state); return true; }
+    if (confirm || space) { closeCombat(state); return true; }
     return false;
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
-    if (b.drill) { if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space"; }
-    if (e.code === "Enter" || e.code === "NumpadEnter") { act(state, { type: "start" }); return true; }
-    if (e.code === "Space") { cui.msg = "Place your defenders, then press Enter or Start the fight."; return true; }
+    if (b.drill) { if (confirm || space) cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return confirm || space; } // a base drill (no fight to start)
+    if (confirm) { act(state, { type: "start" }); return true; }
+    if (space) { cui.msg = `Place your defenders, then press ${keyLabel("battle.confirm", 1) || "Enter"} or Start the fight.`; return true; }
   }
   const team = players(b).filter((u) => alive(u)); // on any floor: the view follows (followFloor)
-  if (e.code === "Tab") {
+  if (k === "battle.next" || k === "battle.prev") {
     const ready = team.filter((u) => u.ap > 0);
     const list = ready.length ? ready : team;
     const i = list.findIndex((u) => u.id === cui.sel);
-    if (list.length) cui.sel = list[(i + (e.shiftKey ? list.length - 1 : 1)) % list.length].id;
+    if (list.length) cui.sel = list[(i + (k === "battle.prev" ? list.length - 1 : 1)) % list.length].id;
     cui.mode = "move";
     follow(b);
     return true;
   }
-  if (/^Digit[1-9]$/.test(e.code)) {
-    const u = players(b)[Number(e.code.slice(5)) - 1];
+  const un = /^battle\.unit([1-9])$/.exec(k || "");
+  if (un) {
+    const u = players(b)[Number(un[1]) - 1];
     if (u && alive(u)) { cui.sel = u.id; cui.mode = "move"; follow(b); }
     return true;
   }
   // The retreat confirm: Enter gives the order, Space does nothing (too easy to press by habit), Esc closes it.
-  if (retreatAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-retreat", { v: "go" }); return true; }
-  if (retreatAskOpen(b) && e.code === "Space") { cui.msg = "Press Enter or Sound the retreat to give the order, Esc to keep fighting."; return true; }
-  if (fallAskOpen(b) && (e.code === "Enter" || e.code === "NumpadEnter")) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
-  if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") { requestEndTurn(state, e.code === "Space" ? "space" : "enter"); return true; }
+  if (retreatAskOpen(b) && confirm) { combatAction(state, "cb-retreat", { v: "go" }); return true; }
+  if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
+  if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
+  if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
-  if (e.code === "KeyA" && e.shiftKey) { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
+  if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (b.phase === "deploy") return false;
-  if (e.code === "KeyR" && e.shiftKey) { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
-  if (e.code === "KeyC" && e.shiftKey) { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
-  // W A S D pan the view (viewKey), so search, a quick rummage (sim/search.js) and drag are on Shift.
-  if (e.code === "KeyS" && e.shiftKey) { combatAction(state, "cb-act", { v: "search" }); return true; }
-  if (e.code === "KeyQ" && e.shiftKey && b.raid) { combatAction(state, "cb-act", { v: "quick" }); return true; }
-  if (e.code === "KeyD" && e.shiftKey) { combatAction(state, "cb-act", { v: "drag" }); return true; }
-  const map = { KeyF: "shoot", KeyE: "melee", KeyM: "meds", KeyO: "overwatch", KeyH: "hunker", KeyR: "retreat", KeyN: "vehicle", KeyX: "extract", KeyC: "subdue", KeyT: "tie", KeyG: "throw", KeyL: "climb", KeyK: "peek", KeyQ: "close", KeyY: "brace", KeyU: "crush", KeyJ: "doubletap", KeyP: "pickup", KeyZ: "stowbody" };
-  if (map[e.code]) { combatAction(state, "cb-act", { v: map[e.code] }); return true; }
+  if (k === "battle.retreatAll") { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
+  if (k === "battle.clear") { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
+  // The unit's orders (shoot, melee…; search, a quick rummage (sim/search.js, raids only) and drag are on Shift: W A S D pan).
+  const o = k && KEY_BY_ID.get(k);
+  if (o && o.v && (o.v !== "quick" || b.raid)) { combatAction(state, "cb-act", { v: o.v }); return true; }
   return false;
 }
 
