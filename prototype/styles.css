@@ -804,3 +804,6 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 .askbox .asktext { line-height: 1.5; color: var(--text); margin-bottom: 0.6rem; }
 .askbox .askskip { display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; color: var(--muted); cursor: pointer; margin-bottom: 0.6rem; }
 .askbox .askbtns { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.deftab .dplan { padding: 0.25rem 0; border-bottom: 1px solid #2c313a; }
+.deftab .dplan:last-of-type { border-bottom: none; }
+.cbactions .dshname { width: 8rem; font-weight: 700; }

@@ -67,7 +67,7 @@ function wallBattle(st, enemy, context = {}) {
   const h = hub(st);
   globalThis.window = {};
   try {
-    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "st", layout: "baseDefence", deploy: true, context: { strip: true, night: false, ...context } });
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "st", layout: "baseDefence", deploy: true, context: { strip: true, night: false, ready: { manned: true }, ...context } }); // ready: everyone at a post (defenceplan.js openStart)
   } finally { delete globalThis.window; }
   const b = st.combat;
   combatAct(st, { type: "start" });

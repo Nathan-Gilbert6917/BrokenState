@@ -14,6 +14,9 @@
 // the tactical battle; headless and on autopilot the same battle is played out by the AI on both sides, so the
 // odds match. Losing it overruns the base: people hurt (and killed), stores spoiled, an outpost lost. A hub with
 // nobody left alive ends the game.
+// The watch (watch.js): an exhausted guard counts half (sleep.js). A horde that reaches a base at night with nobody
+// awake on watch, no tripwire and the defences not manned (surpriseAt) finds the defence buildings counting half and
+// opens a break-in with its first move; someone awake on watch sees one coming 2 tiles sooner (hordeWarnings).
 import { log, addCard, atBase, hurt, combatPower, removeBase, isNight, baseVision } from "./world.js";
 import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
@@ -34,6 +37,8 @@ import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
 import { climberSlip } from "./middead.js"; // Climbers over the walls
+import { SURPRISE, surpriseAt, lookoutsSpot, watchSawText } from "./watch.js"; // an unwatched night, the watch's early warning
+import { tiredLevel, TIRED } from "./sleep.js"; // an exhausted guard counts half
 
 // A hive's special dead at the walls (hivetech.js, numbers in hiveconst.js ZTYPES): each one presses the walls by
 // its kind's `wall` weight (brutes 2.5, spitters picking off the defenders 1.4, screamers 1.2, runners 0.9,
@@ -80,7 +85,7 @@ export function guardHold(state, base) {
   const alarm = all ? 0 : armoryDefence(base).alarm; // a tripwire alarm: everyone half, warned or not
   for (const s of atBase(state, base.id)) {
     if (s.inBed) continue;
-    if (s.role === "guard") p += combatPower(s);
+    if (s.role === "guard") p += combatPower(s) * (tiredLevel(s) >= 2 ? TIRED.GUARD : 1); // exhausted (sleep.js): half
     else if (all) p += combatPower(s) * DEFENCE.ALERT_WEIGHT;
     else if (alarm) p += combatPower(s) * alarm;
   }
@@ -104,9 +109,11 @@ function wearDefenceKit(state, base) {
   return out.length ? `${out.join(" and ")[0].toUpperCase()}${out.join(" and ").slice(1)}.` : "";
 }
 
-export function holdLimit(state, base, bosses = 0) {
+// surprise (watch.js surpriseAt: an unwatched night): the defence buildings' bonus counts SURPRISE.HORDE_DEFENCE.
+export function holdLimit(state, base, bosses = 0, surprise = false) {
   const boss = DEFENCE.BOSS[Math.min(2, bosses)];
-  return Math.round((wallHold(base) + guardHold(state, base)) * defenceMult(state, base) * boss);
+  const mult = defenceMult(state, base);
+  return Math.round((wallHold(base) + guardHold(state, base)) * (surprise ? 1 + (mult - 1) * SURPRISE.HORDE_DEFENCE : mult) * boss);
 }
 
 export const spikeKill = (base, n) => {
@@ -168,9 +175,11 @@ export function tierLimits(state, base, bosses = 0, night = false) {
 // (brk × with the yard counted) or held off from the buildings (with the buildings too); else overrun. ratio: what
 // the old single thresholds read (held ≥ hold > broken ≥ brk > overrun).
 // kit: the raiders' siege kit (siege.js raidSiegeKit): ladders, a ram and grenades make the walls count less.
-export function raidTier(state, base, def, att, hold, brk, kit = null) {
+// surprise (watch.js surpriseAt: an unwatched night): they were over the walls before anyone woke: the wall tier is 1.
+export function raidTier(state, base, def, att, hold, brk, kit = null, surprise = false) {
   const m = { ...tierMults(state, base, isNight(state)) };
   if (kit && m.walled) m.wall = Math.max(1, m.wall - siegeWallCut(kit));
+  if (surprise) m.wall = 1;
   const wall = (def * m.wall) / Math.max(1, att), yard = wall * m.yard, last = yard * m.buildings;
   const tier = wall >= hold ? "wall" : yard >= brk ? "yard" : last >= brk ? "buildings" : "overrun";
   const ratio = tier === "wall" ? wall : tier === "overrun" ? last : Math.max(brk, Math.min(yard, hold - 0.001));
@@ -227,7 +236,10 @@ export function hordeAttackBase(state, h, base) {
   if (caught) notes.push(`The bear traps caught ${caught}.`);
   const floodlit = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
   const bosses = Math.min(2, h.bosses || 0);
-  const limit = holdLimit(state, base, bosses);
+  // An unwatched night (watch.js surpriseAt): the dead were at the walls before anyone woke.
+  const sp = surpriseAt(state, base);
+  if (sp) notes.unshift(`${sp.why}: the dead were at the walls before anyone woke, and the defences counted half with nobody manning them.`);
+  const limit = holdLimit(state, base, bosses, !!sp);
   const worn = kit.wire || kit.traps ? wearDefenceKit(state, base) : "";
   if (worn) notes.push(worn);
   if (caught && reduceHorde(state, h, caught)) { log(state, `The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return; }
@@ -265,8 +277,8 @@ export function hordeAttackBase(state, h, base) {
   fightNow(state, {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "zombies", count: force.count, power: force.power, types: force.types, elite: force.elite, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
-    ambush: null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
-    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit },
+    ambush: sp ? "enemy" : null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
+    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit, surprise: !!sp }, // surprise: an unwatched night (watch.js)
   });
 }
 
@@ -407,13 +419,15 @@ registerCombatHandler("hordeBreakIn", (state, result, setup) => {
 });
 
 // ---------- warnings ----------
-// Hourly: a horde you can see that is heading for one of your bases, within 6 tiles, gets a warning card once.
+// Hourly: a horde you can see that is heading for one of your bases, within 6 tiles, gets a warning card once. The
+// lookouts (watch.js lookoutsSpot): someone awake on watch there sees it 2 tiles sooner (and past the base's view);
+// with nobody on watch at night, nobody at the base sees it come.
+export const HORDE_WARN_TILES = 6;
 export function hordeWarnings(state) {
-  const g = state.grid;
   for (const h of state.hordes) {
-    if (h.warned || !state.live.has(h.tile)) continue;
+    if (h.warned) continue;
     const base = state.bases.find((b) => (h.goal && h.goal.baseId === b.id) || h.target === b.tile);
-    if (!base || g.distance(h.tile, base.tile) > 6 || h.tile === base.tile) continue;
+    if (!base || h.tile === base.tile || !lookoutsSpot(state, base, h.tile, HORDE_WARN_TILES)) continue;
     h.warned = true;
     ensureHives(state);
     state.hiveInfo.stats.warnings++;
@@ -505,7 +519,7 @@ function warningCard(state, h, base) {
   return {
     title: `Horde heading for ${base.name}`,
     kind: "horde",
-    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix && mixText(h.mix, h.size) ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
+    text: `Lookouts see a horde of about ${h.size} (score ${hordeScore(h.size)})${bosses ? `, a ${BOSS_NAMES.horde} at its head,` : ""} ${dist} tile${dist === 1 ? "" : "s"} out and coming this way.${watchSawText(state, base, h.tile, HORDE_WARN_TILES)}${ledByShepherd(h) ? " It moves together, led by something that isn't fooled: decoys and fire will hardly turn it." : ""}${h.mix && mixText(h.mix, h.size) ? ` Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.` : ""} ${holdText(state, base, h.size, bosses, h.mix)}${crawlerSlip(state, base, h, false) >= 4 ? " Crawlers may slip past the walls: a watchtower and lit floodlights see them coming." : ""}${climberSlip(h, !!base.watchtower, false) >= 2 ? " Climbers among them will go over the walls: defenders inside them and a watchtower over the yard catch them." : ""}${h.mix && h.mix.sower > 0 ? " Sowers among them seed the land they cross with the worm's eggs." : ""}`,
     choices: [
       {
         label: "Man the defences",

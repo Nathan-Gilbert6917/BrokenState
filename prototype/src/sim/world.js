@@ -34,6 +34,7 @@ import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
 import { watchHour, watchDayRoles } from "./watch.js";
+import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
 import { weatherHour, weatherDaily } from "./weather.js";
@@ -690,6 +691,7 @@ export function tickHour(state) {
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
+  tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
 }

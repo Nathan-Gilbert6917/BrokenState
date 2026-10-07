@@ -14,10 +14,15 @@
 //     (s.watchWas = { role, station, base }). At midnight they count at their own job (watchDayRoles), as people on
 //     priorities on a guard watch do (work.js workDayRoles).
 //   - Pinned people and anyone away from the base are left alone. The dev autopilot (which sets every role) skips the
-//     Manual part.
-import { atBase, baseById, hourOfDay, skill, isNight } from "./world.js";
-import { manned } from "./defences.js";
+//     Manual part: it keeps its own night watch (autopilot.js govWatch, base.watch.gov) and puts it on guard itself.
+// A watch in someone's sleep hours keeps them up (sleep.js: tiredness; off a long watch they sleep in). At night a
+// base with nobody awake on watch is caught asleep by an attack, and one with the watch up sees it coming sooner
+// (surpriseAt, lookoutsSpot below).
+import { atBase, baseById, hourOfDay, skill, isNight, baseVision, localId } from "./world.js";
+import { manned, armoryDefence } from "./defences.js";
 import { isManaged, healthRest } from "./work.js";
+import { hash01 } from "./skills.js";
+import { tiredLevel, TIRED } from "./sleep.js";
 
 export const WATCH_PRESETS = {
   two:   { name: "Two 12-hour watches", shifts: [["Day", 6, 18], ["Night", 18, 6]] },
@@ -166,8 +171,14 @@ export function watchHour(state) {
   }
 }
 // Midnight (world.js, with work.js workDayRoles): Manual people on watch count at their own job in the day's work.
-// watchHour puts them back on watch at the end of the hour.
+// watchHour puts them back on watch at the end of the hour. The governor's watchers likewise (s.govWatch: the job
+// they had, autopilot.js planRoles 1a, which puts them back on watch).
 export function watchDayRoles(state) {
+  for (const s of state.survivors) {
+    if (!s.govWatch) continue;
+    if (s.alive && s.role === "guard") { s.role = s.govWatch.role; s.station = s.govWatch.station ?? null; }
+    delete s.govWatch;
+  }
   for (const s of state.survivors) {
     if (!s.watchWas || !s.alive || isManaged(state, s) || s.role !== "guard") continue;
     s.role = s.watchWas.role;
@@ -193,7 +204,60 @@ export function watchLine(state, base) {
 // manned), the ids of the people standing guard there right now (fit, not in a bed: the watch roster, Guard on
 // priorities, a fixed guard, the emergency's guards), and whether it is night. The State Map's warnings and surprise
 // (an unwatched night) and the battle map's start (who is already at a post) read this.
+// alert: how awake the watch is (each watcher 1, an exhausted one TIRED.ALERT: sleep.js); dozing: the exhausted ones.
 export function readiness(state, base) {
-  const watchers = base ? atBase(state, base.id).filter((s) => s.alive && s.role === "guard" && !s.inBed && !healthRest(s)).map((s) => s.id) : [];
-  return { manned: !!base && (!!base.alert || manned(state, base)), watchers, night: isNight(state) };
+  const guards = base ? atBase(state, base.id).filter((s) => s.alive && s.role === "guard" && !s.inBed && !healthRest(s)) : [];
+  const dozing = guards.filter((s) => tiredLevel(s) >= 2);
+  return {
+    manned: !!base && (!!base.alert || manned(state, base)), watchers: guards.map((s) => s.id), night: isNight(state),
+    alert: guards.length - dozing.length * (1 - TIRED.ALERT), dozing: dozing.map((s) => s.id),
+  };
+}
+
+// ---------- unwatched nights and the watch's early warning ----------
+// An attack that reaches a base at night (20:00–06:00) when nobody is awake on watch there (readiness: no watchers, or
+// only exhausted ones who doze off: with alert a below 1 they are caught with chance 1 − a) and the defences are not
+// manned gets the first move. A tripwire alarm in the armory wakes everyone (no surprise). By day, or with someone
+// awake on watch, nothing changes.
+//   Raids by the numbers (factions.js, visitors.js, prisoners.js rescues): the walls do not count (they were over them
+//     before anyone woke: defences.js raidTier) and everyone but the guards counts SURPRISE.ASLEEP of their combat
+//     power instead of 0.8 (factions.js baseDefense) unless the base is put on alert after all ("Prepare defenses").
+//   Hordes by the numbers (defences.js hordeAttackBase): the defence buildings' bonus to the hold limit counts
+//     SURPRISE.HORDE_DEFENCE (half: nobody manned the barricades or lit the floodlights); the guards add nothing (none).
+//   Battles (a raid defended in person, a horde's break-in): setup.ambush "enemy" (their free volley, your people 1
+//     action in the first turn: combat.js) and setup.context.surprise = true (the battle map's start: who is at a post).
+export const SURPRISE = { ASLEEP: 0.5, HORDE_DEFENCE: 0.5 };
+// { why } when an attack arriving now catches the base asleep, else null. The why opens the log line or card.
+export function surpriseAt(state, base) {
+  if (!base) return null;
+  const r = readiness(state, base);
+  if (!r.night || r.manned || r.alert >= 1) return null;
+  if (armoryDefence(base).alarm) return null; // the tripwire's bells
+  if (r.alert > 0 && hash01(state.seed, "doze", state.hour, localId(state, base.id)) < r.alert) return null;
+  const names = r.dozing.map((id) => { const s = state.survivors.find((x) => x.id === id); return s ? s.name.split(" ")[0] : "?"; });
+  return { why: names.length ? `${names.join(" and ")} dozed off on watch at ${base.name}, worn out` : `Nobody was on watch at ${base.name}` };
+}
+// The lookouts' warning of a raid or a horde coming for a base (parties.js, visitors.js, defences.js hordeWarnings):
+// is it spotted on `tile`, at most `range` tiles out? seen: the tile is in sight (state.live: the bases' view, teams on
+// the radio; visitors add the radio's coverage).
+//   Someone awake on watch (readiness alert 1 or more) or the defences manned: WATCH_WARN.tiles further out, and the
+//     lookouts on the walls see WATCH_WARN.day tiles past the base's view by day and WATCH_WARN.night past it at night
+//     (1 → 3 tiles), in sight or not. A watchtower's extra view (world.js baseVision) adds to it by day.
+//   Nobody awake on watch: by day as before (in sight, within range); at night nobody at the base sees it come, only a
+//     team on the radio (or another base) beyond the base's own night view.
+export const WATCH_WARN = { tiles: 2, day: 1, night: 2 };
+export function lookoutsSpot(state, base, tile, range, seen = state.live.has(tile)) {
+  if (!base) return false;
+  const d = state.grid.distance(tile, base.tile);
+  const r = readiness(state, base);
+  if (r.manned || r.alert >= 1) return d <= range + WATCH_WARN.tiles && (seen || d <= baseVision(base, state) + (r.night ? WATCH_WARN.night : WATCH_WARN.day));
+  if (d > range || !seen) return false;
+  return !r.night || d > baseVision(base, state);
+}
+// The watch's early warning, for the warning cards: a line when only the watch saw it (out of sight, or out of the
+// usual range), else "".
+export function watchSawText(state, base, tile, range, seen = state.live.has(tile)) {
+  if (!base || (seen && state.grid.distance(tile, base.tile) <= range)) return "";
+  const r = readiness(state, base);
+  return r.manned || r.alert >= 1 ? " The watch on the walls saw them early." : "";
 }

@@ -43,7 +43,8 @@ function fortHub(st, list = BUILT, extra = 2) {
 function baseBattle(st, h, enemy = { kind: "zombies", count: 14, power: 3, name: "the horde" }, context = { through: 150 }) {
   globalThis.window = {};
   try {
-    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, night: false, ...context } });
+    // ready: the defences manned (everyone at a post: defenceplan.js openStart), the maps are what is tested here.
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, enemy, ambush: null, canRetreat: true, handler: "dt", layout: "baseDefence", deploy: true, downedLive: 0.4, context: { strip: true, night: false, ready: { manned: true }, ...context } });
   } finally { delete globalThis.window; }
   return st.combat;
 }

@@ -47,6 +47,7 @@ import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
+import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
 // H_GROW rows taller at a time (up to H_TRIES times) if its buildings do not all fit, and its wall map is as much longer
@@ -648,6 +649,7 @@ export function fallBack(state, opts = {}) {
 // The start of your turn: on the wall map, are they through? On the yard map, is the yard lost?
 export function tierPlayerTurn(state, b) {
   const T = b.tier;
+  lateOut(b); // defenceplan.js: the people who were not on watch are out of the buildings now
   const foes = b.units.filter((u) => u.side === "enemy" && active(u));
   if (T.map === "wall") {
     const inside = foes.filter((f) => T.interior[f.y * b.w + f.x]).length;
