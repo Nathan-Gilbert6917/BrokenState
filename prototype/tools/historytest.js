@@ -252,7 +252,7 @@ section("Causes, the worst day, the best people, events");
   killSurvivor(W, ppl[1], hub(W).tile, "fighting the horde at the hub");
   killSurvivor(W, ppl[2], hub(W).tile, "fighting the horde at the hub");
   const dc = deathsByCause(W);
-  check(dc[0].key === "dead" && dc[0].n === 2 && dc.some((c) => c.key === "hunger" && c.n === 1), `deaths by cause from the memorial wall (${dc.map((c) => `${c.label} ${c.n}`).join(", ")})`);
+  check(dc[0].key === "horde" && dc[0].n === 2 && dc.some((c) => c.key === "hunger" && c.n === 1), `deaths by cause from the memorial wall (${dc.map((c) => `${c.label} ${c.n}`).join(", ")})`);
   const wd = worstDay(W);
   check(wd && wd.kind === "deaths" && wd.n >= 2 && wd.day === day(W), `the worst day is the one with most deaths (day ${wd && wd.day}, ${wd && wd.n})`);
   const html = runSummaryHTML(W, { live: true });

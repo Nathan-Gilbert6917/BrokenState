@@ -40,6 +40,7 @@ import { weatherHour, weatherDaily } from "./weather.js";
 import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
+import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
@@ -59,6 +60,7 @@ import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
+import { familyDaily } from "./family.js"; // children and generations
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -360,7 +362,8 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.station = null;
   s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
-  onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
+  const entry = onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
+  noteDeath(state, s, tileId, cause, entry); // causes.js: why it happened, on the memorial entry
   // Died on the tile of one of your bases (hunger, an infected wound, a scavenging accident, a raid or horde at
   // the walls, a convoy starving while it holds there): their things go to that base's armory. No death site
   // inside the walls: no team could be sent to recover it, and passers-by cannot loot it. The one exception is
@@ -495,6 +498,7 @@ function coalitionWins(state) {
 export function removeBase(state, base, cause = "was lost") {
   const i = state.bases.indexOf(base);
   if (i < 0 || base.type === "hub") return false;
+  noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
   const h = hub(state);
   const fled = [];
   for (const s of state.survivors) {
@@ -658,12 +662,14 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
+    causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
   }

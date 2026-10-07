@@ -1,5 +1,5 @@
 // Navigation checks without a browser: the key table (ui/keymap.js), Menu → Controls (ui/controls.js), the search box
-// (ui/palette.js) and the Codex (ui/codex.js).
+// (ui/cmdpalette.js) and the Codex (ui/codex.js).
 // Usage: node tools/navtest.js [seed]
 // - keys: the default bindings fire the same actions as before the table (map, panels, camera spots, bases, battle,
 //   the battle view, timelapse, title), no default conflicts, mapHotkey and combatKey through the table
@@ -20,7 +20,7 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import * as K from "../src/ui/keymap.js";
 import { controlsTab, controlsKey, keysSheet, CONTROLS_ACTIONS } from "../src/ui/controls.js";
 import { mapHotkey } from "../src/ui/alerts.js";
-import { paletteIndex, paletteSearch, paletteGo, matchScore } from "../src/ui/palette.js";
+import { paletteIndex, paletteSearch, paletteGo, matchScore } from "../src/ui/cmdpalette.js";
 import { codexEntries, codexScan, codexSeen, codexModal, codexState, CODEX_ACTIONS, CODEX_CATS } from "../src/ui/codex.js";
 import { helpTopics } from "../src/ui/help.js";
 import { saveOptions, loadOptions } from "../src/ui/saves.js";
@@ -75,6 +75,7 @@ section("Keys: the defaults are the keys of before");
     // New with this table: the codex and the search box.
     ["KeyC", "map", "win.codex"], ["Ctrl+KeyK", "map", "win.palette"], ["Slash", "map", "win.palette"],
     // Folded in from the other branches: the Ledger and undo.
+    ["Digit5", "map", "time.speed5"], ["Numpad2", "map", "time.speed2"], ["KeyM", "map", "map.minimap"],
     ["KeyE", "map", "win.ledger"], ["Ctrl+KeyZ", "edit", "edit.undo"], ["Meta+KeyZ", "edit", "edit.undo"],
   ];
   const bad = OLD.filter(([c, ctx, id]) => K.keyAction(parse(c), ctx) !== id);

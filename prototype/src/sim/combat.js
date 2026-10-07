@@ -69,6 +69,7 @@ import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; 
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
+import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -375,6 +376,7 @@ export function autoResolveCombat(state, setup) {
     owed -= t;
   }
   const odds = byNumbersOdds(state, setup, people, ammoUsed >= people.length * 3);
+  noteFight(state, setup, odds, people.length, ammoUsed >= people.length * 3); // causes.js: the odds, for a death's "Why?"
   const ratio = odds.ratio;
   const tile = party ? partyTile(party) : tileIdOf(setup);
   // Defending a base (interior.js baseTiers): the walls, the yard and the buildings each multiply what the defenders

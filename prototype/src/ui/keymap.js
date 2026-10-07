@@ -22,20 +22,21 @@
 const range = (n, from = 1) => Array.from({ length: n }, (_, i) => i + from);
 
 export const KEY_GROUPS = ["Time", "Map", "Panels", "Windows", "Teams", "Bases", "Camera spots", "Dev", "Team queue", "Undo",
-  "Battle", "Battle orders", "Battle view", "Battle units", "Timelapse", "Title menu", "Work tab"];
-export const KEY_CTX = { map: "Map", queue: "Team queue", edit: "Planner, build queue, Work tab", battle: "Battle", timelapse: "Timelapse", title: "Title menu", work: "Work tab" };
+  "Battle", "Battle orders", "Battle view", "Battle units", "Timelapse", "Title menu", "Work tab", "Questions"];
+export const KEY_CTX = { map: "Map", queue: "Team queue", edit: "Planner, build queue, Work tab", battle: "Battle", timelapse: "Timelapse", title: "Title menu", work: "Work tab", ask: "A question box", note: "A map note" };
 
 export const KEYMAP = [
   // ---------- the State Map (main.js keydown, ui/alerts.js mapHotkey) ----------
-  { id: "ui.close", label: "Close the top window; with nothing open, the menu", group: "Windows", ctx: "map", keys: ["Escape"], fixed: true },
+  { id: "ui.close", label: "Close the top window (the menu's question, a card opened from the tray goes back to it, the Why? panel, the Ledger…); with nothing open, the menu", group: "Windows", ctx: "map", keys: ["Escape"], fixed: true },
   { id: "time.pause", label: "Pause / run", group: "Time", ctx: "map", keys: ["Space"] },
-  ...[0.5, 1, 2, 3].map((v, i) => ({ id: `time.speed${i + 1}`, label: `Speed ${v}×`, group: "Time", ctx: "map", keys: [`Digit${i + 1}`] })),
+  ...[0.5, 1, 2, 3, 5].map((v, i) => ({ id: `time.speed${i + 1}`, label: `Speed ${v}×`, group: "Time", ctx: "map", keys: [`Digit${i + 1}`, `Numpad${i + 1}`] })), // ui/pacing.js SPEEDS
   { id: "map.panUp", label: "Pan up", group: "Map", ctx: "map", keys: ["KeyW", "ArrowUp"] },
   { id: "map.panDown", label: "Pan down", group: "Map", ctx: "map", keys: ["KeyS", "ArrowDown"] },
   { id: "map.panLeft", label: "Pan left", group: "Map", ctx: "map", keys: ["KeyA", "ArrowLeft"] },
   { id: "map.panRight", label: "Pan right", group: "Map", ctx: "map", keys: ["KeyD", "ArrowRight"] },
   { id: "map.hub", label: "Center on the hub", group: "Map", ctx: "map", keys: ["KeyH"] },
   { id: "map.infection", label: "Infection overlay", group: "Map", ctx: "map", keys: ["KeyI"] },
+  { id: "map.minimap", label: "Minimap: show or hide", group: "Map", ctx: "map", keys: ["KeyM"] }, // ui/display.js displayKey
   { id: "tab.bases", label: "Bases tab", group: "Panels", ctx: "map", keys: ["KeyB"] },
   { id: "tab.people", label: "People tab", group: "Panels", ctx: "map", keys: ["KeyP"] },
   { id: "tab.groups", label: "Groups tab", group: "Panels", ctx: "map", keys: ["KeyG"] },
@@ -59,8 +60,8 @@ export const KEYMAP = [
   ...range(9).map((n) => ({ id: `base.${n}`, label: n === 1 ? "Jump to the hub (base 1)" : `Jump to base ${n}`, group: "Bases", ctx: "map", keys: [`F${n}`] })),
   ...range(9).map((n) => ({ id: `cam.save${n}`, label: `Save camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Ctrl+Digit${n}`, `Alt+Digit${n}`, `Ctrl+Numpad${n}`, `Alt+Numpad${n}`] })),
   ...range(9).map((n) => ({ id: `cam.go${n}`, label: `Go to camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Shift+Digit${n}`, `Shift+Numpad${n}`] })),
-  { id: "dev.tools", label: "Dev tools", group: "Dev", ctx: "map", keys: ["Backquote"] },
-  { id: "dev.autopilot", label: "Autopilot on / off", group: "Dev", ctx: "map", keys: ["Shift+KeyP"] },
+  { id: "dev.tools", label: "Dev tools (with Show dev tools on, in Options → Display)", group: "Dev", ctx: "map", keys: ["Backquote"] }, // ui/display.js
+  { id: "dev.autopilot", label: "Autopilot on / off (with Show dev tools on)", group: "Dev", ctx: "map", keys: ["Shift+KeyP"] },
   // A selected order in the team panel's queue (main.js; ui/expedition.js queueBlock): these come before the map's.
   { id: "queue.up", label: "Move the selected order up", group: "Team queue", ctx: "queue", keys: ["ArrowUp"] },
   { id: "queue.down", label: "Move the selected order down", group: "Team queue", ctx: "queue", keys: ["ArrowDown"] },
@@ -119,6 +120,14 @@ export const KEYMAP = [
   // ---------- the title screen's menu (ui/title.js titleKey); Enter presses the button (the browser's own) ----------
   { id: "title.up", label: "Previous menu button", group: "Title menu", ctx: "title", keys: ["ArrowUp"] },
   { id: "title.down", label: "Next menu button", group: "Title menu", ctx: "title", keys: ["ArrowDown"] },
+
+  // ---------- boxes with their own Enter and Esc: fixed ----------
+  // The confirmation box (ui/confirm.js askKey) and the menu's question (main.js): it takes the keyboard while it is up.
+  { id: "ask.yes", label: "Yes: give the order", group: "Questions", ctx: "ask", keys: ["Enter", "NumpadEnter"], fixed: true },
+  { id: "ask.no", label: "Cancel", group: "Questions", ctx: "ask", keys: ["Escape"], fixed: true },
+  // A map note being written (ui/watchlist.js, its own text box).
+  { id: "note.save", label: "Save the map note", group: "Questions", ctx: "note", keys: ["Enter"], fixed: true },
+  { id: "note.cancel", label: "Close the note without saving", group: "Questions", ctx: "note", keys: ["Escape"], fixed: true },
 
   // ---------- a base's Work tab, the cell under the mouse (ui/work.js workKey): fixed, by their numbers ----------
   { id: "work.set", label: "Set the priority 1–5", group: "Work tab", ctx: "work", keys: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"], fixed: true },

@@ -22,6 +22,7 @@ import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { day } from "../sim/world.js";
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
+import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -420,5 +421,5 @@ export const CODEX_CHANGE = {
 // The top bar's button: 📚 Codex, with the count of entries not looked at yet.
 export function codexButton(state) {
   const n = state && state.codex && Array.isArray(state.codex.fresh) ? state.codex.fresh.length : 0;
-  return `<button data-action="cx-open"${tip(`Codex: the dead, items, buildings, illnesses and groups you have met (C)${n ? `. ${n} new` : ""}`)}>📚 Codex${n ? ` <span class="cxnew">${n}</span>` : ""}</button>`;
+  return `<button data-action="cx-open"${tip(`Codex: the dead, items, buildings, illnesses and groups you have met (${keyLabel("win.codex") || "no key"})${n ? `. ${n} new` : ""}`)}>📚 Codex${n ? ` <span class="cxnew">${n}</span>` : ""}</button>`;
 }

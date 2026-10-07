@@ -29,6 +29,8 @@ import { day, alive } from "./world.js";
 import { baseHeat } from "./hordes.js";
 import { attitude } from "./factions.js";
 import { controlledLand, allianceMembers } from "./alliance.js";
+import { birthsTotal } from "./family.js"; // births happen in state.children, not state.survivors
+import { causeKind, CAUSE_KINDS } from "./causes.js"; // the kind of each death, as the "Why?" chain recorded it
 
 export const STOCK_KEYS = ["food", "preserved", "water", "rawwater", "fuel", "wood", "meds", "ammo", "parts", "scrap"];
 // Flow groups: the stock keys each one sums.
@@ -56,7 +58,7 @@ export function ensureHistory(state) {
     v: 1, from: day(state), bc: BASE_COLS, cc: COLONY_COLS,
     all: { rows: [] }, bases: {}, // bases: id -> { name, hub, rows, lost? }
     last: {}, acc: {},            // per base id and "all": stock totals at the last mark, and the day's flows so far
-    seen: state.survivors.length, dead: deadCount(state), // survivors made and dead at the last row
+    seen: state.survivors.length, dead: deadCount(state), born: birthsTotal(state), // survivors made, dead and born at the last row
   };
   markAll(state); // the baseline: nothing before now counts as a flow
   return H;
@@ -146,7 +148,7 @@ export function currentRows(state) {
   const land = state.bases.length ? controlledLand(state).pct : 0;
   const all = [
     d, 1, ...sumStock, ...acc.i, ...acc.o, FLOW_KEYS.map(() => 0), people, people ? moodSum / people : 0, heat,
-    living.length, deadCount(state) - H.dead, made.length, made.filter(isBirth).length,
+    living.length, deadCount(state) - H.dead, made.length, birthsTotal(state) - (H.born ?? birthsTotal(state)),
     hives.filter((hv) => know[hv.tile] && know[hv.tile].hive).length,
     state.hiveInfo && state.hiveInfo.stats ? state.hiveInfo.stats.destroyed : 0,
     facs.length, facs.filter((f) => members.has(f.id) || attitude(f) === "Allied").length, facs.filter((f) => attitude(f) === "Hostile").length,
@@ -157,7 +159,8 @@ export function currentRows(state) {
 function safeHeat(state, b) {
   try { return baseHeat(state, b); } catch { return 0; }
 }
-// A newcomer born in the colony (the children module marks them; until then nobody is). Arrivals count everyone new.
+// A survivor born in the colony (family.js marks a child who grew up). Births are counted on the day from family.js;
+// arrivals count everyone new in state.survivors, a grown-up child included.
 export function isBirth(s) {
   return !!(s && (s.born != null || s.bornDay != null || s.parents || s.origin === "born"));
 }
@@ -187,6 +190,7 @@ function record(state, H) {
   for (const key of Object.keys(H.last)) if (key !== "all" && !state.bases.some((b) => String(b.id) === key)) delete H.last[key];
   H.seen = state.survivors.length;
   H.dead = deadCount(state);
+  H.born = birthsTotal(state);
 }
 
 function pushRow(rows, row, cols) {
@@ -286,7 +290,8 @@ export function causeOf(text) {
 export function deathsByCause(state) {
   const out = new Map();
   for (const m of state.memorial || []) {
-    const c = causeOf(m.cause);
+    const k = m.why ? m.why.k : causeKind(state, m.cause);
+    const c = { key: k, label: CAUSE_KINDS[k] || CAUSE_KINDS.other };
     const e = out.get(c.key) || { key: c.key, label: c.label, n: 0, names: [] };
     e.n++;
     if (e.names.length < 4) e.names.push(m.name);

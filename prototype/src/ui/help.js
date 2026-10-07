@@ -12,6 +12,12 @@ import { keyLabel } from "./keymap.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
+import { familyHelp } from "./family.js"; // children and families (sim/family.js)
+import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
+import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
+import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
+import { pacingHelp } from "./pacing.js";
+import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -82,7 +88,7 @@ function legendTopic() {
   return `What the things drawn on the map mean. <table class="helptable">${LEGEND.map(([sw, name, text]) => `<tr><td>${sw}</td><td><b>${esc(name)}</b></td><td>${text}</td></tr>`).join("")}</table>`;
 }
 
-// The codex (ui/codex.js) and the search box (ui/palette.js).
+// The codex (ui/codex.js) and the search box (ui/cmdpalette.js).
 function codexHelp() {
   const k = (id, d) => `<b>${esc(keyLabel(id) || d)}</b>`;
   return `<b>Codex</b> (${k("win.codex", "C")}, or 📚 Codex in the top bar): every kind of the dead, every item, building, illness and injury, and the groups and outsiders you can meet, with the numbers from the game's own tables and a line on how to deal with each. An entry opens the first time your people meet the thing: a kind of the dead in a battle or in a horde you can see, an item once someone holds it or it is in a base's armory, a building once one is built or queued at one of your bases, an illness once someone has it (the worm once it has been spotted), a group once you know it. Until then it shows as <i>???</i> with its category. New entries are marked until you look at them; the search box at the top finds any opened entry by name.<br><br>
@@ -97,10 +103,13 @@ function startHereTopic() {
     <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"])}<br><br>
     <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
     <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
-    <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card stops the clock and asks what to do. The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["alerts", "Alerts"])}<br><br>
-    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–4 set the speed; windows and cards stop the clock while they are open.<br><br>
+    <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
+    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–5 set the speed (5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
     <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year 8. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
 }
+
+// "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
+const WHY_HELP = `When someone dies or a base is lost, a <b>Why?</b> link sits on its line in the log and the diary, on the memorial wall, on the survivor screen of the dead and on the lost-base card. It opens a short chain of causes written down at the moment it happened: the immediate cause, then up to four things that led to it, drawn from the base, the team and the diary (a well that broke and the scrap that was missing to fix it, a trip that ran overdue, the walls and who was on guard, when a group turned hostile and why). Click a day to open the diary there, or a name or a place to go to it. Deaths from before this was added are pieced together from the diary.`;
 
 // The topics in order: Start here, then the game's help paragraphs, with the map layers and legend right after "Map".
 export function helpTopics() {
@@ -123,12 +132,21 @@ export function helpTopics() {
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
+    if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
+    if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
+    if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
   if (!seen.has("templates-repeat-trip-and-undo")) add("Templates, Repeat trip and Undo", tripsHelp());
+  if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
   add("Sound", soundHelp()); // ui/audio.js
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
+  if (!seen.has("children-and-families")) add("Children and families", familyHelp());
+  if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
+  for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
+  if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
+  for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());
   return out;

@@ -619,7 +619,7 @@ section("UI: the Groups tab, alerts, the trade window extras");
   place(st, m, h.tile); m.goal = { kind: "base", baseId: h.id, tile: h.tile }; m.phase = "travel"; m.declined = false;
   tick(st);
   const ctx = tradeContext(st);
-  check(ctx && /from outside the state/.test(visitorTradeHead(st, ctx)) && /vis-attack/.test(visitorTradeButtons(st, {}, ctx)) && /vis-attack-yes/.test(visitorTradeButtons(st, { visitorAttack: m.id }, ctx)), "the trade window: header, Rob button and its confirmation");
+  check(ctx && /from outside the state/.test(visitorTradeHead(st, ctx)) && /vis-attack/.test(visitorTradeButtons(st, {}, ctx)) && (() => { const u = {}; VISITOR_ACTIONS["vis-attack"](st, u, { id: String(m.id), base: String(h.id) }); return !!u.ask && u.ask.action === "vis-attack-yes" && u.ask.kind === "rob"; })(), "the trade window: header, Rob button and its confirmation (the confirmation box: ui/confirm.js)");
   // Every vis-* handler runs without throwing.
   const ui = {};
   let threw = 0;
