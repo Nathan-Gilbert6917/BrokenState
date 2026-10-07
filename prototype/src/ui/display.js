@@ -6,6 +6,7 @@
 import { setPalette } from "./palette.js";
 import { setReadable, setMapAnim, redrawMap, view } from "./render.js";
 import { MINIMAP_SIZES } from "./displayopts.js";
+import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -75,10 +76,11 @@ export const DISPLAY_CHANGE = {
 // The keys (main.js keydown, before the other map keys). modal: a window is up (ui.js modalKind). Returns true when the
 // key was taken (Shift+P is taken and does nothing while the dev tools are hidden).
 export function displayKey(ui, e, modal) {
-  if (modal || !ui.started || e.ctrlKey || e.altKey || e.metaKey) return false;
-  if (e.code === "KeyM" && !e.shiftKey) { toggle(ui, "minimap"); return true; }
-  if (e.code === "Backquote") { if (devAllowed(ui)) ui.dev = !ui.dev; return true; }
-  if (e.code === "KeyP" && e.shiftKey && !devAllowed(ui)) return true;
+  if (modal || !ui.started) return false;
+  const k = keyAction(e, "map"); // the key table (ui/keymap.js; Menu → Controls): M, ` and Shift+P by default
+  if (k === "map.minimap") { toggle(ui, "minimap"); return true; }
+  if (k === "dev.tools") { if (devAllowed(ui)) ui.dev = !ui.dev; return true; }
+  if (k === "dev.autopilot" && !devAllowed(ui)) return true;
   return false;
 }
 

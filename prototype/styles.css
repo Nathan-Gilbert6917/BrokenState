@@ -599,6 +599,75 @@ body.win-dragging, body.win-dragging * { user-select: none !important; }
 @keyframes alpulse { 50% { box-shadow: 0 0 0 0.25rem rgba(226,104,95,0.35); } }
 .al-fold { align-self: flex-end; padding: 0.05rem 0.55rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.9); }
 
+/* ---------- Menu → Controls, the key sheet (ui/controls.js), the Codex (ui/codex.js), the search box (ui/palette.js) ---------- */
+.settings .keygroups { columns: 2 26rem; column-gap: 1.2rem; }
+.settings .keygroup { break-inside: avoid; margin-bottom: 0.6rem; }
+.settings .keygroup h3 { margin-top: 0.5rem; }
+.settings .keytable { width: 100%; border-collapse: collapse; }
+.settings .keytable td { padding: 0.15rem 0.4rem 0.15rem 0; border-top: 1px solid var(--line); vertical-align: middle; font-size: 0.9rem; }
+.settings .keytable td:first-child { width: auto; padding-top: 0.15rem; }
+.settings .keytable td:nth-child(2) { white-space: normal; }
+.settings .keytable tr.clash td { background: rgba(226,104,95,0.12); }
+.keychips { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+.keyslot { display: inline-flex; align-items: center; }
+.keychip { font: 0.82rem ui-monospace, Consolas, monospace; padding: 0.1rem 0.45rem; min-width: 1.8rem; border-radius: 5px; background: #2c313a; border: 1px solid #4a515d; border-bottom-width: 2px; }
+.keychip.fixed { display: inline-block; color: var(--muted); }
+.keychip.add { color: var(--muted); }
+.keychip.capture { border-color: var(--accent); color: var(--accent); background: #3a2f1a; }
+.keyx { padding: 0 0.25rem; margin-left: 0.1rem; font-size: 0.7rem; opacity: 0.55; border: none; background: none; }
+.keyx:hover { opacity: 1; color: var(--danger); }
+.keyclash { margin: 0.3rem 0 0.5rem; }
+.keysheet .keysheetcols { columns: 2 22rem; column-gap: 1.4rem; }
+.keysheet .keygroup { break-inside: avoid; margin-bottom: 0.4rem; }
+.keysheet .keytable td.keycell { width: 1%; white-space: nowrap; padding: 0.3rem 0.8rem 0.3rem 0; }
+.keysheet .keytable td:nth-child(2) { white-space: normal; }
+.keysheet kbd { font: 0.8rem ui-monospace, Consolas, monospace; padding: 0.05rem 0.35rem; border: 1px solid #4a515d; border-bottom-width: 2px; border-radius: 4px; background: #2c313a; }
+.keysheet .printonly { display: none; }
+#printsheet { display: none; }
+@media print {
+  body.printkeys { overflow: visible; height: auto; background: #fff; color: #000; }
+  body.printkeys > *:not(#printsheet) { display: none !important; }
+  body.printkeys #printsheet { display: block; font: 10pt "Segoe UI", system-ui, sans-serif; color: #000; }
+  #printsheet .noprint { display: none; }
+  #printsheet .printonly { display: block; font-size: 14pt; margin: 0 0 0.4rem; }
+  #printsheet .keysheetcols { columns: 2; column-gap: 1.2rem; }
+  #printsheet .keygroup { break-inside: avoid; margin-bottom: 0.3rem; }
+  #printsheet h3 { color: #000; font-size: 9pt; margin: 0.4rem 0 0.15rem; text-transform: uppercase; }
+  #printsheet table { border-collapse: collapse; width: 100%; }
+  #printsheet td { border-top: 1px solid #bbb; padding: 0.08rem 0.3rem 0.08rem 0; vertical-align: top; }
+  #printsheet td.keycell { white-space: nowrap; }
+  #printsheet kbd { font: 8.5pt ui-monospace, Consolas, monospace; border: 1px solid #888; border-radius: 3px; padding: 0 0.25rem; background: #f3f3f3; color: #000; }
+}
+.cxnew { display: inline-block; font-size: 0.7rem; padding: 0 0.3rem; border-radius: 4px; background: #4a3816; color: var(--accent); border: 1px solid var(--accent); line-height: 1.3; }
+#modal .box.codex { display: flex; flex-direction: column; }
+.codex .cxtabs { flex-wrap: wrap; gap: 0.25rem; margin: 0.3rem 0 0.6rem; }
+.codex .cxwrap { display: grid; grid-template-columns: minmax(13rem, 19rem) 1fr; gap: 0.9rem; height: min(64vh, 44rem); }
+.codex .cxlist { overflow-y: auto; display: flex; flex-direction: column; gap: 0.15rem; padding-right: 0.3rem; border-right: 1px solid var(--line); }
+.codex .cxsearch { margin-bottom: 0.35rem; }
+.codex .cxrow { display: flex; justify-content: space-between; gap: 0.5rem; text-align: left; padding: 0.25rem 0.5rem; font-size: 0.9rem; border-radius: 5px; }
+.codex .cxrow.locked { color: var(--muted); border: 1px dashed var(--line); opacity: 0.7; }
+.codex .cxdetail { overflow-y: auto; padding-right: 0.4rem; }
+.codex .cxhead { display: flex; gap: 0.9rem; align-items: center; margin-bottom: 0.5rem; }
+.codex .cxhead h2 { margin: 0; font-size: 1.25rem; }
+.codex .cxsprite { image-rendering: pixelated; width: auto; background: radial-gradient(circle, #2a2f37 0%, transparent 70%); }
+.codex .cxstats { border-collapse: collapse; width: 100%; margin-bottom: 0.7rem; }
+.codex .cxstats td { padding: 0.25rem 0.6rem 0.25rem 0; border-top: 1px solid var(--line); vertical-align: top; }
+.codex .cxstats td:first-child { white-space: nowrap; width: 8rem; }
+.codex .cxhow { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 0.5rem 0.7rem; line-height: 1.5; }
+.palette { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; background: rgba(0,0,0,0.35); }
+.palette .palbox { width: min(40rem, 94vw); background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); padding: 0.6rem; }
+.palette #palq { width: 100%; font-size: 1.15rem; padding: 0.5rem 0.7rem; }
+.palette .palres { max-height: 52vh; overflow-y: auto; margin-top: 0.4rem; }
+.palette .palrow { display: grid; grid-template-columns: 4.6rem 1fr auto; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; }
+.palette .palrow.sel { background: #3a2f1a; outline: 1px solid var(--accent); }
+.palette .palkind { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.palette .palkind.k-person, .palette .palkind.k-team { color: var(--info); }
+.palette .palkind.k-base, .palette .palkind.k-build { color: var(--good); }
+.palette .palkind.k-group { color: var(--danger); }
+.palette .palhint { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 18rem; }
+.palette .palfoot, .palette .palnone { padding: 0.35rem 0.5rem 0; }
+.palflash { outline: 2px solid var(--accent); box-shadow: 0 0 12px var(--accent); }
+
 /* The Watching panel (ui/watchlist.js): top left under the running orders, above the Layers box (top and max-height set
    by placeWatchlist). Map notes' editor (#noteedit) opens where the tile was right-clicked. Roster bulk actions' report. */
 #watchlist { position: absolute; left: 0.6rem; top: 0.6rem; width: 16rem; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
