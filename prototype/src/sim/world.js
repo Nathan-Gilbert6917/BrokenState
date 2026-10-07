@@ -55,6 +55,7 @@ import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from 
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
+import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 
 export const HUB_VISION = 3;
 export const OUTPOST_VISION = 2;
@@ -665,6 +666,7 @@ export function tickHour(state) {
   checkGameOver(state);
   updateVision(state);
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
+  crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)

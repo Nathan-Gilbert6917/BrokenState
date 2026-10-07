@@ -2,8 +2,10 @@
 // Any element with data-tip="..." shows a hover description.
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import {
-  day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE,
+  day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE, residents,
 } from "../sim/world.js";
+import { freeBeds, MOVE_OUT, CROWD_CARD } from "../sim/moveout.js"; // the move-out planner (moveOutModal) and the base screen's button
+import { crowdLevel } from "../sim/morale.js";
 import * as Parties from "../sim/parties.js";
 import * as Medical from "../sim/medical.js";
 import * as Trade from "../sim/trade.js";
@@ -640,6 +642,7 @@ export function helpText() {
     <b>Firewood:</b> the winter's heating. Below 0°C a base burns 15 firewood (1.5 kg) a person a day (22.5 in a bitter frost) before any fuel (30 firewood, 3 kg, heat as much as 0.2 fuel), so cut a winter's worth in late summer and autumn and keep the fuel for the vehicles and the generator. The <i>Cut wood</i> job (Work tab) cuts within 2 tiles of the base; a team can <i>Cut wood</i> anywhere (team panel, Land; right-click; a plan step) and carry it home (0.1 kg a piece, and a day's cutting is tens of kilos: a car helps). Firewood also turns up in woodpiles, log baskets and sheds, and anything wooden, paper or cloth breaks down into firewood by its weight (inventory: Break down for firewood). Forest gives most, hills fair, farmland and suburbs little, a city next to nothing; an axe, a sledgehammer or a machete cuts far faster than bare hands. Chopping is loud and axes slip; cut land grows back over seasons. A camp fire burns deadfall for free, except on bare ground. The top bar's Firewood says how long it lasts in the cold, and an alert warns when winter is coming without enough.<br>
     <b>Sending a team:</b> select a tile, pick a mission, then crew, vehicle or on foot, stance and supplies. Everything has a weight: what people wear plus the packed supplies and found cargo, shared out among the team (max load 40 kg each, 28 with a Bad Back, more with a pack or Packrat). Load bands slow a team on foot and make it eat and drink more on the move: Light up to 18 kg, Medium up to 28 (−10% pace, +15% rations), Heavy up to 38 (−25%, +35%), Overloaded above (−45%, +60%). Scouting eases it (up to half at 20). A car takes the whole load off its riders (it burns more fuel the fuller it is); bikes (one each) carry 15 kg on the rack and take 55% of the rest away. Teams report only when they get home, unless a radio station is built and they are in range.<br>
     <b>Team panel:</b> click a team on the map, in the Teams tab or in the Running orders list. It shows people, gear, supplies, the vehicle and the order queue. Orders: move, return home, scavenge, look around (2h), survey the area (12, 24 or 48h), camp, roadside repair, treat someone with carried meds (1h), field crafting, boat crossings. A waiting team starts an order at once; a moving team (or queue mode) adds it to its queue. When the queue is empty the team reports in with a card. In the queue, the move under way is the first line: ✕ cancels it and the team stops where it is (the next queued order starts there). Queued orders can be removed, or reordered: drag a line onto another, or click one to select it and press ↑ ↓ (Delete removes it).<br>
+    <b>Moving people between bases:</b> a base with more people than beds loses mood every day, and says so with an <i>Overcrowded</i> card (once, then again after ${CROWD_CARD.days} days or sooner if it gets worse). <i>Move a team out…</i> (on the card, or under Beds on the base screen) opens the move-out planner: pick who goes, their transport and what they take from that base's stores (by default the trip plus ${MOVE_OUT.days} days of food and water, and ${MOVE_OUT.scrap} scrap for an outpost), and where: another of your bases, or <i>Pick a place on the map</i> (they wait outside and the next click on the map sends them). On the map it is a team like any other: order <i>Build outpost</i> on a good spot to found a new base with them. A team that ends a move on one of your bases that is not its home is asked <i>Enter that base?</i>: yes, they live and work there from now on, and what they carry goes into its stores (the vehicle parks there); no, they stay a team and wait for orders.<br>
     <b>Survey and rumours:</b> the <b>Survey</b> mission (planner, right-click any tile, or a team's panel) sweeps the land around a tile (2–4 tiles, 6–48 hours) for places the old maps never showed: farms, cabins, hunting lodges, campgrounds, ranger stations and wrecks off the roads, and caches, wrecked cars and camps. The team moves from spot to spot inside the circle and ends back at its centre; the map shows the circle and its path, the team panel the hours and what it found. Each hour its odds of spotting a hidden place come from the best Scouting (and a little from each extra person), the ground (open farmland easy, forest and hills hard), how far the place is from where the team stands, daylight and the weather (night and fog are bad: a light, night vision or a thermal help; the brighter the light the better), how it travels (a car covers ground but sees little off the road, bikes in between) and its stance (stealthy is careful but covers less). The planner shows the odds as a word (good / fair / poor) with the reasons. It eats at the moving rate, builds Heat at half the rate of standing still, meets what the roads meet on every tile it walks into, and wears the vehicle; on hive land the tougher dead notice it. <b>Optics</b> carried by anyone on a team help: binoculars (the team sees a tile further, ×1.25 odds and a tile more reach), a pocket monocular (×1.1), a spotting scope (×1.6 and two tiles, only while it stays put: surveys, looking around, camps), a thermal monocular (no night or fog penalty; in the off hand it sees in the dark in battle), and a telescope kept in a base's armory (+1 tile of view, +2 with a watchtower). <b>Rumours:</b> radio chatter, travellers, merchants and other groups' news sometimes speak of a place nobody has found ("a hunting lodge somewhere north of Dunmore"): a dashed circle on the map that holds it for 20 days. A survey whose centre is inside it has three times the odds of finding that place.<br>
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("Shift+S")}): a window shows what is inside next to the survivor, with weights; drag what to take. Each survivor carries their own finds up to their max load; the first 8 kg a turn are free to haul, then 12 kg an action. Teammates next to each other hand things over for free. Someone who bleeds out drops what they carried. With a vehicle, walk to it and open it (${k("N")}) to put what you carry in it or take things out. Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("E")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds, ${k("U")} crush the skull of a body next to the unit (a Carrier raises the human dead near it at once; a crushed skull keeps the loot), ${k("J")} double tap a body in sight (1 round, noise), ${k("P")} pick up or put down a body (half the move distance and no shooting while carrying; a carried body cannot get up), ${k("Z")} lay a carried body in the team's car (a raid's vehicle zone, a field battle's evac strip; the body weighs 70 kg plus its things in the team's load, so the car needs the room: it comes home to be buried or burned on the Armory tab), ${k("R")} retreat (one unit, from the green evac strip), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits.<br>
@@ -808,8 +811,37 @@ function lightsRow(state, h, pl) {
   const what = !on ? "none packed" : pv.names.length ? `${pv.names.join(", ")} (+${pv.kg} kg)` : stock ? "none that fits (off hands full)" : "none in the armory";
   return `<tr${tip(why)}><td>Lights</td><td><label><input type="checkbox" data-action="pl-lights" ${on ? "checked" : ""}> one each</label></td><td class="muted small">${have}/${crew.length} lit · ${esc(what)}</td></tr>`;
 }
+// The planners' crew list (who is at the base: skills, gear, what they wear), transport (on foot, the base's bikes,
+// its cars) and supplies table (from the base's stores): the trip planner (from the hub) and the move-out planner
+// (from any base of yours, sim/moveout.js). where: how the base is named in the text ("the hub").
+const PLAN_SKILLS = ["scouting", "stealth", "shooting", "scavenging", "speech", "medicine", "mechanics"];
+function crewPick(state, crewPool, pl, where) {
+  const keySkills = PLAN_SKILLS;
+  return `<div class="crew">${crewPool.map((s) => `
+      <label class="${pl.crew.has(s.id) ? "on" : ""}"${tip(`${s.name}: ${ROLES[s.role]?.name || s.role} at ${where}. Taking them pauses that work.`)}><input type="checkbox" data-action="pl-crew" data-id="${s.id}" ${pl.crew.has(s.id) ? "checked" : ""}>
+        <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b> <span class="muted small">HP ${n0(s.health)} · ${ROLES[s.role]?.name || s.role}</span><br>
+        <span class="small">${keySkills.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
+        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at ${where}.</span>`}</div>`;
+}
+function transportPick(state, h, pl, v, ids, where) {
+  const parked = carsAtBase(state, h.id);
+  const bikeStack = vehiclesAtBase(state, h.id).find(isBike);
+  const nBikes = bikesAtBase(state, h.id);
+  return `<div class="choices">
+          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. People carry everything: heavy loads slow the team and make it eat and drink more (load bands).")}>On foot</button>
+          ${nBikes && bikeStack ? `<button data-action="pl-vehicle" data-v="${bikeStack.id}" class="${isBike(v) ? "active" : ""}" ${bikeStack.condition <= 0 ? "disabled" : ""}${tip(`One bike each (${nBikes} at ${where}). No fuel. Faster than walking on roads, walking pace off-road. Each rack carries ${VEHICLE_TYPES.bike.rack} kg and riding takes 55% of the load's slow-down and extra rations away. Quiet.`)}>Bicycles<span class="hint">${nBikes} at ${where} · condition ${Math.round(bikeStack.condition)}%${ids.length > nBikes ? ` · need ${ids.length}` : ""}</span></button>` : ""}
+          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${VEHICLE_TYPES[x.type].payload} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${VEHICLE_TYPES[x.type].payload} kg payload</span></button>`).join("")}
+          ${parked.length || nBikes ? "" : `<span class="small muted">No vehicles or bikes at ${where}.</span>`}
+        </div>`;
+}
+const PLAN_SUPPLY_KEYS = ["food", "preserved", "water", "fuel", "meds", "ammo", "parts", "scrap"];
+function suppliesTable(state, h, pl, label) {
+  const showKeys = PLAN_SUPPLY_KEYS;
+  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : "")}><td>${k === "water" ? "Water" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}</table>`;
+}
 function plannerModal(state, ui) {
   const pl = ui.planner;
+  if (pl.moveOut) return moveOutModal(state, ui); // sim/moveout.js: a team out of a crowded base
   const h = hub(state);
   if (!h && stagingView(state) && stagingView(state).first) return `<div class="box"><h1>No hub yet</h1><div class="text">Hardcore: your survivors are a team on the road, and there is no base to send anyone from. Give the team its orders (Teams tab, or right-click a tile to move it): ${ESTABLISH_LABEL} on a good spot pitches a staging camp that needs ${esc(needText(STAGING.HARDCORE.needs))}, then the work.</div><div class="row"><button class="primary" data-action="pl-cancel">Close</button></div></div>`;
   if (!h) return `<div class="box"><h1>No base to send a team from</h1><div class="text">You have no base left. Your people on the road can build one (${ESTABLISH_LABEL}: a staging camp that needs ${esc(needText(STAGING.EXILE.needs))}, then the work; it becomes your hub) or take one back (Assault their base) from their orders.</div><div class="row"><button class="primary" data-action="pl-cancel">Close</button></div></div>`;
@@ -826,7 +858,6 @@ function plannerModal(state, ui) {
   const carry = plannerLoad(state, pl);
   // Why this mission cannot go to this tile at all (parties.js checks the same at launch).
   const problem = Parties.missionProblem ? Parties.missionProblem(state, pl.dest, pl.mission) : null;
-  const showKeys = ["food", "preserved", "water", "fuel", "meds", "ammo", "parts", "scrap"];
   const warn = [];
   if (est) {
     // Preserved food (storage.js) is a ration like food, and lighter.
@@ -842,10 +873,6 @@ function plannerModal(state, ui) {
   if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
   if (carry.over) warn.push(carry.why);
   const missions = Object.entries(MISSIONS).filter(([, m]) => !m.hidden);
-  const keySkills = ["scouting", "stealth", "shooting", "scavenging", "speech", "medicine", "mechanics"];
-  const parked = carsAtBase(state, h.id);
-  const bikeStack = vehiclesAtBase(state, h.id).find(isBike);
-  const nBikes = bikesAtBase(state, h.id);
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
     ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
@@ -854,20 +881,11 @@ function plannerModal(state, ui) {
       <select data-action="pl-mission"${tip(MISSIONS[pl.mission].desc)}>${missions.map(([k, m]) => `<option value="${k}" ${pl.mission === k ? "selected" : ""} title="${esc(m.desc)}">${m.name}</option>`).join("")}</select>
       <span class="small muted">${MISSIONS[pl.mission].desc}</span></div>
     <h3>Crew (${ids.length})</h3>
-    <div class="crew">${crewPool.map((s) => `
-      <label class="${pl.crew.has(s.id) ? "on" : ""}"${tip(`${s.name}: ${ROLES[s.role]?.name || s.role} at the hub. Taking them pauses that work.`)}><input type="checkbox" data-action="pl-crew" data-id="${s.id}" ${pl.crew.has(s.id) ? "checked" : ""}>
-        <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b> <span class="muted small">HP ${n0(s.health)} · ${ROLES[s.role]?.name || s.role}</span><br>
-        <span class="small">${keySkills.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
-        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
+    ${crewPick(state, crewPool, pl, "the hub")}
     <div class="grid2" style="margin-top:0.6rem">
       <div>
         <h3>Transport</h3>
-        <div class="choices">
-          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. People carry everything: heavy loads slow the team and make it eat and drink more (load bands).")}>On foot</button>
-          ${nBikes && bikeStack ? `<button data-action="pl-vehicle" data-v="${bikeStack.id}" class="${isBike(v) ? "active" : ""}" ${bikeStack.condition <= 0 ? "disabled" : ""}${tip(`One bike each (${nBikes} at the hub). No fuel. Faster than walking on roads, walking pace off-road. Each rack carries ${VEHICLE_TYPES.bike.rack} kg and riding takes 55% of the load's slow-down and extra rations away. Quiet.`)}>Bicycles<span class="hint">${nBikes} at the hub · condition ${Math.round(bikeStack.condition)}%${ids.length > nBikes ? ` · need ${ids.length}` : ""}</span></button>` : ""}
-          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${VEHICLE_TYPES[x.type].payload} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${VEHICLE_TYPES[x.type].payload} kg payload</span></button>`).join("")}
-          ${parked.length || nBikes ? "" : `<span class="small muted">No vehicles or bikes at the hub.</span>`}
-        </div>
+        ${transportPick(state, h, pl, v, ids, "the hub")}
         <h3>Stance</h3>
         <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
         <h3>Estimate</h3>
@@ -882,7 +900,7 @@ function plannerModal(state, ui) {
       </div>
       <div>
         <h3>Supplies (from hub)</h3>
-        <table class="t">${showKeys.map((k) => `<tr${tip(k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : "")}><td>${k === "water" ? "Water" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">hub ${k === "water" ? esc(hubWaterText(h)) : n0(h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}</table>
+        ${suppliesTable(state, h, pl, "hub")}
         <button data-action="pl-autofill" style="margin-top:0.4rem"${tip("Pack enough for the round trip plus 25%")}>Auto-fill (+25% margin)</button>
         ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
       </div>
@@ -891,6 +909,68 @@ function plannerModal(state, ui) {
     ${problem ? `<div class="danger" style="margin-top:0.6rem">${esc(problem)}</div>` : ""}
     ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || !est || carry.over || problem ? "disabled" : ""}${tip(!ids.length ? "Pick at least one person" : !est ? "No route" : carry.over ? carry.why : problem || "The team leaves now. If the game is paused, it sets off when you unpause.")}>Send team</button></div>
+  </div>`;
+}
+
+// The move-out planner (main.js openMoveOut; sim/moveout.js moveTeamOut): who leaves a base (from the Overcrowded
+// card or the base screen), their transport and what they take from its stores, and where to: another of your bases
+// (they are asked to move in when they get there), or a tile picked on the map once they are out (a place for a new
+// outpost: the scrap it needs is packed by default). Food and water: the trip, plus MOVE_OUT.days for the road ahead.
+function moveOutModal(state, ui) {
+  const pl = ui.planner;
+  const b = baseById(state, pl.fromBaseId);
+  if (!b) return `<div class="box"><h1>Move a team out</h1><div class="text">That base is no longer yours.</div><div class="row"><button class="primary" data-action="pl-cancel">Close</button></div></div>`;
+  const where = b.type === "hub" ? "the hub" : b.name;
+  const pool = atBase(state, b.id);
+  const ids = [...pl.crew];
+  const v = plannerVehicle(state, pl);
+  const carry = plannerLoad(state, pl);
+  const dest = pl.dest != null ? pl.dest : b.tile;
+  const est = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest, vehicle: travelMode(v), v, stance: pl.stance, fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, supplies: pl.supplies, homeBaseId: b.id });
+  const to = pl.dest != null ? state.bases.find((x) => x.tile === pl.dest) || null : null;
+  const beds = baseBeds(b), now = residents(state, b.id).length, after = now - ids.length;
+  const lvl = (n) => crowdLevel(n / Math.max(1, beds));
+  const others = state.bases.filter((x) => x !== b);
+  const warn = [];
+  if (isBike(v) && bikesAtBase(state, b.id) < ids.length) warn.push(`Bikes: ${ids.length} people, ${bikesAtBase(state, b.id)} bikes at ${where} (one each)`);
+  if (pl.dest == null && (pl.supplies.scrap || 0) < MOVE_OUT.scrap) warn.push(`A new outpost needs ${MOVE_OUT.scrap} scrap carried (5 on the ruins of a base): pack it now, or find it on the way`);
+  if (to && ids.length > freeBeds(state, to)) warn.push(`${to.name} has ${Math.max(0, freeBeds(state, to))} free bed${freeBeds(state, to) === 1 ? "" : "s"} for ${ids.length}: it would be crowded`);
+  if (pl.dest != null && !est) warn.push(`No route to ${to ? to.name : "there"}${v ? " for the vehicle" : ""}.`);
+  warn.push(...loadWarnings(carry.t));
+  if (carry.over) warn.push(carry.why);
+  const destBtn = (x) => {
+    const e = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: x.tile, vehicle: travelMode(v), v, stance: pl.stance, fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, supplies: pl.supplies, homeBaseId: b.id });
+    const free = freeBeds(state, x);
+    return `<button data-action="pl-dest" data-tile="${x.tile}" class="${pl.dest === x.tile ? "active" : ""}" ${e ? "" : "disabled"}${tip(`Walk${v ? " or drive" : ""} to ${x.name}; when they get there you are asked whether they move in (they live and work there from then on, and what they carry goes into its stores).`)}>${esc(x.name)}<span class="hint">${free > 0 ? `${free} free bed${free === 1 ? "" : "s"}` : `full (${residents(state, x.id).length} in ${baseBeds(x)} beds)`} · ${e ? `about ${e.hoursOut}h` : "no route"}</span></button>`;
+  };
+  const go = !ids.length ? "Pick at least one person" : carry.over ? carry.why : pl.dest != null && !est ? "No route" : pl.dest == null ? "They leave now and wait outside; then click a tile on the map to send them (Esc: they wait for orders)" : `They set off for ${to ? to.name : "there"} now`;
+  return `<div class="box wide">
+    <h1>Move a team out of ${esc(b.name)}</h1>
+    <div class="text small">${now} people live at ${esc(b.name)} with ${beds} beds (<span class="${lvl(now).tone}">${esc(lvl(now).name.toLowerCase())}</span>)${ids.length ? `; with ${ids.length} gone, ${after} in ${beds} beds (<span class="${lvl(after).tone}">${esc(lvl(after).name.toLowerCase())}</span>)` : ""}. The team is a team like any other on the map: send it to a good spot and order <b>Build outpost</b> there, or to another of your bases and move in when it arrives.</div>
+    <h3>Who goes (${ids.length})</h3>
+    ${crewPick(state, pool, pl, where)}
+    <div class="grid2" style="margin-top:0.6rem">
+      <div>
+        <h3>Where to</h3>
+        <div class="choices">
+          <button data-action="pl-dest" data-tile="" class="${pl.dest == null ? "active" : ""}"${tip("They leave and wait just outside; the map goes to move mode so you can click where they go: a spot for a new outpost, or anywhere.")}>Pick a place on the map<span class="hint">a new outpost, or anywhere: click it once they are out</span></button>
+          ${others.map(destBtn).join("")}
+        </div>
+        <h3>Transport</h3>
+        ${transportPick(state, b, pl, v, ids, where)}
+        <h3>Stance</h3>
+        <div class="row">${Object.entries(STANCES).map(([k, x]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(x.desc)}>${x.name}</button>`).join("")}</div>
+      </div>
+      <div>
+        <h3>Supplies (from ${esc(where)})</h3>
+        ${suppliesTable(state, b, pl, b.type === "hub" ? "hub" : "base")}
+        <button data-action="pl-autofill" style="margin-top:0.4rem"${tip(`Pack for the trip plus ${MOVE_OUT.days} days of food and water${pl.dest == null ? `, and ${MOVE_OUT.scrap} scrap for an outpost` : ""}`)}>Auto-fill</button>
+        ${est && pl.dest != null ? `<div class="kv small" style="margin-top:0.4rem"><div>Arrives in</div><div><b>${est.hoursOut}h</b>${weatherEta(est)}</div><div>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div></div>` : `<div class="small muted" style="margin-top:0.4rem">Weight: ${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div>`}
+        ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
+      </div>
+    </div>
+    ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || carry.over || (pl.dest != null && !est) ? "disabled" : ""}${tip(go)}>Move out</button></div>
   </div>`;
 }
 
@@ -1223,6 +1303,7 @@ function baseOverview(state, b) {
         <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         ${illnessRowHtml(state, b)}
         ${crowdingRow(state, b)}
+        ${people.length ? `<div></div><div><button class="mini" data-action="moveout" data-base="${b.id}"${tip("Pick people to leave this base as a team, with a vehicle and supplies from its stores: send them to found a new outpost, or to another of your bases to move in (the move-out planner).")}>Move a team out…</button></div>` : ""}
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
       </div>
     </div>
