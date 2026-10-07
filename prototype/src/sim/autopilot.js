@@ -575,8 +575,9 @@ export const housingAI = {
 // barracks gets twice the beds out of whatever plot is left.)
 // scarce: share of the building plots; partsKeep: parts left after a barracks; scrapAhead: scrap above the cost for a
 // wish that is not urgent; ahead: an outpost of a cramped hub keeps this many beds free; moveMax / headroom / moveFood:
-// people moved out of a cramped hub at a time, the beds it keeps free under its ceiling, food sent along a head.
-const HOUSING = { scarce: 0.25, partsKeep: 1, scrapAhead: 25, ahead: 3, moveMax: 3, headroom: 2, moveFood: 4 };
+// people moved out of a cramped hub at a time, the beds it keeps free under its ceiling, food sent along a head;
+// line: the least supply-line strength (economy.js) of an outpost people move to.
+const HOUSING = { scarce: 0.25, partsKeep: 1, scrapAhead: 25, ahead: 3, moveMax: 3, headroom: 2, moveFood: 4, line: 0.5 };
 function nextHousing(state, base) {
   if (isShelter(base)) return null; // a shelter has no building plots: it is built up into a base first
   const st = base.stock;
@@ -622,10 +623,12 @@ function hubCramped(state, h = hub(state)) {
 // coming home to it).
 const outpostBedsFree = (state, o) => baseBeds(o) + queuedBeds(o) - residents(state, o.id).length - returning(state, o);
 // How many people the hub sends to live at outpost o now (planSupplyRuns), out of avail it can spare: only while the
-// hub has outgrown its plots (hubCramped) and is fed (10 days a head), the outpost is not running dry and has beds
-// free; HOUSING.moveMax at a time, and no more than brings the hub HOUSING.headroom under its ceiling. 0: nobody.
+// hub has outgrown its plots (hubCramped) and is fed (10 days a head), the outpost is not running dry, has beds
+// free and a good supply line (economy.js supplyLine, HOUSING.line: the hub tops up its food over it); HOUSING.moveMax
+// at a time, and no more than brings the hub HOUSING.headroom under its ceiling. 0: nobody.
 function movers(state, h, o, avail) {
   if (avail < 1 || isShelter(o) || !hubCramped(state, h) || outpostThirsty(state, o)) return 0;
+  if (((o.supplyLine && o.supplyLine.strength) ?? 1) < HOUSING.line) return 0;
   if (edibleFood(h) / Math.max(1, atBase(state, h.id).length) < 10) return 0;
   const next = nextHousing(state, h);
   const over = residents(state, h.id).length + returning(state, h) + HOUSING.headroom - (baseBeds(h) + queuedBeds(h) + (next ? next.beds : 0));
@@ -2171,9 +2174,9 @@ function planTrip(state) {
   // up to LAND_OUTPOSTS more, where they add the most land to the coalition.
   const outposts = state.bases.filter((b) => b.type === "outpost" && !b.captured).length; // bases taken from groups (conquest.js) are not founded ones
   const push = landPush(state);
-  // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost it founded has a
-  // bed free (built or queued: they build ahead of the people sent to them).
-  const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
+  // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost (founded or
+  // taken) has a bed free (built or queued: they build ahead of the people sent to them).
+  const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost").every((o) => outpostBedsFree(state, o) <= 0);
   if (outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
       (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
@@ -3877,7 +3880,7 @@ function planSupplyRuns(state) {
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
       if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
       why = `${load} water (it is running dry)`;
-    } else if (!o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
+    } else if (movers(state, h, o, Math.min(spare, crewPool.length)) > 0) { // a base taken from a group too: its bunkhouse stands empty
       // The hub has outgrown its plots (hubCramped): people move to an outpost with beds free, food for the walk and a
       // few days more with them; the outpost builds its beds, fields and stores ahead of them (buildWishes).
       const n = movers(state, h, o, Math.min(spare, crewPool.length));
