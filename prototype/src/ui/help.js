@@ -15,6 +15,7 @@ import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
 import { familyHelp } from "./family.js"; // children and families (sim/family.js)
+import { FAMILY } from "../sim/family.js";
 import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
 import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map notes
 import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
@@ -148,7 +149,7 @@ export function helpTopics() {
   if (!seen.has("why-did-this-happen")) add("Why did this happen?", WHY_HELP);
   add("Sound", soundHelp()); // ui/audio.js
   if (!seen.has("ledger-and-run-summary")) add("Ledger and run summary", ledgerHelp());
-  if (!seen.has("children-and-families")) add("Children and families", familyHelp());
+  if (FAMILY.enabled && !seen.has("children-and-families")) add("Children and families", familyHelp()); // children are off for now (sim/family.js FAMILY.enabled)
   if (!seen.has("autosaves-and-crashes")) add("Autosaves and crashes", savesHelpHtml());
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
