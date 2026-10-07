@@ -2174,9 +2174,9 @@ function planTrip(state) {
   // up to LAND_OUTPOSTS more, where they add the most land to the coalition.
   const outposts = state.bases.filter((b) => b.type === "outpost" && !b.captured).length; // bases taken from groups (conquest.js) are not founded ones
   const push = landPush(state);
-  // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost (founded or
-  // taken) has a bed free (built or queued: they build ahead of the people sent to them).
-  const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost").every((o) => outpostBedsFree(state, o) <= 0);
+  // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost it founded has a
+  // bed free (built or queued: they build ahead of the people sent to them; taken bases get nobody, planSupplyRuns).
+  const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
   if (outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
       (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
@@ -3880,7 +3880,9 @@ function planSupplyRuns(state) {
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
       if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
       why = `${load} water (it is running dry)`;
-    } else if (movers(state, h, o, Math.min(spare, crewPool.length)) > 0) { // a base taken from a group too: its bunkhouse stands empty
+    } else if (!o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
+      // Not to a base taken from a group (conquest.js): held by whoever took it, often out in the wild (census seed 5005,
+      // huge, aggressive: people moved one by one to nine taken bases died of hordes and the worm: 179 deaths against 85).
       // The hub has outgrown its plots (hubCramped): people move to an outpost with beds free, food for the walk and a
       // few days more with them; the outpost builds its beds, fields and stores ahead of them (buildWishes).
       const n = movers(state, h, o, Math.min(spare, crewPool.length));
