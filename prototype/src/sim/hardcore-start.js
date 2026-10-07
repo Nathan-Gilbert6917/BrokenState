@@ -1,5 +1,9 @@
 // Hardcore mode, your start (hardcore.js): the day Calder falls, three survivors on the road with whatever they grabbed
 // as they fled, very low supplies and no hub.
+// - How many (2026-10-07): the new-run screen's Starting people, 1–4 (hardcore.js START_PEOPLE; 3 by default, the
+//   start described here). Each one rolls their own grab, so the team's own food and water scale with the head count
+//   (1–3 days each: TEAM_MIN..TEAM_MAX per person); the car, its trunk and a prepper's bag are one of each whatever
+//   the count (one car fled, one bag was packed), so a small team has more of those per head and a big one less.
 //
 // - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin, the city
 //   where the first hive rises and the hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
@@ -58,10 +62,11 @@ export const HC_START = {
   // Small things in pockets (weights; all GEAR keys with small: true) and more in a bag (any non-bulky item).
   POCKET_STUFF: { phone: 4, lighters: 3, flashlight: 2, photos: 3, chocolate: 2, candy: 2, smokes: 1.5, batteries: 1.5, bandagekit: 1, goldring: 0.8, watch: 0.6, tobacco: 0.5, tea: 0.4, cards: 0.6, harmonica: 0.3, monocular: 0.2, coins: 0.3 },
   PACK_STUFF: { flashlight: 3, bandagekit: 3, chocolate: 2, candy: 1.5, instcoffee: 1, novel: 1.2, toiletpaper: 1.2, soap: 1, candles: 1, batteries: 1.5, lighters: 1.5, photos: 1, whiskey: 0.6, vodka: 0.5, laptop: 0.4, magazines: 0.6, cards: 0.6, binoculars: 0.3, survivalbook: 0.3, medbook: 0.2, gardenbook: 0.2, fishrod: 0.3, snarewire: 0.3, stove: 0.15, waterfilter: 0.15 },
-  // Food and water each one brings (a bag holds more), clamped for the team to 1–3 days for three (TEAM_MIN..TEAM_MAX).
+  // Food and water each one brings (a bag holds more), clamped for the team to 1–3 days each (TEAM_MIN..TEAM_MAX per
+  // person: 3–9 for three).
   FOOD: { pack: [1, 3], pockets: [0, 1] },
   WATER: { pack: [1, 3], pockets: [0, 1] },
-  TEAM_MIN: 3, TEAM_MAX: 9,
+  TEAM_MIN: 1, TEAM_MAX: 3,
   MEDS: { pack: 0.35 }, // a bottle of pills in the bag
   // The prepper (2026-10-06): one of the three (which one: the dice, by seed) kept a go-bag by the door: a duffle bag
   // (data.js, bigger than a hiking pack) with FOOD and WATER (five days for three, pooled with the team's like
@@ -153,6 +158,8 @@ export const HC_START = {
 export const BACKGROUNDS = Object.fromEntries(Object.entries(HC_START.ARCHETYPES).map(([k, a]) => [k, { name: a.name, blurb: a.blurb }]));
 
 const r1 = (v) => Math.round(v * 10) / 10;
+// "one" to "four" (the starting team's size, hardcore.js START_PEOPLE), else the digits.
+export const countWord = (n) => ["no one", "one", "two", "three", "four", "five", "six"][n] || String(n);
 const firstName = (s) => s.name.split(" ")[0];
 
 // ---------- the contract with the other parts ----------
@@ -374,10 +381,10 @@ export function rollCar(state, p, people) {
   }
   return { owner, car, trunk };
 }
-export function carLine(owner, car, trunk) {
+export function carLine(owner, car, trunk, people = HC_START.CREW) {
   const back = [...Object.entries(trunk.supplies).map(([k, q]) => `${q} ${k}`), ...wordsOf(trunk.gear)];
   const fill = Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100);
-  return `${firstName(owner)} got everyone into their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}.`;
+  return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}.`;
 }
 
 // The things as words, repeats counted ("family photos (2)"); "a, b and c".
@@ -405,14 +412,14 @@ function grabLine(s, got) {
 // ---------- setup (hardcore.js hardcoreCreate) ----------
 // crewRoll: the three (who they were, what they grabbed, the car) drawn from a seed of their own instead of the world's
 // (the new-run screen's Randomize all). The world's rng is put back after the car, so the rest of the run still
-// follows the world's seed.
-export function setupHardcoreStart(state, crew, crewRoll = null) {
+// follows the world's seed. n: how many flee (hardcore.js START_PEOPLE, the new-run screen's Starting people; 3 by default).
+export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CREW) {
   state.hardcore = state.hardcore || {};
   const tile = spawnTile(state);
   const worldRng = state.rng;
   if (crewRoll != null) state.rng = new Rng(crewRoll);
   const people = [];
-  for (let i = 0; i < HC_START.CREW; i++) {
+  for (let i = 0; i < n; i++) {
     const s = makeSurvivor(state, i === 0 ? 1.3 : 1);
     state.survivors.push(s);
     people.push(s);
@@ -423,7 +430,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null) {
   const kinds = drawArchetypes(state, people.length);
   people.forEach((s, i) => applyArchetype(state, s, kinds[i]));
   if (crew) applyCrew(state, crew);
-  if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start
+  if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start (or past the head count)
   // What each one grabbed. A prepper's bag's five days come on top of the others' 1–3 days (TEAM_MIN..TEAM_MAX clamps
   // what the others carried, as before).
   const sup = {};
@@ -440,8 +447,10 @@ export function setupHardcoreStart(state, crew, crewRoll = null) {
     sup.meds += got.meds;
     lines.push(grabLine(s, got));
   }
-  sup.food = Math.max(HC_START.TEAM_MIN, Math.min(HC_START.TEAM_MAX, sup.food));
-  sup.water = Math.max(HC_START.TEAM_MIN, Math.min(HC_START.TEAM_MAX, sup.water));
+  // Clamped per head, the whole team counted (as for three before the head count could change: 3–9).
+  const heads = people.length;
+  sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.food));
+  sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
@@ -462,15 +471,15 @@ export function setupHardcoreStart(state, crew, crewRoll = null) {
   // The car one of them fled in, and what was in the back.
   const { owner, car, trunk } = rollCar(state, p, people);
   state.rng = worldRng;
-  lines.push(carLine(owner, car, trunk));
-  log(state, `The three of you set off in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
+  lines.push(carLine(owner, car, trunk, people.length));
+  log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
-  state.hardcore.start = { tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car.id, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };
+  state.hardcore.start = { people: people.length, tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car.id, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
   if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} Between you: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
+  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
   awaitOrders(state, p, intro, { title: "The day Calder fell" });
   return p;
 }

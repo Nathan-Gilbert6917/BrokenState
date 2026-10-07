@@ -1,5 +1,5 @@
 // Hardcore mode: the run starts on the day the State of Calder falls, not 6–12 months later.
-// - You: 3 survivors on the road with whatever they grabbed as they fled, very low supplies and no hub; the first base
+// - You: 1–4 survivors (the new-run screen's Starting people, START_PEOPLE; 3 by default) on the road with whatever they grabbed as they fled, very low supplies and no hub; the first base
 //   you found becomes the hub (hardcore-start.js).
 // - The outbreak: 1–2 hives at the start, infection 0% away from the outbreak areas, spreading through the first year
 //   (mostly in towns and cities) until the state looks like a normal game's start (hardcore-outbreak.js).
@@ -17,15 +17,25 @@ import { setupHardcoreLoot, hardcoreLootDaily } from "./hardcore-loot.js";
 
 export const MODES = {
   normal: { label: "Normal", tip: "6–12 months after the outbreak: you start with a hub, six survivors and supplies" },
-  hardcore: { label: "Hardcore", tip: "The day Calder falls: three survivors on the road with what they grabbed, no hub, and the outbreak just starting" },
+  hardcore: { label: "Hardcore", tip: "The day Calder falls: one to four survivors (three by default) on the road with what they grabbed, no hub, and the outbreak just starting" },
 };
+
+// Starting people (the new-run screen, Hardcore only): how many flee together on day 1, MIN–MAX, DEF by default. A normal
+// start is a full hub of six and does not take it. createWorld's startPeople and state.startPeople (saved with the game).
+export const START_PEOPLE = { MIN: 1, MAX: 4, DEF: 3 };
+export function clampStartPeople(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(START_PEOPLE.MIN, Math.min(START_PEOPLE.MAX, n)) : START_PEOPLE.DEF;
+}
 
 export const isHardcore = (state) => !!state && state.mode === "hardcore";
 
 // createWorld (world.js), in place of the normal hub, crew and groups. Your start first, so the groups can be placed
 // relative to where you are (hardcore-groups.js keeps them a fair distance away).
-export function hardcoreCreate(state, { factionCount, crew, crewRoll = null }) {
-  setupHardcoreStart(state, crew, crewRoll);
+// startPeople: how many flee together (START_PEOPLE; clamped, 3 when left out).
+export function hardcoreCreate(state, { factionCount, crew, crewRoll = null, startPeople = START_PEOPLE.DEF }) {
+  state.startPeople = clampStartPeople(startPeople);
+  setupHardcoreStart(state, crew, crewRoll, state.startPeople);
   setupHardcoreGroups(state, factionCount);
 }
 
