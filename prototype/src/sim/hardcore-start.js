@@ -2,8 +2,11 @@
 // as they fled, very low supplies and no hub.
 // - How many (2026-10-07): the new-run screen's Starting people, 1–4 (hardcore.js START_PEOPLE; 3 by default, the
 //   start described here). Each one rolls their own grab, so the team's own food and water scale with the head count
-//   (1–3 days each: TEAM_MIN..TEAM_MAX per person); the car, its trunk and a prepper's bag are one of each whatever
-//   the count (one car fled, one bag was packed), so a small team has more of those per head and a big one less.
+//   (1–3 days each: TEAM_MIN..TEAM_MAX per person; food by background, 2026-10-07: ARCHETYPES food); the car, its
+//   trunk and a prepper's bag are one of each whatever the count (one car fled, one bag was packed), so a small team
+//   has more of those per head and a big one less. One or two (HC_START.SMALL, 2026-10-07): a skill bump and the
+//   car's empty seats loaded, so a solo or a pair is not several times deadlier than three (and on the road fewer
+//   armed strangers, and fewer of them: wanderers.js HC_SMALL).
 //
 // - Spawn: a random open land tile (no site on it), reasonably central, away from the outbreak (its origin, the city
 //   where the first hive rises and the hives mapgen placed), the cities, the military sites and the other groups, with a town or a few sites within a
@@ -32,7 +35,7 @@
 //   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
-import { GEAR, SUPPLY_KEYS, TRAITS } from "./data.js";
+import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS } from "./inventory.js";
@@ -63,7 +66,9 @@ export const HC_START = {
   POCKET_STUFF: { phone: 4, lighters: 3, flashlight: 2, photos: 3, chocolate: 2, candy: 2, smokes: 1.5, batteries: 1.5, bandagekit: 1, goldring: 0.8, watch: 0.6, tobacco: 0.5, tea: 0.4, cards: 0.6, harmonica: 0.3, monocular: 0.2, coins: 0.3 },
   PACK_STUFF: { flashlight: 3, bandagekit: 3, chocolate: 2, candy: 1.5, instcoffee: 1, novel: 1.2, toiletpaper: 1.2, soap: 1, candles: 1, batteries: 1.5, lighters: 1.5, photos: 1, whiskey: 0.6, vodka: 0.5, laptop: 0.4, magazines: 0.6, cards: 0.6, binoculars: 0.3, survivalbook: 0.3, medbook: 0.2, gardenbook: 0.2, fishrod: 0.3, snarewire: 0.3, stove: 0.15, waterfilter: 0.15 },
   // Food and water each one brings (a bag holds more), clamped for the team to 1–3 days each (TEAM_MIN..TEAM_MAX per
-  // person: 3–9 for three).
+  // person: 3–9 for three). Food by background (ARCHETYPES food, 2026-10-07): a farmer, a hunter or a trucker grabbed
+  // more to eat (and lifts the team's cap to their own max), a veteran, a nurse, a mechanic or a cop less (they ran
+  // with ammo, a vest, meds or tools instead); the others use FOOD.
   FOOD: { pack: [1, 3], pockets: [0, 1] },
   WATER: { pack: [1, 3], pockets: [0, 1] },
   TEAM_MIN: 1, TEAM_MAX: 3,
@@ -87,6 +92,9 @@ export const HC_START = {
   // ones (weights), one pushed at TRAIT_ODDS when a slot allows (brave never beside coward). pack / packs / weapons /
   // stuff: over the common PACK / PACKS / WEAPONS / PACK_STUFF (stuff is merged in on top, so the common things still
   // turn up). armor: worn from the start. meds: carried on top of a bag's bottle. rounds: × the common ROUNDS.
+  // food (2026-10-07): what they grabbed to eat, over the common FOOD ({ pack, pockets } rolls; max: their share of
+  // the team's cap in place of TEAM_MAX). Per head the draw averages about what FOOD gives (+0.1 food a head), so a
+  // team of three carries about what it did; a fourth brings food by who they were.
   // cars: the kind of car when the car is theirs (weights); carOdds: how likely the car is theirs against the others'.
   // trunk: what was in the back: supplies [lo, hi] each, and N [lo, hi] things from gear (weights).
   TRAIT_ODDS: 0.6,
@@ -94,7 +102,7 @@ export const HC_START = {
     prepper:    { name: "Prepper",            w: 1.2, skills: { scavenging: [2, 4], scouting: [1, 3], shooting: [1, 3] }, traits: {}, carOdds: 1.6,
                   cars: { truck: 4, hummer: 2, suv: 2 }, trunk: { food: [6, 12], water: [6, 12], fuel: [4, 10], ammo: [10, 30], n: [2, 4], gear: { stove: 1, snarewire: 1, fishrod: 1, camonet: 0.8, tripwire: 0.6, flare: 1, survivalbook: 0.6, beartrap: 0.5, waterfilter: 0.5 } },
                   blurb: "saw it coming" },
-    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 6], leadership: [1, 3], scouting: [1, 3] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2,
+    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 6], leadership: [1, 3], scouting: [1, 3] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
                   pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 2, machete: 1, knife: 1 }, weaponOdds: 0.8, rounds: 2, armor: { vest: 0.5 },
                   stuff: { binoculars: 2, bandagekit: 2, flare: 1.5, milradio: 0.3, smokegren: 0.5 },
                   cars: { truck: 3, hummer: 2, suv: 1 }, trunk: { food: [2, 5], water: [2, 5], ammo: [10, 25], n: [1, 3], gear: { milradio: 0.5, binoculars: 1, flare: 1, smokegren: 0.5, bandagekit: 1, assaultpack: 0.5, vest: 0.6, nvg: 0.2 } },
@@ -114,32 +122,32 @@ export const HC_START = {
                   stuff: { lighters: 2, smokes: 1.5, flashlight: 2, batteries: 1.5 },
                   cars: { truck: 5, van: 3 }, trunk: { food: [1, 3], water: [2, 4], scrap: [6, 14], parts: [0, 2], n: [1, 3], gear: { sledge: 1, prybar: 1, fireaxe: 0.6, crowbar: 1, sandbags: 0.5, barbedwire: 0.3, tirevest: 0.4 } },
                   blurb: "tools and lumber in the back" },
-    nurse:      { name: "Nurse",              w: 1, skills: { medicine: [4, 7], speech: [1, 2] }, traits: { medic: 3 }, carOdds: 0.9,
+    nurse:      { name: "Nurse",              w: 1, skills: { medicine: [4, 7], speech: [1, 2] }, traits: { medic: 3 }, carOdds: 0.9, food: { pack: [0, 2], pockets: [0, 1] },
                   pack: 0.7, packs: { backpack: 3, slingbag: 3 }, weapons: { knife: 4 }, weaponOdds: 0.5, meds: [1, 3],
                   stuff: { bandagekit: 3, surgkit: 0.8, soap: 1, razors: 0.5 },
                   cars: { sedan: 3, suv: 2 }, trunk: { meds: [2, 5], food: [1, 2], water: [1, 2], n: [1, 2], gear: { bandagekit: 3, surgkit: 1, medbook: 0.5, dewormer: 0.5 } },
                   blurb: "came off a double shift" },
-    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 3] }, traits: { tough: 2 }, carOdds: 1.2,
+    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 3] }, traits: { tough: 2 }, carOdds: 1.2, food: { pack: [2, 5], pockets: [1, 2], max: 5 },
                   pack: 0.5, packs: { backpack: 3, hikingpack: 1 }, weapons: { huntrifle: 2, machete: 2, knife: 1, leverrifle: 0.5 }, weaponOdds: 0.6, rounds: 1.5,
                   stuff: { gardenbook: 1.5, snarewire: 1, honey: 0.8, tobacco: 0.6 },
                   cars: { truck: 5, suv: 1 }, trunk: { food: [6, 12], preserved: [2, 6], jars: [2, 6], water: [2, 4], n: [1, 2], gear: { gardenbook: 1, snarewire: 1, fishrod: 0.8, barbedwire: 0.5, huntrifle: 0.3, beartrap: 0.4 } },
                   blurb: "a truck full of the harvest" },
-    hunter:     { name: "Hunter",             w: 0.9, skills: { shooting: [3, 5], scouting: [2, 4], stealth: [1, 3] }, traits: { keeneye: 3 }, carOdds: 1.1,
+    hunter:     { name: "Hunter",             w: 0.9, skills: { shooting: [3, 5], scouting: [2, 4], stealth: [1, 3] }, traits: { keeneye: 3 }, carOdds: 1.1, food: { pack: [2, 4], pockets: [1, 2], max: 4 },
                   pack: 0.7, packs: { hikingpack: 3, backpack: 2 }, weapons: { huntrifle: 3, compbow: 1.5, xbow: 1, knife: 1 }, weaponOdds: 0.8, rounds: 1.5,
                   stuff: { binoculars: 2, camonet: 1, gamecall: 1, snarewire: 1, fishrod: 0.8 },
                   cars: { truck: 4, suv: 2 }, trunk: { food: [2, 5], ammo: [8, 20], n: [1, 3], gear: { camonet: 1, binoculars: 1, gamecall: 1, snarewire: 1, beartrap: 0.8, ghillie: 0.4, stove: 0.8, monocular: 0.5 } },
                   blurb: "knows every deer trail" },
-    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3,
+    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3, food: { pack: [0, 2], pockets: [0, 1] },
                   pack: 0.5, packs: { backpack: 3, slingbag: 1 }, weapons: { prybar: 3, bat: 1, knife: 1 },
                   stuff: { crowbar: 1.5, flashlight: 2, batteries: 1.5, lighters: 1 },
                   cars: { truck: 3, van: 2, sedan: 1 }, trunk: { parts: [2, 5], scrap: [4, 10], fuel: [3, 8], n: [1, 2], gear: { crowbar: 1, flashlight: 1, enginebook: 0.5, batteries: 1 } },
                   blurb: "grease under the nails" },
-    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 5], speech: [1, 3], leadership: [1, 3] }, traits: { brave: 2 }, carOdds: 1,
+    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 5], speech: [1, 3], leadership: [1, 3] }, traits: { brave: 2 }, carOdds: 1, food: { pack: [0, 2], pockets: [0, 1] },
                   pack: 0.4, packs: { slingbag: 2, backpack: 2 }, weapons: { pistol: 5, baton: 1 }, weaponOdds: 0.9, rounds: 2, armor: { vest: 0.7 },
                   stuff: { cuffs: 1.5, flashlight: 2, flare: 1 },
                   cars: { suv: 3, sedan: 2 }, trunk: { ammo: [10, 24], n: [1, 3], gear: { cuffs: 1, baton: 0.5, riothelmet: 0.5, riotarms: 0.5, flare: 1, flashlight: 1, shotgun: 0.4 } },
                   blurb: "still in half a uniform" },
-    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [1, 3], scouting: [2, 4] }, traits: { badback: 1, nightowl: 1 }, carOdds: 1.5,
+    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [1, 3], scouting: [2, 4] }, traits: { badback: 1, nightowl: 1 }, carOdds: 1.5, food: { pack: [1, 4], pockets: [1, 1], max: 4 },
                   pack: 0.4, packs: { slingbag: 3, backpack: 1 }, weapons: { bat: 2, revolver: 1.5, knife: 1 },
                   stuff: { pocketradio: 1.5, smokes: 1.5, instcoffee: 1.5, cards: 1, harmonica: 0.5 },
                   cars: { van: 3, truck: 3 }, trunk: { food: [8, 16], water: [4, 8], fuel: [4, 8], n: [1, 2], gear: { pocketradio: 1, cards: 0.8, smokes: 0.8, instcoffee: 1, tirevest: 0.3 } },
@@ -152,12 +160,21 @@ export const HC_START = {
   },
   // The car: whose (ARCHETYPES carOdds), the tank's fill [lo, hi] of its tank, the condition [lo, hi].
   CAR: { FUEL: [0.5, 1], CONDITION: [55, 90] },
+  // Small teams (2026-10-07): the one or two who got out are the ones who could look after themselves, and the car's
+  // empty seats were loaded too. For each seat short of CREW (three; emptySeats): each of them gets + a roll of SKILL
+  // [lo, hi] in each of SKILLS (Scouting, Stealth, Medicine: finding food, slipping past trouble, patching yourself
+  // up), and the back seat holds SEAT [lo, hi] of each supply on top of the trunk. Alone (two seats): +2–4 in each,
+  // 6–12 food, 6–12 water, 2 meds; a pair (one seat): +1–2, 3–6 food, 3–6 water, 1 meds. Three or four: nothing (no
+  // dice drawn, so a default start is the same start).
+  SMALL: { SKILLS: ["scouting", "stealth", "medicine"], SKILL: [1, 2], SEAT: { food: [3, 6], water: [3, 6], meds: [1, 1] } },
   // The first hub: a staging camp (staging.js STAGING.HARDCORE: what it takes and the days of work).
 };
 // For the UI (the People tab's background chip) and the tools: { key: { name, blurb } }.
 export const BACKGROUNDS = Object.fromEntries(Object.entries(HC_START.ARCHETYPES).map(([k, a]) => [k, { name: a.name, blurb: a.blurb }]));
 
 const r1 = (v) => Math.round(v * 10) / 10;
+// Seats short of the default three (HC_START.SMALL): 2 alone, 1 for a pair, 0 for three or four.
+export const emptySeats = (n) => Math.max(0, HC_START.CREW - n);
 // "one" to "four" (the starting team's size, hardcore.js START_PEOPLE), else the digits.
 export const countWord = (n) => ["no one", "one", "two", "three", "four", "five", "six"][n] || String(n);
 const firstName = (s) => s.name.split(" ")[0];
@@ -261,6 +278,23 @@ export function applyArchetype(state, s, key) {
   if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) s.traits.push(rng.weighted(want, (t) => A.traits[t]));
 }
 
+// The most food the team's own grabs come to (a prepper's bag on top): TEAM_MAX a head, a background's food.max in
+// its place (a farmer 5, a hunter or a trucker 4).
+export const teamFoodCap = (people) => people.reduce((a, s) => a + (((HC_START.ARCHETYPES[s.background] || {}).food || {}).max ?? HC_START.TEAM_MAX), 0);
+
+// A team of one or two (HC_START.SMALL): each of them + SKILL per empty seat in each of SKILLS. Draws no dice for
+// three or four. Returns the skills bumped (for the log), or null.
+export function smallTeamSkills(state, people) {
+  const seats = emptySeats(people.length), S = HC_START.SMALL;
+  if (!seats) return null;
+  for (const s of people) for (const k of S.SKILLS) {
+    let up = 0;
+    for (let i = 0; i < seats; i++) up += state.rng.int(S.SKILL[0], S.SKILL[1]);
+    s.skills[k] = Math.min(20, (s.skills[k] || 0) + up);
+  }
+  return S.SKILLS;
+}
+
 // One survivor's flight: their bag (or none), weapon, things, and what they add to the team's food, water, ammo, meds.
 // A: their background's tables (ARCHETYPES) over the common ones.
 export function rollGrab(state, s, A = null) {
@@ -312,7 +346,8 @@ export function rollGrab(state, s, A = null) {
     }
     if (rng.chance(C.MEDS.pack)) got.meds += 1;
   }
-  const f = bag ? C.FOOD.pack : C.FOOD.pockets, w = bag ? C.WATER.pack : C.WATER.pockets;
+  const F = (A && A.food) || C.FOOD; // what they grabbed to eat by background (ARCHETYPES food), else the common
+  const f = bag ? F.pack : F.pockets, w = bag ? C.WATER.pack : C.WATER.pockets;
   got.food += rng.int(f[0], f[1]);
   got.water += rng.int(w[0], w[1]);
   return got;
@@ -379,12 +414,23 @@ export function rollCar(state, p, people) {
       trunk.gear.push(item);
     }
   }
+  // A team of one or two loaded the empty seats too (HC_START.SMALL SEAT per seat short of three): trunk.seats.
+  const seats = emptySeats(people.length);
+  if (seats) {
+    trunk.seats = {};
+    for (const [k, [lo, hi]] of Object.entries(C.SMALL.SEAT)) {
+      let q = 0;
+      for (let i = 0; i < seats; i++) q += rng.int(lo, hi);
+      if (q > 0) { trunk.seats[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
+    }
+  }
   return { owner, car, trunk };
 }
 export function carLine(owner, car, trunk, people = HC_START.CREW) {
   const back = [...Object.entries(trunk.supplies).map(([k, q]) => `${q} ${k}`), ...wordsOf(trunk.gear)];
   const fill = Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100);
-  return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}.`;
+  const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${k}`) : [];
+  return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}${seat.length ? `; on the empty ${people === 1 ? "seats" : "seat"}, what else they could grab: ${andList(seat)}` : ""}.`;
 }
 
 // The things as words, repeats counted ("family photos (2)"); "a, b and c".
@@ -429,6 +475,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // edited colonist keeps the skills typed in.
   const kinds = drawArchetypes(state, people.length);
   people.forEach((s, i) => applyArchetype(state, s, kinds[i]));
+  const smallSkills = smallTeamSkills(state, people); // one or two: the ones who could look after themselves (HC_START.SMALL)
   if (crew) applyCrew(state, crew);
   if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start (or past the head count)
   // What each one grabbed. A prepper's bag's five days come on top of the others' 1–3 days (TEAM_MIN..TEAM_MAX clamps
@@ -447,9 +494,10 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     sup.meds += got.meds;
     lines.push(grabLine(s, got));
   }
-  // Clamped per head, the whole team counted (as for three before the head count could change: 3–9).
+  // Clamped per head, the whole team counted (as for three before the head count could change: 3–9); a farmer, a
+  // hunter or a trucker lifts the food cap by their own max (ARCHETYPES food.max).
   const heads = people.length;
-  sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.food));
+  sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(people), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
   if (prepGot) {
     sup.food += prepGot.food;
@@ -475,6 +523,8 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");
   p.sightNow = state.grid.within(tile.id, sightRadius(state, p));
   state.hardcore.start = { people: people.length, tile: tile.id, lastTile: tile.id, foundedDay: null, grabbed: lines, prepper: prepper ? prepper.id : null, car: car.id, carOwner: owner.id, backgrounds: Object.fromEntries(people.map((s) => [s.id, s.background])) };
+  // Day 1's log says a small team's edge (HC_START.SMALL): the skills, and the seats loaded (the car line has what).
+  if (smallSkills) log(state, `${people.length === 1 ? `${firstName(people[0])} got out alone` : `${firstName(people[0])} and ${firstName(people[1])} got out on their own`}: the kind who can look after ${people.length === 1 ? "themselves" : "each other"} (${andList(smallSkills.map((k) => SKILL_NAMES[k]))} up), and the car's empty ${people.length === 1 ? "seats were" : "seat was"} loaded too.`, "good");
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
   if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
