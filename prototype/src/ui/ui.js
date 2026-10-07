@@ -62,7 +62,7 @@ import { commandable, NO_RADIO } from "../sim/plans.js";
 import { teamRadioLine } from "./radiolisten.js"; // a team's receiver out of contact: what it hears (sim/radiolisten.js)
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS, frontsApproaching } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
-import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, durUnit, MAX_CRAFT_QUEUE, craftInText } from "../sim/crafting.js";
+import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, itemDurMax, durUnit, MAX_CRAFT_QUEUE, craftInText } from "../sim/crafting.js";
 import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton } from "./production.js";
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
@@ -397,7 +397,7 @@ export function tileActions(state, id) {
   actions.push(["sweep", "Survey the area"]);
   // Food from the land (sim/hunting.js): the planner with the Hunting / Fishing trip preset.
   if (gameAbundance(state, id) >= 0.08) actions.push(["move", "Hunting trip", "hunt", "Plan a hunting trip here: go, hunt 8 hours (change it in the plan), come home with the game. Forest and hills are best, autumn the best season; fresh game is heavy and spoils fast."]);
-  if (huntInfo(state, id).fishSpot) actions.push(["move", "Fishing trip", "fish", "Plan a fishing trip here: go, fish 8 hours, come home. Needs a fishing rod or net (the hub's goes along)."]);
+  if (huntInfo(state, id).fishSpot) actions.push(["move", "Fishing trip", "fish", "Plan a fishing trip here: go, fish 8 hours, come home. Needs a fishing rod, a net or a spear (the hub's goes along)."]);
   // A site nobody has reported on yet is assumed to hold something (the map draws it untouched, too).
   if (info ? info.loot > 0.05 : !!mapLoc(state, id)) actions.push(["scavenge", "Scavenge / raid"]);
   const fb = knownGroupBase(state, id, isLive, snap);
@@ -522,9 +522,9 @@ function landRows(state, id, teamsHere) {
   else if ((t.infection || 0) >= WORM.MEAT_AT) out += `<div${tip(`The worm's eggs lie in this ground and its water: game, fish and snares taken here carry them until cooked through, water drawn here until boiled or filtered${(t.infection || 0) >= WORM.CROP_MIN ? ", and crops grown or food gathered here until boiled" : ""}.${searchRiskText(state, id) ? ` Searching a site here: ${searchRiskText(state, id)}.` : ""}`)}>Worm</div><div class="danger">cook the meat, boil the water${(t.infection || 0) >= WORM.CROP_MIN ? " and the greens" : ""}${searchRiskText(state, id) ? `; ${searchRiskText(state, id).split(" (")[0]}` : ""}</div>`;
   if (info.fishSpot) {
     const kitPeople = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).slice(0, 2) : [];
-    const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || []);
+    const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || [], { frozen: frozenAt(state) });
     const fe = kit.power ? expectFish(state, kit, id, HUNT.defHours).rations : null;
-    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod or net; ice fishing in a freeze needs a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? ` · ~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}` : ` · <span class="muted">no rod or net ${p ? "with the team" : "at the hub"}</span>`}</div>`;
+    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod, a net or a spear (spears work in daylight, not through ice); ice fishing in a freeze needs a rod or net and a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? ` · ~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}` : ` · <span class="muted">no rod, net or spear ${p ? "with the team" : "at the hub"}</span>`}</div>`;
   }
   // Wild food (sim/foraging.js): what the land holds this season and what 8 hours of foraging would bring.
   const fPeople = p ? Parties.partyMembers(state, p) : h ? [...atBase(state, h.id)].sort((a, b) => foragerMult(b) - foragerMult(a) || a.id - b.id).slice(0, 3) : [];
@@ -692,7 +692,7 @@ export function helpText() {
     <b>Boats:</b> water blocks travel. A team on a shore can build a one-use boat and cross one water tile (team panel, or right-click the far shore). It costs scrap and hours; a vehicle needs a raft or is left on the shore.<br>
     <b>Supply runs and trade routes:</b> supply runs are convoy jobs between your own bases (a base's Supply runs tab): crew, vehicle, goods each way, once or on a schedule. Trade routes are repeating convoys to a group you have a trade pact with (Groups tab); the terms must be worth it to them at their prices.<br>
     <b>Medical:</b> everyone at a base heals slowly. Each night automatic care treats the worst off first (wounds below 70 health or infected, and illnesses) while meds stay above the base's reserve and medics have time. One treatment per wound or illness a day; each takes a medic's time (3 + Medicine/4 a day per Medic, surgery most of a day). Hospitals (infirmary → field hospital → clinic → trauma hospital) need medics and give beds to people below the admit line (Medical tab, default 70) or badly hurt or ill; with too few medics they run as a lower tier. On a team, treating is a 1-hour order and needs contact. Wounds below 40 health can get infected.<br>
-    <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. Makeshift gear wears out. Teams can make the simplest things in the field.<br>
+    <b>Crafting:</b> the Crafting tab queues makeshift weapons, armor, tools and dressings; people on the Craft role do the work. All gear wears out (weapons and armor a use a fight, fishing gear a day of fishing, camp kit a day in the field): makeshift gear fastest, a well-made piece lasts longer, found gear is part-worn. Teams can make the simplest things in the field.<br>
     <b>Orders, power and stewards:</b> each workshop station (Workshops tab) takes a standing order: Forever, Until stock reaches N, Keep at least N of an input, or Off, and what its operator does while it waits. The Crafting tab keeps N of an item in the armory at a minimum quality. A generator (needs an operator and 2 fuel a day) powers the cold store, radio, floodlights, machine shop and preserving kitchen; an ethanol still makes fuel from surplus food. <i>Hand to a steward</i> (Overview tab) lets the governor run a base, area by area; pinned people are left alone, and Take over hands it back as it is.<br>
     <b>Inventory:</b> every survivor has hands, off hand, head, body, arms, legs, a pack, and four pockets. Open it from a survivor's screen, the Armory tab or the team panel: click an item, then where it should go (or drag it). Treats (chocolate, coffee, cigarettes, vodka) are used up with <i>Use</i> for a mood boost at a price.<br>
     <b>What you find:</b> sites hold what fits them (a hunting lodge rifles, bows and camo; a police station batons, riot gear and a carbine; a hardware store crowbars, sledgehammers and barbed wire; houses jewelry and keepsakes). Valuables (jewelry, smokes, liquor, gadgets, collectibles, household goods) are only for trade. Comforts lift the mood of everyone around them (cards, a harmonica, a guitar) or of whoever carries them (family photos). Camp kit (camo netting, a ghillie wrap, rag-wrapped boots, a scent mask, a smokeless stove) cuts a team's Heat while it camps or searches. Barbed wire, sandbags, bear traps and a tripwire alarm in a base's armory help hold off hordes. Frag grenades, pipe bombs, Molotovs, flares and smoke grenades are thrown in battle like bottles; alarm clocks, pocket radios, hand warmers and heat packs are decoys for the dead (Siege, fire and decoys).<br>
@@ -1139,10 +1139,10 @@ function gapLabel(s, item, plain = false) {
 function gearTip(item) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${d.name}: power ${d.power}${d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}, worth: ${worthTier(item)}${item.quality < 1 ? `, condition ${Math.round(item.quality * 100)}%` : ""}${dur != null ? d.tabs ? `. ${dur} of ${d.dur} tablets left` : d.groom ? `. ${dur} of ${d.dur} days of use left` : `. Makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left before it breaks` : ""}${d.desc ? `. ${d.desc}` : ""}`;
+  return `${d.name}: power ${d.power}${d.skill ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}, worth: ${worthTier(item)}${item.quality < 1 ? `, condition ${Math.round(item.quality * 100)}%` : ""}${dur != null ? d.tabs ? `. ${dur} of ${d.dur} tablets left` : d.groom ? `. ${dur} of ${d.dur} days of use left` : `. ${d.makeshift ? "Makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks` : ""}${d.desc ? `. ${d.desc}` : ""}`;
 }
-// Uses left on makeshift gear, e.g. " [7/10]".
-const durTag = (item) => { const v = itemDur(item); return v != null ? ` [${v}/${GEAR[item.key].dur}]` : ""; };
+// Uses left before it breaks, e.g. " [7/10]".
+const durTag = (item) => { const v = itemDur(item); return v != null ? ` [${v}/${itemDurMax(item)}]` : ""; };
 
 function survivorModal(state, ui) {
   const s = survivorById(state, ui.survivor);

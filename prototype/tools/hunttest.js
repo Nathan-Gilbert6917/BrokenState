@@ -355,7 +355,7 @@ section("Fishing: rods, nets, water, season, ice");
   check(H.fishSpot(state, cleanTile(state, "forest").id) == null, "no fishing away from the water");
   const sum = dayIn(state, "summer") * 24 + 5;
   const p = placeTeam(state, river.id, { weapon: "knife", second: null });
-  check(/fishing rod or a net/.test(H.fishProblem(state, p)), "no rod or net: no fishing");
+  check(/fishing rod, a net or a spear/.test(H.fishProblem(state, p)), "no rod, net or spear: no fishing");
   partyMembers(state, p)[0].gear.backpack = partyMembers(state, p)[0].gear.backpack || newItem("backpack");
   p.cargo.gear.push(newItem("fishrod"));
   state.hour = sum;
@@ -366,7 +366,8 @@ section("Fishing: rods, nets, water, season, ice");
   const eRiver = H.expectFish(state, kitRod, river.id, 8, sum).rations, eLake = H.expectFish(state, kitRod, lake.id, 8, sum).rations, ePond = pond ? H.expectFish(state, kitRod, pond.id, 8, sum).rations : null;
   note(`a rod, 8h in summer from dawn: deep river bend ${eLake}, river ${eRiver}${ePond != null ? `, pond ${ePond}` : ""} food`);
   check(eLake > eRiver && (ePond == null || eRiver > ePond), "a deep bend (or a lake) > a river > a pond");
-  const rolled = mean(Array.from({ length: 300 }, () => simJob(state, p, "fish", 8, sum).rations));
+  const rodItem = p.cargo.gear.find((it) => it.key === "fishrod");
+  const rolled = mean(Array.from({ length: 300 }, () => { rodItem.dur = GEAR.fishrod.dur; return simJob(state, p, "fish", 8, sum).rations; })); // a fresh rod each trip (it wears a use a day of fishing)
   check(Math.abs(rolled - eRiver) <= eRiver * 0.15, `rolled fishing matches the expectation (${r1(rolled)} vs ${eRiver})`);
   const bySeason = ["spring", "summer", "autumn", "winter"].map((k) => [k, H.seasonFish(state, dayIn(state, k) * 24 + 12)]);
   check(bySeason[0][1] > bySeason[1][1] && bySeason[1][1] > bySeason[2][1] && bySeason[2][1] > bySeason[3][1], "spring runs best, winter worst");
@@ -383,6 +384,7 @@ section("Fishing: rods, nets, water, season, ice");
   } else note("no frozen day in the first winter on this seed: ice fishing not checked");
   // Fish run out and come back in about 10 days.
   state.fish = {};
+  rodItem.dur = GEAR.fishrod.dur;
   simJob(state, p, "fish", 24, sum, { reset: false });
   const lvl = H.fishLevel(state, river.id);
   check(lvl < 1 && H.fishLevel(state, river.id, state.hour + 10 * 24) > lvl, `fished down to ${r1(lvl * 100)}%, back up in 10 days`);

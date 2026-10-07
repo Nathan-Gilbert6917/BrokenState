@@ -25,7 +25,7 @@ import { routesDaily } from "../src/sim/economy.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { startWar } from "../src/sim/diplomacy.js";
 import { newItem } from "../src/sim/inventory.js";
-import { makeItem } from "../src/sim/crafting.js";
+import { makeItem, itemDurMax } from "../src/sim/crafting.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -182,12 +182,12 @@ const groupOf = (state, type) => {
   check(combatAct(st, { type: "meds", unit: mu.id, target: mu.id }) === "" && combatAct(st, { type: "meds", unit: mu.id, target: mu.id }) === "", "the medic treats twice");
   playOut(st);
   check(b.over && b.result.outcome === "victory", "the defence wins");
-  const spearMax = GEAR.pipespear.dur, vestMax = GEAR.tirevest.dur;
+  const spearMax = itemDurMax(makeItem("pipespear", 1)), vestMax = itemDurMax(makeItem("tirevest", 1)); // crafted at 100%: their own full uses
   const tookField = everyone.filter((s) => fielded.includes(s.id) && s.alive);
   const stayed = everyone.filter((s) => !fielded.includes(s.id));
   check(tookField.every((s) => s.gear.weapon.dur === spearMax - 1 && s.gear.armor.dur === vestMax - 1), "weapon and armor of those who fought lose one use when the battle ends");
   check(stayed.length === 3 && stayed.every((s) => (s.gear.weapon.dur ?? spearMax) === spearMax && (s.gear.armor.dur ?? vestMax) === vestMax), "people who stayed off the map wear nothing");
-  check(medic.gear.tool && medic.gear.tool.dur === GEAR.bandagekit.dur - mu.kitUses && mu.kitUses >= 2, `the bandage kit lost one use per treatment (${mu.kitUses} uses, ${medic.gear.tool ? medic.gear.tool.dur : "gone"} left)`);
+  check(medic.gear.tool && medic.gear.tool.dur === itemDurMax(medic.gear.tool) - mu.kitUses && mu.kitUses >= 2, `the bandage kit lost one use per treatment (${mu.kitUses} uses, ${medic.gear.tool ? medic.gear.tool.dur : "gone"} left)`);
   // Swapped on the result screen: the weapon that fought is already worn, the fresh one is not.
   const swapper = tookField.find((s) => s !== medic);
   const fought = swapper.gear.weapon;
@@ -195,7 +195,7 @@ const groupOf = (state, type) => {
   h.armory.push(fought);
   swapper.gear.weapon = fresh;
   closeCombat(st);
-  check(fresh.dur === GEAR.spikedbat.dur && fought.dur === spearMax - 1, "an item equipped after the battle is not worn; the one that fought is, once");
+  check(fresh.dur === itemDurMax(fresh) && fought.dur === spearMax - 1, "an item equipped after the battle is not worn; the one that fought is, once");
   check(tookField.filter((s) => s !== swapper).every((s) => s.gear.weapon.dur === spearMax - 1), "closing the battle does not wear anything a second time");
 
   // Surgical kit.

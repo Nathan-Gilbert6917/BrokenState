@@ -11,7 +11,7 @@ import { scavengeOutput } from "../src/sim/economy.js";
 import { fieldTreat, fieldTreatInfo } from "../src/sim/medical.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, autoResolveCombat, finishCombat, WEAPONS } from "../src/sim/combat.js";
 import {
-  CRAFTS, canCraft, queueCraft, cancelCraft, craftingHour, craftingDaily, craftQueue, craftJobStatus, makeItem, itemDur,
+  CRAFTS, canCraft, queueCraft, cancelCraft, craftingHour, craftingDaily, craftQueue, craftJobStatus, makeItem, itemDur, itemDurMax,
   wearAfterFight, fieldCraftOptions, fieldCraft, hasWorkshop,
 } from "../src/sim/crafting.js";
 
@@ -127,19 +127,21 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   }
   check(combatPower(s) > p0, `makeshift gear raises combat power (${p0.toFixed(1)} → ${combatPower(s).toFixed(1)})`);
   wearAfterFight(st, [s]);
-  check(s.gear.weapon.dur === GEAR.spikedbat.dur - 1 && s.gear.armor.dur === GEAR.tirevest.dur - 1, "a fight wears weapon and armor by 1");
+  check(s.gear.weapon.dur === itemDurMax(s.gear.weapon) - 1 && s.gear.armor.dur === itemDurMax(s.gear.armor) - 1, "a fight wears weapon and armor by 1");
   s.gear.weapon.dur = 1;
   wearAfterFight(st, [s]);
   check(!s.gear.weapon && s.gear.armor, "a worn-out bat breaks and is gone");
-  // Loot-style items without dur start full; manufactured gear never wears.
+  // Loot-style items without dur start full; gear without a dur (binoculars) never wears; real gear wears too (GEAR_DUR).
   const loose = { key: "pipespear", name: GEAR.pipespear.name, quality: 0.85 };
-  check(itemDur(loose) === GEAR.pipespear.dur && itemDur({ key: "pistol" }) === null, "durability defaults");
+  check(itemDur(loose) === GEAR.pipespear.dur && itemDur({ key: "binoculars" }) === null && itemDur({ key: "pistol" }) === GEAR.pistol.dur, "durability defaults");
+  // Crafted quality sets the uses: the listed dur at 75%, 20% more at 100%.
+  check(makeItem("spikedbat", 0.75).dur === GEAR.spikedbat.dur && makeItem("spikedbat", 1).dur === Math.round(GEAR.spikedbat.dur * 1.2) && makeItem("spikedbat", 0.6).dur < GEAR.spikedbat.dur, "crafted quality sets how long it lasts");
   // Auto-resolved fight goes through finishCombat and wears gear.
   registerCombatHandler("crafttest", () => {});
   s.gear.weapon = makeItem("pipespear", 1);
   const setup = { tile: h.tile, baseId: h.id, fighterIds: [s.id], enemy: { kind: "zombies", count: 1, power: 0.5 }, handler: "crafttest", context: {} };
   finishCombat(st, setup, autoResolveCombat(st, setup));
-  check(!s.alive || (s.gear.weapon && s.gear.weapon.dur === GEAR.pipespear.dur - 1), "finishCombat wears makeshift gear");
+  check(!s.alive || (s.gear.weapon && s.gear.weapon.dur === itemDurMax(s.gear.weapon) - 1), "finishCombat wears makeshift gear");
 }
 
 // 4. Tactical battles with makeshift weapons (AI plays both sides).
@@ -174,7 +176,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
     done++;
     if (last && last.outcome === "victory") wins++;
     const survivors = team.filter((s) => s.alive && s.gear.weapon);
-    check(survivors.every((s) => s.gear.weapon.dur === GEAR[s.gear.weapon.key].dur - 1), "battle wore each weapon by 1");
+    check(survivors.every((s) => s.gear.weapon.dur === itemDurMax(s.gear.weapon) - 1), "battle wore each weapon by 1");
     if (team.every((s) => s.gear.weapon && s.gear.weapon.key === "crossbow")) check(h.stock.ammo === ammo0, "crossbows use no ammo");
     for (const s of team) s.alive = false; // clear the board for the next battle
   }
@@ -191,7 +193,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   h.armory.push(makeItem("waterfilter", 1));
   craftingDaily(st);
   check(h.stock.water === w0 + GEAR.waterfilter.water, "filter in the armory adds water");
-  check(h.armory.find((g) => g.key === "waterfilter").dur === GEAR.waterfilter.dur - 1, "filter wears a day");
+  check(h.armory.find((g) => g.key === "waterfilter").dur === itemDurMax(h.armory.find((g) => g.key === "waterfilter")) - 1, "filter wears a day");
   h.armory.find((g) => g.key === "waterfilter").dur = 1;
   craftingDaily(st);
   check(!h.armory.some((g) => g.key === "waterfilter"), "worn-out filter is removed");
@@ -202,7 +204,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   scav.gear.tool = makeItem("crowbar", 1);
   check(scavengeOutput(st, h).scrap > out0, "crowbar raises base scavenging");
   craftingDaily(st);
-  check(scav.gear.tool.dur === GEAR.crowbar.dur - 1, "crowbar wears while scavenging");
+  check(scav.gear.tool.dur === itemDurMax(scav.gear.tool) - 1, "crowbar wears while scavenging");
 }
 
 // 6. Field crafting and the bandage kit with field treatment.

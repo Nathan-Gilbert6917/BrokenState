@@ -29,7 +29,7 @@ import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
-import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
+import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
@@ -46,7 +46,7 @@ import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
-import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
+import { skillsHour, skillsDaily, hasPerk, hash01 } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
@@ -168,8 +168,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   for (let i = 0; i < 6; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
   // Starting gear: a few basics spread among the colonists.
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
-  state.survivors.forEach((s, i) => (s.gear.weapon = { key: starts[i], name: GEAR[starts[i]].name, quality: 1 }));
-  state.survivors[0].gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 };
+  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
+  state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
   if (crew) applyCrew(state, crew);

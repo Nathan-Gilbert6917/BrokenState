@@ -8,7 +8,7 @@ import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
 import { wornLoad, maxLoad, personLoad, bandName } from "../sim/load.js";
 import { bandChip, BANDS_HELP } from "./loadview.js";
-import { itemDur, durUnit } from "../sim/crafting.js";
+import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
@@ -69,7 +69,7 @@ export function itemTip(item, s = null) {
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
-  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.groom ? `${dur} of ${d.dur} days of use left` : `makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
+  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.groom ? `${dur} of ${d.dur} days of use left` : `${d.makeshift ? "makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks`);
   if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }
@@ -77,7 +77,7 @@ export function itemTip(item, s = null) {
 function tile(item, loc, s, drag = true) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  const frac = dur != null ? dur / d.dur : item.quality || 1;
+  const frac = dur != null ? dur / itemDurMax(item) : item.quality || 1;
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>

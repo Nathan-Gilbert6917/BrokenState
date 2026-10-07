@@ -254,7 +254,7 @@ const EVENTS = [
             const ok = check(s, p, "stealth", 11).ok;
             const g = s.rng.pick(HUMVEE_GEAR);
             // The find needs carry space like anything else; with none it stays in the wreck.
-            const fits = addGearToCargo(s, p, newItem(g, 1));
+            const fits = addGearToCargo(s, p, newItem(g, 1, s.rng));
             const found = fits ? GEAR[g].name : `${GEAR[g].name} (no room to carry it: left there)`;
             return ok ? `Found: ${found}, ${addCargo(s, p, "ammo", 30)}.` : `Found ${found}, but ${injureRandom(s, p, 20, 50, "at a crashed Humvee")}`;
           },
@@ -273,9 +273,9 @@ const EVENTS = [
         {
           label: "Take the pack", hint: "It may have been a while. Heavy, but a big pack is worth it",
           resolve: (s) => {
-            const pack = newItem(s.rng.chance(0.25) ? "rucksack" : "hikingpack", Math.round(s.rng.range(0.6, 0.95) * 100) / 100);
+            const pack = newItem(s.rng.chance(0.25) ? "rucksack" : "hikingpack", Math.round(s.rng.range(0.6, 0.95) * 100) / 100, s.rng);
             const n = s.rng.int(1, 3);
-            for (let i = 0; i < n; i++) pack.contents[i] = newItem(s.rng.pick(HIKER_STUFF), 1);
+            for (let i = 0; i < n; i++) pack.contents[i] = newItem(s.rng.pick(HIKER_STUFF), 1, s.rng);
             const inside = pack.contents.filter(Boolean).map((it) => it.name.toLowerCase()).join(", ");
             return addGearToCargo(s, p, pack) ? `A ${pack.name.toLowerCase()} with ${inside} inside. It goes in the cargo; anyone can wear it.` : `A ${pack.name.toLowerCase()}, but nobody has room to carry it: it stays on the hiker.`;
           },

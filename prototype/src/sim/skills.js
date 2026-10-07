@@ -671,7 +671,8 @@ function fieldRepair(people) {
     const items = [...Object.values(s.gear || {}), ...(s.pockets || []), ...((s.gear && s.gear.backpack && s.gear.backpack.contents) || [])];
     for (const it of items) {
       const d = it && GEAR[it.key];
-      if (d && d.dur && !d.tabs && Number.isFinite(it.dur) && it.dur < d.dur) it.dur = Math.min(d.dur, it.dur + 1); // not a tube of tablets: dur counts what is left, not wear (worm.js)
+      const max = (it && it.durMax) || (d && d.dur); // its own maximum when it has one (crafted by quality, crafting.js)
+      if (d && d.dur && d.makeshift && !d.tabs && !d.groom && Number.isFinite(it.dur) && it.dur < max) it.dur = Math.min(max, it.dur + 1); // makeshift only (real gear wears too now, GEAR_DUR); not a tube of tablets or toiletries: dur counts what is left, not wear
     }
   }
 }

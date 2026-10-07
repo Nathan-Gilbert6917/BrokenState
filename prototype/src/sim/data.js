@@ -94,7 +94,7 @@ export const GEAR = {
   // medKit = Medicine bonus when treating (crafting.medKitBonus; the surgical kit has it too), bonus = skill bonus for base work, water = water per day at a base,
   // carry = kg added to the wearer's max load (load.js), slots = pack slots (inventory.js).
   spikedbat:  { burnShare: 0.8, name: "Spiked bat",               slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "A bat studded with nails. Hits hard, splinters eventually.", weight: 1.2, cat: "melee" },
-  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  desc: "A kitchen knife taped to a steel pipe.", weight: 1.5, cat: "melee" },
+  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  fish: "spear", fishPower: 0.35, desc: "A kitchen knife taped to a steel pipe. A makeshift spear: it also spears fish in the shallows (fishing in daylight, not through ice).", weight: 1.5, cat: "melee" },
   sawmachete: { name: "Saw-blade machete",        slot: "weapon", skill: "shooting", power: 1.7, req: 0, value: 7,  noise: 0, makeshift: true, dur: 12, desc: "A circular-saw blade ground into a cleaver.", weight: 1.2, cat: "melee" },
   crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs, reusable bolts: silent and needs no ammo in a fight. Hunting loses bolts (arrows).", weight: 3, cat: "bow" },
   pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail. Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
@@ -407,7 +407,7 @@ export const LOCATIONS = {
   barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
   ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.55, known: "road" },
   cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular"], richness: 0.55, known: "road" },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular", "spear"], richness: 0.55, known: "road" },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1, rawwater: 0.5 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },
   ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 1, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular"], richness: 0.5, known: "road" },
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar", "binoculars"], richness: 0.4, known: "road" },
@@ -486,8 +486,25 @@ export const TOWN_NAMES = ["Harlow", "Pine Ridge", "Millbrook", "Cedar Falls", "
 // Kept in a block of their own: the gear for food from the land. Fishing gear goes in a pack
 // slot or the cargo (not worn); a team fishes with what it carries, a base's fishers with what is in its armory.
 Object.assign(GEAR, {
-  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
+  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", fishPower: 0.6, weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
   fishnet:   { name: "Fishing net",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, fish: "net", weight: 2.5, cat: "tools", desc: "A gill net with floats: worked by two, it catches about twice what a rod does (1.2 food an hour)." },
+  // A rod made by hand (crafting.js makeshiftrod): a sapling, fishing line from a spool or unpicked cord, a bent hook.
+  makeshiftrod: { name: "Makeshift fishing rod", slot: "pack", skill: null, power: 0, req: 0, value: 4, noise: 0, fish: "rod", fishPower: 0.42, makeshift: true, dur: 12, weight: 0.5, cat: "tools", desc: "A cut sapling, a length of line and a hook bent from a paperclip. Fishes like a rod, but catches about a third less (0.42 food an hour) and the line snaps in the end." },
+  // A real spear (looted): a weapon, and a gig for fish in the shallows (fish: "spear": daylight, not through ice).
+  spear:     { name: "Steel spear",  slot: "weapon", skill: "shooting", power: 1.8, req: 0, value: 14, noise: 0, fish: "spear", fishPower: 0.5, weight: 1.8, cat: "melee", desc: "A boar spear off a hunting lodge wall: a long steel head on an ash shaft. Keeps the dead at arm's length, and spears fish in the shallows (0.5 food an hour, best in daylight; no use through ice)." },
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// ---------- durability (crafting.js itemDur / wear) ----------
+// Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;
+// the surgical kit: treatments; fishing gear: days of fishing; camp kit: days out in the field). Entries that set
+// their own dur (the makeshift gear, tablets, toiletries) keep it. Found and starting gear comes part-worn
+// (inventory.js newItem with an rng: FOUND_DUR); crafted gear lasts by its quality (crafting.js craftedDur).
+export const GEAR_DUR = {
+  knife: 40, machete: 45, bat: 30, prybar: 70, fireaxe: 50, sledge: 60, baton: 50, spear: 45,
+  pistol: 60, revolver: 80, shotgun: 60, huntrifle: 70, leverrifle: 70, carbine: 70, ar: 60, compbow: 50, xbow: 50,
+  vest: 40, plate: 50, bikehelmet: 40, riothelmet: 50, milhelmet: 60, kneeguards: 35, riotlegs: 45, riotarms: 45,
+  surgkit: 40, fishrod: 60, fishnet: 40, camonet: 60, stove: 80, ghillie: 20, ragboots: 14,
+};
+for (const [k, v] of Object.entries(GEAR_DUR)) if (GEAR[k] && !GEAR[k].dur) GEAR[k].dur = v;
