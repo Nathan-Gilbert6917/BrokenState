@@ -6,6 +6,8 @@ import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
+import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
+import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract } from "./sim/scavenge.js";
 import * as TradeSim from "./sim/trade.js";
@@ -51,6 +53,7 @@ import { REL_ACTIONS } from "./ui/relations.js";
 import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
+import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
@@ -69,6 +72,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) ironH
 import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
+import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
 import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
@@ -98,7 +102,7 @@ const freshUi = () => ({
   radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js)
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -207,7 +211,7 @@ function step(now) {
   else if (state.combat) {
     if (!ui.settings && combatTick(state, now)) dirtyNow = true; // the enemy turn waits while the menu is open
     drawCombat(state, now);
-  } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
+  } else if (!titleCovers(ui)) render(state); // the title screen hides the map
   if (ui.title) titleFrame(state, ui, now);
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
@@ -291,6 +295,8 @@ function tidyUi() {
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
+  // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
+  if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
 }
 
 // ---------- folded panels ----------
@@ -490,25 +496,31 @@ function armDiff(before) {
 }
 
 // ---------- actions ----------
+// The base a planner sends its team from: the hub, or (the move-out planner) the crowded base it was opened for.
+const plannerBase = (pl) => (pl.fromBaseId != null ? baseById(state, pl.fromBaseId) : hub(state));
 function autofill(pl) {
-  const h = hub(state);
+  const h = plannerBase(pl);
   if (!h) return; // no base to send a team from (the planner says so): exiles, hardcore before its first hub
   const ids = [...pl.crew];
   const v = plannerVehicle(state, pl);
+  // Moving out (sim/moveout.js): to the destination picked, or (none yet) just outside the base; MOVE_OUT.days of
+  // food and water on top for the road ahead, and the scrap for an outpost when they may found one.
+  const out = !!pl.moveOut;
   // A plan with steps (ui/plan.js) packs for the whole plan; otherwise for the round trip. Estimated twice: what the
   // team packs is part of its load, and its load sets its pace and how much it eats on the way (sim/load.js).
   const n = Math.max(1, ids.length);
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
-    est = (pl.mission !== "outpost" && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies });
-    view.preview = est ? est.path : null;
+    est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
+    view.preview = est && pl.dest != null ? est.path : null;
     if (!est) return;
+    const ahead = out ? n * MOVE_OUT.days : 0;
     const want = {
-      food: Math.ceil(est.food * 1.25), water: Math.ceil(est.water * 1.25),
+      food: Math.ceil(est.food * 1.25 + ahead), water: Math.ceil(est.water * 1.25 + ahead * thirstAhead(state, MOVE_OUT.days)),
       fuel: (isCar(v) ? Math.max(0, Math.ceil(est.fuel * 1.25 - v.fuel)) : 0) + (pl.mission === "getvehicle" ? 10 : 0),
-      meds: Math.min(2, n), ammo: 15 * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
+      meds: Math.min(2, n), ammo: (out ? MOVE_OUT.ammo : 15) * n, parts: pl.mission === "getvehicle" || pl.mission === "investigate" ? 2 : 0,
       // Snares without snare wire in the hub's armory: 2 scrap of fence wire for each line (sim/hunting.js).
-      scrap: pl.mission === "outpost" ? 15 : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
+      scrap: pl.mission === "outpost" ? 15 : out ? (pl.dest == null ? MOVE_OUT.scrap : 0) : ((pl.plan && pl.plan.steps) || []).filter((s) => s.kind === "snare").length * (h.armory.some((it) => it && it.key === "snarewire") ? 0 : 2),
     };
     for (const k of Object.keys(want)) pl.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(h.stock, k)), want[k])); // water: both kinds, purified packed first (sim/water.js)
   }
@@ -529,6 +541,16 @@ function autofill(pl) {
 }
 
 const partyById = (id) => state.parties.find((p) => p.id === Number(id));
+// The move-out planner (ui.js moveOutModal, sim/moveout.js): who leaves a base, their transport and supplies from
+// its stores, and where to (another of your bases, or a tile picked on the map once they are out).
+function openMoveOut(baseId) {
+  if (!baseById(state, baseId)) return;
+  const pl = { moveOut: true, fromBaseId: baseId, dest: null, mission: "move", crew: new Set(), vehicleId: null, stance: "normal", supplies: {} };
+  ui.planner = pl;
+  ui.plannerError = "";
+  endMoveMode();
+  autofill(pl);
+}
 const baseOf = (d) => baseById(state, Number(d.base));
 // A message from a base action: on the base screen when it is open, otherwise in the log.
 function baseSay(msg) {
@@ -795,10 +817,29 @@ const actions = {
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
   "pl-autofill": () => { autofill(ui.planner); ui.plannerError = ""; },
   "pl-cancel": () => { ui.planner = null; view.preview = null; },
+  // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
+  "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
+  moveout: (d) => openMoveOut(Number(d.base)),
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
+    if (pl.moveOut) {
+      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
+      if (res.error) { ui.plannerError = res.error; return; }
+      ui.planner = null;
+      view.preview = null;
+      ui.baseView = null;
+      // Nowhere picked yet: straight to move mode, so the next click on the map sends them (Esc: they wait outside).
+      if (pl.dest == null) {
+        endMoveMode();
+        ui.moveParty = res.party.id;
+        ui.expedition = res.party.id;
+        ui.xpMsg = "";
+        centerOn(state, partyTile(res.party));
+      }
+      return;
+    }
     const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     ui.planner = null;
@@ -824,6 +865,7 @@ const actions = {
       actions["xp-open"]({ id: c.uiAction.partyId });
       return;
     }
+    if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
@@ -917,6 +959,8 @@ for (const [k, fn] of Object.entries(WATCHLIST_ACTIONS)) actions[k] = (d) => fn(
 for (const [k, fn] of Object.entries(SETTINGS_ACTIONS)) actions[k] = (d) => fn(state, ui, d, settingsApi);
 // The Work tab: priority cells take the click event (right-click counts down, Shift+click edits the role) (ui/work.js).
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
+// The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
+for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 // The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);
@@ -1061,9 +1105,11 @@ const changeActions = {
   customw: (el) => { ui.customW = clampCustomW(el.value); newWorld(state.seed, true); },
   customh: (el) => { ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
   hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
-  // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore).
+  // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
   ironman: (el) => { ui.ironman = !!el.checked; }, // the new-run screen's Ironman box (ui/newgame.js)
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
+  // Starting people (Hardcore only, ui/newgame.js): 1–4 flee together; the same seed and the edited crew (as many as fit).
+  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value); newWorld(state.seed, true); },
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -1091,6 +1137,7 @@ for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) cha
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(SETTINGS_CHANGE)) changeActions[k] = (el) => fn(state, ui, el, settingsApi);
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
 
@@ -1106,7 +1153,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople });
   resetView();
   hideCtx();
   hideTip();
@@ -1126,6 +1173,7 @@ function adopt(st, entry) {
   if (!state.mode) state.mode = "normal"; // saves from before the modes
   ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.ironman = !!state.ironman; // and Ironman, if this one is
+  if (state.mode === "hardcore") ui.startPeople = clampStartPeople(state.startPeople); // and a hardcore game's Starting people
   ui.started = true;
   ui.speed = 0;
   ui.slot = entry ? entry.id : null;
@@ -1171,14 +1219,8 @@ const settingsApi = {
   autosaveInfo: autosaveState,
 };
 initSettings(settingsApi);
-// The title screen (ui/title.js). Its living-map background runs the world created at startup on its own, so New game
-// makes a fresh one.
-let titleTicked = false;
-initTitle({
-  options, desktop: settingsApi.desktop, quit: settingsApi.quit, saveOptions: () => saveOptions(options),
-  tick: () => { titleTicked = true; tickHour(state); },
-  newGame: () => { if (titleTicked) { titleTicked = false; newWorld(randomSeed()); } else { resetView(); centerOn(state, playerTile(state)); } },
-});
+// The title screen (ui/title.js).
+initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 

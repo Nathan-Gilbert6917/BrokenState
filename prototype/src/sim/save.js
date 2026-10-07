@@ -64,6 +64,7 @@ export function saveMeta(state) {
     autopilot: !!state.autopilot, world: worldSizeOf(state), // "world", not "size": the save list keeps the byte size under that key (ui/saves.js)
     mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
     ironman: !!state.ironman, // ui/saves.js: an Ironman game's own slot
+    ...(state.mode === "hardcore" && Number.isFinite(state.startPeople) ? { startPeople: state.startPeople } : {}), // hardcore.js START_PEOPLE: the save list says when it was not three
   };
 }
 
@@ -111,6 +112,12 @@ export function deserializeState(save) {
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
+  // Starting people (hardcore.js START_PEOPLE): a hardcore save from before the choice started with three (its start's
+  // backgrounds name them); a normal start has none.
+  if (state.mode === "hardcore" && !Number.isFinite(state.startPeople)) {
+    const bg = state.hardcore && state.hardcore.start && state.hardcore.start.backgrounds;
+    state.startPeople = bg && Object.keys(bg).length ? Object.keys(bg).length : 3;
+  }
   // needs.js: saves from before the hunger and thirst gauges start everyone full.
   for (const sv of state.survivors || []) { if (!Number.isFinite(sv.hunger)) sv.hunger = 100; if (!Number.isFinite(sv.thirst)) sv.thirst = 100; }
   // woodcutting.js: saves from before firewood (no state.woodcutting) start every base with none, and the work roles

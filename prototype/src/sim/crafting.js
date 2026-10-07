@@ -32,6 +32,10 @@ export const CRAFTS = {
   bandagekit:  { gear: "bandagekit",  in: { scrap: 2, meds: 1 },  hours: 4,  skill: "medicine",  min: 2, field: true },
   dressings:   { name: "Boiled-rag dressings", supplies: { meds: 1 }, in: { scrap: 2, water: 2 }, hours: 6, skill: "medicine", min: 3, field: true,
                  desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
+  // Arrows and bolts for hunting with a bow or crossbow (hunting.js): straight shoots split from the firewood, fletched,
+  // with scrap points.
+  arrows:      { name: "Arrows (12)", supplies: { arrows: 12 }, in: { wood: 30, scrap: 1 }, hours: 4, skill: "mechanics", min: 1, field: true,
+                 desc: "Straight shafts split from firewood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts) for hunting with a bow. A bow's hunt loses about half the arrows it shoots." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and

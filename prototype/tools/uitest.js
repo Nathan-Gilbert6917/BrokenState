@@ -23,6 +23,7 @@ import { createWorld, tickHour, hub, day, alive, atBase, residents, makeSurvivor
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { launchExpedition, partyTile } from "../src/sim/parties.js";
 import { makeHorde } from "../src/sim/hordes.js";
+import { towerWatch } from "../src/sim/defences.js";
 import { addCondition } from "../src/sim/health.js";
 import * as Buildings from "../src/sim/buildings.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -396,6 +397,14 @@ section("Alerts: each kind appears and clears");
   let hd = null;
   appearsClears("horde", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "horde near a base");
   appearsClears("breakin", () => { hd = makeHorde(w, { tile: near.id, size: 2000, target: h.tile }); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); }, "break-in warning");
+  // The watchtower's alarm (sim/defences.js towerWatch): its own alert, in place of the plain horde one.
+  Buildings.addBuilding(h, "watchtower");
+  const ta = appearsClears("tower", () => { hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w); }, () => { w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w); }, "watchtower alarm");
+  check(ta && /Watchtower at .*horde of 30, 2 tiles out/.test(ta.text) && ta.go.tile === near.id, `watchtower alarm: the text and the horde's tile (${ta && ta.text})`);
+  hd = makeHorde(w, { tile: near.id, size: 30 }); towerWatch(w);
+  check(!has("horde").some((a) => a.key === `horde:${hd.id}`), "watchtower alarm: no second (plain) alert for the same horde");
+  w.hordes = w.hordes.filter((x) => x !== hd); towerWatch(w);
+  h.buildings = h.buildings.filter((b) => b.type !== "watchtower"); h.watchtower = false;
   // Sick and untreated.
   const patient = atBase(w, h.id)[1];
   let cond = null;
@@ -589,6 +598,21 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     htmlOk(html, "new-run screen (Custom)");
     check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
   }
+  // Starting people (sim/hardcore.js START_PEOPLE): Hardcore only; greyed out with the reason on a normal start.
+  {
+    const normalHtml = newRunScreen(createWorld({ seed: seed + 9, factionCount: 7 }), { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3 });
+    const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
+    check(nsel && /disabled/.test(nsel[1]) && normalHtml.includes("Hardcore only"), "normal start: Starting people shown greyed out, Hardcore only");
+    for (const n of [1, 2, 3, 4]) {
+      const w = createWorld({ seed: seed + 9, factionCount: 7, mode: "hardcore", startPeople: n });
+      const html = newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
+      htmlOk(html, `new-run screen (Hardcore, ${n} starting)`);
+      const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+      check(sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]) && (html.match(/nrcard/g) || []).length === n,
+        `Hardcore: Starting people 1–4 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
+    }
+  }
+  check(inMain("startpeople") && mainSrc.includes("startPeople: ui.startPeople"), "main.js handles Starting people and passes it to createWorld");
   check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
   check(inMain("worldsize") && inMain("factioncount"), "main.js handles the size and group selects");
   console.log(`  ${SIZE_KEYS.map((k) => `${WORLD_SIZES[k].label} ${WORLD_SIZES[k].w}×${WORLD_SIZES[k].h} (${WORLD_SIZES[k].groups.join("–")} groups)`).join(", ")}`);

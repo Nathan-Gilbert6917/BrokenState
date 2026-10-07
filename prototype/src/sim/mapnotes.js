@@ -1,5 +1,5 @@
 // Map notes: the player's own pins on the map ("bridge to clear", "cache here"), each an icon and a short text on a
-// tile (right-click a tile → Add note; listed, edited and deleted in the Watching panel's Notes, ui/watch.js; drawn
+// tile (right-click a tile → Add note; listed, edited and deleted in the Watching panel's Notes, ui/watchlist.js; drawn
 // by ui/mapnotes.js). Kept in state.mapNotes, so they are saved with the campaign; an older save simply has none.
 // Nothing in the simulation reads them.
 import { newId } from "./world.js";

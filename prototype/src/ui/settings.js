@@ -56,7 +56,7 @@ function ago(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? "Hardcore · " : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
+const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? `Hardcore${e.startPeople && e.startPeople !== 3 ? ` (${e.startPeople} at the start)` : ""} · ` : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
 
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {
@@ -420,7 +420,7 @@ export function autosaveCheck(state, ui, api, now) {
   // The battle-start save (its own slot): as each battle opens, before anything is done in it, so it can be played
   // again (Restart battle). Open cards are left out of it (a card's choices cannot be saved). Not on autopilot.
   const bt = state.combat;
-  if (bt && auto.battle !== bt && !bt.over && o.battleSave !== false && !state.autopilot) {
+  if (bt && auto.battle !== bt && !bt.over && !bt.drill && o.battleSave !== false && !state.autopilot) { // not a defence drill (sim/defenceplan.js)
     auto.battle = bt;
     if (bt.turn <= 1 && !bt.acted) doBattleSave(state, ui, api, bt, now);
     return;
@@ -473,7 +473,7 @@ function ironCheck(state, ui, api, now) {
   }
   auto.over = false;
   const bt = state.combat;
-  if (bt && auto.battle !== bt) { auto.battle = bt; auto.pending = "a battle started"; }
+  if (bt && auto.battle !== bt && !bt.drill) { auto.battle = bt; auto.pending = "a battle started"; } // a defence drill is not a battle
   if (!bt && auto.battle) { auto.battle = null; auto.pending = "a battle ended"; }
   const di = dawnIndex(state);
   if (di > auto.dawn) { auto.dawn = di; auto.pending = auto.pending || "dawn"; }
