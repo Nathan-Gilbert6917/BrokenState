@@ -22,7 +22,7 @@ import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
-import { captivesDaily, releaseStranded } from "./conflicts.js";
+import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
@@ -609,6 +609,7 @@ export function tickHour(state) {
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
+  contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
   craftingHour(state);
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders

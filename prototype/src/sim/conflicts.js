@@ -395,6 +395,82 @@ export function stationaryEncounter(state, p, opts = {}) {
   return card;
 }
 
+// ---------- contact: on the same tile as an enemy ----------
+// A team that shares a tile with a horde or an enemy group's party on the move (a war party, a raid, a hostile group's
+// scavengers or convoy) is attacked: always, by day or night, whatever the 20-hour cooldown on road encounters, with
+// the forced card's choices (run, fight, hide from the dead, pay or talk to people). By day a team sees them coming
+// on the map and can steer round them; at night it sees only its own tile (parties.js sightRadius: night vision
+// goggles a tile round) and can walk straight into them. Checked on every tile a team enters (parties.js onEnterTile:
+// the team stops on that tile) and every hour for teams standing still (tickHour: the enemy came to them).
+// The same horde or party does not attack the same team again for CONTACT.AGAIN hours (it ran, or won).
+export const CONTACT = { AGAIN: 12, HORDE_MIN: 5 };
+// Is this party an enemy to your teams? A group at war with you (Hostile), or raiders and expansionists you have no
+// pact or alliance with; a raid is always an enemy. Sieges are fought at the walls, not here.
+export function enemyParty(state, q) {
+  if (!q || q.owner === "player" || q.phase === "siege") return null;
+  const f = factionById(state, q.owner);
+  if (!f || !f.alive) return null;
+  const att = attitude(f);
+  if (q.kind === "raid" || att === "Hostile" || (isAggressiveType(f) && att !== "Allied" && !f.pact)) return f;
+  return null;
+}
+// What an enemy on this tile would attack the team with: { horde } or { party, f }, or null.
+export function contactOn(state, p, tile) {
+  const seen = p.contacts || {};
+  const fresh = (key) => seen[key] == null || state.hour - seen[key] >= CONTACT.AGAIN;
+  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`));
+  if (horde) return { horde, key: `h${horde.id}` };
+  for (const q of state.parties) {
+    if (q.owner === "player" || !q.path || partyTile(q) !== tile) continue;
+    const f = enemyParty(state, q);
+    if (f && fresh(`p${q.id}`)) return { party: q, f, key: `p${q.id}` };
+  }
+  return null;
+}
+// Can this team be caught out here? A team of yours in the field (not a convoy, not at a base, not already in a
+// fight or a card about one).
+function inTheOpen(state, p, tile) {
+  if (p.owner !== "player" || p.kind === "convoy" || !state.parties.includes(p) || !partyMembers(state, p).length) return false;
+  if (["engaged", "holding", "helping", "siege"].includes(p.phase)) return false;
+  if (state.bases.some((b) => b.tile === tile)) return false;
+  return !state.cards.some((c) => c.partyId === p.id && c.kind === "conflict");
+}
+// The attack, if an enemy is on the team's tile: the card is added and returned (null if none).
+export function contactAttack(state, p, tile = partyTile(p)) {
+  if (!inTheOpen(state, p, tile)) return null;
+  const hit = contactOn(state, p, tile);
+  if (!hit) return null;
+  const dark = isNight(state);
+  let card;
+  if (hit.horde) {
+    const h = hit.horde, scale = Math.min(2.2, 1.2 + h.size / 150);
+    const enemy = enemyGroup(state, p, null, scale, h);
+    card = forcedCard(state, p, makeConflict(state, p, "surge", null, enemy, {
+      identified: true, horde: h.size, contact: true,
+      text: dark ? `In the dark the team walks straight into a horde: about ${h.size} of the dead, all around, and the nearest ${enemy.count} are already on them.` :
+        `A horde of about ${h.size} of the dead is on this ground with the team, and the nearest ${enemy.count} come at them.`,
+    }));
+  } else {
+    const { party: q, f } = hit;
+    const what = q.kind === "raid" ? "raiding party" : q.kind === "convoy" ? "convoy" : q.kind === "scav" ? "scavengers" : "war party";
+    card = forcedCard(state, p, makeConflict(state, p, "ambush", f, enemyGroup(state, p, f, q.kind === "raid" ? 1.5 : 1), {
+      aiPartyId: q.id, contact: true,
+      text: dark ? `In the dark the team blunders into a ${f.name} ${what} camped on the same ground. Shouts, then shots: they are on you before anyone can get away.` :
+        `A ${f.name} ${what} is on the same ground as the team, and they open fire.`,
+    }));
+  }
+  if (!card) return null;
+  (p.contacts || (p.contacts = {}))[hit.key] = state.hour;
+  p.lastConflict = state.hour;
+  p.conflictCount = (p.conflictCount || 0) + 1;
+  addCard(state, card);
+  return card;
+}
+// Every hour, after everyone has moved (world.js tickHour): teams standing still with an enemy come onto their tile.
+export function contactHour(state) {
+  for (const p of [...state.parties]) if (p.owner === "player") contactAttack(state, p);
+}
+
 // Build a conflict of a given type for a party (also used by the test tools and the console). extra: fields for the
 // conflict (contest: scavPartyId, site).
 export function triggerConflict(state, p, type, factionId, extra = {}) {
@@ -545,7 +621,7 @@ function forcedCard(state, p, c, followUp = false) {
     contest: `${f && f.name} scavengers are already working ${c.site != null ? Parties.tileLabel(state, c.site) : "this place"}: about ${n} of them, with sacks, crowbars and rifles. They say it is theirs and want you gone.`,
     surge: `The dead pour out of the buildings around you: about ${n}, and more behind them. They have your scent.`,
   };
-  const text = followUp ? c.followText : texts[c.type];
+  const text = followUp ? c.followText : c.text || texts[c.type]; // c.text: a contact attack's own words (contactAttack)
   return baseCard(state, p, c, followUp ? `${CONFLICT_TYPES[c.type].name}: no deal` : CONFLICT_TYPES[c.type].name, text, forcedChoices(state, p, c));
 }
 

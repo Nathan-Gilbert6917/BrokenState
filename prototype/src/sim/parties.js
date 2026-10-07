@@ -7,7 +7,7 @@ import { roadblockOnEnter } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
-  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange,
+  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight,
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
@@ -21,7 +21,7 @@ import {
 } from "./vehicles.js";
 import { teamLoad, burdenRecord, rationRate, wornLoad } from "./load.js";
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
-import { rescueArrive, captivesOf } from "./conflicts.js";
+import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
@@ -232,8 +232,15 @@ export function bestSkill(state, p, key) {
   return Math.max(0, ...partyMembers(state, p).map((s) => skill(s, key) + checkBonus(s, key))); // checkBonus: Shadow (skills.js)
 }
 
+// At night (20:00–06:00) a team in the field sees only the tile it stands on (0), whatever its scouts and optics, and
+// one tile round with night vision goggles or a thermal monocular in someone's off hand (NIGHT_SIGHT): it can walk
+// into a horde or a war party it never saw on the map, and sharing a tile with them means a fight (conflicts.js
+// contactAttack). Fog and blizzards cannot take it below its own tile.
+export const NIGHT_SIGHT = { dark: 0, goggles: 1, GOGGLES: ["nvg", "thermal"] };
+export const nightEyesOn = (members) => members.some((s) => s.gear && s.gear.tool && NIGHT_SIGHT.GOGGLES.includes(s.gear.tool.key));
 export function sightRadius(state, p) {
   const m = partyMembers(state, p);
+  if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, travelEffects(state).sight));
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
   if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
@@ -827,6 +834,14 @@ function onEnterTile(state, p, tileId) {
   if (p.spotted) perceive(state, p, members, around);
   if (p.kind === "convoy") {
     convoyLegEvent(state, p, tileId);
+    return;
+  }
+  // A horde or an enemy party on this tile attacks (conflicts.js contactAttack): the team stops here, however far it
+  // would have got this hour (a car enters several tiles an hour).
+  if (contactAttack(state, p, tileId)) {
+    const i = p.path.lastIndexOf(tileId, p.idx);
+    if (i >= 0) { p.idx = i; p.progress = 0; }
+    p.eventHour = state.hour;
     return;
   }
   // One event card per team per hour: a vehicle enters several tiles in an hour, and a card made on the first
