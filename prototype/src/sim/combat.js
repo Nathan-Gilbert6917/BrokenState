@@ -2332,6 +2332,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
   const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
   let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a) - (a.loadAim || 0); // nonlethal.js: a taser's daze, pepper spray; reloading.js: handloads loaded below Mechanics 8
+  if (a.loadAim) notes.push(`handloads −${Math.round(a.loadAim)}`); // reloading.js
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
   // An intermediate or rimfire round past its reach (gunmods.js ROUND_REACH): it drops, scope or not.
   const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
@@ -2365,7 +2366,12 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
-  aim += visorAim(a, b) + linkAim(b, a, t) - dazedAim(a); // helmets.js: a visor down (fogged, cracked); hearing.js: a team headset's callout, dazed by a bang
+  // helmets.js: a visor down (fogged, cracked); hearing.js: a team headset's callout, dazed by a bang (each on the odds line)
+  const visor = visorAim(a, b), link = linkAim(b, a, t), dazed = dazedAim(a);
+  aim += visor + link - dazed;
+  if (visor) notes.push(`visor ${visor > 0 ? "+" : ""}${Math.round(visor)}`);
+  if (link) notes.push(`headset callout ${link > 0 ? "+" : ""}${Math.round(link)}`);
+  if (dazed) notes.push(`dazed by a bang −${Math.round(dazed)}`);
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);

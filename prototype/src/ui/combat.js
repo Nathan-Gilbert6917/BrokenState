@@ -1803,7 +1803,8 @@ function odds(b, u, t) {
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
   const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
-  // sim/combat.js shotOdds notes: a bipod rested on cover, firing from a vehicle that moved, a light round's drop at range.
+  // sim/combat.js shotOdds notes: a bipod rested on cover, firing from a vehicle that moved, a light round's drop at range,
+  // handloads, a helmet's visor, a headset's callout, dazed by a bang.
   const notes = o.notes && o.notes.length ? `; ${o.notes.join(", ")}` : "";
   return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}${notes}` };
 }
