@@ -76,7 +76,7 @@ export const STRUCTURES = [
   { key: "workshop", name: "Workshop", w: 6, h: 4, storeys: 1, any: ["ammo_bench", "med_station", "machine_shop", "kitchen", "still", "generator", "craftbench", "workbench", "toolbench"] }, // the benches: the new hub keeps its workshop (it started with an ammo bench before)
   { key: "storehouse", name: "Storehouse", w: 4, h: 3, roof: true, any: ["storehouse"] },
   { key: "common", name: "Common room", w: 5, h: 4, storeys: 1, any: ["common_room", "chapel"] },
-  { key: "cells", name: "Holding cells", w: 4, h: 4, storeys: 1, any: ["cells"] },
+  { key: "cells", name: "Holding cells", w: 4, h: 4, storeys: 1, any: ["cells", "jailhouse"] }, // makeshift cells are a cage in the yard (a utility plot), no building
   { key: "radio", name: "Radio shack", w: 4, h: 3, storeys: 1, any: ["radio"] },
   { key: "garage", name: "Garage", w: 5, h: 4, storeys: 1, any: ["garage"], wide: true },
   { key: "tank", name: "Water tank", w: 2, h: 2, roof: true, any: ["cistern"] },
@@ -98,6 +98,7 @@ export function structuresOf(base) {
       if (s.key === "hospital") name = HOSPITAL_NAME[s.any.find((k) => countAll(base, k))] || name;
       if (s.key === "shed") name = SHED_NAME[s.any.find((k) => countAll(base, k))] || name;
       if (s.key === "common" && !countAll(base, "common_room")) name = "Chapel";
+      if (s.key === "cells" && countAll(base, "jailhouse")) name = "Jailhouse";
       out.push({ ...s, name: n > 1 ? `${name} ${i + 1}` : name });
     }
   }
