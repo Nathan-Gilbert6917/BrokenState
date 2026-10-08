@@ -29,6 +29,7 @@ import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName, benc
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
 import { isManaged } from "./work.js";
 import { stockHas } from "./water.js"; // a Keep-at-least order on water counts both kinds
+import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
 
 export const ORDER_MODES = {
   forever: { name: "Forever", desc: "Runs whenever the operator and the inputs are there." },
@@ -124,7 +125,7 @@ export function orderHold(state, base, st) {
   if (o.mode === "off") return "Order: off";
   if (o.mode === "until") {
     const k = productKey(st);
-    const have = Math.floor((base.stock[k] || 0) + 1e-9);
+    const have = Math.floor(supplyAmt(base.stock, k) + 1e-9);
     const resume = o.n - untilMargin(o.n);
     if (o.paused ? have >= resume : have >= o.n) return `Order met: ${have} of ${o.n} ${k} (starts again below ${Math.max(0, resume)})`;
     return "";
@@ -251,7 +252,7 @@ export function removeCraftOrder(state, base, id) {
 // What counts toward an order: items of the recipe in the armory at minQ or better, or the stock of a supply.
 export function craftOrderHave(base, o) {
   const r = CRAFTS[o.recipe];
-  if (r.supplies) { const k = Object.keys(r.supplies)[0]; return Math.floor((base.stock[k] || 0) + 1e-9); }
+  if (r.supplies) { const k = Object.keys(r.supplies)[0]; return Math.floor(supplyAmt(base.stock, k) + 1e-9); }
   return base.armory.filter((it) => it && it.key === r.gear && (it.quality ?? 1) + 1e-9 >= (o.minQ || 0)).length;
 }
 // The best expected quality anyone at the base (not in a hospital bed) would make it at.

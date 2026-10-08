@@ -26,7 +26,7 @@ import {
 import { spawnAiParty } from "../src/sim/parties.js";
 import { resolveRaidOnPlayer, resolveRaidOnFaction } from "../src/sim/factions.js";
 import { defendInPerson } from "../src/sim/conflicts.js";
-import { finishCombat, combatAct, damage, shotOdds, ammoLeft, active, gunnerOf, TURRET, WEAPONS, autoPlayerTurn, runEnemyPhase, magIn, canSee } from "../src/sim/combat.js";
+import { finishCombat, combatAct, damage, shotOdds, ammoLeft, turretRounds, active, gunnerOf, TURRET, WEAPONS, autoPlayerTurn, runEnemyPhase, magIn, canSee } from "../src/sim/combat.js";
 import { carOptions } from "../src/sim/foundcars.js";
 import { captureBase } from "../src/sim/conquest.js";
 import { teamLoad } from "../src/sim/load.js";
@@ -418,13 +418,15 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && !st.bases.some((b) => b.tile === t.id));
   const p = team(st, tile.id, 3, v.id);
   p.supplies.ammo = 60;
+  p.supplies.a_50bmg_ball = 60; // the M2's belt: .50 BMG (ammo.js rounds by calibre; turretRounds)
   const b = inBrowser(() => createBattle(st, fieldSetup(tile.id, p, { enemy: { kind: "raiders", count: 3, power: 3 } })));
   st.combat = b;
   b.phase = "player";
   const [g, r2] = b.units.filter((u) => u.side === "player");
   for (const u of [g, r2]) { u.aboard = true; u.off = true; u.x = b.vehicle.x; u.y = b.vehicle.y; u.ow = false; u.ap = 2; }
-  const gun0 = g.weapon;
+  const gun0 = g.weapon, load0 = g.load;
   const err = combatAct(st, { type: "gunner", unit: g.id });
+  check(g.load === "ball", `on the M2 the gunner's load is .50 BMG ball (${g.load})`);
   const cell = b.cells[b.vehicle.gunAt];
   check(!err && g.gunner && !g.off && g.weapon === "turret_m2" && g.ap === 1 && cell && cell.h === 1 && gunnerOf(b) === g, `Man the turret (1 action): ${g.name} is up on the roof (a level up), the M2 in hand${err ? ` [${err}]` : ""}`);
   check(active(g) && !active(r2), "the gunner is on the map; the other riders are not (only the gunner can be shot)");
@@ -441,9 +443,9 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   }
   for (const o of foes) if (o !== t) { o.aware = true; }
   check(!!spot, "a raider in the gunner's sight");
-  const ammo0 = ammoLeft(b), noise0 = b.noise || 0;
+  const ammo0 = turretRounds(b), noise0 = b.noise || 0;
   const e2 = combatAct(st, { type: "turret", unit: g.id, target: t.id });
-  check(!e2 && ammoLeft(b) === ammo0 - 3 && magIn(g) === 97 && b.vehicle.belt === 97 && g.turretMag === 97, `a burst: 3 rounds from the team's ammo (${ammo0} → ${ammoLeft(b)}), the belt 97/100${e2 ? ` [${e2}]` : ""}`);
+  check(!e2 && turretRounds(b) === ammo0 - 3 && magIn(g) === 97 && b.vehicle.belt === 97 && g.turretMag === 97, `a burst: 3 rounds of .50 BMG from the team's (${ammo0} → ${turretRounds(b)}), the belt 97/100${e2 ? ` [${e2}]` : ""}`);
   check((b.noise || 0) - noise0 >= 6 && foes.every((o) => o.dead || o.aware), `very loud: noise +${(b.noise || 0) - noise0}, everyone awake`);
   check(t.dead || t.pinT === b.turn, "whoever it lands near is pinned (−10 aim their next turn)");
   // (measured with a hunting rifle in their hands: a raider's own gun may be a sawn-off, at 5% from here pinned or not)
@@ -459,7 +461,7 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   check(/both actions/.test(combatAct(st, { type: "reload", unit: g.id })), "a new belt needs both actions");
   g.ap = 2;
   const e3 = combatAct(st, { type: "reload", unit: g.id });
-  check(!e3 && g.ap === 0 && magIn(g) === Math.min(100, ammoLeft(b)) && b.vehicle.belt === magIn(g), `reloaded (${magIn(g)}, as far as the team's ammo goes)`);
+  check(!e3 && g.ap === 0 && magIn(g) === Math.min(100, turretRounds(b)) && b.vehicle.belt === magIn(g), `reloaded (${magIn(g)}, as far as the team's .50 BMG goes)`);
   // Jams (gunfire.js: the turret's rel): a jammed turret will not fire; the gunner clears it on the turret (Unjam).
   g.ap = 2; g.jam = { kind: "stovepipe", ap: 1 };
   const ej = combatAct(st, { type: "turret", unit: g.id, target: t.id });
@@ -477,7 +479,7 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   // Switching, getting down, getting out.
   r2.ap = 2;
   combatAct(st, { type: "gunner", unit: r2.id });
-  check(r2.gunner && !g.gunner && g.off && g.weapon === gun0 && gunnerOf(b) === r2 && magIn(r2) === b.vehicle.belt, "another rider takes over: one gunner at a time, the belt carries over, the first is back inside with their own gun");
+  check(r2.gunner && !g.gunner && g.off && g.weapon === gun0 && g.load === load0 && gunnerOf(b) === r2 && magIn(r2) === b.vehicle.belt, "another rider takes over: one gunner at a time, the belt carries over, the first is back inside with their own gun");
   r2.ap = 2;
   combatAct(st, { type: "disembark", unit: r2.id });
   check(!r2.gunner && !r2.aboard && !gunnerOf(b) && !b.cells.some((c) => c.h === 1 && c.k === "vehicle"), "getting out ends it");
@@ -497,6 +499,7 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   const tile = st.tiles.find((t) => t.road && !t.loc && !st.bases.some((b) => b.tile === t.id));
   const p = team(st, tile.id, 2, v.id);
   p.supplies.ammo = 60;
+  p.supplies.a_50bmg_ball = 60; // the M2's belt: .50 BMG (ammo.js rounds by calibre; turretRounds)
   const b = inBrowser(() => createBattle(st, raidSetup(st, tile.id, p)));
   st.combat = b; b.phase = "player";
   const g = b.units.find((u) => u.side === "player");

@@ -25,12 +25,15 @@ import { lootItem, allItems } from "./inventory.js";
 import { lockSource } from "./itemcond.js";
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
+import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
 import { THROWABLES } from "./stealth.js";
 import { landEffect } from "./throwables.js";
 import { toolSource } from "./gunsafes.js";
 import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, rollGunCase, SEARCH_TOOLS, isGunCase, openCase, CASE } from "./gunsafes.js";
 import { haulOf } from "./raidloot.js";
+// What rounds a locked thing holds (ammo.js themes), by its loot kind.
+const LOCK_AMMO = { guns: "guns", evidence: "police", miltruck: "military", crash: "military", safe: "home", cash: "home", gear: "home", car: "home" };
 
 // diff: 1–4. force: can be forced at all. loot: extras inside (LOCK_LOOT).
 export const LOCKS = {
@@ -485,7 +488,8 @@ export function lockedSearchHour(state, e, p, members) {
   L.sup.forEach(([k, pp, lo, hi], i) => {
     if (!SUPPLIES[k] || roll("s", i) >= pp) return;
     const q = lo + Math.floor(roll("q", i) * (hi - lo + 1));
-    e.found.supplies[k] = (e.found.supplies[k] || 0) + q;
+    if (k === "ammo") addFindVia((kk, qq) => { e.found.supplies[kk] = (e.found.supplies[kk] || 0) + qq; return qq; }, LOCK_AMMO[def.loot] || "home", q, "lock", e.tile, e.hours, i); // ammo.js: rounds by calibre
+    else e.found.supplies[k] = (e.found.supplies[k] || 0) + q;
     bits.push(`${q} ${k}`);
   });
   L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = lootItem(k, lockSource(def.loot), roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });

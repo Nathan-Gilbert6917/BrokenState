@@ -54,6 +54,8 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { sumRecs } from "./rounds.js"; // rounds by calibre
+import { packRounds } from "./ammo.js";
 import { teamKit, assaultCut, kitText, spendGrenades } from "./siege.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot, armedFactor } from "./world.js";
@@ -153,7 +155,7 @@ export function assaultOdds(power, force, ammoOk = true, people = 0) {
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
-const carriedAmmo = (p) => carriedOf(p, "ammo");
+const carriedAmmo = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // rounds by key: each gun judged by its own calibre (world.js armedFactor)
 // "2 ladders, a battering ram and 3 grenades" (the assault card).
 function kitWords(k) {
   const parts = [];
@@ -480,6 +482,11 @@ function packFor(state, members, base, v) {
   let room = carryCapacity(state, members, v);
   const out = {};
   const take = (k, q) => {
+    if (k === "ammo") { // ammo.js: the rounds that fit their guns, as far as the room goes
+      const got = packRounds(base.stock, members, Math.min(Math.floor(q), Math.floor(room / 0.03)));
+      for (const [kk, qq] of Object.entries(got)) { out[kk] = (out[kk] || 0) + qq; room -= qq * (SUPPLIES[kk] ? SUPPLIES[kk].weight : 0.02); }
+      return;
+    }
     const w = SUPPLIES[k].weight;
     const have = Math.floor(base.stock[k] || 0);
     const qty = Math.max(0, Math.min(have, Math.floor(q), Math.floor(room / w)));

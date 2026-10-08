@@ -55,6 +55,7 @@ import { guardsFor } from "./conflicts.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, ensureDiplo, warsOf, enemyIn, warById, relation } from "./diplomacy.js";
 import { blueprintReward } from "./blueprints.js";
+import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 
 export const JOBS = {
   RADIO_CHANCE: 0.06, FRIENDLY_CHANCE: 0.08, GATE_CHANCE: 0.6, OFFER_DAYS: 4, OFFER_GAP: 4, GATE_GAP: 3,
@@ -633,9 +634,9 @@ export function pickupArrived(state, p, base) {
   if (!j || j.status !== "active" || !f) return false;
   if (j.type === "retrieve" && j.data.atHub) { completeJob(state, j, "they fetched it"); return true; }
   if (j.type !== "deliver") return false;
-  const n = Math.min(j.data.left, Math.floor(base.stock[j.data.key] || 0));
+  const n = Math.min(j.data.left, Math.floor(supplyAmt(base.stock, j.data.key)));
   if (n > 0) {
-    base.stock[j.data.key] -= n;
+    useSupply(base.stock, j.data.key, n); // rounds.js: "ammo" as any rounds
     p.goods.supplies[j.data.key] = (p.goods.supplies[j.data.key] || 0) + n;
     j.data.left -= n;
   }
@@ -727,7 +728,7 @@ const RESERVE_HEAD = { food: 6, water: 5, meds: 3, ammo: 10, fuel: 8, parts: 2, 
 export function hubSpareFor(state, key) {
   const h = hub(state);
   const n = Math.max(1, atBase(state, h.id).length);
-  return Math.max(0, Math.floor((h.stock[key] || 0) - (key === "meds" || key === "fuel" || key === "parts" || key === "scrap" ? RESERVE_HEAD[key] : n * (RESERVE_HEAD[key] || 0))));
+  return Math.max(0, Math.floor(supplyAmt(h.stock, key) - (key === "meds" || key === "fuel" || key === "parts" || key === "scrap" ? RESERVE_HEAD[key] : n * (RESERVE_HEAD[key] || 0))));
 }
 // Can the governor do this job? Deliveries it can pay from the hub's spare stock; scouting and fetching within 12
 // tiles of the hub with 4+ people at home; Aggressive takes a small horde with 6+ people. Nothing else.

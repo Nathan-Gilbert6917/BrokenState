@@ -31,6 +31,7 @@ import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, l
 import { triggerConflict } from "./conflicts.js";
 import { searchCrew } from "./crashes.js";
 import { stockHas } from "./water.js";
+import { sortFind } from "./ammo.js"; // rounds by calibre
 
 export const MILTRUCK = {
   ROAD_P: 0.02, DEAD_END: 0.5, JUNCTION: 1.5, TWO: 0.25,
@@ -87,6 +88,8 @@ const BURNT_KEEP = new Set(["ammo", "parts", "ar", "carbine", "plate", "milhelme
 // Later branches (gun attachments, typed ammo) add to a truck's contents here: hook(rng, ctx, out) with ctx { kind,
 // cond, src, rich } and out { sup, gear } (change it in place).
 export const TRUCK_LOOT_HOOKS = [rosterTruckGear]; // factoryfit.js: the weapons overhaul's military guns in the load
+// ammo.js: an Army truck's rounds by calibre (5.56 and .308, now and then armour-piercing; its own dice).
+TRUCK_LOOT_HOOKS.push((rng, ctx, out) => sortFind(out.sup, "military", "truck", ctx.kind, ctx.cond, ctx.src, out.sup.ammo || 0));
 
 // What is in one truck: { sup: { ammo: 60, … }, gear: [items] }. rng: an Rng (or anything with next / chance / int);
 // kind: TRUCK_KINDS key; cond: TRUCK_COND key; opts.rich: × supplies and item chances (a base's motor pool, a convoy

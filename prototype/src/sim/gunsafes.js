@@ -23,6 +23,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { lootItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
 import { siteSource } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
 import { baseById } from "./world.js";
+import { stashRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 
 // ---------- what is inside ----------
 // guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
@@ -69,6 +70,8 @@ export function registerStashExtra(fn) {
   EXTRAS.push(fn);
   return () => { const i = EXTRAS.indexOf(fn); if (i >= 0) EXTRAS.splice(i, 1); };
 }
+// ammo.js: the rounds in a safe or a case, by the calibres of the guns in it (now and then a typed load).
+registerStashExtra((ctx, out) => stashRounds(ctx, out));
 
 // A weighted pick from { key: weight } with a roll in [0, 1).
 export function pickWeighted(r, weights) {
@@ -157,7 +160,7 @@ export function openCase(item, gear, sup) {
   if (!isGunCase(item)) return [];
   const out = [];
   for (const it of item.contents || []) if (it) { gear.push(it); out.push(it.name); }
-  for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) { sup[k] = (sup[k] || 0) + v; out.push(`${v} ${k}`); }
+  for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) { sup[k] = (sup[k] || 0) + v; out.push(`${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : k}`); } // rounds: "17 12 gauge 00 buckshot" (ammo.js)
   item.contents = [];
   item.sup = {};
   item.locked = false;

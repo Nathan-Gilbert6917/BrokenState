@@ -16,6 +16,7 @@
 // - Determinism (two worlds in one process), save / load mid-visit (identical after 30 more days), the autopilot's
 //   choices, a [days]-day Balanced run per style without NaN, and the UI pieces (Groups tab section, alerts, trade
 //   window extras) without undefined / NaN and with a handler for every data-action.
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { readFileSync, readdirSync } from "node:fs";
 import { createWorld, tickHour, day, hub, atBase, newId, residents, combatPower } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -171,9 +172,9 @@ section("Raiders at your base");
   p1.goal = { kind: "base", baseId: h.id, tile: h.tile };
   p1.path = planPath(st, p1.tile, h.tile, false).path;
   tick(st);
-  const ammo0 = h.stock.ammo;
+  const ammo0 = totalRounds(h.stock); // ammo.js: every round, any calibre
   const msg = answer(st, /^Pay them off/);
-  check(p1.paid && h.stock.ammo < ammo0 && p1.goal.kind === "exit", `paid off: ${msg}`);
+  check(p1.paid && totalRounds(h.stock) < ammo0 && p1.goal.kind === "exit", `paid off: ${msg}`);
   check(!V.raidTargets(st, p1).some((t) => t.goal.kind === "base" && t.goal.baseId === h.id), "a band you paid never targets that base again");
   // Defend in person (resolved by the numbers headless): win and their loot is yours.
   clearCards(st);

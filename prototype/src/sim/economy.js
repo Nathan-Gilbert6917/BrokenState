@@ -33,6 +33,7 @@ import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims nex
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
+import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -120,7 +121,8 @@ function baseScavenging(state, base, people) {
     const q = rng.int(SCAV_FIND[k][0], SCAV_FIND[k][1]);
     const t = state.tiles[base.tile];
     const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${s.id}`) : { [k]: q }; // loot.js: parts by kind (their own dice)
-    for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
+    if (k === "ammo") addFind(base.stock, (t && t.loc && t.loc.type) || "", q, false, "basescav", base.tile, state.hour, s.name); // ammo.js: rounds by calibre, as the place around it holds them
+    else for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
     econStats(state).scavFinds++;
     log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key}`).join(", ")} around ${base.name}.`, "good");
   }
@@ -591,6 +593,7 @@ function shipFromOutposts(state) {
       const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
+      for (const [k, v] of Object.entries(chooseRounds(base.stock, keep.ammo, baseCals(state, base)))) keep[k] = (keep[k] || 0) + v; // ammo.js: the rounds kept are the ones its guns shoot
       keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first
       for (const k of Object.keys(base.stock)) {
         const surplus = base.stock[k] - (keep[k] || 0);

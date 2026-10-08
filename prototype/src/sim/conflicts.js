@@ -44,6 +44,8 @@ import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // rounds by calibre
+import { addFindVia, kindTheme } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
 
 // ---------- small helpers ----------
@@ -107,7 +109,8 @@ export function addCargo(state, p, key, qty) {
 // Ammo the team can shoot with: packed plus found (both pools are used in a fight, combat.js); the same for the arrows
 // its bows and crossbows shoot.
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
-const carriedAmmo = (p) => carriedOf(p, "ammo");
+const carriedAmmo = (p) => totalIn(p.supplies, p.cargo && p.cargo.supplies); // every round, any calibre (rounds.js)
+const carriedRounds = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // by key: the armed factor judges each gun by its own calibre
 
 // Bonus gear goes into the cargo only if there is room for it (parties.js addGearToCargo when it exists).
 function stowGear(state, p, item) {
@@ -128,7 +131,7 @@ function teamPower(state, p) {
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = teamPower(state, p) * armedFactor(people, carriedAmmo(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
+  let mine = teamPower(state, p) * armedFactor(people, carriedRounds(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4 * ambushMult(p.vehicle === true ? partyVehicle(state, p) : null, enemy.kind); // vehicles.js: bulletproof glass (combat.js byNumbersOdds)
@@ -171,7 +174,7 @@ function minBaseDist(state, f, tileId) {
 
 // Pay a value from what the team carries (found cargo first). Returns the plan, or null if short.
 export function payPlan(p, value) {
-  const order = ["scrap", "parts", "ammo", "meds", "fuel", "food", "rawwater", "water"];
+  const order = ["scrap", "parts", "ammo", ...ROUND_KEYS, "meds", "fuel", "food", "rawwater", "water"]; // rounds by calibre after any generic ammo (rounds.js)
   const plan = {};
   let left = value;
   for (const pool of [p.cargo.supplies, p.supplies]) {
@@ -193,7 +196,7 @@ function payFrom(p, plan, f) {
     const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - fromCargo;
     p.supplies[k] = (p.supplies[k] || 0) - (q - fromCargo);
-    if (f) f.stock[k] = (f.stock[k] || 0) + q;
+    if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
   }
 }
 const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * SUPPLIES[k].value, 0);
@@ -207,7 +210,7 @@ export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
       if (q <= 0) continue;
       pool[k] -= q;
       taken[k] = (taken[k] || 0) + q;
-      if (f) f.stock[k] = (f.stock[k] || 0) + q;
+      if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
     }
   }
   const gear = takeGear ? p.cargo.gear.splice(0) : [];
@@ -1030,7 +1033,7 @@ function stealChoice(state, p, c, f) {
     resolve: (st) => {
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "steal-ok");
-        const ammo = addCargo(st, p, "ammo", st.rng.int(15, 40));
+        const ammo = addFindVia((k, q) => addCargo(st, p, k, q), f ? kindTheme(f.type) : "raider", st.rng.int(15, 40), "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
         const food = addCargo(st, p, "food", st.rng.int(4, 10));
         if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); f.stock.food = Math.max(0, f.stock.food - food); }
         resume(st, p);
@@ -1246,7 +1249,7 @@ function victoryRewards(state, p, c, result) {
       if (got.length) out.push(`Taken from the bodies: ${got.join(", ")}.`);
     } else {
       // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.
-      out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
+      out.push(`Taken from the bodies: ${addFindVia((k, q) => addCargo(state, p, k, q), f ? kindTheme(f.type) : "raider", rng.int(15, 45), "bodies", partyTile(p), state.hour)} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
         const item = lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
@@ -1275,7 +1278,7 @@ function victoryRewards(state, p, c, result) {
       changeGoodwill(state, helped, 15, "you fought beside them");
       helped.lastDiplomacy = day(state);
       const key = rng.pick(["ammo", "meds"]);
-      out.push(`${helped.name} thank you with ${addCargo(state, p, key, key === "ammo" ? 40 : 4)} ${key}.`);
+      out.push(`${helped.name} thank you with ${key === "ammo" ? addFindVia((k, q) => addCargo(state, p, k, q), kindTheme(helped.type), 40, "thanks", partyTile(p), state.hour) : addCargo(state, p, key, 4)} ${key}.`);
     }
   }
   // Dead soldiers among the dead (deadsoldiers.js), the fight resolved by the numbers: a body or two to strip (on the

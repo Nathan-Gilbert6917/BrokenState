@@ -40,6 +40,7 @@ import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
+import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by calibre
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
@@ -356,6 +357,7 @@ export function rollGrab(state, s, A = null) {
     s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.6, 1) * 100) / 100);
     got.weapon = s.gear.weapon;
     randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
+    { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
     const rr = C.ROUNDS[w];
     if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
@@ -410,6 +412,7 @@ export function rollPrepper(state, s) {
   s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.8, 1) * 100) / 100);
   got.weapon = s.gear.weapon;
   randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
+  { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
   if (gun) got.ammo += P.AMMO;
   const place = (key) => {
     const item = startItem(rng, key, 1);
@@ -670,6 +673,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   state.parties.push(p);
   // The car one of them fled in, and what was in the back.
   const { owner, car, trunk } = rollCar(state, p, people);
+  settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns
   state.rng = worldRng;
   lines.push(carLine(owner, car, trunk, people.length));
   log(state, `${people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`} in ${firstName(owner)}'s ${car.name.toLowerCase()}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${trunk.gear.length || Object.keys(trunk.supplies).length ? ", and what was in the back is the team's cargo" : ""}.`, "info");

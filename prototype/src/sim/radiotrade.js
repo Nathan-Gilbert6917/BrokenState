@@ -31,6 +31,7 @@ import { sendCaravan, caravanEnRoute, caravanCapacity, CARAVAN_SPEED } from "./c
 import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { itemLoad } from "./inventory.js";
 import { keyWord } from "./water.js";
+import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 
 export const RADIO_DEAL_DAYS = 10;
 
@@ -139,6 +140,7 @@ export function radioTradeContext(state, t) {
     have[k] = Math.max(0, Math.floor(base.stock[k] || 0));
     theirHave[k] = available(f, k);
   }
+  have.ammo = theirHave.ammo = 0; // rounds change hands by calibre and type (ammo.js)
   const fee = feeOf(state, f, base, t);
   return { kind: "radio", t, f, base, p: null, caravan: null, speech: tradeSpeech(atBase(state, base.id)), have, theirHave, myGear: base.armory, theirGear: (f.wares = f.wares || []), center: f.bases[0], fee, theirFee: t.delivery === "deliver" ? deliveryFee(state, f, base) : 0, delivery: t.delivery };
 }
@@ -256,7 +258,7 @@ export function radioDealsDaily(state) {
 export function dealCarried(state, p, deal) {
   const short = [];
   for (const [k, q] of Object.entries(deal.give.supplies)) {
-    const has = Math.floor((p.cargo.supplies[k] || 0) + (p.supplies[k] || 0));
+    const has = Math.floor(k === "ammo" ? totalRounds(p.cargo.supplies) + totalRounds(p.supplies) : (p.cargo.supplies[k] || 0) + (p.supplies[k] || 0)); // "ammo": any rounds (rounds.js)
     if (has < q) short.push(`${q - has} ${keyWord(k)}`);
   }
   const gear = matchGear(p.cargo.gear, deal.give.gear);
@@ -274,9 +276,12 @@ export function completeRadioDeal(state, p, deal) {
   const c = dealCarried(state, p, deal);
   if (!c.ok) return c.why;
   for (const [k, q] of Object.entries(deal.give.supplies)) {
-    const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
-    p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - fromCargo;
-    p.supplies[k] = (p.supplies[k] || 0) - (q - fromCargo);
+    if (k === "ammo") { const c0 = spendAmmo(p.cargo.supplies, q, p.ammoCals).n; spendAmmo(p.supplies, q - c0, p.ammoCals); } // rounds.js: any rounds, the ones its guns need least
+    else {
+      const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
+      p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - fromCargo;
+      p.supplies[k] = (p.supplies[k] || 0) - (q - fromCargo);
+    }
     const pk = poolKey(k);
     f.stock[pk] = (f.stock[pk] || 0) + q;
   }

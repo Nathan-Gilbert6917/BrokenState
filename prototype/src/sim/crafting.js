@@ -20,6 +20,8 @@ import { workFactor } from "./health.js";
 import { hasPerk, hash01, gainXp } from "./skills.js";
 import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
 import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
+import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
+const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies);
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
 
@@ -527,9 +529,10 @@ export function craftingDaily(state) {
 const heldItems = (s) => [...Object.values(s.gear || {}), ...(s.pockets || []), ...((packOf(s)) || [])].filter(Boolean);
 
 // ---------- field crafting (a team on the road) ----------
-const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
+const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : k === "ammo" ? carriedRounds(p) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
 function partyTake(p, k, qty) {
   if (k === "water") { takeTeamWater(p, qty, { rawFirst: true }); return; } // boiled in the work: un-purified first (water.js)
+  if (k === "ammo") { const c = spendAmmo(p.cargo && p.cargo.supplies, qty, p.ammoCals).n; spendAmmo(p.supplies, qty - c, p.ammoCals); return; } // rounds.js: any calibre, the ones its guns need least
   const fromCargo = Math.min(qty, Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
   if (fromCargo) p.cargo.supplies[k] -= fromCargo;
   p.supplies[k] = (p.supplies[k] || 0) - (qty - fromCargo);

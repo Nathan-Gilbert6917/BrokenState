@@ -80,6 +80,8 @@ import { isMember } from "./alliance.js";
 import { hiveById } from "./hives.js";
 import { findPath } from "./hex.js";
 import { hcOutbreak, hcOutbreakCity } from "./hardcore-outbreak.js";
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { payAmmo } from "./ammo.js"; // rounds by calibre
 
 export const HC_GROUPS = {
   // What a band starts with, by the type it will become (you: 3 people, about 10 food, 10 water, 6 ammo).
@@ -967,9 +969,9 @@ function helpCall(state, f, m) {
     choices: [
       {
         label: "Send 40 ammo", hint: `Two weeks of harder sorties against the dead at their walls; goodwill +8`,
-        ai: (st) => ((hub(st)?.stock.ammo || 0) >= 160 ? 2 : -1),
-        disabled: (st) => !hub(st) || (hub(st).stock.ammo || 0) < 40,
-        resolve: (st) => { const hb = hub(st); if (!hb || (hb.stock.ammo || 0) < 40) return "You no longer have 40 ammo to spare."; hb.stock.ammo -= 40; f.stock.ammo = (f.stock.ammo || 0) + 40; m.suppliedUntil = day(st) + M.SUPPLY_DAYS; changeGoodwill(st, f, 8, "you sent ammo"); return `Ammo on its way to ${name}.`; },
+        ai: (st) => (hub(st) && totalRounds(hub(st).stock) >= 160 ? 2 : -1),
+        disabled: (st) => !hub(st) || totalRounds(hub(st).stock) < 40,
+        resolve: (st) => { const hb = hub(st); if (!hb || totalRounds(hb.stock) < 40) return "You no longer have 40 ammo to spare."; payAmmo(st, hb, 40); f.stock.ammo = (f.stock.ammo || 0) + 40; m.suppliedUntil = day(st) + M.SUPPLY_DAYS; changeGoodwill(st, f, 8, "you sent ammo"); return `Ammo on its way to ${name}.`; },
       },
       {
         label: "Send 6 meds", hint: `${M.MEDS_POP} of their wounded go back on the walls; goodwill +6`,

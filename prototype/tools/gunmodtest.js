@@ -239,8 +239,8 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
     check(withDot === Math.min(95, shotOdds(b, plain, me).chance + 4), `their shots with it: ${shotOdds(b, plain, me).chance}% → ${withDot}%`);
   }
   const sup = units.find((u) => u.suppressor && u.modItems && u.modItems.muzzle);
-  check(sup && Math.abs(shotNoise(b, sup, WEAPONS[sup.weapon]) - WEAPONS[sup.weapon].noise * ATTACH[sup.modItems.muzzle.key].noise) < 1e-9 && ATTACH[sup.modItems.muzzle.key].noise < 0.75, `a suppressed enemy's shot is quieter (${sup && shotNoise(b, sup, WEAPONS[sup.weapon]).toFixed(2)} vs ${sup && WEAPONS[sup.weapon].noise}), so the alert is smaller`);
-  check(units.every((u) => "ammoType" in u), "every enemy keeps a place for its loaded round (u.ammoType, for the ammo overhaul)");
+  check(sup && shotNoise(b, sup, WEAPONS[sup.weapon]) < WEAPONS[sup.weapon].noise / 2, `a suppressed enemy's shot is quieter (${sup && shotNoise(b, sup, WEAPONS[sup.weapon]).toFixed(2)} vs ${sup && WEAPONS[sup.weapon].noise}), so the alert is smaller`);
+  check(units.every((u) => "load" in u), "every enemy has its loaded round (u.load, ammo.js enemyLoad)");
   // Looted with the gun.
   const looted = units.filter((u) => u.modItems).slice(0, 30).map((u) => ({ u, keys: Object.values(u.modItems).map((m) => m.key).sort().join(), body: enemyBody(rng, u, KITS[u.kit]) }));
   check(looted.every(({ body, keys, u }) => body.gear.weapon && body.gear.weapon.key === u.weapon && Object.values(body.gear.weapon.mods || {}).map((m) => m.key).sort().join() === keys), "an enemy's body: the gun comes with every part it carried");

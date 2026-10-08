@@ -1,6 +1,6 @@
 // @ts-check
-// Purified and un-purified water (data.js SUPPLIES water / rawwater). Plain helpers with no imports, so any module can
-// use them (no import cycles).
+// Purified and un-purified water (data.js SUPPLIES water / rawwater). Plain helpers (importing only the data and rounds.js), so any
+// module can use them (no import cycles).
 //
 // - Purified water (`water`) is safe to drink: boiled, filtered, treated with tablets, or bottled water found in shops,
 //   houses and crates. Un-purified water (`rawwater`) comes from the land: a base's well or spring, wells, a stream,
@@ -16,6 +16,8 @@
 //   tablets (one per WORM.TABS_WATER), or is drunk as it is.
 // - Other groups keep a single pool (their f.stock.water: they never meet the worm's water rules); un-purified water
 //   sold to them goes into it at about half the price (trade.js).
+import { totalRounds, spendAmmo, isRoundKey } from "./rounds.js"; // "ammo" as every round (rounds.js imports only data)
+import { SUPPLIES } from "./data.js";
 export const RAW = "rawwater";
 export const WATER_KEYS = ["water", RAW];
 const pos = (v) => Math.max(0, Number(v) || 0);
@@ -78,19 +80,22 @@ export function waterText(pure, raw, { word = "water" } = {}) {
   return r > 0 ? `${p} ${word} (+${r} un-purified)` : `${p} ${word}`;
 }
 // A supply in a stock for a recipe (a station, a craft, a field craft), water counting both kinds: the amount there is.
-export const stockHas = (o, k) => (k === "water" ? waterIn(o) : (o && o[k]) || 0);
+// "ammo": every round there, any calibre (rounds.js totalRounds; a recipe or a cost in generic ammo).
+export const stockHas = (o, k) => (k === "water" ? waterIn(o) : k === "ammo" ? totalRounds(o) : (o && o[k]) || 0);
 // Uses up `qty` of a supply from a stock for a recipe; water: un-purified first (it is boiled in the work anyway).
 export function useStock(o, k, qty) {
   if (k === "water") return drawWater(o, qty, { rawFirst: true }).got;
+  if (k === "ammo") return spendAmmo(o, qty).n; // rounds.js: the cheapest rounds first
   o[k] = (o[k] || 0) - qty;
   return qty;
 }
 // Takes `qty` of a supply from a stock (a cost paid, a share given), never below zero; water: purified first.
 export function takeStock(o, k, qty) {
   if (k === "water") return drawWater(o, qty).got;
+  if (k === "ammo") return spendAmmo(o, qty).n; // rounds.js: the cheapest rounds first
   const q = Math.min(pos(o[k]), pos(qty));
   o[k] = Math.max(0, (o[k] || 0) - qty);
   return q;
 }
 // A supply key as a word in a text ("12 un-purified water", "12 scrap").
-export const keyWord = (k) => (k === RAW ? "un-purified water" : k);
+export const keyWord = (k) => (k === RAW ? "un-purified water" : isRoundKey(k) ? SUPPLIES[k].name : k); // rounds: "9mm FMJ" (rounds.js)

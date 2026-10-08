@@ -30,7 +30,7 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 
   check(SUPPLIES.parts.name === "Machine parts" && SUPPLY_KEYS.includes("parts"), "\"parts\" stays the key, named Machine parts");
   const want = { carparts: [7, 3, "vehicle"], gunparts: [10, 0.5, "gunmod"], electronics: [12, 0.3, "electronics"] };
   check(Object.entries(want).every(([k, [v, w, c]]) => SUPPLIES[k] && SUPPLIES[k].value === v && SUPPLIES[k].weight === w && SUPPLIES[k].cat === c), "car parts (7, 3 kg, vehicle), gun parts (10, 0.5 kg, gunmod), electronics (12, 0.3 kg, electronics)");
-  check(SUPPLY_KEYS.slice(-3).join() === "carparts,gunparts,electronics", "the kinds come last (every older key keeps its place)");
+  check(SUPPLY_KEYS.filter((k) => !SUPPLIES[k].round).slice(-3).join() === "carparts,gunparts,electronics", "the kinds come last (every older key keeps its place; the rounds by calibre after them)");
   check(PART_KINDS.every((k) => LOT[k] > 0), "every kind has a trade lot");
   const st = world();
   check(PART_KINDS.every((k) => !(hub(st).stock[k] > 0)), "a new hub starts with none of the kinds (machine parts as before)");
@@ -83,7 +83,7 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 
     const res = launchExpedition(st, { memberIds: [s.id, s2.id], dest: f.bases[0], mission: "move", stance: "normal", supplies: { food: 4, water: 4 } });
     const p = res.party;
     p.path = [f.bases[0]]; p.idx = 0; p.dest = f.bases[0];
-    p.cargo.supplies = { ammo: 400 };
+    p.cargo.supplies = { a_9mm_fmj: 400 } /* rounds by calibre (ammo.js): what balanceWith("ammo") pays with */;
     giveOrder(st, p, "trade");
     const ctx = tradeContext(st);
     if (check(ctx && ctx.kind === "visit" && ctx.theirHave.gunparts > 0, `the trade window lists their gun parts (${ctx && ctx.theirHave.gunparts})`)) {

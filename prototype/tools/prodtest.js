@@ -9,6 +9,7 @@
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
 // Usage: node tools/prodtest.js [days for the long runs] [seeds...]
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // the bench makes rounds by calibre (ammo.js)
 import { createWorld, tickHour, hub, atBase, makeSurvivor, newId, day, hourOfDay, RADIO_RANGE } from "../src/sim/world.js";
 import { addBuilding, stations, stationStatus, runStations, mannedStations, RECIPES, BUILDINGS } from "../src/sim/buildings.js";
 import {
@@ -54,40 +55,40 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   op(a, bench);
   a.skills.mechanics = 0;
   // Forever (no order): it runs.
-  h.stock.ammo = 0;
+  setRounds(h.stock, 0);
   runStations(st, h);
-  check(h.stock.ammo === RECIPES.ammo.out.ammo, `Forever: the bench runs (${h.stock.ammo} ammo)`);
+  check(totalRounds(h.stock) === RECIPES.ammo.out.ammo, `Forever: the bench runs (${totalRounds(h.stock)} ammo)`);
   check(!orderHold(st, h, bench) && stationOrder(h, bench).mode === "forever", "no order means Forever");
   // Until N: runs below N, stops at N, starts again only below N - 10%.
   setStationOrder(st, h, bench.id, { mode: "until", n: 50 });
-  h.stock.ammo = 45;
+  setRounds(h.stock, 45);
   runStations(st, h);
-  check(h.stock.ammo === 53, `Until 50: runs from 45 (${h.stock.ammo})`);
+  check(totalRounds(h.stock) === 53, `Until 50: runs from 45 (${totalRounds(h.stock)})`);
   productionHour(st);
   runStations(st, h);
-  check(h.stock.ammo === 53, `Until 50: stops at 53 (${h.stock.ammo})`);
+  check(totalRounds(h.stock) === 53, `Until 50: stops at 53 (${totalRounds(h.stock)})`);
   check(/Order met/.test(stationStatus(st, h, bench).reason) && stationStatus(st, h, bench).idle, `the status says why (${stationStatus(st, h, bench).reason})`);
-  h.stock.ammo = 46;
+  setRounds(h.stock, 46);
   productionHour(st);
   runStations(st, h);
-  check(h.stock.ammo === 46, `Until 50: still stopped at 46 (the margin: starts again below 45) (${h.stock.ammo})`);
-  h.stock.ammo = 44;
+  check(totalRounds(h.stock) === 46, `Until 50: still stopped at 46 (the margin: starts again below 45) (${totalRounds(h.stock)})`);
+  setRounds(h.stock, 44);
   productionHour(st);
   runStations(st, h);
-  check(h.stock.ammo === 52, `Until 50: starts again below 45 (${h.stock.ammo})`);
+  check(totalRounds(h.stock) === 52, `Until 50: starts again below 45 (${totalRounds(h.stock)})`);
   // Keep at least N of an input.
   setStationOrder(st, h, bench.id, { mode: "keep", key: "scrap", n: 10 });
-  h.stock.scrap = 12; h.stock.ammo = 0;
+  h.stock.scrap = 12; setRounds(h.stock, 0);
   runStations(st, h);
-  check(h.stock.scrap === 12 && h.stock.ammo === 0, `Keep 10 scrap: no run from 12 (it would leave 9) (${h.stock.scrap} scrap, ${h.stock.ammo} ammo)`);
+  check(h.stock.scrap === 12 && totalRounds(h.stock) === 0, `Keep 10 scrap: no run from 12 (it would leave 9) (${h.stock.scrap} scrap, ${totalRounds(h.stock)} ammo)`);
   h.stock.scrap = 13;
   runStations(st, h);
-  check(h.stock.scrap === 10 && h.stock.ammo === 8, `Keep 10 scrap: runs from 13 down to 10 (${h.stock.scrap} scrap)`);
+  check(h.stock.scrap === 10 && totalRounds(h.stock) === 8, `Keep 10 scrap: runs from 13 down to 10 (${h.stock.scrap} scrap)`);
   // Off.
   setStationOrder(st, h, bench.id, { mode: "off" });
-  h.stock.scrap = 100; h.stock.ammo = 0;
+  h.stock.scrap = 100; setRounds(h.stock, 0);
   runStations(st, h);
-  check(h.stock.ammo === 0 && h.stock.scrap === 100, "Off: never runs");
+  check(totalRounds(h.stock) === 0 && h.stock.scrap === 100, "Off: never runs");
   // An idle station makes no workshop noise.
   check(mannedStations(st, h) === 0, `a station its order holds makes no Heat (${mannedStations(st, h)} manned)`);
   setStationOrder(st, h, bench.id, { mode: "forever" });
@@ -105,20 +106,20 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   const [x, y] = people(st2, h2);
   op(x, b2);
   setStationOrder(st2, h2, b2.id, { mode: "until", n: 100, fallback: "farm" });
-  h2.stock.ammo = 120;
+  setRounds(h2.stock, 120);
   productionHour(st2);
   check(x.role === "farm" && x.parked && x.parked.from === b2.id, `order met: the operator goes farming (${x.role})`);
-  h2.stock.ammo = 95;
+  setRounds(h2.stock, 95);
   productionHour(st2);
   check(x.role === "farm", "still farming inside the margin (95 of 100)");
-  h2.stock.ammo = 80;
+  setRounds(h2.stock, 80);
   productionHour(st2);
   check(x.role === "operate" && x.station === b2.id && !x.parked, `needed again: back on the bench (${x.role})`);
   // The player moves them while parked: the fallback lets go.
-  h2.stock.ammo = 120;
+  setRounds(h2.stock, 120);
   productionHour(st2);
   x.role = "guard";
-  h2.stock.ammo = 0;
+  setRounds(h2.stock, 0);
   productionHour(st2);
   check(x.role === "guard" && !x.parked, "someone the player moved while parked stays where the player put them");
   // Fallback to another station.

@@ -225,10 +225,11 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     const keys = types.map((t) => `a_${cal}_${t}`);
     const added = keys.filter((k) => !GEAR[k]);
     for (const k of added) GEAR[k] = boxes[k];
-    const s = st.survivors.find((x) => x.id === u.sid);
-    const pk = s.pockets.slice();
-    s.pockets[0] = { key: keys[0], name: boxes[keys[0]].name, quality: 1, dur: 20 };
-    s.pockets[1] = { key: keys[1], name: boxes[keys[1]].name, quality: 1, dur: 7 };
+    // The battle's rounds (sim/ammo.js: the side's boxes on its fighters and the pools): only these two boxes, on u.
+    const pools0 = b.pools, boxes0 = b.units.map((x) => x.boxes);
+    b.pools = [{}];
+    for (const x of b.units) if (x.side === "player") x.boxes = [];
+    u.boxes = [{ key: keys[0], name: boxes[keys[0]].name, quality: 1, dur: 20 }, { key: keys[1], name: boxes[keys[1]].name, quality: 1, dur: 7 }];
     try {
       const list = UI.ammoToHand(st, b, u);
       check(list.length === 2 && list[0].n === 20 && list[1].n === 7, `the rounds to hand by kind (${list.map((x) => `${x.name} ${x.n}`).join(", ")})`);
@@ -247,15 +248,15 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
       check(UI.renderCombatPanel(st).includes(`<span class="muted">${AMMO_TYPES[types[1]].name}</span>`), "your gun's line shows the kind loaded");
       delete u.load;
     } finally {
-      s.pockets = pk;
+      b.pools = pools0; b.units.forEach((x, i) => { x.boxes = boxes0[i]; });
       for (const k of added) delete GEAR[k];
       cui.ammoAsk = null;
     }
     e.load = "ap";
     cui.hover = { x: e.x, y: e.y, px: 400, py: 300 }; cui.mode = "move";
     html = UI.renderCombatPanel(st);
-    const prev = html.split('id="cbprev"')[1] || "";
-    check(prev.includes(e.weaponName.replace(/&/g, "&amp;")) && !/armour-piercing|hollow point/i.test(html) && !/\bAP\b/.test(html), "the enemy line: its gun and parts, never its ammo");
+    const prev = (html.split('id="cbprev"')[1] || "").split("Enemies in sight")[0]; // the hovered enemy's preview only (your own lines show your load)
+    check(prev.includes(e.weaponName.replace(/&/g, "&amp;")) && !/armour-piercing|hollow point/i.test(prev) && !/\bAP\b/.test(prev), "the enemy line: its gun and parts, never its ammo"); // (the preview: your own line shows your load)
     delete e.load;
     e.jam = { kind: "stovepipe", ap: 1 };
     check(/JAMMED/.test(UI.renderCombatPanel(st)), "a jammed enemy shows JAMMED");

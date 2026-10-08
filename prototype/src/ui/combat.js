@@ -7,7 +7,8 @@ import {
   vehicleTurret, TURRET, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
-import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
+import * as SIM from "../sim/combat.js";
+import { loadsFor } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
@@ -463,23 +464,12 @@ const spearRange = (u) => { const w = WEAPONS[u.weapon]; return (w && (w.throw |
 const spearDown = (b, u) => (u.spearOut && b.spears ? b.spears.find((x) => x.owner === u.id) || null : null);
 export const OVERWATCH_TIP = "Ends the turn. Reacts to every enemy that moves in range until your next turn or the magazine runs dry (each a reaction shot at −15 aim, in the gun's fire mode: a big magazine makes the best overwatch gun). Needs a loaded gun.";
 
-// The kinds of round for the unit's gun to hand: [{ type, n, name }] (the sim's roundsOf when it has one, else the
-// boxes of that calibre on your people, in the team's cargo and, defending a base, in its armory).
+// The kinds of round for the unit's gun to hand: [{ type, n, name }] (sim/ammo.js loadsFor: its side's boxes and pools,
+// the loaded type first; only the types there are rounds of).
 export function ammoToHand(state, b, u) {
-  const cal = WEAPONS[u.weapon] && WEAPONS[u.weapon].cal;
-  const c = CALIBERS[cal];
+  const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
   if (!c || u.side !== "player" || !isRanged(u)) return [];
-  const n = {};
-  if (typeof SIM.roundsOf === "function") for (const t of c.types) { const k = Number(SIM.roundsOf(b, u, t)) || 0; if (k > 0) n[t] = k; }
-  else {
-    const add = (it) => { const r = it && GEAR[it.key] && GEAR[it.key].rounds; if (r && r.cal === cal) n[r.type] = (n[r.type] || 0) + (it.dur ?? GEAR[it.key].dur ?? 0); };
-    for (const p of b.units) if (p.side === "player" && p.sid != null && !p.dead) { const s = state.survivors.find((x) => x.id === p.sid); if (s) for (const it of allItems(s)) add(it); }
-    const party = b.setup && b.setup.partyId ? state.parties.find((x) => x.id === b.setup.partyId) : null;
-    if (party && party.cargo) for (const it of party.cargo.gear || []) add(it);
-    const base = b.setup && b.setup.baseId ? state.bases.find((x) => x.id === b.setup.baseId) : null;
-    if (base) for (const it of base.armory || []) add(it);
-  }
-  return c.types.filter((t) => n[t] > 0).map((t) => ({ type: t, n: Math.floor(n[t]), name: `${c.name} ${AMMO_TYPES[t] ? AMMO_TYPES[t].name : t}` }));
+  return loadsFor(b, u).filter((x) => x.n > 0).map((x) => ({ type: x.type, n: Math.floor(x.n), name: `${c.name} ${x.name}` }));
 }
 const loadOf = (u) => { const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal]; return u.load || (c ? c.base : null); };
 cui.ammoAsk = null; // the unit whose Reload chooser is open
@@ -1010,7 +1000,7 @@ export function renderCombatPanel(state) {
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
-    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Each gun also holds a magazine that Reload (1 action) fills from this; a magazine never counts more rounds than are left here. With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+    <div class="small cbsupply"><span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Each gun also holds a magazine that Reload (1 action) fills from this; a magazine never counts more rounds than are left here. With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
@@ -1168,7 +1158,7 @@ function raidHead(state, b, phase) {
     <div class="small cbsupply">
       ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
       ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
-      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>

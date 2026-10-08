@@ -4,6 +4,8 @@
 // window honours the deal with items), deals that lapse or are called off, a group asking you to bring your side
 // (agree books a deal, decline does nothing), a save and load with a deal waiting, and the HTML of every screen.
 // Usage: node tools/radiotradetest.js [seed]
+import { setRounds } from "../src/sim/ammo.js"; // rounds by calibre
+const AMMO = "a_9mm_fmj"; // your side pays in a box of 9mm (rounds go by calibre: ammo.js)
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, makeSurvivor, newId, day } from "../src/sim/world.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -50,7 +52,7 @@ function setup(s) {
   Object.assign(f.stock, { food: 300, ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 });
   for (const x of st.factions) if (x !== f) x.goodwill = Math.max(x.goodwill, -20);
   st.hordes = st.hordes.filter((x) => st.grid.distance(x.tile, f.bases[0]) > 6);
-  Object.assign(h.stock, { ammo: 600, food: 200, water: 200 });
+  Object.assign(h.stock, { food: 200, water: 200 }); setRounds(h.stock, 0); h.stock[AMMO] = 600; // ammo.js: your side pays in rounds by calibre
   for (let i = 0; i < 3; i++) fighter(st);
   return { st, h, f };
 }
@@ -80,7 +82,7 @@ function drive(state, pred, maxHours, keep = () => false) {
   h.armory.push(newItem("pistol", 0.8));
   check(openRadioTrade(st, f, h.id) === "", "it opens");
   const ctx = tradeContext(st);
-  check(ctx && ctx.kind === "radio" && ctx.base === h && ctx.myGear === h.armory && ctx.have.ammo === Math.floor(h.stock.ammo), "your side: the hub's stores and armory");
+  check(ctx && ctx.kind === "radio" && ctx.base === h && ctx.myGear === h.armory && ctx.have[AMMO] === h.stock[AMMO], "your side: the hub's stores and armory");
   check(ctx.theirGear === f.wares && ctx.theirHave.meds > 0 && ctx.theirHave.meds < f.stock.meds, "their side: what they can spare and their wares");
   check(ctx.delivery === "fetch" && ctx.fee === 0, "by default you fetch it: no fee");
   check(/over the radio/i.test(giftAll(st)) || tradeTotals(st).offer === 0, "no gifts over the radio");
@@ -88,17 +90,17 @@ function drive(state, pred, maxHours, keep = () => false) {
   const fee = deliveryFee(st, f, h);
   check(tradeContext(st).fee === fee && fee > 0, `asking them to bring it adds the delivery fee (${fee})`);
   setQty(st, "theirs", "meds", 5);
-  balanceWith(st, "ammo");
-  const withFee = tradeContext(st).t.offer.ammo;
+  balanceWith(st, AMMO);
+  const withFee = tradeContext(st).t.offer[AMMO];
   setDelivery(st, "fetch");
-  setQty(st, "mine", "ammo", 0);
-  balanceWith(st, "ammo");
-  const noFee = tradeContext(st).t.offer.ammo;
+  setQty(st, "mine", AMMO, 0);
+  balanceWith(st, AMMO);
+  const noFee = tradeContext(st).t.offer[AMMO];
   check(withFee > noFee, `the fee costs more of your side (${withFee} ammo against ${noFee})`);
-  const other = { id: newId(), tile: st.grid.within(h.tile, 3).find((t) => land(st, t) && t !== h.tile), type: "outpost", name: "Elm", stock: { food: 5, ammo: 3 }, buildings: [], construction: [], armory: [] };
+  const other = { id: newId(), tile: st.grid.within(h.tile, 3).find((t) => land(st, t) && t !== h.tile), type: "outpost", name: "Elm", stock: { food: 5, [AMMO]: 3 }, buildings: [], construction: [], armory: [] };
   st.bases.push(other);
   setRadioBase(st, other.id);
-  check(tradeContext(st).base === other && tradeContext(st).have.ammo === 3 && !(st.trade.offer.ammo > 0), "another base's stores: the old side is cleared");
+  check(tradeContext(st).base === other && tradeContext(st).have[AMMO] === 3 && !(st.trade.offer[AMMO] > 0), "another base's stores: the old side is cleared");
   st.bases.pop();
   endTrade(st);
   check(!st.trade, "hanging up closes it");
@@ -113,23 +115,23 @@ function drive(state, pred, maxHours, keep = () => false) {
   openRadioTrade(st, f, h.id, "fetch");
   setQty(st, "theirs", "meds", 6);
   toggleGear(st, "mine", h.armory.indexOf(pistol));
-  balanceWith(st, "ammo");
+  balanceWith(st, AMMO);
   const v = tradeVerdict(st);
-  const ammo = st.trade.offer.ammo || 0;
-  const meds0 = f.stock.meds, hubMeds = h.stock.meds, hubAmmo = h.stock.ammo;
+  const ammo = st.trade.offer[AMMO] || 0;
+  const meds0 = f.stock.meds, hubMeds = h.stock.meds, hubAmmo = h.stock[AMMO];
   check(v.ok, `the deal is fair (${v.reason})`);
   const msg = executeTrade(st);
   const d = pendingDeal(st, f);
   check(!st.trade && d && d.by === "you", `agreeing books it and closes the window: ${msg}`);
   check(f.stock.meds === meds0 - 6 && d.get.supplies.meds === 6, "their 6 meds are set aside for you");
-  check(h.stock.meds === hubMeds && h.stock.ammo === hubAmmo && h.armory.includes(pistol), "nothing leaves your base yet");
-  check(d.give.supplies.ammo === ammo && d.give.gear.length === 1, "your side is on the deal: ammo and the pistol");
+  check(h.stock.meds === hubMeds && h.stock[AMMO] === hubAmmo && h.armory.includes(pistol), "nothing leaves your base yet");
+  check(d.give.supplies[AMMO] === ammo && d.give.gear.length === 1, "your side is on the deal: ammo and the pistol");
   openRadioTrade(st, f, h.id);
   setQty(st, "theirs", "food", 2);
   check(!tradeVerdict(st).ok && /still waiting/.test(tradeVerdict(st).reason), "one deal at a time with a group");
   endTrade(st);
   const form = dealCaravanForm(st, d);
-  check(form.stops[0] === f.bases[0] && form.fromBaseId === h.id && form.goods.ammo === ammo && h.armory[form.gear[0]] === pistol, "the planner: their base, your side loaded");
+  check(form.stops[0] === f.bases[0] && form.fromBaseId === h.id && form.goods[AMMO] === ammo && h.armory[form.gear[0]] === pistol, "the planner: their base, your side loaded");
   form.crew = st.survivors.filter((s) => s.alive && s.location.kind === "base").slice(0, 2).map((s) => s.id);
   form.travel = { food: 20, water: 20, fuel: 0 };
   const res = launchCaravan(st, form);
@@ -157,14 +159,14 @@ function drive(state, pred, maxHours, keep = () => false) {
   f.pop = 4;
   openRadioTrade(st, f, h.id, "deliver");
   setQty(st, "theirs", "meds", 4);
-  balanceWith(st, "ammo");
+  balanceWith(st, AMMO);
   check(!!deliveryRefusal(st, f, h), "too few of them to send a caravan");
   const msg = executeTrade(st);
   check(st.trade && /will not bring it/.test(msg) && !st.parties.some((q) => q.kind === "caravan" && q.owner === f.id), `they say no and the window stays open: ${msg}`);
   f.pop = 24;
   toggleGear(st, "mine", h.armory.indexOf(knife));
-  balanceWith(st, "ammo");
-  const ammo = st.trade.offer.ammo;
+  balanceWith(st, AMMO);
+  const ammo = st.trade.offer[AMMO];
   const ok = executeTrade(st);
   const c = st.parties.find((q) => q.kind === "caravan" && q.owner === f.id);
   check(!st.trade && c && c.goods.supplies.meds === 4 && c.deal && c.deal.fee > 0, `they agree and their caravan sets out: ${ok}`);
@@ -174,7 +176,7 @@ function drive(state, pred, maxHours, keep = () => false) {
     check(st.trade && st.trade.caravanId === c.id && st.trade.offerGear.includes(knife) && v.ok && v.honoured, "it arrives: the deal with the pistol is filled in and honoured");
     const meds = h.stock.meds;
     executeTrade(st);
-    check(h.stock.meds === meds + 4 && c.goods.gear.includes(knife) && h.stock.ammo === 600 - ammo, "done: meds in, ammo and the pistol out");
+    check(h.stock.meds === meds + 4 && c.goods.gear.includes(knife) && h.stock[AMMO] === 600 - ammo, "done: meds in, ammo and the pistol out");
     endTrade(st);
   }
 }
@@ -230,12 +232,12 @@ function drive(state, pred, maxHours, keep = () => false) {
   setQty(st, "theirs", "meds", 4);
   setFeeOffer(st, low - 1);
   check(tradeContext(st).fee === low - 1, "your offer replaces their fee on their side");
-  balanceWith(st, "ammo");
+  balanceWith(st, AMMO);
   const no = executeTrade(st);
   check(st.trade && new RegExp(`would do it for ${low}`).test(no) && !st.parties.some((q) => q.kind === "caravan" && q.owner === f.id), `too low: they stay home and name their lowest ("${no}")`);
   setFeeOffer(st, low);
-  setQty(st, "mine", "ammo", 0);
-  balanceWith(st, "ammo");
+  setQty(st, "mine", AMMO, 0);
+  balanceWith(st, AMMO);
   executeTrade(st);
   const c = st.parties.find((q) => q.kind === "caravan" && q.owner === f.id);
   check(!st.trade && c && c.deal.fee === low, "at their lowest: they come, at your fee");
@@ -243,7 +245,7 @@ function drive(state, pred, maxHours, keep = () => false) {
   openRadioTrade(s2, f2, h2.id, "deliver");
   setQty(s2, "theirs", "meds", 4);
   setFeeOffer(s2, deliveryFee(s2, f2, h2) + 30);
-  balanceWith(s2, "ammo");
+  balanceWith(s2, AMMO);
   const gw = f2.goodwill;
   executeTrade(s2);
   check(!s2.trade && f2.goodwill > gw, "over their fee: a little goodwill");

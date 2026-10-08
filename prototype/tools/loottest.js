@@ -20,6 +20,7 @@ import { THROWABLES } from "../src/sim/stealth.js";
 import { worthTier } from "../src/sim/valuation.js";
 import { newItem, ZBODY } from "../src/sim/inventory.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
+import { AMMO_GEAR } from "../src/sim/data-ammo.js";
 import { Rng } from "../src/sim/rng.js";
 import { TREAT_ORDER } from "../src/sim/needs.js";
 import { GUN_FINDS, SEARCH_TOOLS, GUN_STASH } from "../src/sim/gunsafes.js"; // gun safes, gun cases, drills (their own dice)
@@ -62,6 +63,7 @@ addAll(ZBODY.FINDS, "body:zombie"); // one of the dead searched in a raid (inven
 for (const [k, B] of Object.entries(MILDEAD.BODY)) addAll([...B.armor, ...B.items].map(([key]) => key), `body:dead ${k}`);
 for (const [t, list] of Object.entries(WARES)) addAll(list, `sold:${t}`);
 addAll(RARE_GEAR, "merchants"); addAll(MERCHANT_VALUABLES, "merchants"); addAll(TRAVEL_GEAR, "travellers");
+addAll(Object.keys(AMMO_GEAR), "rounds"); // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");

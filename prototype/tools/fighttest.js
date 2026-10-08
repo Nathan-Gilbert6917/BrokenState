@@ -3,6 +3,7 @@
 // halted, raids carried out of, base defence in person, hordes, pacts, collapsed groups and trade-route terms; raids on
 // you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor, usesArrows, armedFactor, spendShots, ARROWS } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import {
@@ -216,14 +217,15 @@ const groupOf = (state, type) => {
   const st = world();
   const f = groupOf(st, "raider");
   const p = team(st, 2);
-  p.supplies.ammo = 3; p.cargo.supplies.ammo = 40;
+  const guns = partyMembers(st, p).map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean); // ammo.js: rounds that fit the team's guns
+  setRounds(p.supplies, 3, guns); setRounds(p.cargo.supplies, 40, guns);
   const enemy = { kind: "raiders", count: 3, power: 4, factionId: f.id, name: "test raiders" };
   const mixedPools = fightOdds(st, p, enemy, null);
-  p.supplies.ammo = 43; p.cargo.supplies.ammo = 0;
+  setRounds(p.supplies, 43, guns); setRounds(p.cargo.supplies, 0, guns);
   check(Math.abs(mixedPools - fightOdds(st, p, enemy, null)) < 1e-9, "the odds on the card are the same wherever the ammo is carried");
-  p.supplies.ammo = 3; p.cargo.supplies.ammo = 40;
+  setRounds(p.supplies, 3, guns); setRounds(p.cargo.supplies, 40, guns);
   const r = autoResolveCombat(st, { tile: partyTile(p), partyId: p.id, enemy: { kind: "zombies", count: 1, power: 1 }, handler: "ft", context: {} });
-  check(r.ammoUsed === 12 && p.supplies.ammo === 0 && p.cargo.supplies.ammo === 31, `a fight by the numbers shoots from both pools (used ${r.ammoUsed}, packed ${p.supplies.ammo}, found ${p.cargo.supplies.ammo})`);
+  check(r.ammoUsed === 12 && totalRounds(p.supplies) === 0 && totalRounds(p.cargo.supplies) === 31, `a fight by the numbers shoots from both pools (used ${r.ammoUsed}, packed ${totalRounds(p.supplies)}, found ${totalRounds(p.cargo.supplies)})`);
 }
 
 // 7. A battle whose team is gone is dropped without a result (C-17).
@@ -412,14 +414,14 @@ const groupOf = (state, type) => {
     h.alert = true; const ready = baseDefense(st, h); h.alert = false;
     check(prep.hint.includes(`Defense ${Math.round(def)} → ${Math.round(ready)}`) && /1\.3×/.test(prep.hint) && !/\+30%/.test(prep.hint), "\"Prepare defenses\" shows its real effect");
     const pay = pick(card, /^Pay tribute/);
-    Object.assign(h.stock, { food: 5, ammo: 10 });
+    Object.assign(h.stock, { food: 5 }); setRounds(h.stock, 10); // ammo.js: rounds by calibre
     check(isOff(st, pay), "tribute is refused when the ammo is gone");
     pay.resolve(st);
-    check(h.stock.food === 5 && h.stock.ammo === 10 && !raid.returning, "choosing it anyway takes nothing");
-    Object.assign(h.stock, { food: 5, ammo: 35 });
+    check(h.stock.food === 5 && totalRounds(h.stock) === 10 && !raid.returning, "choosing it anyway takes nothing");
+    Object.assign(h.stock, { food: 5 }); setRounds(h.stock, 35);
     h.alert = true;
     const said = pay.resolve(st);
-    check(h.stock.food === 3 && h.stock.ammo === 5 && raid.returning === true && /2 food, 30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${h.stock.food}, ammo ${h.stock.ammo})`);
+    check(h.stock.food === 3 && totalRounds(h.stock) === 5 && raid.returning === true && /2 food, 30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${h.stock.food}, ammo ${totalRounds(h.stock)})`);
     check(h.alert === false, "the base stands down when the raid is bought off");
   }
   h.alert = true;
@@ -473,10 +475,10 @@ const groupOf = (state, type) => {
   const help = st.cards.pop();
   check(!help.text.includes(attacker.name), "a call for help does not name an attacker you have not met");
   const send = pick(help, /^Send 40 ammo/);
-  h.stock.ammo = 10;
+  setRounds(h.stock, 10); // ammo.js: rounds by calibre
   check(isOff(st, send), "\"Send 40 ammo\" is off without the ammo");
   send.resolve(st);
-  check(h.stock.ammo === 10, "and choosing it anyway never drives the stock negative");
+  check(totalRounds(h.stock) === 10, "and choosing it anyway never drives the stock negative");
   // Fights between groups you have not met, seen from afar: nobody is named.
   target.known = false;
   st.live.add(target.bases[0]);
@@ -791,12 +793,12 @@ const groupOf = (state, type) => {
   const weak = { kind: "zombies", count: 1, power: 1 };
   let r = null;
   for (let i = 0; i < 12 && (!r || r.outcome !== "victory"); i++) {
-    p.supplies.ammo = 30; p.supplies.arrows = 30; p.cargo.supplies.ammo = 0; p.cargo.supplies.arrows = 0;
+    setRounds(p.supplies, 30, ["huntrifle"]); p.supplies.arrows = 30; setRounds(p.cargo.supplies, 0); p.cargo.supplies.arrows = 0; // ammo.js: the rifle's rounds
     for (const m of ms) m.health = 100;
     r = autoResolveCombat(st, { tile: partyTile(p), partyId: p.id, enemy: weak, handler: "ft", context: {} });
   }
   check(r.outcome === "victory" && r.ammoUsed === 6 && r.arrowsUsed === 12, `two bows and a rifle shoot 12 arrows and 6 rounds (${r.outcome}: ammo ${r.ammoUsed}, arrows ${r.arrowsUsed})`);
-  check(r.arrowsBack === Math.round(12 * ARROWS.BACK) && p.supplies.arrows === 30 - 12 + r.arrowsBack && p.supplies.ammo === 24, `after the win ${r.arrowsBack} arrows are picked up again (packed ${p.supplies.arrows}, ammo ${p.supplies.ammo})`);
+  check(r.arrowsBack === Math.round(12 * ARROWS.BACK) && p.supplies.arrows === 30 - 12 + r.arrowsBack && totalRounds(p.supplies) === 24, `after the win ${r.arrowsBack} arrows are picked up again (packed ${p.supplies.arrows}, ammo ${totalRounds(p.supplies)})`);
   // Lost or broken off: none picked up (rounds not fired come back, arrows too).
   let lost = 0;
   for (let i = 0; i < 12 && lost < 3; i++) {

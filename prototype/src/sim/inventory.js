@@ -23,6 +23,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
+import { bodyRounds, findRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
@@ -621,7 +622,7 @@ export function enemyBody(rng, u, kit) {
       for (const it of mil.gear) stow(body, it, ""); // (a second rifle with nowhere to go stays on the ground)
       return body;
     }
-    if (rng.chance(0.12)) add("ammo", rng.int(2, 6));
+    if (rng.chance(0.12)) for (const [k, n] of Object.entries(bodyRounds(u, rng.int(2, 6)))) add(k, n); // ammo.js: a box of something
     if (rng.chance(0.05)) add("meds", 1);
     if (rng.chance(0.06)) stow(body, lootItem(rng.pick(ZOMBIE_FINDS), "survivor", spend(rng)), "");
     if (rng.chance(ZOMBIE_PACK)) {
@@ -632,7 +633,7 @@ export function enemyBody(rng, u, kit) {
     }
     return body;
   }
-  add("ammo", rng.int(3, 10));
+  for (const [k, n] of Object.entries(bodyRounds(u, rng.int(3, 10)))) add(k, n); // ammo.js: rounds of their gun's calibre and load
   if (rng.chance(0.25)) add("food", rng.int(1, 3));
   if (rng.chance(MEDS.BODY_HUMAN)) add("meds", 1); // medfinds.js
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
@@ -672,6 +673,7 @@ export function deadBodyFinds(rng, ztype, plateDur = null) {
   for (const k of ["ammo", "food", "meds", "scrap"]) { const [p, lo, hi] = ZBODY[k]; if (rng.chance(p)) sup[k] = rng.int(lo, hi); }
   if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(lootItem(k, "survivor", GEAR[k].makeshift ? rng : spend(rng))); }
   if (rng.chance(ZBODY.pistol)) { gear.push(lootItem("pistol", "survivor", spend(rng))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
+  if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, findRounds(gear.some((g) => g.key === "pistol") ? "police" : "home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre
   if (rng.chance(ZBODY.bag)) gear.push(lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng)));
   return { sup, gear };
 }

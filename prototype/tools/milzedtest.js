@@ -14,6 +14,7 @@
 //     few more): damage per hit, hits to kill, a one-on-one fight on the map and a team of three against six; raids at
 //     a National Guard base with and without them.
 // Usage: node tools/milzedtest.js [fights per matchup = 60] [seed = 7] [quick]
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
@@ -213,10 +214,10 @@ section("Their bodies (deadsoldiers.js bodyLoot; inventory.js enemyBody, deadBod
     for (const [k, v] of Object.entries(body.supplies)) sup[k] = (sup[k] || 0) + v;
   }
   const pct = (k) => Math.round(((tally[k] || 0) / n) * 100);
-  check(pct("vest") + pct("plate") >= 30 && pct("milhelmet") >= 25 && sup.ammo / n >= 3, `a dead soldier's body (${n}): a vest ${pct("vest")}%, a plate carrier ${pct("plate")}%, a combat helmet ${pct("milhelmet")}%, an assault rifle ${pct("ar")}%, a carbine ${pct("carbine")}%, a radio ${pct("milradio")}%, a smoke grenade ${pct("smokegren")}%; ${r2(sup.ammo / n)} rounds a body`);
+  check(pct("vest") + pct("plate") >= 30 && pct("milhelmet") >= 25 && totalRounds(sup) / n >= 3, `a dead soldier's body (${n}): a vest ${pct("vest")}%, a plate carrier ${pct("plate")}%, a combat helmet ${pct("milhelmet")}%, an assault rifle ${pct("ar")}%, a carbine ${pct("carbine")}%, a radio ${pct("milradio")}%, a smoke grenade ${pct("smokegren")}%; ${r2(totalRounds(sup) / n)} rounds a body`);
   check(armorQ / armorN < 0.7, `the armour on them is worn: ${Math.round((armorQ / armorN) * 100)}% condition on average`);
   const zf = { items: 0, ammo: 0, pistol: 0 };
-  for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null); zf.items += f.gear.length; zf.ammo += f.sup.ammo || 0; zf.pistol += f.gear.some((g) => g.key === "pistol") ? 1 : 0; }
+  for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null); zf.items += f.gear.length; zf.ammo += totalRounds(f.sup); zf.pistol += f.gear.some((g) => g.key === "pistol") ? 1 : 0; }
   check(zf.items / n < 0.45 && zf.ammo / n < 1.5 && zf.pistol / n < 0.04, `one of the ordinary dead (raid body): ${r2(zf.items / n)} items, ${r2(zf.ammo / n)} rounds a body, a pistol ${Math.round((zf.pistol / n) * 1000) / 10}% (a bonus, not the loot)`);
   check(GEAR.milhelmet && GEAR.milhelmet.slot === "head", "the combat helmet is an item (head slot)");
   const rl = { riothelmet: 0 };
@@ -242,7 +243,12 @@ function raidAt(state, tile, opts = {}) {
   let guard = 0;
   while (!b.over && guard++ < 200) { autoPlayerTurn(state); runEnemyPhase(state); }
   const zb = b.raid.containers.filter((c) => c.kind === "body" && c.zombie);
-  const out = { ...start, over: b.over, result: b.result, zbodies: zb.length, zsearched: zb.filter((c) => c.searched).length, solBodies: zb.filter((c) => c.ztype === "soldier").length, solSearched: zb.filter((c) => c.ztype === "soldier" && c.searched).length, b };
+  // The armour the dead soldiers and riot cops killed in it carry (what is there to take, searched or not: a body not
+  // searched is rolled as a search would roll it, deadBodyFinds with its plates' wear, on dice of its own).
+  const ARM = ["vest", "plate", "milhelmet", "riothelmet"];
+  const gearOf = (c) => (c.contents && Array.isArray(c.contents.gear) ? c.contents.gear : deadBodyFinds(new Rng(c.id * 7919 + 13), c.ztype || null, c.plateDur ?? null).gear);
+  const armourOn = zb.reduce((a, c) => a + gearOf(c).filter((g) => g && ARM.includes(g.key)).length, 0);
+  const out = { ...start, armourOn, over: b.over, result: b.result, zbodies: zb.length, zsearched: zb.filter((c) => c.searched).length, solBodies: zb.filter((c) => c.ztype === "soldier").length, solSearched: zb.filter((c) => c.ztype === "soldier" && c.searched).length, b };
   state.combat = null;
   return out;
 }
@@ -281,7 +287,7 @@ if (!QUICK) {
       if (r.result.outcome === "extracted") o.out++;
       o.deaths += r.result.survivorsDead.length;
       o.gear += r.result.loot.gear.length;
-      o.armor += r.result.loot.gear.filter((g) => ["vest", "plate", "milhelmet", "riothelmet"].includes(g.key)).length;
+      o.armor += r.armourOn; // the armour on the dead's bodies (what the raid makes available), not the haul: what a team carries out depends on its hands (flashbang crates fill them both ways)
       o.sup += Object.values(r.result.loot.supplies).reduce((a, v) => a + v, 0);
       o.soldiers += r.soldiers;
       o.turns += r.result.turns;
@@ -290,7 +296,7 @@ if (!QUICK) {
     return o;
   };
   const a = tally(false), z = tally(true);
-  const line = (n, o) => console.log(`    ${n.padEnd(22)} raids ${o.raids}  got out ${Math.round((o.out / o.raids) * 100)}%  deaths/raid ${r2(o.deaths / o.raids)}  dead soldiers/raid ${r2(o.soldiers / o.raids)}  items/raid ${r2(o.gear / o.raids)} (armour ${r2(o.armor / o.raids)})  supplies/raid ${Math.round(o.sup / o.raids)}  turns ${r2(o.turns / o.raids)}`);
+  const line = (n, o) => console.log(`    ${n.padEnd(22)} raids ${o.raids}  got out ${Math.round((o.out / o.raids) * 100)}%  deaths/raid ${r2(o.deaths / o.raids)}  dead soldiers/raid ${r2(o.soldiers / o.raids)}  items/raid ${r2(o.gear / o.raids)} (armour on the bodies ${r2(o.armor / o.raids)})  supplies/raid ${Math.round(o.sup / o.raids)}  turns ${r2(o.turns / o.raids)}`);
   line("with dead soldiers", a);
   line("ordinary dead only", z);
   check(a.raids >= N * 0.8 && a.out / a.raids >= 0.6, `still doable for a prepared team: ${Math.round((a.out / a.raids) * 100)}% get out (ordinary dead: ${Math.round((z.out / z.raids) * 100)}%)`);
@@ -308,7 +314,7 @@ if (!QUICK) {
   const meanSe = (xs) => { const m = xs.reduce((s, v) => s + v, 0) / xs.length; const sd = Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, xs.length - 1)); return { m, se: sd / Math.sqrt(xs.length) }; };
   const dd = meanSe(pairs.map((p) => p.d)), dt = meanSe(pairs.map((p) => p.t));
   check(pairs.length >= N * 0.8 && dd.m >= -2 * dd.se, `not safer than the ordinary dead beyond chance: deaths/raid ${r2(a.deaths / a.raids)} vs ${r2(z.deaths / z.raids)}, paired over ${pairs.length} raids ${dd.m >= 0 ? "+" : ""}${r2(dd.m)} ± ${r2(dd.se)} (turns ${dt.m >= 0 ? "+" : ""}${r2(dt.m)} ± ${r2(dt.se)}: they leave sooner with the armour)`);
-  check(a.armor / a.raids > z.armor / z.raids, `and richer: armour off the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
+  check(a.armor / a.raids > z.armor / z.raids, `and richer: armour on the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
 }
 
 // ---------- balance: one weapon at a time ----------

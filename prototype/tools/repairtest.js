@@ -133,7 +133,8 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   const msg = queueRepair(st, h, `s:${c.id}:weapon`);
   check(h.gearRepairs.length === 1 && c.gear.weapon === ar && h.stock.gunparts === gp0 - 3 && h.stock.scrap === sc0 - 1, `queued: the gun stays in hand, its inputs paid (${msg})`);
   check(/already queued/.test(queueRepair(st, h, `s:${c.id}:weapon`)) && h.gearRepairs.length === 1, "the same item is not queued twice");
-  check(queueRepair(st, h, `s:${c.id}:pocket:0`) === "Nothing there.", "an empty pocket cannot be queued");
+  const ep = c.pockets.findIndex((x) => !x); // (pocket 0 may hold a box of rounds: ammo.js starter boxes)
+  check(ep >= 0 && queueRepair(st, h, `s:${c.id}:pocket:${ep}`) === "Nothing there.", "an empty pocket cannot be queued");
   const hour0 = st.hour;
   for (let i = 0; i < 4 && h.gearRepairs.length; i++) { repairHour(st); st.hour++; }
   check(!h.gearRepairs.length && c.gear.weapon === ar && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours, mended in hand: ${itemDur(ar)} of ${itemDurMax(ar)}`);

@@ -9,7 +9,7 @@
 // and without wars between groups.
 // Usage: node tools/diplotest.js [seed] [days] [collapse seeds, e.g. 1,2,3,4,5,6]
 import { createWorld, tickHour, hub, atBase, day, alive, newId, checkGameOver, snapshot } from "../src/sim/world.js";
-import { GEAR, SUPPLY_KEYS } from "../src/sim/data.js";
+import { GEAR, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { launchExpedition, partyTile, planPath, removeParty } from "../src/sim/parties.js";
 import { attitude, recomputeOwnership, resolveRaidOnFaction, strength } from "../src/sim/factions.js";
@@ -688,7 +688,7 @@ section("Wants and surplus, the market board");
     const m = refreshMarket(st, f);
     nlists += m.wants.length + m.surplus.length;
     if (m.wants.some((x) => PART_KINDS.includes(x.key)) || m.surplus.some((x) => PART_KINDS.includes(x.key))) bad++; // they want and offer "parts"
-    for (const k of SUPPLY_KEYS.filter((x) => !PART_KINDS.includes(x))) {
+    for (const k of STOCK_KEYS.filter((x) => !PART_KINDS.includes(x))) { // rounds by calibre are not market goods of their own: the lists carry "ammo" (ammo.js)
       const n = demand(st, f, k); // stock, their kind and their state (trade.js)
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;
