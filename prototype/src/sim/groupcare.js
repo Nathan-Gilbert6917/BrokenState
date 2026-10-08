@@ -17,8 +17,8 @@
 // loses); at 0 it is out (vehicles.js groupTurret). With a workshop, one in need (under VEHICLE.below) gets
 // VEHICLE.step back a day for a part and 2 scrap.
 // Hunger (hungerTrade): a group with under HUNGER.below days of food a head buys food from a group that has HUNGER.rich
-// (not one at war with it, relation above HUNGER.rel), paying with ammo, scrap, fuel and meds at their worth (data.js
-// SUPPLIES) × HUNGER.markup, once every HUNGER.gap days.
+// (not one at war with it, relation above HUNGER.rel; a member of its bloc first, blocs.js), paying with ammo, scrap,
+// fuel and meds at their worth (data.js SUPPLIES) × HUNGER.markup (1 from a bloc member), once every HUNGER.gap days.
 // Raids (raidAnswer): a group raided by a group HOLD_RATIO × stronger than its defence at a base pays tribute
 // (TRIBUTE share of its food, ammo, meds and scrap) TRIBUTE_ODDS of the time instead of fighting, as you can.
 // Expansion (canExpand): a new base takes EXPAND.scrap scrap and EXPAND.fit fit people at home.
@@ -46,11 +46,14 @@ import { itemDur, itemDurMax } from "./crafting.js";
 import { workshopFactor } from "./groupworks.js";
 import { factionVehicles, groupTurret, upgradesOf } from "./vehicles.js";
 import { relation, warsOf } from "./diplomacy.js";
+import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
+import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
 
 // What each type of group leans to (1 = an ordinary group). Read through prio(); the situation multiplies it.
 // Wired now: scavenge (aiscav.js trip gap), trade (buying food when short), raid (factions.js raid chance), expand,
 // repair, heal (medics), recruit (growth, wanderers, press-gangs), craft (arsenal.js), yield (tribute instead of a
-// fight), harsh (desertion), vehicles (taking, fitting: groupvehicles.js).
+// fight), harsh (desertion), vehicles (taking, fitting: groupvehicles.js), ally (blocs.js), warlike (diplomacy.js,
+// playerwars.js), peaceful (playerwars.js).
 // Folded in: nonlethal.js NL_TAKE (takeAlive), groupworks.js WALLED_TYPES (walled), escorts.js's home guard (escort),
 // groupjails.js prisoners recruited after a long hold (× recruit). Still separate (TODO, lead): nonlethal.js NL_STYLE /
 // NL_KIT (by battle kit, not group type), groupworks.js build order (one order for every type), groupjails.js GROUP_JAIL
@@ -60,14 +63,17 @@ import { relation, warsOf } from "./diplomacy.js";
 export const GROUP_PRIORITIES = {
   // takeAlive: the share of a beaten group's losses the winners take alive (nonlethal.js NL_TAKE reads it); walled:
   // builds the full wall goal at every base (groupworks.js WALLED_TYPES reads it); escort: × the share of its fighters
-  // a group puts on a caravan (escorts.js groupCapacity).
-  raider:       { takeAlive: 0.25, walled: 0, escort: 0.8, scavenge: 1.0, trade: 0.3, raid: 1.5, build: 0.6, expand: 1.1, fortify: 0.6, prisoners: 1.2, nonlethal: 0.3, repair: 0.7, heal: 0.6, recruit: 1.2, caravan: 0.2, farm: 0.6, craft: 1.1, yield: 0.3, harsh: 1.4, ransom: 1.0, patrol: 0.8, vehicles: 1.3, steal: 1.5 },
-  expansionist: { takeAlive: 0.2, walled: 0, escort: 1.1, scavenge: 1.1, trade: 0.9, raid: 1.0, build: 1.1, expand: 1.5, fortify: 0.9, prisoners: 1.0, nonlethal: 0.7, repair: 1.0, heal: 0.9, recruit: 1.4, caravan: 1.3, farm: 1.0, craft: 1.0, yield: 0.5, harsh: 1.0, ransom: 1.0, patrol: 1.0, vehicles: 1.2, steal: 0.8 },
-  zealot:       { takeAlive: 0, walled: 0, escort: 0.8, scavenge: 0.8, trade: 0.4, raid: 1.2, build: 0.9, expand: 0.9, fortify: 1.0, prisoners: 1.3, nonlethal: 0.2, repair: 0.6, heal: 0.7, recruit: 1.0, caravan: 0.3, farm: 1.0, craft: 0.8, yield: 0.0, harsh: 1.3, ransom: 0.0, patrol: 1.0, vehicles: 0.6, steal: 0.7 },
-  military:     { takeAlive: 0.35, walled: 1, escort: 1, scavenge: 0.9, trade: 0.8, raid: 0.4, build: 1.0, expand: 0.8, fortify: 1.3, prisoners: 1.2, nonlethal: 1.1, repair: 1.4, heal: 1.3, recruit: 0.8, caravan: 0.8, farm: 0.8, craft: 1.2, yield: 0.6, harsh: 1.1, ransom: 0.8, patrol: 1.4, vehicles: 1.5, steal: 0.3 },
-  fortress:     { takeAlive: 0.35, walled: 1, escort: 0.9, scavenge: 0.9, trade: 1.0, raid: 0.3, build: 1.3, expand: 0.5, fortify: 1.5, prisoners: 0.9, nonlethal: 0.9, repair: 1.4, heal: 1.1, recruit: 0.9, caravan: 0.9, farm: 1.1, craft: 1.2, yield: 0.7, harsh: 0.9, ransom: 1.0, patrol: 0.9, vehicles: 1.0, steal: 0.3 },
-  traders:      { takeAlive: 0.45, walled: 0, escort: 1.2, scavenge: 1.0, trade: 1.5, raid: 0.1, build: 1.0, expand: 0.9, fortify: 0.8, prisoners: 0.6, nonlethal: 1.2, repair: 1.0, heal: 1.1, recruit: 1.0, caravan: 1.5, farm: 0.9, craft: 0.9, yield: 1.2, harsh: 0.8, ransom: 1.2, patrol: 0.8, vehicles: 1.1, steal: 0.2 },
-  commune:      { takeAlive: 0.4, walled: 0, escort: 1, scavenge: 0.9, trade: 1.3, raid: 0.0, build: 1.1, expand: 0.9, fortify: 0.7, prisoners: 0.4, nonlethal: 1.5, repair: 0.9, heal: 1.4, recruit: 1.4, caravan: 1.0, farm: 1.5, craft: 0.8, yield: 1.3, harsh: 0.6, ransom: 1.0, patrol: 0.6, vehicles: 0.5, steal: 0.1 },
+  // a group puts on a caravan (escorts.js groupCapacity). ally: how readily it joins a bloc (blocs.js: forming, joining,
+  // the help it sends a member, the wars of its bloc it joins); warlike: its temper for war (diplomacy.js declareWars
+  // between groups, the old TEMPER table; playerwars.js a war declared on you); peaceful: how readily it takes terms and
+  // how fast a war wears it down (playerwars.js termsChance, weariness).
+  raider:      { takeAlive: 0.25, walled: 0, escort: 0.8, scavenge: 1.0, trade: 0.3, raid: 1.5, build: 0.6, expand: 1.1, fortify: 0.6, prisoners: 1.2, nonlethal: 0.3, repair: 0.7, heal: 0.6, recruit: 1.2, caravan: 0.2, farm: 0.6, craft: 1.1, yield: 0.3, harsh: 1.4, ransom: 1.0, patrol: 0.8, vehicles: 1.3, steal: 1.5, ally: 0.7, warlike: 1.5, peaceful: 0.6 },
+  expansionist: { takeAlive: 0.2, walled: 0, escort: 1.1, scavenge: 1.1, trade: 0.9, raid: 1.0, build: 1.1, expand: 1.5, fortify: 0.9, prisoners: 1.0, nonlethal: 0.7, repair: 1.0, heal: 0.9, recruit: 1.4, caravan: 1.3, farm: 1.0, craft: 1.0, yield: 0.5, harsh: 1.0, ransom: 1.0, patrol: 1.0, vehicles: 1.2, steal: 0.8, ally: 0.6, warlike: 1.4, peaceful: 0.8 },
+  zealot:       { takeAlive: 0, walled: 0, escort: 0.8, scavenge: 0.8, trade: 0.4, raid: 1.2, build: 0.9, expand: 0.9, fortify: 1.0, prisoners: 1.3, nonlethal: 0.2, repair: 0.6, heal: 0.7, recruit: 1.0, caravan: 0.3, farm: 1.0, craft: 0.8, yield: 0.0, harsh: 1.3, ransom: 0.0, patrol: 1.0, vehicles: 0.6, steal: 0.7, ally: 0.4, warlike: 1.2, peaceful: 0.2 },
+  military:     { takeAlive: 0.35, walled: 1, escort: 1, scavenge: 0.9, trade: 0.8, raid: 0.4, build: 1.0, expand: 0.8, fortify: 1.3, prisoners: 1.2, nonlethal: 1.1, repair: 1.4, heal: 1.3, recruit: 0.8, caravan: 0.8, farm: 0.8, craft: 1.2, yield: 0.6, harsh: 1.1, ransom: 0.8, patrol: 1.4, vehicles: 1.5, steal: 0.3, ally: 0.9, warlike: 0.5, peaceful: 1.0 },
+  fortress:     { takeAlive: 0.35, walled: 1, escort: 0.9, scavenge: 0.9, trade: 1.0, raid: 0.3, build: 1.3, expand: 0.5, fortify: 1.5, prisoners: 0.9, nonlethal: 0.9, repair: 1.4, heal: 1.1, recruit: 0.9, caravan: 0.9, farm: 1.1, craft: 1.2, yield: 0.7, harsh: 0.9, ransom: 1.0, patrol: 0.9, vehicles: 1.0, steal: 0.3, ally: 1.3, warlike: 0.3, peaceful: 1.1 },
+  traders:      { takeAlive: 0.45, walled: 0, escort: 1.2, scavenge: 1.0, trade: 1.5, raid: 0.1, build: 1.0, expand: 0.9, fortify: 0.8, prisoners: 0.6, nonlethal: 1.2, repair: 1.0, heal: 1.1, recruit: 1.0, caravan: 1.5, farm: 0.9, craft: 0.9, yield: 1.2, harsh: 0.8, ransom: 1.2, patrol: 0.8, vehicles: 1.1, steal: 0.2, ally: 1.4, warlike: 0.1, peaceful: 1.5 },
+  commune:      { takeAlive: 0.4, walled: 0, escort: 1, scavenge: 0.9, trade: 1.3, raid: 0.0, build: 1.1, expand: 0.9, fortify: 0.7, prisoners: 0.4, nonlethal: 1.5, repair: 0.9, heal: 1.4, recruit: 1.4, caravan: 1.0, farm: 1.5, craft: 0.8, yield: 1.3, harsh: 0.6, ransom: 1.0, patrol: 0.6, vehicles: 0.5, steal: 0.1, ally: 1.5, warlike: 0.1, peaceful: 1.6 },
 };
 // A type's weight for an action (1 for an unknown type or action).
 export const weightOf = (f, act, dflt = 1) => ((GROUP_PRIORITIES[f && f.type] || {})[act] ?? dflt);
@@ -216,12 +222,14 @@ export function hungerTrade(state, f, d = day(state)) {
   const wars = new Set(warsOf(state, f).flatMap((w) => [w.a, w.b]));
   const partners = state.factions.filter((o) => o.alive && o !== f && !o.outsider && !wars.has(o.id) && (o.stock.food || 0) >= o.pop * H.rich && relation(state, f, o) > H.rel);
   if (!partners.length) return null;
-  const o = partners.sort((a, b) => b.stock.food / b.pop - a.stock.food / a.pop || a.id - b.id)[0];
+  const mate = (o) => (sameBloc(state, f, o) ? 1 : 0); // blocs.js: a member of their bloc first, at cost
+  const o = partners.sort((a, b) => mate(b) - mate(a) || b.stock.food / b.pop - a.stock.food / a.pop || a.id - b.id)[0];
+  const markup = mate(o) ? 1 : H.markup;
   let want = Math.min(Math.floor(f.pop * H.want - (f.stock.food || 0)), Math.floor((o.stock.food || 0) - o.pop * (H.rich - 2)));
   if (want <= 0) return null;
   // Pay with what they can spare most (ammo above 3 a head, scrap, fuel, meds above 1 a head), at their worth.
   const spare = { ammo: (f.stock.ammo || 0) - f.pop * 3, scrap: f.stock.scrap || 0, fuel: (f.stock.fuel || 0) - f.pop * 0.5, meds: (f.stock.meds || 0) - f.pop };
-  let owed = want * SUPPLIES.food.value * H.markup;
+  let owed = want * SUPPLIES.food.value * markup;
   const paid = {};
   for (const k of ["scrap", "ammo", "fuel", "meds"]) {
     if (owed <= 0) break;
@@ -230,7 +238,7 @@ export function hungerTrade(state, f, d = day(state)) {
     paid[k] = q;
     owed -= q * SUPPLIES[k].value;
   }
-  if (owed > 0) want = Math.floor(want * (1 - owed / (want * SUPPLIES.food.value * H.markup)));
+  if (owed > 0) want = Math.floor(want * (1 - owed / (want * SUPPLIES.food.value * markup)));
   if (want <= 0) return null;
   for (const [k, q] of Object.entries(paid)) { f.stock[k] -= q; o.stock[k] = (o.stock[k] || 0) + q; }
   f.stock.food = (f.stock.food || 0) + want;
@@ -268,7 +276,7 @@ export function desertPressure(state, f) {
   if (growthFactor(state, f) < 1) p += 0.5; // no quarters for everyone (groupworks.js)
   p += Math.min(2, ((f.lossRecent || 0) / pop) * 5);
   p += (woundedOf(f) / pop) * 2;
-  if (warsOf(state, f).length) p += 0.5;
+  if (warsOf(state, f).length || atWarWithYou(state, f)) p += 0.5; // playerwars.js: a war with you weighs the same
   return p * weightOf(f, "harsh");
 }
 export function desertDaily(state, f, d = day(state)) {
