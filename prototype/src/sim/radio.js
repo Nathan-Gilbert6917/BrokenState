@@ -555,12 +555,12 @@ export function radioTradeIfShort(state, needs) {
     // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
     const deals = [];
     for (const f of state.factions) {
-      if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
+      if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want, { kinds: true }) < 3) continue; // part kinds: out of their parts (trade.js KIND_MIX)
       for (const pay of plenty) {
         if (pay === want) continue;
         const budgetUnits = hubSpare(state, pay);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min(REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value));
+        const qty = Math.min(REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value, Infinity, true));
         if (qty < 2) continue;
         const cost = qty * buyPrice(state, f, want, speech, qty);
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);

@@ -86,6 +86,8 @@ export const CRAFTS = {
   scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
   recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },
   sling:       { gear: "sling",       in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
+  // A field repair kit (repair.js): tools, pins and springs for 5 repairs on the road.
+  repairkit:   { gear: "repairkit",   in: { scrap: 3, gunparts: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 3, needs: "workshop" },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },

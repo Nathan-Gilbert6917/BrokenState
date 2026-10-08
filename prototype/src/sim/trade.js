@@ -79,6 +79,10 @@ export const kindShare = (f, key) => ((KIND_MIX[f && f.type] || KIND_MIX["*"])[k
 // Where a supply goes in a group's stores: one water pool, one count of parts.
 export const groupStockKey = (key, f = null) => (PART_KINDS.includes(key) && (!f || pooled(f)) ? "parts" : poolKey(key));
 const stockOf = (f, key) => { const k = pooled(f) ? groupStockKey(key) : poolKey(key); return Math.max(0, f.stock[k] ?? (k === "water" || k === "wood" || k === "arrows" ? (f.pop || 0) * REF[k] : 0)); };
+// A group's reorder level for parts (merchants sell it parts below it: visitors.js tradeWithGroup): 4 + 1 per 5
+// people, half again for the builders and fighters (fortress, expansionist, military).
+export const groupPartsTarget = (f) => Math.round((4 + Math.floor((f.pop || 0) / 5)) * (["fortress", "expansionist", "military"].includes(f.type) ? 1.5 : 1));
+export const groupPartsLow = (f) => pooled(f) && Math.max(0, f.stock.parts || 0) < groupPartsTarget(f);
 // Part kinds left in a group's stores by the code that adds supplies by key (a delivery, a gift, a caravan's load) go
 // into its one count of parts (refreshMarkets, each day, and after a trade).
 export function foldPartKinds(f) {

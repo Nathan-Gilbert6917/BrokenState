@@ -16,12 +16,18 @@ const SCOUT_KIT = ["thermal", "binoculars", "spotscope", "monocular"];
 const TRIP_OPTICS = ["binoculars", "monocular"];
 const OPTICS_KG = 2.5; // extra kg a survey or recon may take for its optics
 
+// A field repair kit (repair.js) on trips that may fight or stay out (the road wears what they carry): taken when the
+// base has a spare, or always on the riskiest (a raid, the hive, a rescue, an assault). Inside the kit's weight.
+const REPAIR_TRIPS = ["scavenge", "raid", "rescue", "hive", "hunt", "recover", "investigate", "getvehicle", "assault", "sweep", "recon", "outpost", "move"];
+const RISKY_TRIPS = ["raid", "hive", "rescue", "assault"];
 // Moves kit from base.armory onto the crew for a mission. Returns the names of what went along.
 export function packTripKit(state, base, crew, mission) {
   if (!base || !crew.length) return [];
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle", "hive", "rescue"].includes(mission);
   const scouting = mission === "sweep" || mission === "recon";
-  const want = [...(scouting ? SCOUT_KIT : []), ...(looting ? SEARCH_KIT : ["tripwire", "stove"]), ...MORALE_KIT, ...(mission === "trade" ? [] : FIGHT_KIT), ...(scouting || mission === "trade" ? [] : TRIP_OPTICS)];
+  const kits = base.armory.filter((it) => it && it.key === "repairkit").length;
+  const repair = REPAIR_TRIPS.includes(mission) && (kits > 1 || (kits === 1 && RISKY_TRIPS.includes(mission))) ? ["repairkit"] : [];
+  const want = [...repair, ...(scouting ? SCOUT_KIT : []), ...(looting ? SEARCH_KIT : ["tripwire", "stove"]), ...MORALE_KIT, ...(mission === "trade" ? [] : FIGHT_KIT), ...(scouting || mission === "trade" ? [] : TRIP_OPTICS)];
   const budget = crew.length * KIT_KG + (scouting ? OPTICS_KG : 0);
   let kg = 0;
   const out = [];

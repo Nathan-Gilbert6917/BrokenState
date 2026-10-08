@@ -485,3 +485,72 @@ export function autoFieldRepairs(state) {
     }
   }
 }
+
+// ---------- the stock of parts and kits the autopilot keeps (its trades buy below these) ----------
+// Reorder levels by base: gun parts 2 + 1 per 3 guns here; machine parts 3 + 1 per generator, well, ammo bench and
+// machine shop; car parts 2 + 2 per car here or out with a team from here; electronics 1 + the radio station and 1
+// per 2 night-vision / thermal sights and radios; Kevlar kits 1 per 3 soft vests; field repair kits 2 at a base that
+// sends teams out (the hub), 1 elsewhere. A repair waiting short of one raises its target by what it lacks (urgent).
+export const PART_SUPPLIES = ["gunparts", "parts", "carparts", "electronics"];
+export const PART_KITS = ["kevlarkit", "repairkit"];
+const ELEC = new Set(["nvg", "thermal", "thermalscope", "milradio", "handradio", "peq"]);
+const memo = new WeakMap();
+// Every item at a base: the armory and what the people here wear, hold and carry.
+function itemsAt(state, base) {
+  const out = base.armory.filter(Boolean);
+  for (const s of atBase(state, base.id)) {
+    out.push(...Object.values(s.gear || {}).filter(Boolean), ...(s.pockets || []).filter(Boolean));
+    if (s.gear && s.gear.backpack && s.gear.backpack.contents) out.push(...s.gear.backpack.contents.filter(Boolean));
+  }
+  return out;
+}
+// { targets, have, urgent } for the base, worked out once an hour.
+export function partPlan(state, base) {
+  const m = memo.get(base);
+  if (m && m.hour === state.hour) return m;
+  const items = itemsAt(state, base);
+  const n = (pred) => items.filter((it) => GEAR[it.key] && pred(it, GEAR[it.key])).length;
+  const guns = n((it, d) => d.slot === "weapon" && GUN_CATS.includes(d.cat));
+  const vests = n((it) => materialOf(it.key) === "soft");
+  const cars = (state.vehicles || []).filter((v) => v.type !== "bike" && ((v.loc.kind === "base" && v.loc.baseId === base.id) || (v.loc.kind === "party" && (state.parties || []).some((p) => p.id === v.loc.partyId && p.homeBaseId === base.id)))).length;
+  const cnt = (t) => base.buildings.filter((b) => b.type === t && !b.broken).length;
+  const targets = {
+    gunparts: 2 + Math.floor(guns / 3),
+    parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("machine_shop"),
+    carparts: 2 + 2 * cars,
+    electronics: 1 + (base.radio ? 1 : 0) + Math.floor(n((it) => ELEC.has(it.key)) / 2),
+    kevlarkit: Math.ceil(vests / 3),
+    repairkit: base.type === "hub" ? 2 : 1,
+  };
+  const urgent = {};
+  for (const c of repairCandidates(state, base)) {
+    if (c.cond >= AUTO.LOW) continue;
+    const info = repairInfo(state, base, c.item);
+    if (info.ok || !info.kind) continue;
+    for (const [k, v] of Object.entries(info.inputs.supplies)) if (PART_SUPPLIES.includes(k) && have(base, k) < v) urgent[k] = (urgent[k] || 0) + v;
+    for (const [k, v] of Object.entries(info.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) urgent[k] = (urgent[k] || 0) + v;
+  }
+  for (const [k, v] of Object.entries(urgent)) targets[k] = (targets[k] || 0) + v;
+  const haveOf = {};
+  for (const k of PART_SUPPLIES) haveOf[k] = Math.floor(Math.max(0, base.stock[k] || 0));
+  for (const k of PART_KITS) haveOf[k] = items.filter((it) => it.key === k).length;
+  const out = { hour: state.hour, targets, have: haveOf, urgent };
+  memo.set(base, out);
+  return out;
+}
+// How many of a part or kit the base is short of its reorder level (0: none).
+export const partDeficit = (state, base, k) => { const p = partPlan(state, base); return Math.max(0, (p.targets[k] || 0) - (p.have[k] || 0)); };
+// The autopilot's need (autopilot.js needs: 1.2+ is bought, 0.6- is sold) for the part kinds: wanted below the
+// reorder level (1.9: a repair waits on them, or under half of it; 1.4 otherwise), never sold (0.9 at or above it).
+// Machine parts keep the governor's own need and only gain the urgency.
+export function partNeeds(state, base) {
+  const p = partPlan(state, base);
+  const out = {};
+  for (const k of PART_SUPPLIES) {
+    const short = p.have[k] < p.targets[k];
+    out[k] = short ? (p.urgent[k] || p.have[k] < p.targets[k] / 2 ? 1.9 : 1.4) : 0.9;
+  }
+  return out;
+}
+// Kits the base should buy from a trader now: [key] (each wanted once a deal).
+export const kitWants = (state, base) => PART_KITS.filter((k) => partDeficit(state, base, k) > 0);
