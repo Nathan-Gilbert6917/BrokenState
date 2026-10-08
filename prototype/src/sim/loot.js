@@ -89,6 +89,7 @@ export const ITEM_TAGS = {
   bottle: ["kitchen", "home", "crime", "travel"], noisemaker: ["crime"], firecracker: ["shop", "travel"],
   pipebomb: ["crime", "industry"], molotov: ["crime"], flare: ["travel", "garage", "fire", "police", "military", "crash", "outdoor", "camp"],
   smokegren: ["police", "military", "crash", "prison"], gamecall: ["hunt", "outdoor", "sport"],
+  flashbang: ["police", "military", "prison", "crash", "guns"], // throwables.js FLASH: SWAT, riot squads and the Army
   // siege kit and decoys (siege.js, decoys.js)
   frag: ["military", "crash", "guns"], ladder: ["tools", "farm", "fire"], ram: ["fire", "police"],
   alarmclock: ["home", "kitchen", "travel", "shop"], pocketradio: ["home", "travel", "camp", "outdoor", "shop"],
@@ -240,6 +241,56 @@ export function gunmodWares(state, type, name, salt = "") {
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return [];
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt))] : [];
+}
+
+// Flashbangs and smoke grenades (throwables.js FLASH; riot police use smoke too): police stations, prisons, the National
+// Guard and the Army's wrecks and convoys. A roll of their own each search hour (SITE_GRENADES) and one per raid
+// container (AREA_GRENADES: an armoury's crate holds 2-4 flashbangs or 1-3 smoke grenades); their own dice, so adding
+// them changed no other find. p: the chance (x the site's loot left); items: { key: [weight, lo, hi] }, one kind a roll.
+export const SITE_GRENADES = {
+  police: { p: 0.05, items: { flashbang: [2, 1, 2], smokegren: [1.5, 1, 2] } },
+  prison: { p: 0.04, items: { flashbang: [1.5, 1, 2], smokegren: [2, 1, 2] } },
+  military: { p: 0.06, items: { flashbang: [2, 1, 3], smokegren: [1, 1, 2] } },
+  crash_mil: { p: 0.05, items: { flashbang: [1, 1, 2], smokegren: [1, 1, 2] } },
+  convoy: { p: 0.05, items: { flashbang: [1, 1, 2], smokegren: [1, 1, 2] } },
+};
+export const AREA_GRENADES = {
+  armory: { p: 0.3, items: { flashbang: [3, 2, 4], smokegren: [2, 1, 3] } }, // a police, prison or National Guard armoury
+  barracks: { p: 0.08, items: { flashbang: [2, 1, 2], smokegren: [1, 1, 1] } }, // a barracks, a police locker room (SWAT)
+  cellblock: { p: 0.03, items: { flashbang: [1, 1, 1], smokegren: [1, 1, 1] } }, // a riot squad's spares by the cells
+  milwreck: { p: 0.08, items: { flashbang: [1, 1, 2], smokegren: [1, 1, 2] } },
+};
+// One kind from a table's items by u, and how many by v: [key, n].
+function pickGrenades(items, u, v) {
+  const list = Object.entries(items).filter(([k]) => GEAR[k]);
+  const total = list.reduce((a, [, [w]]) => a + w, 0);
+  let x = u * total;
+  for (const [k, [w, lo, hi]] of list) { x -= w; if (x < 0) return [k, lo + Math.floor(v * (hi - lo + 1))]; }
+  return null;
+}
+// This search hour's flashbangs or smoke grenades at a site (SITE_GRENADES): a list of items (often none).
+export function rollSiteGrenades(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_GRENADES[t.loc.type] : null;
+  if (!site) return [];
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "grenfind", tileId, state.hour, salt) >= site.p * loot * mult) return [];
+  const got = pickGrenades(site.items, hash01(state.seed, "grenpick", tileId, state.hour, salt), hash01(state.seed, "grenn", tileId, state.hour, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], siteSource(t.loc.type), hash01(state.seed, "grendur", tileId, state.hour, salt, i)));
+  return out;
+}
+// A raid container's flashbangs or smoke grenades (AREA_GRENADES), by its area type; site: the raid's site type (an
+// armoury's are police stock, or military at a base: itemcond.js areaSource).
+export function rollAreaGrenades(state, tileId, areaType, site = null, salt = "") {
+  const a = AREA_GRENADES[areaType];
+  if (!a || hash01(state.seed, "areagren", tileId, salt) >= a.p) return [];
+  const got = pickGrenades(a.items, hash01(state.seed, "areagrenpick", tileId, salt), hash01(state.seed, "areagrenn", tileId, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], areaSource(areaType, site), hash01(state.seed, "areagrendur", tileId, salt, i)));
+  return out;
 }
 
 // ---------- small finds per raid container (combat.js searchBox) ----------

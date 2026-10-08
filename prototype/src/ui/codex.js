@@ -19,6 +19,7 @@ import { WORM, wormSeen } from "../sim/worm.js";
 import { bossUnit, DEFENCE } from "../sim/defences.js";
 import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
+import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
@@ -142,6 +143,10 @@ const ITEM_HOW = {
   luxury: "Read or used at a base for mood; also a trade good.",
   vehicle: "Team cargo: brought home, it joins the base's vehicles.",
 };
+// Items with a line of their own (over their kind's).
+const ITEM_HOW_KEY = {
+  flashbang: "Throw (G) it into a room before you go in, or at two or more of them bunched in cover: the stunned lose actions and aim and cannot overwatch the doorway. Keep your own people out of its 2 tiles (or facing away). Useless against the dead, except as a loud lure.",
+};
 const TRADE_HOW = "A trade good: groups pay for it by their kind (raiders love liquor and drugs; zealots will not touch them). Use it at a base for mood, or sell it.";
 function itemEntries() {
   const out = [];
@@ -168,8 +173,10 @@ function itemEntries() {
       if (edge.length) stats.push(["Crafting edge", edge.join(", ")]);
     }
     if (LOCKED.crafts[k]) stats.push(["Recipe", `locked until ${techName(LOCKED.crafts[k])} is ${CRAFT_BOOKS[LOCKED.crafts[k]] ? "read" : "studied"}`]);
+    if (k === "flashbang") stats.push(["Flash", `${FLASH.r} tiles in sight (${FLASH.near} through a doorway): −${FLASH.ap} action next turn (−${FLASH.apNear} within a tile), aim −${FLASH.aim}, no overwatch; facing away: aim −${FLASH.daze}`]);
+    if (g.visor) stats.push(["Visor", `takes ${Math.round(FLASH.visor * 100)}% off a flashbang`]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
-    out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
+    out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW_KEY[k] || ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
   }
   return out;
 }
@@ -270,9 +277,9 @@ function groupEntries() {
     sprite: () => enemyCanvas("raiders", "#7a1a1a", null, null, 9),
   }, {
     key: "o:merchants", cat: "groups", name: "Merchant caravan", sub: "Outsiders",
-    stats: [["Guards", "3–5 at first, up to 7"], ["Carries", "fuel, meds, preserved food, parts, ammo, manuals, books and good gear"]],
+    stats: [["Escort", "what the cargo is worth to them, out of their company's 2–8 hired guns and its vehicles (a pickup, a Humvee or an MRAP)"], ["Carries", "by speciality (arms dealers, medics, mechanics, general traders); manuals, books and valuables"]],
     text: "Traders from another state, walking the roads with wagons. They visit the groups' bases and, when invited over the radio (or by chance), yours: the trade window opens for a day.",
-    how: "Invite them over the radio when they call. They want food, water, scrap and jars. Attack one and every merchant hears of it.",
+    how: "Invite them over the radio when they call. They want food, water, scrap and jars. Rob one on the road and everything in the wagons is yours; if anyone gets away or sees it, every merchant hears of it.",
     sprite: () => enemyCanvas("raiders", "#d9a520", null, null, 4),
   }, {
     key: "o:explorers", cat: "groups", name: "Travellers", sub: "Outsiders",

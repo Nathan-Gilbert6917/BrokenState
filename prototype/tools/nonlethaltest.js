@@ -81,7 +81,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   // A sure hit: stunned (loses both actions on its turn), then −20 aim the turn after.
   u.aim = 200;
   const err = combatAct(st, { type: "taser", unit: u.id, target: t.id });
-  check(!err && u.nlTaser === 1 && u.ap === 0 && t.nl && t.nl.stun === NL.TASER.stun, `tased: 1 cartridge left, the turn used, ${t.name} stunned (${err || "ok"})`);
+  check(!err && u.nlTaser === 1 && u.ap === 0 && t.stun && t.stun.ap === NL.TASER.stun && t.stun.then, `tased: 1 cartridge left, the turn used, ${t.name} stunned (${err || "ok"})`);
   for (const o of mine(b)) o.ap = 0;
   endPlayerTurn(st);
   check(t.ap === 0 || b.phase !== "enemy", `${t.name} lost its next ${NL.TASER.stun} actions (ap ${t.ap})`);
@@ -90,9 +90,9 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   for (const o of mine(b)) o.ap = 0;
   const p0 = mine(b).find((o) => active(o));
   endPlayerTurn(st);
-  const dz = t.nl && t.nl.dazeOn;
+  const dz = t.stun && t.stun.dazed && t.stun.aim === NL.TASER.daze; // the shared stun (throwables.js u.stun): the daze after
   const before = shotOdds(b, t, p0).chance + 0; // with the daze
-  const save = t.nl.dazeOn; t.nl.dazeOn = false; const plain = shotOdds(b, t, p0).chance; t.nl.dazeOn = save;
+  const save = t.stun; delete t.stun; const plain = shotOdds(b, t, p0).chance; t.stun = save;
   check(dz && (plain - before === NL.TASER.daze || before === 5 || plain === 95), `the turn after it is dazed: aim −${NL.TASER.daze} (${plain}% → ${before}%)`);
   runEnemyPhase(st);
   // Knock-out threshold, cartridges, reload.
@@ -125,7 +125,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   place(b, mine(b), 2, 3); u.x = 4; u.y = 6; z.x = 6; z.y = 6; u.aim = 200;
   const hp0 = z.hp;
   combatAct(st, { type: "taser", unit: u.id, target: z.id });
-  check(z.hp === hp0 && !(z.nl && z.nl.stun) && !z.ko, "a taser does nothing to the dead");
+  check(z.hp === hp0 && !z.stun && !z.ko, "a taser does nothing to the dead");
   // A non-lethal blow on one of the dead is a plain blow: it can kill.
   z.hp = 1;
   damage(b, z, 50, u, true, { how: "melee" });
@@ -138,7 +138,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   a.weapon = "stunbaton"; a.meleeAim = 500;
   r.hp = r.maxHp;
   combatAct(st2, { type: "melee", unit: a.id, target: r.id });
-  check(r.hp < r.maxHp && r.nl && r.nl.stun === NL.BATON.stun, `a stun baton hit stuns (−${NL.BATON.stun} action) and hurts`);
+  check(r.hp < r.maxHp && r.stun && r.stun.ap === NL.BATON.stun && !r.stun.aim, `a stun baton hit stuns (−${NL.BATON.stun} action) and hurts`);
   r.hp = 2; a.ap = 2;
   combatAct(st2, { type: "melee", unit: a.id, target: r.id });
   check(r.ko && !r.dead, "a stun baton never kills the living: at 0 they are knocked out");
@@ -282,7 +282,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   b2.nlEdge = { key: `${b2.turn}:enemy`, r: 3 };
   b2.phase = "enemy"; g.ap = 2; b2.turn = 3;
   let used = 0;
-  for (let i = 0; i < 20; i++) { b2.turn = 3 + i; b2.nlEdge = { key: `${b2.turn}:enemy`, r: 3 }; g.ap = 2; g.nlTaser = 2; const p = mine(b2)[0]; p.nl = null; p.down = false; p.ko = false; p.hp = p.maxHp; nlAI(b2, g); if (g.nlTaser < 2) used++; }
+  for (let i = 0; i < 20; i++) { b2.turn = 3 + i; b2.nlEdge = { key: `${b2.turn}:enemy`, r: 3 }; g.ap = 2; g.nlTaser = 2; const p = mine(b2)[0]; p.nl = null; delete p.stun; p.down = false; p.ko = false; p.hp = p.maxHp; nlAI(b2, g); if (g.nlTaser < 2) used++; }
   check(used >= 12, `guards winning with a taser use it (${used} of 20 turns)`);
   // Losing: lethal.
   let usedLosing = 0;
@@ -488,14 +488,14 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   const [u] = mine(b), [g, g2] = theirs(b);
   giveTaser(st, survivorById(st, u.sid)); u.nlTaser = null; u.aim = 300;
   combatAct(st, { type: "taser", unit: u.id, target: g.id });
-  if (!(g.nl && g.nl.stun)) g.nl = { stun: NL.TASER.stun, dazeAfter: true }; // a miss (95% cap): the stun by hand, the save is the point
+  if (!g.stun) g.stun = { aim: NL.TASER.daze, ap: NL.TASER.stun, next: b.turn, dazed: false, then: { aim: NL.TASER.daze } }; // a miss (95% cap): the stun by hand, the save is the point
   surrender(b, g2);
   b.takeAlive = true;
   const text = saveToString(st);
   const B = loadFromString(text);
   const bb = B.combat;
   const gg = bb.units.find((x) => x.id === g.id), g2b = bb.units.find((x) => x.id === g2.id), ub = bb.units.find((x) => x.id === u.id);
-  check(gg.nl && gg.nl.stun === NL.TASER.stun && g2b.surr && bb.nlDrops.length === 1 && ub.nlTaser === 1 && bb.takeAlive, "a saved battle keeps the stun, the surrender and its dropped weapon, the taser's cartridges and Take them alive");
+  check(gg.stun && gg.stun.ap === NL.TASER.stun && gg.stun.then && g2b.surr && bb.nlDrops.length === 1 && ub.nlTaser === 1 && bb.takeAlive, "a saved battle keeps the stun, the surrender and its dropped weapon, the taser's cartridges and Take them alive");
   const go = (w) => { for (let k = 0; k < 30 && w.combat && !w.combat.over; k++) { autoPlayerTurn(w, { retreat: false }); if (w.combat && !w.combat.over) runEnemyPhase(w); } return w.combat ? JSON.stringify([w.combat.result && w.combat.result.outcome, w.combat.log.length, w.combat.units.map((x) => [x.hp, !!x.surr, !!x.ko, !!x.dead])]) : "none"; };
   const C = loadFromString(text);
   check(go(B) === go(C), "two loads of it play out the same");

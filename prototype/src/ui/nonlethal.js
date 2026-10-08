@@ -1,7 +1,7 @@
 // The battle view's side of the non-lethal kit (sim/nonlethal.js): the Taser, Pepper spray, Pull blows, Execute,
 // Surrender and "Take them alive" buttons, the pepper cone preview, the status tags (stunned, blinded, knocked out,
 // hands up) and the hover lines. ui/combat.js and ui/isoview.js call in here; cui is ui/combat.js's view state.
-import { NL, taserOdds, coneCells, coneUnits, nlStatus, surrenderRefusal, nlEnsure, blinded, stunnedNow, dazed, NL_STYLE } from "../sim/nonlethal.js";
+import { NL, taserOdds, coneCells, coneUnits, nlStatus, surrenderRefusal, nlEnsure, blinded, NL_STYLE } from "../sim/nonlethal.js";
 import { active, adjacent } from "../sim/combat.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -12,8 +12,7 @@ export function nlTags(t) {
   const out = [];
   if (t.dead) return out;
   if (t.surr) out.push([t.tied ? "TIED" : "HANDS", t.tied ? "#c9a74a" : "#f0e6a0"]);
-  if (stunnedNow(t)) out.push(["STUN", "#9fd0ff"]);
-  else if (dazed(t)) out.push(["DAZE", "#9fd0ff"]);
+  // A stun or daze (a taser, a stun baton, a flashbang): the STN / DZ tag of both views (u.stun).
   if (blinded(t)) out.push(["BLIND", "#ff9a4a"]);
   if (t.pull && active(t)) out.push(["PULL", "#b8e0a0"]);
   return out;

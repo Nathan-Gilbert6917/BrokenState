@@ -39,6 +39,7 @@ import {
   reachable, pathTo, moveAlong, fightOutlook, hasShots, isRanged, evacAt, canSeeAt,
 } from "./combat.js";
 import { knockOut, findCarried } from "./stealth.js";
+import { nextTurnOf } from "./throwables.js"; // one stun for everything: a flashbang's u.stun (stunTurnStart / stunTurnEnd)
 import { survivorById, baseById, factionById } from "./world.js";
 import { EQUIP_SLOTS, packOf, lootItem, ensureInv, stow } from "./inventory.js";
 import { kitSource } from "./itemcond.js";
@@ -122,13 +123,21 @@ export function nlDown(b, t, by) {
 export function nlAfterHit(b, t, by, hit) {
   if (!by || !hit || hit.how !== "melee" || !living(t) || !(t.hp > 0)) return;
   const w = WEAPONS[by.weapon];
-  if (w && w.stun) { stun(t, w.stun, false); say(b, `${t.name} is stunned by the shock (−${w.stun} action).`, t.side === "player" ? "danger" : "good"); }
+  if (w && w.stun) { applyStun(b, t, w.stun, 0); say(b, `${t.name} is stunned by the shock (−${w.stun} action).`, t.side === "player" ? "danger" : "good"); }
 }
-function stun(t, ap, daze) {
-  const n = nlOf(t);
-  n.stun = Math.max(n.stun || 0, ap);
-  if (daze) n.dazeAfter = true;
+// A stun on the shared field (throwables.js stunUnit's u.stun { aim, ap, next, dazed, applied }): ap actions lost at the
+// start of the unit's next turn (stunTurnStart), aim off until that turn ends (stunTurnEnd). then: { aim } a daze for
+// the turn after (the taser's), put on by stunTurnEnd. A stun not yet served merges with the new one (the worse of each).
+export function applyStun(b, t, ap, aim, then = null) {
+  const next = nextTurnOf(b, t), was = t.stun;
+  const pending = !!was && was.next >= next && !was.applied;
+  const live = !!was && was.next >= b.turn;
+  t.stun = { aim: Math.max(aim, live ? was.aim : 0), ap: Math.max(ap, pending ? was.ap : 0), next: Math.max(next, pending ? was.next : 0), dazed: false };
+  const th = then || (pending && was.then) || null;
+  if (th) t.stun.then = th;
+  t.stun.dazed = t.stun.ap <= 0;
   t.ow = false;
+  return t.stun;
 }
 // One of your people knocked out: down, not bleeding; wakes in 2–4 turns unless tied up or carried.
 export function koSurvivor(b, t, by) {
@@ -144,17 +153,18 @@ export function koSurvivor(b, t, by) {
 }
 
 // ---------- aim, overwatch ----------
-// Aim lost to a taser's daze or pepper spray (shotOdds, meleeOdds, the taser's own odds).
+// Aim lost to pepper spray (shotOdds, meleeOdds, the taser's own odds). A stun's (a taser, a baton, a flashbang) is
+// u.stun.aim, counted by combat.js itself.
 export function nlAimPen(u) {
   const n = u && u.nl;
   if (!n) return 0;
-  return (n.dazeOn ? NL.TASER.daze : 0) + (n.blind > 0 || n.blindOn ? NL.PEPPER.blind : 0);
+  return n.blind > 0 || n.blindOn ? NL.PEPPER.blind : 0;
 }
-// No overwatch while blinded or stunned.
-export const nlNoOw = (u) => !!(u && u.nl && (u.nl.blind > 0 || u.nl.blindOn || u.nl.stun > 0));
+// No overwatch while blinded (a stun: combat.js checks u.stun).
+export const nlNoOw = (u) => blinded(u);
 export const blinded = (u) => !!(u && u.nl && (u.nl.blind > 0 || u.nl.blindOn));
-export const stunnedNow = (u) => !!(u && u.nl && u.nl.stun > 0);
-export const dazed = (u) => !!(u && u.nl && (u.nl.dazeOn || u.nl.dazeNext));
+// Stunned and its lost actions still to come (not worth tasing again).
+export const stunnedNow = (u) => !!(u && u.stun && !u.stun.dazed && !u.stun.applied);
 
 // ---------- battle setup (createBattle / createRaid) ----------
 const storeOf = (state, b) => {
@@ -241,31 +251,17 @@ function writeBack(state, b) {
 }
 
 // ---------- the turn ----------
-// The start of a side's turn (sides: ["player"], or ["enemy", "third"]): the stunned of those sides lose their actions,
-// a daze and blindness go on; the other side's turn has just ended, so its daze is over and spent blindness lifts.
-// Your knocked-out people come to here (enemies: stealth.js stealthTurn).
+// The start of a side's turn (sides: ["player"], or ["enemy", "third"]), after throwables.js stunTurnStart has taken the
+// stunned's actions: blindness goes on; the other side's turn has just ended, so spent blindness lifts. Your
+// knocked-out people come to here (enemies: stealth.js stealthTurn).
 export function nlTurnStart(b, sides) {
   for (const u of b.units) {
     if (sides.includes(u.side) && u.side === "player" && u.ko && !u.dead && !u.left && !u.tied && !u.carried && u.wake != null && b.turn >= u.wake) wakeUp(b, u);
     const n = u.nl;
     if (!n) continue;
     if (sides.includes(u.side)) {
-      if (n.dazeNext) { n.dazeOn = true; n.dazeNext = false; }
-      if (n.stun > 0) {
-        if (activeAny(u)) {
-          const lost = Math.min(u.ap, n.stun);
-          u.ap -= lost;
-          u.ow = false;
-          if (lost) say(b, `${u.name} is still twitching from the shock (−${lost} action${lost === 1 ? "" : "s"}).`, u.side === "player" ? "danger" : "good");
-        }
-        n.stun = 0;
-        if (n.dazeAfter) { n.dazeNext = true; n.dazeAfter = false; }
-      }
       if (n.blind > 0) { n.blindOn = true; n.blind--; u.ow = false; }
-    } else {
-      n.dazeOn = false;
-      if (!(n.blind > 0)) n.blindOn = false;
-    }
+    } else if (!(n.blind > 0)) n.blindOn = false;
   }
 }
 function wakeUp(b, u) {
@@ -379,7 +375,7 @@ export function taserOdds(b, a, t) {
   if (!canSee(b, a, t)) return { ok: false, chance: 0, label: "No line of sight" };
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = flat || t.kind === "zombie" ? 0 : coverAgainst(b, t.x, t.y, a.x, a.y).level;
-  const aim = a.aim + NL.TASER.aim - COVER_DEF[cov] - (t.hunker && cov ? 20 : 0) - Math.max(0, d - 2) * NL.TASER.fall - nlAimPen(a) + (flat ? 15 : 0);
+  const aim = a.aim + NL.TASER.aim - COVER_DEF[cov] - (t.hunker && cov ? 20 : 0) - Math.max(0, d - 2) * NL.TASER.fall - nlAimPen(a) - (a.stun ? a.stun.aim : 0) + (flat ? 15 : 0);
   const chance = Math.round(clamp(aim, 5, 95));
   const ko = living(t) && t.hp < t.maxHp * NL.TASER.ko;
   const what = !living(t) ? "does nothing to the dead" : ko ? `knocks them out (under ${Math.round(NL.TASER.ko * 100)}% health)` : `stuns: −${NL.TASER.stun} actions, then −${NL.TASER.daze} aim`;
@@ -402,7 +398,7 @@ function fireTaser(b, a, t) {
       if (t.side === "enemy" && t.kind === "human") say(b, `${a.name} tases ${t.name}, who drops (${o.chance}%).`, good);
       nlDown(b, t, a);
     } else {
-      stun(t, NL.TASER.stun, true);
+      applyStun(b, t, NL.TASER.stun, NL.TASER.daze, { aim: NL.TASER.daze });
       t.hunker = false;
       fx(b, { type: "melee", from: [t.x, t.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: a.side, text: "STUN" });
       say(b, `${a.name} tases ${t.name} (${o.chance}%): locked up, they lose their next ${NL.TASER.stun} actions.`, good);
@@ -781,11 +777,7 @@ export function nlStatus(b, u) {
   if (u.surr && !u.dead) return u.tied ? "Surrendered, tied up" : u.side === "player" ? "Surrendered" : `Surrendered (hands up${u.surrAlone ? `, left alone ${u.surrAlone} turn${u.surrAlone === 1 ? "" : "s"}` : ""})`;
   if (u.ko && !u.dead) return u.tied ? "Knocked out, tied up" : `Knocked out (wakes in ${Math.max(1, (u.wake ?? b.turn + 1) - b.turn)})`;
   const bits = [];
-  if (u.nl) {
-    if (u.nl.stun > 0) bits.push(`Stunned (−${u.nl.stun} action${u.nl.stun === 1 ? "" : "s"})`);
-    else if (u.nl.dazeOn || u.nl.dazeNext) bits.push(`Dazed (aim −${NL.TASER.daze})`);
-    if (blinded(u)) bits.push(`Blinded (aim −${NL.PEPPER.blind}, no overwatch)`);
-  }
+  if (blinded(u)) bits.push(`Blinded (aim −${NL.PEPPER.blind}, no overwatch)`); // a stun: the flashbang's own line (throwables.js stunLabel)
   if (u.pull && active(u)) bits.push("Pulling blows");
   return bits.join(", ");
 }

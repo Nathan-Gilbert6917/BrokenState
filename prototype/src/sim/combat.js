@@ -34,21 +34,21 @@ import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, rollAreaGrenades } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
 import { illnessAim } from "./health.js";
-import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE } from "./throwables.js";
+import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE, stunTurnStart, stunTurnEnd, kitFlashbangs } from "./throwables.js";
 import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM } from "./siege.js"; // ladders, the ram, rocks from the walls
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
 import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
-import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
+import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
@@ -669,6 +669,12 @@ export const KITS = {
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
               finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey", "toothpaste"] },
+  // Merchant caravans' escorts from outside the state (escorts.js, by their company's gear): the riflemen, and the
+  // armoured tier's hired guns in vests and plates with automatic rifles.
+  escorts:  { label: "Escort",  aim: 2, hp: 3,  weapons: ["huntrifle", "huntrifle", "leverrifle", "shotgun", "carbine", "pistol"], strong: ["carbine", "huntrifle", "ar"], armor: [null, "vest", "vest"], loot: ["huntrifle", "leverrifle", "shotgun", "pistol", "vest", "bikehelmet", "binoculars", "flashlight", "handradio"], pack: ["backpack", 0.3],
+              finds: ["smokes", "instcoffee", "cards", "watch", "lighters", "chocolate", "batteries"] },
+  contractors: { label: "Contractor", aim: -2, hp: -5, weapons: ["ar", "ar", "carbine", "carbine", "huntrifle"], strong: ["ar"], armor: ["vest", "plate", "plate"], loot: ["ar", "carbine", "plate", "vest", "riothelmet", "milhelmet", "nvg", "milradio", "smokegren", "frag", "binoculars", "reddot", "holo"], pack: ["assaultpack", 0.35],
+              finds: ["cigarettes", "chocolate", "instcoffee", "smokegren", "frag", "batteries", "watch", "goldchain", "photos"] },
   // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
               finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },
@@ -1641,6 +1647,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
+  if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
@@ -1656,7 +1663,7 @@ export function meleeOdds(b, a, t) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
   const up = hAt(b, t.x, t.y) > hAt(b, a.x, a.y) ? HEIGHT.MELEE_UP : 0; // striking up at someone on higher ground
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up - nlAimPen(a) / 2))); // nonlethal.js: half the daze or blindness up close
+  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up - (a.stun ? a.stun.aim / 2 : 0) - nlAimPen(a) / 2))); // a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty up close
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
   return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
@@ -1872,6 +1879,7 @@ export function enemyUnit(b, rng, kind, power, n) {
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
   };
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
+  kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
   return u;
 }
 
@@ -2003,19 +2011,24 @@ export function createBattle(state, setup) {
     const foes = b.units.filter((u) => u.side === "enemy");
     if (foes.length) {
       const cx = Math.round(foes.reduce((a, u) => a + u.x, 0) / foes.length), cy = Math.round(foes.reduce((a, u) => a + u.y, 0) / foes.length);
-      const big = setup.enemy.vehicle === "truck" || setup.enemy.vehicle === "van";
+      // A merchant caravan's escort vehicle (escorts.js): vehicleBody "humvee" | "mrap" draws it as the Army's (olive),
+      // a pickup as a truck; it is not one of the map's found cars (foundcars.js: c.car.escort), it is settled after.
+      const mil = setup.enemy.vehicleBody === "humvee" || setup.enemy.vehicleBody === "mrap" ? setup.enemy.vehicleBody : null;
+      const big = setup.enemy.vehicle === "truck" || setup.enemy.vehicle === "van" || !!mil;
+      const L = mil === "humvee" ? 3 : big ? 4 : 3;
       const spots = [];
       for (let y = 0; y < H; y++) for (let x = Math.max(0, cx - 2); x < W; x++) spots.push([x, y, Math.hypot(x - (cx + 2), y - cy)]);
       spots.sort((a, c) => a[2] - c[2]);
       for (const [x, y] of spots.slice(0, 300)) {
-        const r = placeCar(b.cells, W, H, x, y, rng.chance(0.5) ? "x" : "y", big ? 4 : 3, big ? "truck" : "car", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !!b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), rng.int(0, 1e6), { ring: false });
+        const r = placeCar(b.cells, W, H, x, y, rng.chance(0.5) ? "x" : "y", L, big ? "truck" : "car", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !!b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), rng.int(0, 1e6), { ring: false, ...(mil ? { body: mil } : {}) });
         if (!r) continue;
+        if (setup.enemy.escort) for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) { const c = b.cells[idx(xx, yy)]; if (c.car) { c.car.escort = true; if (mil) { c.car.mil = { kind: mil, cond: "intact" }; c.car.up = { p: 1, s: 0, g: 1, m: 0, t: setup.enemy.turret || null }; } } } // plated, glassed, the turret drawn
         const reach = flood(b.cells, 0, Math.floor(H / 2));
         if (!b.units.every((u) => reach[idx(u.x, u.y)] || u.side !== "player")) { removeCar(b.cells, W, r); continue; }
         b.reach = reach;
         b.enemyVehicle = { type: setup.enemy.vehicle, partyId: setup.enemy.vehiclePartyId ?? null, x: r.x0, y: r.y0, w: r.w, h: r.h };
         if (technicalPlated(state, setup.enemy)) for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) b.cells[idx(xx, yy)].car.up = { p: 0, s: 1, g: 0, m: 0, t: null }; // a raider technical (vehicles.js): scrap plating, full cover
-        say(b, `They came in a ${setup.enemy.vehicle === "sedan" ? "car" : setup.enemy.vehicle}: it stands behind them. Win and it is yours to take.`, "info");
+        say(b, `They came in ${setup.enemy.vehicleName ? `${/^[aeiou]/i.test(setup.enemy.vehicleName) ? "an" : "a"} ${setup.enemy.vehicleName}` : `a ${setup.enemy.vehicle === "sedan" ? "car" : setup.enemy.vehicle}`}: it stands behind them. Win and it is yours to take.`, "info");
         break;
       }
     }
@@ -2177,7 +2190,7 @@ export function moveAlong(b, u, path) {
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
-      if (!o.ow || nlNoOw(o) || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // nlNoOw: blinded or stunned (nonlethal.js) // thirdside.js: not at the third side unless at odds
+      if (!o.ow || o.stun || nlNoOw(o) || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds; stun: a flashbang or a taser (throwables.js); nlNoOw: pepper spray (nonlethal.js)
       if (!canSee(b, o, u) || !canFire(b, o)) continue;
       o.ow = false;
       say(b, `${o.name} reacts on overwatch.`, "info");
@@ -2379,6 +2392,7 @@ export function combatAct(state, act) {
       break;
     }
     case "overwatch":
+      if (u.stun) return "Still seeing spots from the flash: no overwatch until it wears off.";
       if (blinded(u)) return "Blinded by pepper spray: no overwatch until it wears off.";
       if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
       u.ow = true; u.ap = 0;
@@ -2589,8 +2603,10 @@ export function endPlayerTurn(state) {
   bindDims(b);
   if (!b || b.over || b.phase !== "player") return;
   for (const u of b.units) if (u.side === "player") u.ap = 0;
+  stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
   nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
   // arrive, then the next ones are sent; the Heat's waves come in on the ground floor.
@@ -2642,6 +2658,7 @@ export function runEnemyPhase(state) {
 }
 
 function startPlayerTurn(state, b) {
+  stunTurnEnd(b, ["enemy", "third"]); // throwables.js: their stun wears off with the enemy turn
   b.turn++;
   b.phase = "player";
   if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
@@ -2662,6 +2679,7 @@ function startPlayerTurn(state, b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
+  stunTurnStart(b, ["player"]); // throwables.js: whoever a flashbang caught loses an action or two
   nlTurnStart(b, ["player"]); // nonlethal.js: stuns and blindness on your people, the knocked out coming to
   stirBodies(state, b); // carriers.js: bodies in the flames burn; a carrier who went down puts the body down
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
@@ -2868,7 +2886,7 @@ function aiUnit(b, u) {
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
-    if (u.side === "player" || rng.chance(0.6)) u.ow = true;
+    if (!u.stun && (u.side === "player" || rng.chance(0.6))) u.ow = true; // stun: no overwatch through a flashbang's glare
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
   }
@@ -2892,7 +2910,7 @@ function holdPost(b, u) {
     const inside = b.tier && (b.tier.map === "interior" || b.tier.map === "fort") && STICKY.has(u.post);
     if (!walls && !inside) { u.post = null; return false; }
     if (magLow(u) && !reloadRefusal(b, u)) reload(b, u); // a quiet moment: the magazine topped up
-    if (canFire(b, u)) u.ow = true;
+    if (canFire(b, u) && !u.stun) u.ow = true;
     u.ap = 0;
     return true;
   }
@@ -2900,7 +2918,7 @@ function holdPost(b, u) {
   const shot = bestShot(b, u, adj.length && u.post === "gate" ? adj : foes);
   if (shot) fire(b, u, shot.t);
   else if (adj.length) strike(b, u, adj[0]);
-  else if (canFire(b, u)) u.ow = true;
+  else if (canFire(b, u) && !u.stun) u.ow = true;
   else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
   u.ap = 0;
   return true;
@@ -4250,6 +4268,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         gear.push(it);
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
+      gear.push(...carriedThrowables(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // inventory.js: a flashbang they never threw
     } else if (box.truck) {
       // An Army truck's cargo bed (miltrucks.js truckLoot: its own dice, the same truck holds the same things); the
       // tile remembers it was opened. The crew strapped in the cab rise at the noise.
@@ -4276,6 +4295,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
       const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${box.id}`);
       if (part) gear.push(part);
+      // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
+      gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
@@ -4513,6 +4534,9 @@ function autoRaidTurn(state) {
       if (esc && !combatAct(state, esc)) continue;
       const skull = botCrush(b, u); // carriers.js: a body in danger next to them, crushed before it gets up
       if (skull && !combatAct(state, skull)) continue;
+      // stealth.js: a flashbang into a room (or a knot) of two or more people who know the team is there, then the rest
+      // of the turn (the stunned cannot watch the doorway).
+      if (!leave && botFlash(state, b, u, true)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
