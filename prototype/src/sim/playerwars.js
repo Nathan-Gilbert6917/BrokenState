@@ -302,6 +302,7 @@ export function declareByPlayer(state, f, goal = "tribute") {
   const why = playerDeclareProblem(state, f);
   if (why) return why;
   if (!["tribute", "land", "break"].includes(goal)) goal = "tribute";
+  if (goal === "land" && f.bases.length < 2) goal = "tribute"; // a group with one base cannot hand one over
   const d = ensurePwars(state);
   const bandits = isAggressiveType(f) && attitude(f) === "Hostile";
   const w = newWar(state, f, "you", goal, "yours");
@@ -464,8 +465,9 @@ export function sueTerms(state, w) {
   const lead = w.score.them - w.score.you;
   const caps = captivesOf(state, f.id).length;
   if (caps && lead <= 3) t.push({ kind: "prisoners", payer: "them", n: caps });
-  if (lead <= -PW.LEAD || (w.by === "you" && w.goal === "tribute" && lead <= 0)) t.push({ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE) });
-  if (w.by === "you" && w.goal === "land" && lead <= -PW.LEAD) { const tile = theirBaseNearest(state, f); if (tile != null) t.push({ kind: "cede", payer: "them", tile }); }
+  const yours = w.by === "you";
+  if (lead <= -PW.LEAD || (yours && (w.goal === "tribute" || w.goal === "break") && lead <= 0)) t.push({ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE) });
+  if (yours && (w.goal === "land" || w.goal === "break") && lead <= -PW.LEAD) { const tile = theirBaseNearest(state, f); if (tile != null) t.push({ kind: "cede", payer: "them", tile }); }
   t.push(ceasefireTerm(lead > 0 ? PW.WHITE_CEASEFIRE : PW.CEASEFIRE));
   return t;
 }
@@ -517,7 +519,7 @@ export function termsChance(state, w, terms) {
     else if (t.kind === "cede" && t.payer === "them") p -= 0.45;
     else if (t.kind === "prisoners" && t.payer === "them") p -= 0.04 * t.n;
   }
-  if (w.goal === "conversion" && !terms.some((t) => t.kind === "convert")) p *= 0.3; // zealots: the faith or nothing
+  if (w.goal === "conversion" && !terms.some((t) => t.kind === "convert")) p *= 0.15; // zealots: the faith or nothing
   if (w.goal === "rival" && !terms.some((t) => t.kind === "cede" && t.payer === "you")) p *= 0.5;
   if (w.by === "you") p += 0.1; // they did not want this war
   return clamp(p, 0.02, 0.95);
@@ -557,7 +559,9 @@ export function offerTerms(state, warId, key) {
   const via = talkVia(state, f) === "radio" ? "by radio" : "by an envoy under a white flag";
   if (h(state, w.id, day(state), key, "talk") >= opt.chance) {
     ensurePwars(state).pwarStats.refused++;
-    return `${f.name} refused your terms (${opt.text}), sent ${via} (${Math.round(opt.chance * 100)}% chance). The war goes on.`;
+    const no = `${f.name} refused your terms (${opt.text}), sent ${via} (${Math.round(opt.chance * 100)}% chance). The war goes on.`;
+    log(state, no, "info");
+    return no;
   }
   ensurePwars(state).pwarStats.accepted++;
   const done = settle(state, w.id, opt.terms, `${f.name} accepted your terms, sent ${via}`);
@@ -672,3 +676,7 @@ export function demandCard(state, w) {
     ],
   };
 }
+
+// Help → Blocs and wars (ui/help.js).
+export const BLOCS_WARS_HELP = `<b>Blocs.</b> Groups that like each other and share a threat (a common enemy, you, a hive nearby, prey for raiders) ally into a bloc, by their type: traders, communes and fortresses readily, the military with order-keeping groups, expansionists with a few, raiders only in loose gangs of raiders, zealots only with zealots. Members send what they can spare to a raid on another (it shows in the news: "came to the aid of…"), raid together, share everything their scouts saw, buy food from each other first and grow closer every day. A bloc breaks when two members fall out, when one betrays another (a theft found out, a hungry raider turning on its gang), or when the danger that brought them together has passed; a member that joins your coalition leaves it. Each bloc has a colour: a dashed ring of it round its members' bases on the map. A bloc whose enemy is hostile to you may ask you to stand with it (its fighters then help defend your bases near them); a bloc can also form against you, or against your coalition when it holds a third of the state.<br><br>
+<b>Wars with you.</b> A hostile group may declare war on you (rarely: one war at a time, months apart). It has a goal, from what it knows and what you did: loot (its spies saw rich stores), one of your outposts near its land, revenge (your raids on it, executions, its people in your jails), conversion (zealots) or breaking you as a rival (when your coalition holds much of the state). While it lasts its raids come oftener (about every ${PW.RAID_GAP[0]}–${PW.RAID_GAP[1]} days, joined by its bloc), the base it wants is besieged (${PW.SIEGE_HOURS} hours at the walls), and your caravans and teams near its land are hunted. Every raid you hold and base of theirs you take counts for you; their losses, hunger and deserters wear them down, your dead and lost bases wear you down. Every ${PW.OFFER_GAP} days or so they send word by radio or envoy: worn out, they sue for peace (a ceasefire, your captives back, tribute when you are clearly ahead); ahead, they offer peace on their terms (tribute, the base they want, their prisoners back, a tithe and a convert). You can offer terms yourself from their card in the Groups tab (the % is the chance they agree: their type, weariness, the score and how well the terms answer their goal). A side worn out past ${PW.BROKEN} pulls back. After a peace: ${PW.CEASEFIRE} days of ceasefire (no raids from them), and no new war from them for ${PW.COOLDOWN} days. You can declare war on a group too (its card: for tribute, for land, or to break it): it turns hostile, its bloc joins it, its friends think less of you.`;
