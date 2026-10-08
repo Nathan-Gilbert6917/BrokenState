@@ -91,7 +91,8 @@ import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; // prisoners on Cut wood (by hand)
-import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
+import { wormHealMult, WORM } from "./worm.js";
+import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
 
 // The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
 // of. cap: prisoners held; guarded / unguarded: escapes a day in the cell; bonus: × the escape for each thing a
@@ -399,8 +400,8 @@ export function takePrisonersAt(state, f, base, n) {
 // The same, by the jail rules (conquest.js): those the base you took has room for stay there, the rest wait on a card
 // (settle: walked to a base with room, released, executed or asked to join).
 export function surrenderPrisoners(state, f, base, n) {
-  const list = takePrisonersAt(state, f, base, n);
   const room = freeCells(state, base);
+  const list = takePrisonersAt(state, f, base, n);
   overflow(state, list.slice(room));
   return list;
 }
@@ -535,7 +536,7 @@ export function settle(state, id, how, baseId = null) {
   const { party, base, people, home } = settlePlace(state, p);
   if (how === "hold") {
     const to = baseById(state, Number(baseId));
-    if (!to || freeCells(state, to) <= 0) return settle(state, id, "release");
+    if (!to || freeCells(state, to) <= 0) return `No free cell at ${to ? to.name : "that base"} any more. ${settle(state, id, "release")}`;
     delete p.awaiting;
     if (party) { p.dest = to.id; return `${p.name} walks on with the team, bound for ${to.name}'s ${jailName(to).toLowerCase()}.`; }
     if (base === to) return `${p.name} goes into a cell at ${to.name}.`;
@@ -703,6 +704,8 @@ export function gatherIntel(state, p, full = true) {
       f.known = true;
       f.intel = { day: day(state), pop: f.pop, food: Math.round(f.stock.food || 0), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
       lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} ammo, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
+      const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
+      if (jt) lines.push(`Their jail: ${jt}.`);
     }
     const out = state.parties.filter((q) => q.owner === f.id && q.path);
     for (const q of out) tiles.add(q.path[Math.min(q.idx || 0, q.path.length - 1)]);

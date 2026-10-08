@@ -70,7 +70,7 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
-import { groupCapture, jailsOn, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the winner of a raid takes a few prisoners
+import { groupCapture, jailsOn, GROUP_JAIL, freeOnCollapse } from "./groupjails.js"; // jailhouse: the winner of a raid takes a few prisoners
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
 
@@ -826,6 +826,7 @@ export function collapseFaction(state, f, by = null) {
   f.alive = false;
   f.bases = [];
   f.pact = null;
+  freeOnCollapse(state, f); // groupjails.js: the people they held walk home
   if (f.known) log(state, `${f.name} has collapsed.`, "danger");
   takeOver(state, f, ruins, by);
   // Their people on the road are gone with them: raids, sieges and convoys end here.

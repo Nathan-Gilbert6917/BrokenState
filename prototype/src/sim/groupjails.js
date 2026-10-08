@@ -404,6 +404,12 @@ export function groupJailsDaily(state) {
   }
 }
 
+// A group collapses (factions.js collapseFaction): the other groups' people it held walk home.
+export function freeOnCollapse(state, f) {
+  for (const rec of f.prisoners || []) { const from = factionById(state, rec.from); if (from && from.alive) from.pop += 1; }
+  f.prisoners = [];
+}
+
 // ---------- for the UI (ui/diplomacy.js) ----------
 // "holds 3 prisoners (jailhouse)" when you know it: a prisoner of theirs told you (questioning), or you have seen
 // their main base (a scout's snapshot of it). "" otherwise, or in an older save.
