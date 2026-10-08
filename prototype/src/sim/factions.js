@@ -855,6 +855,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
       const fate = attacker ? baseFate(state, attacker, lost) : "leave"; // keep it, burn it or loot it and go
       if (fate === "keep") attacker.bases.push(lost);
       else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
+      else if (leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1))) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
     if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}).`, "danger");

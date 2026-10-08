@@ -41,7 +41,7 @@ import {
 } from "./combat.js";
 import { knockOut, findCarried } from "./stealth.js";
 import { nextTurnOf } from "./throwables.js"; // one stun for everything: a flashbang's u.stun (stunTurnStart / stunTurnEnd)
-import { survivorById, baseById, factionById } from "./world.js";
+import { survivorById, baseById, factionById, localId } from "./world.js"; // localId: world-local ids for the dice
 import { EQUIP_SLOTS, packOf, lootItem, ensureInv, stow } from "./inventory.js";
 import { kitSource } from "./itemcond.js";
 import { hash01 } from "./skills.js";
@@ -738,7 +738,7 @@ export const nlSpared = (u) => !!(u.ko || u.surr);
 export function raidPrisoners(state, attacker, target, loss) {
   if (!attacker || !target || loss <= 0) return 0;
   const share = NL_TAKE[attacker.type] ?? 0.2;
-  const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", attacker.id, target.id, state.hour)));
+  const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", localId(state, attacker.id), localId(state, target.id), state.hour)));
   if (n <= 0) return 0;
   const out = { killed: 0 };
   if (Array.isArray(attacker.bases)) groupCapture(state, attacker, target, n, out);
