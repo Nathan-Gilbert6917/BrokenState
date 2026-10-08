@@ -63,9 +63,8 @@ import { TRAINING, WARD, lessonGap } from "./training.js"; // the player's ward 
 // fight), harsh (desertion), vehicles (taking, fitting: groupvehicles.js), ally (blocs.js), warlike (diplomacy.js,
 // playerwars.js), peaceful (playerwars.js).
 // Folded in: nonlethal.js NL_TAKE (takeAlive), groupworks.js WALLED_TYPES (walled), escorts.js's home guard (escort),
-// groupjails.js prisoners recruited after a long hold (× recruit). Still separate (TODO, lead): nonlethal.js NL_STYLE /
-// NL_KIT (by battle kit, not group type), groupworks.js build order (one order for every type), groupjails.js GROUP_JAIL
-// EARLY / LATE / FULL / BUYERS / WORK (jails, what to do with no room, labour: could read prisoners / harsh / trade),
+// groupjails.js prisoners recruited after a long hold (× recruit). Still separate: nonlethal.js NL_STYLE /
+// NL_KIT (by battle kit, not group type), groupworks.js build order (one order for every type),
 // FACTION_TYPES food / expand / raid (the types' base rates; the profile scales them), wanderers.js military squads
 // (patrol), throwables.js FLASH_KIT and medics.js MEDIC.ENEMY (by kit; arsenal.js ARSENAL.NONLETHAL seeds the items).
 // Moved in from the files that read them (each type's second and third line: what were per-type tables or
@@ -93,6 +92,19 @@ import { TRAINING, WARD, lessonGap } from "./training.js"; // the player's ward 
 //     sharesNews (a talk that goes well marks their bases on your map).
 //   playerwars.js: cbConversion and cbRival (the score of a "conversion" or a "rival" goal for a war on you; rival ×
 //     the share of the land the coalition holds).
+//   blocs.js (the last of it, with the jails: still no change in play): blocFit (was typesFit's chain of type checks:
+//     how readily two types ally, 0 never; the table is symmetric, each row lists the types it allies with), blocGang
+//     (a bloc of only these is a loose gang: weaker ties, less help, a hungry member turns on a weaker one), blocHunts
+//     and blocPrey (two raider gangs ally over shared prey: a peaceful group both know), blocWord (the bloc's name),
+//     blocVote (was VOTE.TYPE: the type's lean in a vote to join your coalition).
+//   groupcare.js GROUP_MED: medStart ([the doctor's, the other medics'] Medicine at the start) and sickbayBuilt (the sick
+//     bay tier counted for a group that does not build: old saves, the hardcore military).
+//   groupjails.js GROUP_JAIL (jail: what was its per-type EARLY / LATE / FULL / UNSOLD / BUYERS / WORK / CAPTIVE
+//     tables): early (builds cells before it holds anyone), late (builds them last, after its sick bay), full (one more
+//     with no room: "sell", "kill" or "release"), unsold (a sale that finds no buyer: "kill" or "release"; null: as
+//     full), buyer (buys people: "labour" or "free"; null: never), share and mood (a held worker's share and the mood
+//     stand-in of its labour), eat (food a prisoner eats a day), health and captiveMood (your person held: a day's
+//     health and mood), escapeWork (× the cell's escape on worked days).
 // New with them: splinter (× the chance a group torn by strife splits, 0 never) and splinterAs (the type of the band
 // that walks out: raiders, expansionists and the military's deserters go raiding, zealots found a new sect):
 // splinters.js; flee (× the chance it leaves a base it cannot hold against the dead: zealots stand, traders and
@@ -106,25 +118,39 @@ export const GROUP_PRIORITIES = {
   // how fast a war wears it down (playerwars.js termsChance, weariness).
   raider:      { takeAlive: 0.25, walled: 0, escort: 0.8, scavenge: 1.0, trade: 0.3, raid: 1.5, build: 0.6, expand: 1.1, fortify: 0.6, prisoners: 1.2, nonlethal: 0.3, repair: 0.7, heal: 0.6, recruit: 1.2, caravan: 0.2, farm: 0.6, craft: 1.1, yield: 0.3, harsh: 1.4, ransom: 1.0, patrol: 0.8, vehicles: 1.3, steal: 1.5, ally: 0.7, warlike: 1.5, peaceful: 0.6,
     mechanic: 3, pressGang: 1.5, relKin: -20, relOut: -44, relRank: 4, blocRel: -26, sites: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"], provoked: 0, keep: 0.8, raze: 0.22, hiveWar: 0, convoy: 0, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["scrapPlate"], fitting: 1, likes: { walls: 1 },
-    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 0, splinter: 1, splinterAs: "raider", flee: 1 },
+    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 0, splinter: 1, splinterAs: "raider", flee: 1,
+    blocFit: { raider: 0.8 }, blocGang: 1, blocHunts: 1, blocPrey: 0, blocWord: "Syndicate", blocVote: -1, medStart: [4, 2], sickbayBuilt: 2,
+    jail: { early: true, late: false, full: "sell", unsold: "kill", buyer: "labour", share: 0.9, mood: 15, eat: 0.3, health: -1.2, captiveMood: -2, escapeWork: 1.25 } },
   expansionist: { takeAlive: 0.2, walled: 0, escort: 1.1, scavenge: 1.1, trade: 0.9, raid: 1.0, build: 1.1, expand: 1.5, fortify: 0.9, prisoners: 1.0, nonlethal: 0.7, repair: 1.0, heal: 0.9, recruit: 1.4, caravan: 1.3, farm: 1.0, craft: 1.0, yield: 0.5, harsh: 1.0, ransom: 1.0, patrol: 1.0, vehicles: 1.2, steal: 0.8, ally: 0.6, warlike: 1.4, peaceful: 0.8,
     mechanic: 4, pressGang: 0, relKin: -28, relOut: -24, relRank: 2, blocRel: 28, sites: ["town", "airport", "factory", "police"], provoked: 0, keep: 0.9, raze: 0.05, hiveWar: 0.4, convoy: 0, raidBait: 0.6, siegePrep: 1, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["scrapPlate", "mesh"], fitting: 1, likes: null,
-    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 40, splinter: 0.6, splinterAs: "raider", flee: 0.8 },
+    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 40, splinter: 0.6, splinterAs: "raider", flee: 0.8,
+    blocFit: { expansionist: 0.7, fortress: 0.35, traders: 0.35, commune: 0.2, military: 0.3 }, blocGang: 0, blocHunts: 0, blocPrey: 0, blocWord: "Compact", blocVote: -0.4, medStart: [5, 3], sickbayBuilt: 2,
+    jail: { early: false, late: false, full: "sell", unsold: "kill", buyer: "labour", share: 0.6, mood: 30, eat: 0.6, health: -0.6, captiveMood: -0.5, escapeWork: 1.1 } },
   zealot:       { takeAlive: 0, walled: 0, escort: 0.8, scavenge: 0.8, trade: 0.4, raid: 1.2, build: 0.9, expand: 0.9, fortify: 1.0, prisoners: 1.3, nonlethal: 0.2, repair: 0.6, heal: 0.7, recruit: 1.0, caravan: 0.3, farm: 1.0, craft: 0.8, yield: 0.0, harsh: 1.3, ransom: 0.0, patrol: 1.0, vehicles: 0.6, steal: 0.7, ally: 0.4, warlike: 1.2, peaceful: 0.2,
     mechanic: 2, pressGang: 0, relKin: 20, relOut: -34, relRank: 3, blocRel: 12, sites: ["church", "school", "univ", "hospital", "town"], provoked: 0, keep: 0.7, raze: 0.12, hiveWar: 1, convoy: 0, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["mesh"], fitting: 1, likes: null,
-    meetOdds: 0.5, stop: "zealotpatrol", talkDc: 2, rescueDc: 3, bribeCost: 1.5, bribeOdds: 0.55, pactOdds: 0.8, ransomHead: 30, killCaptive: 0.05, turnCaptive: 0.01, sharesNews: 0, cbConversion: 30, cbRival: 0, splinter: 0.5, splinterAs: "zealot", flee: 0.4 },
+    meetOdds: 0.5, stop: "zealotpatrol", talkDc: 2, rescueDc: 3, bribeCost: 1.5, bribeOdds: 0.55, pactOdds: 0.8, ransomHead: 30, killCaptive: 0.05, turnCaptive: 0.01, sharesNews: 0, cbConversion: 30, cbRival: 0, splinter: 0.5, splinterAs: "zealot", flee: 0.4,
+    blocFit: { zealot: 0.8 }, blocGang: 0, blocHunts: 0, blocPrey: 0, blocWord: "Covenant", blocVote: -0.8, medStart: [4, 2], sickbayBuilt: 2,
+    jail: { early: false, late: false, full: "kill", unsold: null, buyer: null, share: 0.5, mood: 25, eat: 0.6, health: -0.8, captiveMood: -0.5, escapeWork: 1.1 } },
   military:     { takeAlive: 0.35, walled: 1, escort: 1, scavenge: 0.9, trade: 0.8, raid: 0.4, build: 1.0, expand: 0.8, fortify: 1.3, prisoners: 1.2, nonlethal: 1.1, repair: 1.4, heal: 1.3, recruit: 0.8, caravan: 0.8, farm: 0.8, craft: 1.2, yield: 0.6, harsh: 1.1, ransom: 0.8, patrol: 1.4, vehicles: 1.5, steal: 0.3, ally: 0.9, warlike: 0.5, peaceful: 1.0,
     mechanic: 6, pressGang: 0, relKin: 18, relOut: 18, relRank: 0, blocRel: 25, sites: ["military", "airport", "police", "ranger"], provoked: 0.03, keep: 0.55, raze: 0, hiveWar: 0.75, convoy: 0, raidBait: 0.6, siegePrep: 1, bombs: "frag", threat: 0, sellsCars: 0, fits: ["plating", "glass"], fitting: 1, likes: null,
-    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 40, splinter: 0.3, splinterAs: "raider", flee: 0.6 },
+    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 40, splinter: 0.3, splinterAs: "raider", flee: 0.6,
+    blocFit: { military: 1, fortress: 1, traders: 1, commune: 1, expansionist: 0.3 }, blocGang: 0, blocHunts: 0, blocPrey: 0, blocWord: "Alliance", blocVote: 0, medStart: [8, 4], sickbayBuilt: 3,
+    jail: { early: true, late: false, full: "release", unsold: null, buyer: "free", share: 0.4, mood: 50, eat: 0.6, health: -0.1, captiveMood: -0.5, escapeWork: 1.1 } },
   fortress:     { takeAlive: 0.35, walled: 1, escort: 0.9, scavenge: 0.9, trade: 1.0, raid: 0.3, build: 1.3, expand: 0.5, fortify: 1.5, prisoners: 0.9, nonlethal: 0.9, repair: 1.4, heal: 1.1, recruit: 0.9, caravan: 0.9, farm: 1.1, craft: 1.2, yield: 0.7, harsh: 0.9, ransom: 1.0, patrol: 0.9, vehicles: 1.0, steal: 0.3, ally: 1.3, warlike: 0.3, peaceful: 1.1,
     mechanic: 5, pressGang: 0, relKin: 18, relOut: 18, relRank: 0, blocRel: 22, sites: ["prison", "dam", "ranch", "town"], provoked: 0.02, keep: 0.5, raze: 0, hiveWar: 0.7, convoy: 0.15, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["plating", "mesh"], fitting: 1, likes: { walls: 2 },
-    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 0.5 },
+    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 0.5,
+    blocFit: { fortress: 1, traders: 1, commune: 1, military: 1, expansionist: 0.35 }, blocGang: 0, blocHunts: 0, blocPrey: 1, blocWord: "League", blocVote: 0.2, medStart: [7, 4], sickbayBuilt: 3,
+    jail: { early: true, late: false, full: "release", unsold: null, buyer: "free", share: 0.5, mood: 45, eat: 0.6, health: -0.2, captiveMood: -0.5, escapeWork: 1.1 } },
   traders:      { takeAlive: 0.45, walled: 0, escort: 1.2, scavenge: 1.0, trade: 1.5, raid: 0.1, build: 1.0, expand: 0.9, fortify: 0.8, prisoners: 0.6, nonlethal: 1.2, repair: 1.0, heal: 1.1, recruit: 1.0, caravan: 1.5, farm: 0.9, craft: 0.9, yield: 1.2, harsh: 0.8, ransom: 1.2, patrol: 0.8, vehicles: 1.1, steal: 0.2, ally: 1.4, warlike: 0.1, peaceful: 1.5,
     mechanic: 4, pressGang: 0, relKin: 30, relOut: 30, relRank: 1, blocRel: 18, sites: ["town", "gas", "truckstop", "grocery", "mall"], provoked: 0.01, keep: 0.3, raze: 0, hiveWar: 0.15, convoy: 0.15, raidBait: 1.2, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["mesh"], fitting: 1, likes: null,
-    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2 },
+    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2,
+    blocFit: { fortress: 1, traders: 1, commune: 1, military: 1, expansionist: 0.35 }, blocGang: 0, blocHunts: 0, blocPrey: 1, blocWord: "Concord", blocVote: 0.5, medStart: [6, 3], sickbayBuilt: 2,
+    jail: { early: false, late: false, full: "sell", unsold: "release", buyer: null, share: 0.4, mood: 40, eat: 0.6, health: -0.3, captiveMood: -0.5, escapeWork: 1.1 } },
   commune:      { takeAlive: 0.4, walled: 0, escort: 1, scavenge: 0.9, trade: 1.3, raid: 0.0, build: 1.1, expand: 0.9, fortify: 0.7, prisoners: 0.4, nonlethal: 1.5, repair: 0.9, heal: 1.4, recruit: 1.4, caravan: 1.0, farm: 1.5, craft: 0.8, yield: 1.3, harsh: 0.6, ransom: 1.0, patrol: 0.6, vehicles: 0.5, steal: 0.1, ally: 1.5, warlike: 0.1, peaceful: 1.6,
     mechanic: 3, pressGang: 0, relKin: 30, relOut: 30, relRank: 1, blocRel: 18, sites: ["farm", "ranch", "feedstore", "town"], provoked: 0.01, keep: 0.3, raze: 0, hiveWar: 0.15, convoy: 0.15, raidBait: 1.2, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["mesh"], fitting: 0.3, likes: { farms: 1 },
-    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2 },
+    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2,
+    blocFit: { fortress: 1, traders: 1, commune: 1, military: 1, expansionist: 0.2 }, blocGang: 0, blocHunts: 0, blocPrey: 1, blocWord: "Accord", blocVote: 0.5, medStart: [7, 3], sickbayBuilt: 2,
+    jail: { early: false, late: true, full: "release", unsold: null, buyer: null, share: 0.3, mood: 60, eat: 0.6, health: 0, captiveMood: -0.5, escapeWork: 1.1 } },
 };
 // A type's weight for an action (1 for an unknown type or action).
 export const weightOf = (f, act, dflt = 1) => ((GROUP_PRIORITIES[f && f.type] || {})[act] ?? dflt);
@@ -192,7 +218,7 @@ export function healRate(f, tier = 0) {
 // ---------- the medics' skill (AI parity for training.js; coarse: two numbers a group, once a day) ----------
 // f.med = { doc, docXp, staff, staffXp }: the Medicine of the group's doctor (its best medic) and of its other medics
 // (one number for all of them), each with its XP inside the level (skills.js xpNeed, as for your people). It starts
-// by type (GROUP_MED.start) and grows each day the way yours does:
+// by type (GROUP_PRIORITIES medStart) and grows each day the way yours does:
 //   - duty: USE.medicRole (8) a day while the group has wounded (half with none), + USE.wound (5) for each wounded
 //     a medic has (up to GROUP_MED.treats), under the use cap (20);
 //   - ward rounds, with a sick bay (groupHospitalTier, the one they built: groupworks.js sickbayWork): the wounded × WARD.bed × the tier's teach factor shared among
@@ -204,23 +230,22 @@ export function healRate(f, tier = 0) {
 // What it does: the medics' Medicine sets how much their care speeds the healing (healRate: HEAL_MEDIC ×
 // medicSkillMult, 1 at GROUP_MED.ref, ± perLevel a level).
 // The sick bay (groupHospitalTier): the tier the group built (groupworks.js sickbayWork, f.works[tile].sickbay). Old
-// saves and the hardcore military, which do not build, count as GROUP_MED.builtTier. What stays abstract: a group's
+// saves and the hardcore military, which do not build, count as GROUP_PRIORITIES sickbayBuilt. What stays abstract: a group's
 // doctor never becomes a Professor, and its medics are one number (nobody graduates by name).
 export const GROUP_MED = {
-  start: { military: [8, 4], fortress: [7, 4], commune: [7, 3], traders: [6, 3], expansionist: [5, 3], raider: [4, 2], zealot: [4, 2] },
-  dflt: [5, 3], ref: 3, perLevel: 0.05, minMult: 0.7, maxMult: 1.5, treats: 3,
-  builtTier: { military: 3, fortress: 3, dflt: 2 },
+  // each type's start and built tier: GROUP_PRIORITIES medStart / sickbayBuilt; these for an unknown type
+  dflt: [5, 3], ref: 3, perLevel: 0.05, minMult: 0.7, maxMult: 1.5, treats: 3, builtDflt: 2,
 };
 export function medOf(f) {
   if (!f.med || !Number.isFinite(f.med.staff)) {
-    const [doc, staff] = GROUP_MED.start[f.type] || GROUP_MED.dflt;
+    const [doc, staff] = weightOf(f, "medStart", GROUP_MED.dflt);
     f.med = { doc, docXp: 0, staff, staffXp: 0 };
   }
   return f.med;
 }
 export const medicSkillMult = (f) => (f ? Math.max(GROUP_MED.minMult, Math.min(GROUP_MED.maxMult, 1 + GROUP_MED.perLevel * (medOf(f).staff - GROUP_MED.ref))) : 1);
 export function groupHospitalTier(state, f) {
-  if (!groupsBuild(state, f)) return GROUP_MED.builtTier[f.type] || GROUP_MED.builtTier.dflt;
+  if (!groupsBuild(state, f)) return weightOf(f, "sickbayBuilt", GROUP_MED.builtDflt);
   return Math.min(hospitalTypes().length, sickbayTier(f));
 }
 // XP into one of the two tracks (level and progress), as skills.js addXp.

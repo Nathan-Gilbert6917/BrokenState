@@ -3,7 +3,7 @@
 // decide on what they know (groupworld.js f.knows), not on the true state. One pass a day (diplomacy.js
 // diplomacyDaily, after relations and pacts), hashed dice only (skills.js hash01): the world's dice are not touched.
 //
-// Who allies with whom (typesFit): traders, communes and fortresses with each other readily (1), with the military
+// Who allies with whom (typesFit; each type's row: GROUP_PRIORITIES blocFit): traders, communes and fortresses with each other readily (1), with the military
 // (1); the military with the order-keeping types (military, fortress, traders, communes: 1; expansionists 0.3);
 // expansionists with expansionists (0.7), fortresses and traders (0.35), communes (0.2); raiders only with raiders
 // (0.8: loose gangs); zealots only with zealots (0.8). Never across those lines.
@@ -47,7 +47,7 @@
 // break off; most agrees win"). An invitation to one member into your coalition (yours from the Groups tab, the
 // radio, the coalition tab's "Invite the whole bloc", the governor's, or a member's own ask) goes to the bloc:
 // - Each member scores it (voteScore: a fixed sum, not dice, bar a small hashed nudge VOTE.JITTER): its goodwill to
-//   you around VOTE.GW_MID, its type's lean (VOTE.TYPE: communes and traders for, raiders and zealots against), a pact
+//   you around VOTE.GW_MID, its type's lean (GROUP_PRIORITIES blocVote: communes and traders for, raiders and zealots against), a pact
 //   with you, its ties to the invited member (relations over the bloc's line) and to the coalition's members, the
 //   war state (a foe the bloc shares with you: for; a coalition member as the bloc's foe: against; at war and wanting
 //   friends: for), and the invited member's own wish (VOTE.ASKED). AGREE or more: agree; BREAK or less: break off;
@@ -101,7 +101,8 @@ export const BLOC = {
 export const VOTE = {
   AGREE: 0.3, BREAK: -0.8, // the score lines: agree at AGREE or more, break off at BREAK or less
   GW_MID: 45, GW_SCALE: 20, // goodwill to you: (goodwill − GW_MID) / GW_SCALE
-  TYPE: { commune: 0.5, traders: 0.5, fortress: 0.2, military: 0, expansionist: -0.4, zealot: -0.8, raider: -1 },
+  // the type's lean: GROUP_PRIORITIES blocVote (communes and traders 0.5, fortresses 0.2, the military 0,
+  // expansionists −0.4, zealots −0.8, raiders −1)
   PACT: 0.4, // a pact with you already
   TIE_SCALE: 60, TIE_CAP: 1, // relations with the invited member over the bloc's line, and with the coalition's members, / TIE_SCALE (±TIE_CAP)
   ASKED: 0.6, // the invited member itself (it met your terms)
@@ -113,7 +114,6 @@ export const VOTE = {
 };
 // Not blue (yours) and not too close to the groups' own colours.
 export const BLOC_COLORS = ["#ffd166", "#06d6a0", "#ef476f", "#e9ff70", "#f4a261", "#cdb4db", "#ff99c8", "#fb8500"];
-const ORDER = new Set(["military", "fortress", "traders", "commune"]);
 const h = (state, ...k) => hash01(state.seed, "blocs", ...k);
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const dist = (state, a, b) => state.grid.distance(a, b);
@@ -146,17 +146,11 @@ export const blocMembers = (state, bloc) => (bloc ? bloc.members.map((id) => fac
 export const blocMates = (state, f) => blocMembers(state, blocOf(state, f)).filter((m) => m !== f);
 export const blocColorOf = (state, f) => { const b = blocOf(state, f); return b ? b.color : null; };
 export const blocTitle = (b) => (b ? `the ${b.name}` : "");
-const isGang = (b, state) => blocMembers(state, b).every((m) => m.type === "raider");
+const isGang = (b, state) => blocMembers(state, b).every((m) => weightOf(m, "blocGang", 0) > 0); // a loose gang of raiders (GROUP_PRIORITIES blocGang)
 
 // Can these two types ever ally, and how readily (0 = never)?
-export function typesFit(a, b) {
-  const A = a.type, B = b.type;
-  if (A === "raider" || B === "raider") return A === B ? 0.8 : 0;
-  if (A === "zealot" || B === "zealot") return A === B ? 0.8 : 0;
-  if (A === "military" || B === "military") { const o = A === "military" ? B : A; return ORDER.has(o) ? 1 : o === "expansionist" ? 0.3 : 0; }
-  if (A === "expansionist" || B === "expansionist") { const o = A === "expansionist" ? B : A; return o === "expansionist" ? 0.7 : o === "fortress" || o === "traders" ? 0.35 : 0.2; }
-  return 1;
-}
+// GROUP_PRIORITIES blocFit: a's row names the types it allies with (the table is symmetric); a type not in it, never.
+export const typesFit = (a, b) => (weightOf(a, "blocFit", null) || {})[b.type] ?? 0;
 const relLine = (a, b) => Math.max(weightOf(a, "blocRel", BLOC.REL), weightOf(b, "blocRel", BLOC.REL));
 const eligible = (state, f) => f && f.alive && !f.outsider && f.bases.length && !isMember(state, f) && !f.hcNoGrow;
 
@@ -176,7 +170,7 @@ export function threatApplies(state, f, foe) {
   const c = factionById(state, foe.id);
   if (!c || !c.alive || c === f) return false;
   if (warBetween(state, f, c)) return true;
-  if (foe.why === "prey") return f.type === "raider" && nearKnown(state, f, c);
+  if (foe.why === "prey") return weightOf(f, "blocHunts", 0) > 0 && nearKnown(state, f, c);
   return relation(state, f, c) <= BLOC.FOE_REL && nearKnown(state, f, c);
 }
 // The threat two groups share, or null: { kind: "group" | "player" | "hive", id, why }.
@@ -199,8 +193,8 @@ export function sharedThreat(state, a, b) {
     if (-ra - rb > bw) { bw = -ra - rb; best = c; }
   }
   if (best) return { kind: "group", id: best.id, why: "foe" };
-  if (a.type === "raider" && b.type === "raider") {
-    const prey = state.factions.filter((c) => c.alive && c !== a && c !== b && !c.outsider && (c.type === "traders" || c.type === "commune" || c.type === "fortress") && nearKnown(state, a, c) && nearKnown(state, b, c))
+  if (weightOf(a, "blocHunts", 0) > 0 && weightOf(b, "blocHunts", 0) > 0) { // raider gangs: shared prey (GROUP_PRIORITIES blocHunts, blocPrey)
+    const prey = state.factions.filter((c) => c.alive && c !== a && c !== b && !c.outsider && weightOf(c, "blocPrey", 0) > 0 && nearKnown(state, a, c) && nearKnown(state, b, c))
       .sort((x, y) => x.pop - y.pop || x.id - y.id)[0];
     if (prey) return { kind: "group", id: prey.id, why: "prey" };
   }
@@ -225,14 +219,13 @@ export function foeText(state, foe) {
 }
 
 // ---------- names ----------
-const WORD = { raider: "Syndicate", zealot: "Covenant", military: "Alliance", expansionist: "Compact", fortress: "League", traders: "Concord", commune: "Accord" };
 const PLACES = ["Northern", "Southern", "Eastern", "Western", "Central", "Upland", "Lowland", "River", "Highway", "Prairie", "Ridge", "Lakeside"];
 function blocName(state, founder, foe) {
   const t = state.tiles[founder.bases[0]];
   const W = state.grid.width || 1, H = state.grid.height || 1;
   const dx = t ? t.x / W - 0.5 : 0, dy = t ? t.y / H - 0.5 : 0;
   const first = dy < -0.17 ? "Northern" : dy > 0.17 ? "Southern" : dx < -0.17 ? "Western" : dx > 0.17 ? "Eastern" : "Central";
-  const word = foe && foe.kind === "player" && foe.why === "coalition" ? "Front" : WORD[founder.type] || "League";
+  const word = foe && foe.kind === "player" && foe.why === "coalition" ? "Front" : weightOf(founder, "blocWord", "League"); // GROUP_PRIORITIES blocWord
   const d = ensureBlocs(state);
   const used = new Set([...d.blocs, ...d.blocEnded].map((b) => b.name));
   for (const p of [first, ...PLACES]) if (!used.has(`${p} ${word}`)) return `${p} ${word}`;
@@ -372,7 +365,7 @@ export function voteScore(state, bloc, m, invitee, side = { kind: "player" }) {
   const parts = {};
   if (side.kind === "player") {
     parts.goodwill = (m.goodwill - VOTE.GW_MID) / VOTE.GW_SCALE;
-    parts.type = VOTE.TYPE[m.type] ?? 0;
+    parts.type = weightOf(m, "blocVote", 0);
     if (m.pact) parts.pact = VOTE.PACT;
     const cs = allianceMembers(state).filter((c) => c !== m);
     if (cs.length) parts.coalition = cap1(avg(cs.map((c) => relation(state, m, c))) / VOTE.TIE_SCALE);

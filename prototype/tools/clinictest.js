@@ -16,7 +16,7 @@ import { ensureSkills, CAP_WARD, CAP_STUDY, USE, EARNED_PERKS, PERKS, hasPerk, x
 import { addCondition } from "../src/sim/health.js";
 import { governRoles, setAutopilot } from "../src/sim/autopilot.js";
 import { WORK_TYPES, workState, planBase } from "../src/sim/work.js";
-import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED } from "../src/sim/groupcare.js";
+import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED, weightOf } from "../src/sim/groupcare.js";
 import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -244,13 +244,13 @@ console.log("AI groups");
   f.pop = Math.max(f.pop, 30);
   delete f.med;
   const m = medOf(f);
-  const start = GROUP_MED.start[f.type] || GROUP_MED.dflt;
+  const start = weightOf(f, "medStart", GROUP_MED.dflt);
   check(m.doc === start[0] && m.staff === start[1], `starts by type: doctor ${m.doc}, medics ${m.staff}`);
   const t0 = groupHospitalTier(st, f);
   f.works = f.works || {};
   f.works[f.bases[0]] = { ...(f.works[f.bases[0]] || {}), beds: 1, bench: 1, sickbay: 3 }; // a clinic built
   const tier = groupHospitalTier(st, f);
-  check(tier === (st.groupWorks ? 3 : GROUP_MED.builtTier[f.type]), `sick bay tier ${t0} → ${tier} with a clinic built`);
+  check(tier === (st.groupWorks ? 3 : weightOf(f, "sickbayBuilt", GROUP_MED.builtDflt)), `sick bay tier ${t0} → ${tier} with a clinic built`);
   f.wounded = 6;
   const before = healRate(f).rate;
   let xp = 0;

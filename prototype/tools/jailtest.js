@@ -19,7 +19,7 @@ import { housingAI, setAutopilot } from "../src/sim/autopilot.js";
 import { takeCaptive, captivesOf, allCaptives, CAPTIVE_TOOL } from "../src/sim/conflicts.js";
 import {
   GROUP_JAIL, groupJailTier, groupJailCap, groupRoom, groupHeld, groupCapture, groupJailsHour, groupJailsDaily, captiveEscape,
-  groupLabour, jailWork, jailText, groupPrisoners, groupJailGuards,
+  groupLabour, jailWork, jailText, groupPrisoners, groupJailGuards, jailOf,
 } from "../src/sim/groupjails.js";
 import { nextWork, groupWorksDaily } from "../src/sim/groupworks.js";
 import { workState, assignRole, planBase, schedAt, roleOf, taskWhy, toManual } from "../src/sim/work.js";
@@ -387,7 +387,7 @@ const noDice = (fn) => {
   for (const t of g.bases) Object.assign((g.works || (g.works = {}))[t] || (g.works[t] = {}), { water: 9, farms: 9, beds: 9, walls: 9 });
   g.stock.scrap = 100; g.stock.parts = 10; g.job = null;
   const nw0 = nextWork(st, g);
-  check(!nw0 || nw0.type !== "jail" || GROUP_JAIL.EARLY.includes(g.type), `${g.name} (${g.type}) holding nobody: ${nw0 ? nw0.type : "nothing"} next`);
+  check(!nw0 || nw0.type !== "jail" || jailOf(g).early, `${g.name} (${g.type}) holding nobody: ${nw0 ? nw0.type : "nothing"} next`);
   groupPrisoners(g).push({ id: newId(), from: st.factions.find((x) => x !== g).id, power: 3, since: day(st) });
   const nw = nextWork(st, g);
   check(nw && nw.type === "jail", `holding a prisoner: a jail next (${nw && nw.why})`);
