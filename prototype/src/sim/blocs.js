@@ -42,7 +42,30 @@
 //   turning on a weaker gang-mate (GANG_BETRAY a day, ×4 when short of food: it raids them): −40 relations with the
 //   victim, −15 with the others, out of the bloc.
 // - Interests diverge: no shared threat for IDLE days (the danger is past), or a member's bases drift beyond RANGE + 6
-//   of every other member's; a member that joins your coalition leaves. Under two members the bloc is gone.
+//   of every other member's; a member that joins your coalition alone leaves. Under two members the bloc is gone.
+// The bloc votes (user, 2026-10-08: "Let a whole bloc join together. Give each the option to agree, decline or to
+// break off; most agrees win"). An invitation to one member into your coalition (yours from the Groups tab, the
+// radio, the coalition tab's "Invite the whole bloc", the governor's, or a member's own ask) goes to the bloc:
+// - Each member scores it (voteScore: a fixed sum, not dice, bar a small hashed nudge VOTE.JITTER): its goodwill to
+//   you around VOTE.GW_MID, its type's lean (VOTE.TYPE: communes and traders for, raiders and zealots against), a pact
+//   with you, its ties to the invited member (relations over the bloc's line) and to the coalition's members, the
+//   war state (a foe the bloc shares with you: for; a coalition member as the bloc's foe: against; at war and wanting
+//   friends: for), and the invited member's own wish (VOTE.ASKED). AGREE or more: agree; BREAK or less: break off;
+//   between: decline. A member that cannot sit in the coalition (hostile to you, at war with you or with a member,
+//   goodwill under ALLIANCE.LEAVE_GOODWILL + VOTE.MARGIN) breaks off.
+// - Agrees more than half of the members: the bloc joins together. Those that agreed or declined go in (the decliners
+//   bow to the majority; any without a pact sign a non-aggression pact as they join); those that broke off leave the
+//   bloc and stay out (two or more of them keep the bloc and its name between them, cold to you: no longer at your
+//   side). The bloc itself is folded into the coalition (its record says so).
+// - Not carried: the invited member goes in alone only when it voted agree (it leaves the bloc as before: under two
+//   members left the bloc is gone); otherwise it declines and nothing changes (and the bloc hears no other invitation
+//   for VOTE.GAP days: blocVoteWait). Nobody breaks off from a vote lost.
+// - Shown: a log line naming each member's vote, the coalition's record, the radio news; the Groups tab and the
+//   coalition tab preview the vote before you send the invitation (previewVote: the same score on the same day).
+// - AI blocs (parity): two blocs facing the same foe, with every pair of types able to ally, nearest bases within
+//   RANGE and room for both under MAX, merge BLOC.MERGE a day × the ally weights: the smaller bloc votes the same way
+//   (its relations with the larger bloc's members stand in for goodwill to you, VOTE.MERGE_MID), and the same rule
+//   carries it (agree and decline members go over, break-off members stay or scatter).
 // You and the blocs:
 // - A bloc whose foe is hostile to you (or a hive), whose members all know you, none hostile and on average
 //   INVITE_GW+ goodwill, asks you to stand with it (INVITE a day, every INVITE_GAP days at most, one of them in radio
@@ -59,7 +82,7 @@ import { attitude, changeGoodwill, strength } from "./factions.js";
 import { ensureDiplo, relation, changeRelation, warsOf, enemyIn, warBetween, news, knownAs, baseDistance, allyWar, DIPLO } from "./diplomacy.js";
 import { weightOf, woundedOf } from "./groupcare.js";
 import { knowsOf, knownBase } from "./groupworld.js";
-import { isMember, allianceMembers, controlledLand } from "./alliance.js";
+import { isMember, allianceMembers, controlledLand, admitToAlliance, ensureAlliance, ALLIANCE } from "./alliance.js";
 import { canRadioGroup } from "./radio.js";
 import { spawnAiParty } from "./parties.js";
 import { atWarWithYou, pwarOf } from "./playerwars.js";
@@ -72,6 +95,21 @@ export const BLOC = {
   WAR_JOIN: 0.6, WAR_JOIN_ATT: 0.35, SNUB: -8, GANG_BETRAY: 0.004, BETRAY_VICTIM: -40, BETRAY_OTHERS: -15,
   PLAYER_FOE_GW: -30, COALITION_LAND: 0.3, INVITE_GW: 35, INVITE: 0.03, INVITE_GAP: 60, LEAVE_GW: -8, ACCEPT_GW: 5, FOE_GW: -10,
   PLAYER_HELP: 0.12, PLAYER_RANGE: 20, STRUCK_GW: -15, BLOW_SHARE: 0.33, ASSAULT_RANGE: 10, ASSAULT_MAX: 4,
+  MERGE: 0.02, // two AI blocs facing the same foe: the smaller one votes on merging into the larger, this often a day
+};
+// The bloc's vote on joining your coalition (or another bloc): see the header.
+export const VOTE = {
+  AGREE: 0.3, BREAK: -0.8, // the score lines: agree at AGREE or more, break off at BREAK or less
+  GW_MID: 45, GW_SCALE: 20, // goodwill to you: (goodwill − GW_MID) / GW_SCALE
+  TYPE: { commune: 0.5, traders: 0.5, fortress: 0.2, military: 0, expansionist: -0.4, zealot: -0.8, raider: -1 },
+  PACT: 0.4, // a pact with you already
+  TIE_SCALE: 60, TIE_CAP: 1, // relations with the invited member over the bloc's line, and with the coalition's members, / TIE_SCALE (±TIE_CAP)
+  ASKED: 0.6, // the invited member itself (it met your terms)
+  COMMON: 0.3, FOE_IN: -1.5, AT_WAR: 0.2, // the bloc's foe is yours too; the bloc's foe is in the coalition; at war, it wants friends
+  JITTER: 0.4, // a hashed nudge (−0.2 to +0.2): the same on the same day
+  MARGIN: 5, // goodwill over the coalition's leaving line it needs to sit there at all
+  MERGE_MID: 20, // AI merge: average relations with the larger bloc's members around this stand in for goodwill
+  GAP: 20, // days after a vote that kept everyone out before the bloc hears another invitation (alliance.js inviteProblem)
 };
 // Not blue (yours) and not too close to the groups' own colours.
 export const BLOC_COLORS = ["#ffd166", "#06d6a0", "#ef476f", "#e9ff70", "#f4a261", "#cdb4db", "#ff99c8", "#fb8500"];
@@ -315,6 +353,148 @@ export function blocsDaily(state) {
     inviteYou(state, bloc, today);
   }
   formAndJoin(state, today);
+  mergeBlocs(state, today);
+}
+
+// ---------- the vote: joining your coalition (or a larger bloc) together ----------
+const cap1 = (v) => Math.max(-VOTE.TIE_CAP, Math.min(VOTE.TIE_CAP, v));
+const avg = (xs) => (xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : 0);
+// Why this member cannot go into your coalition at all ("" = it can): it breaks off.
+function coalitionBar(state, m) {
+  if (attitude(m) === "Hostile") return "hostile to you";
+  if (atWarWithYou(state, m)) return "at war with you";
+  if (allianceMembers(state).some((c) => c !== m && warBetween(state, c, m))) return "at war with a member";
+  if (m.goodwill < ALLIANCE.LEAVE_GOODWILL + VOTE.MARGIN) return "too little goodwill";
+  return "";
+}
+// One member's score (see the header). side: { kind: "player" } or { kind: "bloc", bloc } (an AI merge).
+export function voteScore(state, bloc, m, invitee, side = { kind: "player" }) {
+  const parts = {};
+  if (side.kind === "player") {
+    parts.goodwill = (m.goodwill - VOTE.GW_MID) / VOTE.GW_SCALE;
+    parts.type = VOTE.TYPE[m.type] ?? 0;
+    if (m.pact) parts.pact = VOTE.PACT;
+    const cs = allianceMembers(state).filter((c) => c !== m);
+    if (cs.length) parts.coalition = cap1(avg(cs.map((c) => relation(state, m, c))) / VOTE.TIE_SCALE);
+    const foe = bloc.foe;
+    if (foe && foe.kind === "group") {
+      const c = factionById(state, foe.id);
+      if (c && isMember(state, c)) parts.war = VOTE.FOE_IN;
+      else if (c && c.alive && (attitude(c) === "Hostile" || atWarWithYou(state, c))) parts.war = VOTE.COMMON;
+    } else if (foe && foe.kind === "hive") parts.war = VOTE.COMMON;
+    if (parts.war == null && warsOf(state, m).some((w) => { const e = factionById(state, enemyIn(w, m)); return e && !isMember(state, e); })) parts.war = VOTE.AT_WAR;
+  } else {
+    const os = blocMembers(state, side.bloc);
+    parts.goodwill = (avg(os.map((o) => relation(state, m, o))) - VOTE.MERGE_MID) / VOTE.GW_SCALE;
+    parts.type = Math.min(...os.map((o) => typesFit(m, o))) - 0.6;
+    if (side.bloc.foe && threatApplies(state, m, side.bloc.foe)) parts.war = VOTE.COMMON;
+  }
+  if (m === invitee) parts.asked = VOTE.ASKED;
+  else if (invitee) parts.tie = cap1((relation(state, m, invitee) - relLine(m, invitee)) / VOTE.TIE_SCALE);
+  parts.nudge = (h(state, bloc.name, m.name, side.kind === "bloc" ? side.bloc.name : "you", day(state), "vote") - 0.5) * VOTE.JITTER;
+  return { score: Object.values(parts).reduce((a, x) => a + x, 0), parts };
+}
+// The vote, without acting on it: { votes: [{ f, vote, score, why }], agrees, carries, invitee }.
+export function previewVote(state, bloc, invitee = null, side = { kind: "player" }) {
+  const votes = blocMembers(state, bloc).map((m) => {
+    const bar = side.kind === "player" ? coalitionBar(state, m) : side.bloc && blocMembers(state, side.bloc).some((o) => !typesFit(m, o) || warBetween(state, m, o)) ? "it cannot ally with them" : "";
+    if (bar) return { f: m, vote: "break", score: -9, why: bar };
+    const { score } = voteScore(state, bloc, m, invitee, side);
+    return { f: m, vote: score >= VOTE.AGREE ? "agree" : score <= VOTE.BREAK ? "break" : "decline", score, why: "" };
+  });
+  const agrees = votes.filter((v) => v.vote === "agree").length;
+  return { votes, agrees, carries: agrees * 2 > votes.length, invitee };
+}
+const VOTE_WORD = { agree: "agreed", decline: "declined", break: "broke off" };
+export const voteText = (state, v) => v.votes.map((x) => `${knownAs(state, x.f)} ${VOTE_WORD[x.vote]}${x.why ? ` (${x.why})` : ""}`).join(", ");
+// alliance.js inviteToAlliance: an invitation to a member of this bloc. Acts on the vote; returns the message.
+export function blocJoinsCoalition(state, bloc, invitee) {
+  const d = ensureBlocs(state);
+  const A = ensureAlliance(state);
+  const v = previewVote(state, bloc, invitee);
+  const title = cap(blocTitle(bloc));
+  const tally = voteText(state, v);
+  const coal = A.name.replace(/^The /, "the ");
+  d.blocStats.votes = (d.blocStats.votes || 0) + 1;
+  bloc.votes = (bloc.votes || 0) + 1;
+  if (v.carries) {
+    const going = v.votes.filter((x) => x.vote !== "break").map((x) => x.f);
+    const staying = v.votes.filter((x) => x.vote === "break").map((x) => x.f);
+    d.blocStats.wholeJoins = (d.blocStats.wholeJoins || 0) + 1;
+    bloc.members = staying.map((m) => m.id);
+    bloc.player = null; // those who broke off are not at your side
+    for (const m of going) {
+      if (!m.pact) m.pact = "nonaggression"; // a coalition member needs a pact with you (alliance.js allianceDaily)
+      admitToAlliance(state, m, m === invitee ? "they joined your coalition" : `they joined your coalition with ${blocTitle(bloc)}`, true);
+    }
+    const names = going.map((m) => m.name).join(", ");
+    const text = `${title} voted on your invitation (${tally}): it joins ${coal} together: ${names}.${staying.length ? ` ${staying.map((m) => m.name).join(" and ")} broke away and stay${staying.length === 1 ? "s" : ""} out.` : ""}`;
+    A.history.unshift({ day: day(state), text: `${title} joined together (${names}).` });
+    log(state, text, "good");
+    if (staying.length < 2) dissolve(state, bloc, `its members joined ${coal}`, true);
+    else blocNews(state, `${cap(staying.map((m) => knownAs(state, m)).join(" and "))} broke away when the rest of ${blocTitle(bloc)} joined ${coal}.`, "info", staying);
+    blocNews(state, `${title} joined ${coal} together.`, "info", going);
+    return text;
+  }
+  const mine = v.votes.find((x) => x.f === invitee);
+  if (mine && mine.vote === "agree") {
+    d.blocStats.aloneJoins = (d.blocStats.aloneJoins || 0) + 1;
+    leaveBloc(state, invitee, "it joined your coalition alone");
+    admitToAlliance(state, invitee, "they joined your coalition", true);
+    const text = `${title} voted on your invitation (${tally}): the bloc stays out, but ${invitee.name} joins ${coal} alone and leaves ${blocTitle(bloc)}.`;
+    A.history.unshift({ day: day(state), text: `${invitee.name} joined alone; ${blocTitle(bloc)} voted to stay out.` });
+    log(state, text, "good");
+    return text;
+  }
+  d.blocStats.voteFails = (d.blocStats.voteFails || 0) + 1;
+  bloc.voteFailed = day(state);
+  const text = `${title} voted on your invitation (${tally}): the bloc stays out, and ${invitee.name} with it.`;
+  A.history.unshift({ day: day(state), text: `${blocTitle(bloc)} voted against joining (${invitee.name} invited).` });
+  log(state, text, "info");
+  return text;
+}
+// Days before a bloc that voted everyone out hears another invitation (0: it would vote now).
+export function blocVoteWait(state, f) {
+  const b = state.noBlocs ? null : blocOf(state, f);
+  return b && b.voteFailed != null ? Math.max(0, b.voteFailed + VOTE.GAP - day(state)) : 0;
+}
+// A member to carry the invitation of a whole bloc: one that meets your terms (the best goodwill), or null.
+export function blocCarrier(state, bloc, inviteProblem) {
+  return blocMembers(state, bloc).filter((m) => !isMember(state, m) && !inviteProblem(state, m)).sort((a, b) => b.goodwill - a.goodwill || a.id - b.id)[0] || null;
+}
+// AI blocs merging (parity with a bloc joining your coalition together): see the header.
+function mergeBlocs(state, today) {
+  const d = ensureBlocs(state);
+  for (const big of [...d.blocs]) for (const small of [...d.blocs]) {
+    if (big === small || !d.blocs.includes(big) || !d.blocs.includes(small)) continue;
+    const B = blocMembers(state, big), S = blocMembers(state, small);
+    if (S.length > B.length || (S.length === B.length && small.id < big.id) || B.length + S.length > BLOC.MAX) continue;
+    if (!big.foe || !small.foe || big.foe.kind !== small.foe.kind || big.foe.id !== small.foe.id) continue;
+    if (S.some((m) => B.some((o) => !typesFit(m, o) || warBetween(state, m, o)))) continue;
+    if (!S.some((m) => B.some((o) => baseDistance(state, m, o) <= BLOC.RANGE))) continue;
+    if (h(state, big.name, small.name, today, "merge") >= BLOC.MERGE * Math.sqrt(avg(S.map((m) => weightOf(m, "ally"))) * avg(B.map((m) => weightOf(m, "ally"))))) continue;
+    mergeVote(state, big, small);
+  }
+}
+// The smaller bloc votes on going over to the larger: { vote, moved }.
+export function mergeVote(state, big, small) {
+  const d = ensureBlocs(state);
+  const v = previewVote(state, small, null, { kind: "bloc", bloc: big });
+  d.blocStats.votes = (d.blocStats.votes || 0) + 1;
+  const fs = [...blocMembers(state, small), ...blocMembers(state, big)];
+  if (!v.carries) {
+    blocNews(state, `${cap(blocTitle(small))} voted against merging with ${blocTitle(big)} (${voteText(state, v)}).`, "info", fs);
+    return { vote: v, moved: [] };
+  }
+  const moved = v.votes.filter((x) => x.vote !== "break").map((x) => x.f);
+  const staying = v.votes.filter((x) => x.vote === "break").map((x) => x.f);
+  for (const m of moved) for (const o of blocMembers(state, big)) changeRelation(state, m, o, 5);
+  small.members = staying.map((m) => m.id);
+  big.members.push(...moved.map((m) => m.id));
+  d.blocStats.merges = (d.blocStats.merges || 0) + 1;
+  blocNews(state, `${cap(blocTitle(small))} merged into ${blocTitle(big)} (${voteText(state, v)}).`, "info", fs);
+  if (staying.length < 2) dissolve(state, small, `its members went over to ${blocTitle(big)}`, true);
+  return { vote: v, moved };
 }
 
 function formAndJoin(state, today) {

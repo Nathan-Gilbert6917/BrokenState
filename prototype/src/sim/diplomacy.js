@@ -72,6 +72,7 @@ import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group'
 import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strife (splinter bands)
 import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
 import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
+import { knownBase } from "./groupworld.js"; // a war raid on your base goes only for one they know
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -367,7 +368,7 @@ export function warRaid(state, w, f, o) {
   if (origin == null) return null;
   const targets = o.bases.map((t) => ({ kind: "faction", factionId: o.id, tile: t, w: 1 / (1 + g.distance(origin, t) / 8) }));
   // You fight beside one side: its enemy may come for your bases too.
-  if (w.playerSide === o.id && raidPaceOpen(state)) for (const b of state.bases) if (g.distance(origin, b.tile) <= 20) targets.push({ kind: "player", baseId: b.id, tile: b.tile, w: 0.6 / (1 + g.distance(origin, b.tile) / 8) });
+  if (w.playerSide === o.id && raidPaceOpen(state)) for (const b of state.bases) if (g.distance(origin, b.tile) <= 20 && knownBase(state, f, b.tile)) targets.push({ kind: "player", baseId: b.id, tile: b.tile, w: 0.6 / (1 + g.distance(origin, b.tile) / 8) });
   if (!targets.length) return null;
   const tgt = rng.weighted(targets, (t) => t.w);
   const mult = w.playerSide === f.id ? 1.25 : 1;
