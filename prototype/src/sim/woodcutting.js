@@ -38,7 +38,7 @@
 // 30th of this when a unit was a 3 kg bundle): stored at bases with no limit, carried by teams, traded.
 import { log, skill, atBase } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
-import { gainXp } from "./skills.js";
+import { gainXp, USE } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
 import { workFactor, addCondition } from "./health.js";
@@ -302,8 +302,8 @@ export function woodDaily(state, base) {
     takeWood(state, tile, amount);
     if (c.tool) got.tools++;
     base.woodNoise += c.tool ? WOOD.noise.axe : WOOD.noise.hands;
-    gainXp(state, c.s, "farming", 3);
-    gainXp(state, c.s, "mechanics", 1);
+    gainXp(state, c.s, "farming", USE.wood); // skills.js
+    gainXp(state, c.s, "mechanics", USE.woodMech);
   }
   base.woodNoise = r1(base.woodNoise);
   base.stock.wood = (base.stock.wood || 0) + got.wood;

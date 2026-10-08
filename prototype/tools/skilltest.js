@@ -154,6 +154,17 @@ console.log("XP per action");
   const ppl = Object.keys(roles).map((r) => person(w, {}, r));
   S.skillsDaily(w);
   check(ppl.every((s) => (s.xp[roles[s.role]] || 0) > 0), "a day on Farm, Guard, Scavenge or Medic gives XP in that role's skill");
+  // Balance pass 2026-10-07: an hour on guard, the camp's talker, an outpost's head.
+  const g = ppl.find((s) => s.role === "guard");
+  let x1 = xpOf(g, "shooting");
+  S.skillsHour(w);
+  check(Math.abs(xpOf(g, "shooting") - x1 - S.USE.watchHour) < 1e-9, `an hour on guard at a base gives ${S.USE.watchHour} Shooting XP (the night watch too)`);
+  const talkers = atBase(w, hub(w).id).filter((s) => !s.inBed);
+  const bestTalk = [...talkers].sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0];
+  nextDay(w);
+  x1 = xpOf(bestTalk, "speech");
+  S.skillsDaily(w);
+  check(talkers.length >= 3 && xpOf(bestTalk, "speech") - x1 >= S.USE.campTalk - 1e-9, `the best Speech at a base of 3 or more gains ${S.USE.campTalk} Speech a day (the camp's talker)`);
   // Tactical battle: shots and hits counted, given as Shooting XP when it ends.
   const bw = world(SEED + 3);
   const bh = hub(bw);
@@ -179,6 +190,9 @@ console.log("Daily caps");
   check(r1(got) === S.CAP_USE, `use XP per skill per day is capped at ${S.CAP_USE} (got ${r1(got)} of 150)`);
   check(S.gainXp(st, s, "farming", 100, "study") === S.CAP_STUDY, `study XP (teaching, books) has its own cap of ${S.CAP_STUDY}`);
   check(S.gainXp(st, s, "shooting", 5) === 5, "the cap is per skill");
+  let fought = 0;
+  for (let i = 0; i < 20; i++) fought += S.gainXp(st, s, "shooting", 4, "fight");
+  check(r1(fought) === S.CAP_FIGHT && S.gainXp(st, s, "shooting", 2) === 2, `fighting XP has its own cap of ${S.CAP_FIGHT}, apart from the use cap (got ${r1(fought)} of 80)`);
   nextDay(st);
   check(S.gainXp(st, s, "farming", 5) === 5, "the caps reset the next day");
   check(S.gainXp(st, s, "nonsense", 5) === 0 && S.gainXp(st, s, "farming", NaN) === 0, "unknown skills and NaN give nothing");
