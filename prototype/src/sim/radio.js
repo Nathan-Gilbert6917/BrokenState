@@ -607,14 +607,17 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
     const deals = [];
     for (const f of state.factions) {
       if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
-      if (base && tradeBase(state, f) !== base) continue; // their caravan would go to another base
+      const tb = tradeBase(state, f);
+      if (base && tb !== base) continue; // their caravan would go to another base
+      if (!tb || deliveryRefusal(state, f, tb)) continue; // they will not bring it (radiotrade.js)
+      const fee = deliveryFee(state, f, tb); // what they charge to bring it
       for (const pay of plenty) {
         if (pay === want) continue;
         const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value));
+        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee)));
         if (qty < 2) continue;
-        const cost = qty * buyPrice(state, f, want, speech, qty);
+        const cost = qty * buyPrice(state, f, want, speech, qty) + fee;
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
         if (!Number.isFinite(payQty)) continue;
         deals.push({ f, pay, qty, payQty, per: (payQty * SUPPLIES[pay].value * (needs[pay] + 0.2)) / qty });
