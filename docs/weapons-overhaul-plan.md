@@ -1044,6 +1044,15 @@ They live in `item.mods` on the helmet, the same field the gunmods branch uses. 
   - Save round-trip with helmet mods.
   - loottest tags pass.
 
+### 18.8 As built (branch `w2-helmets`, wave 2 agent E2)
+- **Files:** `data-helmets.js` (HELMET_GEAR, merged by one line in data.js), `helmets.js` (HELMETS, HELMET_ATTACH, FACE, fit/strip on items and at inventory locations, faceOf/visorAim/toggleVisor, HEAD_KIT/kitHeadgear/issueEars/dropHeadgear/starterHeadgear, HEAD_FINDS/AREA_HEAD/WARE_HEAD and their rollers), `hearing.js` (HEAR, HEARING, bangOf, deafen, tickEars, hearRange, hearMult, heardGhosts, earHold, dazedAim, linkAim, linkEscape, fitHeadgear, hearSetup, settleEars). Test: `tools/heartest.js`.
+- **Condition:** item.dur / durMax (section 25). Helmets keep A2's dmax (milhelmet 30, riot 25, bike 20); hardhat 15, highcut 45 (AC 4), ballvisor 25 (AC 3, ceramic: cracks), riotvisor 20 (AC 1).
+- **Face zone:** armour.js armourHit rolls the face (35%) only when the target wears a helmet (no extra dice otherwise). A hard hat (GEAR `blunt`) never stops a bullet.
+- **Ears:** u.ears { key, cut, hear, elec, link }; u.earCut = min(0.4, cut / 10) for flashbangs; enemies by kit (HEAD_KIT) or from their group's arsenal (ear items are arsenalWorthy; issued in armFromArsenal). A seeded arsenal from an older save gets its headgear once (`A.headgear`).
+- **Hooks:** combat.js fire / suppress / doubletap (deafen after the noise), startPlayerTurn (heardGhosts, then tickEars), endPlayerTurn (tickEars for the enemy), shotOdds (visorAim + linkAim − dazedAim), sightRange (u.vsight), escapeOdds (team headset), combatAct "visor" (free, Shift+Y), enemyGhosts (heard flag), wearFielded (settleEars); stealth.js (helmet NVG, hearMult in the behind arc, hearSetup); middead.js scream (earHold, a bang of NM.NOISE); throwables.js (frag/pipe bomb bang 5, flashbang bang 5; flashCut ignores a raised visor); lights.js (helmet light = flashlight); inventory.js enemyBody (dropHeadgear, ear items on the body); loot.js (head tables chained after the parts tables); repair.js (noRepair, recharge: a battery swap, no max lost); deadsoldiers.js (commset 4% on a dead soldier, BODY_EXTRA).
+- **For the launcher agent:** `import { deafen, HEAR } from "./hearing.js"` and call `deafen(b, x, y, HEAR.BLAST.he40 | HEAR.BLAST.rocket)` at a launcher blast (and `deafen(b, a.x, a.y, bang, a)` at the launch).
+- **Permanent hearing loss:** behind `HEARING.PERMANENT = false` (u.hearLost → s.hearing in settleEars; hearRange reads it). No status icon yet.
+
 ---
 
 ## 19. Lootable gun safes and gun cases

@@ -6,6 +6,7 @@ import { GUN_GEAR, GEAR_PATCH } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
+import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
@@ -573,6 +574,7 @@ Object.assign(GEAR, {
 Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
+Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 
 // ---------- durability (crafting.js itemDur / wear) ----------
 // Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;

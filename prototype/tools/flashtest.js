@@ -53,7 +53,7 @@ function openBattle(st, enemy = { kind: "raiders", count: 4, power: 3 }, n = 3) 
   b.phase = "player";
   b.fires = []; b.smoke = []; b.lures = [];
   let i = 0;
-  for (const u of b.units) { u.x = u.side === "player" ? 1 : 30 - (i % 4); u.y = u.side === "player" ? 1 + 2 * (u.id % 6) : 2 + 2 * (i++ >> 2); u.aware = true; u.face = [0, 0]; delete u.stun; u.ow = false; }
+  for (const u of b.units) { u.x = u.side === "player" ? 1 : 30 - (i % 4); u.y = u.side === "player" ? 1 + 2 * (u.id % 6) : 2 + 2 * (i++ >> 2); u.aware = true; u.face = [0, 0]; delete u.stun; u.ow = false; u.earCut = 0; u.ears = null; u.visor = false; } // no kit ear protection (helmets.js HEAD_KIT): sections below give it on purpose
   return b;
 }
 const P = (b) => b.units.filter((u) => u.side === "player");

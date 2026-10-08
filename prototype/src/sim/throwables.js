@@ -41,6 +41,7 @@ import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
+import { deafen, HEAR } from "./hearing.js"; // the bang: deafened near a blast
 
 export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4, struct: [40, 60] };
 export const FRAG = { r: 1.5, dmg: [20, 30], wake: 12, noise: 4, struct: [30, 45] };
@@ -156,6 +157,7 @@ export function landEffect(b, u, T, x, y) {
     const B = T.fx === "frag" ? FRAG : BLAST;
     const parts = hurtAll(b, u, caught(b, x, y, B.r), B.dmg, "BOOM");
     b.noise = (b.noise || 0) + B.noise;
+    deafen(b, x, y, HEAR.BLAST[T.fx] || HEAR.BLAST.frag); // hearing.js: the bang deafens those near it
     alertNear(b, x, y, B.wake, "The blast wakes everything nearby.");
     const torn = wreck(b, x, y, B.r, B.struct, u);
     return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn + vehicleBlast(b, x, y, B.r, B.dmg, T.fx); // combat.js: the team's vehicle and its riders (plating, glass)
@@ -218,7 +220,7 @@ export function flashCells(b, x, y) {
 }
 // The share of a flashbang a unit shrugs off: ear protection (u.earCut, when it has it) and a visor (GEAR visor).
 export function flashCut(u) {
-  const visor = !!u.visor || (u.fielded || []).some(([, it]) => it && GEAR[it.key] && GEAR[it.key].visor);
+  const visor = !u.visorUp && (!!u.visor || (u.fielded || []).some(([, it]) => it && GEAR[it.key] && GEAR[it.key].visor)); // visorUp: raised (helmets.js)
   return Math.min(FLASH.cutMax, Math.max(0, Number(u.earCut) || 0) + (visor ? FLASH.visor : 0));
 }
 const facingAway = (u, x, y) => { const f = u.face || [0, 0]; return !!(f[0] || f[1]) && (x - u.x) * f[0] + (y - u.y) * f[1] < 0; };
@@ -264,6 +266,7 @@ function flashBurst(b, by, x, y) {
     if (s) hit.push(`${t.name} ${stunLabel(s)}`);
   }
   b.noise = (b.noise || 0) + FLASH.noise;
+  deafen(b, x, y, HEAR.BLAST.flash); // hearing.js: the bang rings in the ears too
   // The people within earshot wake (the dead turn to the noise instead: the lure, stealth.js throwAt).
   const pods = new Set();
   for (const e of b.units) if (e.side === "enemy" && e.kind === "human" && !e.aware && active(e) && dist(e.x, e.y, x, y) <= FLASH.wake) pods.add(e.pod);

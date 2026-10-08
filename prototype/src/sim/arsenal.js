@@ -44,7 +44,8 @@ import { enemyMods, fitMod, gunMods, modLabel, fittedSuppressor, takesMods, fitt
 import { hash01 } from "./skills.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds: one abstract count (f.stock.ammo) and any rounds by key it holds
 import { enemyLoad } from "./ammo.js"; // the round a unit armed from it loads (data-ammo.js KIT_AMMO by the group's kit)
-import { syncModes } from "./gunfire.js"; // the fire modes of the gun it is given
+import { syncModes } from "./gunfire.js";
+import { isEarKey, issueEars, starterHeadgear } from "./helmets.js"; // helmets and ear protection by kit // the fire modes of the gun it is given
 import { enemyPieces } from "./armour.js"; // its armour pieces: the arsenal's items themselves (their wear)
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
@@ -103,7 +104,7 @@ export const isNonlethalKey = (k) => !!(GEAR[k] && (GEAR[k].nonlethal === "taser
 // The fighters' other kit: a medic's kit (medics.js enemy medics), a flashbang or a smoke grenade (throwables.js FLASH_KIT).
 export const isMedKitKey = (k) => !!(GEAR[k] && GEAR[k].medKit);
 export const isKitThrowKey = (k) => k === "flashbang" || k === "smokegren";
-export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key)));
+export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
 const usesRounds = (k) => !!(WEAPONS[k] && WEAPONS[k].ammo > 0);
@@ -142,6 +143,7 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
   for (let i = 0; i < nT && T.length; i++) { const it = make(T[i % T.length], "t", i); if (it) out.push(it); }
   // Tasers and pepper spray (nonlethal.js NL_KIT: the share of a kit's people who carry one).
   for (const [key, share] of Object.entries(ARSENAL.NONLETHAL[kind] || {})) for (let i = 0; i < Math.round(n * share); i++) { const it = make(key, `n${key}`, i); if (it) out.push(it); }
+  out.push(...starterHeadgear(kind, n, make)); // helmets.js HEAD_KIT: helmets and ear protection by kit (hashed)
   return out;
 }
 
@@ -160,13 +162,24 @@ export function seedArsenal(state, f) {
   const A = (f.arsenal = newArsenal(f));
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
   A.seeded = A.items.length;
+  A.headgear = true; // starterKit dealt helmets and ear protection (helmets.js)
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   return A;
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
 export function ensureArsenal(state, f) {
   if (!f || f.outsider || ARSENAL_SWITCH.off) return null;
+  if (f.arsenal && !f.arsenal.headgear && f.arsenal.seeded != null) headgearOnce(state, f); // a seeded arsenal from before helmets and ear protection
   return f.arsenal || seedArsenal(state, f);
+}
+// A group's helmets and ear protection (helmets.js HEAD_KIT), once: a new arsenal is seeded with them (starterKit); an
+// older save's arsenal gets the same deal for its people now (hashed, the world's dice untouched).
+function headgearOnce(state, f) {
+  const A = f.arsenal;
+  A.headgear = true;
+  const kind = KIT_OF[f.type] || "survivors";
+  const src = kitSource(kind);
+  for (const it of starterHeadgear(kind, Math.max(0, Math.round(A.pop0 ?? f.pop ?? 0)), (key, tag, i) => (GEAR[key] ? lootItem(key, src, [state.seed, "ars", f.name, tag, i]) : null))) put(A, f, it, null);
 }
 export function addToArsenal(state, f, it, why = "found") {
   if (!arsenalWorthy(it)) return false;
@@ -345,6 +358,7 @@ export function armFromArsenal(state, b, u, n) {
   u.armorKey = body ? body.key : null;
   u.armor = 1 - ((body ? GEAR[body.key].power * qual(body) : 0) + (head ? GEAR[head.key].power * qual(head) * 0.5 : 0)) * 0.06;
   u.arsArmour = lo ? Object.values(lo.armour) : [];
+  issueEars(b, f, u); // helmets.js: the group's ear protection, and only its issued helmet
   u.mag = null; u.magW = null;
   loadMag(u);
   // The gun as it is (gunfire.js: its modes, its quality and wear for the jams; ammo.js: the round its kit loads) and

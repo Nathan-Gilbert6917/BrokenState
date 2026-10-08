@@ -65,6 +65,7 @@ export const REPAIR_KINDS = {
   steel:   { name: "steel plate",         skill: "mechanics", min: 3, in: { scrap: 4, fuel: 1 }, hours: 4 },
   camp:    { name: "camp kit",            skill: "crafting",  min: 1, in: { scrap: 1 }, hours: 1, soft: true },
   fish:    { name: "fishing gear",        skill: "crafting",  min: 0, in: { scrap: 1 }, hours: 1, soft: true },
+  recharge: { name: "battery swap",       skill: "mechanics", min: 0, in: {}, gearIn: { batteries: 1 }, hours: 0.5, soft: true }, // electronic ear protection, a team headset (data-helmets.js recharge: nothing off the maximum)
 };
 
 // The kind of repair an item takes ({ kind, def }), { refuse: why }, or null (it does not wear, or it is used up
@@ -74,6 +75,8 @@ export function repairKind(item) {
   if (!d || !d.dur || d.tabs || d.groom || d.count) return null;
   if (d.medKit || d.water || d.throw || d.use || d.cat === "gunmod" || item.key === "repairkit" || item.key === "kevlarkit") return null;
   const k = (kind) => ({ kind, def: REPAIR_KINDS[kind] });
+  if (d.noRepair) return { refuse: d.noRepair }; // a cracked ballistic visor (data-helmets.js)
+  if (d.recharge) return k("recharge"); // new batteries (data-helmets.js)
   if (ARMOUR.includes(d.slot)) {
     const mat = materialOf(item.key) || (d.makeshift ? "padding" : "hard");
     if (mat === "ceramic") return { refuse: `Ceramic plates cannot be repaired: the ${item.name} has to be replaced.` };
@@ -110,7 +113,7 @@ export function repairMath(item, skillLevel, opts = {}) {
   const max = itemDurMax(item), dur = itemDur(item);
   const gap = Math.max(0, max - dur);
   const restore = opts.kit ? Math.ceil(gap * REPAIR.KIT_RESTORE - 1e-9) : gap;
-  const loss = round1(restore * lossRate(skillLevel, opts));
+  const loss = GEAR[item.key] && GEAR[item.key].recharge ? 0 : round1(restore * lossRate(skillLevel, opts)); // a battery swap wears nothing out
   const newMax = round1(Math.max(1, max - loss));
   return { restore, oldMax: max, newMax, dur: Math.min(newMax, dur + restore), loss: round1(max - newMax) };
 }

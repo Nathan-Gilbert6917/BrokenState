@@ -22,6 +22,7 @@ import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
+import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
 import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
 import { truckLoot, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
@@ -179,7 +180,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...paper(type)]));
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...paper(type)]));
   }
   st.hour = 0;
   const com = [];
@@ -210,6 +211,10 @@ section("4. No world-dice drift (against dev 75793c5; bodies' and trucks' keys a
 // The non-lethal kit (data-nonlethal.js, loot.js, the guards' kit) is new loot on purpose: the baseline is checked without it
 // (taken out of the finds tables and the kits for this section, put back after it).
 const NL_KEYS = new Set(["taser", "tasercart", "pepper", "stunbaton"]);
+// Helmets and ear protection (helmets.js HEAD_FINDS / AREA_HEAD / WARE_HEAD, rolled on their own dice after the parts
+// tables found nothing): new loot on purpose, off for the baselines (their chances at 0), back after them.
+const headStash = [];
+for (const T of [HEAD_FINDS, AREA_HEAD, WARE_HEAD]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
 const nlStash = [];
 for (const T of [SITE_FINDS, AREA_FINDS]) for (const v of Object.values(T)) for (const k of Object.keys(v.items)) if (NL_KEYS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
 for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot", "finds"]) if (Array.isArray(K[f]) && K[f].some((k) => NL_KEYS.has(k))) { nlStash.push([K, f, K[f]]); K[f] = K[f].filter((k) => !NL_KEYS.has(k)); }
@@ -272,7 +277,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
   runs[0].lists.forEach((was, i) => {
     const now = [...runs[1].lists[i]];
     for (const k of was) { const j = now.indexOf(k); if (j < 0) onlyAdds = false; else now.splice(j, 1); }
-    if (now.some((k) => k !== "flashbang" && k !== "smokegren")) onlyAdds = false;
+    if (now.some((k) => k !== "flashbang" && k !== "smokegren" && k !== "commset")) onlyAdds = false; // commset: a dead soldier's headset (helmets.js; its own dice too)
     added += now.length;
   });
   check(onlyAdds && added > 0, `the flashbang extras (the armoured dead, Army trucks) only add (${added} flashbangs and smoke grenades): the rest and the dice are as without them`);
@@ -312,6 +317,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
 
 // ---------- 5. merchants' specialities ----------
 for (const [o, k, v] of nlStash) o[k] = v; // the non-lethal kit back
+for (const [v, p] of headStash) v.p = p; // helmets and ear protection back
 section("5. Merchants' specialities");
 {
   const w = createWorld({ seed: 99, factionCount: 8 });
@@ -320,7 +326,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items)]);
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items)]);
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : [])]);
