@@ -324,12 +324,12 @@ console.log("Estimates: hours, rations and fuel");
         const card = st.cards[k];
         st.cards.splice(k, 1);
         if (card.isOrders) continue;
-        const before = p.progress, pace = JSON.stringify([p.members, cargoLoad(p.cargo)]), during = sweeping(p);
+        const before = p.progress, pace = JSON.stringify([p.members, cargoLoad(p.cargo), carried(p, "food"), carried(p, "water")]), during = sweeping(p); // a card that takes their food or water (robbers) changes the rations too
         const ok = card.choices.filter((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled));
         const ch = ok.find((x) => /ignore|leave|move on|pass|keep|walk on|^no|decline|^turn .*away|carry on|continue/i.test(x.label)) || ok[0];
         if (ch) ch.resolve(st);
         cardsSeen++;
-        if ((p.progress < before && !during) || JSON.stringify([p.members, cargoLoad(p.cargo)]) !== pace || p.phase === "engaged") { delay += 1; if (process.env.SDEBUG) console.log(`    case ${c}: ${card.title} [${p.phase}${sweeping(p) ? " survey" : ""}] progress ${before.toFixed(2)}→${p.progress.toFixed(2)} load ${pace} → ${JSON.stringify([p.members, cargoLoad(p.cargo)])}`); }
+        if ((p.progress < before && !during) || JSON.stringify([p.members, cargoLoad(p.cargo), carried(p, "food"), carried(p, "water")]) !== pace || p.phase === "engaged") { delay += 1; if (process.env.SDEBUG) console.log(`    case ${c}: ${card.title} [${p.phase}${sweeping(p) ? " survey" : ""}] progress ${before.toFixed(2)}→${p.progress.toFixed(2)} load ${pace} → ${JSON.stringify([p.members, cargoLoad(p.cargo), carried(p, "food"), carried(p, "water")])}`); }
       }
       if (st.combat) { st.combat = null; delay += 1; }
       // The team panel's queue estimate while it surveys: the way home after it.
