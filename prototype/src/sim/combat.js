@@ -46,7 +46,7 @@ import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
-import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
+import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
@@ -1564,6 +1564,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   let aim = a.aim + (w.aim || 0) + gm.aim;
   if (d > rg.opt && !a.noFall) aim -= (d - rg.opt) * rg.fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
+  if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm); // gunmods.js: a bipod braced, a sling on the move, night sights and lights
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : coverAgainst(b, t.x, t.y, ax, ay);
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js)
@@ -2081,6 +2082,7 @@ export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
   if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
+  u.movedT = b.turn; // moved this turn (gunmods.js situationalAim: a bipod braces only a shooter who stood still)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;

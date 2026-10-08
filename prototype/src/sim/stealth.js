@@ -149,7 +149,7 @@ export function stealthSetup(state, b) {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
       setLight(u, s);
-      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")); // a thermal monocular sees in the dark like night vision (optics.js)
+      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal; // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
@@ -601,7 +601,7 @@ export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
   setLight(u, s);
-  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal"));
+  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal;
   if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   setSuppressor(u, s);

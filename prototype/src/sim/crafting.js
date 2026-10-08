@@ -5,6 +5,7 @@
 // Makeshift gear has durability (item.dur): it wears with every fight / treatment / day of work and breaks at 0.
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
 import { LIGHTS } from "./lights.js";
+import { wearMakeshiftMods } from "./gunmods.js"; // makeshift gun parts that wear by the fight
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS } from "./buildings.js";
@@ -275,6 +276,7 @@ export function wearAfterFight(state, people) {
     if (!s || !s.alive) continue;
     wearSlot(state, s, "weapon");
     for (const slot of ARMOR_SLOTS) wearSlot(state, s, slot);
+    for (const m of wearMakeshiftMods(s.gear.weapon)) log(state, `${s.name.split(" ")[0]}'s ${m.name} fell apart.`, "danger"); // gunmods.js: a scrap scope wears a fight at a time
   }
 }
 
