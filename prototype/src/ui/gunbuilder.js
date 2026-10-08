@@ -170,6 +170,7 @@ function rows(s) {
     ["close", "Up close", sgn(s.close), s.close, 1, "Aim within 2.5 tiles."],
     ["opt", "Best range", `${r1(s.opt)} tiles`, s.opt, 1, "No aim lost out to here."],
     ["fall", "Fall-off", `−${r2(s.fall)} a tile`, s.fall, -1, "Aim lost each tile beyond the best range."],
+    ...(s.reach ? [["reach", "Round's reach", `${r1(s.reach)} tiles, then −${r2(s.drop)} more a tile`, s.reach, 1, "A light round (5.56, 7.62×39, .22) drops past this, whatever the sight; no part pushes the best range past it."]] : []),
     ["dmg", "Damage", `${s.dmg[0]}–${s.dmg[1]}`, avg(s.dmg), 1, "A hit's damage before armour and cover."],
     ["cap", "Magazine", s.cap ? `${s.cap} rounds` : "—", s.cap, 1, "Rounds loaded; Reload (I) fills it in battle."],
     ["noise", "Noise", s.noise ? `${r2(s.noise)} · heard ~${Math.round(s.earshot)} tiles` : "silent", s.noise, -1, "A shot's noise (the dead and the unaware hear it; Heat in a raid)."],

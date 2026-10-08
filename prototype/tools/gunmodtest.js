@@ -110,9 +110,10 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   check(u2.weaponName === "Police carbine (red dot)", `the battle panel shows the gun with its parts (${u2.weaponName})`);
   // A 4× scope: better far off, worse up close.
   const far = (item) => { s.gear.weapon = item; const bb = baseBattle(st, { count: 1 }); clearMap(bb); const a = bb.units.find((x) => x.side === "player"), e = bb.units.find((x) => x.side === "enemy"); a.aim = 40; a.x = 1; a.y = 6; e.aware = true; e.x = 19; e.y = 6; const f = shotOdds(bb, a, e).chance; e.x = 3; const c = shotOdds(bb, a, e).chance; return { f, c }; };
-  const plain = far(newItem("carbine")), scoped = far(gunWith("carbine", "scope4x"));
-  check(scoped.f > plain.f + 10 && scoped.c === plain.c - 8, `a 4× scope: at 18 tiles ${plain.f}% → ${scoped.f}%, at 2 tiles ${plain.c}% → ${scoped.c}% (−8)`);
-  const can = far(gunWith("carbine", "riflecan"));
+  // On the lever-action (.30-30): a 5.56 carbine's round drops past 10 tiles whatever the sight (gunmods.js ROUND_REACH).
+  const plain = far(newItem("leverrifle")), scoped = far(gunWith("leverrifle", "scopemount", "scope4x"));
+  check(scoped.f >= plain.f + 10 && scoped.c === plain.c - 8, `a 4× scope: at 18 tiles ${plain.f}% → ${scoped.f}%, at 2 tiles ${plain.c}% → ${scoped.c}% (−8)`);
+  const can = far(gunWith("leverrifle", "riflecan"));
   const o1 = (() => { s.gear.weapon = newItem("carbine"); const bb = baseBattle(st, { count: 1 }); const a = bb.units.find((x) => x.side === "player"), e = bb.units.find((x) => x.side === "enemy"); return shotOdds(bb, a, e).dmg; })();
   const o2 = (() => { s.gear.weapon = gunWith("carbine", "riflecan"); const bb = baseBattle(st, { count: 1 }); const a = bb.units.find((x) => x.side === "player"), e = bb.units.find((x) => x.side === "enemy"); return shotOdds(bb, a, e).dmg; })();
   check(can.f < plain.f && o2[1] < o1[1], `a rifle suppressor costs a little: at 18 tiles ${plain.f}% → ${can.f}%, damage ${o1.join("–")} → ${o2.join("–")}`);
@@ -460,7 +461,11 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const still = shotOdds(b, u, t).chance;
   u.movedT = b.turn;
   const moved = shotOdds(b, u, t).chance;
-  check(still - moved === 7 && situationalAim(b, u, 8) === 1, `a bipod braced: +8, on the move only the sling's +1 (${moved}% → ${still}%)`);
+  // The bipod counts only rested on half cover next to the shooter in the shot's line (combat.js restCell; user
+  // request 2026-10-08): standing still in the open gives nothing, the sling +1 on the move.
+  b.cells[6 * b.w + 3].k = "sandbag"; b.losCache.fill(0);
+  const rested = shotOdds(b, u, t).chance;
+  check(moved - still === 1 && rested - moved === 8 && situationalAim(b, u, 8) === 1 && situationalAim(b, u, 8, u.gm, true) === 9, `a bipod rested on sandbags: +8, standing still in the open nothing, on the move the sling's +1 (${still}% → ${moved}% → ${rested}%)`);
   s.gear.weapon = gunWith("pistol", "tritium", "weaponlight");
   const b2 = baseBattle(st, { count: 1 });
   clearMap(b2);

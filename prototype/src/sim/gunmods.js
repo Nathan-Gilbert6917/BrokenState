@@ -10,7 +10,7 @@
 //   dmg: × damage, cap: + rounds in the magazine, capMult: × magazine size, noise: × shot noise,
 //   weight: + kg, value: + trade value (base values; the item's own worth is valuation.js itemValue),
 //   night: + aim at night, nightNear: + aim at night within 6 tiles (a weapon light), peq: + aim at night for a
-//   shooter with night vision (an IR laser), brace: + aim when the shooter did not move this turn (a bipod),
+//   shooter with night vision (an IR laser), brace: + aim when the gun rests on half cover in the shot's line (a bipod),
 //   moving: + aim when it did (a sling), jam: × jam odds (combat.js jams, section 14), thermal: the shooter sees in the
 //   dark (a thermal sight), light: a weapon light (works as a flashlight, lights.js), flashless: the muzzle flash no
 //   longer shows the shooter, launcher: an under-barrel launcher's ammo ("40mm", section 13) or null.
@@ -40,7 +40,7 @@
 //   4× rifle scope        optic       −8   +3   −0.5                          0.6   40     lever (mount), AR-15, AK (mount), .22 rifle (the hunting rifle has its own)
 //   Laser sight           tactical +1 +6                                      0.1   20     any gun with a light / laser slot
 //   Vertical foregrip     grip    +2  +2                                      0.15  12     the AR-15 (under the handguard), the pump shotgun, a rail
-//   Bipod                 bipod   +8 when the shooter did not move this turn  0.4   18     bolt, lever, AR-15, AR-10, .22 rifle, a quad rail
+//   Bipod                 bipod   +8 rested on half cover next to the shooter 0.4  18     bolt, lever, AR-15, AR-10, .22 rifle, a quad rail
 //   9mm suppressor        muzzle           −1         ×0.95           ×0.35   0.25  45     9mm
 //   Rifle suppressor      muzzle           −1         ×0.95           ×0.4    0.55  60     5.56, 7.62×39, .308, .30-30
 //   Oil-filter suppressor muzzle                                      ×0.5    0.4   12     9mm, 5.56, .308, .30-30; wears out in 12 shots
@@ -326,15 +326,38 @@ export function fittedKg(m) {
 // A battle unit's attachments (combat.js sets u.gm and u.gmWeapon): nothing when its weapon has changed since (a raider
 // handed a better gun, floorfolk.js; a thrown-in weapon swap, thirdside.js).
 export const unitMods = (u) => (u && u.gm && u.gmWeapon === u.weapon ? u.gm : NO_MODS);
-// The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds).
-export const modRange = (w, m) => ({ opt: (w.opt || 0) + m.opt, fall: Math.max(Math.min(FALL_MIN, w.fall || 0), (w.fall || 0) + m.fall) });
-// The aim attachments give by the moment (combat.js shotOdds): a bipod when the shooter did not move this turn
-// (u.movedT, combat.js moveAlong), a sling when it did; at night a tritium sight, a weapon light within 6 tiles and
-// an IR laser for a shooter wearing night vision (u.nvg, stealth.js). d: the distance to the target.
-export function situationalAim(b, u, d, gm = unitMods(u)) {
+// Light rounds at long range (user request 2026-10-08: a scoped assault rifle or carbine rivalled the hunting rifle at
+// range). An intermediate round (5.56, 7.62×39) or a rimfire .22 flies true out to its reach (tiles) and then drops and
+// drifts, whatever sight is on the gun: an attachment (a scope, a precision stock) never pushes the gun's best range
+// past the round's reach (a bare gun's own best range stays where it is), and every tile past the reach costs drop aim
+// on top of the gun's fall-off (combat.js shotOdds; the Sniper perk's no-fall-off does not cover it; a loaded type's
+// range, match +1 or subsonic −1, moves the reach with it). Full-power rounds (.308, .30-30, .50 BMG) have no reach: the
+// hunting rifle, the marksman and sniper rifles and the .50 own the long shots. Pistol calibres and shotgun shells fall
+// off hard already by their guns' own numbers. With a 65-aim shooter: an AR-15 with an ACOG 79 / 57 / 34% at 10 / 15 /
+// 20 tiles (was 79 / 72 / 59), the hunting rifle 70 / 64 / 54%.
+export const ROUND_REACH = { "556": { reach: 10, drop: 2 }, "762x39": { reach: 9, drop: 2 }, "22lr": { reach: 9, drop: 2 } };
+export const roundReach = (w) => (w && w.cal && ROUND_REACH[w.cal]) || null;
+// The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds), the range capped at
+// the round's reach (ROUND_REACH).
+export function modRange(w, m) {
+  const rr = roundReach(w);
+  let opt = (w.opt || 0) + m.opt;
+  if (rr && m.opt > 0) opt = Math.min(opt, Math.max(w.opt || 0, rr.reach));
+  return { opt, fall: Math.max(Math.min(FALL_MIN, w.fall || 0), (w.fall || 0) + m.fall) };
+}
+// A sight that magnifies (a scope: the optic slot, more best range: the 4× scope, the ACOG, the LPVO, the tactical,
+// thermal and scrap scopes; not a red dot, a holo sight or tritium). hunting.js: a scoped gun hunts better.
+export const isScope = (key) => !!(ATTACH[key] && ATTACH[key].slot === "optic" && (ATTACH[key].opt || 0) > 0);
+export const hasScope = (item) => fitted(item).some((m) => isScope(m.key) && modFits(item.key, m.key));
+// The aim attachments give by the moment (combat.js shotOdds): a bipod when the gun rests on half cover next to the
+// shooter in the line of the shot (rested: combat.js restCell, user request 2026-10-08; standing still alone no longer
+// counts), a sling when the shooter moved this turn (u.movedT, combat.js moveAlong); at night a tritium sight, a weapon
+// light within 6 tiles and an IR laser for a shooter wearing night vision (u.nvg, stealth.js). d: the distance to the
+// target.
+export function situationalAim(b, u, d, gm = unitMods(u), rested = false) {
   if (!gm || gm === NO_MODS) return 0;
   const moved = !!b && u.movedT != null && u.movedT === b.turn;
-  let aim = moved ? gm.moving || 0 : gm.brace || 0;
+  let aim = (moved ? gm.moving || 0 : 0) + (rested ? gm.brace || 0 : 0);
   if (b && (b.night || b.dark)) aim += (gm.night || 0) + (d <= 6 ? gm.nightNear || 0 : 0) + (u.nvg ? gm.peq || 0 : 0);
   return aim;
 }
@@ -384,7 +407,7 @@ export function attachText(key) {
   if (a.capMult && a.capMult !== 1) bits.push(`magazine ×${a.capMult}`);
   if (a.noise && a.noise !== 1) bits.push(a.noise < 1 ? `shots ${Math.round(a.noise * 100)}% as loud` : `shots ${Math.round((a.noise - 1) * 100)}% louder`);
   if (a.jam && a.jam !== 1) bits.push(`jams ×${a.jam}`);
-  if (a.brace) bits.push(`${sgn(a.brace)} aim when the shooter did not move this turn`);
+  if (a.brace) bits.push(`${sgn(a.brace)} aim when the shot's line crosses half cover right next to the shooter (rested on it)`);
   if (a.moving) bits.push(`${sgn(a.moving)} aim when the shooter moved this turn`);
   if (a.night) bits.push(`${sgn(a.night)} aim at night`);
   if (a.nightNear) bits.push(`${sgn(a.nightNear)} aim at night within 6 tiles, a light without the off hand`);
@@ -424,7 +447,7 @@ export function modsText(item) {
   if (m.capMult !== 1) bits.push(`magazine ×${m.capMult}`);
   if (m.noise !== 1) bits.push(`noise ×${Math.round(m.noise * 100) / 100}`);
   if (m.jam !== 1) bits.push(`jams ×${Math.round(m.jam * 100) / 100}`);
-  if (m.brace) bits.push(`${sgn(m.brace)} aim braced`);
+  if (m.brace) bits.push(`${sgn(m.brace)} aim rested on half cover`);
   if (m.moving) bits.push(`${sgn(m.moving)} aim on the move`);
   if (m.night || m.nightNear || m.peq) bits.push("better at night");
   const worn = list.filter((x) => GEAR[x.key] && GEAR[x.key].dur).map((x) => `${x.name}: ${x.dur ?? GEAR[x.key].dur} of ${GEAR[x.key].dur} ${x.key === "scrapscope" ? "fights" : "shots"} left`);
@@ -594,5 +617,7 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   draws less; some foul the action: more jams), the makeshift oil filter and bottle wear out fast, a muzzle brake (+3
   aim) and a pistol compensator (+2) make the shot louder, a shotgun choke reaches further but spreads less up close.
   No suppressor fits a revolver. Magazines: an extended 9mm magazine (24 rounds), a drum for the AR-15 family (twice
-  the rounds, heavy, −2 aim), a shotgun tube extension (+2 shells). A bipod: +8 aim when the shooter did not move this
-  turn; a sling +1 when it did. None is worth a step of cover.`;
+  the rounds, heavy, −2 aim), a shotgun tube extension (+2 shells). A bipod: +8 aim when the gun rests on half cover
+  (sandbags, crates, a car, a fence, a window sill) right next to the shooter that the shot's line crosses; a sling +1
+  when the shooter moved this turn. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22),
+  scope or not: −2 aim a tile, and no sight pushes its best range past that. None is worth a step of cover.`;
