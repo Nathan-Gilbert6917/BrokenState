@@ -32,6 +32,7 @@ import { triggerConflict } from "./conflicts.js";
 import { searchCrew } from "./crashes.js";
 import { stockHas } from "./water.js";
 import { sortFind } from "./ammo.js"; // rounds by calibre
+import { unitPower, partyLost } from "./arsenal.js"; // an AI salvage party's fighters (their kit) and the kit of its dead
 
 export const MILTRUCK = {
   ROAD_P: 0.02, DEAD_END: 0.5, JUNCTION: 1.5, TWO: 0.25,
@@ -204,12 +205,13 @@ export function truckSearchHour(state, e, p, members) {
   if (!list.length || !members.length) return "";
   if (hash01(state.seed, "mtsearch", e.tile, state.hour, e.hours) >= MILTRUCK.SEARCH_P) return "";
   const x = list[0];
+  const guarded = guardedTrucks(state, e.tile).some((y) => y.i === x.i); // a convoy's: the line of the dead hears it (CONVOY_GUARD)
   markOpened(state, x);
   const got = truckLoot(truckRng(state, x), x.kind, x.cond, { rich: x.rich, src: x.src });
   const bits = [];
   for (const [k, q] of Object.entries(got.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; bits.push(`${q} ${k}`); }
   for (const it of got.gear) { e.found.gear.push(it); bits.push(it.name); }
-  e.heat = Math.min(100, e.heat + MILTRUCK.SEARCH_HEAT + 2 * x.crew);
+  e.heat = Math.min(100, e.heat + MILTRUCK.SEARCH_HEAT + 2 * x.crew + (guarded ? CONVOY_GUARD.HEAT_OPEN : 0));
   return ` Forced the back of a ${truckName(x).toLowerCase()}: ${bits.length ? bits.join(", ") : "nothing left in it"}.${x.crew ? ` ${x.crew === 1 ? "A soldier" : `${x.crew} soldiers`} still strapped in the cab came for them (Heat up).` : ""}`;
 }
 
@@ -245,11 +247,57 @@ export function spotTrucks(state, p, tileId, chance) {
 // =====================================================================================================================
 // The abandoned military convoy (an event, the crashes.js pattern): every 14–28 days (the first between days 12 and 20)
 // a base, a team on the road or the radio learns of Army trucks stopped on a road tile: a card, and a temporary site
-// there (data.js LOCATIONS convoy, raid areas combat.js AREA_SETS.convoy) with 2–4 trucks and their turned crews. Other
-// groups within CONVOY.raceRange send salvage parties; one that gets there strips it (stripKeep of what is left, its
-// trucks' cargo too). It is burned out or picked clean CONVOY.life days after it was found.
+// there (data.js LOCATIONS convoy, raid areas combat.js AREA_SETS.convoy) with 2–4 trucks and their turned crews, and
+// a guard of more dead soldiers round each truck while nobody has stripped it (CONVOY_GUARD: more of them and more Heat
+// by the truck). Other groups within CONVOY.raceRange send salvage parties; one that gets there fights the dead
+// soldiers by the numbers (convoyAiLosses) and strips it (stripKeep of what is left, its trucks' cargo too). It is
+// burned out or picked clean CONVOY.life days after it was found.
 // =====================================================================================================================
 export const CONVOY = { firstMin: 12, firstMax: 20, gapMin: 14, gapMax: 28, minDist: 4, maxDist: 12, radioDist: 18, lifeMin: 6, lifeMax: 9, trucks: [2, 4], raceRange: 22, raceMin: 18, raceMax: 48, stripKeep: 0.3 };
+// The convoy's guard and its noise, by the truck (tools/convoyvalue.js measures it against a National Guard base: a
+// convoy held about 40% of a base's loot with about half its dead, and the hour-by-hour search there paid more than a
+// base's for no more danger). Each unopened truck of a convoy nobody has stripped yet (stripped: the first group there
+// fought them):
+//   PER_TRUCK     more dead soldiers standing round it on the raid map (on top of MILTRUCK.AROUND and its crew in the cab)
+//   HEAT_PRESENT  raid and search Heat at the start, each: the line of trucks and the dead about it draw more of them
+//   HEAT_OPEN     more Heat when it is forced open (on top of MILTRUCK.RISE_HEAT on the map, SEARCH_HEAT in the search)
+//   SEARCH_THREAT the hour-by-hour search (scavenge.js searchHour): + threat a guard standing (PER_TRUCK's mean each)
+//   AI_LOSS       an AI group's salvage party (convoysHour): people lost a soldier about the trucks (round each, its crew,
+//                 the guard), × AI_REF / their fighters' power (arsenal.js unitPower: their type's arms and their kit)
+// The dead met in a fight by the numbers at the convoy (conflicts.js enemyGroup) count the guard too (convoyGuards).
+export const CONVOY_GUARD = { PER_TRUCK: [2, 3], HEAT_PRESENT: 2, HEAT_OPEN: 4, SEARCH_THREAT: 1.6, AI_LOSS: 0.07, AI_REF: 3.8 };
+const guardMean = () => (CONVOY_GUARD.PER_TRUCK[0] + CONVOY_GUARD.PER_TRUCK[1]) / 2;
+// The convoy trucks still guarded on a tile: unopened, of a convoy nobody has stripped.
+export function guardedTrucks(state, tileId) {
+  const t = state.tiles && state.tiles[tileId];
+  if (!t || !t.loc || t.loc.type !== "convoy") return [];
+  const c = convoyById(state, t.loc.convoy);
+  if (!c || c.gone || c.stripped) return [];
+  return unopenedTrucks(state, tileId).filter((x) => x.src === "convoy");
+}
+// The guard standing round them (by the numbers: PER_TRUCK's mean a truck, rounded).
+export const convoyGuards = (state, tileId) => Math.round(guardedTrucks(state, tileId).length * guardMean());
+// Heat at the start of a raid or a search there.
+export const convoyHeat0 = (state, tileId) => guardedTrucks(state, tileId).length * CONVOY_GUARD.HEAT_PRESENT;
+// The hour-by-hour search's extra threat there.
+export const convoyThreat = (state, tileId) => guardedTrucks(state, tileId).length * guardMean() * CONVOY_GUARD.SEARCH_THREAT;
+// Every dead soldier about the unopened trucks of a convoy (an AI party meets them all): round each (AROUND's mean),
+// its crew in the cab, and the guard while nobody has stripped it.
+export function convoySoldiers(state, tileId) {
+  const t = state.tiles && state.tiles[tileId];
+  if (!t || !t.loc || t.loc.type !== "convoy") return 0;
+  const around = (MILTRUCK.AROUND[0] + MILTRUCK.AROUND[1]) / 2;
+  const list = unopenedTrucks(state, tileId).filter((x) => x.src === "convoy");
+  return list.reduce((a, x) => a + around + x.crew, 0) + guardedTrucks(state, tileId).length * guardMean();
+}
+// An AI group's salvage party fights its way to the trucks: the people it loses (at most its strength), its own dice.
+export function convoyAiLosses(state, c, f, strength) {
+  const soldiers = convoySoldiers(state, c.tile);
+  if (!soldiers || !f) return 0;
+  const power = Math.max(1, unitPower(f, 2.2));
+  const exp = soldiers * CONVOY_GUARD.AI_LOSS * (CONVOY_GUARD.AI_REF / power);
+  return Math.min(Math.max(0, Math.round(strength || 0)), Math.floor(exp + hash01(state.seed, "convoyai", c.id, f.id, c.stripped || 0)));
+}
 const RACE = { raider: 0.7, military: 0.9, expansionist: 0.6, zealot: 0.4, fortress: 0.35, traders: 0.3, commune: 0.15 };
 const croll = (state, ...k) => hash01(state.seed, "convoy", ...k);
 export const convoys = (state) => state.convoys || (state.convoys = []);
@@ -413,6 +461,17 @@ export function convoysHour(state) {
     q.returning = true;
     if (!c || c.gone || partyTile(q) !== c.tile) continue;
     const f = factionById(state, q.owner);
+    // AI parity: the party fights the dead soldiers about the trucks first (convoyAiLosses: the same guard your teams
+    // meet, by the numbers); its dead and their kit are gone (arsenal.js partyLost). Lost to the last, nothing is stripped.
+    const lost = f && f.alive ? convoyAiLosses(state, c, f, q.strength) : 0;
+    if (lost > 0) {
+      partyLost(state, f, lost);
+      f.pop = Math.max(0, f.pop - lost);
+      q.strength = Math.max(0, (q.strength || 0) - lost);
+      c.aiLost = (c.aiLost || 0) + lost;
+      if (state.live.has(c.tile)) log(state, `${f.known ? f.name : "Another group"} fought the dead soldiers round the ${c.name}: ${lost === 1 ? "one of them" : `${lost} of them`} fell.`, "danger");
+      if (q.strength < 1) continue;
+    }
     const team = state.parties.find((p) => p.owner === "player" && p.kind !== "convoy" && partyMembers(state, p).length && partyTile(p) === c.tile && p.phase !== "engaged");
     if (team && f && !state.cards.some((x) => x.partyId === team.id)) {
       triggerConflict(state, team, "challenge", f.id);

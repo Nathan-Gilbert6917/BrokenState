@@ -44,6 +44,7 @@ import { warRaidOnPlayer } from "./diplomacy.js";
 import { pwarTeamMult, pwarTeamRange } from "./playerwars.js"; // wars with you: their patrols hunt your teams
 import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
+import { convoyGuards } from "./miltrucks.js"; // an Army convoy's guard among the dead met there
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
@@ -166,6 +167,9 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
       for (const k of siteList(rng, mix, g.count)) if (k) g.types[k] = (g.types[k] || 0) + 1;
       if (!Object.keys(g.types).length) g.types = null;
     }
+    // At an Army convoy nobody has stripped: its guard of dead soldiers comes too (miltrucks.js convoyGuards; no dice).
+    const guard = horde ? 0 : convoyGuards(state, partyTile(p));
+    if (guard) { g.count += guard; g.types = { ...(g.types || {}), soldier: ((g.types && g.types.soldier) || 0) + guard }; }
     return g;
   }
   const def = FACTION_TYPES[f.type];
