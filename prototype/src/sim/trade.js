@@ -29,12 +29,13 @@ import { log, day, newId, survivorById, factionById, baseById, atBase, skill, sn
 import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
-import { itemLoad, newItem } from "./inventory.js";
-import { gunmodWares } from "./loot.js"; // a gun attachment on the table now and then
+import { itemLoad, lootItem } from "./inventory.js";
+import { traderSource, spend } from "./itemcond.js"; // the condition of what they sell, by the kind of group
+import { gunmodWares, pickWeighted } from "./loot.js"; // a gun attachment on the table now and then
 import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
-import { tradeSpeech, bookWares, gainXp, USE } from "./skills.js";
+import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 import { RAW, keyWord } from "./water.js";
@@ -272,18 +273,31 @@ export const WARES = {
   expansionist: ["pistol", "shotgun", "huntrifle", "vest", "riothelmet", "scrapvest", "carbine", "leverrifle", "revolver", "hikingpack", "riotarms", "smokegren", "flare", "binoculars"],
   zealot: ["machete", "knife", "shotgun", "pipespear", "bandagekit", "fireaxe", "bat", "molotov", "compbow"],
 };
+// A farming commune also sells the tools of the land now and then (its own dice: the rest of the stock is unchanged):
+// { p: chance a week, items: weights }.
+export const WARE_EXTRAS = {
+  commune: { p: 0.7, items: { fishrod: 2, fishnet: 1.5, snarewire: 2, lantern: 1.5, fireaxe: 1, sledge: 0.7, honey: 1.5, tobacco: 1, dewormer: 1 } },
+};
 export const WARES_MAX = 12;
 // Fills a group's gear for sale (sim-side only: uses the world's random numbers). refresh: new stock for the week.
+// The kinds come from the group's list (WARES); the condition from what kind of group it is (itemcond.js: the
+// military's kit kept up, raiders' knocked about), priced by it (valuation.js itemValue).
 export function ensureWares(state, f, refresh = false) {
   if (f.wares && !refresh) return f.wares;
   const rng = state.rng;
   const pool = WARES[f.type] || WARES.traders;
   const n = f.type === "traders" ? rng.int(4, 6) : rng.int(1, 3);
   const keep = (f.wares || []).slice(-Math.max(0, WARES_MAX - n));
+  const src = traderSource(f.type);
   for (let i = 0; i < n; i++) {
-    const it = newItem(rng.pick(pool), Math.round(rng.range(0.5, 1) * 100) / 100);
-    if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.4, 1)));
-    keep.push(it);
+    const key = rng.pick(pool);
+    spend(rng, GEAR[key] && GEAR[key].dur ? 2 : 1); // the old quality and wear draws, still taken (the world's dice stay put)
+    keep.push(lootItem(key, src, rng));
+  }
+  const ex = WARE_EXTRAS[f.type];
+  if (ex && hash01(state.seed, "wareex", f.name, day(state)) < ex.p) {
+    const key = pickWeighted(ex.items, hash01(state.seed, "wareexk", f.name, day(state)));
+    if (key) keep.push(lootItem(key, src, [state.seed, "wareexd", f.name, day(state)]));
   }
   keep.push(...gunmodWares(state, f.type, f.name, day(state))); // loot.js: a gun attachment now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)

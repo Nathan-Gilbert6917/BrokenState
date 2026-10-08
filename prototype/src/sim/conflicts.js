@@ -15,7 +15,8 @@
 // goodwill is high. Over time they may escape, be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
-import { stripAll, itemLoad, newItem } from "./inventory.js";
+import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
+import { kitSource, spend } from "./itemcond.js";
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
   armedFactor, usesArrows,
@@ -1246,7 +1247,7 @@ function victoryRewards(state, p, c, result) {
       out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
-        const item = newItem(key, rng.pick([0.7, 0.85, 1]), rng);
+        const item = lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
         out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);
       }
     }
@@ -1283,7 +1284,7 @@ function victoryRewards(state, p, c, result) {
     for (const kind of Object.keys(mil)) {
       const n = Math.min(2, Math.round(c.enemy.count * mil[kind] * 0.5));
       for (let i = 0; i < n; i++) {
-        const loot = bodyLoot(rng, kind, newItem);
+        const loot = bodyLoot(rng, kind, armouredItem);
         for (const [k, q] of Object.entries(loot.sup)) got.push(`${addCargo(state, p, k, q)} ${k}`);
         for (const g of loot.gear) if (stowGear(state, p, g)) got.push(g.name);
       }

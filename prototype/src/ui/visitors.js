@@ -4,7 +4,7 @@ import { hub, baseById, log } from "../sim/world.js";
 import { SUPPLIES } from "../sim/data.js";
 import {
   knownVisitors, visitorView, visitorById, radioPayRaiders, inviteMerchants, radioNewsFrom, reopenGate, openVisitorTrade, attackMerchants,
-  visitorAlertsData, goodsText, VISITOR_COLORS, merchantRep,
+  visitorAlertsData, goodsText, VISITOR_COLORS, merchantRep, specName,
 } from "../sim/visitors.js";
 import { wormOthersAt } from "../sim/worm.js"; // sick guests sheltering at a base
 import { otherWormRow } from "./health.js";
@@ -41,7 +41,7 @@ function card(state, w) {
   const sb = v.phase === "sheltered" ? baseById(state, v.shelterBase) : null;
   const sick = sb ? wormOthersAt(state, sb).filter((o) => o.kind === "guest" && o.v === v && o.w.seen != null) : [];
   const worm = sick.length ? `<div class="small" style="margin-top:0.25rem">Sick with the worm at ${esc(sb.name)}: ${sick.length} of them.</div>${sick.map((o) => otherWormRow(state, sb, o)).join("")}` : "";
-  const extra = v.kind === "merchants" ? `<div class="small muted">Carrying ${esc(goodsText(v))}</div>` : v.kind === "raiders" ? `<div class="small muted">Armed with ${esc(w.gear)} · strength about ${w.strength}</div>` : "";
+  const extra = v.kind === "merchants" ? `<div class="small muted">${specName(v) ? `${esc(specName(v).charAt(0).toUpperCase() + specName(v).slice(1))} · ` : ""}Carrying ${esc(goodsText(v))}</div>` : v.kind === "raiders" ? `<div class="small muted">Armed with ${esc(w.gear)} · strength about ${w.strength}</div>` : "";
   return `<div class="card">
     <div class="spread"><b><span class="swatch" style="background:${VISITOR_COLORS[v.kind]}"></span>${ICON[v.kind]} ${esc(w.name)}</b><span style="color:${ATT_COLOR[w.attitude] || "var(--muted)"}">${esc(w.attitude)}</span></div>
     <div class="small muted">${esc(w.label)}${w.sub ? ` (${esc(w.sub)})` : ""} · ${w.size} ${w.size === 1 ? "person" : "people"} · from ${esc(w.home)} (came in from the ${esc(w.from)})</div>
@@ -67,7 +67,7 @@ export function visitorAlerts(state) {
 // ---------- the trade window (ui/tradewindow.js) ----------
 export function visitorTradeHead(state, ctx) {
   const v = ctx.visitor;
-  return `${v.kind === "merchants" ? "Merchants" : "Travellers"} from ${esc(v.home)}, from outside the state`;
+  return `${v.kind === "merchants" ? `Merchants${specName(v) ? ` (${esc(specName(v))})` : ""}` : "Travellers"} from ${esc(v.home)}, from outside the state`;
 }
 export function visitorTradeButtons(state, ui, ctx) {
   const v = ctx.visitor;

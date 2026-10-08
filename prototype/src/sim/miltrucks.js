@@ -24,7 +24,7 @@
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
 import { log, addCard, hub, atBase, factionById, snapshot } from "./world.js";
 import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad } from "./parties.js";
 import { triggerConflict } from "./conflicts.js";
@@ -50,7 +50,7 @@ export const TRUCK_KINDS = {
   humvee: { name: "Humvee", short: "Humvee", L: 3, body: "humvee", crew: [1, 3], vehicle: "hummer" },
   mrap:   { name: "MRAP", short: "MRAP", L: 4, body: "mrap", crew: [2, 3], vehicle: "miltruck" },
 };
-// q: × supplies, items: × item chances, qual: item quality range, crew: × strapped-in crew.
+// q: × supplies, items: × item chances, qual: the old item quality range (items now take theirs from itemcond.js: an intact truck "military", a wrecked or burned-out one "wreck"), crew: × strapped-in crew.
 export const TRUCK_COND = {
   intact:  { name: "intact", q: 1, items: 1, qual: [0.6, 1], crew: 1 },
   wrecked: { name: "wrecked", q: 0.6, items: 0.6, qual: [0.4, 0.8], crew: 0.7 },
@@ -104,8 +104,8 @@ export function truckLoot(rng, kind, cond = "intact", opts = {}) {
   for (const [k, p] of T.gear) {
     if (burnt && !BURNT_KEEP.has(k)) continue;
     if (!rng.chance(Math.min(0.95, p * C.items * rich))) continue;
-    const [a, b] = C.qual;
-    gear.push(newItem(k, Math.round((a + rng.next() * (b - a)) * 100) / 100));
+    rng.next(); // the old quality draw (TRUCK_COND qual), still taken so the truck's dice stay where they were
+    gear.push(lootItem(k, burnt || cond === "wrecked" ? "wreck" : "military", rng)); // itemcond.js: crates in good order, a wreck's knocked about
   }
   const out = { sup, gear };
   for (const hook of TRUCK_LOOT_HOOKS) hook(rng, { kind, cond, src: opts.src || null, rich }, out);

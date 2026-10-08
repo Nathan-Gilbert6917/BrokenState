@@ -132,11 +132,12 @@ async function main() {
     setAutopilot(s2, true, "balanced");
     while (day(s2) < 20) tickHour(s2);
     for (const h of [...s2.hives]) destroyHive(s2, h, "test");
-    let border = null, secured = 0;
-    while (day(s2) < 90 && !s2.gameOver) { tickHour(s2); if (s2.hour % 24 === 0 && hivesSecured(s2)) secured++; if (!border) border = s2.hiveSites.find((x) => x.border) || null; }
+    // poured: the border's log line, seen as it is written (the log keeps 200 lines: by day 90 a busy run has scrolled it out).
+    let border = null, secured = 0, poured = false;
+    while (day(s2) < 90 && !s2.gameOver) { tickHour(s2); if (s2.hour % 24 === 0 && hivesSecured(s2)) secured++; if (!border) border = s2.hiveSites.find((x) => x.border) || null; if (!poured) poured = s2.log.slice(0, 20).some((l) => /pouring over the/.test(l.text)); }
     check(!!border && border.started != null, `a mass of the dead comes over the border and starts a hive (${border ? `day ${Math.floor(border.chosen / 24) + 1}` : "none"})`);
     check(!s2.victory, `no hive victory (${secured} days with no hive standing or being built, before the outbreak burned out)`);
-    check(s2.hives.length + s2.hiveSites.filter((x) => x.started != null).length >= 1 && s2.log.some((l) => /pouring over the/.test(l.text)), `hives in the state again on day 90 (${s2.hives.length} standing, ${s2.hiveSites.length} sites); the log says so`);
+    check(s2.hives.length + s2.hiveSites.filter((x) => x.started != null).length >= 1 && poured, `hives in the state again on day 90 (${s2.hives.length} standing, ${s2.hiveSites.length} sites); the log says so`);
     // After the burn-out and a season clear: the hive victory.
     const s3 = world(5);
     s3.hives.length = 0; s3.hiveSites.length = 0;

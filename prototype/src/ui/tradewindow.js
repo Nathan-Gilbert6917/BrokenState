@@ -23,6 +23,7 @@ import {
 } from "../sim/radiotrade.js"; // trading over the radio
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
+import { qualityWord, rollsQuality } from "../sim/itemcond.js"; // condition in a word (poor … excellent)
 import { itemLoad } from "../sim/inventory.js";
 import { modLabel } from "../sim/gunmods.js";
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
@@ -40,16 +41,19 @@ const when = (hour) => `day ${Math.floor(hour / 24) + 1}, ${String(hour % 24).pa
 const first = (s) => esc(s.name.split(" ")[0]);
 
 // ---------- trade window ----------
+// Condition: a word and the percent for gear that has one (sim/itemcond.js), the uses left of the most it can have.
+const condText = (item) => (rollsQuality(item.key) || (item.quality ?? 1) !== 1 ? `${qualityWord(item.quality ?? 1)} ${Math.round((item.quality ?? 1) * 100)}%` : "");
 function gearLabel(item) {
-  const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${esc(modLabel(item))} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${itemDurMax(item)} uses` : ""}</span>`; // a gun with its attachments (sim/gunmods.js): they sell with it
+  const bits = [condText(item), dur != null ? `${dur}/${itemDurMax(item)} uses` : ""].filter(Boolean).join(" · ");
+  return `${esc(modLabel(item))}${bits ? ` <span class="muted">${bits}</span>` : ""}`; // a gun with its attachments (sim/gunmods.js): they sell with it
 }
 // No base value anywhere: what this group pays or charges, and why (sim/valuation.js).
 const gearTip = (item, price, mine, why) => {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${d.name}: condition ${Math.round((item.quality ?? 1) * 100)}%${dur != null ? `, ${dur} of ${itemDurMax(item)} uses left` : ""}. ${mine ? "They pay" : "They charge"} ${p1(price)}${why.length ? ` (${why.map((w) => w.text.toLowerCase()).join("; ")})` : ""}. ${d.desc || ""}`.trim();
+  const cond = [condText(item) ? `condition ${condText(item)}` : "", dur != null ? `${dur} of ${itemDurMax(item)} uses left` : ""].filter(Boolean).join(", ");
+  return `${d.name}${cond ? `: ${cond}` : ""}. ${mine ? "They pay" : "They charge"} ${p1(price)}${why.length ? ` (${why.map((w) => w.text.toLowerCase()).join("; ")})` : ""}. ${d.desc || ""}`.trim();
 };
 // The "why" lines under a row: what moves this group's price for it (no numbers).
 const whyHtml = (why) => why.map((w) => `<span class="tw-why ${w.dir}">${w.dir === "up" ? "▲" : w.dir === "down" ? "▼" : "✕"} ${esc(w.text)}</span>`).join("");

@@ -12,7 +12,8 @@
 // the table of sources per item.
 import { GEAR } from "./data.js";
 import { hash01 } from "./skills.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { siteSource, areaSource, traderSource } from "./itemcond.js"; // the condition finds come in, by source
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -208,7 +209,7 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "modfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "modpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
 }
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
@@ -221,7 +222,8 @@ export function rollAreaGunmod(state, tileId, areaType, salt = "") {
   const a = AREA_GUNMODS[areaType];
   if (!a || hash01(state.seed, "areamod", tileId, salt) >= a.p) return null;
   const key = pickWeighted(a.items, hash01(state.seed, "areamodpick", tileId, salt));
-  return key ? newItem(key, 1) : null;
+  const t = state.tiles[tileId];
+  return key ? lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areamoddur", tileId, salt)) : null;
 }
 // A loose attachment on a trader's or a merchant's table now and then (trade.js ensureWares, visitors.js merchantGoods;
 // its own dice). Military groups and merchants carry the good ones.
@@ -237,7 +239,7 @@ export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return [];
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
-  return key ? [newItem(key, Math.round((0.7 + 0.3 * hash01(state.seed, "modwareq", name, salt)) * 100) / 100)] : [];
+  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt))] : [];
 }
 
 // ---------- small finds per raid container (combat.js searchBox) ----------
@@ -294,7 +296,7 @@ export function rollFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "find", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "findpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1, hash01(state.seed, "finddur", tileId, state.hour, salt)) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "finddur", tileId, state.hour, salt)) : null;
 }
 // Lights (lights.js) where people kept them: a roll of its own each search hour, like HUNT_FINDS (so adding them
 // changed no other find). Torches are made, not found (crafting.js).
@@ -314,7 +316,7 @@ export function rollLightFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "lightfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "lightpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1, hash01(state.seed, "lightdur", tileId, state.hour, salt)) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "lightdur", tileId, state.hour, salt)) : null;
 }
 // Hunting and fishing gear at a site this search hour (HUNT_FINDS; its own dice too), or null.
 export function rollHuntFind(state, tileId, mult = 1, salt = "") {
@@ -324,15 +326,16 @@ export function rollHuntFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "huntfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "huntpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1, hash01(state.seed, "huntdur", tileId, state.hour, salt)) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "huntdur", tileId, state.hour, salt)) : null;
 }
 
-// A small find in a raid container (the battle's random numbers, after the container's own loot), or null.
-export function rollAreaFind(rng, areaType, rich = 1, scav = 0) {
+// A small find in a raid container (the battle's random numbers, after the container's own loot), or null. site: the
+// raid's site type (an armoury's condition goes by it: itemcond.js areaSource).
+export function rollAreaFind(rng, areaType, rich = 1, scav = 0, site = null) {
   const a = AREA_FINDS[areaType];
   if (!a || !rng.chance(a.p * (0.5 + rich) * (1 + scav / 30))) return null;
   const key = pickWeighted(a.items, rng.next());
-  return key ? newItem(key, 1, rng) : null;
+  return key ? lootItem(key, areaSource(areaType, site), rng) : null;
 }
 
 // ---------- firewood (data.js SUPPLIES.wood) ----------
