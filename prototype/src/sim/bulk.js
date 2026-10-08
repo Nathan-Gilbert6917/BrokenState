@@ -14,6 +14,7 @@ import { baseById, combatPower, gearEffect, skill, newId, survivorById, factionB
 import { ensureInv, itemLoad, packSize, ensurePack } from "./inventory.js";
 import { wornLoad, maxLoad, feelFactor, LOAD_BANDS } from "./load.js";
 import { itemScore } from "./autopilot.js";
+import { equipKit } from "./carrykit.js"; // carry kit: the best rig, plates into the carrier, spare magazines
 import { activeHospital, bedReason } from "./medical.js";
 import { conditionsOf } from "./health.js";
 import { supplyRuns, dispatchSupplyRun, jobParty, planSupplyRun, deleteSupplyRun } from "./supply.js";
@@ -102,6 +103,7 @@ export function equipBest(state, people) {
         got.get(s).push({ slot, item: best, was: cur || null });
       }
     }
+    for (const x of equipKit(base.armory, crew)) if (x.s && got.has(x.s)) got.get(x.s).push({ slot: GEAR[x.item.key] && GEAR[x.item.key].slot === "rig" ? "rig" : "armor", item: x.item, was: x.was || null });
     for (const item of [...base.armory]) {
       const d = GEAR[item.key];
       if (!d || d.slot !== "tool" || d.water) continue;

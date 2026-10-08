@@ -169,12 +169,18 @@ export function bodyKit(body, u, src) {
   if (u.arsRig) body.gear.rig = u.arsRig;
   else if (u.rigKey && GEAR[u.rigKey] && !body.gear.rig && !(body.gear.armor && pouchesOf(body.gear.armor))) body.gear.rig = lootItem(u.rigKey, src, [u.id, "rig"]);
   if (body.gear.rig) ensureRig(body.gear.rig);
+  for (const it of unitMagItems(u, src)) stow(body, it, "");
+}
+// A unit's spare magazines as items (a body's loot): a group's own, else new ones of its kit's condition, loaded with
+// what they held (own dice).
+export function unitMagItems(u, src) {
+  if (!u || u.kind !== "human" || !KIT_LOOT.on) return [];
+  if (u.arsMags && u.arsMags.length) return u.arsMags.slice();
   const cal = calOf(u.weapon);
-  if (u.arsMags && u.arsMags.length) { for (const it of u.arsMags) stow(body, it, ""); return; }
-  (u.mags || []).filter((m) => m.where !== "gun" && m.key && MAGAZINES[m.key]).forEach((m, i) => {
+  return (u.mags || []).filter((m) => m.where !== "gun" && m.key && MAGAZINES[m.key]).map((m, i) => {
     const it = lootItem(m.key, src, [u.id, "mag", i]);
     if (cal && m.load && m.load !== typeFor(cal, null)) it.load = m.load;
-    stow(body, it, "");
+    return it;
   });
 }
 
@@ -310,7 +316,17 @@ export function equipKit(list, people) {
   for (const s of people) {
     ensureInv(s);
     const g = s.gear;
-    // A chest rig when the body armour has no pouches.
+    // A chest rig when the body armour has no pouches (one over a pouched vest goes back, its contents into the vest's).
+    if (g.rig && g.armor && pouchesOf(g.armor)) {
+      const rig = g.rig, into = ensureRig(g.armor), kinds = pouchesOf(g.armor);
+      g.rig = null;
+      for (const [i, it] of (rig.contents || []).entries()) {
+        if (!it) continue;
+        const j = kinds.findIndex((k, n) => !into[n] && !pouchReason(it, k));
+        if (j >= 0) { into[j] = it; rig.contents[i] = null; }
+      }
+      list.push(rig);
+    }
     if (!g.rig && !(g.armor && pouchesOf(g.armor))) {
       const rigs = list.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "rig").sort((a, b) => pouchesOf(b).length - pouchesOf(a).length);
       if (rigs.length) { const it = rigs[0]; list.splice(list.indexOf(it), 1); ensureRig(it); g.rig = it; out.push({ s, item: it, was: null }); }
@@ -364,4 +380,40 @@ export function migrateKit(state) {
     const st = storageFor(state, personPlace(s));
     starterMags(s, st ? st.list : null);
   }
+}
+
+// ---------- the governor's plates (autopilot.js governBase, hourly at a base it runs) ----------
+// Plates break and need replacing: a worn carrier's missing, broken or badly worn plate (under PLATE_SWAP of its
+// points) is swapped for the best spare in the armory; a worn steel plate in the armory is queued for the workbench
+// (repair.js: steel can be patched, ceramic cannot); with fewer spare plates than SPARE_PLATES while carriers are in
+// use, a steel plate is crafted (crafting.js steelplate: scrap 8, Mechanics 4, a workshop). Returns the messages.
+export const PLATE_SWAP = 0.35;
+export function governPlates(state, base, people, repair) {
+  const out = [];
+  if (!base || !base.armory) return out;
+  const cond = (it) => { const m = itemDurMax(it); return m ? (itemDur(it) ?? m) / m : 1; };
+  const spareOk = (it) => it && GEAR[it.key] && GEAR[it.key].slot === "insert" && !armourBroken(it) && cond(it) >= PLATE_SWAP;
+  const score = (it) => (armourSpec(it.key) ? armourSpec(it.key).ac : 0) * 10 + cond(it) * 5;
+  for (const s of people) {
+    const c = s.gear && s.gear.armor;
+    if (!isCarrier(c)) continue;
+    const ins = insertsOf(c);
+    for (const side of INSERT_SIDES) {
+      const cur = ins[side];
+      if (cur && !armourBroken(cur) && cond(cur) >= PLATE_SWAP) continue;
+      const best = base.armory.filter(spareOk).sort((a, b) => score(b) - score(a))[0];
+      if (!best) continue;
+      base.armory.splice(base.armory.indexOf(best), 1);
+      if (cur && !armourBroken(cur)) base.armory.push(cur);
+      ins[side] = best;
+      out.push(`${s.name.split(" ")[0]}'s ${side} plate: ${best.name.toLowerCase()}`);
+    }
+  }
+  if (repair) {
+    const i = base.armory.findIndex((it) => it && it.key === "steelplate" && !armourBroken(it) && cond(it) < 0.6);
+    if (i >= 0 && (base.gearRepairs || []).length < 2) { const m = repair.queue(state, base, `armory:${base.id}:list:${i}`); if (/queued/.test(m)) out.push(m); }
+    const need = plateNeed(people, base.armory);
+    if (need.want && need.have < need.want && !(base.crafting || []).some((j) => j.recipe === "steelplate") && (base.stock.scrap || 0) >= 14) { const m = repair.craft(state, base, "steelplate"); if (/queued/.test(m)) out.push(m); }
+  }
+  return out;
 }

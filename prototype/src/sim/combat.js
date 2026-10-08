@@ -87,7 +87,7 @@ import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILT
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
-import { weighPlayer, kitEnemy } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
+import { weighPlayer, kitEnemy, unitMagItems, withMags } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
@@ -5147,6 +5147,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
       }
     }
+    if (box.kind === "body" && !box.zombie) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
+    else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, box.id); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
     sortFind(sup, box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house"), "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
