@@ -48,6 +48,8 @@ import { takeCaptive } from "./conflicts.js";
 import { PRISON } from "./prisoners.js";
 import { addMood } from "./relations.js";
 import { changeGoodwill } from "./factions.js";
+import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: takeAlive (NL_TAKE)
+import { removeFromArsenal } from "./arsenal.js";
 
 export const NL = {
   TASER: { range: 4, shots: 2, stun: 2, daze: 20, ko: 0.4, aim: 10, fall: 8 },
@@ -73,7 +75,8 @@ export const NL_STYLE = {
 // A group type's kit (conflicts.js KIND_OF).
 export const TYPE_KIT = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 // AI raids between groups: the share of a beaten group's losses the winners take alive, by the winners' type.
-export const NL_TAKE = { traders: 0.45, commune: 0.4, military: 0.35, fortress: 0.35, raider: 0.25, expansionist: 0.2, zealot: 0 };
+// One table for every type's leanings: groupcare.js GROUP_PRIORITIES takeAlive (read when used).
+export const NL_TAKE = new Proxy({}, { get: (_, t) => (typeof t === "string" ? weightOf({ type: t }, "takeAlive", null) : undefined), has: (_, t) => weightOf({ type: t }, "takeAlive", null) != null });
 // Prisoners held between groups, a day each: joined their captors, ransomed back, slipped away.
 export const AI_HELD = { recruit: 0.03, ransom: 0.03, escape: 0.01, ransomFood: 4 };
 export const SURRENDER = {
@@ -185,6 +188,7 @@ export function arsenalCount(f, key) {
   const a = f && f.arsenal;
   if (!a) return null;
   if (Array.isArray(a)) return a.filter((x) => (typeof x === "string" ? x : x && x.key) === key).length;
+  if (Array.isArray(a.items)) return a.items.filter((x) => x && x.key === key).length; // arsenal.js: { items: [...] }
   if (typeof a === "object") { const v = a[key]; return typeof v === "number" ? v : Array.isArray(v) ? v.length : v ? 1 : 0; }
   return null;
 }
@@ -752,8 +756,8 @@ export function aiCaptivesDaily(state) {
       for (let i = 0; i < n0; i++) {
         const r = hash01(state.seed, "nlheld", f.id, tid, state.hour, i);
         if (!f.alive) { n--; if (t && t.alive) t.pop += 1; continue; }
-        if (r < AI_HELD.recruit) { n--; f.pop += 1; state.stats.aiRecruited = (state.stats.aiRecruited || 0) + 1; }
-        else if (r < AI_HELD.recruit + AI_HELD.ransom && t && t.alive && (t.stock.food || 0) >= AI_HELD.ransomFood) { n--; t.pop += 1; t.stock.food -= AI_HELD.ransomFood; f.stock.food = (f.stock.food || 0) + AI_HELD.ransomFood; state.stats.aiRansomed = (state.stats.aiRansomed || 0) + 1; }
+        if (r < AI_HELD.recruit * weightOf(f, "recruit")) { n--; f.pop += 1; state.stats.aiRecruited = (state.stats.aiRecruited || 0) + 1; }
+        else if (r >= AI_HELD.recruit * weightOf(f, "recruit") && r < AI_HELD.recruit + AI_HELD.ransom && t && t.alive && (t.stock.food || 0) >= AI_HELD.ransomFood) { n--; t.pop += 1; t.stock.food -= AI_HELD.ransomFood; f.stock.food = (f.stock.food || 0) + AI_HELD.ransomFood; state.stats.aiRansomed = (state.stats.aiRansomed || 0) + 1; }
         else if (r < AI_HELD.recruit + AI_HELD.ransom + AI_HELD.escape || !t || !t.alive) { n--; if (t && t.alive) t.pop += 1; }
       }
       if (n > 0) f.held[tid] = n; else delete f.held[tid];

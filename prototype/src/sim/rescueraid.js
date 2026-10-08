@@ -62,6 +62,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, addGearTo
 import { itemValue } from "./valuation.js";
 import { hasPerk, gainXp } from "./skills.js";
 import { Rng } from "./rng.js";
+import { removeFromArsenal } from "./arsenal.js";
 import * as Groupworks from "./groupworks.js"; // groupJailTier (the jailhouse work), when it is there
 
 export const RESCUE_RAID = {
@@ -110,6 +111,7 @@ export function groupArmory(state, f) {
   return f.armory;
 }
 function takeFromGroup(f, it) {
+  if (f.arsenal && removeFromArsenal(f, it, "stolen")) return; // arsenal.js: off their books (counted)
   const list = f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : f.armory || [];
   const i = list.indexOf(it);
   if (i >= 0) list.splice(i, 1);

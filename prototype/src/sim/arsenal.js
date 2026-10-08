@@ -70,6 +70,7 @@ export const ARSENAL = {
   BYNUM_PICK: 0.3, // conflicts.js victoryRewards: by the numbers, one piece of their dead's kit for you this often
   WALL_LAUNCHER: 6, // power a launcher adds against walls
   SEEN_DAYS: 30, // a fight or a look at their camp shows you their kit for this long
+  NONLETHAL: { guards: { taser: 0.4, pepper: 0.45 }, soldiers: { taser: 0.12, pepper: 0.2 }, militia: { pepper: 0.25 }, fighters: { pepper: 0.08 }, raiders: { taser: 0.04 } }, // as nonlethal.js NL_KIT
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
 export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
@@ -88,7 +89,9 @@ export const isLauncherKey = (k) => !!((GEAR[k] && (GEAR[k].launcher || GEAR[k].
 export const isWeaponKey = (k) => !!(GEAR[k] && GEAR[k].slot === "weapon" && WEAPONS[k]);
 export const isArmourKey = (k) => !!(GEAR[k] && ARMOUR_SLOTS.includes(GEAR[k].slot) && (GEAR[k].power || 0) > 0);
 export const isThrowKey = (k) => !!(GEAR[k] && GEAR[k].throw && (EXPLOSIVE.has(k) || GEAR[k].explosive));
-export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key)));
+// nonlethal.js: a taser or pepper spray carried beside the gun (its nlSetup hands out only what the arsenal holds).
+export const isNonlethalKey = (k) => !!(GEAR[k] && (GEAR[k].nonlethal === "taser" || GEAR[k].nonlethal === "pepper"));
+export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key)));
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
 const usesRounds = (k) => !!(WEAPONS[k] && WEAPONS[k].ammo > 0);
@@ -125,6 +128,8 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
   for (let i = 0; i < n; i++) { const key = A[(offA + i) % A.length]; if (key) { const it = make(key, "a", i); if (it) out.push(it); } }
   const T = ARSENAL.THROWS[kind] || [], nT = Math.round(n * (ARSENAL.THROW_PER[kind] || 0));
   for (let i = 0; i < nT && T.length; i++) { const it = make(T[i % T.length], "t", i); if (it) out.push(it); }
+  // Tasers and pepper spray (nonlethal.js NL_KIT: the share of a kit's people who carry one).
+  for (const [key, share] of Object.entries(ARSENAL.NONLETHAL[kind] || {})) for (let i = 0; i < Math.round(n * share); i++) { const it = make(key, `n${key}`, i); if (it) out.push(it); }
   return out;
 }
 
@@ -132,7 +137,7 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
 function newArsenal(f) {
   return { items: [], next: 0, rev: 0, pop0: f.pop, stats: { in: {}, out: {} } };
 }
-function stat(A, side, why, n = 1) { A.stats[side][why] = (A.stats[side][why] || 0) + n; }
+function stat(A, side, why, n = 1) { const S = A.stats || (A.stats = { in: {}, out: {} }); S[side][why] = (S[side][why] || 0) + n; }
 function put(A, f, it, why) {
   if (it.aid == null) it.aid = `${f.name}#${++A.next}`;
   A.items.push(it);
@@ -288,13 +293,15 @@ export function wallPower(state, f, n) {
 export const raidCount = (f, strength) => clamp(Math.round(strength / unitPower(f)), 1, 14);
 
 // ---------- battles (combat.js) ----------
+// Fights at the group's own base: everything they own is there (rescue missions, assaults, rescueraid.js).
+const HOME_HANDLERS = ["rescue", "assault", "baseAssault", "rescueRaid"];
 // One of a group's units on the battle map is armed from its arsenal: the n-th best kit of the issue for this fight.
 export function armFromArsenal(state, b, u, n) {
   const f = factionById(state, u.factionId);
   if (!f || !f.alive || f.outsider || u.kind !== "human") return;
   if (!ensureArsenal(state, f)) return;
   const setup = b.setup || {};
-  const task = setup.enemy && setup.enemy.arsTask ? setup.enemy.arsTask : setup.handler === "rescue" || setup.handler === "assault" ? "home" : "field";
+  const task = setup.enemy && setup.enemy.arsTask ? setup.enemy.arsTask : HOME_HANDLERS.includes(setup.handler) ? "home" : "field";
   b.arsIssue = b.arsIssue || {};
   const want = Math.max(n, Math.round((setup.enemy && setup.enemy.count) || n), 20);
   if (!b.arsIssue[f.id] || b.arsIssue[f.id].length < want) b.arsIssue[f.id] = issueKit(state, f, want, task);
@@ -321,6 +328,9 @@ export function armFromArsenal(state, b, u, n) {
   u.arsArmour = lo ? Object.values(lo.armour) : [];
   u.mag = null; u.magW = null;
   loadMag(u);
+  // rescueraid.js: what a guard carries is not on the armory's rack too.
+  const rack = b.rescue && b.rescue.armory && b.rescue.armory.items;
+  if (rack) for (const x of [u.arsItem, ...u.arsArmour]) { const i = x ? rack.indexOf(x) : -1; if (i >= 0) rack.splice(i, 1); }
 }
 
 // After any fight with a group (combat.js finishCombat, before the handler): who lost what. battle: the map it was
@@ -353,7 +363,7 @@ export function settleArsenal(state, setup, result, battle = null) {
     }
   } else {
     const n = Math.max(1, Math.round(e.count || 1));
-    const issue = issueKit(state, f, n, e.arsTask || (setup.handler === "rescue" || setup.handler === "assault" ? "home" : setup.layout === "baseDefence" ? "raid" : "field"));
+    const issue = issueKit(state, f, n, e.arsTask || (HOME_HANDLERS.includes(setup.handler) ? "home" : setup.layout === "baseDefence" ? "raid" : "field"));
     const dead = pickDead(state, issue, Math.min(n, result.enemiesKilled || 0), `${setup.handler}|${state.hour}`);
     for (const lo of issue) {
       const isDead = dead.includes(lo);

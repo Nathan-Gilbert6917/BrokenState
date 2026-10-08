@@ -227,12 +227,15 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   // The arsenal work's store, when a group has one, is the one that shrinks.
   const st2 = world(seed + 4);
   const f2 = raiders(st2);
-  f2.arsenal = { items: [newItem("ar"), newItem("shotgun"), newItem("vest")], rev: 0 };
+  // arsenal.js: the guards on the map carry their own kit; the rack holds the rest (three extra pieces here).
+  const extra = [newItem("knife"), newItem("bat"), newItem("baton")]; // the worst pieces: no guard takes them up
+  f2.arsenal = { items: [...Array.from({ length: 30 }, () => newItem("pistol")), ...extra], rev: 0 };
+  const n2 = f2.arsenal.items.length;
   captive(st2, f2);
   const p2 = teamAt(st2, f2, 2);
   RR.startRescueRaid(st2, p2, f2, "assault");
   const b2 = st2.combat;
-  check(b2.rescue.armory && b2.rescue.armory.items.length === 3 && b2.rescue.armory.items.includes(f2.arsenal.items[0]), "an arsenal's own items are on the rack");
+  check(b2.rescue.armory && b2.rescue.armory.items.length >= 3 && extra.every((it) => b2.rescue.armory.items.includes(it)) && b2.rescue.armory.items.every((it) => f2.arsenal.items.includes(it) && !b2.units.some((x) => x.arsItem === it)), "an arsenal's own items are on the rack (not the guns its guards carry)");
   for (const d of b2.rescue.doors.filter((x) => x.area === "armory")) { d.open = true; b2.cells[d.y * b2.w + d.x].k = "odoor"; }
   const u2 = capUnits(b2)[0];
   u2.tied = false;
@@ -241,7 +244,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   move(st2, b2, u2, r2[0], r2[1]);
   b2.phase = "player"; u2.ap = 2;
   combatAct(st2, { type: "rescue", unit: u2.id, op: "armory" });
-  check(f2.arsenal.items.length < 3 && f2.arsenal.rev > 0, `the arsenal shrinks (${f2.arsenal.items.length} left)`);
+  check(f2.arsenal.items.length < n2 && f2.arsenal.rev > 0, `the arsenal shrinks (${f2.arsenal.items.length} left of ${n2})`);
   // Out with it: extracted, the gear is theirs.
   st.combat = b;
   const s0 = survivorById(st, u.sid);
