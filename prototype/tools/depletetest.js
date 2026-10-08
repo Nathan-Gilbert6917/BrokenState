@@ -23,6 +23,7 @@ import { launchExpedition, partyTile, planPath, removeParty } from "../src/sim/p
 import { recomputeOwnership, factionsDaily } from "../src/sim/factions.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { crashes } from "../src/sim/crashes.js";
+import { ensureEraState } from "../src/sim/eras.js";
 import { convoys } from "../src/sim/miltrucks.js";
 import {
   AISCAV, FACTION_MAKE, aiScav, aiScavDaily, sendParty, scavArrived, scavSearchHour, bestSite, groupNeeds, lootBand, LOOT_BANDS,
@@ -293,6 +294,9 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
 
   // The base's surroundings: down with scavengers, never back up.
   const s2 = world(11);
+  // No raids on the hub (eras.js raidPaceOpen): left to itself it has no guard, and since the groups fight from their
+  // arsenals (arsenal 348bdec) Red Hand overruns it on day 14 of this seed; this is about the surroundings, not that.
+  ensureEraState(s2).nextRaid = 1e9;
   const h = hub(s2);
   const people = atBase(s2, h.id);
   for (const s of people) s.role = "farm";
@@ -399,7 +403,10 @@ for (const style of ["balanced", "cautious"]) {
   const P = PERSONALITIES[style];
   const h = hub(st);
   const g = st.grid;
-  const R = P.range + 5;
+  // The ring the governor scans first: P.range + 5, and 4 more for a Cautious one short of something (autopilot.js
+  // planTrip: the bare hub's first builds leave it short of scrap, barestart). Picked clean out to the wider one, so a
+  // trip beyond it is a far one either way.
+  const R = P.range + 5 + (P.reserves ? 4 : 0);
   Object.assign(h.stock, { food: 400, water: 200, ammo: 200, meds: 20 });
   // Everything near home is picked clean (and you know it); farther out the sites are rich (and you know it).
   for (const t of st.tiles) {
@@ -427,7 +434,9 @@ for (const style of ["balanced", "cautious"]) {
   const s2 = world(42);
   setAutopilot(s2, true, "balanced");
   const h2 = hub(s2);
-  Object.assign(h2.stock, { food: 400, water: 200, ammo: 200, meds: 20 });
+  // 25 scrap, the old start's: the bare hub's 50 (barestart) pays for a claim trip first (claims.js), and that team
+  // walks past the site and sees it stripped before any scavenging trip is planned.
+  Object.assign(h2.stock, { food: 400, water: 200, ammo: 200, meds: 20, scrap: 25 });
   const near = s2.tiles.filter((t) => t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= 6 && t.owner == null).sort((a, b) => a.id - b.id);
   for (const t of s2.tiles) if (t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= P.range + 5) { t.loot = AISCAV.floor; s2.knowledge[t.id] = snapshot(s2, t.id); }
   const believed = near[0];
