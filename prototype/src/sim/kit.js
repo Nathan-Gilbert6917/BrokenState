@@ -3,7 +3,7 @@
 // Each kind once, into free pockets and pack slots only (nothing goes in the cargo), at most KIT_KG kg a person, so
 // the trip's load and pace barely change. What is not used comes home with them.
 import { GEAR } from "./data.js";
-import { stow } from "./inventory.js";
+import { stow, allCarried } from "./inventory.js";
 import { packLights } from "./lights.js";
 
 export const KIT_KG = 1.5;
@@ -82,9 +82,4 @@ export function packSiegeKit(base, cargo, crew, room) {
   return out;
 }
 
-function hasOn(s, key) {
-  const g = s.gear || {};
-  if (Object.values(g).some((it) => it && it.key === key)) return true;
-  if ((s.pockets || []).some((it) => it && it.key === key)) return true;
-  return !!(g.backpack && g.backpack.contents && g.backpack.contents.some((it) => it && it.key === key));
-}
+const hasOn = (s, key) => allCarried(s).some((it) => it.key === key); // inventory.js: worn, pockets, rig pouches, the pack

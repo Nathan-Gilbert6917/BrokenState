@@ -76,6 +76,7 @@ import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 import { familyDaily } from "./family.js"; // children and generations
 import { leavePlayerBase } from "./groupworld.js"; // a lost outpost stands empty for a group to move into
+import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -198,6 +199,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
+  state.survivors.forEach((s) => starterMags(s, state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
+  state.kitV = 2; // carry kit: rigs, magazines as items, carriers with plates (carrykit.js migrateKit for older saves)
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;

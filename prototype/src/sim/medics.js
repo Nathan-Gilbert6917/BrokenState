@@ -27,7 +27,7 @@
 // the most cover and the fewest eyes on it, reviving or stabilizing there; a medic heals the badly hurt.
 import { GEAR } from "./data.js";
 import { gearEffect, survivorById, factionById, hurt } from "./world.js";
-import { packOf } from "./inventory.js";
+import { carriedSpots } from "./inventory.js";
 import { itemDur, wearHeld } from "./crafting.js";
 import { hash01 } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
@@ -81,9 +81,8 @@ const isKitItem = (it) => !!(it && GEAR[it.key] && GEAR[it.key].medKit && (itemD
 export function kitOf(s) {
   if (!s || !s.gear) return null;
   if (isKitItem(s.gear.tool)) return { item: s.gear.tool, pack: false };
-  const pk = packOf(s);
-  for (const it of [...(s.pockets || []), ...((pk && pk.contents) || [])]) if (isKitItem(it)) return { item: it, pack: true };
-  return null;
+  const x = carriedSpots(s).find((c) => ["pocket", "rig", "pack"].includes(c.where) && isKitItem(c.item)); // inventory.js: pockets, rig pouches, the pack
+  return x ? { item: x.item, pack: true } : null;
 }
 // The Medicine a kit adds for this survivor (crafting.js medKitBonus's rule, for a kit wherever it is carried).
 export function kitBonusOf(s, it) {

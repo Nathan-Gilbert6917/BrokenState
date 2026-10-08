@@ -32,6 +32,7 @@ import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: conditi
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { CLIPS, ADMIN_KG, POUCH_NAMES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
+import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 
 export const POCKETS = 4;
@@ -798,6 +799,7 @@ export function enemyBody(rng, u, kit) {
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
+  bodyKit(body, u, src); // carrykit.js: their rig and spare magazines (loaded with their type)
   for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
   // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left; a group's own kit (arsenal.js).
   if (u.arsMedKit && u.medKit === u.arsMedKit) { if (itemDur(u.arsMedKit) !== 0) stow(body, u.arsMedKit, ""); }

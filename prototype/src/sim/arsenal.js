@@ -51,6 +51,7 @@ import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
 import { workshopFactor } from "./groupworks.js";
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
+import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sections 15-16): their rigs, spare magazines and plates
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -159,6 +160,7 @@ function put(A, f, it, why) {
 export function seedArsenal(state, f) {
   const A = (f.arsenal = newArsenal(f));
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
+  for (const it of seedKit(state.seed, f.name, kitOf(f), A.items)) put(A, f, it, null); // carrykit.js: rigs, spare magazines, spare plates (own dice)
   A.seeded = A.items.length;
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   return A;
@@ -169,7 +171,7 @@ export function ensureArsenal(state, f) {
   return f.arsenal || seedArsenal(state, f);
 }
 export function addToArsenal(state, f, it, why = "found") {
-  if (!arsenalWorthy(it)) return false;
+  if (!arsenalWorthy(it) && !kitWorthy(it)) return false; // carrykit.js: rigs, magazines, plates too
   const A = ensureArsenal(state, f);
   if (!A || A.items.includes(it)) return false;
   put(A, f, it, why);
@@ -386,10 +388,11 @@ function armExtras(state, b, f, u) {
     }
   }
   for (const it of [u.arsItem, ...(u.arsArmour || [])]) if (it) used.add(it);
+  armKit(u, kitOf(f), (pred) => { const it = f.arsenal.items.find((x) => pred(x) && !used.has(x)); if (it) used.add(it); return it || null; }); // carrykit.js: their rig and spare magazines
 }
 // What a unit carried besides its gun and armour (settleArsenal): its medic kit and the throwables it did not throw.
 function extrasOf(u) {
-  const out = u.arsMedKit ? [u.arsMedKit] : [];
+  const out = [...(u.arsMedKit ? [u.arsMedKit] : []), ...(u.arsRig ? [u.arsRig] : []), ...(u.arsMags || [])]; // carrykit.js: a rig and spare magazines go where the fighter goes
   const left = { ...(u.throwables || {}) };
   for (const it of u.arsThrows || []) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
   return out;

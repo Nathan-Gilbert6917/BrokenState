@@ -16,6 +16,7 @@ import { raidEnemies } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { gunMods, NO_MODS } from "../src/sim/gunmods.js";
+import { starterMags } from "../src/sim/carrykit.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -30,6 +31,8 @@ function fighter(state, weapon = "pistol", shooting = 9) {
   s.health = 100;
   s.gear.weapon = weapon ? newItem(weapon) : null;
   for (const slot of ["head", "armor", "arms", "legs", "tool"]) s.gear[slot] = null;
+  s.pockets = s.pockets.map(() => null);
+  if (s.gear.weapon) starterMags(s); // carrykit.js: two spare magazines in the pockets, as a colonist starts with (section 15)
   s.location = { kind: "base", baseId: hub(state).id };
   state.survivors.push(s);
   return s;
@@ -276,7 +279,7 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   p.ap = 2;
   check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
   b.pools[0].a_12ga_buck = 20;
-  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 6, "with shells, it reloads to 6/6");
+  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 4 && p.ap === 1, "with shells, a Reload puts 4 in the pump's tube (4/6, 1 action: an internal magazine)");
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");
