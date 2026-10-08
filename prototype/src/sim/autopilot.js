@@ -13,7 +13,7 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -25,7 +25,7 @@ import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./order
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
-import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
+import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice } from "./trade.js";
 import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
 import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
 import { autoVisitorTrade } from "./visitors.js";
@@ -1308,9 +1308,19 @@ function handleTrade(state) {
   let budget = Object.entries(spare).reduce((a, [k, q]) => a + (q > 0 ? q * sellPrice(state, f, k, speech, q) : 0), 0);
   const ask = {};
   const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
+  for (const k of ["gunparts", "carparts", "electronics"]) caps[k] = Math.max(1, Math.min(6, partDeficit(state, home, k))); // repair.js: up to the reorder level
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
   let room = cargoRoom(state, p);
+  // A Kevlar kit or a field repair kit from their wares while the base is short of one (repair.js kitWants).
+  const askGear = [];
+  for (const k of kitWants(state, home)) {
+    const it = (f.wares || []).find((x) => x && x.key === k);
+    if (!it || budget <= 0) continue;
+    const cost = gearBuyPrice(state, f, it, speech);
+    if (cost > budget || (GEAR[k].weight || 1) > room) continue;
+    askGear.push(it); askValue += cost; budget -= cost; room -= GEAR[k].weight || 1;
+  }
   for (const k of Object.keys(need).sort((a, b) => need[b] - need[a])) {
     if (need[k] < 1.2 || budget <= 0 || !SUPPLIES[k]) continue;
     const q = maxBuyable(state, f, k, speech, budget, Math.min(caps[k] || 10, Math.floor(room / SUPPLIES[k].weight)));
@@ -1335,11 +1345,12 @@ function handleTrade(state) {
   if (askValue > 0 && offerValue >= askValue && p.apEnvoy !== f.id) { // an envoy keeps its goods for the gift
     state.trade.offer = offer;
     state.trade.ask = ask;
+    state.trade.askGear = askGear;
     const res = executeTrade(state);
     const list = (o) => Object.entries(o).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
     if (/^Traded/.test(res)) {
       g.stats.trades++;
-      text = `traded ${list(offer)} for ${list(ask)}`;
+      text = `traded ${list(offer)} for ${[list(ask), ...askGear.map((x) => x.name)].filter(Boolean).join(", ")}`;
     } else text = `no deal (${res})`; // e.g. more than the team can carry
   }
   if (!f.pact) {
@@ -1483,6 +1494,10 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
+  // Parts by kind (repair.js partNeeds): bought below their reorder levels, never sold; machine parts gain the urgency.
+  const pn = partNeeds(state, h);
+  for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
+  out.parts = Math.max(out.parts, pn.parts > 1.5 ? pn.parts : 0);
   return persona(state).reserves ? reserveNeeds(state, h, out) : out;
 }
 // Cautious: a supply below its reserve target is wanted (1.6, up to 3 when it is gone); one well above it
@@ -2321,6 +2336,8 @@ export function planCrafts(state, base) {
   if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
   if (have("ghillie") + have("woodghillie") < 1 && tryCraft(["woodghillie", "ghillie"], "a ghillie wrap: less Heat in camp and on searches", 60)) return; // the woodland suit once the Bushcraft Field Guide is read
   if ((st.fuel || 0) >= 20 && base.armory.some((it) => it.key === "bottle") && have("molotov") < 3 && hordeThreat(state, base).any && tryCraft(["molotov"], "Molotovs for when the dead come", 0)) return;
+  // Field repair kits (repair.js): kept on hand for the teams, made at a workshop from spare gun and machine parts.
+  if (have("repairkit") < (base.type === "hub" ? 2 : 1) && (st.gunparts || 0) >= 3 && tryCraft(["repairkit"], "a field repair kit for the teams", 30)) return;
   if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
   if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
 }

@@ -186,6 +186,9 @@ const SUPPLY_HOW = {
   preserved: "Eaten after the fresh food; barely spoils, needs no cellar, lighter on a trip and sells well.",
   jars: "The preserving kitchen fills them; most come back when the food in them is eaten.",
   wood: "Heats a base in winter before fuel, boils the water, fires camp fires. Anyone with an axe can cut it.",
+  carparts: "Vehicle repairs, garage upgrades and car-part recipes take them. Garages, gas stations and wrecks hold them; stripping a car gives several.",
+  gunparts: "Springs, pins and barrels: repairs to guns and their attachments take them. Gun stores, armouries and barracks hold them; a spare gun salvaged gives some.",
+  electronics: "Repairs to lights, lasers, night vision and radios take them. Radio towers, offices and news wrecks hold them; salvaged gadgets give some.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => ({

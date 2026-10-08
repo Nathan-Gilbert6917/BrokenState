@@ -622,7 +622,7 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
     // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
     const deals = [];
     for (const f of state.factions) {
-      if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
+      if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want, { kinds: true }) < 3) continue; // part kinds: out of their parts (trade.js KIND_MIX)
       const tb = tradeBase(state, f);
       if (base && tb !== base) continue; // their caravan would go to another base
       if (!tb || deliveryRefusal(state, f, tb)) continue; // they will not bring it (radiotrade.js)
@@ -631,7 +631,7 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
         if (pay === want) continue;
         const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee)));
+        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee), Infinity, true));
         if (qty < 2) continue;
         const cost = qty * buyPrice(state, f, want, speech, qty) + fee;
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);

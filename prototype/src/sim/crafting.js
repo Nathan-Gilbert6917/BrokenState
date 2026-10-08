@@ -86,6 +86,8 @@ export const CRAFTS = {
   scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
   recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },
   sling:       { gear: "sling",       in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
+  // A field repair kit (repair.js): tools, pins and springs for 5 repairs on the road.
+  repairkit:   { gear: "repairkit",   in: { scrap: 3, gunparts: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 3, needs: "workshop" },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
@@ -146,6 +148,7 @@ export function craftOutputText(key) {
   else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
+  else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
   else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; a base only when its boiler is cold with nothing to burn and it has no water filter)`); // worm.js
   else {
@@ -174,6 +177,7 @@ export function durUnit(key) {
   if (d.count) return "left"; // a count stack (data-ammo.js: a box of rounds, primers): what is in it
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
+  if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
   if (d.suppressor) return "shots";
   if (d.cat === "gunmod") return key === "scrapscope" ? "fights" : "shots"; // makeshift gun parts (gunmods.js)
   if (d.fish) return "days of fishing";

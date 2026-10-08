@@ -37,7 +37,8 @@ import {
   available, need, demand, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
   autoSellGear,
 } from "./trade.js";
-import { marketOf } from "./trade.js";
+import { marketOf, groupStockKey } from "./trade.js";
+import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
@@ -87,9 +88,10 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
   if (!p) return null;
   const g = { supplies: {}, gear: [] };
   for (const [k, q] of Object.entries((goods && goods.supplies) || {})) {
-    const take = Math.max(0, Math.min(Math.floor(q), Math.floor(f.stock[k] || 0)));
+    const sk = groupStockKey(k, f); // a part kind comes out of the group's one count of parts
+    const take = Math.max(0, Math.min(Math.floor(q), Math.floor(f.stock[sk] || 0)));
     if (!take) continue;
-    f.stock[k] -= take;
+    f.stock[sk] -= take;
     g.supplies[k] = take;
   }
   for (const item of (goods && goods.gear) || []) {
@@ -257,13 +259,15 @@ export function autoCaravanTrade(state, needs, style, spare = {}) {
     const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
     // Pay with what they want most (trade.js demand: their stock, kind and state) among what the hub has plenty of.
     const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, f, b) - demand(state, f, a) || needs[a] - needs[b]);
-    for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
+    for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : ["parts", "carparts", "gunparts", "electronics"].includes(k) ? Math.max(1, partDeficit(state, base, k)) : 20));
+    const kit = kitWants(state, base).map((k) => ctx.theirGear.find((g) => g && g.key === k)).find(Boolean); // a Kevlar or field repair kit (repair.js)
+    if (kit && plenty.length) ctx.t.askGear = [kit];
     for (const k of plenty) {
       if (tradeVerdict(state).ok) break;
       if (!ctx.t.ask[k]) balanceWith(state, k);
       if (spare[k] != null && (ctx.t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs (autopilot.js tradeSpare)
     }
-    if (short.length && tradeVerdict(state).ok) text = executeTrade(state);
+    if ((short.length || kit) && tradeVerdict(state).ok) text = executeTrade(state);
   }
   // Spare weapons to a group that prizes them (at war, hordes at its walls...), valuables to anyone who pays.
   if (tradeContext(state)) {

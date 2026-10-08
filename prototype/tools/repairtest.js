@@ -12,10 +12,15 @@ import { addBuilding, benchTier } from "../src/sim/buildings.js";
 import {
   REPAIR, REPAIR_KINDS, repairKind, repairInfo, repairItem, repairMath, lossRate, queueRepair, cancelRepair, repairHour,
   fieldRepair, fieldRepairInfo, planRepairs, wornOut, repairPreview, repairInfoAt, repairAt, repairJobStatus, repairCandidates,
-  isFighter, repairHold, benchWanted, repairCrafterWanted, autoFieldRepairs,
+  isFighter, repairHold, benchWanted, repairCrafterWanted, autoFieldRepairs, partPlan, partNeeds, kitWants,
 } from "../src/sim/repair.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { packTripKit } from "../src/sim/kit.js";
+import { CRAFTS } from "../src/sim/crafting.js";
+import { crewAI } from "../src/sim/autopilot.js";
+import * as V from "../src/sim/visitors.js";
+import { groupPartsLow, groupPartsTarget } from "../src/sim/trade.js";
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -267,6 +272,66 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   let ok = true;
   try { for (let i = 0; i < 6; i++) tickHour(back); } catch (e) { ok = false; console.log(e); }
   check(ok, "a loaded world with a repair under way plays on");
+}
+
+// 8. Kits on trips, the stock of parts and kits kept, and buying them from traders.
+{
+  console.log("Kits on trips, stock, buying");
+  // Packing (kit.js): a field repair kit when the base has a spare, or on a risky trip.
+  const { st, h, people } = setup(2, { mechanics: 6, crafting: 6 });
+  const crew = people.slice(1, 3);
+  for (const s of crew) { s.gear.backpack = newItem("backpack"); s.pockets = s.pockets.map(() => null); }
+  const kits = () => h.armory.filter((x) => x.key === "repairkit").length;
+  const onCrew = () => crew.filter((s) => (s.gear.backpack.contents || []).some((x) => x && x.key === "repairkit")).length;
+  h.armory.push(newItem("repairkit"));
+  packTripKit(st, h, crew, "scavenge");
+  check(kits() === 1 && onCrew() === 0, "one kit at the base: a scavenging team leaves it");
+  packTripKit(st, h, crew, "raid");
+  check(kits() === 0 && onCrew() === 1, "but a raid takes it");
+  for (const s of crew) s.gear.backpack.contents = s.gear.backpack.contents.map(() => null);
+  h.armory.push(newItem("repairkit"), newItem("repairkit"));
+  packTripKit(st, h, crew, "scavenge");
+  check(kits() === 1 && onCrew() === 1, "two at the base: a scavenging team takes one");
+  check(CRAFTS.repairkit && CRAFTS.repairkit.in.gunparts === 1 && CRAFTS.repairkit.in.parts === 1 && CRAFTS.repairkit.needs === "workshop", "a field repair kit is made at a workshop (3 scrap, a gun part, a machine part)");
+  // Reorder levels (repair.js partPlan).
+  const s2 = setup(2, { mechanics: 6, crafting: 6 });
+  for (const s of s2.people) s.gear.weapon = null;
+  s2.h.armory = [newItem("ar"), newItem("pistol"), newItem("shotgun"), newItem("vest"), newItem("vest")];
+  Object.assign(s2.h.stock, { gunparts: 0, carparts: 0, electronics: 5 });
+  const plan = partPlan(s2.st, s2.h);
+  check(plan.targets.gunparts === 3 && plan.targets.kevlarkit === 1 && plan.targets.repairkit === 2 && plan.targets.carparts >= 2, `targets: gun parts 2 + 1 per 3 guns, a Kevlar kit per 3 vests, 2 field kits at the hub (${JSON.stringify(plan.targets)})`);
+  const pn = partNeeds(s2.st, s2.h);
+  check(pn.gunparts >= 1.2 && pn.carparts >= 1.2 && pn.electronics < 1.2 && pn.electronics > 0.6, `below the level wanted (gun parts ${pn.gunparts}), at or above it neither bought nor sold (electronics ${pn.electronics})`);
+  check(kitWants(s2.st, s2.h).join() === "kevlarkit,repairkit", "the Kevlar kit and the field kits are on the shopping list");
+  // A gun waiting short of gun parts raises the target (urgent).
+  const f2 = s2.people[1];
+  f2.gear.weapon = worn("ar", 10); f2.gear.weapon.lastUsed = Math.floor(s2.st.hour / 24);
+  s2.st.hour++;
+  const p2 = partPlan(s2.st, s2.h);
+  check(p2.urgent.gunparts > 0 && p2.targets.gunparts > plan.targets.gunparts && partNeeds(s2.st, s2.h).gunparts === 1.9, `a gun repair waiting on gun parts: the target rises, urgent (${p2.targets.gunparts})`);
+  check(crewAI.needs(s2.st).gunparts === 1.9 && crewAI.needs(s2.st).electronics === 0.9, "the governor's needs carry them: its trades ask for gun parts, and never sell what is kept");
+  // Merchants at the gates sell them (visitors.js autoVisitorTrade).
+  const m = V.spawnVisitor(s2.st, "merchants");
+  for (const k of Object.keys(m.stock)) m.stock[k] = 0; // only parts on their wagons: the deal is about them
+  m.stock.gunparts = 6; m.stock.carparts = 2;
+  m.wares.push(newItem("kevlarkit"));
+  s2.h.stock.scrap = 400; s2.h.stock.food = 2000;
+  m.goal = { kind: "base", baseId: s2.h.id, tile: s2.h.tile }; m.phase = "stop"; m.tile = s2.h.tile; m.stayUntil = s2.st.hour + 5;
+  m.goodwill = 30;
+  V.openVisitorTrade(s2.st, m, { baseId: s2.h.id });
+  const g0 = s2.h.stock.gunparts || 0;
+  const text = V.autoVisitorTrade(s2.st, crewAI.needs(s2.st), "balanced", {});
+  check((s2.h.stock.gunparts || 0) > g0 && (s2.h.stock.gunparts || 0) <= g0 + 6, `merchants: the gun parts it lacks bought, no more than the reorder level (${text})`);
+  check(s2.h.armory.some((x) => x.key === "kevlarkit"), "and the Kevlar kit off their table");
+  s2.st.trade = null;
+  // A group low on parts buys them from visiting merchants (visitors.js tradeWithGroup).
+  const f = s2.st.factions.find((x) => x.alive);
+  f.stock.parts = 0; f.stock.food = 400; f.stock.scrap = 200; f.pop = Math.max(f.pop, 10);
+  check(groupPartsLow(f) && groupPartsTarget(f) >= 4, `a group below its parts reorder level (${groupPartsTarget(f)})`);
+  const m2 = V.spawnVisitor(s2.st, "merchants");
+  Object.assign(m2.stock, { carparts: 4, gunparts: 3, parts: 6, food: 0, scrap: 0, meds: 0, fuel: 0, ammo: 0, preserved: 0, water: 0 });
+  V.tradeWithGroup(s2.st, m2, f);
+  check(f.stock.parts > 0 && !("carparts" in f.stock) && !("gunparts" in f.stock), `it buys parts from the merchants into its one count (${f.stock.parts})`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

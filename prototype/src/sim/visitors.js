@@ -99,7 +99,9 @@ import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
-import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey } from "./trade.js";
+import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
+const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
 import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
@@ -1173,7 +1175,9 @@ function merchantsAtBase(state, v, base) {
 // the merchants lack, at the group's need on both sides (value for value), at most a third of the merchants' stock.
 export function tradeWithGroup(state, v, f) {
   // demand (trade.js): stock, kind and state on each side (a group at war wants ammo; merchants want food and scrap).
-  const want = (x, k) => demand(state, x, k);
+  // A group below its parts reorder level (trade.js groupPartsLow) buys parts of any kind (into its one count).
+  const low = groupPartsLow(f);
+  const want = (x, k) => (x === f && low && PART_KEYS.includes(k) ? Math.max(1.5, demand(state, x, k)) : demand(state, x, k));
   const sells = SUPPLY_KEYS.filter((k) => want(f, k) >= 1.2 && available(v, k) > 0).sort((a, b) => want(f, b) - want(f, a));
   const wants = SUPPLY_KEYS.filter((k) => want(v, k) >= 1.2 && available(f, k) > 0).sort((a, b) => want(v, b) - want(v, a));
   const gave = [], got = [];
@@ -1192,7 +1196,7 @@ export function tradeWithGroup(state, v, f) {
     }
     if (!Object.keys(pay).length) continue;
     v.stock[k] -= q;
-    f.stock[k] = (f.stock[k] || 0) + q;
+    f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts
     for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
     gave.push(`${q} ${k}`);
   }
@@ -1335,7 +1339,10 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // A manual for a building or craft you cannot make yet (blueprints.js), one at a time.
   const bp = ctx.theirGear.findIndex((g) => GEAR[g.key] && GEAR[g.key].blueprint && !isKnown(state, GEAR[g.key].blueprint));
   if (bp >= 0 && plenty.length && styleKey !== "aggressive") { t.askGear = [ctx.theirGear[bp]]; tryDeal(); }
-  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
+  // A Kevlar kit, a field repair kit while the base is short of one (repair.js kitWants), one of each.
+  const home = ctx.base || hub(state);
+  if (home && plenty.length) for (const k of kitWants(state, home)) { const it = ctx.theirGear.find((g) => g && g.key === k); if (it) { t.askGear = [it]; tryDeal(); } }
+  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : PART_KEYS.includes(k) && home ? Math.max(1, partDeficit(state, home, k)) : 20));
   if (short.length) tryDeal();
   // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).
   if (ctx.base && tradeContext(state)) { const r = autoSellGear(state, needs); if (/^Traded/.test(r)) out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); }
