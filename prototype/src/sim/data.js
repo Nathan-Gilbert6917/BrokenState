@@ -2,7 +2,7 @@
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
-import { GUN_GEAR, GEAR_PATCH } from "./data-guns.js";
+import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
@@ -571,7 +571,7 @@ Object.assign(GEAR, {
 
 // The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
-Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR); // LATER_GEAR: the launchers and the M2 (wave 2, launchers.js)
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)

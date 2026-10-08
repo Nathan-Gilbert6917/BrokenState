@@ -70,7 +70,11 @@ export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.ve
 export const tank = (v) => VEHICLE_TYPES[v.type].tank;
 // Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks.
 export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : payloadOf(v));
-export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.name);
+export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.destroyed ? `${v.name} (wrecked)` : v.name);
+// Blown up in a fight (launchers.js): condition 0 for good, a wreck nothing repairs; stripped for parts at a base or
+// where it lies (parties.js recoverVehicle).
+export const isWreck = (v) => !!(v && v.destroyed);
+export const WRECK_TEXT = "Blown up: a burnt-out wreck nothing can repair. Strip it for parts and scrap.";
 
 // Fuel multiplier for a car this full (load / payload): 1 up to 60%, 1.3 at 100%, 1.6 at 125% (the most).
 export function fuelMultFor(fill) {
@@ -199,6 +203,7 @@ export function wreckSupplies(stock) {
 }
 
 export function repair(state, base, v) {
+  if (isWreck(v)) return WRECK_TEXT;
   if (isBike(v)) {
     // Bikes: patches, a chain link, spokes. Anyone can do it with a bit of scrap per bike.
     const need = Math.max(1, Math.ceil((v.count || 1) / 2));
@@ -250,6 +255,15 @@ export const VEH_UPGRADES = {
   scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 30 }, hours: 12, mech: 3, kg: 230, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
 };
 export const TURRET_KG = { lmg: 60, m2hb: 90 };
+// Turrets (the user's rules, wave 2). The LMG turret is a garage job, the player's and the AI groups' alike: it takes an
+// unused hand-held light machine gun (the roster's lmg item, out of the base's armory or the group's arsenal) plus
+// scrap and parts, and holds that very item (upgrades.turret.item: its wear and parts); stripping the turret gives it
+// back. The M2 is never built or fitted: it comes mounted on military vehicles (found, claimed or captured Humvees,
+// Army trucks, a National Guard motor pool, a military group's or an escort's), is bolted to the hull (never stripped,
+// never salvaged: there is no M2 item) and is lost with its vehicle.
+export const TURRET_FIT = { gun: "lmg", item: "lmg", cost: { scrap: 15, parts: 4 }, hours: 16, mech: 6, shop: "garage" };
+export const turretRemovable = (t) => !!t && t.gun !== "m2hb";
+export const M2_BOLTED = "The M2 is bolted to the hull: it stays with the vehicle.";
 export const TURRET_NAME = { lmg: "LMG turret", m2hb: "M2 turret" };
 export const UPGRADE_FX = {
   wear: 0.6, breakdown: 0.8,                      // × a plating level (armourOf)
@@ -294,14 +308,14 @@ export function ambushMult(v, enemyKind) {
   const u = upgradesOf(v);
   return u.glass || (u.mesh && enemyKind === "zombies") ? UPGRADE_FX.ambush : 1;
 }
-// One line: "Bulletproof glass, armour plate ×2, M2 turret (not yet usable)".
+// One line: "Bulletproof glass, armour plate ×2, M2 turret".
 export function upgradeText(v) {
   const u = upgradesOf(v), bits = [];
   if (u.glass) bits.push("bulletproof glass");
   if (u.mesh) bits.push("mesh grilles");
   if (u.plating) bits.push(`armour plate${u.plating > 1 ? ` ×${u.plating}` : ""}`);
   if (u.scrapPlate) bits.push("scrap plating");
-  if (u.turret) bits.push(`${TURRET_NAME[u.turret.gun] || "MG turret"} (not yet usable)`);
+  if (u.turret) bits.push(TURRET_NAME[u.turret.gun] || "MG turret");
   const s = bits.join(", ");
   return s ? s[0].toUpperCase() + s.slice(1) : "";
 }
@@ -329,9 +343,11 @@ const costValue = (c) => Object.entries(c).reduce((a, [k, q]) => a + q * ((SUPPL
 // An upgrade's cost in today's supply keys (car parts fall back to parts; the two part kinds merge then).
 export function upgradeCost(key) {
   const out = {};
-  for (const [k, q] of Object.entries(VEH_UPGRADES[key].cost)) { const s = costOf(k); out[s] = (out[s] || 0) + q; }
+  for (const [k, q] of Object.entries(key === "turret" ? TURRET_FIT.cost : VEH_UPGRADES[key].cost)) { const s = costOf(k); out[s] = (out[s] || 0) + q; }
   return out;
 }
+// The unused LMG a turret takes from a base's armory (the best kept first), or null.
+export const turretItemIn = (list) => (list || []).filter((it) => it && it.key === TURRET_FIT.item).sort((a, b) => (b.dur ?? 0) - (a.dur ?? 0))[0] || null;
 export const costText = (c) => Object.entries(c).map(([k, q]) => `${q} ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}`).join(", ");
 
 // ---------- pre-fitted ----------
@@ -482,15 +498,23 @@ const stripMech = (U) => Math.max(1, U.mech - 2);
 // Why this upgrade cannot be fitted (or stripped: op "strip") on v at this base now ("" when it can).
 export function upgradeProblem(state, base, v, key, op = "fit") {
   if (!v || !isCar(v)) return "Only cars and trucks take upgrades.";
+  if (isWreck(v)) return WRECK_TEXT;
   if (!(v.loc.kind === "base" && v.loc.baseId === base.id)) return "Park it at this base first.";
   const u = upgradesOf(v);
   if (garageQueue(base).some((j) => j.vehicleId === v.id)) return "Already in the garage for another job.";
   if (garageQueue(base).length >= MAX_GARAGE) return `The garage queue is full (${MAX_GARAGE}).`;
   if (key === "turret") {
-    if (op !== "strip") return "Turrets come later (the mounted gun is not usable yet).";
-    if (!u.turret) return "No turret to take off.";
-    if (!u.turret.item && !GEAR[u.turret.gun]) return "The mounted gun cannot come off yet (it is not a usable weapon until a later update).";
-    if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4)) return "Needs a Mechanics 4+ survivor here.";
+    if (op === "strip") {
+      if (!u.turret) return "No turret to take off.";
+      if (!turretRemovable(u.turret)) return M2_BOLTED;
+      if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4)) return "Needs a Mechanics 4+ survivor here.";
+      return "";
+    }
+    if (u.turret) return `It has ${u.turret.gun === "m2hb" ? "an M2 bolted on" : "a turret"} already.`;
+    if (!turretItemIn(base.armory)) return "Needs an unused light machine gun (LMG) in this base's armory: the turret is built round it.";
+    if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= TURRET_FIT.mech)) return `Needs a Mechanics ${TURRET_FIT.mech}+ survivor here.`;
+    if (!shopOk(base, TURRET_FIT.shop)) return `Needs ${SHOP_TEXT[TURRET_FIT.shop]} at this base.`;
+    for (const [k, q] of Object.entries(upgradeCost("turret"))) if ((base.stock[k] || 0) < q) return `Needs ${costText(upgradeCost("turret"))} (short of ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}).`;
     return "";
   }
   const U = VEH_UPGRADES[key];
@@ -525,7 +549,10 @@ export function upgradeOptions(state, base, v) {
       out.push({ key, op: "strip", name: `Strip ${U.name.toLowerCase()}`, ok: !why, why, cost: {}, refund: stripRefund(key), hours: stripHours(U), mech: stripMech(U), kg: -U.kg });
     }
   }
-  if (u.turret) { const why = upgradeProblem(state, base, v, "turret", "strip"); out.push({ key: "turret", op: "strip", name: `Strip the ${(TURRET_NAME[u.turret.gun] || "turret").toLowerCase()}`, ok: !why, why, cost: {}, refund: {}, hours: 8, mech: 4, kg: -(TURRET_KG[u.turret.gun] || 60) }); }
+  // The turret: an LMG one fitted round an unused LMG from the armory (items: the item it takes), stripped for that LMG
+  // back; an M2 is bolted on (its strip shows, refused, so the reason is there to read).
+  if (u.turret) { const why = upgradeProblem(state, base, v, "turret", "strip"); out.push({ key: "turret", op: "strip", name: `Strip the ${(TURRET_NAME[u.turret.gun] || "turret").toLowerCase()}`, ok: !why, why, cost: {}, refund: turretRemovable(u.turret) ? { lmg: 1 } : {}, hours: 8, mech: 4, kg: -(TURRET_KG[u.turret.gun] || 60) }); }
+  else { const why = upgradeProblem(state, base, v, "turret", "fit"); out.push({ key: "turret", op: "fit", name: TURRET_NAME.lmg, ok: !why, why, cost: upgradeCost("turret"), items: [TURRET_FIT.item], hours: TURRET_FIT.hours, mech: TURRET_FIT.mech, kg: TURRET_KG.lmg, shop: TURRET_FIT.shop }); }
   return out;
 }
 // What stripping one level gives back: half its car parts (rounded down), and glass whole (a spare set).
@@ -540,10 +567,15 @@ export function stripRefund(key) {
 export function queueUpgrade(state, base, v, key, op = "fit") {
   const why = upgradeProblem(state, base, v, key, op);
   if (why) return why;
-  const U = key === "turret" ? { name: TURRET_NAME[upgradesOf(v).turret.gun] || "turret", hours: 16, mech: 6 } : VEH_UPGRADES[key];
+  const U = key === "turret" ? { name: TURRET_NAME[upgradesOf(v).turret ? upgradesOf(v).turret.gun : TURRET_FIT.gun] || "turret", hours: TURRET_FIT.hours, mech: TURRET_FIT.mech } : VEH_UPGRADES[key];
   const job = { id: newId(), vehicleId: v.id, key, op, progress: 0, hours: op === "strip" ? (key === "turret" ? 8 : stripHours(U)) : U.hours, mech: op === "strip" ? (key === "turret" ? 4 : stripMech(U)) : U.mech };
   if (op === "fit") {
-    if (key === "glass" && (base.spareGlass || 0) > 0) { base.spareGlass -= 1; job.paid = { spareGlass: 1 }; }
+    if (key === "turret") { // the LMG goes with the job (back to the armory if it is cancelled)
+      const it = turretItemIn(base.armory);
+      base.armory.splice(base.armory.indexOf(it), 1);
+      job.item = it;
+      job.paid = upgradeCost(key); for (const [k, q] of Object.entries(job.paid)) base.stock[k] = (base.stock[k] || 0) - q;
+    } else if (key === "glass" && (base.spareGlass || 0) > 0) { base.spareGlass -= 1; job.paid = { spareGlass: 1 }; }
     else { job.paid = upgradeCost(key); for (const [k, q] of Object.entries(job.paid)) base.stock[k] = (base.stock[k] || 0) - q; }
   }
   garageQueue(base).push(job);
@@ -560,6 +592,7 @@ export function cancelGarageJob(state, base, id) {
     if (k === "spareGlass") base.spareGlass = (base.spareGlass || 0) + n;
     else base.stock[k] = (base.stock[k] || 0) + back;
   }
+  if (job.item) base.armory.push(job.item); // the LMG a turret job took comes back whole
   q.splice(q.indexOf(job), 1);
   return `Cancelled. ${full ? "All" : "Half"} the materials were returned.`;
 }
@@ -586,16 +619,23 @@ export function garageHour(state) {
     if (job.progress < job.hours) continue;
     q.splice(q.indexOf(job), 1);
     const v = vehicleById(state, job.vehicleId);
-    log(state, finishUpgrade(state, base, v, job.key, job.op), "good");
+    log(state, finishUpgrade(state, base, v, job.key, job.op, job), "good");
     const best = who.slice().sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0];
     if (best) gainXp(state, best, "mechanics", (USE.repair || 3) * 2);
   }
 }
 // The work done: the upgrade on (or off, with the refund). Returns the log line.
-export function finishUpgrade(state, base, v, key, op = "fit") {
+export function finishUpgrade(state, base, v, key, op = "fit", job = null) {
   const u = upgradesOf(v);
+  if (key === "turret" && op !== "strip") {
+    const item = (job && job.item) || null;
+    u.turret = { gun: TURRET_FIT.gun, ...(item ? { item } : {}) };
+    v.upgrades = u;
+    return `An LMG turret fitted to the ${v.name} at ${base.name}${item ? ` round the ${item.name}` : ""}: Shoot fires it from the roof (Man the turret).`;
+  }
   if (key === "turret") {
     const t = u.turret;
+    if (!turretRemovable(t)) return M2_BOLTED; // never: an M2 stays with the vehicle
     u.turret = null;
     v.upgrades = u;
     const item = t && t.item ? t.item : t && GEAR[t.gun] ? newItem(t.gun, 0.8) : null;
@@ -627,6 +667,8 @@ export function stripVehicle(state, base, v) {
   if (isBike(v)) return "Bikes are not stripped for car parts.";
   const got = stripYield(v);
   for (const [k, q] of Object.entries(got)) if (q > 0) base.stock[k] = (base.stock[k] || 0) + q;
+  const t = upgradesOf(v).turret; // an LMG turret's gun comes off with the rest; an M2 is scrapped with the hull
+  if (t && turretRemovable(t) && t.item) base.armory.push(t.item);
   state.vehicles.splice(state.vehicles.indexOf(v), 1);
   const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
   log(state, msg, "info");

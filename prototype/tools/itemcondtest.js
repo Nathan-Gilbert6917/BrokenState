@@ -40,6 +40,8 @@ let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
 const h16 = (s) => createHash("sha1").update(s).digest("hex").slice(0, 16);
+// Added to Army trucks after the baselines (data-guns.js TRUCK_GEAR's launcher rows: their own hashed dice, nothing else moves).
+const LAUNCH_ADDED = new Set(["at4", "m79", "rpg", "a_40mm_he", "a_40mm_smoke", "a_rocket_heat"]);
 const keysOf = (items) => items.filter(Boolean).map((it) => it.key + (it.contents ? `[${it.contents.filter(Boolean).map((c) => c.key).join(",")}]` : "")).join(",");
 const flat = (items) => items.filter(Boolean).flatMap((it) => [it, ...(it.contents ? flat(it.contents) : [])]);
 const pct = (v) => `${Math.round(v * 100)}%`;
@@ -253,7 +255,7 @@ const truckHooks = takeFlashHooks();
   const ks = [];
   for (const kind of ["cargo", "humvee", "mrap"]) for (const cond of ["intact", "wrecked", "burnt"]) {
     const rng = new Rng(kind.length * 100 + cond.length);
-    for (let i = 0; i < 200; i++) ks.push(keysOf(truckLoot(rng, kind, cond).gear));
+    for (let i = 0; i < 200; i++) ks.push(keysOf(truckLoot(rng, kind, cond).gear.filter((it) => !LAUNCH_ADDED.has(it.key)))); // the launchers' rows (wave 2) only add, on dice of their own
     ks.push(String(rng.state));
   }
   check(h16(ks.join("|")) === BASE.trucks, "trucks: the same items, the dice where they were");

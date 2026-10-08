@@ -26,6 +26,8 @@ import { unitMods } from "./gunmods.js";
 import { earGearOf, faceOf, HELMETS, syncVisorSight, helmetOf } from "./helmets.js";
 import { weather } from "./weather.js";
 import { wear } from "./crafting.js";
+import { registerHearing } from "./launchers.js"; // launcher blasts and rocket launches deafen through hearing.js (registered below, at load)
+import { registerHearing as registerThrowHearing } from "./throwables.js"; // the same registry, re-exported by throwables.js
 
 export const HEAR = {
   BASE: 6, RANGE: 4, SHOOTER: 1, FALL: 0.5, DEAF: 3.5, DEAF2: 5, DAZE: 6, MAX: 3, DAZE_AIM: 10,
@@ -204,3 +206,8 @@ export function visorState(u) {
   if (!f || f.kind === "cage") return "";
   return u.visorUp ? "up" : "down";
 }
+
+// Hand deafen and HEAR to the launchers (launchers.js HEARING) at load: combat.js and throwables.js import this module
+// statically, so every run registers it at the same moment (no dynamic import).
+registerHearing({ deafen, HEAR });
+registerThrowHearing({ deafen, HEAR });

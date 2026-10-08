@@ -17,6 +17,7 @@ import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, searchCost, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
+import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
 import { LIGHTS } from "../sim/lights.js";
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
@@ -158,6 +159,17 @@ function rescueButtons(state, b, u, btn) {
 
 // A unit's weapon with its magazine (sim/combat.js magazines): "9mm pistol 7/15", flagged when it needs a reload.
 function gunText(b, u) {
+  return gunOnly(b, u) + launcherText(b, u);
+}
+// A launcher beside the gun (sim/launchers.js): your own with its rounds ("M79 1/1 HE"); theirs only what it is (R10:
+// never what it is loaded with).
+function launcherText(b, u) {
+  if (!u || !u.gl || u.dead) return "";
+  if (u.side !== "player") return ` · <span class="warn">${esc(glName(u.gl))}</span>`;
+  const empty = !u.gl.oneShot && Math.min(u.gl.mag, glRounds(b, u, u.gl.load)) < 1;
+  return ` · <b>${esc(glLabel(b, u))}</b>${empty ? ` <span class="danger">empty — reload (${esc(keyLabel("battle.launch", 1) || "Shift+L")})</span>` : ""}`;
+}
+function gunOnly(b, u) {
   const m = magLabel(b, u);
   const jam = u.jam && !u.dead ? ' <b class="danger" data-tip="Jammed: Unjam clears it (or a Reload, for a double feed).">JAMMED</b>' : "";
   if (!m) return esc(u.weaponName) + jam;
@@ -291,7 +303,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "suppress", "throwspear", "unjam"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "suppress", "throwspear", "unjam", "launch", "glreload"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
   }
   autoSelect(b);
@@ -328,6 +340,7 @@ export function combatClick(state, px, py) {
   // Suppressing fire at an enemy or a spot, a spear thrown at a tile (the weapons overhaul: the sim says why not).
   if (u && active(u) && u.ap > 0 && cui.mode === "suppress") return void act(state, { type: "suppress", unit: u.id, x: c.x, y: c.y, ...(who && who.side === "enemy" && v.seen.has(who.id) ? { target: who.id } : {}) });
   if (u && active(u) && u.ap > 0 && cui.mode === "throwspear") return void act(state, { type: "throwspear", unit: u.id, x: c.x, y: c.y, ...(who && who.side === "enemy" && v.seen.has(who.id) ? { target: who.id } : {}) });
+  if (u && active(u) && u.ap > 0 && cui.mode === "launch") return void act(state, { type: "launch", unit: u.id, x: c.x, y: c.y }); // sim/launchers.js: the sim says why not
   if (u && active(u) && u.ap > 0 && nlMapClick(state, b, u, c, cui, act)) return; // pepper spray toward a tile (ui/nonlethal.js)
   if (u && active(u) && u.ap > 0 && cui.mode === "drag") {
     if (cui.dragId == null) {
@@ -519,7 +532,39 @@ function gunButtons(state, b, u, btn) {
   if (canSuppressUI(u)) html += btn("suppress", "Suppress", "1 action: a stream of fire at an enemy or a spot (click it; the cone shows on the map). Everyone living in the cone keeps their head down until their next turn ends: −20 aim, no overwatch, they hunker. No effect on the dead. Hungry for rounds: automatic guns and machine guns do it best.", u.ap > 0 && canFire(b, u), key("battle.suppress", "Shift+O"));
   const sp = spearDown(b, u);
   if (sp) { const why = SIM.pickSpearRefusal ? SIM.pickSpearRefusal(b, u) : ""; html += btn("pickspear", "Pick up spear", `1 action: pick up the ${esc(sp.name.toLowerCase())} ${u.name.split(" ")[0]} threw, from next to it (walking onto it picks it up for free).${why ? ` ${why}` : ""}`, u.ap > 0 && !why, key("battle.pickspear", "Shift+P")); }
+  if (u.gl) html += launchButtons(b, u, btn, key);
   if (spearOf(u)) html += btn("throwspear", "Throw spear", `1 action: throw the ${u.weaponName} at a tile up to ${spearRange(u)} away (click it): its melee damage on a hit. ${u.name.split(" ")[0]} fights with what is left (fists or a sidearm) until it is picked up again; it is picked up after a won fight.`, u.ap > 0, key("battle.throwspear", "Shift+G"));
+  return html;
+}
+// A grenade launcher or a rocket (sim/launchers.js): Launch (a targeting mode; an empty one is reloaded instead, 1
+// action) and, with more than one kind of 40 mm to hand, the round the next reload takes (free).
+cui.glPick = {}; // uid -> the kind of 40 mm picked for the launcher's next reload
+function launchButtons(b, u, btn, key) {
+  const g = u.gl;
+  const k = key("battle.launch", "Shift+L");
+  const name = glName(g);
+  let html = "";
+  if (g.mag < 1 && !g.oneShot) {
+    const t = cui.glPick[u.id] || g.load;
+    const why = glReloadRefusal(b, u, t);
+    html += btn("launch", '<span class="danger">Reload launcher</span>', `1 action: load the ${esc(name)} with ${esc(roundLabel(t))} (${g.cap > 1 ? `${g.cap} rounds` : "a round"}).${why ? ` ${why}` : ""}`, u.ap > 0 && !why, k);
+  } else {
+    const range = g.load === "buck" ? LAUNCH.BUCK.range : glRange(g);
+    const tip = g.cal === "rocket"
+      ? `Ends the turn: fire the ${esc(name)} straight at a tile it sees, up to ${range} away (click it): ${ROCKET.impact.join("–")} on the spot, ${ROCKET.dmg.join("–")} within 2; breaks gates, doors, wall sections, a ram, vehicles. Nothing arms inside ${LAUNCH.ARM} tiles (the red ring). The backblast (orange) hurts anyone 2 tiles behind; fired from inside a room it hurts the shooter too.${g.oneShot ? " A rocket tube fires once." : ""}`
+      : g.load === "he" ? `Ends the turn: lob a 40 mm HE grenade up to ${range} tiles (click a tile you or a teammate sees, over walls too): ${GL_HE.impact.join("–")} on the spot, ${GL_HE.dmg.join("–")} within a tile and a half. It does not arm inside ${LAUNCH.ARM} tiles (the red ring).`
+      : g.load === "buck" ? `Ends the turn: buckshot at an enemy up to ${range} tiles off (click them): ${LAUNCH.BUCK.dmg.join("–")}, best within ${LAUNCH.BUCK.opt}.`
+      : g.load === "smoke" ? `Ends the turn: lob a 40 mm smoke round up to ${range} tiles: a cloud there for a few turns.` : `Ends the turn: lob a 40 mm flare up to ${range} tiles: it lights everything within 7 tiles.`;
+    html += btn("launch", `Launch: ${esc(glLabel(b, u))}`, tip, u.ap > 0, k);
+  }
+  const loads = glLoads(b, u);
+  if (loads.length > 1) {
+    const cur = cui.glPick[u.id] || g.load;
+    const i = loads.findIndex((x) => x.type === cur);
+    const nx = loads[(i + 1) % loads.length];
+    html += btn("glround", `Round: ${esc(roundLabel(cur))}`, `Free: the kind of round the launcher's next reload takes (${loads.map((x) => `${roundLabel(x.type)} ${x.n}`).join(", ")}); next ${roundLabel(nx.type)}. A reload with another kind than the loaded one swaps it (1 action).`, true);
+    if (g.mag >= 1 && cur !== g.load) html += btn("glreload", "Swap the round", `1 action: unload the ${esc(roundLabel(g.load))} and load ${esc(roundLabel(cur))}.`, u.ap > 0 && !glReloadRefusal(b, u, cur));
+  }
   return html;
 }
 // The Reload chooser: one button per kind of round to hand (the picked one marked); I reloads the picked one.
@@ -553,6 +598,24 @@ function gunOrder(state, b, u, v, d) {
     return true;
   }
   if (v === "pickspear") { act(state, { type: "pickspear", unit: u.id }); return true; }
+  // A launcher (sim/launchers.js): Launch toggles the targeting mode; an empty one is reloaded instead.
+  if (v === "launch") {
+    if (!u.gl) { cui.msg = "No grenade launcher or rocket: an M79, M32, AT4 or RPG in the hands or carried, or an M203 under the rifle."; return true; }
+    if (u.gl.mag < 1 && !u.gl.oneShot) { act(state, { type: "glreload", unit: u.id, ammo: cui.glPick[u.id] || null }); return true; }
+    cui.mode = cui.mode === "launch" ? "move" : "launch";
+    cui.msg = cui.mode === "launch" ? `Click where to fire the ${glName(u.gl)} (${u.gl.cal === "rocket" ? "a tile it sees" : u.gl.load === "buck" ? "an enemy" : "a tile someone of yours sees"}). The red ring: too close to arm.` : "";
+    return true;
+  }
+  if (v === "glreload") { if (u.gl) act(state, { type: "glreload", unit: u.id, ammo: cui.glPick[u.id] || null }); return true; }
+  if (v === "glround") {
+    const loads = u.gl ? glLoads(b, u) : [];
+    if (loads.length < 2) { cui.msg = "Only one kind of round for the launcher to hand."; return true; }
+    const cur = cui.glPick[u.id] || u.gl.load;
+    const nx = loads[(loads.findIndex((x) => x.type === cur) + 1) % loads.length];
+    cui.glPick[u.id] = nx.type;
+    cui.msg = `The launcher's next reload: ${roundLabel(nx.type)} (${nx.n} to hand).`;
+    return true;
+  }
   if (v === "ammoclose") { cui.ammoAsk = null; return true; }
   if (v === "reload") {
     if (d.k) { act(state, { type: "reload", unit: u.id, ammo: d.k }); return true; }
@@ -585,6 +648,7 @@ export function aimArea(b, u, vis, h, mode) {
   const w = b.w, hgt = b.h;
   const band = new Uint8Array(w * hgt);
   if (!u) return band;
+  if (mode === "launch") return launchArea(b, u, vis, h, band);
   if (mode === "throwspear") {
     const r = spearRange(u);
     for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
@@ -611,7 +675,51 @@ export function aimArea(b, u, vis, h, mode) {
   band[h.y * w + h.x] = 2;
   return band;
 }
+// A launcher's targeting (sim/launchers.js): 1 in reach, 3 too close to arm (the red ring), 4 the backblast cone, 5
+// the hovered spot's blast, 2 the hovered spot. vis: the cells your side sees.
+function launchArea(b, u, vis, h, band) {
+  const g = u.gl;
+  if (!g) return band;
+  const w = b.w, hgt = b.h;
+  const range = g.load === "buck" ? LAUNCH.BUCK.range : glRange(g);
+  for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+    if (x === u.x && y === u.y) continue;
+    const d = Math.hypot(x - u.x, y - u.y);
+    if (d > range + 0.25) continue;
+    if (d < LAUNCH.ARM && (g.load === "he" || g.cal === "rocket")) band[y * w + x] = 3;
+    else if (vis[y * w + x]) band[y * w + x] = 1;
+  }
+  if (h && !(h.x === u.x && h.y === u.y)) {
+    const blast = g.cal === "rocket" ? ROCKET : g.load === "he" ? GL_HE : null;
+    if (blast && Math.hypot(h.x - u.x, h.y - u.y) >= LAUNCH.ARM) for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) if (Math.hypot(x - h.x, y - h.y) <= blast.r + 1e-6 && band[y * w + x] !== 3) band[y * w + x] = 5;
+    if (g.cal === "rocket") for (const [x, y] of backblastCells(b, u, h.x, h.y)) band[y * w + x] = 4;
+    band[h.y * w + h.x] = 2;
+  }
+  return band;
+}
+const LAUNCH_FILL = { 1: "rgba(140,200,255,0.12)", 2: "rgba(255,120,60,0.45)", 3: "rgba(255,60,60,0.22)", 4: "rgba(255,160,40,0.35)", 5: "rgba(255,120,60,0.25)" };
+// The fill of a targeting band's cell (suppress, throw spear: one colour; launch: by its meaning).
+const aimFill = (mode, k) => (mode === "launch" ? LAUNCH_FILL[k] || "rgba(0,0,0,0)" : mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.16)");
+function launchPreview(b, u, h) {
+  const g = u.gl;
+  if (!g) return "";
+  const why = launchRefusal(b, u, h.x, h.y);
+  const d = Math.hypot(h.x - u.x, h.y - u.y);
+  if (why) return `<span class="warn">${esc(why)}</span>`;
+  const dud = d < LAUNCH.ARM && (g.load === "he" || g.cal === "rocket");
+  const blast = g.cal === "rocket" ? ROCKET : GL_HE;
+  const caught = b.units.filter((t) => active(t) && !t.off && Math.hypot(t.x - h.x, t.y - h.y) <= blast.r + 1e-6);
+  const mine = caught.filter((t) => t.side === "player"), theirs = caught.filter((t) => t.side !== "player");
+  const behind = g.cal === "rocket" ? b.units.filter((t) => t !== u && t.side === "player" && active(t) && backblastCells(b, u, h.x, h.y).some(([x, y]) => x === t.x && y === t.y)) : [];
+  const parts = [];
+  if (dud) parts.push(`<span class="warn">Too close: it will not arm (${LAUNCH.DUD.join("–")} on whoever is on the spot, no blast).</span>`);
+  else if (g.load === "he" || g.cal === "rocket") parts.push(`${theirs.length ? `catches ${theirs.length} of them` : "nobody of theirs in the blast"}${mine.length ? ` · <span class="danger">and ${mine.length} of yours!</span>` : ""}`);
+  if (behind.length) parts.push(`<span class="danger">backblast on ${behind.map((t) => esc(t.name)).join(", ")}</span>`);
+  if (g.cal === "rocket" && enclosedAt(b, u.x, u.y)) parts.push('<span class="danger">fired inside: the backblast hurts the shooter (and costs an action next turn)</span>');
+  return `<b>Fire the ${esc(glName(g))}</b> here (${Math.round(d)} tiles): ${parts.join(" · ")} <span class="muted">Click to fire (ends the turn${g.cal === "rocket" ? "" : "; a tile off now and then"}).</span>`;
+}
 function aimPreview(b, u, h) {
+  if (cui.mode === "launch") return launchPreview(b, u, h);
   const v = view(b);
   const band = aimArea(b, u, v.vis, h, cui.mode);
   if (cui.mode === "throwspear") return band[h.y * b.w + h.x] ? `<b>Throw the ${esc(u.weaponName)}</b> here (1 action). <span class="muted">Range ${spearRange(u)}; it lands on this tile.</span>` : `<span class="warn">Out of reach: a spear flies ${spearRange(u)} tiles at most.</span>`;
@@ -1697,7 +1805,7 @@ function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
   if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
-  if (u && (cui.mode === "suppress" || cui.mode === "throwspear")) return aimPreview(b, u, h); // the weapons overhaul's targeting
+  if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
   const v = view(b);
   const t = unitAt(b, h.x, h.y);
   const nlp = nlPreview(b, t && (t.side === "player" || v.vis[h.y * W + h.x]) ? t : null, h, u, cui); // the pepper cone, hands up, your knocked out (ui/nonlethal.js)
@@ -1937,11 +2045,11 @@ export function drawCombat(state, now) {
   }
 
   // Suppressing fire's cone, a thrown spear's reach.
-  if (u && (cui.mode === "suppress" || cui.mode === "throwspear")) {
+  if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) {
     const band = aimArea(b, u, v.vis, cui.hover, cui.mode);
-    ctx.fillStyle = cui.mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.16)";
-    for (let i = 0; i < W * H; i++) if (band[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
-    outline(band, (k) => k >= 1, cui.mode === "suppress" ? "rgba(255,150,70,0.9)" : "rgba(150,205,255,0.9)");
+    for (let i = 0; i < W * H; i++) if (band[i]) { ctx.fillStyle = aimFill(cui.mode, band[i]); ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs); }
+    if (cui.mode === "launch") { outline(band, (k) => k === 3, "rgba(255,80,80,0.9)"); outline(band, (k) => k === 4, "rgba(255,170,60,0.95)"); outline(band, (k) => k === 1 || k === 2 || k === 5, "rgba(150,205,255,0.7)"); }
+    else outline(band, (k) => k >= 1, cui.mode === "suppress" ? "rgba(255,150,70,0.9)" : "rgba(150,205,255,0.9)");
   }
   // The pepper spray's cone toward the hovered tile (ui/nonlethal.js).
   const cone = nlConeMask(b, u, cui);
@@ -2104,19 +2212,21 @@ function drawIsoView(state, b, now, cw, ch) {
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
   // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).
-  if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear")) {
+  if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) {
     const band = aimArea(b, v.u, v.vis, cui.hover, cui.mode);
-    ctx.fillStyle = cui.mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.18)";
-    ctx.beginPath();
-    for (let i = 0; i < band.length; i++) {
-      if (!band[i]) continue;
-      const x = i % b.w, y = (i / b.w) | 0;
-      const pts = [project(x, y), project(x + 1, y), project(x + 1, y + 1), project(x, y + 1)];
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let k = 1; k < 4; k++) ctx.lineTo(pts[k][0], pts[k][1]);
-      ctx.closePath();
+    for (const code of cui.mode === "launch" ? [1, 3, 5, 4, 2] : [1, 2]) {
+      ctx.fillStyle = cui.mode === "launch" ? aimFill("launch", code) : cui.mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.18)";
+      ctx.beginPath();
+      for (let i = 0; i < band.length; i++) {
+        if (!band[i] || (cui.mode === "launch" ? band[i] !== code : code !== 1)) continue;
+        const x = i % b.w, y = (i / b.w) | 0;
+        const pts = [project(x, y), project(x + 1, y), project(x + 1, y + 1), project(x, y + 1)];
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let k = 1; k < 4; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+        ctx.closePath();
+      }
+      ctx.fill();
     }
-    ctx.fill();
   }
 }
 // The selected unit's hit chance against every enemy in sight (the isometric view shows it over their heads).
@@ -2642,10 +2752,10 @@ function drawObject(k, px, py, cs, n, cell = null) {
         // clipped to this cell, so the cells meet into one car; glass over the cabin, wheels at the corners. The team's
         // own vehicle ("vehicle", combat.js placeVehicle) is the blue one.
         const { i, j, L, ax, kind, v, body: bodyKind } = cell.car, big = kind === "truck" || bodyKind === "truck";
-        const body = kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length];
+        const body = cell.car && cell.car.wrecked ? "#2b2723" : kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length]; // wrecked: blown up (sim/launchers.js), burnt out
         const bikeParts = [[0.15, 0.65, 0.3, 0.7, "#1e1e20"], [1.35, 1.85, 0.3, 0.7, "#1e1e20"], [0.45, 1.55, 0.42, 0.58, kind === "vehicle" ? "#2f5d8a" : "#8a8f96"], [0.75, 1.15, 0.36, 0.64, "#5a5244"]]; // a bike: 2 x 1
         const mil = MIL_BODY[bodyKind]; // an Army truck (sim/miltrucks.js; the team's own Army truck too): olive, burned out near black
-        const parts = mil ? milParts(mil, L, kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
+        const parts = mil ? milParts(mil, L, cell.car.wrecked ? "#2b2723" : kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
           : bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
         if (bodyKind !== "bike") for (const a of mil ? mil.wheels(L) : big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);

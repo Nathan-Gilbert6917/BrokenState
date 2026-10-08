@@ -315,7 +315,7 @@ export function claimCar(state, b, rec) {
   if (rec.mil) markTaken(state, rec.mil); // miltrucks.js: gone from the tile's maps from now on
   else (state.carClaims = state.carClaims || {})[tile] = state.hour;
   markAbandonedVehicle(state, v, fix ? "needs repair" : "found");
-  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof (not yet usable)" : ""}` : ""}.`, "good");
+  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof" : ""}` : ""}.`, "good");
   return v;
 }
 // A group's vehicle driven out of its motor pool: off their books (with its upgrades), and they know who took it.
@@ -346,7 +346,7 @@ export function settleClaims(state, b, result) {
   const lost = result && result.outcome === "defeat";
   for (const id of b.claims) {
     const v = vehicleById(state, id);
-    if (!v || v.loc.kind !== "abandoned" || (v.found && v.found.repair)) continue;
+    if (!v || v.loc.kind !== "abandoned" || (v.found && v.found.repair) || v.destroyed) continue; // a wreck (launchers.js) never runs
     if (!lost && p && state.parties.includes(p) && partyMembers(state, p).length && !p.vehicle) {
       joinTeam(state, p, v);
       log(state, `The ${v.name} joins ${teamName(state, p)} (fuel ${Math.round(v.fuel)}, condition ${Math.round(v.condition)}%).`, "good");
@@ -372,12 +372,13 @@ export function joinTeam(state, p, v) {
 
 // ---------- the State Map: repairing a found vehicle, driving it home ----------
 // The found vehicle that needs work on the team's tile, or null.
-export const fixableAt = (state, tile) => state.vehicles.find((v) => v.loc.kind === "abandoned" && v.loc.tile === tile && v.found && v.found.repair) || null;
+export const fixableAt = (state, tile) => state.vehicles.find((v) => v.loc.kind === "abandoned" && v.loc.tile === tile && v.found && v.found.repair && !v.destroyed) || null;
 // A found vehicle that runs on the team's tile (for "drive it home"), or null.
-export const runnerAt = (state, tile) => state.vehicles.find((v) => v.loc.kind === "abandoned" && v.loc.tile === tile && v.found && !v.found.repair && isCar(v)) || null;
+export const runnerAt = (state, tile) => state.vehicles.find((v) => v.loc.kind === "abandoned" && v.loc.tile === tile && v.found && !v.found.repair && isCar(v) && !v.destroyed) || null;
 export const fixChance = (mech, need) => Math.max(FIX.min, Math.min(FIX.max, FIX.base + FIX.perMech * (mech - need)));
 // Why the team cannot start the repair now ("" when it can).
 export function fixProblem(state, p, v) {
+  if (v && v.destroyed) return "A burnt-out wreck: nothing repairs it."; // blown up (launchers.js)
   const r = v.found && v.found.repair;
   if (!r) return "It does not need repairs.";
   const mech = bestSkill(state, p, "mechanics");

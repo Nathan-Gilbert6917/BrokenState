@@ -435,11 +435,11 @@ export function modsText(item) {
 // How often an enemy's gun carries an attachment, by its kit (combat.js KITS): [chance, candidates] per slot; only the
 // candidates that fit the gun count (none fit: nothing there). A sight on a gun that needs a mount for one comes with
 // its mount. Soldiers' rifles are well kept: half carry a sight (ACOGs, holo sights), a quarter a suppressor, a light,
-// a grip, now and then an IR laser (no launcher under an AR until the launcher wave). Guards (police): lights, lasers, pistol dots,
+// a grip, now and then an IR laser, and one AR in eight an M203 under the barrel (launchers.js: 2-4 HE with it). Guards (police): lights, lasers, pistol dots,
 // bigger magazines. Militia and fighters (hunters at heart): scopes on mounts, recoil pads, bipods and slings.
 // Raiders, survivors and zealots: cheap or makeshift parts (a red dot, an oil filter, a folding stock, a side mount).
 export const ENEMY_MODS = {
-  soldiers: { optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling"]] },
+  soldiers: { under: [0.125, ["m203"]], optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling"]] },
   guards:   { optic: [0.1, ["reddot", "rmr"]], tactical: [0.2, ["laser", "weaponlight", "weaponlight"]], mag: [0.08, ["extmag", "tubeext"]] },
   escorts:  { optic: [0.15, ["scope4x", "reddot"]], bipod: [0.04, ["bipod"]], tactical: [0.04, ["laser"]], mag: [0.06, ["extmag", "tubeext"]] }, // merchant caravans' riflemen (escorts.js)
   contractors: { optic: [0.45, ["reddot", "holo", "scope4x"]], muzzle: [0.15, ["riflecan", "comp"]], grip: [0.08, ["foregrip"]], tactical: [0.08, ["laser"]], mag: [0.08, ["drum"]] }, // their hired guns

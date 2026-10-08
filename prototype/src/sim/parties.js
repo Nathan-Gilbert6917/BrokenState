@@ -26,7 +26,7 @@ import { startScavenge } from "./scavenge.js";
 import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -58,8 +58,9 @@ import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldA
 import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
-import { totalRounds, spendAmmo, ROUND_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
+import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 import { packRounds, addRecord, drawTeamShots, sortFind } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
+import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -633,7 +634,7 @@ export function launchExpedition(state, opts) {
   if (!est) return fail(v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile.");
   // Water: purified and un-purified together (water.js), purified packed first.
   // "ammo": rounds of any calibre (packed below as the rounds that fit the crew's guns: ammo.js packRounds).
-  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : k === "ammo" ? totalRounds(home.stock) - ROUND_KEYS.reduce((a, x) => a + (supplies[x] || 0), 0) : home.stock[k] || 0);
+  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : k === "ammo" ? totalRounds(home.stock) - GENERIC_KEYS.reduce((a, x) => a + (supplies[x] || 0), 0) : home.stock[k] || 0);
   for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at ${at}.`);
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
@@ -652,6 +653,7 @@ export function launchExpedition(state, opts) {
     if (d.raw > 0) packed[RAW] = (packed[RAW] || 0) + d.raw;
   }
   if (supplies.ammo > 0) { packed.ammo = 0; addRecord(packed, packRounds(home.stock, members, supplies.ammo)); } // ammo.js: the rounds that fit each one's gun
+  addRecord(packed, packLauncherRounds(home.stock, members, Math.max(0, cap - load))); // launchers.js: 40 mm and rockets for the launchers they carry, as far as they can carry
   Object.assign(supplies, packed);
   const stays = STAY_MISSIONS.includes(mission);
   /** @type {Party} */
@@ -1566,6 +1568,15 @@ function recoverVehicle(state, p) {
     awaitOrders(state, p, text, { failed: !c.got.length });
     return "";
   };
+  if (v.destroyed) { // blown up (launchers.js): no restart; what is left in it, then stripped where it lies
+    const c = takeVehicleCargo(state, p, v);
+    const y = stripYield(v), got = [];
+    for (const k of ["carparts", "scrap"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); }
+    if (!vehicleCargo(v)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
+    spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: !vehicleCargo(v) });
+    awaitOrders(state, p, `The ${v.name} is a burnt-out wreck past repair.${c.got.length ? ` The team took ${c.got.join(", ")} out of it.` : ""} Stripped for ${got.join(" and ") || "nothing they could carry"}.${vehicleCargo(v) ? ` Still inside: ${c.left.join(", ")}.` : " Nothing is left of it."}`);
+    return "";
+  }
   if (p.vehicle) return salvage(`The team already has a vehicle, so the ${v.name} stays.`);
   if (isBike(v)) {
     // Bikes: no fuel; a badly damaged stack needs a bit of scrap or a part to get rolling.

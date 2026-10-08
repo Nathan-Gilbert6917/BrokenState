@@ -21,14 +21,15 @@ import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
-import { foldRounds, sumRecs, ROUND_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf } from "./rounds.js";
+import { foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf } from "./rounds.js";
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
-// The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds).
+// The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds; a launcher too: its rounds are
+// launchers.js's, never a gun's magazine, a plan's "ammo" or the bench's).
 /** @param {string | null | undefined} wkey */
 export function calOf(wkey) {
   const w = wkey ? WEAPONS[wkey] : null;
-  return w && w.ammo > 0 && w.cal && CALIBERS[w.cal] ? w.cal : null;
+  return w && w.ammo > 0 && w.cal && CALIBERS[w.cal] && !w.launcher ? w.cal : null;
 }
 
 
@@ -48,7 +49,7 @@ export function gunCals(people, items = []) {
 export function mixForCals(cals) {
   /** @type {Record<string, number>} */
   const out = {};
-  for (const [c, w] of Object.entries(cals || {})) if (w > 0 && CALIBERS[c]) out[baseKey(c)] = (out[baseKey(c)] || 0) + w;
+  for (const [c, w] of Object.entries(cals || {})) if (w > 0 && CALIBERS[c] && CALIBERS[c].common !== false) out[baseKey(c)] = (out[baseKey(c)] || 0) + w;
   return Object.keys(out).length ? out : { a_9mm_fmj: 1, a_12ga_buck: 1 };
 }
 const peopleAt = (state, baseId) => (state.survivors || []).filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === baseId);
@@ -97,7 +98,7 @@ export function chooseRounds(rec, n, cals = null) {
   if (!rec || !(left > 0)) return out;
   const order = [];
   for (const [c] of Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))) for (const t of typesOf(c)) order.push(ammoKey(c, t));
-  for (const k of ROUND_KEYS.filter((x) => !order.includes(x)).sort((a, b) => SUPPLIES[a].value - SUPPLIES[b].value || (a < b ? -1 : 1))) order.push(k);
+  for (const k of GENERIC_KEYS.filter((x) => !order.includes(x)).sort((a, b) => SUPPLIES[a].value - SUPPLIES[b].value || (a < b ? -1 : 1))) order.push(k);
   for (const k of order) {
     if (left <= 0) break;
     const q = Math.min(left, Math.max(0, Math.floor(num(rec[k]))));

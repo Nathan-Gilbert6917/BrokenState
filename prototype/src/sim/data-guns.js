@@ -12,8 +12,8 @@
 //   GEAR_PATCH     the same for items already in data.js GEAR (a description that changed).
 //   KIT_PATCH      what each kind of fighter now carries (combat.js KITS); spearThrow: they throw their spears.
 //   FACTORY_FIT    the parts a gun is always (or often) found with (factoryfit.js: the sniper rifle's scope and bipod).
-//   LATER_GEAR     launchers, their rounds and the mounted M2: items kept out of GEAR (and out of loot) until the launcher
-//                  agent (wave 2, section 13) and the vehicle upgrades (section 11) merge them with their logic.
+//   LATER_GEAR     the launchers (M79, M32, AT4, RPG) as items: merged into GEAR (data.js) in wave 2; launchers.js
+//                  fires them (the M203 is a gun part, the rounds data-ammo.js boxes). The M2 is never an item.
 //   ROSTER_TAGS    loot.js theme tags for every new item (where it is normally kept).
 //   ROSTER_HELP    the Help topic.
 //
@@ -22,7 +22,8 @@
 // modes = { single, burst, auto }: { rounds a pull of the trigger, aim for each round }; ammo stays the default a shot.
 // heavy: { mob: −1 tile an action, brace: +aim when the shooter did not move this turn }; brace (a number): aim when
 // the shooter DID move this turn (a big rifle snapped up off the shoulder); pierce: cover counts that many steps less.
-// sniper: the enemy AI keeps its distance with it (section 22). launcher / mount: not fired by the shoot code yet.
+// sniper: the enemy AI keeps its distance with it (section 22). launcher: fired by launchers.js ("launch"), never the
+// shoot code (dmg: a round inside its arming range, hitting as a slug); mount: the M2 on a vehicle's turret.
 //
 // Melee (section 4): mclass = blade | pierce | chop | blunt | heavy (armour by class, section 2); quick = a strike costs
 // 1 action instead of the turn, one strike a turn (hit and step away); stagger = chance a hit (twice on a critical) costs
@@ -115,8 +116,8 @@ export const GUN_WEAPONS = {
   dmr:         { name: "Marksman rifle",     dmg: [27, 37], opt: 13, fall: 1.8, aim: 8,  ammo: 1, noise: 3, close: -8, cap: 20, cal: "308", rel: 0.6 },
   sniper:      { name: "Bolt-action sniper rifle", dmg: [30, 40], opt: 15, fall: 1.2, aim: 9, ammo: 1, noise: 3, close: -14, cap: 5, cal: "308", rel: 0.1, brace: -15, sniper: true },
   amr:         { name: ".50 anti-materiel rifle", dmg: [62, 84], opt: 16, fall: 1.2, aim: -2, ammo: 1, noise: 6, close: -20, cap: 10, cal: "50bmg", rel: 0.6, brace: -20, pierce: 1, common: false },
-  // Mounted only (a vehicle turret, section 11): no item yet (LATER_GEAR).
-  m2hb:        { name: "M2 heavy machine gun", dmg: [40, 58], opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, cal: "50bmg", rel: 0.5, common: false, mount: true,
+  // Mounted only, never an item (a military vehicle's turret, section 11: fired as combat.js turret_m2).
+  m2hb:        { name: "M2 heavy machine gun", dmg: [40, 58], opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, cal: "50bmg", rel: 0.5, common: false, mount: true, pierce: 1, // no item: bolted to a military vehicle, it fires as combat.js turret_m2
                  modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -4 }, auto: { rounds: 12, aim: -12 } } },
   // ---------- launchers (section 13): data only; the launcher agent (wave 2) fires them ("launch") ----------
   // dmg: a 40 mm HE round or a rocket hitting as a slug inside its arming range. range: tiles a round is sent.
@@ -191,32 +192,27 @@ export const FACTORY_FIT = {
 // chance] each on dice of their own (the truck's other rolls are unchanged). Wrecked trucks hold 60% as many, burnt none.
 /** @type {Record<string, [string, number][]>} */
 export const TRUCK_GEAR = {
-  cargo:  [["smg", 0.1], ["dmr", 0.06], ["sniper", 0.04], ["lmg", 0.06], ["amr", 0.01], ["combatknife", 0.2], ["etool", 0.25], ["tomahawk", 0.03]],
-  humvee: [["smg", 0.08], ["dmr", 0.05], ["sniper", 0.03], ["lmg", 0.06], ["combatknife", 0.15], ["etool", 0.2]],
-  mrap:   [["smg", 0.08], ["dmr", 0.05], ["sniper", 0.03], ["lmg", 0.05], ["combatknife", 0.15], ["etool", 0.15]],
+  cargo:  [["smg", 0.1], ["dmr", 0.06], ["sniper", 0.04], ["lmg", 0.06], ["amr", 0.01], ["combatknife", 0.2], ["etool", 0.25], ["tomahawk", 0.03],
+           ["at4", 0.04], ["m79", 0.02], ["a_40mm_he", 0.05], ["a_40mm_smoke", 0.02], ["rpg", 0.005], ["a_rocket_heat", 0.01]], // launchers (wave 2): a convoy's AT4s, a crate of 40 mm
+  humvee: [["smg", 0.08], ["dmr", 0.05], ["sniper", 0.03], ["lmg", 0.06], ["combatknife", 0.15], ["etool", 0.2], ["at4", 0.03], ["a_40mm_he", 0.03]],
+  mrap:   [["smg", 0.08], ["dmr", 0.05], ["sniper", 0.03], ["lmg", 0.05], ["combatknife", 0.15], ["etool", 0.15], ["at4", 0.04], ["a_40mm_he", 0.03]],
 };
 
-// Launchers, their rounds and the mounted M2 (sections 11, 13): not merged into GEAR yet, so nothing drops them and
-// no source is needed; the launcher agent merges them with their loot (military armory, convoys, soldiers' ARs).
+// The launchers as items (section 13; merged into GEAR by data.js since wave 2, fired by launchers.js). The M203 is the
+// economy agent's under-barrel part (data-gunmods.js MOD_GEAR, cat gunmod); the rounds are data-ammo.js boxes
+// (a_40mm_he / buck / smoke / illum, a_rocket_heat: common: false). The AT4 is its own round: fired, it is gone. The M2
+// is no item at all (the user's rule): it is bolted to its military vehicle's turret (vehicles.js), fires there as
+// combat.js turret_m2 (its numbers: GUN_WEAPONS m2hb), and is lost with the vehicle.
 /** @type {Record<string, any>} */
 export const LATER_GEAR = {
-  m79:  { name: "Grenade launcher",          slot: W, skill: SH, power: 6, req: 6, value: 180, noise: 3, weight: 2.7, cat: "explosive",
-          desc: "A break-action 40 mm launcher: one round at a time, lobbed over walls." },
-  m203: { name: "Underbarrel grenade launcher", slot: "pack", skill: SH, power: 0, req: 6, value: 160, noise: 3, weight: 1.4, cat: "gunmod", mount: "under",
-          desc: "A 40 mm launcher that fits under an assault rifle's barrel." },
-  m32:  { name: "Revolver grenade launcher", slot: W, skill: SH, power: 8, req: 8, value: 400, noise: 3, weight: 5.3, cat: "explosive",
-          desc: "A six-shot 40 mm launcher." },
-  at4:  { name: "Rocket tube",               slot: W, skill: SH, power: 7, req: 4, value: 300, noise: 6, weight: 6.7, bulky: true, cat: "explosive",
-          desc: "A single-shot rocket: the tube is the round. Fired, it is junk." },
-  rpg:  { name: "Rocket launcher",           slot: W, skill: SH, power: 8, req: 8, value: 350, noise: 6, weight: 6.3, bulky: true, cat: "explosive",
-          desc: "A reloadable rocket launcher." },
-  m2hb: { name: "M2 heavy machine gun",      slot: "cargo", skill: SH, power: 0, req: 10, value: 600, noise: 6, weight: 38, bulky: true, cat: "automatic",
-          desc: "A .50 machine gun on a tripod or a turret ring: mounted on a vehicle, never carried." },
-  a_40mm_he:    { name: "40 mm HE rounds",           slot: "pack", count: true, dur: 6, weight: 1.38, value: 90, cat: "ammo", desc: "High-explosive grenades for a 40 mm launcher." },
-  a_40mm_buck:  { name: "40 mm buckshot rounds",     slot: "pack", count: true, dur: 6, weight: 1.38, value: 48, cat: "ammo", desc: "Canister rounds: a giant shotgun shell." },
-  a_40mm_smoke: { name: "40 mm smoke rounds",        slot: "pack", count: true, dur: 6, weight: 1.38, value: 60, cat: "ammo", desc: "Smoke grenades for a 40 mm launcher." },
-  a_40mm_illum: { name: "40 mm illumination rounds", slot: "pack", count: true, dur: 6, weight: 1.38, value: 36, cat: "ammo", desc: "Parachute flares for a 40 mm launcher." },
-  a_rocket_he:  { name: "Rockets",                   slot: "pack", count: true, dur: 1, weight: 2.6, value: 60, bulky: true, cat: "ammo", desc: "A rocket for the reloadable launcher." },
+  m79:  { name: "Grenade launcher",          slot: W, skill: SH, power: 6, req: 6, value: 180, noise: 3, weight: 2.7, cat: "explosive", launcher: "40mm", dur: 70,
+          desc: "A break-action 40 mm launcher (M79): one grenade at a time, lobbed up to 20 tiles over walls. HE blasts the spot it lands on (a grenade inside 3 tiles does not arm: it hits like a stone). Also takes buckshot, smoke and flares. The bearer fights with a sidearm or their fists besides. Needs Shooting 6." },
+  m32:  { name: "Revolver grenade launcher", slot: W, skill: SH, power: 8, req: 8, value: 400, noise: 3, weight: 5.3, cat: "explosive", launcher: "40mm", dur: 60,
+          desc: "A six-shot 40 mm launcher (M32): six grenades before a reload, lobbed up to 20 tiles. Needs Shooting 8." },
+  at4:  { name: "Rocket tube",               slot: W, skill: SH, power: 7, req: 4, value: 300, noise: 6, weight: 6.7, bulky: true, cat: "explosive", launcher: "rocket",
+          desc: "A single-shot rocket (AT4): the tube is the round. Fired straight at what the shooter sees (14 tiles), it breaks gates, walls, rams and vehicles. Fired, it is gone. Mind the backblast: 2 tiles behind the shooter, and never from inside a building. Needs Shooting 4." },
+  rpg:  { name: "Rocket launcher",           slot: W, skill: SH, power: 8, req: 8, value: 350, noise: 6, weight: 6.3, bulky: true, cat: "explosive", launcher: "rocket", dur: 60,
+          desc: "A reloadable rocket launcher (RPG): a rocket at a time, fired straight at what the shooter sees (14 tiles). Breaks gates, walls, rams and vehicles. Mind the backblast. Needs Shooting 8." },
 };
 
 // Where each new item is normally kept (loot.js ITEM_TAGS; tools/loottest.js checks every site and raid area holds
@@ -231,6 +227,8 @@ export const ROSTER_TAGS = {
   combatknife: ["military", "guns", "crash"], hatchet: ["tools", "outdoor", "camp", "hunt", "garage"], tomahawk: ["military", "guns"],
   kukri: ["guns", "home", "crime", "mall"], katana: ["mall", "home", "shop"],   pickaxe: ["industry", "tools", "farm"], hammer: ["tools", "garage", "home", "industry"], etool: ["military", "camp"],
   golfclub: ["home", "sport", "garage", "mall", "shop"],
+  // the launchers and the M2 (wave 2): army stock; a rocket launcher in a gang's armoury now and then
+  m79: ["military", "crash"], m32: ["military"], at4: ["military", "crash"], rpg: ["military", "crime"],
 };
 
 // The Help topic (ui/help.js, after "Gun attachments").

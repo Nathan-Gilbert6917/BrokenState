@@ -21,8 +21,12 @@ import {
   VEH_UPGRADES, costOf, upgradeCost, upgradesOf, upgradeKg, payloadOf, vehicleCapacity, typeFuel, typeSpeed, breakdownChance, wearMult, riderMult,
   ambushMult, queueUpgrade, cancelGarageJob, garageHour, garageQueue, upgradeProblem, upgradeOptions, finishUpgrade, stripRefund, createVehicle,
   vehicleValue, factionVehicles, groupTurret, groupTurretPower, isTechnical, fitTechnical, fitMilitary, TURRET_ODDS, upgradeText, armourOf,
-  raidHumvee, raidTurretPower, factionVehiclesDaily, HUMVEE,
+  raidHumvee, raidTurretPower, factionVehiclesDaily, HUMVEE, TURRET_FIT, stripVehicle,
 } from "../src/sim/vehicles.js";
+import { GEAR as GEAR_ALL } from "../src/sim/data.js";
+import { newItem } from "../src/sim/inventory.js";
+import { fitUpgrade } from "../src/sim/groupworld.js";
+import { ensureArsenal, addToArsenal } from "../src/sim/arsenal.js";
 import { spawnAiParty } from "../src/sim/parties.js";
 import { resolveRaidOnPlayer, resolveRaidOnFaction } from "../src/sim/factions.js";
 import { defendInPerson } from "../src/sim/conflicts.js";
@@ -112,7 +116,7 @@ section("Costs, skill gates, the shop, the garage job");
   while (garageQueue(h).length && hours < 120) { garageHour(st); hours++; }
   check(upgradesOf(v).plating === 2 && /most/.test(upgradeProblem(st, h, v, "plating")), "two levels of plate, no third");
   check(/Take the bulletproof glass off first/.test(upgradeProblem(st, h, v, "mesh")) && /armour plate off first/.test(upgradeProblem(st, h, v, "scrapPlate")), "glass or grilles, plate or scrap plating: one of each");
-  check(/not yet usable|later/.test(upgradeProblem(st, h, v, "turret")), "no turrets yet");
+  check(/unused light machine gun/.test(upgradeProblem(st, h, v, "turret")), `a turret needs an unused LMG in the armory ("${upgradeProblem(st, h, v, "turret")}")`);
   check(upgradeOptions(st, h, v).some((o) => o.op === "strip" && o.key === "glass") && upgradeText(v) === "Bulletproof glass, armour plate ×2", `the details line: "${upgradeText(v)}"`);
   const bike = createVehicle(st, "bike", { kind: "base", baseId: h.id }, { count: 2 });
   check(/Only cars/.test(upgradeProblem(st, h, bike, "mesh")), "bikes take no upgrades");
@@ -283,7 +287,7 @@ section("Pre-fitted: claimed Army vehicles, the National Guard motor pool, raide
       const blob = serializeState(st);
       const st2 = deserializeState(blob);
       const h2 = st2.vehicles.find((x) => x.id === humvee.id);
-      check(h2 && upgradesOf(h2).turret && upgradesOf(h2).turret.gun === "m2hb" && /M2 turret \(not yet usable\)/.test(upgradeText(h2)), `the claimed Humvee keeps its M2 through a save ("${upgradeText(h2)}")`);
+      check(h2 && upgradesOf(h2).turret && upgradesOf(h2).turret.gun === "m2hb" && /M2 turret/.test(upgradeText(h2)) && !/not yet usable/.test(upgradeText(h2)), `the claimed Humvee keeps its M2 through a save ("${upgradeText(h2)}")`);
     }
   }
   check(pools > 0 && poolOk === pools, `every National Guard motor pool (${poolOk}/${pools}) has a running cargo truck and a Humvee with an M2, and only those two are ready`);
@@ -570,6 +574,62 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   const m0 = byNumbersOdds(st, s0, people).mine;
   fitMilitary(v, "m2hb");
   check(near(byNumbersOdds(st, s0, people).mine - m0, TURRET_ODDS.m2hb), "by the numbers: a team riding its own turreted Humvee gets +6");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+section("Turrets: an LMG turret built round an LMG item; the M2 bolted to its military vehicle (the user's rules)");
+{
+  const st = createWorld({ seed: SEED, factionCount: 6 });
+  const h = hub(st);
+  for (const s of atBase(st, h.id)) { s.skills.mechanics = 7; s.role = "craft"; }
+  if (!h.buildings.some((b) => b.type === "garage")) addBuilding(h, "garage");
+  const v = createVehicle(st, "truck", { kind: "base", baseId: h.id }, { fuel: 20 });
+  h.armory = h.armory.filter((it) => it.key !== "lmg");
+  check(/unused light machine gun/.test(upgradeProblem(st, h, v, "turret")), "no LMG in the armory: no turret");
+  const lmg = newItem("lmg", 0.9);
+  lmg.dur = 37;
+  h.armory.push(lmg);
+  for (const [k, q] of Object.entries(upgradeCost("turret"))) h.stock[k] = q + 10;
+  const opt = upgradeOptions(st, h, v).find((o) => o.key === "turret");
+  check(opt && opt.op === "fit" && opt.ok && /LMG/.test(opt.name) && opt.items && opt.items[0] === "lmg" && Object.keys(opt.cost).length, `the garage offers an LMG turret: the LMG item, ${JSON.stringify(opt && opt.cost)}`);
+  const stock0 = { ...h.stock };
+  queueUpgrade(st, h, v, "turret");
+  check(!h.armory.includes(lmg) && Object.entries(upgradeCost("turret")).every(([k, q]) => h.stock[k] === stock0[k] - q), "queued: the LMG leaves the armory, scrap and parts are paid");
+  cancelGarageJob(st, h, garageQueue(h)[0].id);
+  check(h.armory.includes(lmg), "cancelled: the LMG comes back");
+  queueUpgrade(st, h, v, "turret");
+  let hours = 0;
+  while (garageQueue(h).length && hours < 60) { garageHour(st); hours++; }
+  const t = upgradesOf(v).turret;
+  check(t && t.gun === "lmg" && t.item === lmg && t.item.dur === 37, `fitted: the turret holds that very LMG (its wear too) after ${hours}h`);
+  check(WEAPONS.turret_lmg.dmg.join() === WEAPONS.lmg.dmg.join() && WEAPONS.turret_lmg.aim === (WEAPONS.lmg.aim || 0) + 6 && WEAPONS.turret_m2.dmg[0] > WEAPONS.turret_lmg.dmg[1], "the LMG turret fires the LMG's numbers +6 mounted; the M2 hits harder");
+  check(!upgradeOptions(st, h, v).some((o) => o.op === "fit" && o.key === "turret"), "one turret a vehicle");
+  queueUpgrade(st, h, v, "turret", "strip");
+  hours = 0;
+  while (garageQueue(h).length && hours < 40) { garageHour(st); hours++; }
+  check(!upgradesOf(v).turret && h.armory.includes(lmg), "stripped: the same LMG back in the armory");
+  // The M2: never fitted, never stripped, never an item; scrapped with the vehicle.
+  check(!GEAR_ALL.m2hb, "there is no M2 item");
+  const hv = fitMilitary(createVehicle(st, "hummer", { kind: "base", baseId: h.id }, { fuel: 20 }), "m2hb");
+  check(/bolted/.test(upgradeProblem(st, h, hv, "turret", "strip")) && upgradeOptions(st, h, hv).some((o) => o.key === "turret" && o.op === "strip" && !o.ok), `the M2 cannot be stripped ("${upgradeProblem(st, h, hv, "turret", "strip")}")`);
+  check(!upgradeOptions(st, h, hv).some((o) => o.key === "turret" && o.op === "fit") && /already/.test(upgradeProblem(st, h, hv, "turret")), "and nothing else goes on its turret ring");
+  const n0 = h.armory.length;
+  finishUpgrade(st, h, hv, "turret", "strip");
+  check(upgradesOf(hv).turret && upgradesOf(hv).turret.gun === "m2hb" && h.armory.length === n0, "even forced, the garage leaves it on");
+  const armory0 = h.armory.map((it) => it.key).join();
+  stripVehicle(st, h, hv);
+  check(!st.vehicles.includes(hv) && h.armory.map((it) => it.key).join() === armory0, "scrapped for parts: the M2 goes with the hull (nothing in the armory)");
+  // The AI: an LMG from its arsenal on a turret, paid like yours; no M2 ever moved.
+  const f = st.factions.find((x) => x.alive && x.type === "raider") || st.factions.find((x) => x.alive && x.type !== "military");
+  ensureArsenal(st, f);
+  f.vehicles = [{ id: "t1", type: "truck", name: "Pickup", fuel: 10, condition: 70, owner: f.id }];
+  const glmg = newItem("lmg", 1);
+  addToArsenal(st, f, glmg, "found");
+  f.stock.scrap = 100; f.stock.parts = 50;
+  let fit = null;
+  for (let i = 0; i < 400 && !fit; i++) { f.careTick = i; const r = fitUpgrade(st, f); if (r && r.key === "turret") fit = r; }
+  const tt = fit && upgradesOf(fit.v).turret;
+  check(tt && tt.gun === "lmg" && tt.item === glmg && !f.arsenal.items.includes(glmg) && f.stock.scrap < 100, `an AI group fits an LMG turret from its arsenal, paying scrap and parts (${tt ? `${tt.gun}, scrap ${f.stock.scrap}` : "none"})`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

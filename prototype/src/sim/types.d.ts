@@ -174,6 +174,7 @@ export interface Vehicle {
   found?: { model: string; at?: string; hour?: number; tries?: number; repair: { parts: number; scrap: number; hours: number; mech: number; what: string[] } | null };
   // Upgrades (vehicles.js VEH_UPGRADES; missing = none): glass / mesh 0|1, plating 0|1|2, scrapPlate 0|1, a mounted gun.
   upgrades?: { glass?: number; mesh?: number; plating?: number; scrapPlate?: number; turret?: { gun: string; item?: Item } | null };
+  destroyed?: boolean; // blown up in a fight (launchers.js): condition 0 for good, nothing repairs it (strip it for parts)
 }
 
 // ---------- teams ----------

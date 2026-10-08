@@ -2385,6 +2385,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
   const d = GEAR[item.key];
   if (d.slot === "weapon") {
     const eff = gearEffect(s, item);
+    if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
     return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) : -1;
   }
   if (d.slot === "backpack") return d.carry || 0;
@@ -2615,6 +2616,7 @@ function planTrip(state) {
       // One found on a map that needs work (foundcars.js): only with a good enough mechanic at the hub, and its parts.
       const fv = state.vehicles.find((x) => x.id === m.info?.vehicleId);
       const fix = fv && fv.found && fv.found.repair;
+      if (fv && fv.destroyed) { cands.push({ mission: "getvehicle", tile: m.tile, score: 0.8, crew: 2, why: `strip the wreck of our ${fv.name.toLowerCase()}`, supplies: {} }); continue; } // launchers.js: blown up, past repair
       if (fix) {
         if (!atBase(state, h.id).some((s) => skill(s, "mechanics") >= fix.mech)) continue;
         cands.push({ mission: "getvehicle", tile: m.tile, score: 2, crew: 2, why: `repair the ${fv.name.toLowerCase()} we found`, supplies: { fuel: 12, parts: fix.parts, scrap: fix.scrap }, min: { parts: fix.parts, scrap: fix.scrap } });
