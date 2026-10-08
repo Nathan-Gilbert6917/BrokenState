@@ -3,20 +3,23 @@
 //     past its reach whatever the sight, no part pushes the best range past it; the hunting rifle, the marksman and
 //     sniper rifles beat a scoped AR-15, AK or carbine at 15 and 20 tiles; the Sniper perk does not cover the drop;
 //     gunStats shows the reach; the odds' notes say why
-//   - a scope hunts better (hunting.js SCOPE_HUNT): any magnifying sight, the hunting rifle always, not a red dot, an
-//     override (the sniper rifle) left alone
+//   - past the reach a hit does ×0.85 (G3); pistol rounds reach 8 tiles (G6)
+//   - a scope hunts better (hunting.js SCOPE_HUNT): any magnifying sight fitted, not a red dot; the hunting rifle's own
+//     scope is in its numbers (1, as before: G4), an override (the sniper rifle) left alone
 //   - bipods (combat.js restCell, gunmods.js situationalAim, gunfire.js braceAim): +8 only rested on half cover next
 //     to the shooter in the shot's line (standing still alone: nothing); not behind, not on full cover, not on a crate
 //     below a walkway; the built-in bipods (machine gun, .50) the same; enemies the same, and a post scored from where
-//     it would stand (the AI's scoreCell path) counts its rest
+//     it would stand (the AI's scoreCell path) counts its rest; a wall shot over (a palisade from its walkway, a
+//     barricade) is a rest too (G1); the autopilot rates a bipod a quarter of its +8 (G5)
 //   - firing from a vehicle that moved this turn (combat.js rideAim, RIDE): the turret's gunner −10 after another
-//     drove, −25 when they turned it themselves, nothing in the other side's turn or the next turn; the odds' notes;
+//     drove, −25 when they turned it themselves, the turret's overwatch in the other side's turn right after −10 too
+//     (G2), nothing the turn after; the odds' notes;
 //     the mark survives save / load
 // Usage: node tools/longrangetest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler, shotOdds, makeLosCache, restCell, rideAim, RIDE, driveTo, turnVehicle, manTurret, floodReach } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
-import { fitMod, gunMods, modRange, ROUND_REACH, hasScope, isScope, situationalAim } from "../src/sim/gunmods.js";
+import { fitMod, gunMods, modRange, ROUND_REACH, hasScope, isScope, situationalAim, modScore, MOD_SCORE } from "../src/sim/gunmods.js";
 import { gunStats } from "../src/sim/gunstats.js";
 import { huntWeaponInfo, SCOPE_HUNT, HUNT_CAT } from "../src/sim/hunting.js";
 import { WEAPONS } from "../src/sim/combat.js";
@@ -76,6 +79,14 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   u.noFall = false; u.load = "match";
   const m = shotOdds(b, u, t);
   check(m.notes.some((n) => /past 11 tiles/.test(n)), `a match round's reach is 11 tiles (${m.notes.join(", ")})`);
+  // G3: past the reach a hit does less.
+  const in10 = arA(10), out15 = arA(15);
+  check(out15.dmg[0] === Math.round(in10.dmg[0] * ROUND_REACH["556"].dmg) && out15.dmg[1] === Math.round(in10.dmg[1] * ROUND_REACH["556"].dmg) && hr(15).dmg.join() === hr(10).dmg.join() && out15.notes.some((n) => /damage ×0.85/.test(n)), `a 5.56 hit past 10 tiles: ${in10.dmg.join("–")} → ${out15.dmg.join("–")}; the hunting rifle's ${hr(15).dmg.join("–")} either way`);
+  // G6: pistol rounds reach 8 tiles.
+  const p8 = odds(gunWith("pistol"), 8), p12 = odds(gunWith("pistol"), 12), rv12 = odds(gunWith("revolver"), 12);
+  check(ROUND_REACH["9mm"].reach === 8 && !p8.notes.length && p12.notes.some((n) => /past 8 tiles/.test(n)) && rv12.notes.some((n) => /past 8 tiles/.test(n)) && p12.dmg[1] < p8.dmg[1], `pistol rounds drop past 8 tiles (9mm ${p8.chance}% at 8, ${p12.chance}% at 12; the .357 too)`);
+  const smg = gunWith("smg", "scopemount", "scrapscope");
+  check(modRange(WEAPONS.smg, gunMods(smg)).opt === 8, "a scrap scope on the SMG: best range 8, not 9");
 }
 
 // 2. A scope hunts better.
@@ -85,7 +96,7 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   const ar = huntWeaponInfo(gunWith("ar")), arS = huntWeaponInfo(gunWith("ar", "acog")), arD = huntWeaponInfo(gunWith("ar", "reddot"));
   check(near(arS.big, HUNT_CAT.automatic.big * SCOPE_HUNT.big) && near(arS.small, HUNT_CAT.automatic.small * SCOPE_HUNT.small) && near(ar.big, HUNT_CAT.automatic.big) && near(arD.big, ar.big) && arS.scoped && !arD.scoped, `an AR-15 with an ACOG hunts deer at ${arS.big.toFixed(3)} (bare ${ar.big}, a red dot ${arD.big})`);
   const hr = huntWeaponInfo(gunWith("huntrifle")), lv = huntWeaponInfo(gunWith("leverrifle")), lvS = huntWeaponInfo(gunWith("leverrifle", "scopemount", "scope4x"));
-  check(hasScope(gunWith("leverrifle", "scopemount", "scope4x")) && near(hr.big, SCOPE_HUNT.big) && near(lv.big, 1) && near(lvS.big, SCOPE_HUNT.big) && hr.scoped, `the hunting rifle's own scope counts (${hr.big.toFixed(2)}); a lever-action ${lv.big}, with a 4× scope ${lvS.big.toFixed(2)}`);
+  check(hasScope(gunWith("leverrifle", "scopemount", "scope4x")) && hr.big === HUNT_CAT.rifle.big && hr.small === HUNT_CAT.rifle.small && !hr.scoped && near(lv.big, 1) && near(lvS.big, SCOPE_HUNT.big), `the hunting rifle as before (${hr.big} / ${hr.small}: its scope is in its numbers); a lever-action ${lv.big}, with a 4× scope ${lvS.big.toFixed(2)}`);
   const sn = huntWeaponInfo(gunWith("sniper"));
   check(sn.big === 1.25 && sn.small === 0.4 && !sn.scoped, "the sniper rifle's own numbers already count its scope (1.25 / 0.4)");
 }
@@ -114,7 +125,17 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   at(b, 6, 3).k = "sandbag";
   at(b, 5, 3).h = 1; // the shooter up on a walkway, the sandbags down below
   check(!restCell(b, 5, 3, 13, 3), "a crate or sandbags below a shooter on a walkway: no rest");
+  // G1: a wall shot over is a rest: the palisade from the walkway behind it, a barricade on the ground; not a boulder.
+  at(b, 6, 3).k = "palisade";
+  check(!!restCell(b, 5, 3, 13, 3), "the palisade from its walkway: a rest");
   delete at(b, 5, 3).h;
+  at(b, 6, 3).k = "barricade";
+  check(!!restCell(b, 5, 3, 13, 3), "a barricade on the ground: a rest");
+  at(b, 6, 3).k = "boulder";
+  check(!restCell(b, 5, 3, 13, 3), "a boulder (blocks sight): no rest");
+  at(b, 6, 3).k = "sandbag";
+  // G5: the autopilot rates a bipod at a quarter of its +8.
+  check(modScore("bipod") === MOD_SCORE.rest * 8 && MOD_SCORE.rest === 0.25, `the autopilot's worth of a bipod: ${modScore("bipod")} (was 4)`);
   // The AI scores a post from where it would stand (scoreCell calls shotOdds from that cell): the rest counts there.
   t.x = 13; t.y = 3; u.x = 1; u.y = 1; b.losCache.fill(0);
   const fromPost = shotOdds(b, u, t, 5, 3).chance, fromOpen = shotOdds(b, u, t, 5, 5).chance;
@@ -162,7 +183,7 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   const b2 = save.combat, g2 = b2 && b2.units.find((x) => x.id === g.id);
   check(!!g2 && b2.vehicle.movedK === v.movedK && rideAim(b2, g2) === -RIDE.TURRET, "the mark survives save / load");
   b.phase = "enemy";
-  check(rideAim(b, g) === 0, "an overwatch shot in the enemy's turn: the vehicle has stopped (no penalty)");
+  check(rideAim(b, g) === -RIDE.TURRET && rideAim(b, r) === 0, "the turret's overwatch in the enemy's turn right after: −10 too (G2)");
   b.phase = "player"; b.turn += 1;
   check(rideAim(b, g) === 0, "next turn: nothing");
   g.ap = 2;
@@ -174,6 +195,8 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   const eg = { side: "enemy", gunner: true };
   b.phase = "enemy";
   check(rideAim(b, eg) === -RIDE.TURRET, "their gunner on a Humvee that moved in their turn: the same −10");
+  b.phase = "player"; b.turn += 1;
+  check(rideAim(b, eg) === -RIDE.TURRET, "and on overwatch in your turn right after");
 }
 
 console.log(`\n${fail ? "FAILED" : "passed"}: ${pass} passed, ${fail} failed`);

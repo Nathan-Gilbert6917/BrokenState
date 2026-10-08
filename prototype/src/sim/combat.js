@@ -1851,7 +1851,10 @@ class MinHeap {
 // ---------- odds ----------
 // A bipod's rest (user request 2026-10-08): the cell next to the shooter at (x0, y0) that the shot's line to (x1, y1)
 // crosses and that is half cover (CELL cover 1: sandbags, crates, a car, a fence, a window, a counter...) standing at
-// least as high as the shooter (not a crate down below a walkway): the gun rests on it. [x, y] or null.
+// least as high as the shooter (not a crate down below a walkway), or a full-cover wall people shoot over (cover 2 that
+// does not block sight: the palisade from its walkway, a barricade; user pick G1) whose top, REST.WALL_RISE levels over
+// its foot, reaches the shooter: the gun rests on it. [x, y] or null.
+export const REST = { WALL_RISE: 1 };
 export function restCell(b, x0, y0, x1, y1) {
   bindDims(b);
   if (!inside(x0, y0) || (x0 === x1 && y0 === y1)) return null;
@@ -1862,6 +1865,7 @@ export function restCell(b, x0, y0, x1, y1) {
     if (cx === x0 && cy === y0) continue;
     const c = b.cells[idx(cx, cy)], C = CELL[c.k];
     if (C && C.cover === 1 && hAt(b, cx, cy) >= h0) return [cx, cy];
+    if (C && C.cover === 2 && !C.los && !C.walk && hAt(b, cx, cy) + REST.WALL_RISE >= h0) return [cx, cy];
   }
   return null;
 }
@@ -1869,14 +1873,17 @@ export function restCell(b, x0, y0, x1, y1) {
 // 2026-10-08): the one who drove or turned it this turn (a gunner who turned it from the turret, say) RIDE.DRIVER, the
 // turret's gunner RIDE.TURRET (the ring mount steadies the gun), anyone else aboard RIDE.RIDER. Either side: the
 // enemy's gunner on their Humvee (b.raidHumvee) the same, should it ever move. Overwatch shots in the other side's
-// turn are not hit (the vehicle has stopped). Today only the gunner can fire after a drive (driving takes both
-// actions, riders sit inside); the rider and driver numbers are there for whatever lets them shoot.
+// turn right after are the turret's too (user pick G2: the gunner's overwatch still sways, RIDE.TURRET); the turn
+// after that, nothing. Today only the gunner can fire after a drive (driving takes both actions, riders sit inside);
+// the rider and driver numbers are there for whatever lets them shoot.
 export const RIDE = { DRIVER: 25, RIDER: 15, TURRET: 10 };
 export function rideAim(b, a) {
   if (!b || !a || !(a.aboard || a.gunner)) return 0;
   const v = a.side === "player" ? b.vehicle : b.raidHumvee;
   const k = strikeMark(b);
-  if (!v || v.movedK !== k) return 0;
+  if (!v || v.movedK == null) return 0;
+  if (v.movedK === k - 1) return a.gunner ? -RIDE.TURRET : 0; // the other side's turn right after: the turret's overwatch
+  if (v.movedK !== k) return 0;
   return -(a.droveK === k ? RIDE.DRIVER : a.gunner ? RIDE.TURRET : RIDE.RIDER);
 }
 export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
@@ -1892,7 +1899,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
   // An intermediate or rimfire round past its reach (gunmods.js ROUND_REACH): it drops, scope or not.
   const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
-  if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}`); }
+  const slow = d > reach ? rr.dmg ?? 1 : 1; // and a hit there does less (it has slowed)
+  if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   // A bipod (fitted, or built into the machine gun and the .50) counts only rested on half cover next to the shooter in
   // the shot's line (restCell); the AI's posts (scoreCell) score it the same way, so a bipod gunner seeks sandbags.
@@ -1929,7 +1937,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
-  const ad = af.dmg ?? 1; // the loaded type's damage (hollow points' soft-target bonus: damage, ammo.js softMult)
+  const ad = (af.dmg ?? 1) * slow; // the loaded type's damage, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes };
 }
 

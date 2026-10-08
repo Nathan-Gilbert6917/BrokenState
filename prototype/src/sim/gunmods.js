@@ -330,12 +330,17 @@ export const unitMods = (u) => (u && u.gm && u.gmWeapon === u.weapon ? u.gm : NO
 // range). An intermediate round (5.56, 7.62×39) or a rimfire .22 flies true out to its reach (tiles) and then drops and
 // drifts, whatever sight is on the gun: an attachment (a scope, a precision stock) never pushes the gun's best range
 // past the round's reach (a bare gun's own best range stays where it is), and every tile past the reach costs drop aim
-// on top of the gun's fall-off (combat.js shotOdds; the Sniper perk's no-fall-off does not cover it; a loaded type's
-// range, match +1 or subsonic −1, moves the reach with it). Full-power rounds (.308, .30-30, .50 BMG) have no reach: the
-// hunting rifle, the marksman and sniper rifles and the .50 own the long shots. Pistol calibres and shotgun shells fall
-// off hard already by their guns' own numbers. With a 65-aim shooter: an AR-15 with an ACOG 79 / 57 / 34% at 10 / 15 /
-// 20 tiles (was 79 / 72 / 59), the hunting rifle 70 / 64 / 54%.
-export const ROUND_REACH = { "556": { reach: 10, drop: 2 }, "762x39": { reach: 9, drop: 2 }, "22lr": { reach: 9, drop: 2 } };
+// on top of the gun's fall-off, and a hit past it does dmg × its damage (it has slowed: user pick G3) (combat.js
+// shotOdds; the Sniper perk's no-fall-off does not cover it; a loaded type's range, match +1 or subsonic −1, moves the
+// reach with it). Pistol rounds (9mm, .45 ACP, .357) the same past 8 tiles (user pick G6: a scrap or thermal scope on an
+// SMG or a pistol no longer reaches out). Full-power rounds (.308, .30-30, .50 BMG) have no reach: the hunting rifle, the
+// marksman and sniper rifles and the .50 own the long shots; shotgun shells fall off hard by their guns' own numbers.
+// With a 65-aim shooter: an AR-15 with an ACOG 79 / 57 / 34% at 10 / 15 / 20 tiles (was 79 / 72 / 59), the hunting
+// rifle 70 / 64 / 54%.
+export const ROUND_REACH = {
+  "556": { reach: 10, drop: 2, dmg: 0.85 }, "762x39": { reach: 9, drop: 2, dmg: 0.85 }, "22lr": { reach: 9, drop: 2, dmg: 0.85 },
+  "9mm": { reach: 8, drop: 2, dmg: 0.85 }, "45acp": { reach: 8, drop: 2, dmg: 0.85 }, "357": { reach: 8, drop: 2, dmg: 0.85 },
+};
 export const roundReach = (w) => (w && w.cal && ROUND_REACH[w.cal]) || null;
 // The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds), the range capped at
 // the round's reach (ROUND_REACH).
@@ -407,7 +412,7 @@ export function attachText(key) {
   if (a.capMult && a.capMult !== 1) bits.push(`magazine ×${a.capMult}`);
   if (a.noise && a.noise !== 1) bits.push(a.noise < 1 ? `shots ${Math.round(a.noise * 100)}% as loud` : `shots ${Math.round((a.noise - 1) * 100)}% louder`);
   if (a.jam && a.jam !== 1) bits.push(`jams ×${a.jam}`);
-  if (a.brace) bits.push(`${sgn(a.brace)} aim when the shot's line crosses half cover right next to the shooter (rested on it)`);
+  if (a.brace) bits.push(`${sgn(a.brace)} aim when the shot's line crosses half cover or a wall shot over right next to the shooter (rested on it)`);
   if (a.moving) bits.push(`${sgn(a.moving)} aim when the shooter moved this turn`);
   if (a.night) bits.push(`${sgn(a.night)} aim at night`);
   if (a.nightNear) bits.push(`${sgn(a.nightNear)} aim at night within 6 tiles, a light without the off hand`);
@@ -556,14 +561,16 @@ export function randomStarterMods(rng, item, salt = "") {
 // ---------- fitting what lies around (the autopilot: autopilot.js equipFromArmory) ----------
 // How much an attachment is worth on a gun for a fight: aim counts, up close half, range a little, a suppressor a
 // good deal (quiet shots, less Heat), a brake's noise against it; magazines a little (the reload branch counts them);
-// a bipod and a sling half their bonus (only some shots), night aids a little, jams against.
+// a sling half its bonus (only some shots), a bipod a quarter (only rested on half cover in the line of fire:
+// MOD_SCORE.rest, user pick G5), night aids a little, jams against.
+export const MOD_SCORE = { rest: 0.25 };
 export function modScore(key) {
   const a = ATTACH[key];
   if (!a) return 0;
   if (a.adds) return 0.5; // a mount or rail: only for what it carries
   return (a.aim || 0) + 0.5 * (a.close || 0) + 0.8 * (a.opt || 0) - 2 * (a.fall || 0) - 20 * (1 - (a.dmg ?? 1))
     + 6 * (1 - (a.noise ?? 1)) + 0.25 * (a.cap || 0) + 3 * ((a.capMult ?? 1) - 1) + (GEAR[key] && GEAR[key].dur ? -1 : 0)
-    + 0.5 * (a.brace || 0) + 0.5 * (a.moving || 0) + 0.25 * ((a.night || 0) + (a.nightNear || 0) + (a.peq || 0)) - 4 * ((a.jam ?? 1) - 1)
+    + MOD_SCORE.rest * (a.brace || 0) + 0.5 * (a.moving || 0) + 0.25 * ((a.night || 0) + (a.nightNear || 0) + (a.peq || 0)) - 4 * ((a.jam ?? 1) - 1)
     + (a.thermal ? 2 : 0) + (a.launcher ? -1 : 0);
 }
 // Fits loose attachments from pool (an armory list) to the guns given (best first), one per free slot and only where
@@ -618,6 +625,6 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   aim) and a pistol compensator (+2) make the shot louder, a shotgun choke reaches further but spreads less up close.
   No suppressor fits a revolver. Magazines: an extended 9mm magazine (24 rounds), a drum for the AR-15 family (twice
   the rounds, heavy, −2 aim), a shotgun tube extension (+2 shells). A bipod: +8 aim when the gun rests on half cover
-  (sandbags, crates, a car, a fence, a window sill) right next to the shooter that the shot's line crosses; a sling +1
-  when the shooter moved this turn. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22),
-  scope or not: −2 aim a tile, and no sight pushes its best range past that. None is worth a step of cover.`;
+  (sandbags, crates, a car, a fence, a window sill) or a wall you shoot over (a palisade from its walkway, a barricade)
+  right next to the shooter that the shot's line crosses; a sling +1 when the shooter moved this turn. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope
+  or not: −2 aim a tile and ×0.85 damage, and no sight pushes its best range past that. None is worth a step of cover.`;

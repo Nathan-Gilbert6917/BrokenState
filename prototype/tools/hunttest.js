@@ -157,7 +157,7 @@ const yieldRows = [];
   const aut = dayIn(state, "autumn");
   const start = aut * 24 + 5;
   const info = (w) => H.huntWeaponInfo(newItem(w));
-  check(info("huntrifle").big === H.SCOPE_HUNT.big && info("huntrifle").scoped && info("huntrifle").loud && info("huntrifle").ammo, "hunting rifle: the best for big game (its built-in scope: SCOPE_HUNT), loud, uses ammo");
+  check(info("huntrifle").big === 1 && info("huntrifle").loud && info("huntrifle").ammo, "hunting rifle: the best for big game, loud, uses ammo");
   check(info("crossbow") && !info("crossbow").loud && !info("crossbow").ammo && info("crossbow").arrows && !info("huntrifle").arrows, "crossbow (cat bow): silent, no ammo, arrows");
   check(info("shotgun").small > info("huntrifle").small && info("shotgun").big < info("huntrifle").big, "shotgun: better for small game, worse for deer");
   check(info("pistol").big < info("crossbow").big, "pistol: poor for big game");

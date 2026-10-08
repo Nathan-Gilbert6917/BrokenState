@@ -20,8 +20,8 @@
 //   team: the best three hunters count 1, ½ and ¼ (+0.08 a hand without a weapon, up to two, driving game):
 //     a hunter = their best hunting weapon (big / small game: hunting rifle 1 / 0.8, bows and crossbows 0.6 + 0.08 ×
 //     power for big game (scrap crossbow 0.8, compound bow 0.86, hunting crossbow 0.9) / 0.9,
-//     shotgun 0.45 / 1.2, automatic 0.7 / 0.6, pistol 0.3 / 0.6; melee: none; a gun with a scope × 1.15 / 1.05,
-//     SCOPE_HUNT: the hunting rifle always, its scope is built in) × the weapon's skill gap ×
+//     shotgun 0.45 / 1.2, automatic 0.7 / 0.6, pistol 0.3 / 0.6; melee: none; a scope fitted to the gun × 1.15 / 1.05,
+//     SCOPE_HUNT: the hunting rifle's own is in its numbers) × the weapon's skill gap ×
 //     skill (0.55 + 0.09 × (0.5 Shooting + 0.35 Scouting + 0.15 Stealth)) × 1.25 with the Hunter perk.
 //     Firearms need ammo carried (1 a shot); bows and crossbows are silent and need arrows (ARROW: each shot at game,
 //     a second one after a miss as for guns, loses its arrow half the time: about 0.6 arrows a kill). Nobody with a
@@ -132,12 +132,13 @@ export const HUNT_CAT = {
 };
 // A scope on the hunter's gun (user request 2026-10-08): × these on its big and small game (a deer at 200 metres is a
 // shot a scope makes). Any magnifying sight counts (gunmods.js isScope: the 4× scope, ACOG, LPVO, the tactical, thermal
-// and scrap scopes; not a red dot or a holo sight). The hunting rifle is scoped from the factory (its scope is part of
-// the gun: no sight slot), so it always counts; a gun with its own hunt numbers (the sniper rifle, the .50) already has
-// its scope in them. A scoped AR-15 hunts deer at 0.7 × 1.15 = 0.8; the hunting rifle 1.15, a scoped lever-action or
-// carbine the same. Everyone who hunts with a gun reads it here (the Hunt job, a team's hunt, crews, the autopilot).
-export const SCOPE_HUNT = { big: 1.15, small: 1.05, builtIn: ["huntrifle"] };
-export const scopedForHunt = (item) => !!item && (SCOPE_HUNT.builtIn.includes(item.key) || hasScope(item));
+// and scrap scopes; not a red dot or a holo sight) fitted to the gun. The hunting rifle's own scope is already in its
+// numbers (rifle 1 / 0.8; it has no sight slot: user pick G4, food from it as before), as is the sniper rifle's and the
+// .50's (their own hunt numbers). A scoped AR-15 hunts deer at 0.7 × 1.15 = 0.8; a scoped lever-action or carbine
+// 1.15, past the hunting rifle's 1. Everyone who hunts with a gun reads it here (the Hunt job, a team's hunt, crews,
+// the autopilot).
+export const SCOPE_HUNT = { big: 1.15, small: 1.05 };
+export const scopedForHunt = (item) => !!item && hasScope(item);
 // Arrows (data.js SUPPLIES.arrows): the chance a shot at game loses its arrow; how many a hunting team takes from home
 // when someone on it has a bow (plans.js applyPlan, packHuntArrows).
 export const ARROW = { lost: 0.5, pack: 12 };
@@ -890,7 +891,7 @@ export function baseHuntDay(state, base, hour = state.hour) {
   const tile = cabinTiles(state, base)[0];
   if (tile == null) return 0;
   const sh = mixShares(huntMixOf(base));
-  const m = 0.82, rifle = { big: m * HUNT_CAT.rifle.big * SCOPE_HUNT.big, small: m * HUNT_CAT.rifle.small * SCOPE_HUNT.small }, bow = { big: m * 0.86, small: m * 0.9 };
+  const m = 0.82, rifle = { big: m * HUNT_CAT.rifle.big, small: m * HUNT_CAT.rifle.small }, bow = { big: m * 0.86, small: m * 0.9 };
   const dayStart = hour - (hour % 24);
   let r = 0;
   for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) {
