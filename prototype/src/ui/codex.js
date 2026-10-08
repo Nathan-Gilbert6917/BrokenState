@@ -154,6 +154,7 @@ function itemEntries() {
     if (g.medKit) stats.push(["Medicine", `+${g.medKit} when treating`]);
     if (g.slots) stats.push(["Pack", `${g.slots} slots, +${g.carry || 0} kg load`]);
     if (g.tabs) stats.push(["Tablets", g.dur]);
+    else if (g.count) stats.push(["Holds", g.dur]);
     else if (g.groom) stats.push(["Lasts", `${g.dur} days of use`]);
     else if (g.dur) stats.push(["Lasts", `${g.dur} ${durUnit(k)}${g.makeshift ? " (makeshift)" : ""}; found ones are part-worn, crafted ones last by their quality`]);
     if (g.fish) stats.push(["Fishing", `${g.fish === "net" ? "net, worked by two, 1.2" : `${g.fish}, ${g.fishPower ?? 0.6}`} food an hour${g.fish === "spear" ? " in daylight, not through ice" : ""}`]);

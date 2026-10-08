@@ -31,6 +31,7 @@ export const SITE_TAGS = {
   truckstop: ["travel", "shop", "garage"], crashsite: ["travel", "crash", "garage"],
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
+  convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
@@ -42,6 +43,7 @@ export const AREA_TAGS = {
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
+  miltrucks: ["military", "travel"], // Army trucks (miltrucks.js: their cargo is truckLoot)
 };
 // Where each thing is normally kept. Books are placed by skills.js BOOK_SITES and blueprints by blueprints.js.
 export const ITEM_TAGS = {
@@ -168,6 +170,7 @@ export const SITE_FINDS = {
   truckstop: { p: 0.187, items: { pocketradio: 1, handradio: 1, puritabs: 1, handwarmer: 1, alarmclock: 0.5, cigarettes: 2, smokes: 3, lighters: 2, candy: 2, chocolate: 2, instcoffee: 2, flare: 2, vodka: 1, batteries: 1, tobacco: 1, cards: 1, watch: 0.5, deodorant: 1, wetwipes: 1, toothpaste: 1, lipbalm: 1 } },
   crashsite: { p: 0.1, items: { flare: 2, phone: 2, smokes: 1, photos: 2, lighters: 1, goldring: 0.5, watch: 0.5 } },
   crash_mil: { p: 0.14, items: { frag: 1.5, smokegren: 3, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
+  convoy: { p: 0.12, items: { frag: 1, smokegren: 2, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
   crash_cargo: { p: 0.171, items: { chocolate: 2, instcoffee: 2, coffee: 1, batteries: 2, toiletpaper: 1, puritabs: 1, wetwipes: 1, toothpaste: 1 } },
   crash_med: { p: 0.125, items: { chocolate: 1, candy: 1, soap: 1, razors: 1, wetwipes: 1 } },
   crash_news: { p: 0.14, items: { camera: 3, phone: 2, laptop: 2, batteries: 1 } },

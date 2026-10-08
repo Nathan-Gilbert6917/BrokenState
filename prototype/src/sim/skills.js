@@ -685,7 +685,7 @@ function fieldRepair(people) {
     for (const it of items) {
       const d = it && GEAR[it.key];
       const max = (it && it.durMax) || (d && d.dur); // its own maximum when it has one (crafted by quality, crafting.js)
-      if (d && d.dur && d.makeshift && !d.tabs && !d.groom && Number.isFinite(it.dur) && it.dur < max) it.dur = Math.min(max, it.dur + 1); // makeshift only (real gear wears too now, GEAR_DUR); not a tube of tablets or toiletries: dur counts what is left, not wear
+      if (d && d.dur && d.makeshift && !d.tabs && !d.groom && !d.count && Number.isFinite(it.dur) && it.dur < max) it.dur = Math.min(max, it.dur + 1); // makeshift only (real gear wears too now, GEAR_DUR); not a tube of tablets or toiletries: dur counts what is left, not wear
     }
   }
 }

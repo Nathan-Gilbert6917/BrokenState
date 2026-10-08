@@ -162,6 +162,7 @@ export function craftOutputText(key) {
 export function durUnit(key) {
   const d = GEAR[key];
   if (d.tabs) return "tablets"; // purification tablets: dur counts the tablets in the tube (worm.js)
+  if (d.count) return "left"; // a count stack (data-ammo.js: a box of rounds, primers): what is in it
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.suppressor) return "shots";
@@ -346,7 +347,7 @@ export function craftingHour(state) {
 // (world.js combatPower, combat.js, inventory.js itemArmor) and a fishing tool's catch (hunting.js fishToolPower).
 export const craftedDur = (dur, quality = 1) => Math.max(1, Math.round(dur * (0.4 + 0.8 * Math.max(0, Math.min(1, quality)))));
 // Durability with its own maximum (item.durMax: crafted, or worn part-way when found); counts, not wear, stay out.
-const ownMax = (d) => d && d.dur && !d.tabs && !d.groom;
+const ownMax = (d) => d && d.dur && !d.tabs && !d.groom && !d.count; // count stacks (data-ammo.js boxes) count what is left
 export function makeItem(key, quality = 1) {
   const d = GEAR[key];
   const item = { key, name: d.name, quality };

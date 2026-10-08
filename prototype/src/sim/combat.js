@@ -71,7 +71,10 @@ import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; 
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
+import { GUN_WEAPONS, KIT_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
+import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
+import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -321,6 +324,7 @@ export function finishCombat(state, setup, result) {
   if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearAfterFight(state, combatants(state, setup));
   battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
+  if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
   const fn = handlers && handlers.get(setup.handler);
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
   state.resolving = (state.resolving || 0) + 1;
@@ -608,16 +612,16 @@ export const WEAPONS = {
   // carry pistols too (KITS), so every gun's odds against them move with it: at 14–21 +0 three pistols beat 4 raiders
   // 24% to the revolver's 40%; at 15–22 +4 about 30% to its 35% (3000–4000 battles a matchup, crits 25 / 10 / 5 / 8);
   // 16–24 +4 overtook the revolver (33% to 32%).
-  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15 }, // a double-stack 9mm magazine
-  shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6 }, // a pump: five in the tube and one in the chamber
-  huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5 }, // a bolt-action's internal magazine
-  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30 }, // a 30-round magazine: 15 bursts of 2
+  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15, cal: "9mm", rel: 0.35 }, // a double-stack 9mm magazine
+  shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6, cal: "12ga", rel: 0.3 }, // a pump: five in the tube and one in the chamber
+  huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
+  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a 30-round magazine: 15 bursts of 2
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
-  pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1 }, // a single-shot zip gun: reloaded after every shot
+  pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1, cal: "12ga", rel: 1.2 }, // a single-shot zip gun: reloaded after every shot
   // Special crafted weapons (craft books and blueprints, blueprints.js): better than the makeshift ones above.
   springmachete: { name: "Leaf-spring machete", melee: true, dmg: [21, 31] },
   pulleybow:  { name: "Pulley-limb bow",   dmg: [16, 25], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
@@ -632,9 +636,9 @@ export const WEAPONS = {
   spear:      { name: "Steel spear",       melee: true, dmg: [18, 28] }, // a long reach: between the machete and the fire axe
   compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
-  revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6 }, // a six-shot cylinder
-  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8 }, // a tube under the barrel
-  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30 }, // a patrol carbine's 30-round magazine
+  revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6, cal: "357", rel: 0.05 }, // a six-shot cylinder
+  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8, cal: "3030", rel: 0.3 }, // a tube under the barrel
+  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a patrol carbine's 30-round magazine
   // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
   acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
@@ -661,6 +665,13 @@ export const KITS = {
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
               finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },
 };
+// The weapons overhaul (data-guns.js): new weapons, and each kit's lists extended (KIT_PATCH appends to them).
+Object.assign(WEAPONS, GUN_WEAPONS);
+for (const [kind, patch] of Object.entries(KIT_PATCH)) {
+  const kit = KITS[kind];
+  if (!kit) continue;
+  for (const [k, list] of Object.entries(patch)) kit[k] = Array.isArray(kit[k]) ? [...kit[k], ...list] : list;
+}
 
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -796,17 +807,20 @@ export function removeCar(cells, W, r) {
 // Heat +DRIVE.HEAT and the unaware within DRIVE.RADIUS hear the engine). What is found rides in it wherever it stands
 // (raidloot.js stash, atVehicle) and so does the siege ram (siege.js loadRam / unloadRam); extracting from a zone it
 // touches keeps it (R.vehicleZone follows it: syncVehicleZone).
-export const DRIVE = { RANGE: 8, AP: 2, HEAT: 5, RADIUS: 10 };
+export const DRIVE = { RANGE: 8, AP: 2, HEAT: 5, RADIUS: 10, MIL: 1.6 }; // MIL: × Heat and radius for an Army truck (vehicles.js miltruck)
 export const nearRect = (r, x, y) => Math.max(r.x - x, x - (r.x + r.w - 1), r.y - y, y - (r.y + r.h - 1), 0) <= 1;
 export function placeVehicle(cells, W, H, zone, kind, ok) {
-  const L = kind === "truck" ? 4 : kind === "bike" ? 2 : 3; // a bike or a motorcycle: 2 x 1 cells
+  const mil = kind === "miltruck"; // an Army truck (vehicles.js miltruck): 2 × 5, drawn as the loot trucks are (body "m35")
+  const L = mil ? 5 : kind === "truck" ? 4 : kind === "bike" ? 2 : 3; // a bike or a motorcycle: 2 x 1 cells
   const z = zone;
   const [x, y, ax] = z.side === "east" ? [z.x0 + 1, z.y0, "y"] : z.side === "north" ? [z.x0, z.y0, "x"] : z.side === "south" ? [z.x0, z.y0 + 1, "x"] : [z.x0, z.y0, "y"];
-  const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: kind, wide: kind === "bike" ? 1 : 2 });
+  const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: mil ? "m35" : kind, wide: kind === "bike" ? 1 : 2 });
   if (!rect) return null;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) cells[yy * W + xx].f = "road";
-  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind };
+  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}) };
 }
+// What stands for a team's vehicle on a map (placeVehicle): "bike", "miltruck", "truck" (a pickup) or "car".
+export const vehicleBody = (party, pv) => (party.vehicle === "bike" || (pv && isBike(pv)) ? "bike" : pv && pv.type === "miltruck" ? "miltruck" : pv && pv.type === "truck" ? "truck" : "car");
 export function syncVehicleZone(b) {
   const R = b.raid;
   if (!R || !b.vehicle) return;
@@ -815,7 +829,7 @@ export function syncVehicleZone(b) {
   for (let i = 0; i < R.zones.length; i++) R.zones[i].vehicle = i === R.vehicleZone;
 }
 // Seats: who can ride in the team's vehicle (board / disembark), by its model (vehicles.js VEHICLE_TYPES).
-export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1 }; // a bike or a motorcycle: its rider
+export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1, miltruck: 12 }; // a bike or a motorcycle: its rider
 // Ramming (driveTo): the vehicle drives through people (any side, RAMMING.HIT damage, the dead ZOMBIE_HIT) and light
 // obstacles (WEAR: what each costs the vehicle's condition, settled when the battle ends: settleVehicle). Walls, trees,
 // other cars, water, railings and trenches stop it.
@@ -997,10 +1011,12 @@ export function driveTo(b, u, x, y) {
   const at = u.aboard ? (ringOf(null)[0] || [v.x, v.y]) : [u.x, u.y];
   b.reach = flood(b.cells, at[0], at[1]);
   syncFloor(b);
-  if (b.raid) { b.raid.heat = Math.min(100, b.raid.heat + DRIVE.HEAT); syncVehicleZone(b); }
-  b.noise = (b.noise || 0) + 2;
-  say(b, `${u.name} drives the ${v.kind === "truck" ? "truck" : "car"} ${steps} cell${steps === 1 ? "" : "s"}${b.raid ? ` (Heat +${DRIVE.HEAT})` : ""}${hits.length ? `, running down ${hits.join(", ")}` : ""}${wear ? ` (the ${v.kind} takes a beating: condition −${wear})` : ""}.`, hits.length ? "danger" : "info");
-  alertNear(b, tx + Math.floor(v.w / 2), ty + Math.floor(v.h / 2), DRIVE.RADIUS, "The engine carries: the unaware nearby turn toward it.");
+  const loud = v.mil ? DRIVE.MIL : 1; // an Army truck (miltrucks.js): a big diesel, heard further
+  const heat = Math.round(DRIVE.HEAT * loud);
+  if (b.raid) { b.raid.heat = Math.min(100, b.raid.heat + heat); syncVehicleZone(b); }
+  b.noise = (b.noise || 0) + 2 * loud;
+  say(b, `${u.name} drives the ${v.mil ? "Army truck" : v.kind === "truck" ? "truck" : "car"} ${steps} cell${steps === 1 ? "" : "s"}${b.raid ? ` (Heat +${heat})` : ""}${hits.length ? `, running down ${hits.join(", ")}` : ""}${wear ? ` (the ${v.kind} takes a beating: condition −${wear})` : ""}.`, hits.length ? "danger" : "info");
+  alertNear(b, tx + Math.floor(v.w / 2), ty + Math.floor(v.h / 2), Math.round(DRIVE.RADIUS * loud), "The engine carries: the unaware nearby turn toward it.");
   if (!u.aboard) detect(b, u);
   bump(b);
   return "";
@@ -1029,6 +1045,45 @@ export function scatterCars(rng, cells, W, H, n, ok, kind = "car", lo = 1, hi = 
   }
   return placed;
 }
+// Army trucks (miltrucks.js trucksAt): each a car of kind "truck" (full cover, blocks sight) with c.car.mil { i, kind,
+// cond } and body m35 / humvee / mrap (the views draw it olive, burned out black), TRUCK_KINDS L cells long. Along the
+// road when there is one (a convoy, a road tile: nose to tail in the lanes, the road still open end to end), else
+// parked in a row on open ground (a base's motor pool). ok(x, y, onRoad): a cell it may stand on. Returns [{ truck, rect }].
+export function placeMilTrucks(rng, cells, W, H, trucks, road, ok) {
+  const out = [];
+  const mark = (rect, x) => {
+    for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
+      const c = cells[yy * W + xx];
+      c.car.mil = { i: x.i, kind: x.kind, cond: x.cond, key: x.key }; // key, i: the truck's record (miltrucks.js markTaken)
+    }
+    out.push({ truck: x, rect });
+  };
+  let row = null; // the motor pool's row: the last truck parked
+  for (const x of trucks) {
+    const K = TRUCK_KINDS[x.kind] || TRUCK_KINDS.cargo, L = K.L, opt = { body: K.body };
+    let rect = null;
+    if (road && x.src !== "base") {
+      const onRoad = (xx, yy) => road.onRoad(xx, yy) && ok(xx, yy, true);
+      for (let tries = 0; tries < 60 && !rect; tries++) {
+        const lane = rng.int(0, road.lanes - 1);
+        rect = placeCar(cells, W, H, rng.int(3, Math.max(3, W - 4 - L)), road.r + lane * 2, "x", L, "truck", onRoad, rng.int(0, 1e6), opt);
+        if (rect && !road.through()) { removeCar(cells, W, rect); rect = null; }
+      }
+    }
+    for (let tries = 0; tries < 80 && !rect; tries++) {
+      if (row && tries < 6) { // next to the last one parked, side by side
+        const r = row, step = 3 * (tries + 1);
+        rect = placeCar(cells, W, H, r.ax === "x" ? r.x0 : r.x0 + step, r.ax === "x" ? r.y0 + step : r.y0, r.ax, L, "truck", ok, rng.int(0, 1e6), opt);
+      } else {
+        const ax = rng.chance(0.5) ? "x" : "y";
+        rect = placeCar(cells, W, H, rng.int(3, Math.max(3, W - 4 - (ax === "x" ? L : 2))), rng.int(1, Math.max(1, H - 2 - (ax === "y" ? L : 2))), ax, L, "truck", ok, rng.int(0, 1e6), opt);
+      }
+    }
+    if (rect) { row = rect; mark(rect, x); }
+  }
+  return out;
+}
+
 function layRoad(rng, cells, W, H, t, r0, opts = {}) {
   const idx = (x, y) => y * W + x;
   const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -1162,7 +1217,7 @@ function genMap(rng, tile, opts = {}) {
     case "mall": building(8, 5); scatter("car", 6); break;
     case "hospital": case "univ": case "factory": building(7, 5); scatter("crate", 4); scatter("car", 2); break;
     case "police": building(5, 4); scatter("car", 4); scatter("crate", 2); break;
-    case "military": building(5, 4); fenceLine(rx(X(5), X(7)), rng.int(1, Y(4)), X(6), true, "sandbag"); fenceLine(rx(X(5), X(7)), rng.int(Y(8), Y(11)), X(6), true, "sandbag"); scatter("truck", 2); scatter("crate", 3); break;
+    case "military": building(5, 4); fenceLine(rx(X(5), X(7)), rng.int(1, Y(4)), X(6), true, "sandbag"); fenceLine(rx(X(5), X(7)), rng.int(Y(8), Y(11)), X(6), true, "sandbag"); if (!(opts.trucks && opts.trucks.length)) scatter("truck", 2); scatter("crate", 3); break;
     case "prison": building(6, 5); fenceLine(X(5), 0, Y(9), false); fenceLine(X(12), Y(2), Y(9), false); break;
     case "airport": scatter("truck", 3); scatter("crate", 4); scatter("car", 2); break;
     case "dam": for (let x = 0; x < W; x++) if (free(x, 0)) put(x, 0, "water"); building(5, 3); break;
@@ -1178,6 +1233,8 @@ function genMap(rng, tile, opts = {}) {
     case "radiotower": building(3, 3); fenceLine(rx(X(4), X(8)), rng.int(Y(2), Y(10)), X(6), true); scatter("crate", 2); break;
     default: break;
   }
+  // Army trucks on this tile (miltrucks.js trucksAt): on the road, or parked in a row (a base's motor pool).
+  if (opts.trucks && opts.trucks.length) placeMilTrucks(rng, cells, W, H, opts.trucks, road, (x, y, onRoad) => free(x, y) && (onRoad || (at(x, y).f !== "road" && at(x, y).f !== "floor")));
   // A bigger map has room for a few more buildings around a site that has them (a shed, a house, an outbuilding).
   const sited = built;
   for (let i = 0; i < Math.round(sited * (area - 1) * 0.5); i++) building(rng.int(4, 5), rng.int(3, 4));
@@ -1771,7 +1828,7 @@ export function createBattle(state, setup) {
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
-  const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined });
+  const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId) }); // Army trucks (miltrucks.js), not on a base's wall map
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
@@ -1799,7 +1856,7 @@ export function createBattle(state, setup) {
   if (party && party.vehicle && setup.layout !== "baseDefence") {
     const pv = partyVehicle(state, party);
     {
-      const kind = party.vehicle === "bike" || (pv && isBike(pv)) ? "bike" : pv && pv.type === "truck" ? "truck" : "car"; // a bike: 2 x 1
+      const kind = vehicleBody(party, pv); // a bike: 2 x 1; an Army truck: 2 x 5
       const roadRows = [];
       for (let y = 0; y < H; y++) if (b.cells[idx(1, y)].f === "road") roadRows.push(y);
       const ys = roadRows.length ? [roadRows[Math.floor(roadRows.length / 2) - 1] ?? roadRows[0], roadRows[0], roadRows[roadRows.length - 2] ?? roadRows[0]] : [Math.floor(H / 2) - 1, Math.floor(H / 2) + 1, 2, H - 4];
@@ -2345,6 +2402,11 @@ export function combatAct(state, act) {
       u.left = true; u.ap = 0; u.ow = u.hunker = false;
       say(b, `${u.name} slips away from the fight.`, "info");
       break;
+    case "car": { // foundcars.js: a car or truck next to the unit: get in, look for the keys, hotwire it, inspect it, claim it
+      const err = carAct(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      break;
+    }
     case "open": { // locks.js: a locked container or door next to the unit, by key, lockpicks or force
       if (!b.raid) return "Nothing to open.";
       const err = openLock(state, b, u, act, { say, alertNear, fx });
@@ -3490,6 +3552,9 @@ export const AREAS = {
   medwreck:  { name: "Medevac wreck",    outdoor: true, boxes: ["crate", "crate", "car"], loot: { meds: [0.9, 2, 6], water: [0.4, 1, 4], scrap: [0.4, 1, 4] }, gear: [["surgkit", 0.08], ["bandagekit", 0.12]] },
   newswreck: { name: "News chopper wreck", outdoor: true, boxes: ["crate", "car"], loot: { parts: [0.6, 1, 3], scrap: [0.7, 2, 6], water: [0.3, 1, 3] }, gear: [["hikingpack", 0.04], ["slingbag", 0.06]] },
   fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.15, 1, 2], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05], ["hikingpack", 0.04], ["slingbag", 0.04]] },
+  // Army trucks (miltrucks.js): every truck is one container (kind "miltruck", its cargo is truckLoot, not this
+  // table), placed by placeMilTrucks; its crew stands round it and some are still strapped in (truckCrewRises).
+  miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 export const AREA_SETS = {
@@ -3519,6 +3584,9 @@ export const AREA_SETS = {
   // Crash events (crashes.js).
   crash_mil: ["milwreck", "milwreck", "cargodrop", "campsite"], crash_cargo: ["fuselage", "cargodrop", "cargodrop", "wreck"],
   crash_med: ["medwreck", "medwreck", "cargodrop", "wreck"], crash_news: ["newswreck", "wreck", "campsite"], airdrop: ["cargodrop", "cargodrop", "cargodrop", "campsite"],
+  // The abandoned Army convoy (miltrucks.js): its trucks (the "miltrucks" area, added by createRaid), the cars that
+  // were stuck behind it and the crews' last camp.
+  convoy: ["roadcars", "campsite", "wreck"],
 };
 
 export function raidAreasFor(tile) {
@@ -3532,6 +3600,7 @@ export function raidAreasFor(tile) {
 export function areaHint(type) {
   const a = AREAS[type];
   if (!a) return "";
+  if (a.trucks) return "Likely: ammunition, rifles, armour, grenades, rations; maybe night vision or a radio. Opening one wakes the crew strapped in the cab";
   const sup = Object.entries(a.loot).sort((x, y) => y[1][0] - x[1][0]).map(([k]) => k);
   return `Likely: ${sup.join(", ")}${a.gear.length ? ", maybe gear" : ""}`;
 }
@@ -3558,7 +3627,7 @@ export function searchableNear(b, u) {
   return b.raid ? b.raid.containers.filter((c) => !c.searched && nearBox(u, c) && !(c.lock && !c.lock.open)).sort((a, c) => (a.kind === "body") - (c.kind === "body")) : []; // locked: open it first (locks.js)
 }
 
-function genRaidMap(rng, tile, areaTypes, withVehicle) {
+function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
   const t = tile || { terrain: "plains" };
   const floor = { plains: "grass", forest: "grass", hills: "dirt", mountain: "gravel", suburb: "grass", city: "rubble", water: "grass" }[t.terrain] || "grass";
   const cells = Array.from({ length: W * H }, () => ({ k: "open", f: floor }));
@@ -3603,6 +3672,25 @@ function genRaidMap(rng, tile, areaTypes, withVehicle) {
     const def = AREAS[type];
     if (!def) continue;
     const area = { id: areas.length, type, name: def.name };
+    if (def.trucks) {
+      // Army trucks (miltrucks.js trucksAt, extra.trucks): one container each, its cargo bed; an intact one often
+      // padlocked (locks.js cargobed). One already opened is still there as cover, with nothing in it.
+      const placed = placeMilTrucks(rng, cells, W, H, extra.trucks || [], road, (x, y, onRoad) => (onRoad ? inside(x, y) && cells[idx(x, y)].k === "open" && !reserved[idx(x, y)] : free(x, y)));
+      if (!placed.length) continue;
+      for (const { truck: x, rect } of placed) {
+        if (x.opened) continue;
+        const lock = x.cond === "burnt" ? 0 : x.cond === "intact" ? 0.5 : 0.25;
+        containers.push({
+          id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, area: area.id, kind: "miltruck", searched: false, crew: x.crew,
+          truck: { i: x.i, kind: x.kind, cond: x.cond, src: x.src, key: x.key, rich: x.rich }, label: `${truckName(x)}: cargo bed`,
+          ...(rng.chance(lock) ? { lockKind: "cargobed" } : {}),
+        });
+      }
+      const xs = placed.flatMap(({ rect }) => [rect.x0, rect.x0 + rect.w - 1]), ys = placed.flatMap(({ rect }) => [rect.y0, rect.y0 + rect.h - 1]);
+      Object.assign(area, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3, outdoor: true, trucks: placed.map(({ truck: x, rect }) => ({ i: x.i, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, crew: x.opened ? 0 : x.crew })) });
+      areas.push(area);
+      continue;
+    }
     if (def.road) {
       // Cars on the road itself (AREAS.roadcars), 2 × 3–4 cells each, lengthwise in the lanes (layRoad putCar: a free ring
       // round each, the road still open end to end); on a bridge the first such area's cars stand on the deck.
@@ -3750,7 +3838,7 @@ export function createRaid(state, setup) {
   const tile = state.tiles[tileId];
   const party = state.parties.find((x) => x.id === setup.partyId);
   const pv = party && party.vehicle ? partyVehicle(state, party) : null;
-  const withVehicle = party && party.vehicle ? (party.vehicle === "bike" || (pv && isBike(pv)) ? "bike" : pv && pv.type === "truck" ? "truck" : "car") : false; // what stands in the entry zone (placeVehicle)
+  const withVehicle = party && party.vehicle ? vehicleBody(party, pv) : false; // what stands in the entry zone (placeVehicle)
   // A building's own map (buildingmaps.js): a single-building site, or the building picked at a site with several;
   // else the street map as before (at a site with several, the panel offers the buildings first: R.choose).
   const pick = raidBuilding(state, tile, setup);
@@ -3766,7 +3854,9 @@ export function createRaid(state, setup) {
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
     const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile), W, H); // more rooms and areas on a bigger map
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
-    map = genRaidMap(rng, tile, types, withVehicle);
+    const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
+    if (trucks.length && !types.includes("miltrucks")) types.unshift("miltrucks"); // first: they want the room
+    map = genRaidMap(rng, tile, types, withVehicle, { trucks });
   }
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
@@ -3860,6 +3950,7 @@ export function createRaid(state, setup) {
       pod++;
     }
   }
+  truckCrews(state, b); // miltrucks.js: the turned crews standing round the Army trucks
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
@@ -3996,6 +4087,52 @@ function spawnWave(b, n) {
   if (made) say(b, `${made} more of the dead shamble in, drawn by the commotion.`, "danger");
 }
 
+// ---------- Army trucks' crews (miltrucks.js) ----------
+// The turned crew round each truck on a raid map: MILTRUCK.AROUND dead soldiers standing near it, unaware.
+function truckCrews(state, b) {
+  const R = b.raid;
+  if (!R) return;
+  const rng = b.rng;
+  const power = 2 + b.infection * 3;
+  for (const a of R.areas) {
+    for (const t of a.trucks || []) {
+      if (!t.crew && !rng.chance(0.5)) continue; // an opened truck: now and then one still about it
+      const n = rng.int(MILTRUCK.AROUND[0], MILTRUCK.AROUND[1]);
+      const cells = [];
+      for (let y = t.y - 3; y <= t.y + t.h + 2; y++) for (let x = t.x - 3; x <= t.x + t.w + 2; x++) if (inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y) && zoneAt(b, x, y) < 0) cells.push([x, y]);
+      rng.shuffle(cells);
+      for (let i = 0; i < n && i < cells.length; i++) {
+        const z = enemyUnit(b, rng, "zombies", power, b.units.filter((o) => o.kind === "zombie").length + 1);
+        applyZType(z, "soldier", false, power);
+        z.x = cells[i][0]; z.y = cells[i][1]; z.aware = false; z.home = [z.x, z.y];
+        b.units.push(z);
+      }
+    }
+  }
+}
+// The cargo bed is opened: the crew still strapped in the cab tear free (box.crew dead soldiers next to the truck,
+// aware), and the noise carries (Heat +RISE_HEAT, everything within RISE_RADIUS turns toward it).
+function truckCrewRises(state, b, u, box) {
+  const n = box.crew || 0;
+  box.crew = 0;
+  if (!n) return;
+  const rng = b.rng;
+  const power = 2 + b.infection * 3;
+  const ring = boxRing(b, box).filter(([x, y]) => b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y)).sort((p, q) => dist(q[0], q[1], u.x, u.y) - dist(p[0], p[1], u.x, u.y)); // the cab's side, away from the searcher first
+  let made = 0;
+  for (let i = 0; i < n && i < ring.length; i++) {
+    const z = enemyUnit(b, rng, "zombies", power, b.units.filter((o) => o.kind === "zombie").length + 1);
+    applyZType(z, "soldier", false, power);
+    z.x = ring[i][0]; z.y = ring[i][1]; z.aware = true; z.home = [z.x, z.y];
+    b.units.push(z);
+    made++;
+  }
+  if (b.raid) b.raid.heat = Math.min(100, b.raid.heat + MILTRUCK.RISE_HEAT);
+  b.noise = (b.noise || 0) + 1;
+  if (made) say(b, `Something thrashes in the cab of the ${box.label.split(":")[0].toLowerCase()}: ${made === 1 ? "a dead soldier tears" : `${made} dead soldiers tear`} free of the seat belts and come${made === 1 ? "s" : ""} for ${u.name}! (Heat +${MILTRUCK.RISE_HEAT})`, "danger");
+  alertNear(b, box.x, box.y, MILTRUCK.RISE_RADIUS, "The banging in the cab carries.");
+}
+
 // open: the player looks inside (the search window does the taking); else what fits is taken at once (bots, tests).
 // quick: a rummage (search.js): part of what is inside shows, the rest stays hidden, and it is heard.
 function searchBox(state, b, u, box, open = false, quick = false) {
@@ -4031,6 +4168,15 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         gear.push(it);
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1, rng)); // what was in their pockets
+    } else if (box.truck) {
+      // An Army truck's cargo bed (miltrucks.js truckLoot: its own dice, the same truck holds the same things); the
+      // tile remembers it was opened. The crew strapped in the cab rise at the noise.
+      const x = box.truck;
+      const got = truckLoot(truckRng(state, x), x.kind, x.cond, { rich: x.rich, src: x.src });
+      Object.assign(sup, got.sup);
+      gear.push(...got.gear);
+      markOpened(state, x);
+      truckCrewRises(state, b, u, box);
     } else {
       const def = AREAS[R.areas[box.area].type];
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {

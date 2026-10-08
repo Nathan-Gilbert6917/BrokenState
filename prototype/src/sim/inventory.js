@@ -40,14 +40,15 @@ export const ZOMBIE_PACK_STUFF = ["chocolate", "candy", "phone", "photos", "nove
 
 // worn: found or starting gear comes part-worn, FOUND_DUR / START_DUR of its uses left (data.js GEAR dur). Pass the
 // rng in hand (its position is hashed with the item, so the roll moves none of the world's random numbers) or a
-// number 0–1 from a hash of its own. Counts (tablets, toiletries) and items that do not wear stay full.
+// number 0–1 from a hash of its own. Counts (tablets, toiletries, count stacks such as boxes of rounds) and items
+// that do not wear stay full.
 export const FOUND_DUR = { lo: 0.3, hi: 1 };   // loot: from nearly done to as good as new
 export const START_DUR = { lo: 0.55, hi: 1 };  // what people start the game (or join) with: looked after
 export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
   const d = GEAR[key];
   const item = { key, name: d.name, quality };
   if (d.dur) item.dur = d.dur;
-  if (worn != null && d.dur && !d.tabs && !d.groom) {
+  if (worn != null && d.dur && !d.tabs && !d.groom && !d.count) {
     const u = typeof worn === "number" ? worn : mix01(worn.state, key, quality);
     item.dur = Math.max(1, Math.round(d.dur * (range.lo + (range.hi - range.lo) * u)));
   }
@@ -68,7 +69,12 @@ export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slot
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
-export const itemKg = (item) => (item && GEAR[item.key] && Number.isFinite(GEAR[item.key].weight) ? GEAR[item.key].weight : 1);
+// A count stack (GEAR count: true, item.dur = how many are left: a box of rounds) weighs its share left.
+export const itemKg = (item) => {
+  const d = item && GEAR[item.key];
+  if (!d || !Number.isFinite(d.weight)) return 1;
+  return d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight;
+};
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
 export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item);
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? itemKg(m) : 0), 0) : 0);

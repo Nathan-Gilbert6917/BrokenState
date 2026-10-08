@@ -17,6 +17,7 @@ import { HIVE } from "../sim/hiveconst.js";
 import { buildSiteLabel, isMarked } from "../sim/hivebirth.js"; // a build site's days to a hive, a marked gathering
 import { festivalNow } from "../sim/festival.js"; // the hub's harvest festival: extra fires
 import { activeCrashes, daysLeft, crashTip } from "../sim/crashes.js";
+import { activeConvoys, convoyDaysLeft, convoyTip } from "../sim/miltrucks.js";
 import { rumoursOf, surveyTip } from "../sim/survey.js";
 import { hasKey } from "../sim/locks.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
@@ -295,7 +296,7 @@ function geometry(state) {
     G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
     G.water[i] = t.terrain === "water" ? 1 : 0;
     g.neighbors(t.id).forEach((m, j) => (G.nb[i * 6 + j] = m));
-    if (t.loc && !t.loc.crash) G.sites.push(i); // crash sites come and go: drawn on their own (sim/crashes.js)
+    if (t.loc && !t.loc.crash && !t.loc.convoy) G.sites.push(i); // crash sites and convoys come and go: drawn on their own (sim/crashes.js, sim/miltrucks.js)
     if (t.bridge) {
       const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
       const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
@@ -1378,6 +1379,25 @@ export function render(state) {
     pill(px + w / 2, py - h / 2, left, "#a0521c", s);
     labels.push({ text: t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].name : "Wreck", x: px, y: py + 7 * s + 12, pri: 1, screen: true, color: "#ffb07a", size: 9 });
   }
+  // The abandoned Army convoys (sim/miltrucks.js): the site on its tile with the days left, like a found wreck.
+  for (const c of activeConvoys(state)) {
+    const s = zoomBoost();
+    const px = G.x[c.tile], py = G.y[c.tile];
+    if (px < minX || px > maxX || py < minY || py > maxY) continue;
+    const t = state.tiles[c.tile];
+    const cv = poiSpriteCanvas("convoy", "", c.stripped > 0 || (t.loot || 0) < 0.3);
+    const w = (gridW(cv) || 26) * POI_PX * 1.2 * s, h = spriteH(cv, w);
+    ctx.beginPath();
+    ctx.ellipse(px, py + 7 * s, Math.max(9 * s, w * 0.46), 4.5 * s, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fill();
+    ctx.strokeStyle = "#a8b46a";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    sprite(cv, px, py + 7 * s - h / 2, w);
+    pill(px + w / 2, py - h / 2, `${Math.max(0, Math.ceil(convoyDaysLeft(state, c)))}d`, "#56602e", s);
+    labels.push({ text: "Army convoy", x: px, y: py + 7 * s + 12, pri: 1, screen: true, color: "#c8d48a", size: 9 });
+  }
   ctx.restore();
   drawSurveys(state, minX, maxX, minY, maxY, labels);
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
@@ -1619,7 +1639,7 @@ function markerLook(state, m) {
   if (m.type === "vehicle") {
     const v = i.vehicleId != null ? vehicleById(state, i.vehicleId) : null;
     const bike = v && v.type === "bike";
-    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
+    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25 };
   }
   if (m.type === "death") return { empty: i.items === 0 };
   return { emptied: !!i.emptied };
@@ -1737,7 +1757,7 @@ function partyLook(state, p) {
   const v = p.vehicle ? vehicleById(state, p.vehicleId) : null;
   const supply = p.routeKind === "supply";
   const kind = p.kind === "convoy" ? (p.vehicle ? (supply ? "supply" : "convoy") : supply ? "supplycart" : "cart")
-    : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
+    : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
   return { color, kind, count: (p.members || []).length };
 }
 
@@ -2060,6 +2080,7 @@ export function tileTooltip(state, id) {
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
+  for (const line of convoyTip(state, id)) lines.push(`<span style="color:#c8d48a">${esc(line)}</span>`); // sim/miltrucks.js
   for (const line of surveyTip(state, id)) lines.push(`<span style="color:#f0c85a">${esc(line)}</span>`); // sim/survey.js: surveys and rumours
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js

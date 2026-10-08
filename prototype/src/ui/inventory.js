@@ -73,7 +73,7 @@ export function itemTip(item, s = null) {
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
-  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.groom ? `${dur} of ${d.dur} days of use left` : `${d.makeshift ? "makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks`);
+  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.count ? `${dur} of ${d.dur} left` : d.groom ? `${dur} of ${d.dur} days of use left` : `${d.makeshift ? "makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks`);
   if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }
