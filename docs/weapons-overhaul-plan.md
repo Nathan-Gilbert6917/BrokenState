@@ -1302,3 +1302,31 @@ This REPLACES the section 17/21 field contract: **one condition field for all ge
 - **Noise.** Drill noise is 1 an action and grinder noise 1.5 (2 and 3 a turn of two actions), so the Heat sums in 19.3 hold (mid drilled 9.6, high 19.2). The table's "noise 2 an action" would double them; the bot's projection `R.heat + turns × (1.2 + noise)` uses the per-turn noise.
 - **Not built.** The base gun locker (19.7). Cases do not take a gun put back in by hand (the case is a loot container; "Open case" empties it). Ammo in a case sits on `item.sup` and is not counted in itemLoad / itemValue.
 - **TODO for later stages.** GUN_STASH comments name dmr, m79, highcut, eardef, riflecan, scope4x / pistolcan fits (register extras or rows); miltrucks cargo calls `rollGunCase` at 0.15.
+
+---
+
+## 26. Group arsenals: everyone only has what their group gathers (user, 2026-10-07; agent H)
+
+"Raiders use what they capture as the game goes on. Every survivor AI or player led only has the resources their group gathers and uses for different tasks." Supersedes R15's arsenal note:
+- Each AI group holds real goods: f.arsenal (weapons with their mods and condition, armour, throwables, launchers, ammo boxes by calibre once agent A lands, vehicles = f.vehicles) next to its supplies stock.
+- Inflows: its own scavenging (aiscav.js), crafting/production, trade and radio deals, battlefield pickup after won fights (the losers' gear, the dead's gear), raids on other groups / caravans / your bases (stolen goods), captured vehicles.
+- Outflows: gear issued to fighters who die and are not recovered, wear and breakage, ammo spent, trade, theft by others.
+- Allocation by task: home defence keeps a share; raids, caravan escorts (caravans2 already sizes escorts by what the sender can spare), scavenging parties, hunting draw from what is left. Their battle units (combat.js enemyUnit for a group's people) are armed FROM the arsenal (best kit to the best fighters), not from KITS; KITS stay only for people with no group (wanderers, the dead's leftovers) and as the starting arsenal of a new group.
+- By the numbers: a group's strength reflects its arsenal (guns, armour, launchers, vehicles), not a flat number.
+- People: groups have only the people they have; raids and escorts send real people from the population and casualties are real.
+
+---
+
+## 27. Wave 2 brief: what wave 1 actually built (read before sections 12–18; dev 557d5a2, 2026-10-08)
+
+Where the as-built code differs from the plan, the code wins:
+- **Ammo (A):** rounds are SUPPLIES keys `a_<cal>_<type>` (data-ammo.js ROUND_SUPPLIES; boxes in AMMO_GEAR are the item form). API in `rounds.js` (record level) and `ammo.js` (roundsOf, takeBattleRounds, loadsFor, pickLoad, enemyLoad, settleAll, packRounds, starterLoad, roundNeeds, benchRounds...). Generic "ammo" survives only as an abstract count (AI groups' f.stock.ammo, plans, by-the-numbers). `u.load` = loaded type key; the armour weight is `u.armLoad`. Ammo bench (production) already makes common rounds per calibre (`benchRounds`). Beanbag/rubber less-lethal types exist.
+- **Magazines today:** gunmags counter (u.mag/u.magMax, magCap from WEAPONS cap × gunMods capMult + cap); reload act takes act.ammo (switch type, 1 action); extended mag / drum / tube are still ATTACHMENTS (gunmods.js, mount "mag").
+- **Condition:** ONE field item.dur / item.durMax (+ item.durBase for repairs) for all gear (section 25). repair.js (bench family; Tarkov max loss), autopilot repairs.
+- **Armour (A2, armour.js):** per-hit, AC + dur, hit locations (torso/head/arms/legs; crits to the head), ceramic shatters / steel spalls; vest AC2, plate (plate carrier, single piece, ceramic AC5 dmax 45), helmets bikehelmet/riothelmet/milhelmet/footballhelmet/rivethelmet with AC. Enemy pieces wear; loot keeps dur. riothelmet has `visor: true` (flashbang reads it). Flashbang reads `u.earCut` (0–1) for ear protection.
+- **Battle:** gunfire.js (fire modes {single,burst,auto}: {rounds, aim}, jams + unjam, suppress, over-penetration, sustained overwatch), u.stun (shared by flashbang, taser, baton), medics.js (heldDown states: down/stab/ko/surr/tied), nonlethal.js, rescueraid.js, throwables.js (FRAG/BLAST/SMOKE/FLARE/FLASH, landEffect, throwLanding, blastSpot, vehicleBlast). Vehicle turret (turret_m2 / turret_lmg) fires through gunfire with .50/5.56 rounds.
+- **Roster (B):** data-guns.js GUN_GEAR / GUN_WEAPONS / KIT_PATCH / WEAPON_PATCH / FACTORY_FIT / TRUCK_GEAR and LATER_GEAR (launchers m79, m203, m32, at4, rpg, their rounds, and the carryable m2hb: NOT merged into GEAR yet). WEAPONS has launcher entries flagged `launcher`. M203 is also a gunmods attachment (C), removed from loot until wave 2.
+- **Attachments (C):** data-gunmods.js SLOTS / PLATFORMS / WEAPON_PLATFORM / MOD_ATTACH / MOD_GEAR; gunmods.js fitAt/stripAt/slotsOf/fitsSlot/modFits; gun builder UI (D: ui/gunbuilder.js, gunart.js) with Repair button.
+- **AI groups (H):** arsenal.js (f.arsenal.items real items; armFromArsenal/settleArsenal in createBattle/createRaid/finishCombat), groupcare.js GROUP_PRIORITIES, groupworld.js. ANY new gear enemies can carry must seed into arsenals by kit and be armed through armFromArsenal.
+- **Loot:** every looted/traded item goes through itemcond.js lootItem / rollCondition (itemcondtest scans for stray newItem). ITEM_TAGS for loottest.
+- **Keys in battle already used:** F shoot, I reload, E melee, O overwatch, H hunker, M meds, U crush, J double tap, P pick up body, Z lay body, R retreat, G throw, B roofs, V centre, X extract, N vehicle; Shift+F fire mode, Shift+J unjam, Shift+O suppress, Shift+G throw spear, Shift+P pick up spear, Shift+I ammo cycle, Shift+T turret, Shift+H heal, Shift+V revive, Shift+K finish, Shift+D drag, Shift+S search, Shift+R sound retreat, Shift+C area clear, Shift+A AI plays. Check ui/keymap.js and uitest's conflict checks.
