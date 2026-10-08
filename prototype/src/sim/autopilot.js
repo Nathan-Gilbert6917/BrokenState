@@ -86,6 +86,7 @@ import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageD
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
+import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
@@ -2238,6 +2239,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
 
 function equipFromArmory(state, base) {
   if (!base.armory.length) return;
+  openCasesIn(base.armory, base.stock); // gunsafes.js: gun cases brought home are opened (free), their guns join the armory
   const people = atBase(state, base.id).filter((s) => !s.pinned).sort((a, b) => combatPower(b) - combatPower(a)); // pinned people keep their kit too
   if (!people.length) return;
   const handed = [];
@@ -3581,7 +3583,7 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
-  const kit = packTripKit(state, h, crew, c.mission); // kit.js: camp kit against Heat, a comfort, throwables
+  const kit = packTripKit(state, h, crew, c.mission, c.tile); // kit.js: camp kit against Heat, a comfort, throwables (a drill for gun safes)
   // A tube of purification tablets (worm.js packTablets) for a water haul or a trip of more than TABS_TRIP_DAYS: river
   // water fetched or un-purified water packed is drunk safe on the way without stopping to boil it.
   const tabs = armoryTabs(h).length > 0 && ((c.steps || []).some((x) => x.kind === "water") || days > TABS_TRIP_DAYS);
