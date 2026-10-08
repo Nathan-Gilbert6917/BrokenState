@@ -101,6 +101,7 @@ export const KEYMAP = [
   { id: "battle.revive", label: "Revive a downed teammate (a medic)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyV"], v: "revive" },
   { id: "battle.finish", label: "Finish a downed enemy", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyK"], v: "finish" },
   { id: "battle.gunner", label: "Man the vehicle's turret (again: get down)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyT"], v: "gunner" },
+  { id: "battle.pullOut", label: "Pull someone downed out of a vehicle (from next to it)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyU"], v: "pullOut" },
   // The unit orders (combatAction "cb-act" with v).
   ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
     ["retreat", "Retreat (from the evac strip)", "KeyR"], ["vehicle", "Open the vehicle", "KeyN"], ["extract", "Extract (raid)", "KeyX"], ["subdue", "Subdue", "KeyC"],

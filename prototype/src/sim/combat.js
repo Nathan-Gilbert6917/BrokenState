@@ -3099,6 +3099,7 @@ export function combatAct(state, act) {
     case "dragAlly": { const why = MED.liftRefusal(b, u, t); if (why) return why; MED.lift(b, u, t); break; }
     case "dropAlly": { const why = MED.dropRefusal(b, u, act.into); if (why) return why; MED.dropAlly(b, u, act.into || null); break; }
     case "finish": { const why = MED.finishOff(b, u, t); if (why) return why; break; }
+    case "pullOut": { const why = MED.pullOut(b, u, t || MED.pullTargets(b, u)[0] || null); if (why) return why; break; } // a downed rider out of a vehicle
     case "search": {
       if (!b.raid) return "Nothing to search.";
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
@@ -3685,7 +3686,7 @@ function holdPost(b, u) {
 function aiMeds(b, u) {
   if (medsLeft(b) < 1) return false;
   const hurtAlly = b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && (o === u || adjacent(u, o)));
-  const target = hurtAlly || (u.hp < 40 ? u : null);
+  const target = hurtAlly || (u.hp < 40 && MED.spareMeds(b, u) >= 1 ? u : null); // medics.js: the meds reserve kept for a revive
   if (!target) return false;
   heal(b, u, target);
   u.ap -= 1;
@@ -5368,7 +5369,7 @@ function autoRaidTurn(state) {
       if (MED.rescueStep(b, u)) { if (u.dragging != null && !leave) u.ap = 0; continue; } // medics.js: a downed teammate dragged to cover, stabilized, revived; a medic heals
       const fallen = medsLeft(b) > 0 ? b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && adjacent(u, o)) : null;
       if (fallen) { combatAct(state, { type: "meds", unit: u.id, target: fallen.id }); continue; }
-      if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
+      if (u.hp < 50 && MED.spareMeds(b, u) >= 1 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
       const lockAct = !leave ? autoLock(state, b, u) : null; // locks.js: key, picks or force, by the odds and the Heat
       if (lockAct && !combatAct(state, lockAct)) continue;
       // search.js: pressed for time (Heat up, an aware enemy close, on the way out), rummage through what is right
