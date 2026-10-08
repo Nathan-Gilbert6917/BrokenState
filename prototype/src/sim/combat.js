@@ -2674,7 +2674,11 @@ export function moveAlong(b, u, path) {
   let reacted = null; // overwatchers that have fired at this mover already (once each per move)
   for (const [x, y] of path) {
     const there = unitAt(b, x, y);
-    if (there && (active(there) || (x === path[path.length - 1][0] && y === path[path.length - 1][1]))) break;
+    const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
+    // Your people squeeze past the third side on the way (reachable: through, never stopping there); stopping at the
+    // first of them left a man between two soldiers holding a corridor spending his actions where he stood, and the
+    // raid never ended (tools/wanderertest.js seed 904, once the enemy guns' condition came by kit).
+    if (there && (active(there) || last) && !(u.side === "player" && there.side === "third" && !last)) break;
     u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
