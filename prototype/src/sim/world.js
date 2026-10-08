@@ -30,6 +30,7 @@ import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
+import { repairHour } from "./repair.js"; // gear repairs at the bench
 import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { startChronicle, recordChronicle } from "./chronicle.js";
@@ -116,6 +117,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
+    gunSlots: 1, // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -356,13 +358,14 @@ export function residents(state, baseId) {
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
-/** @param {Survivor} s @param {string} key @returns {number} */
 // Crafting for someone from before the skill (save.js, skills.js ensureSkills): 0.7 × Mechanics, the floor too.
+/** @param {Survivor} s */
 export function fillCrafting(s) {
   if (!s || !s.skills || Number.isFinite(s.skills.crafting)) return;
   s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
   if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
 }
+/** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
@@ -761,6 +764,7 @@ export function tickHour(state) {
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
+  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   craftingHour(state);
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);

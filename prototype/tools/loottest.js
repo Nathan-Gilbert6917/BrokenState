@@ -7,7 +7,7 @@
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
-import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
+import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
 import { AREAS, AREA_SETS, KITS, WEAPONS } from "../src/sim/combat.js";
 import { ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZOMBIE_PACK, enemyBody } from "../src/sim/inventory.js";
 import { WARES } from "../src/sim/trade.js";
@@ -43,6 +43,10 @@ for (const [t, f] of Object.entries(LIGHT_FINDS)) addAll(Object.keys(f.items), `
 for (const [t, f] of Object.entries(GUNMOD_FINDS)) addAll(Object.keys(f.items), `modfind:${t}`); // gun attachments (gunmods.js)
 for (const [a, f] of Object.entries(AREA_GUNMODS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), `sold:${t}`);
+// The weapons overhaul's attachments and repair kits (loot.js SITE_MODS / AREA_MODS / WARE_MODS: their own dice).
+for (const [t, f] of Object.entries(SITE_MODS)) addAll(Object.keys(f.items), `modfind:${t}`);
+for (const [a, f] of Object.entries(AREA_MODS)) addAll(Object.keys(f.items), `raid:${a}`);
+for (const [t, f] of Object.entries(WARE_MODS)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [a, def] of Object.entries(AREAS)) addAll(def.gear.map(([k]) => k), `raid:${a}`);
 for (const [a, f] of Object.entries(AREA_FINDS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, b] of Object.entries(BOOK_SITES)) addAll(b.books, `books:${t}`);
@@ -75,8 +79,8 @@ check(Object.keys(LOCATIONS).every((t) => SITE_TAGS[t]), `every site type has th
 check(Object.keys(AREAS).every((a) => AREA_TAGS[a]), `every raid area has theme tags (missing: ${Object.keys(AREAS).filter((a) => !AREA_TAGS[a]).join(", ") || "none"})`);
 check(Object.keys(SITE_FINDS).every((t) => LOCATIONS[t]) && Object.keys(AREA_FINDS).every((a) => AREAS[a]), "finds tables only name real site types and raid areas");
 const misfits = [];
-for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, ...Object.keys((SITE_FINDS[t] || {}).items || {}), ...Object.keys((HUNT_FINDS[t] || {}).items || {}), ...Object.keys((LIGHT_FINDS[t] || {}).items || {}), ...Object.keys((GUNMOD_FINDS[t] || {}).items || {})]) if (!fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t}`);
-for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
+for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, ...Object.keys((SITE_FINDS[t] || {}).items || {}), ...Object.keys((HUNT_FINDS[t] || {}).items || {}), ...Object.keys((LIGHT_FINDS[t] || {}).items || {}), ...Object.keys((GUNMOD_FINDS[t] || {}).items || {}), ...Object.keys((SITE_MODS[t] || {}).items || {})]) if (!fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t}`);
+for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {}), ...Object.keys((AREA_MODS[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
 check(!misfits.length, `everything a site or raid area holds fits its theme${misfits.length ? ` (misfits: ${misfits.join("; ")})` : ""}`);
 const placed = new Set([...Object.values(LOCATIONS).flatMap((d) => d.gear), ...Object.values(SITE_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(HUNT_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(LIGHT_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(AREAS).flatMap((d) => d.gear.map(([k]) => k)), ...Object.values(AREA_FINDS).flatMap((f) => Object.keys(f.items))]);
 check([...placed].every((k) => ITEM_TAGS[k]), `every item placed at a site has theme tags (missing: ${[...placed].filter((k) => !ITEM_TAGS[k]).join(", ") || "none"})`);
@@ -176,6 +180,22 @@ check(zpacks && zitems / zpacks >= 1 && zitems / zpacks <= 3, `with a few things
 let rfinds = 0;
 for (let i = 0; i < 3000; i++) { const body = enemyBody(rng, { kind: "human", name: "R", id: i, weapon: "pistol", kit: "raiders" }, KITS.raiders); if (body.pockets.some((it) => it && KITS.raiders.finds.includes(it.key))) rfinds++; }
 check(rfinds / 3000 > 0.12 && rfinds / 3000 < 0.35, `a raider's pockets hold something small about one time in five (${((rfinds / 3000) * 100).toFixed(0)}%)`);
+
+// ---------- parts by kind (section 10) ----------
+console.log("Parts by kind");
+check(Object.keys(SITE_MODS).every((t) => LOCATIONS[t]) && Object.keys(AREA_MODS).every((a) => AREAS[a]), "the overhaul's attachment tables only name real site types and raid areas");
+check(Object.keys(PARTS_MIX).every((t) => LOCATIONS[t] || AREAS[t]), `the parts mix only names real site types and raid areas (${Object.keys(PARTS_MIX).filter((t) => !LOCATIONS[t] && !AREAS[t]).join(", ") || "all real"})`);
+{
+  const stp = { seed: 5, hour: 10 };
+  const tally = (place) => { const t = {}; for (let i = 0; i < 200; i++) for (const [k, v] of Object.entries(sortParts(stp, place, 5, `x${i}`))) t[k] = (t[k] || 0) + v; return t; };
+  const auto = tally("autoshop"), guns = tally("gunstore"), radio = tally("radiotower"), farm = tally("farm");
+  const sum = (t) => Object.values(t).reduce((a, b) => a + b, 0);
+  check(sum(auto) === 1000 && Math.abs(auto.carparts / 1000 - 0.6) < 0.06 && Math.abs(guns.gunparts / 1000 - 0.6) < 0.06 && Math.abs(radio.electronics / 1000 - 0.6) < 0.06, `an auto shop's parts are 60% car parts (${auto.carparts / 10}%), a gun store's gun parts (${guns.gunparts / 10}%), a radio tower's electronics (${radio.electronics / 10}%); the rest machine parts`);
+  check(farm.parts === 1000, "elsewhere they are machine parts");
+  const sup = { parts: 4, scrap: 2 };
+  splitParts(stp, sup, "garage", "y");
+  check(sup.scrap === 2 && (sup.parts || 0) + (sup.carparts || 0) + (sup.gunparts || 0) + (sup.electronics || 0) === 4, `a raid container's parts split the same way (${JSON.stringify(sup)})`);
+}
 
 // ---------- the table ----------
 if (!quiet) {

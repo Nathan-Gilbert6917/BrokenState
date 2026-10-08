@@ -293,6 +293,8 @@ function merchantGoods(state, v, rng) {
     fuel: rng.int(15, 40), meds: rng.int(8, 22), preserved: rng.int(20, 50), parts: rng.int(3, 9), ammo: rng.int(60, 160),
     food: rng.int(5, 15), water: rng.int(10, 20), scrap: 0, jars: 0,
   });
+  // Parts by kind (data.js SUPPLIES; section 10), on dice of their own (the caravan's other goods come out as before).
+  for (const [k, lo, hi] of [["carparts", 1, 4], ["gunparts", 0, 3], ["electronics", 1, 4]]) v.stock[k] = lo + Math.floor(hash01(state.seed, "mkinds", v.serial, k) * (hi - lo + 1));
   const unknown = BP_KEYS.filter((id) => !isKnown(state, id));
   const bps = rng.shuffle([...(unknown.length ? unknown : BP_KEYS)]);
   const nBp = rng.chance(0.75) ? (rng.chance(0.25) ? 2 : 1) : 0;

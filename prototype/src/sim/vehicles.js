@@ -167,6 +167,20 @@ export function canRepair(state, base) {
   return { ok: false, per: 0 };
 }
 
+// Car parts (data.js SUPPLIES carparts; docs/weapons-overhaul-plan.md section 10): a vehicle is mended with car parts,
+// and CARPART_SUB machine parts stand in for each one short. What paying n car parts takes from what is there:
+// { car, parts, ok } (have(k) reads a stock; nothing is taken).
+export const CARPART_SUB = 2;
+/** @param {(k: string) => number} have @param {number} n */
+export function carPartsCost(have, n) {
+  const car = Math.min(n, Math.max(0, Math.floor(have("carparts") + 1e-9)));
+  const parts = (n - car) * CARPART_SUB;
+  return { car, parts, ok: parts <= Math.max(0, have("parts")) + 1e-9 };
+}
+// "1 car part" / "2 car parts (or 2 machine parts each)".
+/** @param {number} n */
+export const carPartsText = (n) => `${n} car part${n === 1 ? "" : "s"} (or ${CARPART_SUB} machine parts for each)`;
+
 export function repair(state, base, v) {
   if (isBike(v)) {
     // Bikes: patches, a chain link, spokes. Anyone can do it with a bit of scrap per bike.
@@ -179,13 +193,31 @@ export function repair(state, base, v) {
   }
   const r = canRepair(state, base);
   if (!r.ok) return "Needs a garage or a Mechanics 4+ survivor at this base.";
-  if ((base.stock.parts || 0) < 1) return "Needs 1 part.";
+  const pay = carPartsCost((k) => base.stock[k] || 0, 1);
+  if (!pay.ok) return `Needs ${carPartsText(1)}.`;
   if (v.condition >= 100) return "Already in top shape.";
-  base.stock.parts -= 1;
+  if (pay.car) base.stock.carparts -= pay.car;
+  if (pay.parts) base.stock.parts -= pay.parts;
   v.condition = Math.min(100, v.condition + r.per);
   const mech = atBase(state, base.id).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0];
   if (mech) gainXp(state, mech, "mechanics", USE.repair); // skills.js
   return `Repaired the ${v.name} to ${Math.round(v.condition)}%.`;
+}
+
+// Strips a car parked at a base for parts (section 10): 3–8 car parts by its condition, 20 scrap and the fuel in its
+// tank into the base's stores; the vehicle is gone. Not bikes. Returns the message.
+export const STRIP = { min: 3, max: 8, scrap: 20 };
+/** @param {any} v */
+export const stripYield = (v) => ({ carparts: STRIP.min + Math.round((STRIP.max - STRIP.min) * Math.max(0, Math.min(100, v.condition || 0)) / 100), scrap: STRIP.scrap, fuel: Math.floor(Math.max(0, v.fuel || 0)) });
+export function stripVehicle(state, base, v) {
+  if (!v || !base || v.loc.kind !== "base" || v.loc.baseId !== base.id) return "That vehicle is not parked here.";
+  if (isBike(v)) return "Bikes are not stripped for car parts.";
+  const got = stripYield(v);
+  for (const [k, q] of Object.entries(got)) if (q > 0) base.stock[k] = (base.stock[k] || 0) + q;
+  state.vehicles.splice(state.vehicles.indexOf(v), 1);
+  const msg = `Stripped the ${v.name} for parts: ${got.carparts} car parts, ${got.scrap} scrap${got.fuel ? `, ${got.fuel} fuel from its tank` : ""}. It is gone.`;
+  log(state, msg, "info");
+  return msg;
 }
 
 // Abandoned vehicles get siphoned and stripped by passers-by, like death sites.

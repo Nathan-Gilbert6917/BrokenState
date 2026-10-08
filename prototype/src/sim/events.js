@@ -5,7 +5,7 @@ import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike, carPartsCost } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
@@ -413,12 +413,14 @@ function breakdownCard(state, p, v) {
     choices: [
       { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
       {
-        label: "Use a spare part", hint: "1 part: quick fix, +10 condition",
-        get disabled() { return carried(p, "parts") < 1; }, // what the team carries now, not when the card was made
+        label: "Use a spare part", hint: "1 car part (or 2 machine parts): quick fix, +10 condition",
+        get disabled() { return !carPartsCost((k) => carried(p, k), 1).ok; }, // what the team carries now, not when the card was made
         resolve: (s) => {
           if (!here(s)) return gone;
-          if (carried(p, "parts") < 1) return "No spare part left. Nothing was done.";
-          takeSupply(p, "parts", 1);
+          const pay = carPartsCost((k) => carried(p, k), 1); // vehicles.js: a car part, else 2 machine parts
+          if (!pay.ok) return "No spare part left. Nothing was done.";
+          if (pay.car) takeSupply(p, "carparts", pay.car);
+          if (pay.parts) takeSupply(p, "parts", pay.parts);
           v.condition = Math.min(100, v.condition + 10);
           delay(p, 1);
           return "Back on the road quickly.";

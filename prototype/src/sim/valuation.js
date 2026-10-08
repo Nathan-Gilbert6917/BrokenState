@@ -61,6 +61,8 @@ export function itemValue(item) {
   // A count stack (GEAR count: true: a box of rounds, primers...) is worth its share left; wear costs at most 70%.
   const durF = dur == null ? 1 : d.count ? clamp(dur / d.dur, 0, 1) : 0.3 + 0.7 * clamp(dur / itemDurMax(item), 0, 1);
   let v = d.value * (0.2 + 0.8 * q) * durF;
+  // A maximum lowered by repairs (repair.js: item.durBase, the maximum before the first) sells low: × 0.4 at none left.
+  if (item.durBase > 0 && dur != null) v *= 0.4 + 0.6 * clamp(itemDurMax(item) / item.durBase, 0, 1);
   if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);
   if (item.mods) for (const m of Object.values(item.mods)) if (m) v += itemValue(m); // a gun's fitted attachments (gunmods.js) sell with it
   return v;

@@ -35,7 +35,7 @@ import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds, carryMods } from "./inventory.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -4185,6 +4185,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
+      splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
       for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1, rng));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);

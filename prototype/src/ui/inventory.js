@@ -13,8 +13,9 @@ import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
-  breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt,
+  breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt, salvageInfo, salvageAt, salvageYield, salvageText, placeOfLoc,
 } from "../sim/inventory.js";
+import { repairKind, repairInfo, fieldRepairInfo, repairPreview, queueRepair, fieldRepair, cancelRepair, repairJobStatus } from "../sim/repair.js"; // gear repairs at the bench
 import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
 import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
@@ -39,7 +40,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
-const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
+const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
 function icon(key) {
   const d = GEAR[key];
   if (GUNS.has(key)) return "🔫";
@@ -142,7 +143,7 @@ function storageBox(state, ui, place, user) {
     const b = baseById(state, st.id);
     const junk = b ? armoryJunk(b) : [];
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
-    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>`;
+    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
   }
   const tiles = st.list.map((it, i) => {
     const l = `${loc}:${i}`;
@@ -171,6 +172,7 @@ function selBar(state, ui, place) {
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button>
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? modBar(state, ui, item) : ""}</div>`;
 }
@@ -208,6 +210,34 @@ function reselect(state, ui, item) {
 
 // The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (asks first for anything
 // that is not junk: ui/confirm.js), and in an armory the water boiler's mark (may burn / keep).
+// Repair (sim/repair.js) and Salvage (sim/inventory.js salvageAt) for the selected item: at a base the repair goes in
+// its queue (the bench, the crafters), in the field it takes a field repair kit; the tooltip is the preview (the new
+// maximum, what it takes, how long, who).
+function repairButtons(state, ui, item, from, place) {
+  const out = [];
+  const base = place && place.startsWith("base:") ? baseById(state, Number(place.split(":")[1])) : null;
+  if (repairKind(item)) {
+    const info = base ? repairInfo(state, base, item) : fieldRepairInfo(state, ui.invSel);
+    const queueable = base && (info.ok || (!info.who && /Craft role/.test(info.reason)));
+    out.push(`<button class="mini" data-action="inv-repair" ${queueable || (!base && info.ok) ? "" : "disabled"}${tip(`${base ? "Repair at the bench" : "Field repair with a repair kit"}: ${repairPreview(info)}`)}>Repair${info.kind ? ` (max ${Math.round(info.oldMax)} → ${Math.round(info.newMax)})` : ""}</button>`);
+    if (base) {
+      const fk = fieldRepairInfo(state, ui.invSel);
+      if (fk.ok) out.push(`<button class="mini" data-action="inv-fieldrepair"${tip(`Now, with a field repair kit: ${repairPreview(fk)}`)}>Repair with a kit</button>`);
+    }
+  }
+  const sv = salvageInfo(state, ui.invSel);
+  if (salvageYield(item)) out.push(`<button class="mini" data-action="inv-salvage" ${sv.ok ? "" : "disabled"}${tip(sv.ok ? `Take the ${item.name} apart for parts: ${salvageText(sv.got)}${item.mods ? " (its attachments come off into storage)" : ""}. It is gone. Asks first.` : sv.reason)}>Salvage (${esc(salvageText(sv.got))})</button>`);
+  return out.join(" ");
+}
+// The base's repair queue (sim/repair.js): what is at the bench, how far along, why it waits; Cancel puts it back in the armory.
+function repairsBox(state, base) {
+  const q = base.repairs || [];
+  if (!q.length) return "";
+  return `<div class="small" style="margin-top:0.3rem"><b${tip("Gear at the bench: people on the Craft role with the skill work it before the craft queue. Finished, it goes to the armory.")}>Repairs</b> ${q.map((j) => {
+    const why = repairJobStatus(state, base, j);
+    return `<span class="chip"${tip(why || `${Math.floor(j.progress)} of ${j.hours} work-hours done`)}>${esc(j.item.name)} ${why ? `<span class="muted">(${esc(why)})</span>` : `${Math.round((j.progress / j.hours) * 100)}%`} <button class="mini" data-action="inv-cancelrepair" data-base="${base.id}" data-id="${j.id}"${tip("Cancel: the item goes back to the armory (what was paid comes back, half once started)")}>×</button></span>`;
+  }).join(" ")}</div>`;
+}
 function burnButtons(state, ui, item, from) {
   const bd = breakDownInfo(state, ui.invSel);
   if (!(bd.wood > 0) || from.o === "body") return "";
@@ -551,6 +581,25 @@ export const INV_ACTIONS = {
   "inv-fitto": (state, ui, d) => { if (ui.invSel) ui.invMsg = fitModAt(state, d.gun, ui.invSel); ui.invSel = d.gun; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
+  // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).
+  "inv-repair": (state, ui) => {
+    if (!ui.invSel) return;
+    const loc = parseLoc(ui.invSel);
+    const place = placeOfLoc(state, loc);
+    const base = place && place.startsWith("base:") ? baseById(state, Number(place.split(":")[1])) : null;
+    ui.invMsg = base ? queueRepair(state, base, ui.invSel) : fieldRepair(state, ui.invSel);
+    if (base) ui.invSel = null;
+  },
+  "inv-fieldrepair": (state, ui) => { if (ui.invSel) ui.invMsg = fieldRepair(state, ui.invSel); },
+  "inv-cancelrepair": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = cancelRepair(state, b, Number(d.id)); },
+  "inv-salvage": (state, ui, d = {}) => {
+    if (!ui.invSel) return;
+    const it = itemAt(state, ui.invSel);
+    const info = salvageInfo(state, ui.invSel);
+    if (it && info.ok && ask(ui, d, "inv-salvage", { kind: "salvage", title: `Take the ${it.name} apart for parts?`, text: `It is gone for good: ${salvageText(info.got)}.`, yes: "Take it apart" })) return;
+    ui.invMsg = salvageAt(state, ui.invSel);
+    ui.invSel = null;
+  },
   "inv-breakdown": (state, ui, d = {}) => {
     if (!ui.invSel) return;
     const it = itemAt(state, ui.invSel);

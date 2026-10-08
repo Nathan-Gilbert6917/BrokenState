@@ -85,6 +85,15 @@ export const ITEM_TAGS = {
   laser: ["guns", "police", "crime", "sport"], foregrip: ["guns", "military", "police"], bipod: ["guns", "hunt", "military"],
   pistolcan: ["guns", "military", "crime"], riflecan: ["military", "guns"], brake: ["guns", "hunt", "military"], comp: ["guns", "police", "sport"],
   choke: ["guns", "hunt", "farm", "sport"], extmag: ["guns", "police", "crime"], drum: ["military", "guns"], tubeext: ["guns", "police", "hunt"],
+  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js)
+  tritium: ["guns", "police"], rmr: ["guns", "police"], acog: ["military", "crash"], lpvo: ["military"], tacscope: ["military", "guns"],
+  thermalscope: ["military"], scrapscope: ["crime", "camp"], scopemount: ["guns", "hunt"], sidemount: ["guns", "crime"],
+  quadrail: ["military", "guns"], mlok: ["military", "guns"], can22: ["guns", "hunt"], can9: ["police", "military"], can556: ["military"],
+  can308: ["military", "guns"], can12: ["guns", "military"], bottlecan: ["crime", "camp"], solventcan: ["crime", "guns", "tools"],
+  flashhider: ["guns", "military"], recoilpad: ["guns", "hunt", "farm", "sport", "police"], collapsible: ["military", "police"],
+  precision: ["military", "guns"], foldstock: ["crime", "guns"], anglegrip: ["guns", "military", "police"], revgrip: ["guns", "police", "home"],
+  weaponlight: ["guns", "police", "military"], peq: ["military"], sling: ["guns", "hunt", "military", "police", "sport", "outdoor", "farm"],
+  m203: ["military"], repairkit: ["tools", "garage", "military", "guns", "camp"], kevlarkit: ["police", "military"],
   bottle: ["kitchen", "home", "crime", "travel"], noisemaker: ["crime"], firecracker: ["shop", "travel"],
   pipebomb: ["crime", "industry"], molotov: ["crime"], flare: ["travel", "garage", "fire", "police", "military", "crash", "outdoor", "camp"],
   smokegren: ["police", "military", "crash", "prison"], gamecall: ["hunt", "outdoor", "sport"],
@@ -210,6 +219,8 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   const key = pickWeighted(site.items, hash01(state.seed, "modpick", tileId, state.hour, salt));
   return key ? newItem(key, 1) : null;
 }
+// rollGunmodFind, or when it found nothing the overhaul's table (SITE_MODS; its own dice). scavenge.js searchHour.
+export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt);
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
@@ -219,7 +230,7 @@ export const AREA_GUNMODS = {
 };
 export function rollAreaGunmod(state, tileId, areaType, salt = "") {
   const a = AREA_GUNMODS[areaType];
-  if (!a || hash01(state.seed, "areamod", tileId, salt) >= a.p) return null;
+  if (!a || hash01(state.seed, "areamod", tileId, salt) >= a.p) return rollAreaMod(state, tileId, areaType, salt); // else the overhaul's table (AREA_MODS; its own dice)
   const key = pickWeighted(a.items, hash01(state.seed, "areamodpick", tileId, salt));
   return key ? newItem(key, 1) : null;
 }
@@ -235,9 +246,102 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return [];
+  const more = modWares(state, type, name, salt); // the overhaul's parts (WARE_MODS; their own dice)
+  if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
-  return key ? [newItem(key, Math.round((0.7 + 0.3 * hash01(state.seed, "modwareq", name, salt)) * 100) / 100)] : [];
+  return key ? [newItem(key, Math.round((0.7 + 0.3 * hash01(state.seed, "modwareq", name, salt)) * 100) / 100), ...more] : more;
+}
+function modWares(state, type, name, salt) {
+  const w = WARE_MODS[type];
+  if (!w || hash01(state.seed, "newmodware", name, salt) >= w.p) return [];
+  const key = pickWeighted(w.items, hash01(state.seed, "newmodwarepick", name, salt));
+  return key ? [newItem(key, Math.round((0.7 + 0.3 * hash01(state.seed, "newmodwareq", name, salt)) * 100) / 100)] : [];
+}
+
+// The weapons overhaul's attachments (section 5's "where" column) and the repair kits: their own tables and dice
+// (SITE_MODS each search hour, AREA_MODS per raid container, WARE_MODS on a trader's table), rolled after the
+// GUNMOD_FINDS / AREA_GUNMODS / WARE_GUNMODS roll (search hours and containers: only when that one found nothing), so
+// every find from before them comes out as it did.
+export const SITE_MODS = {
+  gunstore: { p: 0.1, items: { tritium: 2, rmr: 1.5, scopemount: 3, sidemount: 1, mlok: 1, can22: 1, can308: 0.4, flashhider: 2, recoilpad: 3, precision: 0.6, foldstock: 1, anglegrip: 1.5, revgrip: 2, weaponlight: 1.5, sling: 3, can12: 0.1, repairkit: 1, tacscope: 0.3 } },
+  police: { p: 0.06, items: { tritium: 1.5, rmr: 1, can9: 0.4, collapsible: 1, anglegrip: 1, weaponlight: 2, recoilpad: 1, sling: 1, revgrip: 1, kevlarkit: 2 } },
+  military: { p: 0.07, items: { acog: 2, lpvo: 0.4, tacscope: 0.6, thermalscope: 0.02, quadrail: 1.5, mlok: 1, can9: 0.4, can556: 0.6, can308: 0.3, flashhider: 1.5, collapsible: 1.5, precision: 0.6, anglegrip: 1, weaponlight: 1.5, peq: 0.4, sling: 2, m203: 0.15, kevlarkit: 1.5, repairkit: 1 } },
+  crash_mil: { p: 0.05, items: { acog: 2, weaponlight: 1, peq: 0.3, can556: 0.3, kevlarkit: 1 } },
+  convoy: { p: 0.04, items: { acog: 1, weaponlight: 1, repairkit: 1, kevlarkit: 1 } },
+  prison: { p: 0.02, items: { revgrip: 1, kevlarkit: 1 } },
+  lodge: { p: 0.05, items: { scopemount: 3, recoilpad: 2, sling: 2, can22: 0.4 } },
+  cabin: { p: 0.025, items: { scopemount: 1, recoilpad: 1, sling: 1 } },
+  ranch: { p: 0.02, items: { recoilpad: 1, sling: 1 } },
+  farm: { p: 0.01, items: { recoilpad: 1, sling: 1 } },
+  hardware: { p: 0.02, items: { repairkit: 1 } },
+  autoshop: { p: 0.02, items: { repairkit: 1 } },
+};
+export const AREA_MODS = {
+  armory: { p: 0.08, items: { tritium: 1, rmr: 1, weaponlight: 2, collapsible: 1, acog: 0.6, can9: 0.3, kevlarkit: 2, sling: 1 } },
+  gunshop: { p: 0.08, items: { scopemount: 2, sidemount: 0.6, recoilpad: 2, revgrip: 1.5, flashhider: 1.5, sling: 2, tritium: 1, can22: 0.5, foldstock: 0.6, repairkit: 0.5 } },
+  barracks: { p: 0.05, items: { acog: 1, quadrail: 0.6, weaponlight: 1, sling: 1, kevlarkit: 1, peq: 0.15 } },
+  milwreck: { p: 0.05, items: { acog: 1, weaponlight: 1, can556: 0.2, kevlarkit: 0.6 } },
+  motorpool: { p: 0.03, items: { repairkit: 1 } },
+  cabin: { p: 0.02, items: { scopemount: 1, recoilpad: 1, sling: 1 } },
+  workshop: { p: 0.02, items: { repairkit: 1 } },
+  garage: { p: 0.015, items: { repairkit: 1 } },
+};
+export function rollSiteMod(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_MODS[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "newmodfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "newmodpick", tileId, state.hour, salt));
+  return key ? newItem(key, 1) : null;
+}
+export function rollAreaMod(state, tileId, areaType, salt = "") {
+  const a = AREA_MODS[areaType];
+  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return null;
+  const key = pickWeighted(a.items, hash01(state.seed, "newareamodpick", tileId, salt));
+  return key ? newItem(key, 1) : null;
+}
+export const WARE_MODS = {
+  traders: { p: 0.3, items: { scopemount: 2, recoilpad: 2, sling: 2, tritium: 1, flashhider: 1, revgrip: 1, weaponlight: 1, repairkit: 1, anglegrip: 0.6 } },
+  military: { p: 0.35, items: { acog: 2, weaponlight: 2, collapsible: 1, quadrail: 1, can556: 0.4, peq: 0.3, kevlarkit: 1.5, repairkit: 1, sling: 1 } },
+  raider: { p: 0.2, items: { sidemount: 1, foldstock: 1, scrapscope: 1, bottlecan: 0.5, solventcan: 0.5 } },
+  expansionist: { p: 0.2, items: { scopemount: 1, sling: 1, recoilpad: 1, repairkit: 1, weaponlight: 0.6 } },
+  fortress: { p: 0.15, items: { recoilpad: 1, sling: 1, repairkit: 1, kevlarkit: 0.5 } },
+  merchants: { p: 0.45, items: { acog: 1, lpvo: 0.4, rmr: 1, tacscope: 0.4, thermalscope: 0.05, mlok: 1, can9: 0.5, can308: 0.4, can12: 0.1, weaponlight: 1, precision: 0.5, repairkit: 1.5, kevlarkit: 1 } },
+};
+
+// ---------- parts by kind (data.js SUPPLIES: parts are machine parts; section 10) ----------
+// A find of parts, already rolled, is split into kinds by where it was found (no new dice for the find itself; its
+// own hash dice for each part): an auto shop's are mostly car parts, a gun store's gun parts, a radio tower's
+// electronics; the rest machine parts. By site type (scavenge.js, the base's own scavenging) or raid area (combat.js).
+export const PARTS_MIX = {};
+for (const t of ["autoshop", "gas", "truckstop", "crashsite", "convoy", "wreck", "roadcars", "garage", "motorpool", "pumps"]) PARTS_MIX[t] = { carparts: 0.6 };
+for (const t of ["factory", "dam", "workshop", "warehouse", "quarry"]) PARTS_MIX[t] = { carparts: 0.1, electronics: 0.1 }; // machine parts 0.8
+for (const t of ["gunstore", "gunshop", "armory", "barracks", "milwreck", "crash_mil"]) PARTS_MIX[t] = { gunparts: 0.6 };
+for (const t of ["radiotower", "univ", "lab", "office", "control", "airport", "hangar", "newswreck", "crash_news", "mall"]) PARTS_MIX[t] = { electronics: 0.6 };
+PARTS_MIX.military = { gunparts: 0.4, electronics: 0.2, carparts: 0.2 };
+PARTS_MIX.police = { gunparts: 0.3, electronics: 0.1, carparts: 0.1 };
+// n parts found at a place of this type: { parts, carparts, gunparts, electronics } (only the kinds found).
+export function sortParts(state, placeType, n, salt = "") {
+  const mix = PARTS_MIX[placeType];
+  const out = {};
+  const q = Math.max(0, Math.floor(n));
+  if (!mix) { if (q) out.parts = q; return out; }
+  for (let i = 0; i < q; i++) {
+    let u = hash01(state.seed, "partkind", placeType, salt, state.hour, i);
+    let k = "parts";
+    for (const [kind, w] of Object.entries(mix)) { if (u < w) { k = kind; break; } u -= w; }
+    out[k] = (out[k] || 0) + 1;
+  }
+  return out;
+}
+// Splits a supplies object's parts by place (the rest of it as it is). Returns it.
+export function splitParts(state, sup, placeType, salt = "") {
+  if (!sup || !(sup.parts > 0) || !PARTS_MIX[placeType]) return sup;
+  const n = sup.parts;
+  delete sup.parts;
+  for (const [k, v] of Object.entries(sortParts(state, placeType, n, salt))) sup[k] = (sup[k] || 0) + v;
+  return sup;
 }
 
 // ---------- small finds per raid container (combat.js searchBox) ----------

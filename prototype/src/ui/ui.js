@@ -40,7 +40,7 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
-import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
+import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
@@ -1600,7 +1600,8 @@ function baseVehicles(state, b) {
       <div class="row"><span style="width:5.5rem" class="muted">Fuel</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:3rem">${n0(v.fuel)}/${tank(v)}</span></div>
       <div class="row" style="margin-top:0.3rem">
         <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
-        <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && (b.stock.parts || 0) >= 1 && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button>
+        <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && carPartsCost((k) => b.stock[k] || 0, 1).ok && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `${carPartsText(1)} → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 car part)</button>
+        <button class="mini" data-action="stripv" data-base="${b.id}" data-id="${v.id}"${tip(`Take it apart for good: ${stripYield(v).carparts} car parts (by its condition), ${stripYield(v).scrap} scrap and the fuel in its tank. The vehicle is gone.`)}>Strip for parts</button>
       </div></div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
     ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;
 }

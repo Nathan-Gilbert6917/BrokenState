@@ -414,6 +414,53 @@ export function breakDownAt(state, str) {
   unlistFromSites(state, info.item);
   return `Broke down the ${info.item.name} for firewood: +${info.wood} to ${where}.`;
 }
+// ---------- salvage: taking things apart for parts (docs/weapons-overhaul-plan.md section 10) ----------
+// A gun: floor(value / 30) + 1 gun parts and a scrap (its attachments come off into storage first); an attachment
+// worth 25 or more: a gun part; gadgets: electronics (a phone, a camera, a console 1, a laptop 2, night vision 3, a
+// thermal 4...). Where breaking down for firewood works (storage, a pocket, the pack; not worn or held, not a body's).
+// The parts go to the base's stores or the team's cargo. No time: a screwdriver and a hammer.
+export const SALVAGE_ELECTRONICS = { phone: 1, camera: 1, console: 1, laptop: 2, nvg: 3, thermal: 4, milradio: 3, handradio: 1, pocketradio: 1, thermalscope: 3, peq: 1, weaponlight: 1 };
+const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
+// What taking it apart gives: { supplies } or null (nothing worth taking).
+export function salvageYield(item) {
+  const d = item && GEAR[item.key];
+  if (!d) return null;
+  if (SALVAGE_ELECTRONICS[item.key]) return { electronics: SALVAGE_ELECTRONICS[item.key] };
+  if (d.slot === "weapon" && GUN_CATS.includes(d.cat)) return { gunparts: Math.floor((d.value || 0) / 30) + 1, scrap: 1 };
+  if (isGunmod(item.key) && (d.value || 0) >= 25) return { gunparts: 1 };
+  return null;
+}
+export function salvageInfo(state, str) {
+  const loc = parseLoc(str);
+  const item = itemAt(state, str);
+  const place = placeOf(state, loc);
+  const got = salvageYield(item);
+  let reason = "";
+  if (!item) reason = "Nothing there.";
+  else if (!got) reason = `Nothing worth taking from the ${item.name}.`;
+  else if (loc.o === "body") reason = "Take it first.";
+  else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
+  else if (!place) reason = "Out of reach.";
+  return { ok: !reason, reason, item, got: got || {}, place };
+}
+export const salvageText = (got) => Object.entries(got).map(([k, v]) => `${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`).join(", ");
+// Takes it apart: the item is gone (its attachments go to storage), its parts into the stores or the cargo. Returns the message.
+export function salvageAt(state, str) {
+  const info = salvageInfo(state, str);
+  if (!info.ok) return info.reason;
+  const st = storageFor(state, info.place);
+  const [kind, idStr] = info.place.split(":");
+  const id = Number(idStr);
+  let stock;
+  if (kind === "base") { const b = baseById(state, id); if (!b) return "Out of reach."; stock = b.stock; }
+  else { const p = state.parties.find((x) => x.id === id); if (!p) return "Out of reach."; p.cargo = p.cargo || { supplies: {}, gear: [] }; stock = p.cargo.supplies; }
+  const mods = info.item.mods ? Object.values(info.item.mods).filter(Boolean) : [];
+  removeAt(state, str);
+  unlistFromSites(state, info.item);
+  if (st && mods.length) { st.list.push(...mods); delete info.item.mods; }
+  for (const [k, v] of Object.entries(info.got)) stock[k] = Math.max(0, stock[k] || 0) + v;
+  return `Took the ${info.item.name} apart: ${salvageText(info.got)}${mods.length && st ? `; its ${mods.map((m) => m.name).join(" and ")} went to ${st.name}` : ""}.`;
+}
 // Marks an armory item for the water boiler (worm.js): "burn" (it may burn it even if it is not junk), "keep" (never),
 // or null (junk burns while the base allows it). Returns the message.
 export function setFireMark(state, str, mark) {

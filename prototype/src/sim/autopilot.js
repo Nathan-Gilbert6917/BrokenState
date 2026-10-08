@@ -12,7 +12,8 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { fitFromPool } from "./gunmods.js"; // the autopilot fits loose gun attachments
+import { fitFromPool } from "./gunmods.js";
+import { planRepairs } from "./repair.js"; // the autopilot queues repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -267,7 +268,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
-  if (areas.production) { govOrders(state, base); planCrafts(state, base); }
+  if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
 }
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {

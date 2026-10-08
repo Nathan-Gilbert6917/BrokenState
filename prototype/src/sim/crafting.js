@@ -10,7 +10,7 @@
 // condition (craftQuality), narrower the better the crafter; each finished craft gives Crafting XP by the kind of thing,
 // the worth of what went into it and the quality it came out at (craftXp).
 import { LIGHTS } from "./lights.js";
-import { wearMakeshiftMods } from "./gunmods.js"; // makeshift gun parts that wear by the fight
+import { wearMakeshiftMods, attachText, fitsText } from "./gunmods.js"; // makeshift gun parts that wear by the fight
 import { GEAR, SKILL_NAMES, SUPPLIES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS, benchOf } from "./buildings.js";
@@ -79,6 +79,13 @@ export const CRAFTS = {
   ghillie:     { gear: "ghillie",     in: { scrap: 2 },           hours: 6,  skill: "stealth",   min: 2, field: true },
   ragboots:    { gear: "ragboots",    in: { scrap: 1 },           hours: 2,  skill: "stealth",   min: 0, field: true },
   scentmask:   { gear: "scentmask",   in: { scrap: 1, water: 1 }, hours: 2,  skill: "stealth",   min: 1, field: true },
+  // Gun attachments (gunmods.js; docs/weapons-overhaul-plan.md section 5): a bottle over the muzzle in the field, a
+  // solvent trap drilled out at a machine shop, a cheap magnifier for a scope, a rubber butt pad, a sling.
+  bottlecan:   { gear: "bottlecan",   gearIn: { bottle: 1 }, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  solventcan:  { gear: "solventcan",  in: { scrap: 3, gunparts: 1 }, hours: 10, skill: "mechanics", min: 6, needs: "machine_shop" },
+  scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
+  recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },
+  sling:       { gear: "sling",       in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
@@ -150,10 +157,11 @@ export function craftOutputText(key) {
     if (d.throw) fx.push(d.throw === "molotov" ? "thrown in battle, sets a 3 × 3 patch on fire for 2–3 turns (the dead walk into it), one use" : d.throw === "pipebomb" ? "thrown in battle (over walls too), blows up everyone within a tile and the cover there, one use" : "thrown in battle to pull unaware guards and the dead to a spot, one use");
     if (d.siege) fx.push(d.siege === "ladder" ? "set against a wall in battle to climb onto its walkway" : "carried by 2–3 to smash a barred gate or door, 16–24 a carrier a turn");
     if (d.suppressor) fx.push("a muzzle attachment (gunmods.js): fitted to a 9mm pistol or a rifle, halves the noise of its shots");
+    else if (d.cat === "gunmod" && attachText(r.gear)) fx.push(`a gun attachment (gunmods.js): ${attachText(r.gear)}; fits ${fitsText(r.gear)}`);
     if (LIGHTS[r.gear]) fx.push(`a light: at night sees ${LIGHTS[r.gear].sight} tiles (7 without) and searches without fumbling, but is seen ${LIGHTS[r.gear].seen} tile${LIGHTS[r.gear].seen === 1 ? "" : "s"} further${LIGHTS[r.gear].free ? "; hands free" : "; in the off hand"}`); // lights.js
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
-    bits.push(`${d.throw || d.suppressor || d.siege ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
+    bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
   if (d.dur) bits.push(`lasts ${ownMax(d) ? `about ${d.dur}` : d.dur} ${durUnit(r.gear)}${ownMax(d) ? " (more when well made)" : ""}`);
@@ -167,6 +175,7 @@ export function durUnit(key) {
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.suppressor) return "shots";
+  if (d.cat === "gunmod") return key === "scrapscope" ? "fights" : "shots"; // makeshift gun parts (gunmods.js)
   if (d.fish) return "days of fishing";
   if (d.heat) return "days in the field";
   return "days";
@@ -310,6 +319,7 @@ export function craftJobStatus(state, base, job) {
 // Hourly: crafters work the first job in the queue they can do (blocked jobs are skipped, not lost).
 export function craftingHour(state) {
   for (const base of state.bases) {
+    if (base.repairHour === state.hour) continue; // repair.js: the crafters spent this hour on a repair
     const q = craftQueue(base);
     const job = q.find((j) => !craftJobStatus(state, base, j));
     if (!job) continue;
