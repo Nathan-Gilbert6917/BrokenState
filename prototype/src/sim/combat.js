@@ -2772,7 +2772,10 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     }
   }
   s += best * 0.3;
-  if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
+  // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
+  // that still gets a slope toward them (a team left 40+ tiles off on a big fort map stood still for good:
+  // conquertest's stalled assault).
+  if (!best) s -= 8 + (field ? Math.min(field[idx(u.x, u.y)] > 40 ? 120 : 40, field[idx(x, y)]) : nearest);
   if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
   if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;

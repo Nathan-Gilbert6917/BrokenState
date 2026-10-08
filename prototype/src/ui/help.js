@@ -22,6 +22,7 @@ import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 import { pacingHelp } from "./pacing.js";
 import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 import { GUNMODS_HELP } from "../sim/gunmods.js"; // sights, suppressors, magazines on guns
+import { MEDICS_HELP } from "../sim/medics.js"; // medics, the downed, dragging, finishing
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -144,6 +145,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
+    if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
@@ -159,6 +161,7 @@ export function helpTopics() {
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
+  if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());
   return out;

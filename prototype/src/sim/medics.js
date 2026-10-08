@@ -44,21 +44,21 @@ export const MEDIC = {
   REVIVE: { AP: 2, BASE: 50, MED: 4, KIT: 5, STAB: 15, MAX: 95, HP: [0.25, 0.4], SHAKEN: 10 },
   HANDS: { BASE: 50, MED: 4, MAX: 90 },
   DRAG: 0.5,              // move × while dragging someone
-  BLEED: 3,
-  OVERKILL: 1,            // an enemy hit for at least this × their health in one blow dies outright (no going down)               // an enemy's turns to bleed out (as your people's, combat.js BLEED_TURNS)
+  BLEED: 3,               // an enemy's turns to bleed out (as your people's, combat.js BLEED_TURNS)
+  OVERKILL: 2,            // an enemy hit for at least this × their full health in one blow dies outright (no going down)
   TREATING: 1.25,         // shotPriority × for a medic who treated, dragged or stabilized someone this turn or the last
   END_KIT: 5,             // endBattle: a medic with a kit left counts this much more Medicine for the downed's odds
   // Enemy medics: one in about GROUP battles of these kits has one, carrying KIT with USES, Medicine MED.
   ENEMY: { GROUP: 0.2, KITS: { soldiers: "traumakit", guards: "bandagekit", militia: "bandagekit", fighters: "bandagekit" }, MED: [3, 6], USES: 4 },
   // Finishing someone who is down: a shot BASE% out to FROM tiles, PER% less a tile past it (at least MIN), a blow
-  // from next to them sure. Enemy KITS do it (when no standing foe is next to them and no shot of URGENT% or more is
-  // on offer); CAPTURE of the time one next to a downed survivor drags them off as a prisoner instead; a dragger hurt
-  // under LET_GO of their health lets go.
-  FINISH: { BASE: 90, FROM: 6, PER: 5, MIN: 30, KITS: ["raiders", "zealots"], URGENT: 55, CAPTURE: 0.15, LET_GO: 0.5 },
+  // from next to them sure. Enemy KITS may do it (WILL of the time they could: when no standing foe is next to them and
+  // no shot of URGENT% or more at one is on offer); CAPTURE of the time one next to a downed survivor drags them off as
+  // a prisoner instead; a dragger hurt under LET_GO of their health lets go.
+  FINISH: { BASE: 90, FROM: 6, PER: 5, MIN: 30, KITS: ["raiders", "zealots"], URGENT: 35, WILL: 0.5, CAPTURE: 0.15, LET_GO: 0.5 },
   // The AI's sense of danger at a cell (exposure): a shooter that sees it through full / half / no cover, a melee foe
-  // within MELEE_R. SAFE: under this is safe; HEAVY: open ground under fire (a rescuer goes there only when the
+  // within MELEE_R. HEAVY: open ground under fire (a rescuer goes there only when the
   // downed ally is within one move); REVIVE: a medic revives (2 actions) only under this.
-  RISK: { FULL: 0.5, HALF: 2, OPEN: 4, MELEE: 3, MELEE_R: 3.5, SAFE: 1, HEAVY: 4, REVIVE: 2 },
+  RISK: { FULL: 0.5, HALF: 2, OPEN: 4, MELEE: 3, MELEE_R: 3.5, HEAVY: 4, REVIVE: 2 },
   // By the numbers (breakoff.js rollFight): a won fight fought to the end; each member who fell is saved (barely
   // alive) by a medic with a kit still standing: SAVE + PER_MED a point of their Medicine, at most MAX.
   NUMBERS: { SAVE: 0.15, PER_MED: 0.025, MAX: 0.6 },
@@ -408,7 +408,7 @@ export function settleFoes(b, outcome) {
 
 // ---------- finishing a downed enemy (your side: act "finish") ----------
 const finishable = (t) => !!t && t.side === "enemy" && t.kind === "human" && t.down && !t.dead && !t.off && !t.left;
-export const finishOdds = (u, t) => (adjacent(u, t) ? 100 : Math.max(MEDIC.FINISH.MIN, Math.min(95, MEDIC.FINISH.BASE - MEDIC.FINISH.PER * Math.max(0, dist(u.x, u.y, t.x, t.y) - MEDIC.FINISH.FROM))));
+export const finishOdds = (u, t) => (adjacent(u, t) ? 100 : Math.max(MEDIC.FINISH.MIN, Math.min(95, Math.round(MEDIC.FINISH.BASE - MEDIC.FINISH.PER * Math.max(0, dist(u.x, u.y, t.x, t.y) - MEDIC.FINISH.FROM)))));
 export function finishRefusal(b, u, t) {
   if (!finishable(t)) return "Finish needs an enemy who is down.";
   if (adjacent(u, t)) return "";
@@ -446,27 +446,29 @@ export function finishOff(b, u, t) {
 }
 
 // ---------- the AI ----------
-// The danger at (x, y) from these foes: { threat, safe }.
+// The danger at (x, y) from these foes: { threat, safe, exposed }. safe: no shooter sees it through less than full
+// cover and no melee foe is close.
 export function exposure(b, x, y, foes) {
   const R = MEDIC.RISK;
-  let threat = 0;
+  let threat = 0, exposed = 0;
   for (const f of foes) {
     const d = dist(f.x, f.y, x, y);
-    if (f.kind === "zombie" || !isRanged(f) || !hasShots(b, f)) { if (d <= R.MELEE_R) threat += R.MELEE; continue; }
+    if (f.kind === "zombie" || !isRanged(f) || !hasShots(b, f)) { if (d <= R.MELEE_R) { threat += R.MELEE; exposed++; } continue; }
     if (d > sightRange(b, f) || !los(b, f.x, f.y, x, y)) continue;
     const c = coverAgainst(b, x, y, f.x, f.y).level;
     threat += c >= 2 ? R.FULL : c === 1 ? R.HALF : R.OPEN;
+    if (c < 2) exposed++;
   }
-  return { threat, safe: threat < R.SAFE };
+  return { threat, exposed, safe: exposed === 0 };
 }
 // Whom the AI is wary of: the foes standing and aware (the sleeping and the fleeing do not shoot).
 const threats = (b, u) => H.foesOf(b, u).filter((f) => f.aware !== false && !f.dormant && !f.fleeing && (f.f || 0) === (u.f || 0));
-// The cell to drag to with one action at drag speed: where the dragged ally lands (the cell behind the dragger) has
-// the least exposure, then the farthest from the foes. { x, y, path, threat, at: [x, y] of the ally } or null.
+// The cell to drag to with the actions left at drag speed: where the dragged ally lands (the cell behind the dragger)
+// has the least exposure, then the farthest from the foes. { x, y, path, cost, threat, at: [x, y] of the ally } or null.
 export function dragCell(b, u, foes) {
   const t = dragging(b, u);
   if (!t) return null;
-  const r = reachable(b, u, u.mob);
+  const r = reachable(b, u, u.mob * Math.max(1, Math.min(2, u.ap)));
   const W = b.w;
   let best = null;
   for (let i = 0; i < r.dist.length; i++) {
@@ -479,7 +481,7 @@ export function dragCell(b, u, foes) {
     const e = exposure(b, px, py, foes);
     const near = foes.length ? Math.min(...foes.map((f) => dist(f.x, f.y, px, py))) : 20;
     const sc = -e.threat * 3 - exposure(b, x, y, foes).threat * 0.5 + Math.min(12, near) * 0.3 - r.dist[i] * 0.05 + (u.side === "player" && H.evacAt(b, px, py) ? 1 : 0);
-    if (!best || sc > best.sc) best = { x, y, sc, threat: e.threat, at: [px, py], i };
+    if (!best || sc > best.sc) best = { x, y, sc, threat: e.threat, at: [px, py], i, cost: r.dist[i] };
   }
   if (best) best.path = pathTo(r, best.x, best.y);
   return best;
@@ -537,26 +539,30 @@ export function rescueStep(b, u) {
     const here = exposure(b, t.x, t.y, foes);
     if (here.safe) { dropAlly(b, u); t.noDrag = b.turn; return true; }
     const mv = dragCell(b, u, foes);
-    if (mv && mv.threat < here.threat - 0.25 && mv.path.length) { u.ap -= 1; moveAlong(b, u, mv.path); return true; }
+    if (mv && mv.threat < here.threat - 0.25 && mv.path.length) { u.ap -= mv.cost <= u.mob ? 1 : 2; u.hunker = false; moveAlong(b, u, mv.path); return true; }
     dropAlly(b, u); t.noDrag = b.turn;
     return true;
   }
   if (foes.some((f) => adjacent(u, f))) return false; // something is on them: fight first
   const pool = u.side !== "player" || medsLeft(b) >= 1;
+  let reach = null; // where the unit can get to this turn (worked out once, only if someone needs going to)
   for (const t of downedOf(b, u).sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {
     const ex = exposure(b, t.x, t.y, foes);
     const canRev = isMedic(u) && pool;
     if (adjacent(u, t)) {
-      // Bleeding out this turn: stop it first. Exposed: out of the line of fire. Safe enough: revive (a medic) or stabilize.
+      // Bleeding out this turn: stop it first. Safe enough: a medic revives. Exposed: out of the line of fire. Else
+      // stabilize.
       if (!t.stab && (t.bleed || 0) <= 1) { claim(b, u, t); stabilize(b, u, t); return true; }
+      const quiet = (e) => e.safe || e.threat < MEDIC.RISK.REVIVE; // out of every line of fire but behind full cover, or nearly
+      if (canRev && u.ap >= MEDIC.REVIVE.AP && quiet(ex) && quiet(exposure(b, u.x, u.y, foes))) { claim(b, u, t); revive(b, u, t); return true; }
       if (!ex.safe && t.noDrag !== b.turn && !liftRefusal(b, u, t)) { claim(b, u, t); lift(b, u, t); return true; }
-      if (canRev && u.ap >= MEDIC.REVIVE.AP && ex.threat < MEDIC.RISK.REVIVE) { claim(b, u, t); revive(b, u, t); return true; }
       if (!t.stab) { claim(b, u, t); stabilize(b, u, t); return true; }
       continue;
     }
     // Not next to them: worth going over if they bleed, could be revived, or lie exposed.
     if (t.stab && !canRev && ex.safe) continue;
-    const r = reachable(b, u, u.mob * u.ap);
+    if (dist(u.x, u.y, t.x, t.y) > u.mob * u.ap + 1.5) continue; // out of reach this turn
+    const r = reach || (reach = reachable(b, u, u.mob * u.ap));
     let best = null;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
       const x = t.x + dx, y = t.y + dy;
@@ -578,8 +584,8 @@ export function rescueStep(b, u) {
     moveAlong(b, u, pathTo(r, best.x, best.y));
     return true;
   }
-  // A medic heals the badly hurt (themselves or next to them).
-  if (isMedic(u) && pool) {
+  // A medic heals the badly hurt (themselves or next to them), keeping a meds and a kit use back for a revive.
+  if (isMedic(u) && (u.side !== "player" || medsLeft(b) >= 2) && u.kitLeft - (u.kitUses || 0) >= 2) {
     const hurtOnes = b.units.filter((o) => o.side === u.side && active(o) && (o === u || adjacent(u, o)) && o.hp < o.maxHp * 0.5).sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp);
     if (hurtOnes.length) { medicHeal(b, u, hurtOnes[0]); return true; }
   }
@@ -596,6 +602,8 @@ export function finishTurn(b, u) {
   if (foes.some((f) => adjacent(u, f))) return false;
   if (canFire(b, u) && foes.some((f) => canSeeAt(b, u, f.x, f.y) && shotOdds(b, u, f).chance >= MEDIC.FINISH.URGENT)) return false;
   const adj = prey.find((t) => adjacent(u, t));
+  const inSight = adj || (canFire(b, u) && prey.some((t) => canSeeAt(b, u, t.x, t.y) && coverAgainst(b, t.x, t.y, u.x, u.y).level < 2));
+  if (!inSight || !b.rng.chance(MEDIC.FINISH.WILL)) return false; // not every time: they may have other things on their mind
   if (adj) {
     const fid = b.setup && b.setup.enemy ? b.setup.enemy.factionId : null;
     if (fid != null && !b.raid && adj.draggedBy == null && b.rng.chance(MEDIC.FINISH.CAPTURE)) {
@@ -665,3 +673,35 @@ export function takenAway(state, b, u, s, outcome) {
   return { line: `${u.name} was dragged off and never seen again.`, dead: true };
 }
 export { survivorById };
+
+// Help → Medics and the downed (ui/help.js), from the numbers above.
+const R = MEDIC.REVIVE, F = MEDIC.FINISH;
+export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fight is a medic: a bandage kit (+2 Medicine), a field trauma kit
+  (+3) or a surgical kit (+4), in the off hand, a pocket or the pack, with uses left. A small red cross marks them on the map and
+  in the roster. Their Medicine says how good they are.<br>
+  <b>Heal</b> (Shift+H): 1 action, 1 meds and a use of the kit: ${MEDIC.HEAL.BASE} + ${MEDIC.HEAL.MED} a point of Medicine + ${MEDIC.HEAL.KIT}
+  a point of the kit's bonus, on themselves or a teammate next to them (plain meds heal less).<br>
+  <b>Revive</b> (Shift+V): both actions, 1 meds and a use of the kit, next to a teammate who is down: ${R.BASE}% + ${R.MED} a point of
+  Medicine + ${R.KIT} a point of the kit's bonus (+${R.STAB} if already stabilized), at most ${R.MAX}%. They get up with
+  ${Math.round(R.HP[0] * 100)}–${Math.round(R.HP[1] * 100)}% health, act from their next turn and are shaken (−${R.SHAKEN} aim) for the rest of
+  the battle. A failed try still stabilizes them. Only with a kit and meds: the button is shown greyed with the reason otherwise.<br>
+  <b>Stabilize</b> (Use meds, M): anyone can. With meds it is sure; with none, by hand (pressure, a belt for a tourniquet):
+  ${MEDIC.HANDS.BASE}% + ${MEDIC.HANDS.MED} a point of Medicine, at most ${MEDIC.HANDS.MAX}%, and a failed try can be repeated. Healing
+  health always needs meds.<br>
+  <b>Drag ally</b> (Shift+G): anyone can take hold of a downed teammate next to them, for free, and drag them: half the move
+  distance (both actions can go on moving), no shooting. Shift+G again puts them down; next to the vehicle they can be laid
+  in it (counts as carried out). Drag them out of the line of fire: raiders and zealots finish the downed they can see
+  (now and then they drag one off instead, a prisoner of their group if they get away: down or badly hurt, the dragger
+  lets go), and the dead go for the downed in their way. Other groups' people leave your downed be.<br>
+  <b>The enemy's downed.</b> People you fight go down at 0 health too (a blow of twice their health kills outright) and bleed
+  out in ${MEDIC.BLEED} turns. Their friends drag them into cover, stabilize them, and their medic (about one group in five of
+  soldiers, guards, militia and fighters) revives them. <b>Finish</b> (Shift+F): 1 action, a blow from next to them (sure,
+  silent) or one round (${F.BASE}% out to ${F.FROM} tiles, −${F.PER} a tile past it, the noise of a shot): dead for good. A plain
+  click never does it. Tie them up (T) instead and, after a won fight, the ones stabilized or tied up come home as
+  prisoners.<br>
+  <b>Who draws fire.</b> A medic seen treating or dragging someone is shot first (×${MEDIC.TREATING}).<br>
+  <b>The AI</b> (AI plays my side, the raid bot, the enemy): one rescuer for each of the downed, only when the way there is
+  not open ground under fire (unless it is close); it drags them to the cell with the most cover and the fewest eyes on it,
+  revives or stabilizes there while the others cover; a medic heals the badly hurt and keeps a meds back for a revive.<br>
+  <b>By the numbers</b> (auto-resolve, teams on the road): a medic with a kit still standing after a won fight saves some
+  of the fallen (${Math.round(MEDIC.NUMBERS.SAVE * 100)}% + ${MEDIC.NUMBERS.PER_MED * 100}% a point of Medicine, at most ${Math.round(MEDIC.NUMBERS.MAX * 100)}%), and the carried pull through more often.`;

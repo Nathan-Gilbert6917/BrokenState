@@ -384,7 +384,7 @@ export function throwAt(b, u, key, x, y, blind = false) {
   return [lx, ly];
 }
 
-export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
+export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && (t.dead || t.ko || (t.wounded && t.down))) || (t.side === "player" && t.down && !t.dead && !t.left);
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
   t.x = x; t.y = y;

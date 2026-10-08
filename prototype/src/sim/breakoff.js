@@ -333,14 +333,13 @@ export function rollFight(rng, model, policy = "never") {
 }
 
 // A won fight fought to the end (medics.js MEDIC.NUMBERS): each member who fell is saved, barely alive, by the best
-// medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). Draws only when there is
-// such a medic and someone fell (the dice of a fight without one are as before). Sets m.saved.
+// medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). One draw for each who fell,
+// medic or not, so the same fight with and without a medic goes on with the same dice. Sets m.saved.
 function medicSaves(rng, ms) {
   const medics = ms.filter((m) => !m.down && m.kit);
-  if (!medics.length || !ms.some((m) => m.down)) return;
-  const med = Math.max(...medics.map((m) => m.medicine || 0));
-  const p = Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med);
-  for (const m of ms) if (m.down && rng.chance(p)) m.saved = true;
+  const med = medics.length ? Math.max(...medics.map((m) => m.medicine || 0)) : 0;
+  const p = medics.length ? Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med) : 0;
+  for (const m of ms) if (m.down && rng.next() < p) m.saved = true;
 }
 
 // ---------- the real fight ----------
