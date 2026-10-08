@@ -445,6 +445,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     if (!r.gear) continue;
     const d = GEAR[r.gear], text = craftOutputText(key);
     if (d.slot === "weapon") check(/power/.test(text), `${key}: a weapon lists its power (${text})`);
+    else if (d.slot === "rig") check(!/power|armor/.test(text) && /pouches/.test(text) && /carry/.test(text), `${key}: a chest rig lists its pouches and carry space (${text})`); // carry kit (w2-kit)
     else if (d.slot === "backpack") check(/pack slots/.test(text) && /carry/.test(text) && !/power/.test(text), `${key}: a pack lists slots and carry space (${text})`);
     else if (d.slot === "tool") check(!/power/.test(text) && /Medicine|Scavenging|water|at night/.test(text), `${key}: a tool lists what it does (${text})`);
     // The stealth kit (stealth.js): thrown things and the suppressor are carried, not worn.

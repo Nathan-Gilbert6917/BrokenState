@@ -49,7 +49,7 @@ const packStuffKg = (pack) => (pack && pack.contents ? pack.contents.filter(Bool
 // The old piece goes back to the armory; a pack's contents move into the new pack.
 export function weightOk(s, slot, item) {
   const now = wornLoad(s), cur = s.gear[slot];
-  const after = now - itemLoad(cur) + itemLoad(item) + (slot === "backpack" ? packStuffKg(cur) : 0);
+  const after = now - (cur ? itemLoad(cur) : 0) + itemLoad(item) /* an empty slot weighs nothing (itemKg of nothing is 1) */ + (slot === "backpack" ? packStuffKg(cur) : 0);
   if (after <= now + 1e-9) return true;
   const felt = after * feelFactor(s);
   return felt <= BULK.KIT_FELT_MAX + 1e-9 && after <= maxLoad(s) + 1e-9;

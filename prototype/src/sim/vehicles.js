@@ -13,7 +13,7 @@
 // the load's slow-down and extra rations away (load.js). Found as cargo (data.js GEAR.bicycle) or built in a
 // workshop (crafting.js); a bicycle item in a base's armory joins the base's bikes (parkBikes).
 import { TERRAIN, SUPPLIES, GEAR } from "./data.js";
-import { newId, log, day, atBase, skill } from "./world.js";
+import { newId, log, day, atBase, skill, localId } from "./world.js";
 import { count, benchTier } from "./buildings.js";
 import { hasPerk, gainXp, USE, hash01 } from "./skills.js";
 import { newItem } from "./inventory.js";
@@ -456,7 +456,7 @@ export function factionVehiclesDaily(state) {
     if (!f.alive || f.type !== "military" || f.vehLost == null || !f.vehicles) continue;
     if (f.vehicles.some((x) => x.condition > 0 && upgradesOf(x).turret)) continue;
     const n = f.vehLostN || 0;
-    const wait = HUMVEE.REPLACE[0] + Math.floor(hash01(state.seed, "humveeback", f.id, n) * (HUMVEE.REPLACE[1] - HUMVEE.REPLACE[0] + 1));
+    const wait = HUMVEE.REPLACE[0] + Math.floor(hash01(state.seed, "humveeback", localId(state, f.id), n) /* localId: ids are process-wide */ * (HUMVEE.REPLACE[1] - HUMVEE.REPLACE[0] + 1));
     if (state.hour - f.vehLost < wait * 24 || f.pop < HUMVEE.MIN_POP) continue;
     f.vehicles.push(fitMilitary({ id: `f${f.id}-hummer-${n + 1}`, type: "hummer", name: "Humvee", fuel: Math.round(VEHICLE_TYPES.hummer.tank * 0.6), condition: 80, owner: f.id }, "m2hb"));
     f.vehLostN = n + 1;

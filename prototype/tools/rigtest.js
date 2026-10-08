@@ -201,6 +201,27 @@ section("Enemies");
   const rigged = (u) => !!u.rigKey || !!(u.armorKey && GEAR[u.armorKey].pouches);
   check(sold.filter(rigged).length / sold.length > 0.8, `soldiers wear a chest rig or a carrier's pouches (${sold.filter(rigged).length}/${sold.length})`);
   check(guards.some((u) => u.armorKey === "tacvest") && guards.every((u) => u.armorKey !== "tacvest" || !u.rigKey), `police: tactical vests (${guards.filter((u) => u.armorKey === "tacvest").length}/${guards.length})`);
+  // User decision (2026-10-08): soldiers in full kit move 4, not 5 (carrykit.js CARRY.BASE_KG.soldiers).
+  const many = [...sold, ...make("soldiers", 140).map((u) => u)];
+  const fullKit = (u) => u.armorKey === "plate" || (!!u.rigKey && !!u.helmKey && ["ar", "carbine", "huntrifle"].includes(u.weapon));
+  const full = many.filter(fullKit), light = many.filter((u) => !fullKit(u) && u.armorKey !== "plate");
+  check(full.length > 50 && full.every((u) => u.mob === 4), `soldiers in full kit (a plate carrier, or a rig with a helmet and a rifle) move 4 (${full.filter((u) => u.mob === 4).length}/${full.length}; ${Math.min(...full.map((u) => u.armLoad))}–${Math.max(...full.map((u) => u.armLoad))} kg)`);
+  check(light.some((u) => u.mob === 5), `a lightly kitted soldier (no carrier) can still move 5 (${light.filter((u) => u.mob === 5).length}/${light.length})`);
+  {
+    // Your people by the same rule: the kg they carry into the fight sets the band. In a full-kit soldier's kit and
+    // load (their carrier with plates, helmet, rifle, magazines, and a pack that makes up a soldier's field load, felt) they move 4.
+    const sk = full.find((u) => u.armorKey === "plate" && u.helmKey) || full[0];
+    const pl = person(w, "ar");
+    pl.gear.armor = Object.assign(newItem("plate"), { inserts: { front: newItem("ceramicplate"), back: newItem("ceramicplate") } });
+    pl.gear.head = newItem(sk.helmKey || "milhelmet");
+    const pp = rigPouches(pl); pp[0] = newItem("mag_stanag_30"); pp[1] = newItem("mag_stanag_30");
+    const kit = battleKg(pl);
+    pl.gear.backpack = newItem("rucksack");
+    for (let i = 0; i < pl.gear.backpack.contents.length && battleKg(pl) * feelFactor(pl) < sk.armLoad; i++) pl.gear.backpack.contents[i] = newItem("bottle");
+    for (let i = 0; i < pl.gear.backpack.contents.length && battleKg(pl) * feelFactor(pl) < sk.armLoad; i++) pl.gear.backpack.contents[i] = newItem("steelplate");
+    const kg = battleKg(pl), felt = kg * feelFactor(pl);
+    check(bandFor(felt).mob === 4 && bandFor(sk.armLoad).mob === 4, `one of your people with a soldier's kit and load moves 4 too (${r1(kit)} kg of kit, ${r1(kg)} kg with the pack, felt ${r1(felt)}; the soldier ${sk.armLoad} kg)`);
+  }
   const mk = raid.filter((u) => u.rigKey === "makeshiftrig").length / raid.length;
   check(mk > 0.2 && mk < 0.4, `raiders: a makeshift rig about 30% (${Math.round(mk * 100)}%)`);
   const spares = (u) => (u.mags || []).filter((m) => m.where !== "gun").length;

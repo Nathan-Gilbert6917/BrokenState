@@ -32,7 +32,10 @@ export const CARRY = {
   // but a dash (both actions) loses a tile.
   BANDS: [{ mob: 5, dash: 0 }, { mob: 5, dash: -1 }, { mob: 4, dash: 0 }, { mob: 3, dash: 0 }],
   // What an enemy carries besides the kit it fights with (water, food, a ruck, odds and ends), kg by kit.
-  BASE_KG: { soldiers: 12, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3 },
+  // Soldiers 18.5 (user decision 2026-10-08, "soldiers in full kit move 4, not 5"): a soldier in a plate carrier,
+  // or in a rig with a helmet and a rifle, lands in the Heavy band (over 28 kg: 4 tiles); one in a plain vest with
+  // a light gun can still be Medium.
+  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3 },
   THROW_KG: 0.45, MEDKIT_KG: 0.5,
   // Enemy rigs by kit: [chance, rig key] (a carrier or a tactical vest already has pouches).
   RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"] },
