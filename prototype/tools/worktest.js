@@ -741,7 +741,20 @@ for (const seed of seeds) {
   console.log(`  seed ${seed} (${DICE} rolls): governor food ${g.food}, builds ${g.builds}, crafts ${g.crafts} | priorities food ${p.food}, builds ${p.builds}, crafts ${p.crafts}`);
 }
 console.log(`  total over ${seeds.length} seeds × ${DICE} rolls: governor food ${sum.gov.food}, builds ${sum.gov.builds}, crafts ${sum.gov.crafts} | priorities food ${sum.pri.food}, builds ${sum.pri.builds}, crafts ${sum.pri.crafts}`);
-check(sum.pri.food >= sum.gov.food, `priorities harvest at least as much food (${sum.pri.food} vs ${sum.gov.food})`);
+// Food, paired run by run as the crafts below: a strict "at least as much" over the totals is a coin flip when the two
+// modes tie (dev 348bdec: 60454 vs 60456 over 40 runs, while a seed alone swings ±1800 between the modes), so
+// priorities may harvest less only within two standard errors of the mean paired difference.
+const paired = (k) => {
+  const diffs = [];
+  for (const seed of seeds) for (let dice = 0; dice < DICE; dice++) diffs.push(results.get(`${seed}|${dice}|true`)[k] - results.get(`${seed}|${dice}|false`)[k]);
+  const m = diffs.reduce((a, v) => a + v, 0) / diffs.length;
+  const se = diffs.length > 1 ? Math.sqrt(diffs.reduce((a, v) => a + (v - m) ** 2, 0) / (diffs.length - 1) / diffs.length) : 0;
+  return { m, se };
+};
+{
+  const { m, se } = paired("food");
+  check(sum.pri.food >= sum.gov.food || m >= -2 * se, `priorities harvest at least as much food: any shortfall inside the noise (${sum.pri.food} vs ${sum.gov.food}; a run ${m.toFixed(1)} ± ${se.toFixed(1)}, at least −${(2 * se).toFixed(1)})`);
+}
 // Buildings: the two modes tie within the run-to-run spread (per seed ±40, so about ±90 over 40 runs; 8 runs a seed
 // put priorities 1.3% behind, 4 runs 5.3%; with the governor's water filters held while the tanks are full, work.js
 // holdFilters, 8 runs 0.4% and 4 runs 6.6%): a strict "at least as many" would fail on noise, so allow the spread, 7%.
