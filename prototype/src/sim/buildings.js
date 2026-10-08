@@ -12,6 +12,7 @@ import { cabinProblem } from "./hunting.js";
 import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
+import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -55,7 +56,12 @@ export const BUILDINGS = {
                   desc: `Bench grinder, drill press and clamps under a roof of tin: ${benchText("workbench")}. It counts as a workshop: the workshop recipes can be made here, and an ammo bench can be built at this base. Upgrades the crafting bench on its plot. Needs a Mechanics 2+ survivor here to build.` },
   toolbench:    { name: "Master workbench", plot: "utility", family: "bench", tier: 3, upgrades: "workbench", cost: { scrap: 28, parts: 3 }, hours: 30, max: 1, req: { mechanics: 5 }, craft: BENCH.toolbench,
                   desc: `A lathe, a welder and every jig worth keeping: ${benchText("toolbench")}. A workshop like the workbench. Upgrades the workbench on its plot. Needs a Mechanics 5+ survivor here to build.` },
-  ammo_bench:   { name: "Ammo bench",     plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", bench: 2, desc: "Workshop station. One operator turns scrap into ammo. Needs a workbench (or better) at this base to build." },
+  ammo_bench:   { name: "Ammo bench",     plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", bench: 2, desc: "Workshop station. One operator turns scrap into ammo. Needs a workbench (or better) at this base to build. Can be upgraded into a reloading bench where it stands (Construction)." },
+  // The reloading bench (reloading.js): an ammo bench upgraded where it stands (from, like a barracks from a
+  // bunkhouse; never built new: upgradeOnly). Still an "ammo" station: with no reloading order to work it makes the
+  // common rounds from scrap as the ammo bench did. heat: × a station's Heat (mannedStations).
+  reload_bench: { name: "Reloading bench", plot: "utility", cost: { parts: 1, gunparts: 3, scrap: 20 }, hours: 24, max: 3, station: "ammo", bench: 2, from: "ammo_bench", upgradeOnly: true, req: { mechanics: 3 }, heat: 0.25,
+                  desc: "Workshop station: presses, dies and a powder scale. One operator (Mechanics) loads rounds from brass, powder and primers by the standing reloading orders (keep at least N of a calibre and type: hollow points, slugs, AP…), faster with Mechanics; with no order to work it makes common rounds from scrap like an ammo bench. Typed rounds come out as handloads: they jam more than factory rounds, less the better the loader. Quiet: a quarter of a station's Heat. Upgraded from an ammo bench where it stands (Construction): 1 machine part, 3 gun parts, 20 scrap, 24 work-hours, a Mechanics 3+ survivor here." },
   med_station:  { name: "Med station",    plot: "utility", cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
   machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
   bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
@@ -253,7 +259,7 @@ export function queueBunkhouseExpand(state, base, id) {
 }
 
 // The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
-export const jobName = (job) => (job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
+export const jobName = (job) => (job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
 // Pulls a building down to free its plot: half its scrap and parts back (rounded down), and for a barrel half of its
@@ -386,7 +392,7 @@ export function assignStations(state, base) {
 }
 
 // Stations with an operator at work (not in a hospital bed): what makes workshop noise (Heat, hordes.js).
-export const mannedStations = (state, base) => stations(base).filter((st) => stationOperator(state, base, st) && !stationStatus(state, base, st).idle).length; // an order holding it, or a generator on standby: quiet
+export const mannedStations = (state, base) => stations(base).filter((st) => stationOperator(state, base, st) && !stationStatus(state, base, st).idle).reduce((a, st) => a + (BUILDINGS[st.type].heat ?? 1), 0); // an order holding it, or a generator on standby: quiet; a reloading bench a quarter (heat)
 
 // Extra meds per day from a med station thanks to the base's hospital (Clinic or better). Like everything else
 // a hospital does, it needs the medics to run it (the same staffing rule as medical.activeHospital).
@@ -425,8 +431,10 @@ export function stationStatus(state, base, st) {
   }
   if (recipe === "power") return generatorStatus(state, base, st, op); // power.js
   // production.js: today's inputs and outputs (power, the still's mash) and the station's standing order.
-  const io = stationIO(state, base, st, op);
   const hold = orderHold(state, base, st);
+  const rs = reloadStatus(state, base, st, op, hold); // reloading.js: a reloading order to work today (its station order holds only the common rounds)
+  if (rs) return rs;
+  const io = stationIO(state, base, st, op);
   if (hold) return { op, running: false, idle: true, reason: hold, recipe, out: io.out, in: io.in, powered: io.powered };
   const missing = Object.entries(io.in).filter(([k, v]) => stockHas(base.stock, k) < v).map(([k]) => k);
   const out = io.out;
@@ -440,6 +448,7 @@ export function runStations(state, base) {
   for (const st of stations(base)) {
     const status = stationStatus(state, base, st);
     if (!status.running || status.recipe === "power") continue;
+    if (status.reload) { runReload(state, base, st, status); continue; } // reloading.js: brass, powder and primers into rounds
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
     for (const [k, v] of Object.entries(inp)) useStock(base.stock, k, v);
@@ -454,6 +463,7 @@ export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
   const queued = base.construction.filter((c) => c.type === type && (!c.target || def.from)).length; // a barrel's upgrade is not a new one; a bunkhouse expanded into a barracks is one more barracks
   if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
+  if (def.upgradeOnly) return { ok: false, reason: `Upgrade a${/^[aeiou]/i.test(BUILDINGS[def.from].name) ? "n" : ""} ${BUILDINGS[def.from].name.toLowerCase()} into one (Construction)` }; // the reloading bench
   if (def.family) {
     // Tiered buildings: one step at a time, and only one upgrade in the queue.
     const have = Math.max(0, ...base.buildings.map((x) => (BUILDINGS[x.type].family === def.family ? BUILDINGS[x.type].tier : 0)));
@@ -530,6 +540,11 @@ export function constructionHour(state) {
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");
         if (b) { b.type = "barracks"; log(state, `${base.name}: a bunkhouse is now a barracks (12 beds).`, "good"); }
+        continue;
+      }
+      if (job.target && job.type === "reload_bench") { // an ammo bench upgraded (reloading.js); nothing if it was lost meanwhile
+        const b = base.buildings.find((x) => x.id === job.target && x.type === "ammo_bench");
+        if (b) { b.type = "reload_bench"; log(state, `${base.name}: an ammo bench is now a reloading bench.`, "good"); }
         continue;
       }
       if (job.target) { // a water barrel's upgrade (WATER_BARREL); nothing if it was pulled down meanwhile

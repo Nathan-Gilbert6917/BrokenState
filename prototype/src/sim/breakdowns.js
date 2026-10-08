@@ -59,6 +59,7 @@ export const FIXTURES = {
   still:       { use: 1.2, idle: 0.1, repair: { hours: 6, cost: { scrap: 3, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no fuel from it" },
   machine_shop:{ use: 1.2, idle: 0.1, repair: { hours: 8, cost: { scrap: 3, parts: 1 }, min: 3 }, rig: { hours: 3, cost: { scrap: 2 }, min: 1 }, what: "no parts from it" },
   ammo_bench:  { use: 0.8, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no ammo from it" },
+  reload_bench: { use: 0.8, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no rounds from it" }, // reloading.js: an ammo bench upgraded
   med_station: { use: 0.6, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no meds from it" },
   kitchen:     { use: 0.8, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no preserving" },
   radio:       { use: 0.7, storm: 6, repair: { hours: 10, cost: { scrap: 4, parts: 2 }, min: 4 }, rig: { hours: 3, cost: { scrap: 2 }, min: 2 }, what: "the radio station is off the air" },

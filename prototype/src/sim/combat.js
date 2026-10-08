@@ -61,6 +61,7 @@ import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
+import { noteBrass, pickUpBrass } from "./reloading.js"; // the reloading bench: brass back after a won fight
 import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MODES, rollTrigger, jamGun, jamRefusal, jamLabel, foul, unjam, unjamRefusal, jamReload, aiUnjam, aiMode, noteJamWeather, enemyGunQ, enemyGunCond, SUPPRESS, suppressRounds, suppressRefusal, coneTargets, bestCone, nextInLine, overpenChance, piercesCover, OVERPEN, braceAim, sniperCell, isSniper, gunModes } from "./gunfire.js"; // fire modes, jams, suppressing fire, over-penetration
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
@@ -793,7 +794,7 @@ export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : amm
 // A shot by one of your people: its rounds (its calibre and loaded type: its own boxes, the team's, the pools) or its
 // arrow from the pools (b.arrowsUsed: picked up again after a win).
 function spendShot(b, w, u) {
-  if (w.ammo) b.ammoUsed += takeBattleRounds(b, u, w.ammo);
+  if (w.ammo) { const n = takeBattleRounds(b, u, w.ammo); b.ammoUsed += n; noteBrass(b, u, n); } // reloading.js: its brass, picked up after a win
   if (w.arrows) { take(b, "arrows", w.arrows); b.arrowsUsed = (b.arrowsUsed || 0) + w.arrows; }
 }
 // After the fight: about half the arrows loosed are picked up again when the field is yours (world.js ARROWS.BACK),
@@ -1854,7 +1855,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const rg = gm === NO_MODS ? w : modRange(w, gm);
   const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
-  let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a); // nonlethal.js: a taser's daze, pepper spray
+  let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a) - (a.loadAim || 0); // nonlethal.js: a taser's daze, pepper spray; reloading.js: handloads loaded below Mechanics 8
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm); // gunmods.js: a bipod braced, a sling on the move, night sights and lights
@@ -4347,6 +4348,7 @@ function endBattle(state, b, outcome) {
   }
   // The arrows loosed: about half picked up again when the field is yours (world.js ARROWS.BACK), none otherwise.
   const arrowsBackN = pickUpArrows(b, outcome === "victory");
+  lines.push(...pickUpBrass(state, b, outcome === "victory")); // reloading.js: the brass fired, picked up when the field is yours
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
@@ -5207,6 +5209,7 @@ function endRaid(state, b) {
   const cleared = !enemies.some((u) => activeAny(u) && u.aware);
   settleSpears(state, b, outcome === "extracted" && cleared, lines); // thrown spears: picked up on the way out of a cleared site, else lost
   const arrowsBackN = pickUpArrows(b, outcome === "extracted" && cleared);
+  lines.push(...pickUpBrass(state, b, outcome === "extracted" && cleared)); // reloading.js: brass, as the arrows
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js

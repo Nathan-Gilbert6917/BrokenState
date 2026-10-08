@@ -1,7 +1,7 @@
 // @ts-check
 // Rounds in stock records: the plain half of the ammo API (ammo.js re-exports all of it). Imports only the data
 // modules, so the low-level helpers (water.js stockHas / useStock / takeStock) can use it without an import cycle.
-import { CALIBERS, AMMO_TYPES, ammoKey, ROUND_SUPPLIES } from "./data-ammo.js";
+import { CALIBERS, AMMO_TYPES, ammoKey, ROUND_SUPPLIES, HAND_SUPPLIES, handKey } from "./data-ammo.js";
 import { SUPPLIES } from "./data.js";
 
 // ---------- keys ----------
@@ -9,6 +9,16 @@ import { SUPPLIES } from "./data.js";
 export const ROUND_KEYS = Object.keys(ROUND_SUPPLIES);
 /** @param {string} k */
 export const isRoundKey = (k) => !!ROUND_SUPPLIES[k];
+// Handloads (data-ammo.js HAND_SUPPLIES, reloading.js): a_9mm_hp_hand is the bench's 9mm hollow point. A gun loaded
+// with a type fires both; every draw by type takes the factory round first, then the handload.
+/** @param {string} k */
+export const isHandKey = (k) => !!HAND_SUPPLIES[k];
+// The keys of one round: its factory key and its handload key (when the bench can load it).
+/** @param {string} k a factory key */
+export const withHand = (k) => { const r = ROUND_SUPPLIES[k] && ROUND_SUPPLIES[k].round; const h = r && !HAND_SUPPLIES[k] ? handKey(r.cal, r.type) : null; return h && HAND_SUPPLIES[h] ? [k, h] : [k]; };
+// A handload key's factory key (any other key: itself).
+/** @param {string} k */
+export const factoryKey = (k) => (HAND_SUPPLIES[k] ? ammoKey(HAND_SUPPLIES[k].round.cal, HAND_SUPPLIES[k].round.type) : k);
 /** @param {string} k @returns {{ cal: string, type: string } | null} */
 export const roundOf = (k) => (ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].round : null);
 /** @param {string} cal */
@@ -40,7 +50,7 @@ const num = (v) => (Number.isFinite(v) ? v : 0);
 /** @param {Record<string, number> | null | undefined} rec @param {string | null} [cal] @param {string | null} [type] */
 export function roundsIn(rec, cal = null, type = null) {
   if (!rec) return 0;
-  if (cal && type) return Math.max(0, Math.floor(num(rec[keyFor(cal, type)])));
+  if (cal && type) return withHand(keyFor(cal, type)).reduce((a, k) => a + Math.max(0, Math.floor(num(rec[k]))), 0); // its handloads too
   let n = 0;
   for (const k of ROUND_KEYS) {
     const q = rec[k];
@@ -67,7 +77,7 @@ export function addRounds(rec, key, n) {
 /** @param {Record<string, number>} rec @param {string} cal @param {string | null} type @param {number} n @param {boolean} [strict] */
 export function takeRounds(rec, cal, type, n, strict = true) {
   if (!rec || !(n > 0)) return 0;
-  const keys = type && strict ? [keyFor(cal, type)] : orderFor(cal, type);
+  const keys = type && strict ? withHand(keyFor(cal, type)) : orderFor(cal, type);
   let got = 0;
   for (const k of keys) {
     const q = Math.min(n - got, Math.max(0, Math.floor(num(rec[k]))));
@@ -81,8 +91,8 @@ export function takeRounds(rec, cal, type, n, strict = true) {
 /** @param {string} cal @param {string | null} [type] */
 function orderFor(cal, type = null) {
   const keys = typesOf(cal).map((t) => ammoKey(cal, t)).sort((a, b) => (a === baseKey(cal) ? -1 : b === baseKey(cal) ? 1 : SUPPLIES[a].value - SUPPLIES[b].value));
-  if (type) { const k = keyFor(cal, type); return [k, ...keys.filter((x) => x !== k)]; }
-  return keys;
+  if (type) { const k = keyFor(cal, type); return [k, ...keys.filter((x) => x !== k)].flatMap(withHand); }
+  return keys.flatMap(withHand); // each factory round, then its handloads
 }
 // Generic rounds out of a record (a cost, a gift, a deal paid in "ammo", by-the-numbers shooting with no gun to say
 // which): generic ammo first, then the calibres in `keep` last (the guns there need them), cheapest first. Returns

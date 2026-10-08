@@ -128,8 +128,76 @@ export const STARTER_AMMO = {
   "22lr":  [[0.3, "hp", 50]],
 };
 
+// ---------- the reloading bench (section 12; wave 2, agent C2: reloading.js) ----------
+// What a reloading bench can load, by calibre class: [Mechanics needed, rounds per operator-day] (+4% a day per
+// Mechanics point). .22 LR is rimfire (no primer to replace) and .50 BMG is not craftable; neither are tracers,
+// +P or the less-lethal rounds. AP needs a machine shop at the base and a machine part per 20 (steel cores).
+export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "12ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle" };
+/** @type {Record<string, Record<string, [number, number]>>} */
+export const LOADS = {
+  pistol:  { fmj: [2, 40], hp: [5, 30], subsonic: [6, 25], ap: [10, 10] },
+  rifle:   { fmj: [3, 25], sp: [3, 25], subsonic: [6, 25], match: [9, 15], ap: [10, 10] },
+  shotgun: { buck: [1, 25], bird: [1, 25], slug: [1, 15] },
+};
+// Powder charges (the powder supply's unit: one pistol load; a 1 lb can holds 100) per 10 rounds by class: a can
+// loads 100 pistol, 40 rifle or 60 shotgun rounds.
+export const POWDER_PER10 = { pistol: 10, rifle: 25, shotgun: 100 / 6 };
+// A handload's effects in a fight (gunfire.js ammoJam, combat.js shotOdds, stealth.js shotNoise): aim −AIM when loaded
+// below Mechanics AIM_BELOW; black powder: jam × BLACK_JAM and BLACK_NOISE more noise a shot; match-head primers:
+// misfires and jams × MATCH_JAM.
+export const RELOAD_FX = { AIM_BELOW: 8, AIM: 1, BLACK_JAM: 1.5, BLACK_NOISE: 1, MATCH_JAM: 3 };
+// Can this calibre and type be loaded at the bench? [min, rate] or null.
+/** @param {string} cal @param {string} type */
+export const loadRecipe = (cal, type) => (LOAD_CLASS[cal] && CALIBERS[cal] && CALIBERS[cal].types.includes(type) && LOADS[LOAD_CLASS[cal]][type]) || null;
+// Handloads: a round loaded at the bench is a supply of its own key (a_9mm_hp_hand), so its make travels with it
+// through every stock, pack, cargo, trade and pool exactly like a factory round. The base type of a calibre (FMJ,
+// 00 buck) loaded with smokeless powder and factory primers goes into the factory key (quality-less, so the economy
+// sees it); anything else made at the bench (a typed round, or any round with black powder or match-head primers)
+// is a handload. Their make (quality, black powder, match primers) is a colony-wide average per key (reloading.js).
+/** @param {string} cal @param {string} type */
+export const handKey = (cal, type) => `a_${cal}_${type}_hand`;
+export const HAND_VALUE = 0.75; // × the factory round's worth
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string, hand: true } }>} */
+export const HAND_SUPPLIES = {};
+/** @type {Record<string, any>} */
+export const HAND_GEAR = {};
+for (const [cal, c] of Object.entries(CALIBERS)) {
+  for (const type of c.types) {
+    if (!loadRecipe(cal, type)) continue;
+    const t = AMMO_TYPES[type], k = handKey(cal, type);
+    HAND_SUPPLIES[k] = { name: `${c.name} ${t.name} (handload)`, value: Math.round(c.value * t.value * HAND_VALUE * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type, hand: true } };
+    HAND_GEAR[k] = {
+      name: `${c.name} ${t.name} handloads`, slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true,
+      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(c.value * t.value * HAND_VALUE * c.box)),
+      cat: "ammo", rounds: { cal, type, hand: true },
+      desc: `A box of ${c.box} ${c.name} ${t.name} rounds loaded at a reloading bench: they jam more than factory rounds, less the better the loader.`,
+    };
+  }
+}
+Object.assign(ROUND_SUPPLIES, HAND_SUPPLIES);
+Object.assign(AMMO_GEAR, HAND_GEAR);
+
+// The bench's inputs are supplies (stock keys, like rounds; a battle's pools take brass back as they take arrows),
+// counted in single cases, powder charges and primers. Their item forms (RELOAD_GEAR, count stacks: a bag, a can, a
+// box) are what is found and sold loose; one that reaches a base's armory or a team's cargo is opened into the stock
+// (ammo.js unbox), as a box of rounds is. Black powder and match-head primers are made at the bench (crafting.js).
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, reload: true }>} */
+export const RELOAD_SUPPLIES = {
+  brass:        { name: "Brass and hulls",    value: 0.08,  weight: 0.008,  cat: "ammo", reload: true },
+  powder:       { name: "Powder",             value: 0.2,   weight: 0.0045, cat: "ammo", reload: true },
+  blackpowder:  { name: "Black powder",       value: 0.08,  weight: 0.006,  cat: "ammo", reload: true },
+  primers:      { name: "Primers",            value: 0.15,  weight: 0.001,  cat: "ammo", reload: true },
+  matchprimers: { name: "Match-head primers", value: 0.05,  weight: 0.001,  cat: "ammo", reload: true },
+};
 /** @type {Record<string, any>} brass, powder, primers (section 12; economy agent C, wave 2) */
-export const RELOAD_GEAR = {};
+export const RELOAD_GEAR = {
+  brass:   { name: "Bag of brass",   slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.8, value: 8, cat: "ammo", reload: true,
+             desc: "A bag of 100 fired cases and shotgun hulls, picked up and sorted: a reloading bench primes, charges and seats them again. Opened into the stock at a base." },
+  powder:  { name: "Can of powder",  slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.5, value: 20, cat: "ammo", reload: true,
+             desc: "A 1 lb can of smokeless powder: 100 pistol charges, enough for 40 rifle or 60 shotgun loads at a reloading bench. Opened into the stock at a base." },
+  primers: { name: "Box of primers", slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.1, value: 15, cat: "ammo", reload: true,
+             desc: "A box of 100 primers: a reloading bench needs one for every round it loads. Rare now. Opened into the stock at a base." },
+};
 
 // Enemy loads by kit and calibre class (section 6): weights per type. A type the calibre does not have falls back to
 // the calibre's base. Never shown to the player (section 20, R10).

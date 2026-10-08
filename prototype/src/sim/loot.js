@@ -260,9 +260,10 @@ export function gunmodWares(state, type, name, salt = "") {
 }
 function modWares(state, type, name, salt) {
   const w = WARE_MODS[type];
-  if (!w || hash01(state.seed, "newmodware", name, salt) >= w.p) return [];
+  const rel = reloadWares(state, type, name, salt); // the reloading bench's inputs (WARE_RELOAD; their own dice)
+  if (!w || hash01(state.seed, "newmodware", name, salt) >= w.p) return rel;
   const key = pickWeighted(w.items, hash01(state.seed, "newmodwarepick", name, salt));
-  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "newmodwareq", name, salt))] : []; // itemcond.js: by the trader
+  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "newmodwareq", name, salt)), ...rel] : rel; // itemcond.js: by the trader
 }
 
 // The weapons overhaul's attachments (section 5's "where" column) and the repair kits: their own tables and dice
@@ -296,15 +297,15 @@ export const AREA_MODS = {
 export function rollSiteMod(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];
   const site = t && t.loc ? SITE_MODS[t.loc.type] : null;
-  if (!site) return null;
+  if (!site) return rollSiteReload(state, tileId, mult, salt);
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
-  if (hash01(state.seed, "newmodfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  if (hash01(state.seed, "newmodfind", tileId, state.hour, salt) >= site.p * loot * mult) return rollSiteReload(state, tileId, mult, salt); // else the reloading bench's inputs (SITE_RELOAD; its own dice)
   const key = pickWeighted(site.items, hash01(state.seed, "newmodpick", tileId, state.hour, salt));
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "newmoddur", tileId, state.hour, salt)) : null; // itemcond.js: by the site
 }
 export function rollAreaMod(state, tileId, areaType, salt = "") {
   const a = AREA_MODS[areaType];
-  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return null;
+  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return rollAreaReload(state, tileId, areaType, salt); // else the reloading bench's inputs (AREA_RELOAD; its own dice)
   const key = pickWeighted(a.items, hash01(state.seed, "newareamodpick", tileId, salt));
   const t = state.tiles[tileId];
   return key ? lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "newareamoddur", tileId, salt)) : null; // itemcond.js: by the area
@@ -577,3 +578,57 @@ Object.assign(ITEM_TAGS, {
 });
 for (const [where, items] of [[SITE_FINDS.police, { taser: 1.5, tasercart: 2, pepper: 2, stunbaton: 1 }], [SITE_FINDS.prison, { taser: 1, tasercart: 1.5, pepper: 1.5, stunbaton: 1 }], [SITE_FINDS.gunstore, { taser: 1.5, tasercart: 2, pepper: 2 }],
   [AREA_FINDS.armory, { taser: 1, tasercart: 1.5, pepper: 1, stunbaton: 0.7 }], [AREA_FINDS.cellblock, { pepper: 0.7, stunbaton: 0.5, tasercart: 0.5 }], [AREA_FINDS.gunshop, { taser: 1, tasercart: 1.5, pepper: 1.5 }]]) Object.assign(where.items, items);
+
+// The reloading bench's inputs (data-ammo.js RELOAD_GEAR; reloading.js): bags of fired brass, cans of powder and
+// boxes of primers where shooters kept them. Their own tables and dice, rolled after SITE_MODS / AREA_MODS found
+// nothing (WARE_RELOAD on a trader's table besides its parts), so every find from before comes out as it did. A bag,
+// can or box is found part-used (RELOAD_LEFT of it). Primers are rare: a gun store about 0.08 a search hour.
+export const SITE_RELOAD = {
+  gunstore: { p: 0.2, items: { brass: 3, powder: 3, primers: 4 } },
+  lodge: { p: 0.08, items: { brass: 2, powder: 2, primers: 0.5 } },
+  ranch: { p: 0.05, items: { brass: 1, powder: 2 } },
+  military: { p: 0.05, items: { brass: 2, primers: 1 } },
+  police: { p: 0.03, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.02, items: { brass: 1, powder: 1 } },
+  farm: { p: 0.015, items: { powder: 1, brass: 0.5 } },
+};
+export const AREA_RELOAD = {
+  gunshop: { p: 0.1, items: { brass: 2, powder: 2, primers: 1.5 } },
+  armory: { p: 0.06, items: { brass: 2, primers: 1 } },
+  barracks: { p: 0.04, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.03, items: { brass: 1, powder: 1 } },
+  farmhouse: { p: 0.02, items: { powder: 1, brass: 0.5 } },
+};
+export const WARE_RELOAD = {
+  traders: { p: 0.3, items: { powder: 2, primers: 1.5, brass: 1 } },
+  military: { p: 0.3, items: { primers: 2, powder: 1, brass: 1 } },
+  merchants: { p: 0.35, items: { powder: 2, primers: 2, brass: 1 } },
+  raider: { p: 0.1, items: { brass: 1, powder: 0.5 } },
+};
+export const RELOAD_LEFT = [0.3, 1];
+Object.assign(ITEM_TAGS, {
+  brass: ["guns", "hunt", "police", "military", "farm", "outdoor", "home", "camp"], powder: ["guns", "hunt", "farm", "home", "outdoor", "military"], primers: ["guns", "hunt", "military", "police"],
+});
+const partUsed = (it, u) => { if (it && it.dur > 1) it.dur = Math.max(1, Math.round(it.dur * (RELOAD_LEFT[0] + (RELOAD_LEFT[1] - RELOAD_LEFT[0]) * u))); return it; };
+export function rollSiteReload(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_RELOAD[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "reloadfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "reloadpick", tileId, state.hour, salt));
+  return key ? partUsed(lootItem(key, siteSource(t.loc.type), hash01(state.seed, "reloaddur", tileId, state.hour, salt)), hash01(state.seed, "reloadleft", tileId, state.hour, salt)) : null;
+}
+export function rollAreaReload(state, tileId, areaType, salt = "") {
+  const a = AREA_RELOAD[areaType];
+  if (!a || hash01(state.seed, "areareload", tileId, salt) >= a.p) return null;
+  const key = pickWeighted(a.items, hash01(state.seed, "areareloadpick", tileId, salt));
+  const t = state.tiles[tileId];
+  return key ? partUsed(lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areareloaddur", tileId, salt)), hash01(state.seed, "areareloadleft", tileId, salt)) : null;
+}
+function reloadWares(state, type, name, salt) {
+  const w = WARE_RELOAD[type];
+  if (!w || hash01(state.seed, "reloadware", name, salt) >= w.p) return [];
+  const key = pickWeighted(w.items, hash01(state.seed, "reloadwarepick", name, salt));
+  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "reloadwareq", name, salt))] : [];
+}

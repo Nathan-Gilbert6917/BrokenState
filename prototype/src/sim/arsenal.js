@@ -50,6 +50,7 @@ import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
 import { workshopFactor } from "./groupworks.js";
+import { groupBrass, groupReloadDaily } from "./reloading.js"; // the reloading bench, theirs: brass from their fights, rounds from their workshop
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
 
 export const ARSENAL = {
@@ -197,7 +198,9 @@ function wearOwned(f, it, n = 1) {
 export const arsenalRounds = (f) => (f && f.stock ? totalRounds(f.stock) : 0);
 export function takeArsenalRounds(f, n) {
   if (!f || !f.stock) return 0;
-  return spendAmmo(f.stock, Math.min(arsenalRounds(f), Math.max(0, Math.round(n)))).n; // generic first, then the cheapest rounds
+  const got = spendAmmo(f.stock, Math.min(arsenalRounds(f), Math.max(0, Math.round(n)))).n; // generic first, then the cheapest rounds
+  groupBrass(f, got); // reloading.js: some of the brass picked up again
+  return got;
 }
 export function addArsenalRounds(f, n) { if (n > 0) f.stock.ammo = (f.stock.ammo || 0) + n; }
 
@@ -663,6 +666,7 @@ export function arsenalDaily(state, f) {
     }
   }
   A.pop0 = f.pop;
+  groupReloadDaily(state, f, hasWorkshop(state, f)); // reloading.js: powder and primers bought, rounds loaded at their workshop
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
   if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
   const o = sortedKit(A);

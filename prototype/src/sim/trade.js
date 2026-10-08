@@ -54,9 +54,9 @@ export { itemValue };
 // Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.5, gunparts: 0.5, electronics: 0.5 }; // wood: 12 kg a head; the part kinds are priced by the group's one count of parts
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.5, gunparts: 0.5, electronics: 0.5, brass: 5, powder: 3, primers: 3, blackpowder: 1, matchprimers: 1 }; // reloading.js: the bench's inputs (cases, charges, primers); wood: 12 kg a head; the part kinds are priced by the group's one count of parts
 // Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0 };
+const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 };
 // Groups always have some water (wells, rain barrels), firewood (they cut their own: woodcutting.js) and arrows (they
 // make their own): with no figure yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is
@@ -259,7 +259,7 @@ export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
 // Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
-export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600, carparts: 3, gunparts: 4, electronics: 4 }; // wood: 60 kg
+export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600, carparts: 3, gunparts: 4, electronics: 4, brass: 100, powder: 100, primers: 100, blackpowder: 100, matchprimers: 50 }; // wood: 60 kg
 export const wantQty = (f, k) => Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[poolKey(k)] * f.pop - stockOf(f, k)));
 export function marketLists(state, f, speech = 0) {
   const wants = [], surplus = [], prices = {};
@@ -268,6 +268,7 @@ export function marketLists(state, f, speech = 0) {
     prices[k] = { pay: sellPrice(state, f, k, speech, lot), ask: buyPrice(state, f, k, speech, lot) };
     if (refuses(f, k) || k === RAW) continue; // un-purified water: priced, but the lists ask for and offer purified water
     if (isRoundKey(k)) continue; // rounds: the lists ask for and offer ammo as one good (sold by calibre in the window)
+    if (SUPPLIES[k].reload && !(stockOf(f, k) >= 1)) continue; // the reloading bench's inputs: on the board only from a group that holds some
     if (PART_KINDS.includes(k) && pooled(f)) continue; // they want and offer "parts"; the kinds are in the trade window
     const n = demand(state, f, k);
     if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: wantQty(f, k), price: prices[k].pay });
